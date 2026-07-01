@@ -138,6 +138,13 @@ export default function OverlayWindow() {
   const [actionPending, setActionPending] = useState<"commit" | "abort" | "copy" | "edit" | "insert" | null>(null);
   const [editText, setEditText] = useState("");
   const [showEditMode, setShowEditMode] = useState(false);
+  // `occurred_at_ms` of a result that was suppressed by a commit / edit-confirm
+  // (those flows intentionally close without showing a result-actions pill).
+  // Sticky per-result: unlike the one-shot `suppressNextResultActionsRef`
+  // (reset in the lastResult Effect), this stays set until a NEW result arrives,
+  // so the `bridgeResultFromStop` hold cannot re-arm in a later render
+  // after the ref was reset and briefly flash a suppressed result.
+  const [suppressedResultMs, setSuppressedResultMs] = useState<number | null>(null);
   // Mode-select surface — opened by the `mode_picker_hotkey` global shortcut.
   // Reuses the compact pill geometry; the frontend switches the pill into a
   // selector mode via the `wordscript-mode-select` runtime event.
@@ -189,25 +196,41 @@ export default function OverlayWindow() {
     || (holdPreviewDuringClose
       && lastVisibleSurfaceRef.current === "processing_preview"
       && Boolean(pendingPreviewResult));
-  // Bridge the processing_preview -> result swap so the pill never hits a
-  // pillState=null/unmount gap during the stop transition. That gap orphaned
-  // the previous surface's compositor layers on WebKitGTK and produced the
+  // Bridge the stop/commit -> result swap so the pill never hits a
+  // pillState=null/unmount gap during the transition. That gap orphaned the
+  // previous surface's compositor layers on WebKitGTK and produced the
   // ghosted "processing preview instead of result" / jagged-edges artifact.
-  // Active only while the overlay is still "open" (before the leaving motion
-  // begins) and only when the upcoming result is NOT suppressed: commit /
-  // edit-confirm arm `suppressNextResultActionsRef` because they intentionally
-  // close without showing a result. Folded into `isActive` below so the swap
-  // never dips into leaving->entering (which itself orphaned layers).
-  const bridgeResultFromProcessing = holdPreviewDuringClose
+  //
+  // Covers BOTH in-flight surfaces that lead into a result:
+  //   - "processing_preview" (clipboard_only State 05, backend waits on commit)
+  //   - "compact"            (auto_paste State 04, direct insert)
+  // `holdPreviewDuringClose` excludes "compact" (it is the generic idle/in-flight
+  // surface), so the bridge runs on its own idle+open predicate instead.
+  //
+  // Suppression gate — commit / edit-confirm intentionally close WITHOUT a
+  // result. Two windows must be covered:
+  //   (1) the render where `transcription` just arrived but the lastResult
+  //       Effect hasn't run yet — `suppressNextResultActionsRef` is still true;
+  //   (2) every later render — the ref was reset in that Effect, so a sticky
+  //       per-result marker `suppressedResultMs` (set to this result's
+  //       occurred_at_ms in the Effect) keeps the bridge disarmed. Without the
+  //       sticky marker the bridge would re-arm after the reset and flash the
+  //       suppressed result for a frame.
+  const bridgeResultFromStop =
+    status === "idle"
+    && !showError
+    && !showAnyPreview
     && overlayMotion === "open"
     && !suppressNextResultActionsRef.current
-    && lastVisibleSurfaceRef.current === "processing_preview"
-    && Boolean(previewResult);
+    && previewResult != null
+    && previewResult.occurred_at_ms !== suppressedResultMs
+    && (lastVisibleSurfaceRef.current === "processing_preview"
+      || lastVisibleSurfaceRef.current === "compact");
   const renderResultPreview = showResultPreview
     || (holdPreviewDuringClose
       && (lastVisibleSurfaceRef.current === "result_actions" || lastVisibleSurfaceRef.current === "edit_mode")
       && Boolean(previewResult))
-    || bridgeResultFromProcessing;
+    || bridgeResultFromStop;
   const renderOverlaySurface: OverlaySurface = showEditMode
     ? "edit_mode"
     : renderResultPreview
@@ -384,15 +407,23 @@ export default function OverlayWindow() {
   }, [state.pendingResult?.occurred_at_ms]);
 
   useEffect(() => {
-    if (!state.lastResult?.occurred_at_ms) {
+    const ms = state.lastResult?.occurred_at_ms;
+    if (!ms) {
       return;
     }
 
     if (suppressNextResultActionsRef.current) {
       suppressNextResultActionsRef.current = false;
+      // Mark this result as suppressed so `bridgeResultFromStop` stays
+      // disarmed for it across later renders (the one-shot ref would otherwise
+      // be reset to false here and let the bridge re-arm).
+      setSuppressedResultMs(ms);
       return;
     }
 
+    // A fresh, unsuppressed result — clear any prior suppression marker and
+    // surface the result-actions pill.
+    setSuppressedResultMs(null);
     setShowPreview(true);
     setShowEditMode(false);
     setEditText("");
@@ -434,6 +465,7 @@ export default function OverlayWindow() {
       setShowModePicker(false);
       setEditText("");
       setActionPending(null);
+      setSuppressedResultMs(null);
       if (autoCloseResultTimerRef.current) {
         window.clearTimeout(autoCloseResultTimerRef.current);
         autoCloseResultTimerRef.current = null;
@@ -451,7 +483,7 @@ export default function OverlayWindow() {
     || showError
     || showAnyPreview
     || renderModePicker
-    || bridgeResultFromProcessing;
+    || bridgeResultFromStop;
 
   // Dismiss the mode-select surface when the overlay leaves the active state (user
   // dismissed it or lost focus). Prevents a stale picker from reappearing on
