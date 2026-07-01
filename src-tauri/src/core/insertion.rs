@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -24,6 +24,11 @@ use super::runtime_log;
 use super::sessions::now_ms;
 
 const CLIPBOARD_RESTORE_DELAY_MS: u64 = 180;
+// Upper bound for waiting on wl-copy to exit before reporting a Wayland
+// clipboard write as committed. wl-copy normally forks its clipboard-serving
+// daemon and exits within a few ms; this absorbs a slow compositor handshake
+// without stalling the insert path.
+const WL_COPY_WAIT_MS: u64 = 400;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -832,6 +837,25 @@ fn schedule_clipboard_restore(text: Option<String>, delay_ms: u64) {
 }
 
 fn write_clipboard_with_arboard(text: &str) -> Result<(), String> {
+    // arboard selects its Linux backend from the live environment. WordScript
+    // runs the WebKitGTK webview under GDK_BACKEND=x11 with WAYLAND_DISPLAY
+    // removed (main.rs), so naively calling arboard here makes it pick the X11
+    // backend and write the XWayland clipboard — a different buffer from the
+    // Wayland clipboard `wayland-0` the user's apps read. On an original
+    // Wayland session, temporarily restore WAYLAND_DISPLAY so arboard writes
+    // the Wayland clipboard, then remove it again so WebKitGTK keeps its X11
+    // backend. arboard reads the env at Clipboard::new() time.
+    let restore_wayland = is_wayland_session();
+    if restore_wayland {
+        if let Some(display) = original_wayland_display() {
+            // SAFETY: set_var/remove_var are unsafe on Unix because env access
+            // is not thread-safe in general; here the insert path is single
+            // (one commit at a time) and WebKitGTK does not re-read
+            // WAYLAND_DISPLAY per frame, so the transient change is safe.
+            unsafe { std::env::set_var("WAYLAND_DISPLAY", display) };
+        }
+    }
+
     let arboard_result = Clipboard::new()
         .map_err(|error| format!("Clipboard unavailable: {error}"))
         .and_then(|mut clipboard| {
@@ -839,6 +863,11 @@ fn write_clipboard_with_arboard(text: &str) -> Result<(), String> {
                 .set_text(text.to_string())
                 .map_err(|error| format!("Could not write clipboard: {error}"))
         });
+
+    if restore_wayland {
+        // Re-hide WAYLAND_DISPLAY for WebKitGTK's X11 backend contract.
+        unsafe { std::env::remove_var("WAYLAND_DISPLAY") };
+    }
 
     arboard_result
 }
@@ -1102,30 +1131,67 @@ fn write_wayland_clipboard(text: &str) -> Result<(), String> {
         .env("WAYLAND_DISPLAY", display)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("wl-copy unavailable: {error}"))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
+    // Write the transcript and close stdin (EOF) so wl-copy reads the full
+    // payload and forks its clipboard-serving daemon.
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "wl-copy stdin unavailable".to_string())?;
         stdin
             .write_all(text.as_bytes())
             .map_err(|error| format!("Could not send transcript to wl-copy: {error}"))?;
     }
 
-    std::thread::spawn(move || match child.wait() {
-        Ok(status) if !status.success() => {
-            runtime_log::record(format!(
-                "[WordScript] wl-copy exited with non-success status {}",
-                status
-            ));
+    // Block on wl-copy's exit so the clipboard set is committed before we
+    // report success. The previous fire-and-forget returned Ok(()) immediately
+    // and masked a failed wl-copy (e.g. compositor race / unreachable display)
+    // as a successful clipboard write — `clipboard_written=true` then lied, the
+    // clipboard-only delivery lost the text, and the chain never fell through
+    // to arboard. wl-copy normally forks a daemon and exits quickly; cap the
+    // wait so a hung compositor can't stall the insert.
+    let deadline = Instant::now() + Duration::from_millis(WL_COPY_WAIT_MS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    return Ok(());
+                }
+                let stderr = child
+                    .stderr
+                    .take()
+                    .and_then(|mut s| {
+                        let mut buf = String::new();
+                        std::io::Read::read_to_string(&mut s, &mut buf).ok().map(|_| buf)
+                    })
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let detail = stderr
+                    .map(|s| format!(": {s}"))
+                    .unwrap_or_else(|| format!(" (status {})", status));
+                return Err(format!("wl-copy exited non-success{detail}"));
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    // Don't kill: a wl-copy that hasn't exited yet likely forked
+                    // its daemon and is waiting on the compositor; the clipboard
+                    // set may still land. Report success optimistically rather
+                    // than tearing down a possibly-good daemon.
+                    runtime_log::record(format!(
+                        "[WordScript] wl-copy did not exit within {}ms; assuming daemon forked",
+                        WL_COPY_WAIT_MS
+                    ));
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => return Err(format!("wl-copy wait failed: {error}")),
         }
-        Ok(_) => {}
-        Err(error) => {
-            runtime_log::record(format!("[WordScript] wl-copy wait failed: {error}"));
-        }
-    });
-
-    Ok(())
+    }
 }
 
 fn original_wayland_display() -> Option<String> {
