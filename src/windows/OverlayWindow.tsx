@@ -189,10 +189,25 @@ export default function OverlayWindow() {
     || (holdPreviewDuringClose
       && lastVisibleSurfaceRef.current === "processing_preview"
       && Boolean(pendingPreviewResult));
+  // Bridge the processing_preview -> result swap so the pill never hits a
+  // pillState=null/unmount gap during the stop transition. That gap orphaned
+  // the previous surface's compositor layers on WebKitGTK and produced the
+  // ghosted "processing preview instead of result" / jagged-edges artifact.
+  // Active only while the overlay is still "open" (before the leaving motion
+  // begins) and only when the upcoming result is NOT suppressed: commit /
+  // edit-confirm arm `suppressNextResultActionsRef` because they intentionally
+  // close without showing a result. Folded into `isActive` below so the swap
+  // never dips into leaving->entering (which itself orphaned layers).
+  const bridgeResultFromProcessing = holdPreviewDuringClose
+    && overlayMotion === "open"
+    && !suppressNextResultActionsRef.current
+    && lastVisibleSurfaceRef.current === "processing_preview"
+    && Boolean(previewResult);
   const renderResultPreview = showResultPreview
     || (holdPreviewDuringClose
       && (lastVisibleSurfaceRef.current === "result_actions" || lastVisibleSurfaceRef.current === "edit_mode")
-      && Boolean(previewResult));
+      && Boolean(previewResult))
+    || bridgeResultFromProcessing;
   const renderOverlaySurface: OverlaySurface = showEditMode
     ? "edit_mode"
     : renderResultPreview
@@ -204,7 +219,11 @@ export default function OverlayWindow() {
   const finalPreviewText = activePreviewResult?.final_text?.trim() ?? "";
   const previewClipboardOnly = activePreviewResult?.work_mode?.insert_behavior === "clipboard_only";
 
-  overlaySurfaceRef.current = overlaySurface;
+  // Track the ACTUAL rendered surface (incl. held/bridged state) so drag
+  // position persistence and native visibility sync agree with what is on
+  // screen — not the raw `overlaySurface` which can fall back to "compact"
+  // during a held/bridged render.
+  overlaySurfaceRef.current = renderOverlaySurface;
 
   const applyOverlayMotion = (next: OverlayMotion) => {
     overlayMotionRef.current = next;
@@ -426,7 +445,13 @@ export default function OverlayWindow() {
     }
   }, [pendingPreviewResult, status]);
 
-  const isActive = status === "recording" || status === "processing" || showError || showAnyPreview || renderModePicker;
+  const isActive =
+    status === "recording"
+    || status === "processing"
+    || showError
+    || showAnyPreview
+    || renderModePicker
+    || bridgeResultFromProcessing;
 
   // Dismiss the mode-select surface when the overlay leaves the active state (user
   // dismissed it or lost focus). Prevents a stale picker from reappearing on
@@ -944,14 +969,14 @@ export default function OverlayWindow() {
     if (renderModePicker) {
       // Mode-picker surface: a compact pill showing the current mode chip.
       // Tapping the chip cycles (same handler as in-session), per-mode hotkeys
-      // jump directly, and dismissing the overlay closes the picker.
+      // jump directly, and dismissing the overlay closes the picker. Uses its
+      // own `kind: "mode-picker"` (not "recording") so the `key={pillState.kind}`
+      // remount at `:1042` forces a clean mount on the Picker -> real-recording
+      // transition — otherwise the recording pill keeps stale animation/layer
+      // state from the picker and ghosts.
       return {
-        kind: "recording",
+        kind: "mode-picker",
         mode: pillMode,
-        muted: false,
-        paused: false,
-        level: 0,
-        elapsedSec: 0,
         onCycleMode: handleCycleMode,
       };
     }

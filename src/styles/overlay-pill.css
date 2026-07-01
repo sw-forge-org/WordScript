@@ -115,6 +115,16 @@
   border-color: var(--ov-accent-border-soft);
 }
 
+/* Mode picker: idle selector surface. Soft accent border reads as
+   "selectable", calm idle silhouette (no spinner, no live waveform). */
+.ov-scope .pill--mode-picker {
+  border-color: var(--ov-accent-border-soft);
+  box-shadow:
+    var(--ov-highlight),
+    inset 0 0 0 1px var(--ov-accent-soft),
+    var(--ov-shadow);
+}
+
 .ov-scope .pill--muted {
   border-color: var(--ov-red-border);
 }

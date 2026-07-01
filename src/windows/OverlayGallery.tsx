@@ -136,6 +136,16 @@ export default function OverlayGallery() {
             />
           </Card>
 
+          <Card index="05b" title="Mode picker" hint="Idle silhouette · mode chip · tap to cycle">
+            <OverlayPill
+              state={{
+                kind: "mode-picker",
+                mode,
+                onCycleMode: cycleMode,
+              }}
+            />
+          </Card>
+
           <Card index="06" title="Result actions" hint="Final text + Copy / Edit + auto-close 9s" wide>
             <OverlayPill
               state={{

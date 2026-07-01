@@ -69,6 +69,11 @@ export type OverlayPillState =
       onCancel?: () => void;
     }
   | {
+      kind: "mode-picker";
+      mode: OverlayProcessingMode;
+      onCycleMode?: () => void;
+    }
+  | {
       kind: "error";
       message: string;
     };
@@ -117,11 +122,12 @@ function levelToBars(level: number): number[] {
 
 export function OverlayPill({ state }: { state: OverlayPillState }) {
   switch (state.kind) {
-    case "recording":     return <RecordingPill state={state} />;
-    case "processing":    return <ProcessingPill state={state} />;
+    case "recording":      return <RecordingPill state={state} />;
+    case "processing":     return <ProcessingPill state={state} />;
     case "result-actions": return <ResultActionsPill state={state} />;
-    case "edit-mode":     return <EditPill state={state} />;
-    case "error":         return <ErrorPill state={state} />;
+    case "edit-mode":      return <EditPill state={state} />;
+    case "mode-picker":    return <ModePickerPill state={state} />;
+    case "error":          return <ErrorPill state={state} />;
   }
 }
 
@@ -264,6 +270,18 @@ function ErrorPill({ state }: { state: Extract<OverlayPillState, { kind: "error"
         <Ban size={18} strokeWidth={2.25} />
       </span>
       <span className="pill__error-text" title={state.message}>{state.message}</span>
+    </div>
+  );
+}
+
+/* ── Mode picker (idle selector) ──────────────────────────────────────────── */
+
+function ModePickerPill({ state }: { state: Extract<OverlayPillState, { kind: "mode-picker" }> }) {
+  return (
+    <div className="pill pill--compact pill--mode-picker">
+      <Bars heights={IDLE_BARS} muted={false} />
+      <span className="pill__divider" aria-hidden="true" />
+      <ModeChip mode={state.mode} onClick={state.onCycleMode} />
     </div>
   );
 }
