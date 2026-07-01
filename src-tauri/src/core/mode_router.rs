@@ -179,23 +179,30 @@ pub fn set_active_profile_processing_mode<R: tauri::Runtime>(
         return Err(format!("Unknown processing mode: {}", mode));
     }
 
-    let mut config = super::config::AppConfig::load_from_disk();
+    // read-modify-write under the config file lock so a concurrent save_config
+    // (frontend writing e.g. insert_behavior) cannot be clobbered by this
+    // command writing back a stale snapshot it read first. Without this, the
+    // mode hotkey racing a settings save reverted the user's insert_behavior.
+    let config = super::config::with_config_file_lock(|| {
+        let mut config = super::config::AppConfig::load_from_disk();
 
-    // Update the active profile's work_mode.
-    if let Some(profile) = config
-        .text_profiles
-        .iter_mut()
-        .find(|p| p.id == config.active_text_profile_id)
-    {
-        profile.work_mode.processing_mode = parsed.clone();
-    } else {
-        return Err("No active text profile found.".to_string());
-    }
+        // Update the active profile's work_mode.
+        if let Some(profile) = config
+            .text_profiles
+            .iter_mut()
+            .find(|p| p.id == config.active_text_profile_id)
+        {
+            profile.work_mode.processing_mode = parsed.clone();
+        } else {
+            return Err("No active text profile found.".to_string());
+        }
 
-    // Also update the global fallback so it stays in sync.
-    config.processing_mode = parsed.clone();
+        // Also update the global fallback so it stays in sync.
+        config.processing_mode = parsed.clone();
 
-    config.save_to_disk()?;
+        config.save_to_disk()?;
+        Ok::<super::config::AppConfig, String>(config)
+    })??;
 
     // Set a runtime override so the change is immediate for an in-flight
     // session (the next transcription picks it up without a config reload).

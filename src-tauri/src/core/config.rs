@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
@@ -9,6 +10,35 @@ use super::providers::{
     provider_credentials_configured,
 };
 use super::runtime_log;
+
+/// Serializes every load -> modify -> save sequence touching `config.json`.
+/// Without this, parallel Tauri commands race on the config file: e.g. a
+/// `save_config` (frontend writing `insert_behavior`) and a
+/// `set_active_profile_processing_mode` (mode hotkey writing `processing_mode`)
+/// both do load -> modify -> save. If the mode command reads a stale file
+/// before the frontend's save lands and writes back after it, it silently
+/// overwrites the user's `insert_behavior` change ("settings switch back to
+/// clipboard only"). Commands that read-modify-write the config must hold this
+/// lock for the whole sequence so each sees the latest on-disk state.
+static CONFIG_FILE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn config_file_lock() -> &'static Mutex<()> {
+    CONFIG_FILE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Runs `f` while holding the config file lock. Returns a poison/lock error as
+/// a String so command handlers can surface it.
+pub fn with_config_file_lock<F, R>(f: F) -> Result<R, String>
+where
+    F: FnOnce() -> R,
+{
+    let guard = config_file_lock()
+        .lock()
+        .map_err(|error| format!("config lock poisoned: {error}"))?;
+    let result = f();
+    drop(guard);
+    Ok(result)
+}
 
 pub const DEFAULT_CORRECTION_MODEL: &str = "llama-3.3-70b-versatile";
 pub const DEFAULT_LOCAL_CORRECTION_MODEL: &str = "llama3.2:latest";
@@ -1083,9 +1113,16 @@ pub fn validate_hotkey_collisions(config: &AppConfig) -> Result<(), String> {
 pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<AppConfig, String> {
     validate_hotkey_collisions(&config)?;
     AppConfig::reconcile_legacy_secret_before_save()?;
-    let mut sanitized = config.without_secrets();
-    sanitized.normalize_for_runtime();
-    sanitized.save_to_disk()?;
+    // Hold the config file lock across normalize + write so a parallel
+    // read-modify-write command (e.g. set_active_profile_processing_mode from
+    // the mode hotkey) cannot read a stale file and write it back over this
+    // change — the cause of "settings switch back to clipboard only".
+    let sanitized = with_config_file_lock(|| {
+        let mut sanitized = config.without_secrets();
+        sanitized.normalize_for_runtime();
+        sanitized.save_to_disk()?;
+        Ok::<AppConfig, String>(sanitized)
+    })??;
     super::sound::set_enabled(sanitized.play_sounds);
     emit_ready_event(&app, &sanitized);
     Ok(sanitized)
@@ -1096,10 +1133,14 @@ pub fn switch_active_text_profile<R: Runtime>(
     app: AppHandle<R>,
     profile_id: String,
 ) -> Result<AppConfig, String> {
-    let mut config = AppConfig::load_from_disk();
-    config.active_text_profile_id = profile_id;
-    config.normalize_for_runtime();
-    config.save_to_disk()?;
+    // read-modify-write under the lock: prevents clobbering a concurrent save.
+    let config = with_config_file_lock(|| {
+        let mut config = AppConfig::load_from_disk();
+        config.active_text_profile_id = profile_id;
+        config.normalize_for_runtime();
+        config.save_to_disk()?;
+        Ok::<AppConfig, String>(config)
+    })??;
     super::sound::set_enabled(config.play_sounds);
     emit_ready_event(&app, &config);
     Ok(config.without_secrets())
@@ -1115,14 +1156,16 @@ pub fn acknowledge_profile_health_flag(
     if trimmed_profile.is_empty() || trimmed_flag.is_empty() {
         return Err("profile_id and flag_kind must be non-empty".to_string());
     }
-    let mut config = AppConfig::load_from_disk();
-    config
-        .profile_health_acknowledged_flags
-        .entry(trimmed_profile.to_string())
-        .or_default()
-        .insert(trimmed_flag.to_string());
-    config.save_to_disk()?;
-    Ok(config.without_secrets())
+    with_config_file_lock(|| {
+        let mut config = AppConfig::load_from_disk();
+        config
+            .profile_health_acknowledged_flags
+            .entry(trimmed_profile.to_string())
+            .or_default()
+            .insert(trimmed_flag.to_string());
+        config.save_to_disk()?;
+        Ok::<AppConfig, String>(config.without_secrets())
+    })?
 }
 
 #[tauri::command]
@@ -1135,15 +1178,17 @@ pub fn unacknowledge_profile_health_flag(
     if trimmed_profile.is_empty() || trimmed_flag.is_empty() {
         return Err("profile_id and flag_kind must be non-empty".to_string());
     }
-    let mut config = AppConfig::load_from_disk();
-    if let Some(set) = config.profile_health_acknowledged_flags.get_mut(trimmed_profile) {
-        set.remove(trimmed_flag);
-        if set.is_empty() {
-            config.profile_health_acknowledged_flags.remove(trimmed_profile);
+    with_config_file_lock(|| {
+        let mut config = AppConfig::load_from_disk();
+        if let Some(set) = config.profile_health_acknowledged_flags.get_mut(trimmed_profile) {
+            set.remove(trimmed_flag);
+            if set.is_empty() {
+                config.profile_health_acknowledged_flags.remove(trimmed_profile);
+            }
         }
-    }
-    config.save_to_disk()?;
-    Ok(config.without_secrets())
+        config.save_to_disk()?;
+        Ok::<AppConfig, String>(config.without_secrets())
+    })?
 }
 
 pub fn emit_ready_event<R: Runtime>(app: &AppHandle<R>, config: &AppConfig) {
@@ -2156,6 +2201,51 @@ mod tests {
         assert_eq!(active_profile.work_mode.rewrite_style, "polished");
         assert_eq!(active_profile.work_mode.insert_behavior, "auto_paste");
         assert_eq!(active_profile.curation.summary, "Inbox-ready support follow-ups, escalation language and status updates for customer-facing work.");
+    }
+
+    #[test]
+    fn frontend_save_roundtrip_without_legacy_auto_paste_keeps_auto_paste_profile() {
+        // The frontend AppConfig has no top-level `auto_paste` field (removed in
+        // the mode-hotkey commit); on the Rust side it is `#[serde(default =
+        // default_legacy_auto_paste, skip_serializing)]`. A save_config call
+        // therefore deserializes a config WITHOUT auto_paste, which must default
+        // to `true` so the legacy-migration branch (`if !self.auto_paste`) does
+        // NOT force an auto_paste profile back to clipboard_only. This test
+        // reproduces the reported "settings switch back to clipboard only" by
+        // round-tripping through JSON the way save_config does.
+        let raw = serde_json::json!({
+            "active_text_profile_id": "general",
+            "text_profiles": [{
+                "id": "general",
+                "label": "General writing",
+                "prompt": "",
+                "stt_hints": "",
+                "work_mode": {
+                    "rewrite_style": "polished",
+                    "insert_behavior": "auto_paste",
+                    "recovery_behavior": "standard",
+                    "processing_mode": "auto",
+                },
+                "curation": { "curated": false, "audience": "", "summary": "", "highlights": [] },
+                "dictionary_entries": [],
+                "snippet_entries": [],
+                "speech": null,
+                "modes": null,
+                "capture": null,
+            }],
+            "result_actions_timeout_s": 9,
+            "mode_select_timeout_s": 6,
+        });
+
+        let mut config: AppConfig = serde_json::from_value(raw).unwrap();
+        // auto_paste must have defaulted to true (absent in JSON).
+        assert!(config.auto_paste, "legacy auto_paste must default to true when absent");
+        config.normalize_for_runtime();
+        let active = config.active_text_profile();
+        assert_eq!(
+            active.work_mode.insert_behavior, "auto_paste",
+            "auto_paste profile must NOT be migrated to clipboard_only on a frontend save roundtrip"
+        );
     }
 
     #[test]
