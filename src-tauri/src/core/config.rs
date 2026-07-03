@@ -918,7 +918,20 @@ impl AppConfig {
                 };
             }
 
+            let prev_insert_behavior = profile.work_mode.insert_behavior.clone();
             profile.work_mode = normalize_text_profile_work_mode(&profile.work_mode);
+            // Diagnostic for the insert_behavior-revert investigation (plan P1):
+            // logs ONLY when normalization actually rewrites the value (a
+            // non-canonical token such as "clipboard"/"manual" → canonical, or
+            // an unknown value → the auto_paste default). On a steady canonical
+            // config this never fires, so it is effectively zero-noise — but it
+            // pinpoints any path that is silently rewriting insert_behavior.
+            if profile.work_mode.insert_behavior != prev_insert_behavior {
+                runtime_log::record(format!(
+                    "[WordScript] Config normalize rewrote insert_behavior profile={} from='{}' to='{}'",
+                    profile.id, prev_insert_behavior, profile.work_mode.insert_behavior,
+                ));
+            }
         }
 
         let active_index = self
@@ -930,7 +943,30 @@ impl AppConfig {
         self.active_text_profile_id = self.text_profiles[active_index].id.clone();
     }
 
+    /// Loads, migrates and normalizes the config, persisting it back to disk if
+    /// normalization changed anything (migration / shortcut normalization).
+    ///
+    /// This is the lock-holding entry point for callers that do NOT already
+    /// hold [`with_config_file_lock`]. Frequent unlocked callers — notably
+    /// `resolve_current_processing_mode` (overlay / mode-event polling) — used
+    /// to trigger the conditional re-save here WITHOUT the lock, racing a
+    /// concurrent `save_config` (frontend writing e.g. `insert_behavior`):
+    /// the resolve read a stale file, re-saved its normalized snapshot and
+    /// silently reverted the user's change. Wrapping the whole load→normalize
+    /// →re-save in the lock closes that hole. (plan P1, candidate root C2)
     pub fn load_from_disk() -> Self {
+        with_config_file_lock(Self::load_from_disk_impl).unwrap_or_default()
+    }
+
+    /// Lock-free variant for callers that ALREADY hold [`with_config_file_lock`]
+    /// (e.g. `switch_active_text_profile`, `set_active_profile_processing_mode`).
+    /// The std `Mutex` is not reentrant, so those callers must not go through
+    /// [`load_from_disk`] (which would re-acquire the lock and deadlock).
+    pub(crate) fn load_from_disk_within_lock() -> Self {
+        Self::load_from_disk_impl()
+    }
+
+    fn load_from_disk_impl() -> Self {
         let mut config = Self::load_raw_from_disk();
         let original_provider = config.provider.clone();
         let original_hotkeys = (
@@ -1112,12 +1148,16 @@ pub fn validate_hotkey_collisions(config: &AppConfig) -> Result<(), String> {
 #[tauri::command]
 pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<AppConfig, String> {
     validate_hotkey_collisions(&config)?;
-    AppConfig::reconcile_legacy_secret_before_save()?;
-    // Hold the config file lock across normalize + write so a parallel
-    // read-modify-write command (e.g. set_active_profile_processing_mode from
-    // the mode hotkey) cannot read a stale file and write it back over this
-    // change — the cause of "settings switch back to clipboard only".
+    // Hold the config file lock across the legacy-secret reconcile + normalize
+    // + write so a parallel read-modify-write command (e.g.
+    // set_active_profile_processing_mode from the mode hotkey, or a
+    // resolve_current_processing_mode re-save) cannot read a stale file and
+    // write it back over this change — the cause of "settings switch back to
+    // clipboard only". `reconcile_legacy_secret_before_save` does its own
+    // load -> maybe-save for the legacy provider key; it is now inside the
+    // same locked section so that write can't race this one either.
     let sanitized = with_config_file_lock(|| {
+        AppConfig::reconcile_legacy_secret_before_save()?;
         let mut sanitized = config.without_secrets();
         sanitized.normalize_for_runtime();
         sanitized.save_to_disk()?;
@@ -1135,7 +1175,7 @@ pub fn switch_active_text_profile<R: Runtime>(
 ) -> Result<AppConfig, String> {
     // read-modify-write under the lock: prevents clobbering a concurrent save.
     let config = with_config_file_lock(|| {
-        let mut config = AppConfig::load_from_disk();
+        let mut config = AppConfig::load_from_disk_within_lock();
         config.active_text_profile_id = profile_id;
         config.normalize_for_runtime();
         config.save_to_disk()?;
@@ -1157,7 +1197,7 @@ pub fn acknowledge_profile_health_flag(
         return Err("profile_id and flag_kind must be non-empty".to_string());
     }
     with_config_file_lock(|| {
-        let mut config = AppConfig::load_from_disk();
+        let mut config = AppConfig::load_from_disk_within_lock();
         config
             .profile_health_acknowledged_flags
             .entry(trimmed_profile.to_string())
@@ -1179,7 +1219,7 @@ pub fn unacknowledge_profile_health_flag(
         return Err("profile_id and flag_kind must be non-empty".to_string());
     }
     with_config_file_lock(|| {
-        let mut config = AppConfig::load_from_disk();
+        let mut config = AppConfig::load_from_disk_within_lock();
         if let Some(set) = config.profile_health_acknowledged_flags.get_mut(trimmed_profile) {
             set.remove(trimmed_flag);
             if set.is_empty() {

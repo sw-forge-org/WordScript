@@ -128,6 +128,20 @@ export default function OverlayWindow() {
   const suppressMovedPersistenceUntilRef = useRef(0);
   const suppressNextResultActionsRef = useRef(false);
   const lastVisibleSurfaceRef = useRef<OverlaySurface>("compact");
+  // Snapshot of the last LIVE Processing-Preview content (final text +
+  // clipboardOnly). The commit / edit-confirm flows intentionally close
+  // WITHOUT surfacing a result (`suppressNextResultActionsRef` + the sticky
+  // `suppressedResultMs` marker), so `bridgeResultFromStop` stays disarmed
+  // for them (plan 2644f9b — must not regress). That leaves the
+  // processing_preview surface with no hold: the commit consumes
+  // `pendingResult`, `renderProcessingPreview`'s hold (which required
+  // `pendingPreviewResult`) fails, and the pill falls through to
+  // `pillState=null` — an unmount gap that orphaned the previous surface's
+  // compositor layers on WebKitGTK and produced the ghosted "square pill /
+  // jagged edges" artifact (plan P2). This snapshot feeds a STATIC processing
+  // hold during `overlayMotion==="leaving"` so the surface stays painted
+  // (without spinner / pending) until the clean idle unmount. (plan P2, Opt A)
+  const lastProcessingPreviewSnapshotRef = useRef<{ text: string; clipboardOnly: boolean } | null>(null);
   // `errorHidden` only owns the 4.2 s auto-dismiss of an error pill; it never
   // owns visibility. Error visibility is derived (see `showError` below) so a
   // new trigger atomically hides a previous epoch's error instead of the old
@@ -195,7 +209,7 @@ export default function OverlayWindow() {
   const renderProcessingPreview = showProcessingPreview
     || (holdPreviewDuringClose
       && lastVisibleSurfaceRef.current === "processing_preview"
-      && Boolean(pendingPreviewResult));
+      && (Boolean(pendingPreviewResult) || lastProcessingPreviewSnapshotRef.current != null));
   // Bridge the stop/commit -> result swap so the pill never hits a
   // pillState=null/unmount gap during the transition. That gap orphaned the
   // previous surface's compositor layers on WebKitGTK and produced the
@@ -239,8 +253,29 @@ export default function OverlayWindow() {
         ? "processing_preview"
         : overlaySurface;
   const activePreviewResult = renderProcessingPreview ? pendingPreviewResult : renderResultPreview ? previewResult : null;
-  const finalPreviewText = activePreviewResult?.final_text?.trim() ?? "";
-  const previewClipboardOnly = activePreviewResult?.work_mode?.insert_behavior === "clipboard_only";
+  // When the processing surface is held only by the snapshot (the commit has
+  // already consumed `pendingResult`), read the held content from the snapshot
+  // instead of the now-null `activePreviewResult`. Only relevant during
+  // `overlayMotion!=="idle"`; harmless otherwise (the hold predicate gates it).
+  const processingHoldSnapshot = renderProcessingPreview && !pendingPreviewResult
+    ? lastProcessingPreviewSnapshotRef.current
+    : null;
+  const finalPreviewText = (activePreviewResult?.final_text?.trim() ?? "")
+    || (processingHoldSnapshot ? processingHoldSnapshot.text : "");
+  const previewClipboardOnly = activePreviewResult?.work_mode?.insert_behavior === "clipboard_only"
+    ? true
+    : processingHoldSnapshot ? processingHoldSnapshot.clipboardOnly : false;
+
+  // Capture the live Processing-Preview content while it is genuinely active so
+  // the leaving-hold has a frozen frame to paint. Written during render (same
+  // pattern as `overlaySurfaceRef.current` above); only updates on the live
+  // surface, so the last value survives the commit that clears `pendingResult`.
+  if (showProcessingPreview) {
+    lastProcessingPreviewSnapshotRef.current = {
+      text: finalPreviewText,
+      clipboardOnly: previewClipboardOnly,
+    };
+  }
 
   // Track the ACTUAL rendered surface (incl. held/bridged state) so drag
   // position persistence and native visibility sync agree with what is on
@@ -466,6 +501,7 @@ export default function OverlayWindow() {
       setEditText("");
       setActionPending(null);
       setSuppressedResultMs(null);
+      lastProcessingPreviewSnapshotRef.current = null;
       if (autoCloseResultTimerRef.current) {
         window.clearTimeout(autoCloseResultTimerRef.current);
         autoCloseResultTimerRef.current = null;
@@ -959,7 +995,7 @@ export default function OverlayWindow() {
     // no hard-priority block. This reordering is the atomic-swap guarantee
     // (plan 1782750354086, Phase 1.2). All non-session surfaces below are
     // additionally gated on `status === "idle"` (derived) as defense.
-    if (renderProcessingPreview && activePreviewResult) {
+    if (renderProcessingPreview && (activePreviewResult || processingHoldSnapshot != null)) {
       return {
         kind: "processing",
         mode: pillMode,

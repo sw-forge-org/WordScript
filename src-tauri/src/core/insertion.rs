@@ -29,6 +29,10 @@ const CLIPBOARD_RESTORE_DELAY_MS: u64 = 180;
 // daemon and exits within a few ms; this absorbs a slow compositor handshake
 // without stalling the insert path.
 const WL_COPY_WAIT_MS: u64 = 400;
+// Upper bound for the `wl-paste` read-back that verifies a wl-copy write. A
+// healthy clipboard owner answers immediately; the bound only guards against a
+// hung compositor stalling the insert.
+const WL_PASTE_WAIT_MS: u64 = 400;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -903,6 +907,19 @@ fn run_clipboard_driver_chain(
     text: &str,
     io: &mut impl InsertIo,
 ) -> Result<NativeInsertDriver, String> {
+    // Diagnostic for the clipboard_only-delivery investigation (plan P3):
+    // records which Wayland/X11 flags and which clipboard display the chain
+    // resolved, plus the driver order it will try. Lets the Diagnostics view
+    // confirm whether wl-copy was even a candidate and which WAYLAND_DISPLAY
+    // it targeted at insert time.
+    runtime_log::record(format!(
+        "[WordScript] Clipboard chain entry is_wayland={} has_wl_copy={} wayland_display={} chain={:?}",
+        platform.is_wayland,
+        platform.has_wl_copy,
+        original_wayland_display().unwrap_or_default(),
+        clipboard_driver_execution_chain(platform),
+    ));
+
     let mut errors = Vec::new();
 
     for driver in clipboard_driver_execution_chain(platform) {
@@ -1127,8 +1144,14 @@ fn write_wayland_clipboard(text: &str) -> Result<(), String> {
         return Err("not an original Wayland session".to_string());
     };
 
+    runtime_log::record(format!(
+        "[WordScript] wl-copy write start display={} text_len={}",
+        display,
+        text.len(),
+    ));
+
     let mut child = Command::new("wl-copy")
-        .env("WAYLAND_DISPLAY", display)
+        .env("WAYLAND_DISPLAY", &display)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -1159,7 +1182,7 @@ fn write_wayland_clipboard(text: &str) -> Result<(), String> {
         match child.try_wait() {
             Ok(Some(status)) => {
                 if status.success() {
-                    return Ok(());
+                    return verify_wayland_clipboard(&display, text);
                 }
                 let stderr = child
                     .stderr
@@ -1177,19 +1200,124 @@ fn write_wayland_clipboard(text: &str) -> Result<(), String> {
             }
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    // Don't kill: a wl-copy that hasn't exited yet likely forked
-                    // its daemon and is waiting on the compositor; the clipboard
-                    // set may still land. Report success optimistically rather
-                    // than tearing down a possibly-good daemon.
+                    // wl-copy did not exit within the wait window. Previously
+                    // this returned an OPTIMISTIC Ok(()) — which masked a
+                    // wl-copy that forked NO serving daemon (compositor race /
+                    // unreachable display) as success, leaving the clipboard
+                    // empty while reporting `clipboard_written=true`. Now
+                    // verify the clipboard actually holds our text via a
+                    // bounded `wl-paste` read-back: if it does, the daemon is
+                    // serving and we can safely report Ok; if not, return Err
+                    // so the chain falls through to arboard instead of lying.
+                    // (plan P3, candidate root R1)
                     runtime_log::record(format!(
-                        "[WordScript] wl-copy did not exit within {}ms; assuming daemon forked",
+                        "[WordScript] wl-copy did not exit within {}ms; verifying clipboard via wl-paste",
                         WL_COPY_WAIT_MS
                     ));
-                    return Ok(());
+                    return verify_wayland_clipboard(&display, text);
                 }
                 std::thread::sleep(Duration::from_millis(5));
             }
             Err(error) => return Err(format!("wl-copy wait failed: {error}")),
+        }
+    }
+}
+
+/// Reads back the Wayland clipboard via `wl-paste` (bounded) and confirms it
+/// matches the text we just offered. This is the verification that turns a
+/// silent wl-copy failure into a detected one: on Wayland the selection only
+/// exists while a serving process holds it, so a successful read-back proves
+/// the daemon took ownership and is serving our content. A mismatch / empty
+/// read-back means the clipboard is NOT reliably populated and the caller
+/// should fall through to the next driver. Returns Ok(()) on match, Err on
+/// mismatch or when `wl-paste` is unavailable (in which case we cannot
+/// disprove success and conservatively trust the wl-copy result). (plan P3)
+fn verify_wayland_clipboard(display: &str, expected: &str) -> Result<(), String> {
+    if !command_in_path("wl-paste") {
+        runtime_log::record(
+            "[WordScript] wl-paste unavailable; cannot verify wl-copy write, trusting wl-copy result".to_string(),
+        );
+        return Ok(());
+    }
+
+    match read_wayland_clipboard(display) {
+        Ok(Some(actual)) => {
+            let expected_trim = expected.trim();
+            let actual_trim = actual.trim();
+            if actual_trim == expected_trim {
+                runtime_log::record(format!(
+                    "[WordScript] wl-copy clipboard verified via wl-paste ({} bytes)",
+                    actual.len()
+                ));
+                Ok(())
+            } else {
+                runtime_log::record(format!(
+                    "[WordScript] wl-copy clipboard read-back mismatch: expected {} bytes, got {} bytes",
+                    expected_trim.len(),
+                    actual_trim.len()
+                ));
+                Err(format!(
+                    "wl-copy clipboard read-back mismatch (expected {} bytes, got {})",
+                    expected_trim.len(),
+                    actual_trim.len()
+                ))
+            }
+        }
+        Ok(None) => {
+            runtime_log::record(
+                "[WordScript] wl-copy clipboard read-back empty; clipboard not populated".to_string(),
+            );
+            Err("wl-copy clipboard read-back empty; clipboard not populated".to_string())
+        }
+        Err(error) => {
+            runtime_log::record(format!(
+                "[WordScript] wl-paste read-back failed: {error}"
+            ));
+            // If we cannot read back at all, do not lie about success — let the
+            // chain fall through to arboard.
+            Err(format!("wl-paste read-back failed: {error}"))
+        }
+    }
+}
+
+/// Runs `wl-paste` against the given Wayland display and returns the current
+/// clipboard text. Bounded by `WL_PASTE_WAIT_MS` so a hung compositor cannot
+/// stall the insert path. Returns `Ok(None)` when the clipboard has no owner
+/// (empty selection) and `Err` only when wl-paste itself fails to run.
+fn read_wayland_clipboard(display: &str) -> Result<Option<String>, String> {
+    let mut child = Command::new("wl-paste")
+        .env("WAYLAND_DISPLAY", display)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("wl-paste unavailable: {error}"))?;
+
+    let deadline = Instant::now() + Duration::from_millis(WL_PASTE_WAIT_MS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = child
+                    .stdout
+                    .take()
+                    .and_then(|mut s| {
+                        let mut buf = String::new();
+                        std::io::Read::read_to_string(&mut s, &mut buf).ok().map(|_| buf)
+                    })
+                    .unwrap_or_default();
+                if status.success() {
+                    return Ok(if output.is_empty() { None } else { Some(output) });
+                }
+                return Err(format!("wl-paste exited status {status}"));
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    return Err("wl-paste did not exit within the wait window".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => return Err(format!("wl-paste wait failed: {error}")),
         }
     }
 }

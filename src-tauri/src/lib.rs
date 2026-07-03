@@ -37,6 +37,8 @@ const OVERLAY_PARK_MARGIN: f64 = 72.0;
 const MIN_TRANSCRIPTION_TIMEOUT_MS: u64 = 18_000;
 const MAX_TRANSCRIPTION_TIMEOUT_MS: u64 = 35_000;
 const TRANSCRIPTION_TIMEOUT_PER_AUDIO_SECOND_MS: u64 = 800;
+const PIPELINE_HARD_DEADLINE_SECS: u64 = 120;
+const PIPELINE_HARD_DEADLINE: Duration = Duration::from_secs(PIPELINE_HARD_DEADLINE_SECS);
 
 // Flat overlay surfaces all share one window size (440×60). On WebKitGTK/XWayland
 // with GPU compositing, a `set_size` to the SAME size the window already has is a
@@ -935,7 +937,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                 .get("audio_duration_seconds")
                 .and_then(|duration| duration.as_f64()),
         )),
-        max_retries: Some(0),
+        max_retries: Some(1),
     };
     let transcription_timeout_ms = request.timeout_ms.unwrap_or(MIN_TRANSCRIPTION_TIMEOUT_MS);
     let requested_model = request.model.clone();
@@ -960,6 +962,39 @@ fn handle_audio_ready<R: Runtime + 'static>(
             let _ = tokio::fs::remove_file(cleanup_path).await;
             return;
         }
+
+        let watchdog_app = app.clone();
+        let watchdog_session_id = session_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(PIPELINE_HARD_DEADLINE).await;
+            if core::sessions::is_processing_session_current(&watchdog_app, &watchdog_session_id) {
+                let message = format!(
+                    "The transcription pipeline did not complete within {}s and was cancelled. Restart the session or try again.",
+                    PIPELINE_HARD_DEADLINE_SECS
+                );
+                core::runtime_log::record(format!(
+                    "[WordScript] Native pipeline watchdog timeout session_id={} deadline_secs={}",
+                    watchdog_session_id, PIPELINE_HARD_DEADLINE_SECS
+                ));
+                core::sound::play_if_enabled(core::sound::SoundCue::Error);
+                if matches!(
+                    core::sessions::fail_processing_session_from_native_error(
+                        &watchdog_app,
+                        &watchdog_session_id,
+                        &message,
+                    ),
+                    Ok(true)
+                ) {
+                    let _ = watchdog_app.emit(
+                        "wordscript-event",
+                        serde_json::json!({
+                            "event": "error",
+                            "message": message
+                        }),
+                    );
+                }
+            }
+        });
 
         let pipeline_app_config = core::config::AppConfig::load_from_disk();
         let transcription = core::providers::transcribe_audio_file(request).await;

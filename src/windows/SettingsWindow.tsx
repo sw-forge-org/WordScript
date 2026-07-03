@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -105,6 +105,22 @@ export default function SettingsWindow() {
   const [textRulesAnalysis, setTextRulesAnalysis] = useState<TextRulesAnalysis | null>(null);
   const [profileHealthLevel, setProfileHealthLevel] = useState<ProfileHealthLevel | null>(null);
 
+  // Guards the form against a stale `ready` event clobbering an in-flight
+  // user edit. `save_config` emits a `ready` carrying the SAVED config; under
+  // the Rust config lock overlapping saves resolve in call order (A then B),
+  // so ready(A) can land AFTER the user already edited further to B. The
+  // unconditional `setForm({ ...state.config })` sync would then revert the
+  // form A→B→A→B ("insert_behavior keeps switching"). We count in-flight
+  // saves and suppress the external-sync effect while any is pending, then
+  // re-sync once from the authoritative runtime config when the last one
+  // settles. (plan P1, candidate root C1)
+  const inFlightSaveCountRef = useRef(0);
+  const [formResyncNonce, setFormResyncNonce] = useState(0);
+  const latestConfigRef = useRef<AppConfig | null>(null);
+  useEffect(() => {
+    latestConfigRef.current = state.config;
+  }, [state.config]);
+
   const selectedProvider: ProviderId =
     (form?.provider ?? state.config?.provider) === "local_preview" ? "local_preview" : "groq";
   const selectedLocalModel =
@@ -131,10 +147,15 @@ export default function SettingsWindow() {
     }
   }, [state.config, form, providerReady]);
 
-  // Keep form in sync if config reloads externally.
+  // Keep form in sync if config reloads externally — but NEVER clobber an
+  // in-flight user edit. While a save is pending, `ready` events carrying
+  // older snapshots are skipped (see `inFlightSaveCountRef`); once the last
+  // save settles we re-sync from the authoritative runtime config via the
+  // nonce. (plan P1, candidate root C1)
   useEffect(() => {
+    if (inFlightSaveCountRef.current > 0) return;
     if (state.config) setForm({ ...state.config });
-  }, [state.config]);
+  }, [state.config, formResyncNonce]);
 
   // Instant save: every patch is immediately persisted. There is no "unsaved
   // changes" state — the form is always in sync with the runtime config.
@@ -157,6 +178,21 @@ export default function SettingsWindow() {
         "mode_agent_hotkey" in partial || "mode_prompt_enhance_hotkey" in partial;
       const touchesHotkeys = touchesCaptureHotkeys || touchesModeHotkeys;
       const touchesCapture = "audio_device" in partial || "max_recording_seconds" in partial || "silence_timeout_seconds" in partial;
+
+      // Mark this save as in-flight so the external form-sync effect cannot
+      // clobber `next` with a stale `ready` snapshot emitted by an earlier,
+      // now-superseded save. (plan P1, candidate root C1)
+      inFlightSaveCountRef.current += 1;
+      const settle = () => {
+        inFlightSaveCountRef.current = Math.max(0, inFlightSaveCountRef.current - 1);
+        if (inFlightSaveCountRef.current === 0) {
+          // No more in-flight edits: re-sync from the authoritative runtime
+          // config (which reflects the latest `ready`, including any change a
+          // concurrent path — profile switch / mode hotkey — made in between).
+          if (latestConfigRef.current) setForm({ ...latestConfigRef.current });
+          setFormResyncNonce((n) => n + 1);
+        }
+      };
 
       void saveConfig(next)
         .then(async (saved) => {
@@ -191,6 +227,7 @@ export default function SettingsWindow() {
               });
             } catch { /* non-fatal */ }
           }
+          settle();
         })
         .catch((e: unknown) => {
           // Revert the form to the previous state so the invalid hotkey does
@@ -198,6 +235,7 @@ export default function SettingsWindow() {
           setForm(prev);
           const message = typeof e === "string" ? e : (e instanceof Error ? e.message : String(e));
           setStatus({ msg: `✗  ${message}`, ok: false });
+          settle();
         });
 
       return next;

@@ -184,7 +184,7 @@ pub fn set_active_profile_processing_mode<R: tauri::Runtime>(
     // command writing back a stale snapshot it read first. Without this, the
     // mode hotkey racing a settings save reverted the user's insert_behavior.
     let config = super::config::with_config_file_lock(|| {
-        let mut config = super::config::AppConfig::load_from_disk();
+        let mut config = super::config::AppConfig::load_from_disk_within_lock();
 
         // Update the active profile's work_mode.
         if let Some(profile) = config
