@@ -568,20 +568,29 @@ fn reveal_overlay_window<R: Runtime>(
         // Only position + show on the hidden→visible transition. An in-place
         // resize keeps the current (possibly dragged) position untouched.
         if !was_visible {
+            // Claim the hidden→visible transition IMMEDIATELY so a concurrent
+            // `reveal_overlay_window` call (the Rust trigger via
+            // `apply_trigger_effect` and the frontend
+            // `sync_overlay_window_visibility` arriving in the same instant)
+            // does not both read `was_visible=false` and both call
+            // set_position + show. This closes the race that caused two
+            // overlapping set_position calls and inconsistent final placement.
+            OVERLAY_WINDOW_SHOWN.store(true, Ordering::Relaxed);
+
             if let Some(position) = overlay_target_position(&window, &config, surface, height_override, width_override) {
                 let _ = window.set_position(position);
                 let _ = window.show();
-                // On Windows, ShowWindow can discard a position set on a hidden window,
-                // restoring the window to its creation coordinates (0, 0). Re-applying
-                // after show() ensures the overlay lands at the correct location.
-                #[cfg(target_os = "windows")]
+                // Re-apply position AFTER show() on ALL platforms. On Windows,
+                // ShowWindow can discard a position set on a hidden window.
+                // On XWayland/GTK, `gtk_widget_show` can similarly restore the
+                // window to its pre-hide position (the offscreen park spot),
+                // discarding the `set_position` made while hidden. Re-applying
+                // after show() ensures the overlay lands at the saved drag
+                // position everywhere.
                 let _ = window.set_position(position);
             } else {
                 let _ = window.show();
             }
-            // Record authoritative visibility so subsequent in-session reveals
-            // (surface/kind swaps while the window stays shown) do NOT reposition.
-            OVERLAY_WINDOW_SHOWN.store(true, Ordering::Relaxed);
         }
     }
 }

@@ -518,6 +518,85 @@ describe("OverlayWindow", () => {
     }
   });
 
+  it("persists the final position after multiple onMoved events during one drag, not an intermediate one (K1)", async () => {
+    // Regression: the 180ms persist debounce used to clear `dragSessionActiveRef`
+    // after the first persist, so subsequent onMoved events during the same drag
+    // were silently dropped — only an intermediate position was saved, not the
+    // final one. See docs/BUG_OVERLAY_PLACEMENT_PERSIST.md, K1.
+    render(<OverlayWindow />);
+
+    await waitFor(() => expect(movedHandlers.length).toBeGreaterThan(0));
+    const copyButton = await screen.findByRole("button", { name: "Copy" });
+    vi.useFakeTimers();
+
+    try {
+      await act(async () => {
+        fireEvent.pointerDown(copyButton, { button: 0, pointerId: 31, clientX: 20, clientY: 16 });
+        fireEvent.pointerMove(window, { buttons: 1, pointerId: 31, clientX: 34, clientY: 30 });
+        vi.advanceTimersByTime(500);
+
+        // First onMoved at an intermediate position.
+        movedHandlers[0]?.({ payload: { x: 100, y: 100 } });
+        // Let the 180ms debounce fire — this persists the intermediate position.
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+
+        // The drag is still active (pointer never released). A second onMoved
+        // arrives at the final position. With the old code this was dropped
+        // because `dragSessionActiveRef` was cleared; now it must persist.
+        movedHandlers[0]?.({ payload: { x: 999, y: 888 } });
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+      });
+
+      const calls = invokeMock.mock.calls.filter(
+        ([command]) => command === "remember_overlay_manual_position",
+      );
+      expect(calls.length).toBeGreaterThanOrEqual(2);
+      // The last persisted call must carry the final position, not the
+      // intermediate one.
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[1]).toMatchObject({ x: 999, y: 888, surface: "result_actions" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("persists onMoved events during a drag started within the reveal grace window (K2)", async () => {
+    // Regression: the 420ms reveal-grace suppression dropped onMoved events
+    // even when a real drag (pointerdown) had already started, so a fast drag
+    // right after reveal was never persisted. See
+    // docs/BUG_OVERLAY_PLACEMENT_PERSIST.md, K2.
+    render(<OverlayWindow />);
+
+    await waitFor(() => expect(movedHandlers.length).toBeGreaterThan(0));
+    const copyButton = await screen.findByRole("button", { name: "Copy" });
+    vi.useFakeTimers();
+
+    try {
+      await act(async () => {
+        // pointerdown immediately after reveal — within the 420ms grace.
+        fireEvent.pointerDown(copyButton, { button: 0, pointerId: 42, clientX: 10, clientY: 10 });
+        fireEvent.pointerMove(window, { buttons: 1, pointerId: 42, clientX: 24, clientY: 28 });
+        vi.advanceTimersByTime(100);
+
+        // onMoved while still inside the 420ms grace — but dragIntentRef is set,
+        // so the grace suppression must NOT apply.
+        movedHandlers[0]?.({ payload: { x: 300, y: 200 } });
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+      });
+
+      expect(invokeMock).toHaveBeenCalledWith("remember_overlay_manual_position", {
+        x: 300,
+        y: 200,
+        surface: "result_actions",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ignores moved events that were not caused by an active user drag", async () => {
     render(<OverlayWindow />);
 

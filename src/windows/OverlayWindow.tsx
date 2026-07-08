@@ -315,7 +315,15 @@ export default function OverlayWindow() {
         return;
       }
 
-      if (Date.now() < suppressMovedPersistenceUntilRef.current) {
+      // Suppress host-driven moves (reveal repositioning) for a short grace
+      // window after reveal/park so they are not mistaken for a user drag.
+      // BUT: once a real drag has started (`dragIntentRef` is set, meaning
+      // pointerdown happened), user drag moves take priority over the grace
+      // suppression. Without this, a fast drag started within the 420ms
+      // reveal grace had its first onMoved events silently dropped, so the
+      // drag position was never persisted (K2, see
+      // docs/BUG_OVERLAY_PLACEMENT_PERSIST.md).
+      if (Date.now() < suppressMovedPersistenceUntilRef.current && !dragIntentRef.current) {
         return;
       }
 
@@ -336,9 +344,15 @@ export default function OverlayWindow() {
         } catch {
           // Ignore transient move persistence failures during drag.
         }
-        // End drag session here so trailing onMoved events after a native drag
-        // (where pointerup already fired before the window moved) are still captured.
-        dragSessionActiveRef.current = false;
+        // NOTE: do NOT clear `dragSessionActiveRef` here. The session is
+        // ended by `clearDragIntent` (pointerup/pointercancel/blur) plus a
+        // grace timeout. Clearing it here — as the old code did — meant that
+        // after the FIRST 180ms debounce during a long drag, all subsequent
+        // `onMoved` events were silently dropped (the guard at the top of
+        // this handler rejected them), so only an early intermediate
+        // position was persisted instead of the final drag end position.
+        // That was the root cause of "overlay placement is not always
+        // saved" (see docs/BUG_OVERLAY_PLACEMENT_PERSIST.md, K1).
         if (dragSessionEndTimeoutRef.current) {
           window.clearTimeout(dragSessionEndTimeoutRef.current);
           dragSessionEndTimeoutRef.current = null;

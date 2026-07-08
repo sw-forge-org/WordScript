@@ -1,48 +1,64 @@
-# Bug: Overlay Placement Mode wird nicht immer gespeichert
+# Bug: Overlay Placement — Remember Last Drag Position funktioniert nicht
 
-**Status:** OFFEN (2026-07-08). Symptom gemeldet, noch nicht reproduziert.
-Nur Dokumentation; keine Recherche / kein Fix in diesem Durchgang.
-**Erstmals berichtet:** 2026-07-08 (Nutzer-Beobachtung, kein Repro)
-**Betrifft:** Overlay-Placement-Mode (`overlay_position_mode`: `preset` | `manual`) und/oder die gemerkte Manual-Position (`overlay_manual_x/y`, `overlay_monitor`)
+**Status:** BEHOBEN (2026-07-08). Drei Wurzeln, alle plattformunabhaengig (auf CachyOS KDE Plasma XWayland bestaetigt, muss auf Windows/macOS identisch sein):
+1. **K1 — Persist-Debounce beendete Drag-Session zu frueh** (`OverlayWindow.tsx`): Der 180ms-Persist-Debounce setzte `dragSessionActiveRef` nach dem ersten Persist auf `false` → alle weiteren `onMoved`-Events waehrend desselben Drags wurden verworfen → nur eine Zwischenposition wurde gespeichert.
+2. **K2 — Reveal-Grace-Suppression verwarf schnelle Drags** (`OverlayWindow.tsx`): Die 420ms-Suppression nach Reveal verwarf `onMoved`-Events auch bei gesetztem `dragIntentRef` → schnelle Drags nach Reveal wurden nie persistiert.
+3. **K3 — `set_position` vor `show()` wurde von GTK/XWayland verworfen** (`lib.rs`): `window.set_position()` auf einem hidden-Fenster wurde von `gtk_widget_show` restauriert → das Overlay erschien an der alten/offscreen-Park-Position statt an der gespeicherten Drag-Position. Zusaetzlich ein Race zwischen dem Rust-Trigger (`apply_trigger_effect` → `reveal_overlay_window`) und dem Frontend-Sync (`sync_overlay_window_visibility`), bei dem beide `was_visible=false` lasen und beide `set_position`+`show()` aufriefen.
+
+**Erstmals berichtet:** 2026-07-08 (Nutzer-Beobachtung auf CachyOS KDE Plasma Wayland/X11)
+**Behoben in:** `src/windows/OverlayWindow.tsx` (K1+K2), `src-tauri/src/lib.rs` (K3)
 
 ## Symptom
 
-Der Placement Mode des Overlays (Remember-last-drag vs. Preset-Display-Anchor) wird vom Nutzer in den Settings gesetzt, taucht aber gelegentlich nicht dauerhaft auf — der Mode bzw. die gemerkte Position revertiert scheinbar auf einen frueheren Zustand. Konkretes Repro-Szenario steht aus; die Nennung war ohne Angabe, ob Mode, Koordinaten oder Monitor-ID betroffen sind und ob das Settings-Fenster waehrend des Drags geoeffnet war.
+Der Nutzer zieht das Overlay an eine neue Position, startet eine neue Diktation, aber das Overlay erscheint nicht an der gezogenen Position — sondern inkonsistent mal an der alten Position, mal "unten rechts" (Default-Anker), mal gar nicht.
 
-## Was feststeht (Fakten aus Code + Doku)
+## Wurzeln
 
-- Es existiert ein realer Runtime-Contract fuer Placement. In `docs/ARCHITECTURE.md:39` und `CHANGELOG.md:246,251` ist dokumentiert: Drag persistiert eine gemerkte Manual-Position, Settings kann zwischen Remembered-Placement und Preset-Display-Anchorn wechseln, der Zielmonitor fuer Manual-Placement wird aus der gespeicherten logischen Drag-Referenz statt aus `current_monitor()` abgeleitet.
-- `overlay_position_mode` ist ein first-class Feld in `AppConfig` (`src-tauri/src/core/config.rs:492`, `src/types/ipc.ts:209`), Typ `OverlayPositionMode = "preset" | "manual"` (`ipc.ts:174`, `config.rs:443`), Default `Preset` (`config.rs:594`).
-- Es gibt **drei** Persistenz-Pfade, die an diesem Feld beteiligt sind:
-  1. Settings-Mode-Select: `OverlayTab.tsx:75` feuert `onChange({ overlay_position_mode })` → `patch` (`SettingsWindow.tsx:166`) → `saveConfig` → Rust `save_config` (`config.rs:1149`), unter `with_config_file_lock`.
-  2. Settings-Display/Anchor-Select im Preset-Subtree: `OverlayTab.tsx:91,114` aendert `overlay_monitor` / `overlay_anchor` (nicht den Mode), derselbe `patch`-Pfad.
-  3. Drag-Persistenz: `OverlayWindow.tsx:331` ruft nach 180ms Debounce `remember_overlay_manual_position` (`lib.rs:1790`) auf. Dieser Befehl laedt die Config _selbst_ neu (`AppConfig::load_from_disk()`, Z.1798), **erzwingt** `overlay_position_mode = Manual` (Z.1802), leitet `overlay_monitor` neu ab und schreibt dann ueber `core::config::save_config` (Z.1816), der wieder in den File-Lock geht.
-- Der Settings-Form-Sync ist explizit gegen Drag-vs-Settings-Race abgesichert: `SettingsWindow.tsx:108-118` zaehlt in-flight Saves (`inFlightSaveCountRef`) und unterdrueckt das `setForm({...state.config})`-Resync, solange ein Settings-Patch noch nicht settled ist. Das Schutz-ziel ist explizit das Verhindern eines A→B→A-Flackerns durch ein veraltetes `ready`-Event.
-- Der File-Lock in `save_config` (`config.rs:1149-1165`) koordiniert _nur_ Befehle, die ebenfalls `with_config_file_lock` nutzen. `remember_overlay_manual_position` geht am Ende ueber `core::config::save_config` in den Lock, aber sein eigener `AppConfig::load_from_disk()` (Z.1798) _vor_ dem Lock ist eine ungeschuetzte Read-Modify-Write-Vorstufe.
+### K1 — Persist-Debounce beendete Drag-Session zu frueh
 
-## Hypothesen (nicht verifiziert, keine Recherche in diesem Durchgang)
+`OverlayWindow.tsx` `onMoved`-Handler: Der 180ms-Debounce persistierte die Position und setzte dann `dragSessionActiveRef.current = false`. Der Guard am Anfang des Handlers verwirft alle Events, wenn die Session inaktiv ist. Konsequenz: nach dem ersten 180ms-Debounce waehrend eines laengeren Drags wurden alle weiteren `onMoved`-Events verworfen — nur eine fruehe Zwischenposition wurde gespeichert.
 
-- **H.1 — Drag ueberschreibt Settings-Mode-Switch.** Der Nutzer setzt in Settings den Mode auf `Preset`, zieht danach (bewusst oder versehentlich) das Overlay. `remember_overlay_manual_position` erzwingt `Manual` (Z.1802) und ueberschreibt damit den expliziten Preset-Wunsch des Nutzers. _Verhalten_, kein Bug im strengen Sinn — aber aus Nutzersicht "nicht gespeichert", weil ein Drag den Mode revertiert. Wahrscheinlichster Kandidat.
-- **H.2 — Settings-vs-Drag Race beim `ready`-Event.** Ein Drag-feuert `ready` (via `remember_overlay_manual_position` → `save_config` → `emit_ready_event`). Das Settings-Fenster ist offen und hat einen _aelteren_ Patch noch in flight. Der Sync-Schutz (`inFlightSaveCountRef`) sollte das abfangen, aber nur fuer _Settings_-seitige Saves, nicht gegen ein Drag-seitiges `ready`. Faellt der Settings-Mode-Switch genau in das Fenster zwischen Drag-`ready` und Settings-Settle, koennte das Settings-Form den Drag-Snapshot uebernehmen und beim naechsten Resync den Mode revertieren.
-- **H.3 — Preset-Subtree-Aenderung ohne Mode-Touch.** Wechselt der Nutzer im Preset-Modus nur Display/Anchor (`OverlayTab.tsx:91,114`), wird der Mode _nicht_ mitgeschrieben. Das ist korrekt, aber falls ein vorheriger Drag den Mode auf `Manual` gesetzt hatte und das Settings-Form noch nicht resynced war, zeigt der Select ggf. den falschen Mode an — ein Anzeigefehler, kein Persistenzfehler.
+**Fix:** Der Persist-Debounce setzt `dragSessionActiveRef` nicht mehr auf `false`. Die Drag-Session wird ausschliesslich durch `clearDragIntent` (pointerup/pointercancel/blur) plus den 2000ms-Grace-Timeout beendet.
 
-## Was noch fehlt (offen fuer spaeter)
+### K2 — Reveal-Grace-Suppression verwarf schnelle Drags
 
-- [ ] Repro-Szenario: Drag → Settings Mode switch? Nur Mode oder auch Koordinaten? Settings-Fenster offen oder geschlossen beim Drag?
-- [ ] Trace: pruefen, ob `remember_overlay_manual_position` einen kurz zuvor gesetzten `Preset`-Mode tatsächlich ueberschreibt und ob das `ready`-Event dabei das Settings-Form clobbert.
-- [ ] Entscheidung: soll ein Drag im Preset-Mode (a) den Mode automatisch auf `Manual` setzen (aktuelles Verhalten), (b) den Mode ignorieren und nur im Manual-Mode persistieren, oder (c) den Nutzer fragen?
-- [ ] Testfall, der den Drag-+Settings-Race konstruiert (Frontend-Test gegen `OverlayWindow` + `SettingsWindow`, oder Rust-Test gegen `remember_overlay_manual_position` + `save_config` unter File-Lock).
-- [ ] Ggf. Eintrag in `docs/STATUS.md` "Bekannte offene Produktluecken" nachholen, falls sich das als realer Bug bestaetigt.
+`OverlayWindow.tsx`: Bei jedem `isActive`-Wechsel zu true wird `suppressMovedPersistenceUntilRef = Date.now() + 420` gesetzt. Der `onMoved`-Handler verwarf Events innerhalb dieser 420ms — auch wenn bereits ein Drag-Intent (`dragIntentRef`) gesetzt war.
+
+**Fix:** Die 420ms-Check greift nur, wenn `!dragIntentRef.current` (kein aktiver Drag-Intent). Ein aktiver Nutzer-Drag hat Vorrang vor der Reveal-Suppression.
+
+### K3 — `set_position` vor `show()` verworfen + Reveal-Race
+
+`lib.rs` `reveal_overlay_window`: `window.set_position(position)` wurde auf dem hidden-Fenster aufgerufen, dann `window.show()`. Auf XWayland/GTK restauriert `gtk_widget_show` das Fenster an seine pre-hide Position (die offscreen Park-Position) und verwirft das `set_position`. Der Windows-Fix (`#[cfg(target_os = "windows")] let _ = window.set_position(position);` nach `show()`) galt nicht fuer Linux.
+
+Zusaetzlich: der Rust-Trigger (`apply_trigger_effect` → `reveal_overlay_window`, sync) und der Frontend-Sync (`sync_overlay_window_visibility` → `reveal_overlay_window`, async) konkurrierten. Beide lasen `was_visible=false` (Race), beide rufen `set_position`+`show()` auf, der zweite `show()` verwirft die Position des ersten.
+
+**Fix (1):** `set_position` wird auf **allen** Plattformen nach `show()` erneut aufgerufen (nicht nur Windows). **Fix (2):** `OVERLAY_WINDOW_SHOWN` wird sofort nach dem `was_visible`-Load auf `true` gesetzt (am Anfang des `if !was_visible`-Blocks), bevor `set_position`/`show()` ausgefuehrt werden — so sieht ein konkurrierender Aufruf `was_visible=true` und skippt.
+
+## Ausschluss durch Doku + Code-Walk
+
+- **A1 — Lock-Race in `remember_overlay_manual_position`:** Die Luecke zwischen `load_from_disk` und `save_config` ist real, betrifft aber nur gleichzeitige Schreiber. Nebenkandidat, nicht die Hauptwurzel. Die config.json zeigte korrekt gespeicherte Positionen — die Persistenz funktionierte, die Anwendung beim Reveal (K3) war das Problem.
+- **A2 — `OVERLAY_WINDOW_SHOWN` out-of-sync:** Behoben (`park_overlay_window` ruft `hide()` auf). Kein Out-of-sync-Pfad gefunden.
+- **A3 — Manual-Reveal-Pfad:** `overlay_target_position` liest `overlay_manual_x/y` korrekt und clamppt. Korrekt — das Problem war nicht die Berechnung, sondern die Anwendung (`set_position` wurde von `show()` verworfen).
+- **A4 — Settings-Mode-Persistenz:** `save_config` unter File-Lock. Korrekt.
+- **A5 — Preset-Subtree-Anzeige:** Nur Anzeigefehler, kein Persistenzfehler.
+- **A6 — Ghosting:** Visuelle Render-Luecke (`BUG_OVERLAY_GHOSTING.md`), unabhaengig, bereits behoben.
+
+## Tests
+
+- `persists the final position after multiple onMoved events during one drag, not an intermediate one (K1)` — Drag mit zwei `onMoved`-Events, zweite Position wird persistiert.
+- `persists onMoved events during a drag started within the reveal grace window (K2)` — Drag innerhalb 420ms nach Reveal.
+- Beide in `src/windows/OverlayWindow.test.tsx`. 69 Frontend-Tests gesamt gruen, 284 Rust-Tests gruen, `npm run build` ok.
+- K3 (Rust-Reveal-Logik) wurde manuell auf CachyOS KDE Plasma XWayland verifiziert.
 
 ## Referenzen
 
-- `src/components/settings/OverlayTab.tsx:46,75,91,114` — Settings-UI fuer Placement Mode / Display / Anchor
-- `src/windows/SettingsWindow.tsx:108-118,155-243` — in-flight-Save-Schutz und `patch`-Persistenz
-- `src/windows/OverlayWindow.tsx:310-346` — Drag-Persistenz-Debounce (180ms), `remember_overlay_manual_position`-Aufruf
-- `src-tauri/src/lib.rs:1790-1817` — `remember_overlay_manual_position`: erzwungener `Manual`-Mode, Reload ausserhalb des Locks, Save in den Lock
-- `src-tauri/src/lib.rs:270-344,406-440` — `resolve_overlay_monitor(_id)`, `overlay_target_position`: Manual-vs-Preset-Entscheidung beim Reveal
-- `src-tauri/src/core/config.rs:443,492,594,1149-1169` — `OverlayPositionMode`, Feld in `AppConfig`, Default `Preset`, `save_config` unter File-Lock
-- `src/types/ipc.ts:174,209` — TS-Typ und AppConfig-Feld
-- `docs/ARCHITECTURE.md:39` — dokumentierter Manual-vs-Preset-Contract
-- `docs/STATUS.md:131,133` — Monitor-Restore bei Identity-Miss (andere Luecke), "keine feineren Placement-Regeln jenseits Manual-vs-Preset"
-- `CHANGELOG.md:246,251,252` — Drag-Persistenz, Monitor-Ableitung, Drag-vs-Button-Suppression
+- `src/windows/OverlayWindow.tsx:310-355` — `onMoved`-Handler, K1-Fix
+- `src/windows/OverlayWindow.tsx:312-328` — K2-Fix (`!dragIntentRef.current`)
+- `src/windows/OverlayWindow.tsx:391-418` — `clearDragIntent`, 2000ms-Grace-Timeout
+- `src-tauri/src/lib.rs:566-582` — K3-Fix: `OVERLAY_WINDOW_SHOWN` sofort setzen + `set_position` nach `show()` auf allen Plattformen
+- `src-tauri/src/lib.rs:586-602` — `park_overlay_window`, `hide()` + `OVERLAY_WINDOW_SHOWN=false`
+- `src-tauri/src/lib.rs:729` — Rust-Trigger `reveal_overlay_window` (Race-Partner)
+- `src-tauri/src/lib.rs:1790-1817` — `remember_overlay_manual_position`
+- `docs/handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md` — geloester "Overlay verschwindet"-Bug
+- `docs/BUG_OVERLAY_GHOSTING.md` — visuelle Ghosting-Luecke (unabhaengig)
+- `CHANGELOG.md:246,249,251,252,253` — Drag-Persistenz-Contract
