@@ -198,8 +198,40 @@ describe("useRuntime", () => {
       });
     });
 
+    // The native-event transcription is a pure status sync: it clears
+    // pendingResult and flips status to idle, but does NOT set lastResult —
+    // that is owned by the authoritative wordscript-event transcription which
+    // arrives on the same commit. Setting lastResult here would fire the
+    // OverlayWindow lastResult-Effect a second time and defeat the commit
+    // suppression (the "eckiger 06b-State" regression).
     expect(result.current.state.status).toBe("idle");
     expect(result.current.state.pendingResult).toBeNull();
+    expect(result.current.state.lastResult).toBeNull();
+    expect(result.current.state.lastTranscription).toBe("Wir shippen das morgen.");
+
+    // Now the authoritative wordscript-event transcription arrives and owns
+    // lastResult + the surface decision.
+    await act(async () => {
+      emit("wordscript-event", {
+        event: "transcription",
+        text: "Wir shippen das morgen.",
+        corrected: true,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "ähm wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "clipboard_only",
+          recovery_behavior: "standard",
+        },
+        transform: {
+          applied_rules: ["removed_fillers"],
+          warning: null,
+        },
+      });
+    });
+
+    expect(result.current.state.status).toBe("idle");
     expect(result.current.state.lastResult?.raw_text).toBe("ähm wir shippen das morgen");
     expect(result.current.state.lastResult?.transform?.applied_rules).toEqual(["removed_fillers"]);
   });

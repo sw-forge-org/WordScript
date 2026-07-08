@@ -19,6 +19,7 @@ type Action =
   | { type: "PROCESSING" }
   | { type: "PREVIEW_READY"; result: RuntimeTranscriptionResult }
   | { type: "TRANSCRIPTION"; result: RuntimeTranscriptionResult; preserveExisting?: boolean }
+  | { type: "NATIVE_TRANSCRIPTION_SYNC"; finalText: string; corrected: boolean }
   | { type: "EMPTY" }
   | { type: "MUTED"; muted: boolean }
   | { type: "PAUSED"; paused: boolean }
@@ -55,6 +56,7 @@ function buildRuntimeTranscriptionResult(
           warning: payload.transform.warning,
         }
       : null,
+    delivery: payload.delivery ?? null,
     insertion: payload.insertion ?? null,
     history: payload.history ?? null,
     occurred_at_ms: Date.now(),
@@ -107,6 +109,31 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
           lastTranscription: mergedResult.final_text,
           pendingResult: null,
           lastResult: mergedResult,
+        };
+      }
+    case "NATIVE_TRANSCRIPTION_SYNC":
+      {
+        // The native-event channel fires transcription/transcription_corrected
+        // as a pure status sync (no payload beyond last_transcript). It arrives
+        // shortly before (or after) the authoritative wordscript-event
+        // transcription. Treating it as a separate TRANSCRIPTION dispatch would
+        // set lastResult with a fresh occurred_at_ms and fire the OverlayWindow
+        // lastResult-Effect a second time for the same commit — the one-shot
+        // suppressNextResultActionsRef would be consumed by whichever dispatch
+        // arrived first, and the second would slip through, showing an
+        // unwanted result-actions pill on a clipboard_only commit (the
+        // "eckiger 06b-State" regression). Instead, only update status +
+        // lastTranscription and clear pendingResult here; the authoritative
+        // wordscript-event transcription owns lastResult and the surface
+        // decision. Clearing pendingResult is safe: the native-event arrives
+        // only after the session has completed, so the preview is no longer
+        // valid.
+        return {
+          ...state,
+          status: "idle",
+          paused: false,
+          lastTranscription: action.finalText,
+          pendingResult: null,
         };
       }
     case "EMPTY":
@@ -216,23 +243,15 @@ export function useRuntime() {
           case "transcription":
           case "transcription_corrected":
             {
-              const lastResult = lastResultRef.current;
-            dispatch({
-              type: "TRANSCRIPTION",
-              result: {
-                provider: lastResult?.provider ?? null,
-                active_profile: lastResult?.active_profile ?? null,
-                work_mode: lastResult?.work_mode ?? null,
-                raw_text: lastResult?.raw_text ?? payload.status?.last_transcript ?? "",
-                final_text: payload.status?.last_transcript ?? "",
+              // Pure status sync — do NOT dispatch TRANSCRIPTION (which would
+              // set lastResult and fire the OverlayWindow surface decision a
+              // second time for the same commit). The authoritative
+              // wordscript-event transcription owns lastResult.
+              dispatch({
+                type: "NATIVE_TRANSCRIPTION_SYNC",
+                finalText: payload.status?.last_transcript ?? "",
                 corrected: payload.event === "transcription_corrected",
-                transform: lastResult?.transform ?? null,
-                insertion: lastResult?.insertion ?? null,
-                history: lastResult?.history ?? null,
-                occurred_at_ms: Date.now(),
-              },
-              preserveExisting: true,
-            });
+              });
             }
             break;
           case "empty":

@@ -92,19 +92,23 @@ impl Default for OverlaySurface {
 
 impl OverlaySurface {
     fn dimensions(self) -> (f64, f64) {
-        // Flat surfaces share ONE fixed size (wide enough for the widest,
-        // result-actions). Dynamic pill-based sizing is unreliable on
-        // WebKitGTK/GTK (set_size is async, the window lags one tick behind).
-        // CRITICAL: this default is used by BOTH the base surface sync (invoke
-        // without width/height) and the frontend useLayoutEffect — they MUST
-        // agree, otherwise two competing set_size calls leave the window stuck
-        // at the wrong size (the observed clipping).
+        // ALL flat surfaces share ONE uniform width (480px). A per-surface
+        // width caused clipping on longer transcripts: the processing-preview
+        // (05) with MicButton + PreviewText + Actions + Timer + Working is
+        // wider than compact (recording), and the result-actions (06b) with 4
+        // buttons (Copy/Edit/Insert/Dismiss) is wider than 06 with 3. When the
+        // window was 440px and the pill (even at zoom 0.87) exceeded it, the
+        // pill's rounded ends were clipped outside the window → "eckige Kanten".
+        // A uniform width also means surface swaps within a session never
+        // trigger set_size (no async resize churn on GTK).
+        // CRITICAL: this default is used by BOTH the base surface sync and the
+        // frontend useLayoutEffect — they MUST agree.
         match self {
-            Self::Compact => (440.0, 60.0),
-            Self::ProcessingPreview => (440.0, 60.0),
-            Self::ResultActions => (440.0, 60.0),
+            Self::Compact => (480.0, 60.0),
+            Self::ProcessingPreview => (480.0, 60.0),
+            Self::ResultActions => (480.0, 60.0),
             Self::EditMode => (460.0, 164.0),
-            Self::ModePicker => (440.0, 60.0),
+            Self::ModePicker => (480.0, 60.0),
         }
     }
 
@@ -489,15 +493,32 @@ fn reveal_overlay_window<R: Runtime>(
             window_height = default_height + f64::from(tick & 1);
         }
 
-        let size_changed = window
-            .outer_size()
-            .map(|current| {
-                let current_width = current.width as f64 / scale;
-                let current_height = current.height as f64 / scale;
-                (current_width - window_width).abs() > 0.5
-                    || (current_height - window_height).abs() > 0.5
-            })
-            .unwrap_or(true);
+        // The 1px oscillation (tick & 1) is designed to force a genuine
+        // set_size change on EVERY flat reveal → backing-store reallocation
+        // → full repaint that clears retained compositor layers. But
+        // `size_changed` comparing against `outer_size()` can report the same
+        // height as the oscillated value (e.g. park sets 440×60, tick lands
+        // on an even value → window_height=60 → size_changed=false). When that
+        // happens, set_size is skipped → no reallocation → WebKitGTK keeps
+        // the previous surface's raster → ghosting / "eckiger State" on the
+        // next surface. Fix: on flat surfaces, ALWAYS call set_size when the
+        // tick incremented — the oscillation alternates 0/1, so the height
+        // differs from the PREVIOUS reveal's height, even if it matches the
+        // current outer_size. Edit-mode keeps the outer_size check.
+        let force_set_size = is_flat;
+        let size_changed = if force_set_size {
+            true
+        } else {
+            window
+                .outer_size()
+                .map(|current| {
+                    let current_width = current.width as f64 / scale;
+                    let current_height = current.height as f64 / scale;
+                    (current_width - window_width).abs() > 0.5
+                        || (current_height - window_height).abs() > 0.5
+                })
+                .unwrap_or(true)
+        };
         // Always re-assert transparency + force a repaint on every reveal. On
         // flat→flat surface transitions WebKitGTK keeps the previous pill's
         // composited layer and renders the new pill on top → stale overlap that
@@ -1356,6 +1377,11 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                                 "entry_id": entry.id,
                                                 "retry_of": entry.retry_of,
                                             })),
+                                            "delivery": if matches!(result.insert_mode, core::insertion::NativeInsertMode::DirectPaste) {
+                                                "inserted"
+                                            } else {
+                                                "clipboard"
+                                            },
                                             "insertion": result
                                         }),
                                     );

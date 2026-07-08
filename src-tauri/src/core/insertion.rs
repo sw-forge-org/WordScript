@@ -511,15 +511,32 @@ pub fn native_insertion_status(
 }
 
 #[tauri::command]
-pub fn insert_text_native(
+pub async fn insert_text_native(
     app: AppHandle,
     request: NativeInsertRequest,
     state: State<'_, Mutex<NativeInsertionState>>,
 ) -> Result<NativeInsertResult, String> {
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    let result = state.insert(request);
-    emit_insert_event(&app, &result);
-    Ok(result)
+    // MUST be async: the clipboard write (wl-copy + verify) can block for up to
+    // 800ms. A sync command runs on Tauri's main thread and blocks the webview's
+    // JS event loop — frontend safety timeouts cannot fire, the spinner stays
+    // forever (State 09). Running the blocking work on a background thread keeps
+    // the main thread free so JS timers and IPC events flow normally.
+    let app_for_blocking = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let state = app_for_blocking
+            .try_state::<Mutex<NativeInsertionState>>()
+            .ok_or_else(|| "Native insertion state is not available.".to_string())?;
+        let mut state = state.lock().map_err(|error| error.to_string())?;
+        let result = state.insert(request.clone());
+        drop(state);
+        emit_insert_event(&app_for_blocking, &result);
+        Ok(result)
+    })
+    .await
+    .map_err(|e| format!("Insert task panicked: {e}"))?;
+
+    let _ = state; // state param is unused (we re-fetch via try_state on the blocking thread)
+    result
 }
 
 #[tauri::command]

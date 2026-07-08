@@ -1,16 +1,16 @@
 # Bug: Overlay Ghosting / State Bleeding
 
-**Status:** Offener Bug, noch nicht gefixt. GPU-Compositing wurde am 2026-06-21 standardmäßig aktiviert (siehe Update unten), der Black-Block-Bug tritt nicht mehr auf, das Ghosting bleibt aber sichtbar (evtl. marginal verstaerkt).  
-**Erstmals berichtet:** Phase 2 Follow-up, nach 12h real-world use  
+**Status:** BEHOBEN (2026-07-08). Wurzel war die **halbtransparente Pill-Hintergrundfarbe** (`rgba(27,27,29,0.90)` — 10% Durchscheinen). WebKitGTK cached Compositor-Layer nicht deterministisch; durch die 10% Transparenz schien die gecachte Raster der vorigen Surface durch und produzierte das "eckige" / "switcht zwischen runden und eckigen Ecken"-Symptom. Alle Repaint-Workarounds (1px-Height-Oszillation, `set_background_color`-Re-Assert, `force_set_size`, `key={pillVisualEpoch}`-Remount) waren nicht deterministisch zuverlaessig. Fix: **opaker** Pill-Hintergrund (`--ov-surface: #1b1b1d`, `--ov-surface-strong: #141416`) blockiert jedes residuelle Durchscheinen, selbst wenn die alte Layer gecached bleibt. Der visuelle Unterschied ist minimal (die 10% Transparenz war ohnehin kaum sichtbar, da das Overlay-Fenster den Desktop dahinter nicht sieht).
+**Erstmals berichtet:** Phase 2 Follow-up, nach 12h real-world use
 **Betrifft:** Linux Overlay (WebKitGTK), alle Oberflächen-Übergänge
 
 ## Symptome
 
 ### Szenario 1: Recording → Result-Actions
-Nach Abschluss einer Aufnahme wird die Result-Actions-Pille (mit Copy/Edit/Insert-Buttons) angezeigt, aber die vorherige Recording-Pille (insbesondere die Waveform-Balken) scheint schwach durch den semi-transparenten Hintergrund der neuen Pille durch.
+Nach Abschluss einer Aufnahme wird die Result-Actions-Pille (mit Copy/Edit/Insert-Buttons) angezeigt, aber die vorherige Recording-Pille (insbesondere die Waveform-Balken) scheint schwach durch den semi-transparenten Hintergrund der neuen Pille durch. **Status: behoben (2026-07-08)** — opaker Pill-Hintergrund blockiert jedes Durchscheinen deterministisch.
 
 ### Szenario 2: Neues Recording während Leave-Animation
-Wenn ein neues Recording gestartet wird, während die vorherige Overlay-Pille noch in der Leave-Animation (240ms "Diminishing-Zeit") ist, wird die neue Recording-Pille angezeigt, aber der vorherige Overlay-State (z.B. Result-Actions oder ein vorheriges Recording) wird überlagert/ghosted hinter der neuen Pille sichtbar.
+Wenn ein neues Recording gestartet wird, während die vorherige Overlay-Pille noch in der Leave-Animation (240ms "Diminishing-Zeit") ist, wird die neue Recording-Pille angezeigt, aber der vorherige Overlay-State (z.B. Result-Actions oder ein vorheriges Recording) wird überlagert/ghosted hinter der neuen Pille sichtbar. **Status: behoben (2026-07-08)** — opaker Pill-Hintergrund blockiert auch hier das Durchscheinen; die Trigger-during-leave-Garantie (leaving→entering direkter Übergang) verhindert zusaetzlich den Layer-Orphan-Gap.
 
 ## Diagnose-Ergebnisse
 
@@ -20,21 +20,22 @@ Detaillierte Analyse durch Research-Agents und Code-Inspektion bestätigt: **Es 
 
 > **Update 2026-06-21:** GPU-Compositing ist jetzt standardmäßig aktiviert (`src-tauri/src/main.rs`). Der Black-Block-Bug tritt mit dem Overlay-Shadow-Fix (`--ov-shadow: none`) und `WEBKIT_DISABLE_DMABUF_RENDERER=1` nicht mehr auf. Der Ghosting-Bug bleibt offen und sollte mit aktiviertem GPU-Compositor neu evaluiert werden – die Compositor-Layer-Cache-Hypothese könnte sich anders verhalten als im deaktivierten Modus.
 
-### Root Causes (drei konvergierende Faktoren)
+### Root Causes (drei konvergierende Faktoren — historisch)
 
-1. **`transform: scale(0.87)` auf `.pill`** (`src/styles/overlay-pill.css:83`)
-   - Toter Code: Die `.pill--entering/--open/--leaving` CSS-Klassen, die diesen Transform hätten übersetzen sollen, werden **nie** angewendet (verifiziert via grep: keine Anwendung in OverlayPill.tsx, OverlayWindow.tsx, OverlayGallery.tsx)
-   - Der `transform` hebt die Pille auf eine **eigene Compositor-Layer**
-   - WebKitGTK cached diese Layer beim Unmount und rendert sie beim nächsten Paint durch
+> **Update 2026-06-29 / 2026-07-01:** Alle drei Root Causes wurden adressiert. `transform: scale(0.87)` wurde von `.pill` auf `.ov-pill-shell` verschoben (stabile Wrapper-Schicht, inneres `.pill` bleibt transform-free); `key={pillKind}` wurde vom falschen Fix-Versuch zum korrekten Fix (erzwingt Unmount/Remount pro Surface → Layer-Release + frischer Mount); die Halbtransparenz bleibt bewusst (Faux-Glass-Aesthetic), aber die native 1px-Height-Oszillation pro Reveal + der `useLayoutEffect`-Repaint bei reinen Kind-Wechseln erzwingen einen vollständigen Backing-Store-Repaint, der alle retained Layer loescht. Szenario 1 gilt als behoben.
 
-2. **`key={pillKind}` auf `<OverlayPill>`** (falscher Fix-Versuch)
-   - Erzwingt Unmount/Remount bei jedem Surface-Wechsel
-   - Veranlasst WebKitGTK, die alte Layer zwischenzuspeichern
-   - Hatte das Problem verschlimmert statt behoben
+1. **`transform: scale(0.87)` auf `.pill`** (historisch `src/styles/overlay-pill.css:83`)
+   - Toter Code: Die `.pill--entering/--open/--leaving` CSS-Klassen, die diesen Transform hätten übersetzen sollen, wurden nie angewendet
+   - Der `transform` hob die Pille auf eine **eigene Compositor-Layer**; WebKitGTK cached diese beim Unmount
+   - **Behoben:** Transform auf `.ov-pill-shell` verschoben; `.pill` bleibt transform-free, sodass React die innere Subtree swappen kann, ohne die Wrapper-Layer zu invalidieren
+
+2. **`key={pillKind}` auf `<OverlayPill>`** (ursprünglich falscher Fix-Versuch, jetzt korrekter Fix)
+   - Erzwingt Unmount/Remount bei jedem Surface-Wechsel → WebKitGTK released die alte Layer
+   - **Behoben:** In Kombination mit der nativen 1px-Height-Oszillation (Backing-Store-Reallokation) und dem `useLayoutEffect`-Repaint bei reinen Kind-Wechseln ist dies jetzt der korrekte Fix, nicht die Ursache
 
 3. **Halbtransparenter Pille-Hintergrund** `rgba(27, 27, 29, 0.90)`
-   - Lässt die zwischengespeicherten Pixel der alten Layer zu 10% durchscheinen
-   - Da das Overlay-Fenster ohnehin nicht den Desktop dahinter sieht (kein echtes Blur/Vibrancy auf Linux), war die Transparenz rein optisch und hat nur dem Ghosting gedient
+   - Lässt zwischengespeicherte Pixel zu 10% durchscheinen
+   - **Adressiert (nicht entfernt):** Die Halbtransparenz bleibt als Faux-Glass-Aesthetic; stattdessen erzwingt die native Reveal-Oszillation + useLayoutEffect-Repaint einen vollständigen Repaint, der die retained Layer loescht, bevor die neue Surface malt
 
 ### Warum existierende Fixes nicht ausreichen
 

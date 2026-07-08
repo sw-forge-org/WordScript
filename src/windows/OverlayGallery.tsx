@@ -123,13 +123,13 @@ export default function OverlayGallery() {
             />
           </Card>
 
-          <Card index="05" title="Processing preview" hint="Live text preview + inline Insert / Abort" wide>
+          <Card index="05" title="Processing preview" hint="Live text preview + inline Copy / Abort · clipboard_only gate" wide>
             <OverlayPill
               state={{
                 kind: "processing",
                 mode: "agent",
                 elapsedSec: 4,
-                preview: { text: SAMPLE_PREVIEW, clipboardOnly: false },
+                preview: { text: SAMPLE_PREVIEW, clipboardOnly: true },
                 onCommit: () => {},
                 onAbort: () => {},
               }}
@@ -160,7 +160,7 @@ export default function OverlayGallery() {
             />
           </Card>
 
-          <Card index="06b" title="Result actions · clipboard_only" hint="Adds an inline Insert affordance" wide>
+          <Card index="06b" title="Result actions · clipboard_only" hint="Accent-soft border + inline Insert affordance" wide>
             <OverlayPill
               state={{
                 kind: "result-actions",

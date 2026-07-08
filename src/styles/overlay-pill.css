@@ -13,8 +13,16 @@
 
 .ov-scope {
   /* ── Design tokens ─────────────────────────────────────────────────────── */
-  --ov-surface: rgba(27, 27, 29, 0.90);
-  --ov-surface-strong: rgba(20, 20, 22, 0.94);
+  /* OPAQUE surfaces — deterministically blocks the WebKitGTK compositor-layer
+     ghosting bug. The previous rgba(27,27,29,0.90) was 10% transparent, which
+     let the cached raster of a previous surface bleed through when WebKitGTK
+     retained the compositor layer (non-deterministic: "switcht zwischen runden
+     und eckigen Ecken"). An opaque background blocks every residual pixel,
+     even if the old layer stays cached. The overlay window is transparent and
+     decorationless anyway, so the solid fill reads identically against the
+     desktop. Do NOT reintroduce alpha here. */
+  --ov-surface: #1b1b1d;
+  --ov-surface-strong: #141416;
   --ov-border: rgba(255, 255, 255, 0.09);
   --ov-border-strong: rgba(255, 255, 255, 0.16);
   --ov-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -65,12 +73,19 @@
 
 /* ── Pill root ─────────────────────────────────────────────────────────────── */
 
-/* Persistent wrapper that owns the pill's compositor layer. The .pill itself
-   stays transform-free so that on a surface (kind) change React can swap the
-   inner .pill subtree inside this stable layer — WebKitGTK no longer retains
-   an orphaned promoted pill layer (the flat→flat ghost/bleed). The visual
-   0.87 scale lives here. .overlay-shell stays transform-free on purpose
-   (see overlay-shell.css: window-sizing measurement). (plan 1782308448580) */
+/* Persistent wrapper that hosts the pill. The visual 0.87 scale lives here.
+   .overlay-shell stays transform-free on purpose (see overlay-shell.css:
+   window-sizing measurement). (plan 1782308448580)
+
+   UPDATE 2026-07-08: `zoom: 0.87` was tried but did not scale `width:
+   max-content` reliably on WebKitGTK — the pill rendered at 100% and clipped
+   outside the 480px window on longer transcripts → "eckige Box". Reverted to
+   `transform: scale(0.87)` which scales visually (not layout) and was visually
+   stable. The compositor-layer ghosting that `transform` can cause is blocked
+   by the opaque `--ov-surface` (no alpha bleed-through). The pill's
+   `max-content` width is capped by reducing `pill__preview-text max-width` to
+   220px so the un-scaled pill fits in the 480px window even before the 0.87
+   transform applies. */
 .ov-scope .ov-pill-shell {
   display: inline-flex;
   transform: scale(0.87);
@@ -112,6 +127,15 @@
 
 /* Processing: slightly weaker accent border. */
 .ov-scope .pill--processing {
+  border-color: var(--ov-accent-border-soft);
+}
+
+/* clipboard_only result-actions: same accent-soft border as processing-preview.
+   The "clipboard_only-heit" is already signalled on the processing-preview
+   container via .pill--processing; this mirrors it on the result-actions
+   container so 06b reads consistently with 05. No new colours, no
+   backdrop-filter (Phase-1 rule). */
+.ov-scope .pill--clipboard {
   border-color: var(--ov-accent-border-soft);
 }
 
@@ -332,7 +356,7 @@
 .ov-scope .pill__preview-text {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 280px;
+  max-width: 220px;
   padding: 0 8px 0 10px;
   font-size: 12px;
   font-weight: 500;

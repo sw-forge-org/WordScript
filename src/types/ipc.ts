@@ -83,6 +83,12 @@ export interface RuntimeResultEvent {
   work_mode?:              TextProfileWorkMode;
   raw_text?:               string | null;
   transform?:              RuntimeTransformEvent;
+  /** "inserted" | "clipboard" — derived from the native insert outcome in the
+   *  auto_paste path. When the paste failed and the chain fell back to
+   *  clipboard (`ClipboardFallback`), this is "clipboard" so the overlay can
+   *  surface the Insert retry affordance (06b) the same way it does for the
+   *  explicit `clipboard_only` setting. */
+  delivery?:               "inserted" | "clipboard";
   insertion?:              NativeInsertResult;
   history?:                RuntimeHistoryEvent;
 }
@@ -95,6 +101,11 @@ export interface RuntimeTranscriptionResult {
   final_text:              string;
   corrected:               boolean;
   transform:               RuntimeTransformEvent | null;
+  /** "inserted" | "clipboard" | null — propagated from the transcription event
+   *  payload so the overlay can derive `clipboardOnly` for the result-actions
+   *  surface even on the auto_paste path (ClipboardFallback). Null on
+   *  preview_ready / native-event transcription merge paths. */
+  delivery:                "inserted" | "clipboard" | null;
   insertion:               NativeInsertResult | null;
   history:                 RuntimeHistoryEvent | null;
   occurred_at_ms:          number;

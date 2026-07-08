@@ -203,8 +203,10 @@ function ProcessingPill({ state }: { state: Extract<OverlayPillState, { kind: "p
 /* ── Result actions ───────────────────────────────────────────────────────── */
 
 function ResultActionsPill({ state }: { state: Extract<OverlayPillState, { kind: "result-actions" }> }) {
+  const classes = ["pill", "pill--result-actions"];
+  if (state.clipboardOnly) classes.push("pill--clipboard");
   return (
-    <div className="pill pill--result-actions">
+    <div className={classes.join(" ")}>
       <PreviewText text={state.text} />
       <ResultActions
         clipboardOnly={state.clipboardOnly}

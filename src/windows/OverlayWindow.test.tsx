@@ -203,6 +203,7 @@ describe("OverlayWindow", () => {
             entry_id: "history-1",
             retry_of: null,
           },
+          delivery: "clipboard",
           insertion: {
             ok: true,
             text: "Wir shippen das morgen.",
@@ -345,6 +346,7 @@ describe("OverlayWindow", () => {
             warning: null,
           },
           history: null,
+          delivery: null,
           insertion: null,
           occurred_at_ms: 1716500000000,
         },
@@ -389,6 +391,7 @@ describe("OverlayWindow", () => {
         warning: null;
       };
       history: null;
+      delivery: string | null;
       insertion: null;
       occurred_at_ms: number;
     } | null = null;
@@ -438,6 +441,7 @@ describe("OverlayWindow", () => {
         warning: null,
       },
       history: null,
+      delivery: null,
       insertion: null,
       occurred_at_ms: 1716500000000,
     };
@@ -636,6 +640,7 @@ describe("OverlayWindow", () => {
           corrected: true,
           transform: { applied_rules: ["removed_fillers"], warning: null },
           history: null,
+          delivery: "clipboard",
           insertion: null,
           occurred_at_ms: 1716500000000,
         },
@@ -724,5 +729,73 @@ describe("OverlayWindow", () => {
 
     expect(screen.getByLabelText("Audio level")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+  });
+
+  it("shows the Insert affordance on a clipboard fallback delivery even for an auto_paste profile", async () => {
+    // Simulates an auto_paste run that fell back to clipboard at runtime
+    // (NativeInsertMode::ClipboardFallback). The backend emits
+    // delivery:"clipboard" in the transcription payload; the overlay must
+    // surface the Insert retry affordance (06b) the same way it does for the
+    // explicit clipboard_only setting — without relying on insert_behavior.
+    useRuntimeMock.mockReturnValue({
+      state: {
+        status: "idle",
+        config: createAppConfig({
+          active_text_profile_id: "support",
+          text_profiles: [
+            {
+              id: "support",
+              label: "Support reply",
+              prompt: "Support tone",
+              stt_hints: "",
+              work_mode: {
+                rewrite_style: "clean" as const,
+                insert_behavior: "auto_paste" as const,
+                recovery_behavior: "standard" as const,
+              },
+              curation: createEmptyTextProfileCuration(),
+              dictionary_entries: [],
+              snippet_entries: [],
+            },
+          ],
+        }),
+        muted: false,
+        paused: false,
+        lastTranscription: "Wir shippen das morgen.",
+        pendingResult: null,
+        lastResult: {
+          provider: "groq",
+          active_profile: "Support reply",
+          work_mode: {
+            rewrite_style: "clean",
+            insert_behavior: "auto_paste",
+            recovery_behavior: "standard",
+          },
+          raw_text: "ähm wir shippen das morgen",
+          final_text: "Wir shippen das morgen.",
+          corrected: true,
+          transform: { applied_rules: ["removed_fillers"], warning: null },
+          history: null,
+          delivery: "clipboard",
+          insertion: null,
+          occurred_at_ms: 1716500000000,
+        },
+        error: null,
+        recordingStartMs: null,
+      },
+      toggleMute: vi.fn(),
+      togglePause: vi.fn(),
+      saveConfig: vi.fn(),
+      openSettings: vi.fn(),
+    });
+
+    render(<OverlayWindow />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument());
+
+    // The Insert affordance (06b) must be visible because delivery === "clipboard".
+    expect(screen.getByRole("button", { name: "Insert" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
 });

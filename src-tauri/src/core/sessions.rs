@@ -404,10 +404,16 @@ pub fn complete_native_session(
 }
 
 #[tauri::command]
-pub fn commit_pending_transcription_preview(
+pub async fn commit_pending_transcription_preview(
     app: AppHandle,
     state: State<'_, Mutex<NativeSessionState>>,
 ) -> Result<NativeInsertResult, String> {
+    // MUST be async: the clipboard write (wl-copy + verify) can block for up to
+    // 800ms. A sync command runs on Tauri's main thread and blocks the webview's
+    // JS event loop — frontend safety timeouts cannot fire, the spinner stays
+    // forever (State 09), and the overlay freezes. Running the blocking work on
+    // a background thread via spawn_blocking keeps the main thread free so JS
+    // timers and IPC events flow normally.
     let (session_id, preview) = {
         let mut state = state.lock().map_err(|error| error.to_string())?;
         state.take_pending_preview()?
@@ -420,12 +426,22 @@ pub fn commit_pending_transcription_preview(
         );
     }
 
-    match insert_transcription_from_legacy(
-        &app,
-        &final_text,
-        preview.transformed.corrected,
-        Some(preview.app_config.active_text_profile_auto_paste()),
-    ) {
+    let app_for_blocking = app.clone();
+    let corrected = preview.transformed.corrected;
+    let auto_paste = preview.app_config.active_text_profile_auto_paste();
+    let text_for_insert = final_text.clone();
+    let insert_result = tauri::async_runtime::spawn_blocking(move || {
+        insert_transcription_from_legacy(
+            &app_for_blocking,
+            &text_for_insert,
+            corrected,
+            Some(auto_paste),
+        )
+    })
+    .await
+    .map_err(|e| format!("Commit task panicked: {e}"))?;
+
+    match insert_result {
         Ok(result) if result.ok => {
             let history_entry = history::history_entry_from_insert_result(
                 &preview.app_config,

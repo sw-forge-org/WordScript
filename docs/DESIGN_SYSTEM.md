@@ -33,7 +33,7 @@ Die Shell-Ueberarbeitung ist umgesetzt. Verbindliche Entscheidungen, die aeltere
 - **Chrome:** **Native Titelleiste auf jedem OS** (`decorations: true`). Kein frameless Fenster, kein `titleBarStyle: "Overlay"`, kein `macOSPrivateApi`, keine fake Traffic-Lights. Das "macOS-Gefuehl" entsteht ausschliesslich aus dem Content-Design (Sidebar-Rhythmus, gruppierte Form-Cards, Controls, Typo, Motion).
 - **Motion:** React bleibt 18 → Tab-/Area-Wechsel ueber `useTransition` ohne CSS-Crossfade-Animation (die fruhere `animate-in fade-in` wurde entfernt, weil sie auf WebKitGTK Scroll-Ruckeln verursachte). Tab-Wechsel sind jetzt sofort.
 - **Form-Kit (`src/components/shell/`):** `Sidebar`, `FormCard`/`FormRow`, `DisclosureRow`, `Inspector`, `SegmentControl`, `Stepper`, `StatusBadge`, `Toggle`, `Select`, `ProfileSwitcher` — das System-Settings-Grouped-Form-Idiom als wiederverwendbare Bausteine. FormCards verwenden `contain: layout paint` fuer unabhaengiges Compositing und keine Drop-Shadows mehr (Elevation nur durch Background + Border).
-- **Overlay:** echtes Glassmorphism via `backdrop-filter`, mit `@supports`-Solid-Fallback fuer Linux/Wayland-Compositors ohne Blur, plus orangefarbener Recording-Glow.
+- **Overlay:** Faux-Glass (solid semi-transparent fill + hairline top highlight, **kein** `backdrop-filter`/Blur) — transparente Overlay-Fenster koennen den Desktop dahinter nicht sehen und native Vibrancy ist auf Linux ununterstuetzt. Plus orangefarbener Recording-Glow. Siehe `docs/handoffs/OVERLAY_PHASE1_HANDOFF.md` (Phase-1-Regel: NIEMALS `backdrop-filter`).
 - **Storybook v2** (`2026-06-10`): Overlay + Tokens + Components als visuelle Regression-Basis; Liquid Glass Polish fuer Overlay und Settings.
 - **Home-Screen v2.1** (`2026-06-15`): 3 explizite Background-Layer (`--bg-base` / `--bg-surface` / `--bg-elevated`), 5-Stufen-Type-Scale (12/14/16/20/28px), 4-Point-Spacing (20px card padding, 32px between sections), einzelne `StatusDot`-Primitive. SW-labs orange nur fuer den Capture-Button.
 - **CSS @layer base** (`2026-06-17`): universeller Reset (`*, *::before, *::after`) in `@layer base` gewrappt, damit Tailwind-Utilities nicht ueberschrieben werden.
@@ -123,7 +123,7 @@ Diagnostische History- und Hint-Listen sollen als isolierte, stabile Teilbaeume 
 
 ## Layout-Regeln
 
-- Overlay-Fenster: Tauri `transparent: true`, `alwaysOnTop: true`, `decorations: false`. Pill mit `backdrop-filter: blur(20px)`. Idle wird nativ unsichtbar geparkt.
+- Overlay-Fenster: Tauri `transparent: true`, `alwaysOnTop: true`, `decorations: false`. Pill mit Faux-Glass (solid semi-transparent `--ov-surface` + hairline `--ov-highlight`, kein `backdrop-filter`). Idle wird nativ unsichtbar geparkt.
 - Main Window (Shell): `980x720`, Mindestgroesse `760x540`. Tauri `titleBarStyle: "Overlay"` (macOS) oder Host-Dekoration (Win/Linux). `decorations: false` fuer Custom Chrome.
 - Diagnostics-Pop-out: `1040x780`, Mindestgroesse `900x680`
 - Sidebar: `200px` breit, nicht scrollbar. Preview-Tabs unten mit `opacity: 0.35`.
@@ -269,9 +269,10 @@ Regeln:
 - `set_background_color` wird bei jedem Reveal aufgerufen (nicht nur bei `size_changed`), um WebKitGTK-Compositing-Layer-Probleme zu vermeiden (States ueberlagern sich sonst beim Wechsel).
 - `park_overlay_window` ruft `window.hide()` auf, damit Reveal den Hidden→Visible-Zweig durchlaeuft (Drag-Schutz via `set_position` nur bei Hidden→Visible funktioniert).
 - XWayland-Default (`GDK_BACKEND=x11`) mit `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in fuer nativ Wayland.
-- Pill: `backdrop-filter: blur(20px) saturate(1.2)`, `background: rgba(13, 18, 23, 0.72)`, `border: 1px solid rgba(255,255,255,0.08)`, `border-radius: 20px`.
-- Linux-Fallback (kein `backdrop-filter`): solid `var(--bg)` ohne Blur.
-- Orangener Glow im Recording-Zustand: `box-shadow: 0 0 20px rgba(230, 137, 0, 0.4)`.
+- Pill: Faux-Glass (opak) — `background: var(--ov-surface)` (`#1b1b1d`, seit 2026-07-08 opak um das WebKitGTK-Compositor-Layer-Ghosting deterministisch zu blockieren), `border: 1px solid var(--ov-border)`, `border-radius: var(--ov-radius-compact)` (999px compact / 14px edit). **Kein** `backdrop-filter`, **kein** Alpha-Transparenz auf der Surface (Phase-1-Regel + Ghosting-Fix).
+- Recording-Glow: `box-shadow: inset 0 0 0 1px var(--ov-accent-soft)` (inner ring, kein outer shadow).
+- Processing/clipboard_only: `border-color: var(--ov-accent-border-soft)` (Accent-Soft-Border, gilt fuer State 05 und 06b).
+- Mode-picker (State 05b): eigener `kind: "mode-picker"` + `ModePickerPill`-Komponente, idle-Silhouette mit ModeChip, `pill--mode-picker`-Klasse mit Accent-Soft-Border + inner ring.
 - `--ov-shadow: none` und `--ov-shadow-recording: none` in `overlay-pill.css` (WebKitGTK malt outer `box-shadow` opak).
 - `pointer-events: auto` auf `.ov-scope` (WebKitGTK macht `pointer-events: none` auf overlay-roots die Pill taub).
 - `will-change: opacity` entfernt (reduziert Layer-Cache, verhindert States-Ueberlagerung).
@@ -358,7 +359,7 @@ Regeln:
 
 Plattformgrenzen:
 - **macOS**: `macOSPrivateApi: true` fuer transparente Overlay-Fenster. Verhindert App Store, aber WordScript ist ein Dev-Tool.
-- **Linux/WebKitGTK**: Kein `backdrop-filter`. Overlay-Pill faellt auf solid `var(--bg)` zurueck.
+- **Linux/WebKitGTK**: Kein `backdrop-filter` (Faux-Glass seit Phase 1). Overlay-Pill nutzt solid `--ov-surface`. `--ov-shadow: none` (WebKitGTK malt outer `box-shadow` opak).
 - **Windows**: Transparente Fenster verfuegbar; Blur je nach WebView2-Version.
 - Schwarze Fensterflaechen ausserhalb der Shell gelten als Defekt.
 

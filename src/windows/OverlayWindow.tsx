@@ -43,11 +43,11 @@ type OverlaySurface = "compact" | "processing_preview" | "result_actions" | "edi
 // src-tauri/src/lib.rs. Used as a floor under the live measurement: if WebKitGTK
 // under-reports the scaled box, the known-good constant still prevents clipping.
 const SURFACE_MIN_WIDTH: Record<OverlaySurface, number> = {
-  compact: 256,
-  processing_preview: 300,
-  result_actions: 388,
+  compact: 480,
+  processing_preview: 480,
+  result_actions: 480,
   edit_mode: 420,
-  mode_picker: 256,
+  mode_picker: 480,
 };
 
 interface AudioLevelEvent {
@@ -264,7 +264,9 @@ export default function OverlayWindow() {
     || (processingHoldSnapshot ? processingHoldSnapshot.text : "");
   const previewClipboardOnly = activePreviewResult?.work_mode?.insert_behavior === "clipboard_only"
     ? true
-    : processingHoldSnapshot ? processingHoldSnapshot.clipboardOnly : false;
+    : activePreviewResult?.delivery === "clipboard"
+      ? true
+      : processingHoldSnapshot ? processingHoldSnapshot.clipboardOnly : false;
 
   // Capture the live Processing-Preview content while it is genuinely active so
   // the leaving-hold has a frozen frame to paint. Written during render (same
@@ -646,7 +648,7 @@ export default function OverlayWindow() {
     const { width, height } =
       surface === "edit_mode"
         ? { width: 460, height: 164 }
-        : { width: 440, height: 60 };
+        : { width: 480, height: 60 };
     if (import.meta.env.DEV) {
       const pill = shellRef.current?.querySelector<HTMLElement>(".ov-pill-shell");
       console.warn(
@@ -861,6 +863,16 @@ export default function OverlayWindow() {
     }
   };
 
+  // Copy is a non-destructive action — it writes to the clipboard but the user
+  // may still want to Edit / Insert / Dismiss afterwards. Only clear the pending
+  // spinner; keep the result-actions surface visible.
+  const finishCopyAction = (failed = false) => {
+    setActionPending(null);
+    if (failed) {
+      setShowPreview(false);
+    }
+  };
+
   const handleDismissPreview = () => {
     if (actionPending) return;
 
@@ -874,15 +886,28 @@ export default function OverlayWindow() {
 
     beginOverlayAction("commit");
     suppressNextResultActionsRef.current = true;
-    try {
-      const result = await invoke<NativeInsertResult>("commit_pending_transcription_preview");
-      finishOverlayAction(!result.ok);
-      if (!result.ok) {
+    // Race the invoke against a 1.5s safety timeout. If the native clipboard
+    // write hangs (wl-copy daemon deadlock, compositor race), the invoke
+    // Promise never resolves and the spinner stays forever (State 09). The
+    // timeout guarantees the pending state is cleared and the user can act
+    // again. The invoke continues in the background; if it resolves late the
+    // settled guard prevents a double-finish.
+    let settled = false;
+    const finishSafely = (failed: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(safety);
+      finishOverlayAction(failed);
+      if (failed) {
         suppressNextResultActionsRef.current = false;
       }
+    };
+    const safety = window.setTimeout(() => finishSafely(false), 1500);
+    try {
+      const result = await invoke<NativeInsertResult>("commit_pending_transcription_preview");
+      finishSafely(!result.ok);
     } catch {
-      suppressNextResultActionsRef.current = false;
-      finishOverlayAction(true);
+      finishSafely(true);
     }
   };
 
@@ -890,11 +915,19 @@ export default function OverlayWindow() {
     if (!pendingPreviewResult || actionPending) return;
 
     beginOverlayAction("abort");
+    let settled = false;
+    const finishSafely = (failed: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(safety);
+      finishOverlayAction(failed);
+    };
+    const safety = window.setTimeout(() => finishSafely(false), 1500);
     try {
       await invoke("abort_native_session");
-      finishOverlayAction();
+      finishSafely(false);
     } catch {
-      finishOverlayAction(true);
+      finishSafely(true);
     }
   };
 
@@ -902,6 +935,14 @@ export default function OverlayWindow() {
     if (!finalPreviewText || actionPending) return;
 
     beginOverlayAction("copy");
+    let settled = false;
+    const finishSafely = (failed: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(safety);
+      finishCopyAction(failed);
+    };
+    const safety = window.setTimeout(() => finishSafely(false), 1500);
     try {
       const result = await invoke<NativeInsertResult>("insert_text_native", {
         request: {
@@ -911,9 +952,9 @@ export default function OverlayWindow() {
           auto_paste: false,
         },
       });
-      finishOverlayAction(!result.ok);
+      finishSafely(!result.ok);
     } catch {
-      finishOverlayAction(true);
+      finishSafely(true);
     }
   };
 
@@ -932,17 +973,12 @@ export default function OverlayWindow() {
 
     beginOverlayAction("edit");
     suppressNextResultActionsRef.current = true;
-    const isAutoPaste = previewResult?.work_mode?.insert_behavior !== "clipboard_only";
-    try {
-      const result = await invoke<NativeInsertResult>("insert_text_native", {
-        request: {
-          text: editText,
-          source: "overlay_edit_confirm",
-          corrected: false,
-          auto_paste: isAutoPaste,
-        },
-      });
-      if (result.ok) {
+    let settled = false;
+    const finishSafely = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(safety);
+      if (ok) {
         setActionPending(null);
         setShowEditMode(false);
         setEditText("");
@@ -951,9 +987,20 @@ export default function OverlayWindow() {
         suppressNextResultActionsRef.current = false;
         finishOverlayAction(true);
       }
+    };
+    const safety = window.setTimeout(() => finishSafely(true), 1500);
+    try {
+      const result = await invoke<NativeInsertResult>("insert_text_native", {
+        request: {
+          text: editText,
+          source: "overlay_edit_confirm",
+          corrected: false,
+          auto_paste: false,
+        },
+      });
+      finishSafely(result.ok);
     } catch {
-      suppressNextResultActionsRef.current = false;
-      finishOverlayAction(true);
+      finishSafely(false);
     }
   };
 
@@ -961,6 +1008,14 @@ export default function OverlayWindow() {
     if (!finalPreviewText || actionPending) return;
 
     beginOverlayAction("insert");
+    let settled = false;
+    const finishSafely = (failed: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(safety);
+      finishOverlayAction(failed);
+    };
+    const safety = window.setTimeout(() => finishSafely(false), 1500);
     try {
       const result = await invoke<NativeInsertResult>("insert_text_native", {
         request: {
@@ -970,9 +1025,9 @@ export default function OverlayWindow() {
           auto_paste: true,
         },
       });
-      finishOverlayAction(!result.ok);
+      finishSafely(!result.ok);
     } catch {
-      finishOverlayAction(true);
+      finishSafely(true);
     }
   };
 
@@ -1078,12 +1133,20 @@ export default function OverlayWindow() {
   // (`handleCycleMode`) flips `pillMode` but keeps `kind === "recording"`, so a
   // `kind`-only dep would NOT fire — WebKitGTK then keeps the previous mode's
   // cached raster and the new mode overlaps the old one ("jeder neue Mode
-  // überlappt das darunterliegende"). `muted`/`paused`/`actionPending`/
-  // `showEditMode` likewise change appearance within a kind. Bundling them into
-  // one epoch string and keying the native repaint on it forces a reveal
+  // überlappt das darunterliegende"). `muted`/`paused`/`showEditMode`
+  // likewise change appearance within a kind. Bundling them into one epoch
+  // string and keying the native repaint on it forces a reveal
   // (→ flat-height oscillation → backing-store reallocation → full repaint)
   // on EVERY visual change, not just kind/surface swaps.
-  const pillVisualEpoch = `${pillState?.kind ?? ""}|${pillMode}|${muted ? "m" : ""}|${paused ? "p" : ""}|${showEditMode ? "e" : ""}|${actionPending ?? ""}|${Boolean(previewClipboardOnly && renderResultPreview)}`;
+  //
+  // EXCLUDED from the epoch: `actionPending`. An action-pending spinner (copy/
+  // edit/insert/commit) is an in-place icon swap on a button, not a surface
+  // change. Keying a native reveal on it triggers a 1px-height oscillation +
+  // set_size → backing-store reallocation → a full repaint that WebKitGTK
+  // renders as a brief "another overlay state pops up" flash on top of the
+  // current result-actions surface. The opaque --ov-surface already blocks
+  // ghosting, so the spinner swap does not need a native repaint.
+  const pillVisualEpoch = `${pillState?.kind ?? ""}|${pillMode}|${muted ? "m" : ""}|${paused ? "p" : ""}|${showEditMode ? "e" : ""}|${Boolean(previewClipboardOnly && renderResultPreview)}`;
 
   // Force a native repaint whenever the pill VISUAL IDENTITY changes — even
   // when the surface AND kind stay the same (mode-cycle within "recording",
@@ -1126,8 +1189,12 @@ export default function OverlayWindow() {
         // ("alte States verschwinden verzögert"). A keyed remount unmounts
         // those children (releasing their layers) and mounts fresh ones.
         // Combined with the native 1px backing-store reallocation in
-        // reveal_overlay_window this gives a deterministic clear-before-paint
-        // swap. (plan 1782750354086, §5 follow-up)
+        // reveal_overlay_window AND the opaque --ov-surface (which blocks
+        // residual bleed-through deterministically), this gives a clean swap.
+        // NOTE: keying on the full pillVisualEpoch was tried and reverted — it
+        // caused a 1-frame empty render on every visual change (e.g. commit
+        // pending → idle) that read as a brief "flash" after the result pill.
+        // (plan 1782750354086, §5 follow-up)
         <div className="ov-pill-shell">
           <OverlayPill key={pillState.kind} state={pillState} />
         </div>
