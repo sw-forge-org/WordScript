@@ -165,6 +165,14 @@ pub enum NativeCaptureMonitorState {
     Continue,
     Finished,
     Stop(NativeCaptureStopReason),
+    RebuildEligible,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebuildOutcome {
+    Rebuilt,
+    Failed,
+    NotEligible,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,6 +208,7 @@ struct ActiveCapture {
     stream: Stream,
     shared: Arc<Mutex<SharedCaptureData>>,
     stream_error: Arc<AtomicBool>,
+    rebuild_attempted: bool,
 }
 
 struct SharedCaptureData {
@@ -213,6 +222,7 @@ struct SharedCaptureData {
     has_voice_activity: bool,
     samples: Vec<i16>,
     max_samples: usize,
+    rebuild_in_progress: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -494,6 +504,7 @@ pub fn start_native_capture<R: Runtime + 'static>(
         has_voice_activity: false,
         samples: Vec::new(),
         max_samples,
+        rebuild_in_progress: false,
     }));
 
     let stream = build_stream(
@@ -520,6 +531,7 @@ pub fn start_native_capture<R: Runtime + 'static>(
         stream,
         shared,
         stream_error,
+        rebuild_attempted: false,
     });
 
     Ok(state.status())
@@ -618,6 +630,9 @@ pub fn monitor_native_capture<R: Runtime>(
     }
 
     if active.stream_error.load(Ordering::Relaxed) {
+        if !active.rebuild_attempted {
+            return Ok(NativeCaptureMonitorState::RebuildEligible);
+        }
         return Ok(NativeCaptureMonitorState::Stop(NativeCaptureStopReason::StreamError));
     }
 
@@ -627,6 +642,175 @@ pub fn monitor_native_capture<R: Runtime>(
     }
 
     Ok(NativeCaptureMonitorState::Continue)
+}
+
+pub fn rebuild_stream_after_error<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    capture_id: &str,
+) -> Result<RebuildOutcome, String> {
+    let host = cpal::default_host();
+    let host_id_name = host.id().name().to_string();
+
+    let mut state = app
+        .try_state::<Mutex<NativeCaptureState>>()
+        .ok_or_else(|| "Native capture state is not available.".to_string())?;
+    let mut state = state.lock().map_err(|error| error.to_string())?;
+
+    let Some(active) = state.active.as_mut() else {
+        return Ok(RebuildOutcome::NotEligible);
+    };
+
+    if active.id != capture_id {
+        return Ok(RebuildOutcome::NotEligible);
+    }
+
+    if !active.stream_error.load(Ordering::Relaxed) || active.rebuild_attempted {
+        return Ok(RebuildOutcome::NotEligible);
+    }
+
+    active.rebuild_attempted = true;
+
+    let old_sample_rate = active.sample_rate;
+    let old_channels = active.channels;
+    let old_sample_format_label = active.sample_format.clone();
+    let shared = active.shared.clone();
+
+    {
+        let mut shared_guard = shared.lock().map_err(|error| error.to_string())?;
+        shared_guard.rebuild_in_progress = true;
+        shared_guard.paused = true;
+    }
+
+    let device = match host.default_input_device() {
+        Some(device) => device,
+        None => {
+            rollback_rebuild_pause(&shared);
+            runtime_log::record(format!(
+                "[WordScript] Native capture stream rebuild failed session_id={} reason=no_default_device rebuild_attempt=1",
+                capture_id,
+            ));
+            return Ok(RebuildOutcome::Failed);
+        }
+    };
+
+    let supported_config = match device.default_input_config() {
+        Ok(config) => config,
+        Err(error) => {
+            rollback_rebuild_pause(&shared);
+            runtime_log::record(format!(
+                "[WordScript] Native capture stream rebuild failed session_id={} reason=config_read_error error={error} rebuild_attempt=1",
+                capture_id,
+            ));
+            return Ok(RebuildOutcome::Failed);
+        }
+    };
+
+    let new_sample_format = supported_config.sample_format();
+    let new_stream_config = supported_config.config();
+    let new_sample_rate = new_stream_config.sample_rate.0;
+    let new_channels = new_stream_config.channels;
+    let new_sample_format_label = sample_format_label(new_sample_format);
+
+    if new_sample_rate != old_sample_rate
+        || new_channels != old_channels
+        || new_sample_format_label != old_sample_format_label
+    {
+        rollback_rebuild_pause(&shared);
+        runtime_log::record(format!(
+            "[WordScript] Native capture stream rebuild not eligible session_id={} reason=config_mismatch old_rate={} old_channels={} old_format={} new_rate={} new_channels={} new_format={} rebuild_attempt=1",
+            capture_id, old_sample_rate, old_channels, old_sample_format_label,
+            new_sample_rate, new_channels, new_sample_format_label,
+        ));
+        return Ok(RebuildOutcome::Failed);
+    }
+
+    let new_device_name = device
+        .name()
+        .unwrap_or_else(|_| "Default microphone".to_string());
+
+    let new_stream_error = Arc::new(AtomicBool::new(false));
+
+    let new_stream = match build_stream(
+        app.clone(),
+        &device,
+        &new_stream_config,
+        new_sample_format,
+        shared.clone(),
+        new_stream_error.clone(),
+    ) {
+        Ok(stream) => stream,
+        Err(error) => {
+            rollback_rebuild_pause(&shared);
+            runtime_log::record(format!(
+                "[WordScript] Native capture stream rebuild failed session_id={} reason=build_stream error={error} rebuild_attempt=1",
+                capture_id,
+            ));
+            return Ok(RebuildOutcome::Failed);
+        }
+    };
+
+    if let Err(error) = new_stream.play() {
+        runtime_log::record(format!(
+            "[WordScript] Native capture stream rebuild failed session_id={} reason=play error={error} rebuild_attempt=1",
+            capture_id,
+        ));
+        rollback_rebuild_pause(&shared);
+        return Ok(RebuildOutcome::Failed);
+    }
+
+    let Some(active) = state.active.as_mut() else {
+        runtime_log::record(format!(
+            "[WordScript] Native capture stream rebuild aborted session_id={} reason=active_capture_vanished rebuild_attempt=1",
+            capture_id,
+        ));
+        rollback_rebuild_pause(&shared);
+        return Ok(RebuildOutcome::Failed);
+    };
+
+    if active.id != capture_id {
+        runtime_log::record(format!(
+            "[WordScript] Native capture stream rebuild aborted session_id={} reason=id_mismatch rebuild_attempt=1",
+            capture_id,
+        ));
+        rollback_rebuild_pause(&shared);
+        return Ok(RebuildOutcome::Failed);
+    }
+
+    active.stream = new_stream;
+    active.stream_error = new_stream_error;
+    active.device_name = new_device_name.clone();
+
+    {
+        let mut shared_guard = shared.lock().map_err(|error| error.to_string())?;
+        shared_guard.rebuild_in_progress = false;
+        shared_guard.paused = false;
+        shared_guard.paused_at = None;
+        shared_guard.last_voice_at = Instant::now();
+        shared_guard.last_level_emit_at =
+            Instant::now() - Duration::from_millis(AUDIO_LEVEL_INTERVAL_MS);
+    }
+
+    runtime_log::record(format!(
+        "[WordScript] Native capture stream rebuilt session_id={} host={} new_device={} new_sample_rate={} new_channels={} new_sample_format={} rebuild_attempt=1",
+        capture_id, host_id_name, new_device_name, new_sample_rate, new_channels, new_sample_format_label,
+    ));
+
+    let _ = app.emit(
+        "wordscript-event",
+        serde_json::json!({ "event": "capture_rebuilt" }),
+    );
+
+    Ok(RebuildOutcome::Rebuilt)
+}
+
+fn rollback_rebuild_pause(shared: &Arc<Mutex<SharedCaptureData>>) {
+    if let Ok(mut shared_guard) = shared.lock() {
+        shared_guard.rebuild_in_progress = false;
+        if shared_guard.paused {
+            shared_guard.paused = false;
+            shared_guard.paused_at = None;
+        }
+    }
 }
 
 fn select_input_device(host: &cpal::Host, preferred_name: &str) -> Result<Device, String> {
@@ -755,7 +939,7 @@ fn process_samples<R: Runtime>(
 
     if let Ok(mut shared) = shared.lock() {
         muted = shared.muted;
-        paused = shared.paused;
+        paused = shared.paused || shared.rebuild_in_progress;
         let normalized_samples = samples
             .into_iter()
             .map(|normalized| {
@@ -1107,6 +1291,7 @@ mod tests {
             has_voice_activity: true,
             samples: vec![],
             max_samples: 0,
+            rebuild_in_progress: false,
         }));
 
         let reason = capture_stop_reason(
@@ -1134,6 +1319,7 @@ mod tests {
             has_voice_activity: true,
             samples: vec![],
             max_samples: 0,
+            rebuild_in_progress: false,
         }));
 
         let reason = capture_stop_reason(
@@ -1161,6 +1347,7 @@ mod tests {
             has_voice_activity: true,
             samples: vec![],
             max_samples: 0,
+            rebuild_in_progress: false,
         };
 
         let reason = capture_stop_reason(
@@ -1236,6 +1423,82 @@ mod tests {
         let classified = classify_capture_stream_error(raw);
         assert_eq!(classified, raw);
     }
+
+    #[test]
+    fn does_not_stop_while_rebuild_is_in_progress() {
+        let shared = SharedCaptureData {
+            started_at: Instant::now() - Duration::from_secs(6),
+            last_voice_at: Instant::now() - Duration::from_secs(5),
+            last_level_emit_at: Instant::now(),
+            muted: false,
+            paused: false,
+            paused_at: None,
+            accumulated_paused: Duration::ZERO,
+            has_voice_activity: true,
+            samples: vec![],
+            max_samples: 0,
+            rebuild_in_progress: true,
+        };
+
+        let reason = capture_stop_reason(
+            &NativeCaptureConfig {
+                max_recording_seconds: 30,
+                silence_timeout_seconds: 3,
+                ..NativeCaptureConfig::default()
+            },
+            &shared,
+        );
+
+        assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn rollback_rebuild_pause_clears_in_progress_and_unpauses() {
+        let shared = Arc::new(Mutex::new(SharedCaptureData {
+            started_at: Instant::now(),
+            last_voice_at: Instant::now(),
+            last_level_emit_at: Instant::now(),
+            muted: false,
+            paused: true,
+            paused_at: Some(Instant::now()),
+            accumulated_paused: Duration::ZERO,
+            has_voice_activity: false,
+            samples: vec![],
+            max_samples: 0,
+            rebuild_in_progress: true,
+        }));
+
+        rollback_rebuild_pause(&shared);
+
+        let guard = shared.lock().unwrap();
+        assert!(!guard.rebuild_in_progress);
+        assert!(!guard.paused);
+        assert!(guard.paused_at.is_none());
+    }
+
+    #[test]
+    fn rollback_rebuild_pause_preserves_user_pause_state() {
+        let shared = Arc::new(Mutex::new(SharedCaptureData {
+            started_at: Instant::now(),
+            last_voice_at: Instant::now(),
+            last_level_emit_at: Instant::now(),
+            muted: false,
+            paused: false,
+            paused_at: None,
+            accumulated_paused: Duration::ZERO,
+            has_voice_activity: false,
+            samples: vec![],
+            max_samples: 0,
+            rebuild_in_progress: true,
+        }));
+
+        rollback_rebuild_pause(&shared);
+
+        let guard = shared.lock().unwrap();
+        assert!(!guard.rebuild_in_progress);
+        assert!(!guard.paused);
+        assert!(guard.paused_at.is_none());
+    }
 }
 
 #[test]
@@ -1259,7 +1522,7 @@ fn capture_stop_reason(
         return Some(NativeCaptureStopReason::MaxDuration);
     }
 
-    if shared.paused {
+    if shared.paused || shared.rebuild_in_progress {
         return None;
     }
 
