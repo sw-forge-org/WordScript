@@ -83,8 +83,13 @@ fn ensure_hook_thread() {
 
 fn hook_thread_main() {
     unsafe {
-        let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(ll_keyboard_proc), 0, 0);
-        if hook == 0 {
+        let hook = SetWindowsHookExW(
+            WH_KEYBOARD_LL,
+            Some(ll_keyboard_proc),
+            std::ptr::null_mut(),
+            0,
+        );
+        if hook.is_null() {
             eprintln!(
                 "global-hotkey: failed to install WH_KEYBOARD_LL: {}",
                 std::io::Error::last_os_error()
@@ -92,7 +97,7 @@ fn hook_thread_main() {
             return;
         }
         let mut msg: MSG = std::mem::zeroed();
-        while GetMessageW(&mut msg, 0, 0, 0) > 0 {
+        while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -106,11 +111,11 @@ unsafe extern "system" fn ll_keyboard_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     if code < 0 {
-        return CallNextHookEx(0, code, wparam, lparam);
+        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
     }
     let kb = &*(lparam as *const KBDLLHOOKSTRUCT);
     if kb.flags & LLKHF_INJECTED != 0 {
-        return CallNextHookEx(0, code, wparam, lparam);
+        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
     }
     let vk = kb.vkCode as u16;
     let is_down = wparam == WM_KEYDOWN as usize || wparam == WM_SYSKEYDOWN as usize;
@@ -134,7 +139,7 @@ unsafe extern "system" fn ll_keyboard_proc(
                 });
             }
         }
-        return CallNextHookEx(0, code, wparam, lparam);
+        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
     }
 
     if is_down {
@@ -163,7 +168,7 @@ unsafe extern "system" fn ll_keyboard_proc(
             });
             return 1;
         }
-        return CallNextHookEx(0, code, wparam, lparam);
+        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
     }
 
     if is_up {
@@ -181,7 +186,7 @@ unsafe extern "system" fn ll_keyboard_proc(
         }
     }
 
-    CallNextHookEx(0, code, wparam, lparam)
+    CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
 }
 
 fn send_dummy_key() {

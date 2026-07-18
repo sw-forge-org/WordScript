@@ -1,5 +1,6 @@
 use std::{
     f32::consts::PI,
+    num::NonZero,
     sync::{
         atomic::{AtomicBool, Ordering},
         OnceLock,
@@ -8,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use rodio::{buffer::SamplesBuffer, OutputStreamBuilder};
+use rodio::{buffer::SamplesBuffer, DeviceSinkBuilder};
 
 use super::config::AppConfig;
 
@@ -110,7 +111,7 @@ pub fn play(cue: SoundCue) {
     // state for a cosmetic gain. See plan 1782750354086, Phase 5.1.
     thread::spawn(move || {
         let sample_count = samples.len();
-        let mut stream = match OutputStreamBuilder::open_default_stream() {
+        let mut stream = match DeviceSinkBuilder::open_default_sink() {
             Ok(stream) => stream,
             Err(error) => {
                 eprintln!("WordScript sound output unavailable: {error}");
@@ -118,9 +119,11 @@ pub fn play(cue: SoundCue) {
             }
         };
         stream.log_on_drop(false);
-        stream
-            .mixer()
-            .add(SamplesBuffer::new(1, SAMPLE_RATE, samples));
+        stream.mixer().add(SamplesBuffer::new(
+            NonZero::new(1).unwrap(),
+            NonZero::new(SAMPLE_RATE).unwrap(),
+            samples,
+        ));
 
         // Keep the stream alive until the cue has finished playing.
         let duration = Duration::from_secs_f32(sample_count as f32 / SAMPLE_RATE as f32);

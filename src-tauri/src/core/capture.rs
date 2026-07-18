@@ -91,12 +91,12 @@ impl NativeCaptureConfig {
         let app_config = AppConfig::load_from_disk();
         let active_profile = app_config.active_text_profile();
         let work_mode = app_config.resolved_active_text_profile_work_mode();
-        
+
         // Read per-profile settings
         let speech = active_profile.resolved_speech();
         let modes = active_profile.resolved_modes();
         let capture = active_profile.resolved_capture();
-        
+
         let filter_fillers = app_config.active_text_profile_filter_fillers();
         let professionalize = app_config.active_text_profile_professionalize();
         let provider = speech.provider.clone();
@@ -481,14 +481,14 @@ pub fn start_native_capture<R: Runtime + 'static>(
         "[WordScript] Native capture start host={} device={} sample_rate={} channels={} sample_format={}",
         host.id().name(),
         device_name,
-        stream_config.sample_rate.0,
+        stream_config.sample_rate,
         stream_config.channels,
         sample_format_label(sample_format),
     ));
 
     let max_recording_seconds = config.max_recording_seconds.max(1);
     let max_samples = (max_recording_seconds as usize)
-        .saturating_mul(stream_config.sample_rate.0 as usize)
+        .saturating_mul(stream_config.sample_rate as usize)
         .saturating_mul(stream_config.channels.max(1) as usize);
 
     let stream_error = Arc::new(AtomicBool::new(false));
@@ -525,7 +525,7 @@ pub fn start_native_capture<R: Runtime + 'static>(
         id: format!("capture-{}", state.counter),
         config,
         device_name,
-        sample_rate: stream_config.sample_rate.0,
+        sample_rate: stream_config.sample_rate,
         channels: stream_config.channels,
         sample_format: sample_format_label(sample_format).to_string(),
         stream,
@@ -633,7 +633,9 @@ pub fn monitor_native_capture<R: Runtime>(
         if !active.rebuild_attempted {
             return Ok(NativeCaptureMonitorState::RebuildEligible);
         }
-        return Ok(NativeCaptureMonitorState::Stop(NativeCaptureStopReason::StreamError));
+        return Ok(NativeCaptureMonitorState::Stop(
+            NativeCaptureStopReason::StreamError,
+        ));
     }
 
     let shared = active.shared.lock().map_err(|error| error.to_string())?;
@@ -707,7 +709,7 @@ pub fn rebuild_stream_after_error<R: Runtime + 'static>(
 
     let new_sample_format = supported_config.sample_format();
     let new_stream_config = supported_config.config();
-    let new_sample_rate = new_stream_config.sample_rate.0;
+    let new_sample_rate = new_stream_config.sample_rate;
     let new_channels = new_stream_config.channels;
     let new_sample_format_label = sample_format_label(new_sample_format);
 
@@ -1188,10 +1190,7 @@ fn default_input_error() -> String {
 fn classify_capture_stream_error(raw: &str) -> String {
     let lowered = raw.to_ascii_lowercase();
 
-    if lowered.contains("permission")
-        || lowered.contains("denied")
-        || lowered.contains("access")
-    {
+    if lowered.contains("permission") || lowered.contains("denied") || lowered.contains("access") {
         return "Audio input permission revoked. Check PulseAudio/PipeWire permissions and that no other app holds exclusive control.".to_string();
     }
 
@@ -1205,7 +1204,8 @@ fn classify_capture_stream_error(raw: &str) -> String {
     }
 
     if lowered.contains("timeout") || lowered.contains("timed out") {
-        return "Audio input stream timed out. Check PulseAudio/PipeWire daemon health.".to_string();
+        return "Audio input stream timed out. Check PulseAudio/PipeWire daemon health."
+            .to_string();
     }
 
     raw.to_string()
