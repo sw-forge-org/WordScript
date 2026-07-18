@@ -677,6 +677,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolve_project_root_reads_env_var() {
         std::env::set_var("WORDSCRIPT_PROJECT_ROOT", "/tmp");
         assert_eq!(resolve_project_root(), Some(std::path::PathBuf::from("/tmp")));

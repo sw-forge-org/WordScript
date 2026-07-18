@@ -1879,9 +1879,11 @@ mod tests {
 
     #[test]
     fn normalizes_legacy_shortcuts_to_valid_runtime_values() {
+        // "win" maps to "cmd" on macOS, "win" elsewhere.
+        let win_token = if cfg!(target_os = "macos") { "cmd" } else { "win" };
         assert_eq!(
             normalize_shortcut_value("ctrl_l, win", "ctrl_l+f9", true),
-            "ctrl_l+win"
+            format!("ctrl_l+{win_token}")
         );
         assert_eq!(
             normalize_shortcut_value("ctrl_l+alt_l", "ctrl_l+alt_l+escape", true),
@@ -1889,7 +1891,7 @@ mod tests {
         );
         assert_eq!(
             normalize_shortcut_value("ctrl_l+win+space", "ctrl_l+f9", true),
-            "ctrl_l+win"
+            format!("ctrl_l+{win_token}")
         );
         assert_eq!(
             normalize_shortcut_value("ctrl_l+alt_l+space", "ctrl_l+alt_l+escape", true),
