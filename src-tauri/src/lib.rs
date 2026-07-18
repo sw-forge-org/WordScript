@@ -847,6 +847,36 @@ fn finalize_native_capture_stop<R: Runtime + 'static>(app: &AppHandle<R>, sessio
     }
 }
 
+fn stop_native_capture_after_stream_error<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    capture_id: &str,
+) {
+    let reason = core::capture::NativeCaptureStopReason::StreamError;
+    let status = match core::sessions::processing_from_native(app) {
+        Ok(status) => status,
+        Err(error) => {
+            core::runtime_log::record(format!(
+                "[WordScript] Could not move native capture to processing after rebuild failure (capture_id={capture_id}): {error}"
+            ));
+            return;
+        }
+    };
+    let Some(session_id) = status.active_session_id else {
+        core::runtime_log::record(format!(
+            "[WordScript] Autostop after rebuild failure entered processing without an active session id (capture_id={capture_id})"
+        ));
+        return;
+    };
+    let _ = app.emit(
+        "wordscript-event",
+        serde_json::json!({
+            "event": "recording_stopped",
+            "reason": reason.message(),
+        }),
+    );
+    finalize_native_capture_stop(app, session_id);
+}
+
 fn spawn_native_capture_monitor<R: Runtime + 'static>(app: AppHandle<R>, capture_id: String) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -855,6 +885,22 @@ fn spawn_native_capture_monitor<R: Runtime + 'static>(app: AppHandle<R>, capture
             match core::capture::monitor_native_capture(&app, &capture_id) {
                 Ok(core::capture::NativeCaptureMonitorState::Continue) => continue,
                 Ok(core::capture::NativeCaptureMonitorState::Finished) => return,
+                Ok(core::capture::NativeCaptureMonitorState::RebuildEligible) => {
+                    match core::capture::rebuild_stream_after_error(&app, &capture_id) {
+                        Ok(core::capture::RebuildOutcome::Rebuilt) => continue,
+                        Ok(_) => {
+                            stop_native_capture_after_stream_error(&app, &capture_id);
+                            return;
+                        }
+                        Err(error) => {
+                            core::runtime_log::record(format!(
+                                "[WordScript] rebuild_stream_after_error returned error: {error}"
+                            ));
+                            stop_native_capture_after_stream_error(&app, &capture_id);
+                            return;
+                        }
+                    }
+                }
                 Ok(core::capture::NativeCaptureMonitorState::Stop(reason)) => {
                     let status = match core::sessions::processing_from_native(&app) {
                         Ok(status) => status,

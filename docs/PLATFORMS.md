@@ -1,6 +1,6 @@
 # WordScript — Platforms
 
-Stand: 2026-06-20
+Stand: 2026-07-18
 
 Plattform-Supportmatrix und plattformspezifische Insert- und Recovery-Diagnostik. Quelle ist `core::insertion` (`NativeInsertionPlatformStatus`); diese Datei ist die menschenlesbare Spiegelung des nativen Vertrags.
 
@@ -84,3 +84,75 @@ Sind Portal-Daemon oder Interface nicht erreichbar, meldet der Status `PortalSes
 | KDE Plasma 5 | `org.kde.kwin.RemoteDesktop` ist erst ab Plasma 6 verfuegbar | Distribution-Upgrade auf KDE Plasma 6 oder Auto-Paste deaktiviert lassen |
 
 WordScript erkennt diese Compositor-Spezialfaelle und blendet in `paste_disabled_reason` den jeweiligen Hint ein.
+
+## Linux / PipeWire — Mikrofon-Keep-Alive gegen Auto-Suspend
+
+### Wurzel
+
+PipeWire/WirePlumber suspendiert idle Input-Sources automatisch (es gibt `module-always-sink` fuer Sinks, aber **kein** `module-always-source`-Äquivalent). cpal muss beim Capture-Start eine suspendierte Source reaktivieren — genau das ist der wahrscheinlichste Trigger fuer transiente `Native capture stream error`-Events waehrend aktiver Aufnahmen (Suspend/Resume-Hickup, WirePlumber-Rescan, Source-Reenumerate, Config-Mismatch nach resume).
+
+WordScript hat zwei Verteidigungslinien dagegen:
+
+1. **App-seitig (Capture-Stream-Rebuild):** Siehe `docs/STATUS.md` — wenn der StreamError waehrend einer Aufnahme feuert, startet WordScript genau einen Rebuild-Versuch mit `cpal::default_host()`/`default_input_device()`, bevor der Recovery-Flow (Error-Pill → Processing-Preview mit Copy) greift. Das **heilt** den Abbruch, wenn er passiert.
+2. **System-seitig (WirePlumber-Keep-Alive, praeventiv):** Verhindert das Suspend *proaktiv*, sodass der transiente Error gar nicht erst entsteht. Diese Massnahme ist **User-Ownership** — WordScript schreibt System-Settings nicht automatisch.
+
+### WirePlumber-Keep-Alive einrichten (empfohlener Weg)
+
+Datei `~/.config/wireplumber/main.lua.d/51-wordscript-keepalive.lua` anlegen mit folgendem Inhalt:
+
+```lua
+-- WordScript: Input-Source-Auto-Suspend deaktivieren
+-- Verhindert transiente cpal-StreamError-Events beim Capture-Start
+-- nach idle-Suspend einer Input-Source.
+rule = {
+  matches = {
+    {
+      { "node.name", "matches", "alsa_input.*" },
+    },
+    {
+      { "node.name", "matches", "alsa_card.*" },
+      { "media.class", "matches", "Audio/Source" },
+    },
+  },
+  apply_properties = {
+    ["suspend.idle-timeout"] = 0,
+  },
+}
+table.insert(alsa_monitor.rules, rule)
+```
+
+Anschliessend WirePlumber neu starten:
+
+```bash
+systemctl --user restart wireplumber
+```
+
+### Verifikation
+
+Nach 5 Minuten Idle (keine Aufnahme, kein anderer Stream, der die Source referenziert):
+
+```bash
+pactl list sources short
+```
+
+Die Default-Input-Source sollte weiterhin auf `RUNNING` stehen statt `SUSPENDED`. Bei 2+ Stunden Normalbetrieb mit WordScript sollten keine `[WordScript] Native capture stream error`-Eintraege mehr im persistenten Runtime-Log auftauchen.
+
+### Alternative fuer reine PulseAudio-Systeme (ohne WirePlumber)
+
+Auf Systemen mit klassischem PulseAudio (nicht PipeWire-Pulse) das Auto-Suspend-Modul entladen:
+
+```bash
+pactl unload-module module-suspend-on-idle
+```
+
+Persistenter: in `~/.config/pulse/default.pa` die Zeile `load-module module-suspend-on-idle` auskommentieren oder entfernen und PulseAudio neu starten (`systemctl --user restart pulseaudio`).
+
+### Kontrollierte Reproduktion fuer Verifikation des Rebuild-Pfads
+
+Fuer die Verifikation des **app-seitigen** Rebuild-Pfads (unabhaengig vom Keep-Alive) laesst sich der StreamError kontrolliert provozieren:
+
+```bash
+pactl suspend-source <default-source> 1
+```
+
+`<default-source>` ist der Source-Name aus `pactl list sources short` (mit `*`-Marker). Waehrend einer aktiven WordScript-Aufnahme ausgefuehrt, feuert der cpal-StreamError-Callback; das persistente Runtime-Log sollte `[WordScript] Native capture stream rebuilt session_id=… new_device=… new_sample_rate=… rebuild_attempt=1` zeigen und die Aufnahme sollte ohne Error-Pill weiterlaufen.
