@@ -467,6 +467,15 @@ pub fn start_native_capture<R: Runtime + 'static>(
     let sample_format = supported_config.sample_format();
     let stream_config = supported_config.config();
 
+    runtime_log::record(format!(
+        "[WordScript] Native capture start host={} device={} sample_rate={} channels={} sample_format={}",
+        host.id().name(),
+        device_name,
+        stream_config.sample_rate.0,
+        stream_config.channels,
+        sample_format_label(sample_format),
+    ));
+
     let max_recording_seconds = config.max_recording_seconds.max(1);
     let max_samples = (max_recording_seconds as usize)
         .saturating_mul(stream_config.sample_rate.0 as usize)
@@ -651,7 +660,9 @@ fn build_stream<R: Runtime + 'static>(
     let error_app = app.clone();
     let error_callback = move |error| {
         stream_error.store(true, Ordering::Relaxed);
-        let message = format!("Native capture stream error: {error}");
+        let raw = format!("Native capture stream error: {error}");
+        runtime_log::record(format!("[WordScript] {raw}"));
+        let message = classify_capture_stream_error(&raw);
         let _ = error_app.emit(
             "wordscript-event",
             serde_json::json!({ "event": "error", "message": message }),
@@ -990,6 +1001,32 @@ fn default_input_error() -> String {
     }
 }
 
+fn classify_capture_stream_error(raw: &str) -> String {
+    let lowered = raw.to_ascii_lowercase();
+
+    if lowered.contains("permission")
+        || lowered.contains("denied")
+        || lowered.contains("access")
+    {
+        return "Audio input permission revoked. Check PulseAudio/PipeWire permissions and that no other app holds exclusive control.".to_string();
+    }
+
+    if lowered.contains("device")
+        && (lowered.contains("invalid")
+            || lowered.contains("removed")
+            || lowered.contains("not found")
+            || lowered.contains("no such"))
+    {
+        return "Audio input device was lost during recording (disconnect, suspend or compositor restart). The transcript up to this point is preserved.".to_string();
+    }
+
+    if lowered.contains("timeout") || lowered.contains("timed out") {
+        return "Audio input stream timed out. Check PulseAudio/PipeWire daemon health.".to_string();
+    }
+
+    raw.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1136,6 +1173,68 @@ mod tests {
         );
 
         assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn classify_capture_stream_error_recognises_permission_denied() {
+        let classified = classify_capture_stream_error(
+            "Native capture stream error: PulseAudio: permission denied",
+        );
+        assert_eq!(
+            classified,
+            "Audio input permission revoked. Check PulseAudio/PipeWire permissions and that no other app holds exclusive control."
+        );
+    }
+
+    #[test]
+    fn classify_capture_stream_error_recognises_access_revoked() {
+        let classified = classify_capture_stream_error(
+            "Native capture stream error: Access revoked by portal session",
+        );
+        assert_eq!(
+            classified,
+            "Audio input permission revoked. Check PulseAudio/PipeWire permissions and that no other app holds exclusive control."
+        );
+    }
+
+    #[test]
+    fn classify_capture_stream_error_recognises_device_invalid() {
+        let classified = classify_capture_stream_error(
+            "Native capture stream error: Device invalid after resume",
+        );
+        assert_eq!(
+            classified,
+            "Audio input device was lost during recording (disconnect, suspend or compositor restart). The transcript up to this point is preserved."
+        );
+    }
+
+    #[test]
+    fn classify_capture_stream_error_recognises_device_removed() {
+        let classified = classify_capture_stream_error(
+            "Native capture stream error: No such device (USB disconnect)",
+        );
+        assert_eq!(
+            classified,
+            "Audio input device was lost during recording (disconnect, suspend or compositor restart). The transcript up to this point is preserved."
+        );
+    }
+
+    #[test]
+    fn classify_capture_stream_error_recognises_timeout() {
+        let classified = classify_capture_stream_error(
+            "Native capture stream error: Stream timed out waiting for buffer",
+        );
+        assert_eq!(
+            classified,
+            "Audio input stream timed out. Check PulseAudio/PipeWire daemon health."
+        );
+    }
+
+    #[test]
+    fn classify_capture_stream_error_preserves_unclassified_raw_string() {
+        let raw = "Native capture stream error: Unknown PulseAudio fault 0x1234";
+        let classified = classify_capture_stream_error(raw);
+        assert_eq!(classified, raw);
     }
 }
 
