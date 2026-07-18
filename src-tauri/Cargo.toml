@@ -31,9 +31,9 @@ keyring     = { version = "3", features = ["apple-native", "windows-native", "li
 reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
 arboard     = { version = "3.6", features = ["wayland-data-control"] }
 enigo       = "0.6"
-cpal        = "0.16"
+cpal        = "0.17"
 hound       = "3.5"
-rodio       = "0.21.1"
+rodio       = "0.22.2"
 regex       = "1"
 semver      = "1"
 

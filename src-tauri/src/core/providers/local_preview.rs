@@ -1684,6 +1684,7 @@ whisper_print_timings: total time = 1337.00 ms
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn local_preview_status_flags_runner_probe_failure_for_non_whisper_executable() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[

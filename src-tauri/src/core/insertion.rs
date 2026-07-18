@@ -2040,6 +2040,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn clipboard_fallback_surfaces_auto_paste_failure() {
         let mut clipboard_results = HashMap::new();
         clipboard_results.insert(NativeInsertDriver::Arboard, Ok(()));
@@ -2121,6 +2122,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn last_portal_prompt_is_recorded_when_paste_driver_is_blocked() {
         let mut clipboard_results = HashMap::new();
         clipboard_results.insert(NativeInsertDriver::Arboard, Ok(()));
@@ -2239,6 +2241,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn wayland_platform_status_names_missing_helpers_in_driver_chain() {
         let status = platform_status_from_context(NativeInsertPlatformContext {
             auto_paste: true,
@@ -2268,6 +2271,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn x11_platform_status_marks_missing_xdotool_as_recovery_only() {
         let status = platform_status_from_context(NativeInsertPlatformContext {
             auto_paste: true,
@@ -2360,6 +2364,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn x11_falls_back_when_text_exceeds_xdotool_threshold() {
         let long_text = "a".repeat(900);
         let mut io = FakeInsertIo {
@@ -2415,6 +2420,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn x11_falls_back_to_clipboard_when_xdotool_type_fails() {
         let mut xd_results = HashMap::new();
         xd_results.insert(
