@@ -10,6 +10,11 @@ const startDraggingMock = vi.fn();
 const scaleFactorMock = vi.fn();
 const movedHandlers: Array<(event: { payload: { x: number; y: number } }) => void> = [];
 const runtimeEventHandlers: Array<(event: { payload: { event: string; level?: number; rms?: number; waveform?: number[] } }) => void> = [];
+// D4: capture handlers for the wordscript-mode-event channel so the per-mode
+// hotkey test can dispatch the listener directly. The existing listen mock
+// only captured "wordscript-event"; extending it to capture all channels keeps
+// the existing tests intact (they only assert on runtimeEventHandlers).
+const modeEventHandlers: Array<(event: { payload: unknown }) => void> = [];
 
 function createTestConfig() {
   return createAppConfig({
@@ -45,12 +50,18 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (channel: string, handler: (event: { payload: { event: string; level?: number; rms?: number; waveform?: number[] } }) => void) => {
     if (channel === "wordscript-event") {
       runtimeEventHandlers.push(handler);
+    } else if (channel === "wordscript-mode-event") {
+      modeEventHandlers.push(handler as never);
     }
 
     return () => {
       const index = runtimeEventHandlers.indexOf(handler);
       if (index >= 0) {
         runtimeEventHandlers.splice(index, 1);
+      }
+      const modeIndex = modeEventHandlers.indexOf(handler as never);
+      if (modeIndex >= 0) {
+        modeEventHandlers.splice(modeIndex, 1);
       }
     };
   }),
@@ -83,6 +94,7 @@ describe("OverlayWindow", () => {
   beforeEach(() => {
     movedHandlers.length = 0;
     runtimeEventHandlers.length = 0;
+    modeEventHandlers.length = 0;
     invokeMock.mockReset();
     startDraggingMock.mockReset();
     scaleFactorMock.mockReset();
@@ -759,7 +771,9 @@ describe("OverlayWindow", () => {
 
     expect(screen.getByLabelText("Audio level")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
-    expect(invokeMock).toHaveBeenCalledWith("sync_overlay_window_visibility", { visible: true, surface: "compact" });
+    // D1: the reveal is now coalesced via scheduleReveal (setTimeout(0)/rAF),
+    // so the invoke arrives asynchronously. waitFor covers the flush.
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("sync_overlay_window_visibility", { visible: true, surface: "compact" }));
   });
 
   it("clears a hanging error surface instead of being blocked by error priority", async () => {
@@ -876,5 +890,201 @@ describe("OverlayWindow", () => {
     expect(screen.getByRole("button", { name: "Insert" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
+  // ── D4 (plan 1784412908352): Mode-Wechsel-während-Recording-Pfad ──────────
+
+  it("coalesces multiple reveals within one frame into a single native call", async () => {
+    // Simulates a mode change during recording: the surface stays "compact"
+    // but `pillVisualEpoch` (which includes pillMode) and the per-surface size
+    // layoutEffect both re-evaluate. Without D1's scheduleReveal dispatcher,
+    // each source fires its own `sync_overlay_window_visibility` → 2–3 native
+    // set_size calls per frame with different reveal ticks. With D1, all
+    // sources coalesce via requestAnimationFrame (setTimeout(0) fallback in
+    // jsdom) into at most one native call per macrotask.
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "resolve_current_processing_mode") {
+        return Promise.resolve({ mode: "auto", is_override: false, auto_detected: false, detected_from: null });
+      }
+      if (command === "sync_overlay_window_visibility") return Promise.resolve();
+      if (command === "set_active_profile_processing_mode") return Promise.resolve();
+      return Promise.resolve();
+    });
+    useRuntimeMock.mockReturnValue(buildRecordingState());
+
+    render(<OverlayWindow />);
+
+    // Let the initial recording reveal flush and the chip mount with mode="Auto".
+    await waitFor(() => expect(screen.getByLabelText("Mode Auto, tap to cycle")).toBeInTheDocument());
+
+    // Now tap the mode chip to cycle auto → verbatim. This triggers
+    // handleCycleMode, which (D2) eagerly sets effectiveMode="verbatim" in the
+    // same render → pillVisualEpoch changes → the pillVisualEpoch layoutEffect
+    // and the size layoutEffect both fire scheduleReveal in the same frame.
+    invokeMock.mockClear();
+    fireEvent.click(screen.getByLabelText("Mode Auto, tap to cycle"));
+
+    // Flush the setTimeout(0) fallback (jsdom has no requestAnimationFrame).
+    // The eager update means the rerender happens synchronously inside
+    // fireEvent.click, and the two scheduleReveal calls both land in the same
+    // macrotask. After flushing, at most one sync_overlay_window_visibility
+    // call should have been dispatched for the reveal (the set_active_profile
+    // call is a separate command and not counted).
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    const revealCalls = invokeMock.mock.calls.filter(
+      (call) => {
+        const [command] = call as [string];
+        return command === "sync_overlay_window_visibility";
+      },
+    );
+    expect(revealCalls.length).toBeLessThanOrEqual(1);
+    if (revealCalls.length === 1) {
+      expect(revealCalls[0][1]).toMatchObject({ visible: true, surface: "compact" });
+    }
+  });
+
+  it("eager-updates effectiveMode on cycle tap before the backend resolves", async () => {
+    // D2: handleCycleMode sets effectiveMode eagerly in the same render as the
+    // click, so pillMode/pillVisualEpoch update immediately — even before
+    // set_active_profile_processing_mode resolves. The pending invoke is held
+    // (never resolved) to prove the update is optimistic, not backend-driven.
+    let resolveSetActiveProfile: ((value: unknown) => void) | null = null;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "resolve_current_processing_mode") {
+        return Promise.resolve({ mode: "auto", is_override: false, auto_detected: false, detected_from: null });
+      }
+      if (command === "sync_overlay_window_visibility") return Promise.resolve();
+      if (command === "set_active_profile_processing_mode") {
+        return new Promise((resolve) => { resolveSetActiveProfile = resolve; });
+      }
+      return Promise.resolve();
+    });
+    useRuntimeMock.mockReturnValue(buildRecordingState());
+
+    render(<OverlayWindow />);
+    await waitFor(() => expect(screen.getByLabelText("Mode Auto, tap to cycle")).toBeInTheDocument());
+
+    // Tap to cycle auto → verbatim. The eager update must flip the chip label
+    // to "Verbatim" WITHOUT resolving set_active_profile_processing_mode.
+    fireEvent.click(screen.getByLabelText("Mode Auto, tap to cycle"));
+
+    await waitFor(() => expect(screen.getByLabelText("Mode Verbatim, tap to cycle")).toBeInTheDocument());
+
+    // The backend invoke is still pending (never resolved) — proves the
+    // label change came from the eager setEffectiveMode, not fetchEffectiveMode.
+    // resolveSetActiveProfile is assigned by the invoke mock when
+    // set_active_profile_processing_mode is called; the fact that it's set
+    // means the backend was contacted, but the promise is still pending (we
+    // never call it). The chip label changed BEFORE the promise resolved →
+    // the update is optimistic.
+    expect(resolveSetActiveProfile).not.toBeNull();
+  });
+
+  it("per-mode hotkey still syncs via wordscript-mode-event without eager update", async () => {
+    // D2: the wordscript-mode-event listener (for EXTERNAL mode changes like
+    // the per-mode hotkey, settings save, auto-resolution) stays purely async.
+    // It must NOT eager-update; effectiveMode only changes after
+    // resolve_current_processing_mode resolves with the new mode.
+    let resolveCallCount = 0;
+    let resolveResolveMode: ((value: unknown) => void) | null = null;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "sync_overlay_window_visibility") return Promise.resolve();
+      if (command === "resolve_current_processing_mode") {
+        resolveCallCount += 1;
+        if (resolveCallCount <= 1) {
+          // Initial mount: resolve with "auto".
+          return Promise.resolve({ mode: "auto", is_override: false, auto_detected: false, detected_from: null });
+        }
+        // Subsequent calls (after a mode-event): stay pending until the test
+        // resolves it, proving the chip does NOT update eagerly.
+        return new Promise((resolve) => { resolveResolveMode = resolve; });
+      }
+      return Promise.resolve();
+    });
+    useRuntimeMock.mockReturnValue(buildRecordingState());
+
+    render(<OverlayWindow />);
+    // Wait for the wordscript-mode-event listener to subscribe.
+    await waitFor(() => expect(modeEventHandlers.length).toBeGreaterThan(0));
+    // Wait for the initial resolve to land so the chip shows "Auto".
+    await waitFor(() => expect(screen.getByLabelText("Mode Auto, tap to cycle")).toBeInTheDocument());
+
+    // Fire the wordscript-mode-event listener manually (simulates the per-mode
+    // hotkey path: set_mode_override_and_emit emits the event, the listener
+    // refetches). The chip must STILL say "Auto" until the resolve resolves,
+    // because this path does NOT eager-update (D2 — only the user-driven
+    // handleCycleMode and wordscript-mode-select listener use the optimistic
+    // update).
+    modeEventHandlers.forEach((fn) => fn({ payload: { event: "mode-changed" } }));
+
+    // The chip label is still "Auto" — no eager update on the event path.
+    expect(screen.getByLabelText("Mode Auto, tap to cycle")).toBeInTheDocument();
+    // The second resolve_current_processing_mode call is pending.
+    expect(resolveResolveMode).not.toBeNull();
+
+    // Now resolve the backend with "rewrite" — the chip updates AFTER the
+    // resolve, proving the async-only path.
+    await act(async () => {
+      resolveResolveMode?.({ mode: "rewrite", is_override: true, auto_detected: false, detected_from: null });
+    });
+    await waitFor(() => expect(screen.getByLabelText("Mode Rewrite, tap to cycle")).toBeInTheDocument());
+  });
+
+  it("park (visible:false) is not coalesced with reveal", async () => {
+    // D1: the visible:false (park) path stays a DIRECT invoke, not routed
+    // through scheduleReveal. It fires at the end of the leave timer and must
+    // not be coalesced with a concurrent reveal. We verify the park call
+    // arrives with visible:false even when a reveal was scheduled shortly
+    // before.
+    useRuntimeMock.mockReturnValue(buildRecordingState());
+    const { rerender } = render(<OverlayWindow />);
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
+      "sync_overlay_window_visibility",
+      expect.objectContaining({ visible: true, surface: "compact" }),
+    ));
+
+    // Transition to idle (no pendingResult, no lastResult → isActive goes
+    // false → overlayMotion flips to "leaving" → after OVERLAY_LEAVE_MS the
+    // park invoke fires with visible:false).
+    invokeMock.mockClear();
+    const idleRuntime = buildIdleResultState({
+      status: "idle",
+      lastResult: null,
+      lastTranscription: null,
+      pendingResult: null,
+    });
+    useRuntimeMock.mockReturnValue(idleRuntime);
+
+    // Activate fake timers BEFORE the rerender so the OVERLAY_LEAVE_MS (240ms)
+    // leave timer is scheduled in fake-timer space and we can advance it
+    // deterministically. Also flush any pending real-timer microtasks first.
+    await act(async () => { await Promise.resolve(); });
+    vi.useFakeTimers();
+    try {
+      rerender(<OverlayWindow />);
+
+      // Advance through the OVERLAY_LEAVE_MS (240ms) leave transition. The
+      // park invoke (visible:false) fires at the end of the leave timer.
+      await act(async () => {
+        vi.advanceTimersByTime(260);
+      });
+      // Flush the setTimeout(0) fallback for any coalesced reveals that were
+      // scheduled before the park. They must not have swallowed the park call.
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+
+      const parkCalls = invokeMock.mock.calls.filter(
+        (call) => {
+          const [command, args] = call as [string, { visible?: boolean }];
+          return command === "sync_overlay_window_visibility" && args?.visible === false;
+        },
+      );
+      expect(parkCalls.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

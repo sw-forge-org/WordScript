@@ -1,4 +1,9 @@
 import { type MouseEvent, type PointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+// requestAnimationFrame is provided by the browser (WebKitGTK). In tests where
+// rAF is not installed, fall back to setTimeout(0). The dispatcher below also
+// re-checks `document.visibilityState` per the plan's R1 mitigation: in
+// decorationless transparent overlay windows WebKitGTK can pause rAF when it
+// classifies the window as not-visible even though it is on-screen.
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -38,6 +43,21 @@ const MEASURE_BUFFER = 12;
 
 type OverlayMotion = "idle" | "entering" | "open" | "leaving";
 type OverlaySurface = "compact" | "processing_preview" | "result_actions" | "edit_mode" | "mode_picker";
+
+// A queued native reveal request. All three `sync_overlay_window_visibility`
+// sources (the isActive surface effect, the per-surface size layoutEffect, and
+// the pillVisualEpoch repaint layoutEffect) go through `scheduleReveal` so the
+// latest surface + width/height within one animation frame wins and only ONE
+// native `set_size` is dispatched per frame. This is the frontend-side fix for
+// RC1 (three competing reveal sources) and RC3 (no coalescing on the Rust
+// side). The `visible: false` (park) path is NOT routed through here — it
+// fires deterministically at the end of the leave timer and does not race with
+// reveal sources.
+type RevealRequest = {
+  surface: OverlaySurface;
+  width?: number;
+  height?: number;
+};
 
 // Proven per-surface widths, mirrored from OverlaySurface::dimensions() in
 // src-tauri/src/lib.rs. Used as a floor under the live measurement: if WebKitGTK
@@ -289,6 +309,54 @@ export default function OverlayWindow() {
     overlayMotionRef.current = next;
     setOverlayMotion(next);
   };
+
+  // ── Reveal serializer (D1, plan 1784412908352) ─────────────────────────────
+  // All `sync_overlay_window_visibility` "visible:true" calls go through this
+  // dispatcher. Within one animation frame, multiple sources (the isActive
+  // surface effect, the per-surface size layoutEffect, and the pillVisualEpoch
+  // repaint layoutEffect) can each request a reveal — e.g. on a mode change
+  // during recording, where the surface stays "compact" but `pillVisualEpoch`
+  // and the size layoutEffect both re-evaluate. Without coalescing, each
+  // request fires a separate native `set_size` with a different
+  // `OVERLAY_FLAT_REVEAL_TICK` value, and WebKitGTK/XWayland applies async
+  // `set_size` calls out of order → the window lands at the wrong height and a
+  // ghost of the previous geometry overlaps the new one (RC1 + RC3).
+  //
+  // `requestAnimationFrame` is used instead of `setTimeout(0)` because rAF
+  // guarantees React commits + browser layout within the frame are finished
+  // before the native call is dispatched. `setTimeout(0)` can fire mid-commit
+  // and reopen the gap. R1 mitigation: if WebKitGTK has paused rAF (overlay
+  // classified as not-visible despite being on-screen), fall back to a 0ms
+  // timeout so the reveal still flushes.
+  const pendingRevealRef = useRef<RevealRequest | null>(null);
+  const revealScheduledRef = useRef(false);
+  const scheduleReveal = useCallback((req: RevealRequest) => {
+    pendingRevealRef.current = req; // latest-wins, overwrites any prior request in the same frame
+    if (revealScheduledRef.current) return;
+    revealScheduledRef.current = true;
+    const flush = () => {
+      revealScheduledRef.current = false;
+      const r = pendingRevealRef.current;
+      pendingRevealRef.current = null;
+      if (!r) return;
+      void invoke("sync_overlay_window_visibility", {
+        visible: true,
+        surface: r.surface,
+        ...(r.width != null ? { width: r.width } : {}),
+        ...(r.height != null ? { height: r.height } : {}),
+      }).catch(() => {});
+    };
+    // R1: rAF can pause in a decorationless transparent overlay window if
+    // WebKitGTK classifies it as not-visible. Fall back to setTimeout(0) so the
+    // reveal still flushes; otherwise the overlay would stay parked.
+    const rafAvailable = typeof requestAnimationFrame === "function"
+      && (typeof document === "undefined" || document.visibilityState !== "hidden");
+    if (rafAvailable) {
+      requestAnimationFrame(() => flush());
+    } else {
+      window.setTimeout(() => flush(), 0);
+    }
+  }, []);
 
   // Mark html element before first paint so the overlay window stays transparent while idle.
   useLayoutEffect(() => {
@@ -578,7 +646,12 @@ export default function OverlayWindow() {
   useEffect(() => {
     if (isActive) {
       suppressMovedPersistenceUntilRef.current = Date.now() + 420;
-      void invoke("sync_overlay_window_visibility", { visible: true, surface: overlaySurface }).catch(() => {});
+      // D1: route through scheduleReveal so this reveal coalesces with the
+      // per-surface size layoutEffect and the pillVisualEpoch repaint
+      // layoutEffect when they fire in the same frame (e.g. mode change during
+      // recording). The previous direct invoke raced with those sources and
+      // produced 2–3 set_size calls per frame with different reveal ticks.
+      scheduleReveal({ surface: overlaySurface });
       void getCurrentWindow().setBackgroundColor([0, 0, 0, 0]).catch(() => {});
       void getCurrentWebview().setBackgroundColor([0, 0, 0, 0]).catch(() => {});
       setOverlayDocumentState(false);
@@ -669,13 +742,12 @@ export default function OverlayWindow() {
         `[ov-dom] surface=${surface} reqW=${width} innerW=${window.innerWidth} innerH=${window.innerHeight} pillOffsetW=${pill?.offsetWidth ?? "n/a"}`,
       );
     }
-    void invoke("sync_overlay_window_visibility", {
-      visible: true,
-      surface,
-      width,
-      height,
-    }).catch(() => {});
-  }, [isActive, renderOverlaySurface]);
+    // D1: route through scheduleReveal with the explicit width/height
+    // overrides. If the isActive surface effect or the pillVisualEpoch repaint
+    // also fired this frame, this request's width/height wins as the latest
+    // pending request and only one native set_size is dispatched.
+    scheduleReveal({ surface, width, height });
+  }, [isActive, renderOverlaySurface, scheduleReveal]);
 
   // DEV: mirror the native reveal (req/outer/inner window sizes) into the
   // overlay console so window-vs-webview sizing is diagnosable without the
@@ -753,13 +825,18 @@ export default function OverlayWindow() {
     const unlisten = listen<unknown>("wordscript-mode-select", () => {
       if (showModePickerRef.current) {
         // Already open → cycle to the next mode.
+        // D2: eager setEffectiveMode so pillMode/pillVisualEpoch update in the
+        // same frame as the hotkey press, coalescing the repaint reveal with
+        // any size layoutEffect via scheduleReveal (same rationale as
+        // handleCycleMode). fetchEffectiveMode in .then confirms/corrects.
         const current = effectiveModeRef.current ?? configFallbackModeRef.current;
         if (!current) return;
         const index = MODE_CYCLE.indexOf(current);
         const next = MODE_CYCLE[(index + 1) % MODE_CYCLE.length] ?? MODE_CYCLE[0];
+        setEffectiveMode(next);
         void invoke("set_active_profile_processing_mode", { mode: next })
           .then(() => fetchEffectiveMode())
-          .catch(() => {});
+          .catch(() => fetchEffectiveMode());
       } else {
         // Closed → open the mode-select surface.
         setShowModePicker(true);
@@ -855,14 +932,29 @@ export default function OverlayWindow() {
   // active profile's work_mode (survives restarts) and takes effect
   // immediately via the runtime override. The effective mode is then
   // re-fetched so the pill reflects the backend's resolved state.
+  // D2 (plan 1784412908352): the next mode is locally known from MODE_CYCLE,
+  // so commit it eagerly via setEffectiveMode in the SAME render as the click.
+  // This makes `pillMode` (and therefore `pillVisualEpoch`) update immediately,
+  // so the pillVisualEpoch repaint layoutEffect fires in the same frame as the
+  // click → coalesces with the size layoutEffect via scheduleReveal into a
+  // single native set_size. Without the eager update, `pillMode` stays stale
+  // for 1–3 renders until the async fetchEffectiveMode roundtrip resolves,
+  // opening a render gap where the new mode content paints into the previous,
+  // non-invalidated backing-store rect → ghosting (RC2).
+  // `fetchEffectiveMode` in `.then` confirms or corrects the eager value; the
+  // `.catch` rolls back to the backend's authoritative state. The async
+  // `wordscript-mode-event` listener (for external changes like settings save
+  // or auto-resolution) stays purely async — only the user-driven paths use
+  // the optimistic update.
   const handleCycleMode = () => {
     const current = effectiveMode ?? configFallbackMode;
     if (!current) return;
     const index = MODE_CYCLE.indexOf(current);
     const next = MODE_CYCLE[(index + 1) % MODE_CYCLE.length] ?? MODE_CYCLE[0];
+    setEffectiveMode(next);
     void invoke("set_active_profile_processing_mode", { mode: next })
       .then(() => fetchEffectiveMode())
-      .catch(() => {});
+      .catch(() => fetchEffectiveMode());
   };
 
   const beginOverlayAction = (action: "commit" | "abort" | "copy" | "edit" | "insert") => {
@@ -1170,15 +1262,15 @@ export default function OverlayWindow() {
   // triggers reveal_overlay_window → the flat-height oscillation forces a
   // backing-store reallocation → a full repaint that clears the cached raster
   // before the new visual paints. (plan 1782750354086, §5)
+  // D1: routed through scheduleReveal so a same-frame mode change (which also
+  // re-evaluates the per-surface size layoutEffect) coalesces into a single
+  // native set_size instead of two with different reveal ticks (RC1).
   useLayoutEffect(() => {
     if (!isActive) return;
     if (overlayMotionRef.current === "leaving") return;
     if (dragSessionActiveRef.current) return;
-    void invoke("sync_overlay_window_visibility", {
-      visible: true,
-      surface: overlaySurfaceRef.current,
-    }).catch(() => {});
-  }, [pillVisualEpoch, isActive]);
+    scheduleReveal({ surface: overlaySurfaceRef.current });
+  }, [pillVisualEpoch, isActive, scheduleReveal]);
 
   return (
     <div

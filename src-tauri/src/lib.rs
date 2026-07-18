@@ -66,6 +66,33 @@ static OVERLAY_FLAT_REVEAL_TICK: AtomicU8 = AtomicU8::new(0);
 // genuine park→reveal (between sessions) repositions. (plan 1782750354086)
 static OVERLAY_WINDOW_SHOWN: AtomicBool = AtomicBool::new(false);
 
+// D3 (plan 1784412908352) — Rust-side reveal coalescing as defense-in-depth.
+// Even with the frontend `scheduleReveal` serializer (D1), a frontend reveal
+// and a Rust-triggered reveal (`apply_trigger_effect::StartCapture`) can race
+// in the same frame. `reveal_overlay_window` is split into two entry points:
+//
+//   * `reveal_overlay_window` (direct) — synchronous, used by the StartCapture
+//     trigger (the frontend's reveal for `recording_started` only fires in the
+//     REACTION render, so there is no same-frame competition here).
+//
+//   * `reveal_overlay_window_coalesced` — used by `sync_overlay_window_visibility`.
+//     Writes the request into `OVERLAY_PENDING_REVEAL` (last-write-wins) and
+//     schedules a single flush on the tokio runtime via a 0-ms sleep (yields to
+//     the event loop so any other same-frame sync calls overwrite the pending
+//     request before the flush runs). `OVERLAY_REVEAL_SCHEDULED` guards against
+//     spawning more than one flush task at a time.
+//
+// The 1px-height oscillation (`OVERLAY_FLAT_REVEAL_TICK`) is now incremented
+// ONLY on the hidden→visible transition (`!was_visible`), not on every flat
+// reveal. Within a visible session the React `key={pillState.kind}` remount
+// plus the opaque `--ov-surface` already clear residual compositor layers, so
+// the per-reveal oscillation is no longer needed and was the source of the
+// multi-`set_size` cascade on mode change (RC3). The first reveal of a session
+// still oscillates once to guarantee a genuine `set_size` change → backing-
+// store reallocation → full repaint on the initial show.
+static OVERLAY_PENDING_REVEAL: Mutex<Option<(OverlaySurface, Option<f64>, Option<f64>)>> = Mutex::new(None);
+static OVERLAY_REVEAL_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 struct OverlayMonitorOption {
@@ -74,7 +101,7 @@ struct OverlayMonitorOption {
     is_primary: bool,
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum OverlaySurface {
     Compact,
@@ -455,6 +482,20 @@ fn overlay_target_position<R: Runtime>(
     }
 }
 
+// D3 (plan 1784412908352): the 1px-height oscillation decision, extracted for
+// unit testing. The tick is incremented ONLY on the hidden→visible transition
+// (`!was_visible`) AND only for flat surfaces (compact/processing-preview/
+// result-actions/mode-picker). Edit-mode keeps free sizing and never
+// oscillates. Within a visible session the height stays stable at
+// `default_height` so `set_size` is a no-op — this is what prevents the
+// multi-`set_size` cascade on a same-frame mode change (RC3). The first
+// reveal of a session still oscillates once to force a genuine `set_size`
+// change → backing-store reallocation → full repaint on the initial show.
+fn should_oscillate_flat_reveal(surface: OverlaySurface, was_visible: bool) -> bool {
+    let is_flat = !matches!(surface, OverlaySurface::EditMode);
+    is_flat && !was_visible
+}
+
 // Reveals/resizes the overlay window. Two WebKitGTK/Linux constraints shape this:
 //   1. After a set_size, WebKitGTK does NOT re-paint the newly exposed area of a
 //      transparent window as transparent — it stays black. So the transparent
@@ -465,7 +506,32 @@ fn overlay_target_position<R: Runtime>(
 //      change) must keep the window where it is, so a user-dragged overlay does
 //      not snap back to its config anchor — which read as a frozen drag.
 // set_size itself stays guarded so an unchanged resize stays a no-op.
-fn reveal_overlay_window<R: Runtime>(
+//
+// D3 (plan 1784412908352): the function is split into two entry points that
+// share the same `reveal_overlay_window_impl` core:
+//   * `reveal_overlay_window` (direct) — synchronous, for the Rust StartCapture
+//     trigger. The frontend's reaction-render reveal fires on a later frame
+//     (after `recording_started` is processed), so there is no same-frame
+//     competition here.
+//   * `reveal_overlay_window_coalesced` — for `sync_overlay_window_visibility`
+//     (the frontend command). Writes the request into `OVERLAY_PENDING_REVEAL`
+//     (last-write-wins) and schedules a single flush on the tokio runtime via
+//     a 0-ms sleep. Any other same-frame sync calls overwrite the pending
+//     request before the flush runs → exactly one `set_size` per frame.
+//
+// Tick correction (D3): the 1px oscillation is incremented ONLY on the
+// hidden→visible transition (`!was_visible`), not on every flat reveal. The
+// per-reveal oscillation was the source of the multi-`set_size` cascade on
+// mode change (RC3): two reveals in the same frame each got a new tick → two
+// `set_size` calls with heights 60 and 61 → WebKitGTK applied them out of
+// order → the window landed at the wrong height and a ghost of the previous
+// geometry overlapped the new one. With the frontend serializer (D1) + eager
+// mode update (D2), the React `key={pillState.kind}` remount plus the opaque
+// `--ov-surface` already clear residual compositor layers within a visible
+// session, so the per-reveal oscillation is no longer needed. The first
+// reveal of a session still oscillates once to guarantee a genuine `set_size`
+// change → backing-store reallocation → full repaint on the initial show.
+fn reveal_overlay_window_impl<R: Runtime>(
     app: &AppHandle<R>,
     surface: OverlaySurface,
     height_override: Option<f64>,
@@ -484,28 +550,28 @@ fn reveal_overlay_window<R: Runtime>(
         let was_visible = OVERLAY_WINDOW_SHOWN.load(Ordering::Relaxed);
 
         // Flat-surface backing-store reallocation (see OVERLAY_FLAT_REVEAL_TICK).
-        // Edit-mode keeps free sizing; only the flat family (compact /
-        // processing-preview / result-actions) oscillates 1px so each reveal
-        // forces a real `set_size` change and therefore a full repaint.
+        // D3: the tick is incremented ONLY on the hidden→visible transition so
+        // within a visible session the height stays stable at `default_height`
+        // and `set_size` is a no-op (outer_size already matches). The first
+        // reveal of a session still oscillates 1px once to force a genuine
+        // `set_size` change → backing-store reallocation → full repaint that
+        // clears retained compositor layers from the previous session.
         let is_flat = !matches!(surface, OverlaySurface::EditMode);
-        if is_flat {
+        let oscillate = should_oscillate_flat_reveal(surface, was_visible);
+        if oscillate {
             let tick = OVERLAY_FLAT_REVEAL_TICK.fetch_add(1, Ordering::Relaxed);
             window_height = default_height + f64::from(tick & 1);
         }
 
-        // The 1px oscillation (tick & 1) is designed to force a genuine
-        // set_size change on EVERY flat reveal → backing-store reallocation
-        // → full repaint that clears retained compositor layers. But
-        // `size_changed` comparing against `outer_size()` can report the same
-        // height as the oscillated value (e.g. park sets 440×60, tick lands
-        // on an even value → window_height=60 → size_changed=false). When that
-        // happens, set_size is skipped → no reallocation → WebKitGTK keeps
-        // the previous surface's raster → ghosting / "eckiger State" on the
-        // next surface. Fix: on flat surfaces, ALWAYS call set_size when the
-        // tick incremented — the oscillation alternates 0/1, so the height
-        // differs from the PREVIOUS reveal's height, even if it matches the
-        // current outer_size. Edit-mode keeps the outer_size check.
-        let force_set_size = is_flat;
+        // On the hidden→visible transition we always want a genuine `set_size`
+        // (the oscillation above guarantees a height change). Within a visible
+        // session, only call `set_size` if the requested size actually differs
+        // from the current outer size — this is what keeps a same-frame mode
+        // change (surface stays "compact", size unchanged) from issuing a
+        // redundant `set_size` that races with the frontend serializer's
+        // coalesced call. Edit-mode keeps free sizing and always goes through
+        // the outer_size check.
+        let force_set_size = is_flat && !was_visible;
         let size_changed = if force_set_size {
             true
         } else {
@@ -523,8 +589,9 @@ fn reveal_overlay_window<R: Runtime>(
         // flat→flat surface transitions WebKitGTK keeps the previous pill's
         // composited layer and renders the new pill on top → stale overlap that
         // only clears after a repaint. Re-asserting the background invalidates
-        // the layer; the 1px height oscillation above guarantees a real size
-        // change (and thus a full backing-store reallocation) on flat surfaces.
+        // the layer; the 1px height oscillation on the first reveal of a
+        // session guarantees a real size change (and thus a full backing-store
+        // reallocation) on flat surfaces.
         let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
         if size_changed {
             let _ = window.set_size(LogicalSize::new(window_width, window_height));
@@ -593,6 +660,62 @@ fn reveal_overlay_window<R: Runtime>(
             }
         }
     }
+}
+
+// Direct (synchronous) reveal entry point. Used by the Rust StartCapture
+// trigger, where the frontend's reaction-render reveal fires on a later frame
+// and there is no same-frame competition to coalesce.
+fn reveal_overlay_window<R: Runtime>(
+    app: &AppHandle<R>,
+    surface: OverlaySurface,
+    height_override: Option<f64>,
+    width_override: Option<f64>,
+) {
+    reveal_overlay_window_impl(app, surface, height_override, width_override);
+}
+
+// Coalesced reveal entry point for `sync_overlay_window_visibility`. Writes
+// the request into `OVERLAY_PENDING_REVEAL` (last-write-wins) and schedules a
+// single flush on the tokio runtime. Any other same-frame sync calls
+// overwrite the pending request before the flush runs → exactly one
+// `set_size` per frame. The flush resets `OVERLAY_REVEAL_SCHEDULED` so the
+// next frame can schedule a fresh flush.
+fn reveal_overlay_window_coalesced<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    surface: OverlaySurface,
+    height_override: Option<f64>,
+    width_override: Option<f64>,
+) {
+    {
+        let mut pending = OVERLAY_PENDING_REVEAL
+            .lock()
+            .expect("OVERLAY_PENDING_REVEAL poisoned");
+        *pending = Some((surface, height_override, width_override));
+    }
+    if OVERLAY_REVEAL_SCHEDULED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        // A flush is already scheduled; the updated pending request above will
+        // be picked up by that flush (last-write-wins).
+        return;
+    }
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Yield to the event loop so any other same-frame sync calls land in
+        // OVERLAY_PENDING_REVEAL before we read it. A 0-ms sleep is the
+        // coalescing window — at typical mode-change load (<5 reveals/s) the
+        // added latency is <16ms (R3).
+        tokio::time::sleep(Duration::from_millis(0)).await;
+        OVERLAY_REVEAL_SCHEDULED.store(false, Ordering::SeqCst);
+        let pending = OVERLAY_PENDING_REVEAL
+            .lock()
+            .expect("OVERLAY_PENDING_REVEAL poisoned")
+            .take();
+        if let Some((surface, height_override, width_override)) = pending {
+            reveal_overlay_window_impl(&app_clone, surface, height_override, width_override);
+        }
+    });
 }
 
 fn park_overlay_window<R: Runtime>(app: &AppHandle<R>) {
@@ -1801,7 +1924,13 @@ async fn sync_overlay_window_visibility(
     width: Option<f64>,
 ) -> Result<(), String> {
     if visible {
-        reveal_overlay_window(&app, surface.unwrap_or_default(), height, width);
+        // D3: route through the coalesced entry point so multiple sync calls
+        // arriving in the same frame (e.g. the frontend's three reveal sources
+        // on a mode change during recording) collapse into a single
+        // `set_size`. The `visible: false` (park) path stays synchronous
+        // because it fires deterministically at the end of the leave timer and
+        // does not race with reveal sources.
+        reveal_overlay_window_coalesced(&app, surface.unwrap_or_default(), height, width);
     } else {
         park_overlay_window(&app);
     }
@@ -2338,5 +2467,104 @@ mod tests {
             overlay_workspace_bounds([(-1080.0, 0.0, 1080.0, 1880.0), (0.0, 0.0, 1920.0, 1040.0)]);
 
         assert_eq!(bounds, Some((-1080.0, 0.0, 1920.0, 1880.0)));
+    }
+
+    // D5 (plan 1784412908352): verify that two same-frame reveals with the
+    // same flat surface only increment OVERLAY_FLAT_REVEAL_TICK once. Before
+    // D3 the tick was incremented on EVERY flat reveal (fetch_add), so two
+    // reveals in the same frame each got a new tick → two set_size calls with
+    // heights 60 and 61 → WebKitGTK applied them out of order → the window
+    // landed at the wrong height and a ghost of the previous geometry
+    // overlapped the new one (RC1 + RC3). With D3 the tick is incremented
+    // ONLY on the hidden→visible transition (`!was_visible`), so the second
+    // reveal in a visible session does NOT oscillate → no redundant set_size.
+    // Also verify the coalescing state machine: OVERLAY_PENDING_REVEAL is
+    // last-write-wins and OVERLAY_REVEAL_SCHEDULED prevents more than one
+    // flush from being scheduled.
+    #[test]
+    fn reveal_overlay_window_coalesces_same_frame_sync_calls_into_one_set_size() {
+        // Reset the shared statics to a known state. These statics are only
+        // touched by reveal_overlay_window_impl/park_overlay_window (which
+        // require an AppHandle and are not exercised by other unit tests), so
+        // resetting them here is safe for parallel test execution.
+        OVERLAY_WINDOW_SHOWN.store(false, Ordering::Relaxed);
+        OVERLAY_FLAT_REVEAL_TICK.store(0, Ordering::Relaxed);
+        OVERLAY_REVEAL_SCHEDULED.store(false, Ordering::SeqCst);
+        {
+            let mut pending = OVERLAY_PENDING_REVEAL.lock().expect("OVERLAY_PENDING_REVEAL poisoned");
+            *pending = None;
+        }
+
+        // Simulate two same-frame sync_overlay_window_visibility calls with
+        // the same flat surface (Compact). The first call sees
+        // was_visible=false → should_oscillate returns true → tick increments.
+        // The second call sees was_visible=true (reveal_overlay_window_impl
+        // sets OVERLAY_WINDOW_SHOWN=true on the hidden→visible transition) →
+        // should_oscillate returns false → tick does NOT increment.
+        let first_oscillates = should_oscillate_flat_reveal(OverlaySurface::Compact, false);
+        assert!(first_oscillates, "first reveal (hidden→visible) must oscillate");
+
+        // Simulate the hidden→visible transition claiming visibility.
+        OVERLAY_WINDOW_SHOWN.store(true, Ordering::Relaxed);
+
+        let second_oscillates = should_oscillate_flat_reveal(OverlaySurface::Compact, true);
+        assert!(
+            !second_oscillates,
+            "second reveal in a visible session must NOT oscillate (D3 tick correction)"
+        );
+
+        // Edit-mode never oscillates, regardless of visibility.
+        assert!(!should_oscillate_flat_reveal(OverlaySurface::EditMode, false));
+        assert!(!should_oscillate_flat_reveal(OverlaySurface::EditMode, true));
+
+        // Verify the coalescing state machine: two pending writes collapse to
+        // the last one (last-write-wins), and OVERLAY_REVEAL_SCHEDULED gates
+        // against scheduling more than one flush.
+        {
+            let mut pending = OVERLAY_PENDING_REVEAL.lock().expect("OVERLAY_PENDING_REVEAL poisoned");
+            *pending = Some((OverlaySurface::Compact, Some(61.0), Some(480.0)));
+        }
+        {
+            let mut pending = OVERLAY_PENDING_REVEAL.lock().expect("OVERLAY_PENDING_REVEAL poisoned");
+            *pending = Some((OverlaySurface::Compact, Some(60.0), Some(480.0)));
+        }
+        let final_pending = OVERLAY_PENDING_REVEAL
+            .lock()
+            .expect("OVERLAY_PENDING_REVEAL poisoned")
+            .take();
+        assert_eq!(
+            final_pending,
+            Some((OverlaySurface::Compact, Some(60.0), Some(480.0))),
+            "last write to OVERLAY_PENDING_REVEAL must win"
+        );
+
+        // OVERLAY_REVEAL_SCHEDULED compare_exchange: the first scheduler wins,
+        // the second is rejected.
+        let first_schedule = OVERLAY_REVEAL_SCHEDULED.compare_exchange(
+            false,
+            true,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+        assert!(first_schedule.is_ok(), "first schedule request must succeed");
+        let second_schedule = OVERLAY_REVEAL_SCHEDULED.compare_exchange(
+            false,
+            true,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+        assert!(
+            second_schedule.is_err(),
+            "second schedule request must be rejected (only one flush per frame)"
+        );
+
+        // Cleanup: leave the statics in a neutral state for any subsequent test.
+        OVERLAY_WINDOW_SHOWN.store(false, Ordering::Relaxed);
+        OVERLAY_FLAT_REVEAL_TICK.store(0, Ordering::Relaxed);
+        OVERLAY_REVEAL_SCHEDULED.store(false, Ordering::SeqCst);
+        {
+            let mut pending = OVERLAY_PENDING_REVEAL.lock().expect("OVERLAY_PENDING_REVEAL poisoned");
+            *pending = None;
+        }
     }
 }
