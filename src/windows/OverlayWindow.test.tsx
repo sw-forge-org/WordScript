@@ -986,6 +986,12 @@ describe("OverlayWindow", () => {
     // the per-mode hotkey, settings save, auto-resolution) stays purely async.
     // It must NOT eager-update; effectiveMode only changes after
     // resolve_current_processing_mode resolves with the new mode.
+    //
+    // The fetchEffectiveMode debounce (150ms) collapses redundant refetches
+    // that arrive within the same mode-change window (e.g. wordscript-mode-event
+    // + the ready event from set_active_profile_processing_mode). The test uses
+    // fake timers to advance past the debounce window so the event-driven
+    // refetch actually fires.
     let resolveCallCount = 0;
     let resolveResolveMode: ((value: unknown) => void) | null = null;
     invokeMock.mockImplementation((command: string) => {
@@ -1009,6 +1015,12 @@ describe("OverlayWindow", () => {
     await waitFor(() => expect(modeEventHandlers.length).toBeGreaterThan(0));
     // Wait for the initial resolve to land so the chip shows "Auto".
     await waitFor(() => expect(screen.getByLabelText("Mode Auto, tap to cycle")).toBeInTheDocument());
+
+    // Advance real time past the debounce window so the next fetchEffectiveMode
+    // is not skipped. The debounce uses Date.now(), so we must wait >150ms of
+    // real time. vi.useFakeTimers would not affect Date.now unless configured;
+    // instead use a real delay.
+    await act(async () => { await new Promise((r) => setTimeout(r, 160)); });
 
     // Fire the wordscript-mode-event listener manually (simulates the per-mode
     // hotkey path: set_mode_override_and_emit emits the event, the listener

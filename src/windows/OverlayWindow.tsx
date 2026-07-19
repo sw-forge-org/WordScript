@@ -187,7 +187,26 @@ export default function OverlayWindow() {
   // truth). Fetched via `resolve_current_processing_mode` and kept in sync
   // through `wordscript-mode-event` events.
   const [effectiveMode, setEffectiveMode] = useState<ProcessingMode | null>(null);
+  // Debounce guard: a single mode tap triggers up to FOUR redundant
+  // fetchEffectiveMode calls across different event paths:
+  //   1. handleCycleMode's .then(() => fetchEffectiveMode())
+  //   2. set_active_profile_processing_mode emits `ready` → state.config
+  //      changes → the [state.config] effect fires fetchEffectiveMode
+  //   3. set_active_profile_processing_mode emits `ready` → state.config
+  //      changes → configFallbackMode recomputes (another render)
+  //   4. (per-mode hotkey only) wordscript-mode-event listener fires
+  //      fetchEffectiveMode
+  // Each fetchEffectiveMode → setEffectiveMode is a separate React render
+  // commit. With `transform: scale(0.87)` on .ov-pill-shell, WebKitGTK caches
+  // the compositor layer between commits and can briefly paint two pill
+  // geometries when commits arrive in rapid succession (the ghosting).
+  // Collapsing all fetches within a 150ms window into a SINGLE setEffectiveMode
+  // commit eliminates the multi-render cascade → one geometry → no ghost.
+  const lastModeFetchRef = useRef(0);
   const fetchEffectiveMode = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastModeFetchRef.current < 150) return; // skip redundant refetch within debounce window
+    lastModeFetchRef.current = now;
     try {
       const ctx = await invoke<ResolvedProcessingContext>("resolve_current_processing_mode");
       setEffectiveMode(ctx.mode);
