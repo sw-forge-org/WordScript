@@ -771,8 +771,8 @@ describe("OverlayWindow", () => {
 
     expect(screen.getByLabelText("Audio level")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
-    // D1: the reveal is now coalesced via scheduleReveal (setTimeout(0)/rAF),
-    // so the invoke arrives asynchronously. waitFor covers the flush.
+    // D1+A2: the reveal is coalesced via scheduleReveal (queueMicrotask), so
+    // the invoke arrives asynchronously as a microtask. waitFor covers the flush.
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("sync_overlay_window_visibility", { visible: true, surface: "compact" }));
   });
 
@@ -899,9 +899,9 @@ describe("OverlayWindow", () => {
     // but `pillVisualEpoch` (which includes pillMode) and the per-surface size
     // layoutEffect both re-evaluate. Without D1's scheduleReveal dispatcher,
     // each source fires its own `sync_overlay_window_visibility` → 2–3 native
-    // set_size calls per frame with different reveal ticks. With D1, all
-    // sources coalesce via requestAnimationFrame (setTimeout(0) fallback in
-    // jsdom) into at most one native call per macrotask.
+    // set_size calls per frame with different reveal ticks. With D1+A2, all
+    // sources coalesce via queueMicrotask into at most one native call per
+    // microtask tick.
     invokeMock.mockImplementation((command: string) => {
       if (command === "resolve_current_processing_mode") {
         return Promise.resolve({ mode: "auto", is_override: false, auto_detected: false, detected_from: null });
@@ -920,16 +920,15 @@ describe("OverlayWindow", () => {
     // Now tap the mode chip to cycle auto → verbatim. This triggers
     // handleCycleMode, which (D2) eagerly sets effectiveMode="verbatim" in the
     // same render → pillVisualEpoch changes → the pillVisualEpoch layoutEffect
-    // and the size layoutEffect both fire scheduleReveal in the same frame.
+    // and the size layoutEffect both fire scheduleReveal in the same tick.
     invokeMock.mockClear();
     fireEvent.click(screen.getByLabelText("Mode Auto, tap to cycle"));
 
-    // Flush the setTimeout(0) fallback (jsdom has no requestAnimationFrame).
-    // The eager update means the rerender happens synchronously inside
-    // fireEvent.click, and the two scheduleReveal calls both land in the same
-    // macrotask. After flushing, at most one sync_overlay_window_visibility
-    // call should have been dispatched for the reveal (the set_active_profile
-    // call is a separate command and not counted).
+    // Flush the queueMicrotask. The eager update means the rerender happens
+    // synchronously inside fireEvent.click, and the two scheduleReveal calls
+    // both land in the same microtask queue. After flushing, at most one
+    // sync_overlay_window_visibility call should have been dispatched for the
+    // reveal (the set_active_profile call is a separate command and not counted).
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
     const revealCalls = invokeMock.mock.calls.filter(
@@ -1082,8 +1081,10 @@ describe("OverlayWindow", () => {
       await act(async () => {
         vi.advanceTimersByTime(260);
       });
-      // Flush the setTimeout(0) fallback for any coalesced reveals that were
-      // scheduled before the park. They must not have swallowed the park call.
+      // Flush any coalesced reveals (A2: queueMicrotask) that were scheduled
+      // before the park. With fake timers the microtask queue drains inside the
+      // prior act() block; this second advance is a defensive no-op to be
+      // certain. They must not have swallowed the park call.
       await act(async () => {
         vi.advanceTimersByTime(0);
       });

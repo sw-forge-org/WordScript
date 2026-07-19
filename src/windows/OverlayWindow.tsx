@@ -47,7 +47,7 @@ type OverlaySurface = "compact" | "processing_preview" | "result_actions" | "edi
 // A queued native reveal request. All three `sync_overlay_window_visibility`
 // sources (the isActive surface effect, the per-surface size layoutEffect, and
 // the pillVisualEpoch repaint layoutEffect) go through `scheduleReveal` so the
-// latest surface + width/height within one animation frame wins and only ONE
+// latest surface + width/height within one synchronous tick wins and only ONE
 // native `set_size` is dispatched per frame. This is the frontend-side fix for
 // RC1 (three competing reveal sources) and RC3 (no coalescing on the Rust
 // side). The `visible: false` (park) path is NOT routed through here — it
@@ -329,9 +329,9 @@ export default function OverlayWindow() {
     setOverlayMotion(next);
   };
 
-  // ── Reveal serializer (D1, plan 1784412908352) ─────────────────────────────
+  // ── Reveal serializer (D1, plan 1784412908352; A2, plan 1784429726777) ──────
   // All `sync_overlay_window_visibility` "visible:true" calls go through this
-  // dispatcher. Within one animation frame, multiple sources (the isActive
+  // dispatcher. Within one synchronous tick, multiple sources (the isActive
   // surface effect, the per-surface size layoutEffect, and the pillVisualEpoch
   // repaint layoutEffect) can each request a reveal — e.g. on a mode change
   // during recording, where the surface stays "compact" but `pillVisualEpoch`
@@ -341,16 +341,23 @@ export default function OverlayWindow() {
   // `set_size` calls out of order → the window lands at the wrong height and a
   // ghost of the previous geometry overlaps the new one (RC1 + RC3).
   //
-  // `requestAnimationFrame` is used instead of `setTimeout(0)` because rAF
-  // guarantees React commits + browser layout within the frame are finished
-  // before the native call is dispatched. `setTimeout(0)` can fire mid-commit
-  // and reopen the gap. R1 mitigation: if WebKitGTK has paused rAF (overlay
-  // classified as not-visible despite being on-screen), fall back to a 0ms
-  // timeout so the reveal still flushes.
+  // A2 (plan 1784429726777, Subagent A — NI1): the flush is scheduled via
+  // `queueMicrotask` instead of `requestAnimationFrame`. rAF deferred the
+  // native `set_size` to the NEXT frame: React committed the new DOM in frame
+  // N, the browser painted the new content onto the OLD backing store, then
+  // the rAF callback in frame N+1 triggered `set_size` with an oscillated
+  // height → backing-store reallocation → the just-painted content was
+  // discarded → black flash. Microtasks run after the current synchronous work
+  // (React commit + useLayoutEffect callbacks) but BEFORE the browser paints,
+  // so the native `set_size` is dispatched in the same frame as the new DOM
+  // commit → no backing-store reallocation after paint → no black flash. This
+  // also eliminates R1 (rAF can pause when WebKitGTK classifies a decorationless
+  // transparent overlay as not-visible): microtasks always run regardless of
+  // visibility state.
   const pendingRevealRef = useRef<RevealRequest | null>(null);
   const revealScheduledRef = useRef(false);
   const scheduleReveal = useCallback((req: RevealRequest) => {
-    pendingRevealRef.current = req; // latest-wins, overwrites any prior request in the same frame
+    pendingRevealRef.current = req; // latest-wins, overwrites any prior request in the same tick
     if (revealScheduledRef.current) return;
     revealScheduledRef.current = true;
     const flush = () => {
@@ -365,16 +372,12 @@ export default function OverlayWindow() {
         ...(r.height != null ? { height: r.height } : {}),
       }).catch(() => {});
     };
-    // R1: rAF can pause in a decorationless transparent overlay window if
-    // WebKitGTK classifies it as not-visible. Fall back to setTimeout(0) so the
-    // reveal still flushes; otherwise the overlay would stay parked.
-    const rafAvailable = typeof requestAnimationFrame === "function"
-      && (typeof document === "undefined" || document.visibilityState !== "hidden");
-    if (rafAvailable) {
-      requestAnimationFrame(() => flush());
-    } else {
-      window.setTimeout(() => flush(), 0);
-    }
+    // A2: microtask flush. Runs after the current synchronous work (React
+    // commit + layout effects) but before the browser paints → the native
+    // set_size lands in the same frame as the new DOM. Coalescing is preserved
+    // because `revealScheduledRef` stays true until the microtask runs, so
+    // multiple scheduleReveal calls in the same tick collapse into one invoke.
+    queueMicrotask(flush);
   }, []);
 
   // Mark html element before first paint so the overlay window stays transparent while idle.
