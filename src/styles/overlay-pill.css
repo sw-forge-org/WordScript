@@ -85,11 +85,27 @@
    by the opaque `--ov-surface` (no alpha bleed-through). The pill's
    `max-content` width is capped by reducing `pill__preview-text max-width` to
    220px so the un-scaled pill fits in the 480px window even before the 0.87
-   transform applies. */
+   transform applies.
+
+   RE-UPDATE 2026-07-19 (A1.i, plan 1784429726777, Subagent B — NI3): the
+   opaque `--ov-surface` did NOT deterministically block ghosting — the
+   symptom persisted through 6 attempts. Root cause confirmed: `transform:
+   scale(0.87)` promotes `.ov-pill-shell` to its own Compositor-Layer, which
+   WebKitGTK does not invalidate on mode-cycle (kind stays "recording", so
+   `key={pillState.kind}` does not remount), and the 1px `set_size` oscillation
+   alone cannot force a layer teardown → cached raster ghosts through for one
+   frame. `zoom: 0.87` was unsafe in 2026-07-08 because `max-content` drove the
+   layout (long transcripts → pill > 480px → clipped). That precondition no
+   longer holds: the pill width is now fixed at 480px (lib.rs:133-139) and
+   `pill__preview-text max-width: 220px` caps the content width, so the
+   un-scaled pill fits in the 480px window regardless of transcript length.
+   `zoom` scales the layout (not just the visual), so the box itself becomes
+   87% of its computed size — no Compositor-Layer promotion → no cached raster
+   → no ghosting. `zoom` is non-standard and WebKitGTK-specific, but this app
+   targets WebKitGTK exclusively for the overlay window. */
 .ov-scope .ov-pill-shell {
   display: inline-flex;
-  transform: scale(0.87);
-  transform-origin: center;
+  zoom: 0.87;
 }
 
 .ov-scope .pill {
