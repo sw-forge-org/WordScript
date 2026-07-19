@@ -185,9 +185,16 @@
 }
 
 /* Motion classes (Phase 2 will toggle these from the Rust side). Gallery
-   keeps them inert; the keyframes are defined for completeness. */
+   keeps them inert; the keyframes are defined for completeness.
+   .pill--open has NO transform rule: the previous `transform: translateZ(0)
+   scale(1)` promoted .pill to its own Compositor-Layer permanently (while
+   overlayMotion === "open"), which cached the raster on mode-cycle. The
+   overlay-panel-in animation already uses fill-mode "both", so its final
+   keyframe (opacity:1; transform: translateY(0) scale(1)) persists after the
+   animation completes — no separate idle-state rule is needed. (plan
+   1784429726777, combined with key={mode} on ModeChip to force layer
+   release per mode change.) */
 .ov-scope .pill--entering { animation: overlay-panel-in 320ms cubic-bezier(0.2, 0.9, 0.24, 1) both; }
-.ov-scope .pill--open { transform: translateZ(0) scale(1); }
 .ov-scope .pill--leaving { animation: overlay-panel-out 240ms ease-in both; }
 
 /* ── Mic zone ──────────────────────────────────────────────────────────────── */
@@ -321,22 +328,20 @@
   cursor: pointer;
   transition: background 140ms ease-out;
   position: relative;
-  /* Fixed min-width so the ModeChip (and therefore the whole recording pill,
-     which is inline-flex width:max-content) keeps a STABLE geometry across
-     mode changes. The mode labels range from "Auto" (4 chars) to
-     "prompt_enhance" (15 chars). Empirically measured (plan 1784429726777 R4
-     Live-Diagnose): recording-pill widths range 224-251px across modes, a
-     27px variation driven by the ModeChip label width. WebKitGTK briefly
-     paints both the old and new pill widths simultaneously during the mode
-     switch → ghosting. A fixed min-width larger than the widest mode chip
-     keeps the pill geometry constant: shorter labels center their dot+text
-     within the fixed slot. This is the Versuch 4 (7b5b12b) strategy applied
-     to the WHOLE ModeChip button (dot + label + padding), not just the label
-     span — the previous min-width:52px on .pill__mode-label alone was
-     insufficient because it did not account for the dot + padding
-     contribution. justify-content:center centers dot+label symmetrically so
-     the extra floor width reads as even left/right padding, not as trailing
-     empty space. */
+  /* Fixed min-width on the ModeChip button so its slot stays reserved during
+     the 1-frame unmount→mount gap when key={mode} forces a remount per mode
+     change. Without it, the button collapses to zero width for one frame
+     (reading as a flicker) AND the pill geometry changes during the swap
+     (reading as ghosting because WebKitGTK paints both the collapsed and the
+     re-measured width). With min-width:80px + justify-content:center, the
+     slot stays at the fixed width across the remount, the content (dot+label)
+     swaps atomically, and the pill geometry is stable. 80px fits all 6 mode
+     labels ("auto".."prompt_enhance") at 12px/600-weight with dot + padding.
+     This is the COMBINED fix: key={mode} forces the compositor-layer release
+     (eliminates the cached-raster ghosting), min-width keeps the geometry
+     stable across the remount (eliminates the geometry-change ghosting and
+     the remount flicker). Both are needed — either alone is insufficient.
+     (plan 1784429726777.) */
   min-width: 80px;
 }
 
