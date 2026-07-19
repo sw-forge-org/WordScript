@@ -310,6 +310,7 @@
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   height: 26px;
   padding: 0 8px 0 10px;
@@ -320,6 +321,23 @@
   cursor: pointer;
   transition: background 140ms ease-out;
   position: relative;
+  /* Fixed min-width so the ModeChip (and therefore the whole recording pill,
+     which is inline-flex width:max-content) keeps a STABLE geometry across
+     mode changes. The mode labels range from "Auto" (4 chars) to
+     "prompt_enhance" (15 chars). Empirically measured (plan 1784429726777 R4
+     Live-Diagnose): recording-pill widths range 224-251px across modes, a
+     27px variation driven by the ModeChip label width. WebKitGTK briefly
+     paints both the old and new pill widths simultaneously during the mode
+     switch → ghosting. A fixed min-width larger than the widest mode chip
+     keeps the pill geometry constant: shorter labels center their dot+text
+     within the fixed slot. This is the Versuch 4 (7b5b12b) strategy applied
+     to the WHOLE ModeChip button (dot + label + padding), not just the label
+     span — the previous min-width:52px on .pill__mode-label alone was
+     insufficient because it did not account for the dot + padding
+     contribution. justify-content:center centers dot+label symmetrically so
+     the extra floor width reads as even left/right padding, not as trailing
+     empty space. */
+  min-width: 80px;
 }
 
 .ov-scope .pill__mode:hover { background: rgba(255, 255, 255, 0.05); }
@@ -340,6 +358,7 @@
   line-height: 1;
   color: var(--ov-text);
   white-space: nowrap;
+  text-align: center;
 }
 
 /* ── Timer (mono elapsed time, information only) ──────────────────────────── */
