@@ -82,14 +82,14 @@ static OVERLAY_WINDOW_SHOWN: AtomicBool = AtomicBool::new(false);
 //     request before the flush runs). `OVERLAY_REVEAL_SCHEDULED` guards against
 //     spawning more than one flush task at a time.
 //
-// The 1px-height oscillation (`OVERLAY_FLAT_REVEAL_TICK`) is now incremented
-// ONLY on the hidden→visible transition (`!was_visible`), not on every flat
-// reveal. Within a visible session the React `key={pillState.kind}` remount
-// plus the opaque `--ov-surface` already clear residual compositor layers, so
-// the per-reveal oscillation is no longer needed and was the source of the
-// multi-`set_size` cascade on mode change (RC3). The first reveal of a session
-// still oscillates once to guarantee a genuine `set_size` change → backing-
-// store reallocation → full repaint on the initial show.
+// The 1px-height oscillation (`OVERLAY_FLAT_REVEAL_TICK`) is incremented on
+// EVERY flat reveal — NOT just the hidden→visible transition. A mode-cycle
+// within "recording" keeps `pillState.kind === "recording"`, so the React
+// `key={pillState.kind}` does NOT remount → no compositor-layer orphaning.
+// The oscillation is the only native repaint trigger for these same-kind
+// visual changes. The multi-`set_size` cascade (RC1/RC3) is prevented by the
+// D1 frontend serializer + the D3 Rust coalescing wrapper, which ensure only
+// ONE `set_size` per frame with ONE height instead of 2–3 competing heights.
 static OVERLAY_PENDING_REVEAL: Mutex<Option<(OverlaySurface, Option<f64>, Option<f64>)>> = Mutex::new(None);
 static OVERLAY_REVEAL_SCHEDULED: AtomicBool = AtomicBool::new(false);
 
@@ -483,17 +483,17 @@ fn overlay_target_position<R: Runtime>(
 }
 
 // D3 (plan 1784412908352): the 1px-height oscillation decision, extracted for
-// unit testing. The tick is incremented ONLY on the hidden→visible transition
-// (`!was_visible`) AND only for flat surfaces (compact/processing-preview/
-// result-actions/mode-picker). Edit-mode keeps free sizing and never
-// oscillates. Within a visible session the height stays stable at
-// `default_height` so `set_size` is a no-op — this is what prevents the
-// multi-`set_size` cascade on a same-frame mode change (RC3). The first
-// reveal of a session still oscillates once to force a genuine `set_size`
-// change → backing-store reallocation → full repaint on the initial show.
-fn should_oscillate_flat_reveal(surface: OverlaySurface, was_visible: bool) -> bool {
-    let is_flat = !matches!(surface, OverlaySurface::EditMode);
-    is_flat && !was_visible
+// unit testing. The tick is incremented on EVERY flat reveal (compact /
+// processing-preview / result-actions / mode-picker) — NOT just on the
+// hidden→visible transition. This is required because a mode-cycle within
+// "recording" keeps `pillState.kind === "recording"`, so the React
+// `key={pillState.kind}` does NOT remount → no compositor-layer orphaning.
+// The oscillation is the only native repaint trigger for these same-kind
+// visual changes. The multi-`set_size` cascade is prevented by the D1
+// frontend serializer + the D3 Rust coalescing wrapper, which ensure only
+// ONE `set_size` per frame. Edit-mode keeps free sizing and never oscillates.
+fn should_oscillate_flat_reveal(surface: OverlaySurface, _was_visible: bool) -> bool {
+    !matches!(surface, OverlaySurface::EditMode)
 }
 
 // Reveals/resizes the overlay window. Two WebKitGTK/Linux constraints shape this:
@@ -519,18 +519,19 @@ fn should_oscillate_flat_reveal(surface: OverlaySurface, was_visible: bool) -> b
 //     a 0-ms sleep. Any other same-frame sync calls overwrite the pending
 //     request before the flush runs → exactly one `set_size` per frame.
 //
-// Tick correction (D3): the 1px oscillation is incremented ONLY on the
-// hidden→visible transition (`!was_visible`), not on every flat reveal. The
-// per-reveal oscillation was the source of the multi-`set_size` cascade on
-// mode change (RC3): two reveals in the same frame each got a new tick → two
-// `set_size` calls with heights 60 and 61 → WebKitGTK applied them out of
-// order → the window landed at the wrong height and a ghost of the previous
-// geometry overlapped the new one. With the frontend serializer (D1) + eager
-// mode update (D2), the React `key={pillState.kind}` remount plus the opaque
-// `--ov-surface` already clear residual compositor layers within a visible
-// session, so the per-reveal oscillation is no longer needed. The first
-// reveal of a session still oscillates once to guarantee a genuine `set_size`
-// change → backing-store reallocation → full repaint on the initial show.
+// Tick oscillation: the 1px oscillation (OVERLAY_FLAT_REVEAL_TICK) is
+// incremented on EVERY flat reveal, NOT just on the hidden→visible transition.
+// This is required because a mode-cycle within "recording" keeps
+// `pillState.kind === "recording"`, so the React `key={pillState.kind}` does
+// NOT remount → no compositor-layer orphaning → the previous mode's cached
+// raster ghosts through. The oscillation forces a genuine `set_size` change →
+// backing-store reallocation → full repaint that clears the cached raster.
+//
+// The multi-`set_size` cascade that caused the ghosting (RC1/RC3) is prevented
+// by the D1 frontend `scheduleReveal` serializer + the D3 Rust coalescing
+// wrapper: both ensure only ONE `set_size` per frame, so the oscillation
+// produces exactly one height per frame instead of 2–3 competing heights that
+// WebKitGTK applies out of order.
 fn reveal_overlay_window_impl<R: Runtime>(
     app: &AppHandle<R>,
     surface: OverlaySurface,
@@ -550,28 +551,33 @@ fn reveal_overlay_window_impl<R: Runtime>(
         let was_visible = OVERLAY_WINDOW_SHOWN.load(Ordering::Relaxed);
 
         // Flat-surface backing-store reallocation (see OVERLAY_FLAT_REVEAL_TICK).
-        // D3: the tick is incremented ONLY on the hidden→visible transition so
-        // within a visible session the height stays stable at `default_height`
-        // and `set_size` is a no-op (outer_size already matches). The first
-        // reveal of a session still oscillates 1px once to force a genuine
-        // `set_size` change → backing-store reallocation → full repaint that
-        // clears retained compositor layers from the previous session.
+        // The tick is incremented on EVERY flat reveal so the 1px oscillation
+        // (60↔61) forces a genuine `set_size` change → backing-store
+        // reallocation → full repaint that clears retained compositor layers.
+        //
+        // This is REQUIRED for same-kind visual changes (e.g. mode-cycle within
+        // "recording"): `pillState.kind` stays "recording" so the React
+        // `key={pillState.kind}` does NOT remount → no compositor-layer
+        // orphaning → the previous mode's cached raster ghosts through. The
+        // oscillation is the only native repaint trigger for these changes.
+        //
+        // The multi-`set_size` cascade that caused the ghosting (RC1/RC3) is
+        // prevented by the D1 frontend `scheduleReveal` serializer + the D3
+        // Rust `reveal_overlay_window_coalesced` wrapper: both ensure only ONE
+        // `set_size` per frame, so the oscillation produces exactly one height
+        // per frame instead of 2–3 competing heights.
         let is_flat = !matches!(surface, OverlaySurface::EditMode);
-        let oscillate = should_oscillate_flat_reveal(surface, was_visible);
-        if oscillate {
+        if is_flat {
             let tick = OVERLAY_FLAT_REVEAL_TICK.fetch_add(1, Ordering::Relaxed);
             window_height = default_height + f64::from(tick & 1);
         }
 
-        // On the hidden→visible transition we always want a genuine `set_size`
-        // (the oscillation above guarantees a height change). Within a visible
-        // session, only call `set_size` if the requested size actually differs
-        // from the current outer size — this is what keeps a same-frame mode
-        // change (surface stays "compact", size unchanged) from issuing a
-        // redundant `set_size` that races with the frontend serializer's
-        // coalesced call. Edit-mode keeps free sizing and always goes through
-        // the outer_size check.
-        let force_set_size = is_flat && !was_visible;
+        // force_set_size on flat surfaces: the oscillation alternates 0/1, so
+        // the height differs from the PREVIOUS reveal's height even if it
+        // matches the current outer_size. Without this, `size_changed` could
+        // report false (oscillated height == outer_size) → set_size skipped →
+        // no reallocation → ghosting. Edit-mode keeps the outer_size check.
+        let force_set_size = is_flat;
         let size_changed = if force_set_size {
             true
         } else {
@@ -2469,18 +2475,15 @@ mod tests {
         assert_eq!(bounds, Some((-1080.0, 0.0, 1920.0, 1880.0)));
     }
 
-    // D5 (plan 1784412908352): verify that two same-frame reveals with the
-    // same flat surface only increment OVERLAY_FLAT_REVEAL_TICK once. Before
-    // D3 the tick was incremented on EVERY flat reveal (fetch_add), so two
-    // reveals in the same frame each got a new tick → two set_size calls with
-    // heights 60 and 61 → WebKitGTK applied them out of order → the window
-    // landed at the wrong height and a ghost of the previous geometry
-    // overlapped the new one (RC1 + RC3). With D3 the tick is incremented
-    // ONLY on the hidden→visible transition (`!was_visible`), so the second
-    // reveal in a visible session does NOT oscillate → no redundant set_size.
-    // Also verify the coalescing state machine: OVERLAY_PENDING_REVEAL is
-    // last-write-wins and OVERLAY_REVEAL_SCHEDULED prevents more than one
-    // flush from being scheduled.
+    // D5 (plan 1784412908352): verify that the coalescing state machine
+    // collapses two same-frame sync calls into a single set_size. The tick
+    // oscillates on EVERY flat reveal (needed for same-kind visual changes
+    // like mode-cycle within "recording" where key={pillState.kind} does NOT
+    // remount). The coalescing (OVERLAY_PENDING_REVEAL last-write-wins +
+    // OVERLAY_REVEAL_SCHEDULED single-flush gate) ensures only ONE
+    // reveal_overlay_window_impl call runs per frame → only ONE fetch_add →
+    // only ONE set_size with ONE height, instead of 2–3 competing heights
+    // that WebKitGTK applies out of order (RC1 + RC3).
     #[test]
     fn reveal_overlay_window_coalesces_same_frame_sync_calls_into_one_set_size() {
         // Reset the shared statics to a known state. These statics are only
@@ -2495,31 +2498,34 @@ mod tests {
             *pending = None;
         }
 
-        // Simulate two same-frame sync_overlay_window_visibility calls with
-        // the same flat surface (Compact). The first call sees
-        // was_visible=false → should_oscillate returns true → tick increments.
-        // The second call sees was_visible=true (reveal_overlay_window_impl
-        // sets OVERLAY_WINDOW_SHOWN=true on the hidden→visible transition) →
-        // should_oscillate returns false → tick does NOT increment.
-        let first_oscillates = should_oscillate_flat_reveal(OverlaySurface::Compact, false);
-        assert!(first_oscillates, "first reveal (hidden→visible) must oscillate");
-
-        // Simulate the hidden→visible transition claiming visibility.
-        OVERLAY_WINDOW_SHOWN.store(true, Ordering::Relaxed);
-
-        let second_oscillates = should_oscillate_flat_reveal(OverlaySurface::Compact, true);
+        // The tick oscillates on every flat reveal — this is required for
+        // same-kind visual changes (mode-cycle within "recording") where the
+        // React key does NOT remount. Both the hidden→visible and the
+        // visible→visible transitions oscillate.
         assert!(
-            !second_oscillates,
-            "second reveal in a visible session must NOT oscillate (D3 tick correction)"
+            should_oscillate_flat_reveal(OverlaySurface::Compact, false),
+            "hidden→visible reveal must oscillate"
+        );
+        assert!(
+            should_oscillate_flat_reveal(OverlaySurface::Compact, true),
+            "visible→visible reveal (mode change within session) must oscillate — \
+             this is the only repaint trigger when key=kind does not remount"
+        );
+        assert!(
+            should_oscillate_flat_reveal(OverlaySurface::ProcessingPreview, true),
+            "processing_preview within session must oscillate"
         );
 
-        // Edit-mode never oscillates, regardless of visibility.
+        // Edit-mode never oscillates (free sizing).
         assert!(!should_oscillate_flat_reveal(OverlaySurface::EditMode, false));
         assert!(!should_oscillate_flat_reveal(OverlaySurface::EditMode, true));
 
-        // Verify the coalescing state machine: two pending writes collapse to
-        // the last one (last-write-wins), and OVERLAY_REVEAL_SCHEDULED gates
-        // against scheduling more than one flush.
+        // The coalescing state machine is what prevents the multi-set_size
+        // cascade: two pending writes collapse to the last one
+        // (last-write-wins), and OVERLAY_REVEAL_SCHEDULED gates against
+        // scheduling more than one flush. This means even though the tick
+        // oscillates on every flat reveal, only ONE fetch_add + ONE set_size
+        // happens per frame.
         {
             let mut pending = OVERLAY_PENDING_REVEAL.lock().expect("OVERLAY_PENDING_REVEAL poisoned");
             *pending = Some((OverlaySurface::Compact, Some(61.0), Some(480.0)));
@@ -2535,11 +2541,11 @@ mod tests {
         assert_eq!(
             final_pending,
             Some((OverlaySurface::Compact, Some(60.0), Some(480.0))),
-            "last write to OVERLAY_PENDING_REVEAL must win"
+            "last write to OVERLAY_PENDING_REVEAL must win — only one set_size per frame"
         );
 
         // OVERLAY_REVEAL_SCHEDULED compare_exchange: the first scheduler wins,
-        // the second is rejected.
+        // the second is rejected → only one flush task is spawned.
         let first_schedule = OVERLAY_REVEAL_SCHEDULED.compare_exchange(
             false,
             true,
