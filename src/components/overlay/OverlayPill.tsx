@@ -140,8 +140,24 @@ function RecordingPill({ state }: { state: Extract<OverlayPillState, { kind: "re
   if (state.muted) classes.push("pill--muted");
   if (state.paused) classes.push("pill--paused");
 
+  // key={state.mode}: force a FULL remount of the pill subtree on mode
+  // change. The `transform: scale(0.87)` on `.ov-pill-shell` promotes the
+  // pill to its own compositor layer. When the ModeChip label changes (e.g.
+  // "Auto" → "Verbatim"), WebKitGTK paints the new label onto the CACHED
+  // compositor layer with the OLD geometry → both geometries briefly visible
+  // (ghosting). The native 1px-oscillation `set_size` repaint was meant to
+  // clear this, but the rAF coalescing (D1) + 0ms-sleep (D3) delay the
+  // repaint by one frame → the ghost is visible for that frame. A React
+  // remount releases the old compositor layer IMMEDIATELY (synchronously in
+  // the same commit, before the browser paints) and mounts a fresh subtree
+  // on a new layer → no cached geometry to ghost through.
+  //
+  // NOTE: keying on the full pillVisualEpoch was tried and reverted (caused a
+  // 1-frame empty render on commit-pending→idle). Keying ONLY on `mode`
+  // remounts exclusively on mode change — there is no intermediate null
+  // state because the new mode label is known in the same render commit.
   return (
-    <div className={classes.join(" ")}>
+    <div key={state.mode} className={classes.join(" ")}>
       <MicButton muted={state.muted} onClick={state.onMuteToggle} />
       <Bars heights={levelToBars(state.level)} muted={state.muted} />
       <span className="pill__divider" aria-hidden="true" />
@@ -183,7 +199,7 @@ function ProcessingPill({ state }: { state: Extract<OverlayPillState, { kind: "p
   }
 
   return (
-    <div className="pill pill--compact pill--processing">
+    <div key={state.mode} className="pill pill--compact pill--processing">
       <MicButton muted={false} disabled />
       <Bars heights={IDLE_BARS} muted={false} />
       <span className="pill__divider" aria-hidden="true" />
@@ -280,7 +296,7 @@ function ErrorPill({ state }: { state: Extract<OverlayPillState, { kind: "error"
 
 function ModePickerPill({ state }: { state: Extract<OverlayPillState, { kind: "mode-picker" }> }) {
   return (
-    <div className="pill pill--compact pill--mode-picker">
+    <div key={state.mode} className="pill pill--compact pill--mode-picker">
       <Bars heights={IDLE_BARS} muted={false} />
       <span className="pill__divider" aria-hidden="true" />
       <ModeChip mode={state.mode} onClick={state.onCycleMode} />
