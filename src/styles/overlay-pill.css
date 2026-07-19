@@ -324,6 +324,19 @@
   line-height: 1;
   color: var(--ov-text);
   white-space: nowrap;
+  /* Fixed min-width so the ModeChip (and therefore the whole pill, which is
+     width:max-content) keeps a STABLE geometry across mode changes. The mode
+     labels range from "Auto" (4 chars) to "Verbatim" (8 chars). Without a
+     fixed width, the pill's width changes on every mode switch → the
+     `transform: scale(0.87)` compositor layer gets recached with a new
+     geometry → WebKitGTK briefly paints both the old and new pill geometries
+     (ghosting / "überlagerte States"). With a fixed min-width, the label
+     text changes but the box geometry does not → no compositor-layer
+     recache → no ghost. 52px fits the longest label ("Verbatim") with
+     comfortable padding at 12px/600-weight. text-align:center keeps shorter
+     labels visually centered within the fixed slot. */
+  min-width: 52px;
+  text-align: center;
 }
 
 /* ── Timer (mono elapsed time, information only) ──────────────────────────── */
