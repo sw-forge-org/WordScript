@@ -145,7 +145,7 @@ function RecordingPill({ state }: { state: Extract<OverlayPillState, { kind: "re
       <MicButton muted={state.muted} onClick={state.onMuteToggle} />
       <Bars heights={levelToBars(state.level)} muted={state.muted} />
       <span className="pill__divider" aria-hidden="true" />
-      <ModeChip key={state.mode} mode={state.mode} onClick={state.onCycleMode} />
+      <ModeChip mode={state.mode} onClick={state.onCycleMode} />
       <span className="pill__divider" aria-hidden="true" />
       <Timer
         seconds={state.elapsedSec}
@@ -187,7 +187,7 @@ function ProcessingPill({ state }: { state: Extract<OverlayPillState, { kind: "p
       <MicButton muted={false} disabled />
       <Bars heights={IDLE_BARS} muted={false} />
       <span className="pill__divider" aria-hidden="true" />
-      <ModeChip key={state.mode} mode={state.mode} onClick={state.onCycleMode} />
+      <ModeChip mode={state.mode} onClick={state.onCycleMode} />
       <span className="pill__divider" aria-hidden="true" />
       <Timer seconds={state.elapsedSec} />
       <span className="pill__divider" aria-hidden="true" />
@@ -283,7 +283,7 @@ function ModePickerPill({ state }: { state: Extract<OverlayPillState, { kind: "m
     <div className="pill pill--compact pill--mode-picker">
       <Bars heights={IDLE_BARS} muted={false} />
       <span className="pill__divider" aria-hidden="true" />
-      <ModeChip key={state.mode} mode={state.mode} onClick={state.onCycleMode} />
+      <ModeChip mode={state.mode} onClick={state.onCycleMode} />
     </div>
   );
 }

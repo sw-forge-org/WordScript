@@ -102,6 +102,14 @@ describe("OverlayWindow", () => {
     scaleFactorMock.mockResolvedValue(1);
     invokeMock.mockImplementation((command: string) => {
       switch (command) {
+        // Diagnose-Infrastruktur (plan 1784433288646, Phase 1.2): the overlay
+        // calls append_diag_log on every render/tap/schedule under DEV. Tolerate
+        // these in tests so they don't trip the default throw.
+        case "append_diag_log":
+        case "overlay_open_devtools":
+        case "read_diag_log":
+        case "clear_diag_log":
+          return Promise.resolve();
         case "sync_overlay_window_visibility":
           return Promise.resolve();
         case "remember_overlay_manual_position":

@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ActivitySquare,
   BookText,
+  Bug,
   Cpu,
   History as HistoryIcon,
   Home,
@@ -27,6 +28,7 @@ import { ModesTab } from "../components/settings/ModesTab";
 import { ApiModelsTab } from "../components/settings/ApiModelsTab";
 import { InputTab } from "../components/settings/InputTab";
 import { OverlayTab } from "../components/settings/OverlayTab";
+import { OverlayDiagPanel } from "../components/settings/OverlayDiagPanel";
 import { PromptsTab } from "../components/settings/PromptsTab";
 import { AboutTab } from "../components/settings/AboutTab";
 import { RebuildLabTab } from "../components/settings/RebuildLabTab";
@@ -51,6 +53,7 @@ type AreaId =
   | "modes"
   | "capture"
   | "overlay"
+  | "overlay_diag"
   | "insert_recovery"
   | "diagnostics"
   | "about"
@@ -70,7 +73,15 @@ interface AreaDef {
   config?: boolean;
 }
 
+// DEV-only overlay diagnose area (plan 1784433288646, Phase 1.2). Inlined as
+// a conditional spread so the entry is completely absent from production
+// builds (import.meta.env.DEV is statically replaced by Vite at build time).
+const DEV_OVERLAY_DIAG_AREA: AreaDef[] = import.meta.env.DEV
+  ? [{ id: "overlay_diag", label: "Overlay Diag", icon: Bug, group: "System", eyebrow: "Dev Only", blurb: "Live overlay diagnostic log + DevTools access (dev builds only)." }]
+  : [];
+
 const AREAS: AreaDef[] = [
+  ...DEV_OVERLAY_DIAG_AREA,
   { id: "home", label: "Home", icon: Home, group: "Workspace", eyebrow: "Overview", blurb: "Runtime readiness, recent dictations and quick recovery." },
   { id: "history", label: "History", icon: HistoryIcon, group: "Workspace", eyebrow: "Transcriptions", blurb: "Searchable transcription history, export and retention.", config: true },
   { id: "profiles", label: "Profiles", icon: BookText, group: "Workspace", eyebrow: "Text Rules", blurb: "Context, dictionary, snippets, transcription bias and profile defaults.", config: true },
@@ -345,6 +356,8 @@ export default function SettingsWindow() {
         return <InputTab config={form} onChange={patch} />;
       case "overlay":
         return <OverlayTab config={form} onChange={patch} />;
+      case "overlay_diag":
+        return <OverlayDiagPanel />;
       case "insert_recovery":
         return <InsertRecoveryArea config={form} onChange={patch} />;
       case "diagnostics":

@@ -185,16 +185,9 @@
 }
 
 /* Motion classes (Phase 2 will toggle these from the Rust side). Gallery
-   keeps them inert; the keyframes are defined for completeness.
-   .pill--open has NO transform rule: the previous `transform: translateZ(0)
-   scale(1)` promoted .pill to its own Compositor-Layer permanently (while
-   overlayMotion === "open"), which cached the raster on mode-cycle. The
-   overlay-panel-in animation already uses fill-mode "both", so its final
-   keyframe (opacity:1; transform: translateY(0) scale(1)) persists after the
-   animation completes — no separate idle-state rule is needed. (plan
-   1784429726777, combined with key={mode} on ModeChip to force layer
-   release per mode change.) */
+   keeps them inert; the keyframes are defined for completeness. */
 .ov-scope .pill--entering { animation: overlay-panel-in 320ms cubic-bezier(0.2, 0.9, 0.24, 1) both; }
+.ov-scope .pill--open { transform: translateZ(0) scale(1); }
 .ov-scope .pill--leaving { animation: overlay-panel-out 240ms ease-in both; }
 
 /* ── Mic zone ──────────────────────────────────────────────────────────────── */
@@ -317,7 +310,6 @@
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 5px;
   height: 26px;
   padding: 0 8px 0 10px;
@@ -328,21 +320,6 @@
   cursor: pointer;
   transition: background 140ms ease-out;
   position: relative;
-  /* Fixed min-width on the ModeChip button so its slot stays reserved during
-     the 1-frame unmount→mount gap when key={mode} forces a remount per mode
-     change. Without it, the button collapses to zero width for one frame
-     (reading as a flicker) AND the pill geometry changes during the swap
-     (reading as ghosting because WebKitGTK paints both the collapsed and the
-     re-measured width). With min-width:80px + justify-content:center, the
-     slot stays at the fixed width across the remount, the content (dot+label)
-     swaps atomically, and the pill geometry is stable. 80px fits all 6 mode
-     labels ("auto".."prompt_enhance") at 12px/600-weight with dot + padding.
-     This is the COMBINED fix: key={mode} forces the compositor-layer release
-     (eliminates the cached-raster ghosting), min-width keeps the geometry
-     stable across the remount (eliminates the geometry-change ghosting and
-     the remount flicker). Both are needed — either alone is insufficient.
-     (plan 1784429726777.) */
-  min-width: 80px;
 }
 
 .ov-scope .pill__mode:hover { background: rgba(255, 255, 255, 0.05); }
@@ -363,7 +340,6 @@
   line-height: 1;
   color: var(--ov-text);
   white-space: nowrap;
-  text-align: center;
 }
 
 /* ── Timer (mono elapsed time, information only) ──────────────────────────── */

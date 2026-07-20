@@ -129,6 +129,17 @@ function audioPayloadToLevel(payload: AudioLevelEvent): number {
   return clamp01(Math.max(level * 3.15, rms * 3.45, waveformPeak * 2.2));
 }
 
+// DEV-only diagnostic log (plan 1784433288646, Phase 1.2). Writes to both the
+// browser console and the Rust-side /tmp/kilo/overlay-diag.log via
+// `append_diag_log`. The Settings-Window Diagnose-Panel polls that file for
+// live display. Fire-and-forget — never blocks the render or reveal path.
+// In production (import.meta.env.DEV === false) this is a no-op.
+function diagLog(line: string) {
+  if (!import.meta.env.DEV) return;
+  console.warn(line);
+  void invoke("append_diag_log", { line }).catch(() => {});
+}
+
 export default function OverlayWindow() {
   const { state, toggleMute, togglePause } = useRuntime();
   const { status, muted, paused, error } = state;
@@ -358,6 +369,7 @@ export default function OverlayWindow() {
   const revealScheduledRef = useRef(false);
   const scheduleReveal = useCallback((req: RevealRequest) => {
     pendingRevealRef.current = req; // latest-wins, overwrites any prior request in the same tick
+    diagLog(`[ov-sched] schedule surface=${req.surface} w=${req.width ?? "-"} h=${req.height ?? "-"} t=${Date.now()}`);
     if (revealScheduledRef.current) return;
     revealScheduledRef.current = true;
     const flush = () => {
@@ -365,6 +377,7 @@ export default function OverlayWindow() {
       const r = pendingRevealRef.current;
       pendingRevealRef.current = null;
       if (!r) return;
+      diagLog(`[ov-sched] flush surface=${r.surface} w=${r.width ?? "-"} h=${r.height ?? "-"} t=${Date.now()}`);
       void invoke("sync_overlay_window_visibility", {
         visible: true,
         surface: r.surface,
@@ -726,6 +739,11 @@ export default function OverlayWindow() {
   );
   const pillMode: OverlayProcessingMode = effectiveMode ?? configFallbackMode ?? "auto";
 
+  // [ov-render] (plan 1784433288646, Phase 1.2): per-commit diagnostic of the
+  // mode resolution + surface + motion state. Confirms 1 pillMode-sprung per
+  // tap (NI2/NI4 widelegt) und zeigt den Render-Kontext pro Commit.
+  diagLog(`[ov-render] pillMode=${pillMode} eff=${effectiveMode ?? "null"} fb=${configFallbackMode ?? "null"} surface=${overlaySurface} motion=${overlayMotion} active=${isActive}`);
+
   // Refs mirroring the effective/fallback mode so the stable mode-select
   // listener can read the current value without re-subscribing every render.
   const effectiveModeRef = useRef(pillMode);
@@ -760,7 +778,7 @@ export default function OverlayWindow() {
         : { width: 480, height: 60 };
     if (import.meta.env.DEV) {
       const pill = shellRef.current?.querySelector<HTMLElement>(".ov-pill-shell");
-      console.warn(
+      diagLog(
         `[ov-dom] surface=${surface} reqW=${width} innerW=${window.innerWidth} innerH=${window.innerHeight} pillOffsetW=${pill?.offsetWidth ?? "n/a"}`,
       );
     }
@@ -778,7 +796,7 @@ export default function OverlayWindow() {
     if (!import.meta.env.DEV) return;
     let unlisten: (() => void) | undefined;
     void listen<unknown>("ov-reveal-debug", (event) => {
-      console.warn("[ov-reveal]", JSON.stringify(event.payload));
+      diagLog(`[ov-reveal] ${JSON.stringify(event.payload)}`);
     }).then((fn) => {
       unlisten = fn;
     });
@@ -973,6 +991,7 @@ export default function OverlayWindow() {
     if (!current) return;
     const index = MODE_CYCLE.indexOf(current);
     const next = MODE_CYCLE[(index + 1) % MODE_CYCLE.length] ?? MODE_CYCLE[0];
+    diagLog(`[ov-tap] ${current} -> ${next} t=${Date.now()}`);
     setEffectiveMode(next);
     void invoke("set_active_profile_processing_mode", { mode: next })
       .then(() => fetchEffectiveMode())
@@ -1291,6 +1310,15 @@ export default function OverlayWindow() {
     if (!isActive) return;
     if (overlayMotionRef.current === "leaving") return;
     if (dragSessionActiveRef.current) return;
+    // [ov-repaint] (plan 1784433288646, Phase 1.2): misst Pill-Breite +
+    // ModeChip-Breite pro Repaint-Trigger. Zeigt ob die Geometrie pro
+    // Mode-Wechsel oszilliert (die 27px-Variation die das Ghosting treibt).
+    if (import.meta.env.DEV) {
+      const shell = shellRef.current?.querySelector<HTMLElement>(".ov-pill-shell");
+      const pill = shellRef.current?.querySelector<HTMLElement>(".pill");
+      const mode = shellRef.current?.querySelector<HTMLElement>(".pill__mode");
+      diagLog(`[ov-repaint] epoch=${pillVisualEpoch} shellW=${shell?.offsetWidth ?? "n/a"} pillW=${pill?.offsetWidth ?? "n/a"} modeW=${mode?.offsetWidth ?? "n/a"}`);
+    }
     scheduleReveal({ surface: overlaySurfaceRef.current });
   }, [pillVisualEpoch, isActive, scheduleReveal]);
 

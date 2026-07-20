@@ -1,7 +1,9 @@
 use std::{
+    fs::OpenOptions,
+    io::Write,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Mutex,
+        Mutex, Once,
     },
     time::Duration,
 };
@@ -92,6 +94,16 @@ static OVERLAY_WINDOW_SHOWN: AtomicBool = AtomicBool::new(false);
 // ONE `set_size` per frame with ONE height instead of 2–3 competing heights.
 static OVERLAY_PENDING_REVEAL: Mutex<Option<(OverlaySurface, Option<f64>, Option<f64>)>> = Mutex::new(None);
 static OVERLAY_REVEAL_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
+// ── Diagnose-Infrastruktur (plan 1784433288646, Phase 1.2) ──────────────────
+// Permanent debug-only log sink for the overlay window. The frontend writes
+// [ov-tap]/[ov-render]/[ov-sched]/[ov-repaint]/[ov-dom]/[ov-reveal] lines via
+// the `append_diag_log` command (only called under `import.meta.env.DEV`). The
+// Settings-Window Diagnose-Panel polls `read_diag_log` to display them live.
+// The `Once` truncates the file on the first call per process run so each
+// `npm run tauri dev` session starts with a fresh log.
+const OVERLAY_DIAG_LOG_PATH: &str = "/tmp/kilo/overlay-diag.log";
+static OVERLAY_DIAG_LOG_TRUNCATED: Once = Once::new();
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1970,6 +1982,72 @@ async fn resize_edit_overlay(app: AppHandle, width: f64, height: f64) -> Result<
     Ok(())
 }
 
+// ── Diagnose-Infrastruktur commands (plan 1784433288646, Phase 1.2) ──────────
+// Permanent, debug-only. The frontend only invokes these under
+// `import.meta.env.DEV`; they are safe to register unconditionally but
+// `overlay_open_devtools` is cfg-gated because `open_devtools()` is only
+// available in debug builds (or with the `devtools` Cargo feature).
+
+/// Open the WebKit devtools for the overlay window. The `open_devtools()`
+/// call is gated to debug builds because Tauri v2 only exposes it when
+/// `debug_assertions` is set or the `devtools` Cargo feature is enabled. The
+/// command itself is always registered so the invoke_handler macro stays
+/// uniform; in release builds it returns an error (the frontend only calls it
+/// under `import.meta.env.DEV` anyway).
+#[tauri::command]
+async fn overlay_open_devtools(app: AppHandle) -> Result<(), String> {
+    #[cfg(any(debug_assertions, feature = "devtools"))]
+    {
+        let window = app
+            .get_webview_window("overlay")
+            .ok_or_else(|| "overlay window not found".to_string())?;
+        window.open_devtools();
+        Ok(())
+    }
+    #[cfg(not(any(debug_assertions, feature = "devtools")))]
+    {
+        let _ = app;
+        Err("overlay_open_devtools is only available in debug builds".to_string())
+    }
+}
+
+/// Append a diagnostic line to /tmp/kilo/overlay-diag.log. The first call per
+/// process run truncates the file (via `Once`) so each dev session starts
+/// fresh. Called from the frontend under `import.meta.env.DEV` only.
+#[tauri::command]
+async fn append_diag_log(line: String) -> Result<(), String> {
+    OVERLAY_DIAG_LOG_TRUNCATED.call_once(|| {
+        // Best-effort truncate on the first call. Ignore errors — the append
+        // below will create the file if it doesn't exist.
+        let _ = std::fs::File::create(OVERLAY_DIAG_LOG_PATH);
+    });
+    // Ensure /tmp/kilo exists (it should, but be defensive on fresh machines).
+    if let Some(parent) = std::path::Path::new(OVERLAY_DIAG_LOG_PATH).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(OVERLAY_DIAG_LOG_PATH)
+        .map_err(|e| e.to_string())?;
+    writeln!(file, "{line}").map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Read the current diagnostic log. Used by the Settings-Window Diagnose-Panel
+/// for live polling.
+#[tauri::command]
+async fn read_diag_log() -> Result<String, String> {
+    Ok(std::fs::read_to_string(OVERLAY_DIAG_LOG_PATH).unwrap_or_default())
+}
+
+/// Clear the diagnostic log (truncates to empty).
+#[tauri::command]
+async fn clear_diag_log() -> Result<(), String> {
+    std::fs::write(OVERLAY_DIAG_LOG_PATH, "").map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ── Overlay input routing (Linux/WebKitGTK) ─────────────────────────────────
 // REVERTED 2026-06-19. A cursor-position poller toggling set_ignore_cursor_events
 // does NOT work on this Wayland setup — confirmed by STATUS.md ("setIgnoreCursorEvents
@@ -2119,6 +2197,10 @@ pub fn run() {
             sync_overlay_window_visibility,
             resize_overlay_to_height,
             resize_edit_overlay,
+            overlay_open_devtools,
+            append_diag_log,
+            read_diag_log,
+            clear_diag_log,
             remember_overlay_manual_position,
             core::providers::provider_status,
             core::providers::save_provider_api_key,
