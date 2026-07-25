@@ -36,13 +36,78 @@ Still open:
   session facts (compositor, session type, XWayland versus native Wayland, keys
   the desktop swallows), which is the input the matrix needs.
 
+### S0 measurement, run 1 (2026-07-25, KDE Plasma 6 / Wayland session, app on XWayland)
+
+Method: the rebuilt dev build running in the native host, keys injected through
+XTEST (`xdotool`) on the mode-select shortcut `Ctrl+F11`, which is harmless — it
+opens the overlay selector and starts no capture. Evidence read from the
+`[trigger]` lines in the runtime log.
+
+**Established:**
+
+- **Registration is observable and complete.** All ten bindings registered with
+  the OS on this session:
+
+  ```
+  [trigger] event=register binding=capture       shortcut=F1        id=160    outcome=ok
+  [trigger] event=register binding=pause         shortcut=Ctrl+F10  id=524457 outcome=ok
+  [trigger] event=register binding=abort         shortcut=F4        id=163    outcome=ok
+  [trigger] event=register binding=mode_picker   shortcut=Ctrl+F11  id=524458 outcome=ok
+  [trigger] event=register binding=auto          shortcut=Ctrl+F6   id=524453 outcome=ok
+  … (verbatim, cleanup, rewrite, agent, prompt_enhance all outcome=ok)
+  ```
+
+- **The migration preserves the reporter's escaped state.** `hotkey = "f1"` and
+  `abort_hotkey = "f4"` became `F1` and `F4` — canonicalized, not replaced by a
+  platform default — and `shortcut_schema_version = 1` plus
+  `hold_watchdog_seconds = 120` were stamped once.
+
+- **Press events reach the app through the XWayland grab.** Every injected press
+  produced `event=shortcut … state=pressed` and the matching decision line.
+
+**The decisive negative result: release delivery is nondeterministic.** Holding
+the shortcut for a fixed duration and counting the events per run:
+
+| Hold duration | `state=pressed` | `state=released` |
+| --- | --- | --- |
+| atomic tap | 1 | 1 |
+| 1 s | 4 | 4 |
+| 2 s | 1 | 0 |
+| 3 s | 2 | 2 |
+| 6 s | 2 | 0 |
+
+Two distinct failure modes, both reproduced more than once:
+
+1. **Extra press/release pairs arrive during a hold.** A hold that should be one
+   press and one release delivered two or four of each. In hold mode the first
+   spurious release would stop a capture while the key is still down.
+2. **The release is lost entirely.** The 2 s and 6 s runs produced a press with
+   no matching release, leaving the vendored crate's `state.pressed` — and, in
+   hold mode, `hotkey_active` — stuck. This is exactly the stranded hold D11
+   describes, and it is the state the new watchdog now ends with a stated
+   reason instead of letting it drift into the silence timeout.
+
+The counts do not scale with hold duration, so this is not plain auto-repeat.
+
+**Limit of this measurement, stated honestly:** XTEST injects through a
+different path than physical hardware input, so a negative XTEST result does not
+prove that physical keys behave the same way. What it does establish is that the
+delivery is not deterministic on this path, and that the stranded-hold state is
+reachable in practice rather than hypothetical.
+
 ### Evidence still to collect
 
-The press/release counters per binding are now in `native_trigger_status` and
-every event is in the runtime log. To decide S6 and S7, run the app in the
-native host and press the configured shortcut twice: once with an XWayland
-application focused, once with a native Wayland application focused. Report
-whether both `state=pressed` and `state=released` appear in each case.
+Two things this run could not produce, both requiring a person at the keyboard:
+
+1. **Physical key delivery.** Repeat the hold table above with real key presses
+   rather than XTEST, and compare.
+2. **Focus dependency.** Press the shortcut once with an XWayland application
+   focused and once with a native Wayland application focused. XTEST cannot
+   reach a Wayland-focused client, which is precisely the case in question.
+   Report whether `state=pressed` and `state=released` both appear in each case.
+
+Until at least (1) is answered, S6 keeps hold to talk selectable with the
+watchdog and the honest note, rather than gating it on a guess.
 
 ---
 
