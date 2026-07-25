@@ -519,6 +519,10 @@ pub struct ShortcutValidation {
     pub disabled: bool,
     pub canonical: String,
     pub display: String,
+    /// True when the shortcut is built from modifiers only. Such a shortcut
+    /// acts on key release and, in tap mode, on every single press — which is
+    /// what makes double-tap activation worth offering for it.
+    pub modifier_only: bool,
     pub reason: Option<String>,
     pub warning: Option<String>,
 }
@@ -549,6 +553,7 @@ pub fn validate_shortcut(request: ValidateShortcutRequest) -> ShortcutValidation
             disabled: true,
             canonical: String::new(),
             display: String::new(),
+            modifier_only: false,
             reason: None,
             warning: None,
         },
@@ -557,6 +562,7 @@ pub fn validate_shortcut(request: ValidateShortcutRequest) -> ShortcutValidation
             disabled: false,
             canonical: parsed.canonical,
             display: parsed.display,
+            modifier_only: parsed.modifier_only,
             reason: None,
             warning: parsed.warning,
         },
@@ -565,6 +571,7 @@ pub fn validate_shortcut(request: ValidateShortcutRequest) -> ShortcutValidation
             disabled: false,
             canonical: String::new(),
             display: String::new(),
+            modifier_only: false,
             reason: Some(reason),
             warning: None,
         },

@@ -497,6 +497,10 @@ pub struct AppConfig {
     /// with a stated reason. `0` disables the watchdog.
     #[serde(default = "default_hold_watchdog_seconds")]
     pub hold_watchdog_seconds: u64,
+    /// How close together the two taps of a double-tap activation must be, in
+    /// milliseconds.
+    #[serde(default = "default_double_tap_window_ms")]
+    pub double_tap_window_ms: u64,
     /// Migration gate for the shortcut lane. Legacy rewrites run once at
     /// version `0` and never again — a migration that fires on every save
     /// silently rewrites values the user just chose (D6).
@@ -605,6 +609,7 @@ impl Default for AppConfig {
             abort_hotkey: default_abort_hotkey().to_string(),
             activation_mode: "tap".to_string(),
             hold_watchdog_seconds: default_hold_watchdog_seconds(),
+            double_tap_window_ms: default_double_tap_window_ms(),
             shortcut_schema_version: SHORTCUT_SCHEMA_VERSION,
             overlay_position_mode: OverlayPositionMode::Preset,
             overlay_monitor: default_overlay_monitor().to_string(),
@@ -857,6 +862,9 @@ impl AppConfig {
         self.auto_paste = false;
         migrate_shortcut_schema(self);
         self.hold_watchdog_seconds = self.hold_watchdog_seconds.min(3600);
+        // Below ~150 ms a deliberate double tap is hard to hit; above ~1 s two
+        // unrelated presses start merging into one.
+        self.double_tap_window_ms = self.double_tap_window_ms.clamp(150, 1000);
         self.hotkey = normalize_shortcut_value(&self.hotkey, true);
         self.pause_hotkey = normalize_shortcut_value(&self.pause_hotkey, true);
         self.abort_hotkey = normalize_shortcut_value(&self.abort_hotkey, true);
@@ -1271,6 +1279,10 @@ fn default_overlay_monitor() -> &'static str {
 
 fn default_hold_watchdog_seconds() -> u64 {
     120
+}
+
+fn default_double_tap_window_ms() -> u64 {
+    400
 }
 
 fn default_result_actions_timeout_s() -> u64 {

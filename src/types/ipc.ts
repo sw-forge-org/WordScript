@@ -205,7 +205,7 @@ export interface AppConfig {
   hotkey:                  string;
   pause_hotkey:            string;
   abort_hotkey:            string;
-  activation_mode:         "tap" | "hold";
+  activation_mode:         "tap" | "hold" | "double_tap";
   overlay_position_mode:   OverlayPositionMode;
   overlay_monitor:         string;
   overlay_anchor:          OverlayAnchor;
@@ -239,6 +239,7 @@ export interface AppConfig {
   mode_agent_hotkey?:       string;
   mode_prompt_enhance_hotkey?: string;
   hold_watchdog_seconds?:   number;
+  double_tap_window_ms?:    number;
   shortcut_schema_version?: number;
 }
 
@@ -248,6 +249,9 @@ export interface ShortcutValidation {
   disabled:  boolean;
   canonical: string;
   display:   string;
+  /** True when the shortcut is modifiers only — it acts on key release and, in
+   *  tap mode, on every single press. */
+  modifier_only: boolean;
   reason:    string | null;
   warning:   string | null;
 }
@@ -301,13 +305,14 @@ export interface NativeTriggerStatus {
   registered_hotkey:        string | null;
   registered_pause_hotkey:  string | null;
   registered_abort_hotkey:  string | null;
-  activation_mode:          "tap" | "hold";
+  activation_mode:          "tap" | "hold" | "double_tap";
   last_error:               string | null;
   owner:                    string;
   bindings:                 ShortcutBindingInfo[];
   hold_min_ms:              number;
   debounce_ms:              number;
   hold_watchdog_seconds:    number;
+  double_tap_window_ms:     number;
   registered_mode_hotkeys:  Array<{ label: string; display: string }>;
 }
 

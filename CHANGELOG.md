@@ -139,6 +139,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The old `hooks/pre-commit` location and regenerated legacy `BUILD_ID` and
   `build_info.json` behavior.
 
+### Added
+
+- A third activation mode, **double tap to toggle**: two taps within
+  `double_tap_window_ms` (default 400) start or stop the capture, a single tap
+  does nothing. This is what the mainstream dictation tools do — Wispr Flow
+  double-taps right Shift, macOS Dictation double-taps Fn — and it exists for a
+  concrete reason: a modifier-only trigger in tap mode acts on every single
+  press, so `Ctrl+Alt` as the trigger also fires when the user meant
+  `Ctrl+Alt+T`. Requiring two taps leaves the single press to the rest of the
+  desktop. The gate covers start/stop, pause and abort, each with its own
+  window; mode hotkeys stay single-press. Settings names the trade-off on both
+  modes.
+
 ### Changed
 
 - New default shortcut rotation, identical on Linux, Windows and macOS:

@@ -17,6 +17,7 @@ use super::shortcut;
 const DEFAULT_DEBOUNCE_MS: u64 = 300;
 const DEFAULT_HOLD_MIN_MS: u64 = 300;
 const DEFAULT_HOLD_WATCHDOG_SECONDS: u64 = 120;
+const DEFAULT_DOUBLE_TAP_WINDOW_MS: u64 = 400;
 
 /// Permanent structured logging for the trigger lane (T11). Every shortcut
 /// event, every registration outcome and every decision the state machine
@@ -55,10 +56,7 @@ fn describe_trigger_decision(
             ShortcutState::Pressed => "pressed",
             ShortcutState::Released => "released",
         },
-        match activation_mode {
-            NativeActivationMode::Tap => "tap",
-            NativeActivationMode::Hold => "hold",
-        }
+        activation_mode.as_log_token()
     )
 }
 
@@ -151,15 +149,52 @@ impl ModeHotkeys {
 pub enum NativeActivationMode {
     Tap,
     Hold,
+    DoubleTap,
 }
 
 impl NativeActivationMode {
     fn from_config(value: &str) -> Self {
+        let value = value.trim();
         if value.eq_ignore_ascii_case("hold") {
             Self::Hold
+        } else if value.eq_ignore_ascii_case("double_tap")
+            || value.eq_ignore_ascii_case("doubletap")
+            || value.eq_ignore_ascii_case("double")
+        {
+            Self::DoubleTap
         } else {
             Self::Tap
         }
+    }
+
+    fn as_log_token(&self) -> &'static str {
+        match self {
+            Self::Tap => "tap",
+            Self::Hold => "hold",
+            Self::DoubleTap => "double_tap",
+        }
+    }
+}
+
+/// What a single trigger edge means while `DoubleTap` is active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DoubleTapOutcome {
+    /// First edge: remember it and do nothing. This is what gives the desktop
+    /// its keys back — a lone `Ctrl+Alt` no longer acts, so `Ctrl+Alt+T` keeps
+    /// opening a terminal without also firing WordScript.
+    Armed,
+    /// Second edge inside the window: act.
+    Fired,
+}
+
+fn resolve_double_tap(
+    last_edge: Option<Instant>,
+    window: Duration,
+    now: Instant,
+) -> DoubleTapOutcome {
+    match last_edge {
+        Some(previous) if now.duration_since(previous) <= window => DoubleTapOutcome::Fired,
+        _ => DoubleTapOutcome::Armed,
     }
 }
 
@@ -177,6 +212,9 @@ pub struct NativeTriggerConfig {
     /// until the silence timeout or the maximum-length cap and look like an
     /// unrelated capture bug (D11). `0` disables the watchdog.
     pub hold_watchdog_seconds: u64,
+    /// How close together the two taps of a double-tap must be, in
+    /// milliseconds.
+    pub double_tap_window_ms: u64,
     #[serde(default)]
     pub mode_hotkeys: ModeHotkeys,
 }
@@ -192,6 +230,7 @@ impl Default for NativeTriggerConfig {
             debounce_ms: DEFAULT_DEBOUNCE_MS,
             hold_min_ms: DEFAULT_HOLD_MIN_MS,
             hold_watchdog_seconds: DEFAULT_HOLD_WATCHDOG_SECONDS,
+            double_tap_window_ms: DEFAULT_DOUBLE_TAP_WINDOW_MS,
             mode_hotkeys: ModeHotkeys::default(),
         }
     }
@@ -208,6 +247,7 @@ impl NativeTriggerConfig {
             abort_hotkey: app_config.abort_hotkey,
             activation_mode: NativeActivationMode::from_config(&app_config.activation_mode),
             hold_watchdog_seconds: app_config.hold_watchdog_seconds,
+            double_tap_window_ms: app_config.double_tap_window_ms,
             mode_hotkeys,
             ..Self::default()
         }
@@ -251,6 +291,7 @@ pub struct NativeTriggerStatus {
     pub hold_min_ms: u64,
     pub debounce_ms: u64,
     pub hold_watchdog_seconds: u64,
+    pub double_tap_window_ms: u64,
     /// Labels of mode hotkeys currently registered with the OS, together with
     /// their display string. Empty when no mode hotkeys are active. Lets the
     /// frontend show runtime truth instead of assuming registration succeeded.
@@ -379,6 +420,10 @@ pub struct NativeTriggerState {
     /// Whether a `Released` event was seen for the current hold session. The
     /// watchdog only ends a hold that never got one.
     hold_release_seen: bool,
+    /// Timestamp of the first tap per binding, while waiting for the second.
+    /// Keyed by binding label so capture, pause and abort each get their own
+    /// window instead of stealing each other's arm.
+    double_tap_edges: std::collections::HashMap<String, Instant>,
     last_hotkey_press: Option<Instant>,
     last_tap_shortcut_intent: Option<TapShortcutIntent>,
     last_error: Option<String>,
@@ -413,6 +458,7 @@ impl NativeTriggerState {
             hold_session: 0,
             hold_started_at: None,
             hold_release_seen: false,
+            double_tap_edges: std::collections::HashMap::new(),
             last_hotkey_press: None,
             last_tap_shortcut_intent: None,
             last_error: None,
@@ -438,6 +484,7 @@ impl NativeTriggerState {
             hold_min_ms: self.config.hold_min_ms,
             debounce_ms: self.config.debounce_ms,
             hold_watchdog_seconds: self.config.hold_watchdog_seconds,
+            double_tap_window_ms: self.config.double_tap_window_ms,
             registered_mode_hotkeys: self
                 .registered_mode_hotkeys
                 .iter()
@@ -491,6 +538,7 @@ pub fn configure_native_trigger(
         hold_watchdog_seconds: request
             .hold_watchdog_seconds
             .unwrap_or(existing_hold_watchdog),
+        double_tap_window_ms: persisted.double_tap_window_ms,
         mode_hotkeys,
     };
 
@@ -997,6 +1045,11 @@ pub fn handle_global_shortcut_event<R: Runtime>(
                 return None;
             }
             state.abort_active = true;
+            if requires_double_tap(&state) && !double_tap_gate(&mut state, "abort", Instant::now())
+            {
+                decide("double_tap_armed");
+                return None;
+            }
             state.hotkey_active = false;
             state.tap_hotkey_down = false;
             state.toggled_on = false;
@@ -1016,6 +1069,11 @@ pub fn handle_global_shortcut_event<R: Runtime>(
                 return None;
             }
             state.pause_active = true;
+            if requires_double_tap(&state) && !double_tap_gate(&mut state, "pause", Instant::now())
+            {
+                decide("double_tap_armed");
+                return None;
+            }
             decide("toggle_pause");
             drop(state);
             Some(TriggerEffect::TogglePause)
@@ -1056,6 +1114,32 @@ pub fn handle_global_shortcut_event<R: Runtime>(
                     drop(state);
                     apply_tap_shortcut_intent(app, intent, capture_is_recording)
                 }
+                NativeActivationMode::DoubleTap => {
+                    if !begin_tap_press(&mut state) {
+                        decide("ignored_key_repeat");
+                        return None;
+                    }
+                    if double_tap_uses_release_trigger(&state) {
+                        decide("deferred_to_release_modifier_only");
+                        return None;
+                    }
+                    match apply_double_tap_edge(
+                        &mut state,
+                        session_stage,
+                        capture_is_recording,
+                        now,
+                    ) {
+                        Some(intent) => {
+                            decide(tap_intent_decision(intent));
+                            drop(state);
+                            apply_tap_shortcut_intent(app, intent, capture_is_recording)
+                        }
+                        None => {
+                            decide("double_tap_armed");
+                            None
+                        }
+                    }
+                }
                 NativeActivationMode::Hold => {
                     if state
                         .last_hotkey_press
@@ -1091,6 +1175,32 @@ pub fn handle_global_shortcut_event<R: Runtime>(
             }
         }
         ShortcutState::Released if is_hotkey => {
+            if state.config.activation_mode == NativeActivationMode::DoubleTap {
+                end_tap_press(&mut state);
+                if !double_tap_uses_release_trigger(&state) {
+                    decide("armed_for_next_press");
+                    return None;
+                }
+
+                let now = Instant::now();
+                return match apply_double_tap_edge(
+                    &mut state,
+                    session_stage,
+                    capture_is_recording,
+                    now,
+                ) {
+                    Some(intent) => {
+                        decide(tap_intent_decision(intent));
+                        drop(state);
+                        apply_tap_shortcut_intent(app, intent, capture_is_recording)
+                    }
+                    None => {
+                        decide("double_tap_armed");
+                        None
+                    }
+                };
+            }
+
             if state.config.activation_mode == NativeActivationMode::Tap {
                 if !tap_hotkey_uses_release_trigger(&state) {
                     end_tap_press(&mut state);
@@ -1464,6 +1574,61 @@ fn tap_hotkey_uses_release_trigger(state: &NativeTriggerState) -> bool {
         && is_modifier_only_shortcut(&state.config.hotkey)
 }
 
+/// Double-tap counts the same edge tap mode acts on: the release for a
+/// modifier-only shortcut (there is no "press" that is distinguishable from
+/// holding a modifier), the press otherwise — which is also the more reliably
+/// delivered edge on Linux.
+fn double_tap_uses_release_trigger(state: &NativeTriggerState) -> bool {
+    is_modifier_only_shortcut(&state.config.hotkey)
+}
+
+/// Handles one trigger edge in double-tap mode. Returns `None` while waiting
+/// for the second tap, and the resolved intent once it arrives.
+fn apply_double_tap_edge(
+    state: &mut NativeTriggerState,
+    session_stage: Option<NativeSessionStage>,
+    capture_is_recording: bool,
+    now: Instant,
+) -> Option<TapShortcutIntent> {
+    if !double_tap_gate(state, "capture", now) {
+        return None;
+    }
+
+    {
+        // The second tap is the deliberate one, so the debounce that protects
+        // tap mode from key repeat must not swallow it.
+        state.last_tap_shortcut_intent = None;
+        state.last_hotkey_press = None;
+        resolve_tap_shortcut_intent(state, session_stage, capture_is_recording, now)
+    }
+}
+
+/// Returns true when this edge is the second tap of a double tap and the
+/// binding should act. The first tap is remembered and swallowed — that is what
+/// leaves a single press to the rest of the desktop.
+fn double_tap_gate(state: &mut NativeTriggerState, label: &str, now: Instant) -> bool {
+    let window = Duration::from_millis(state.config.double_tap_window_ms);
+    let previous = state.double_tap_edges.get(label).copied();
+
+    match resolve_double_tap(previous, window, now) {
+        DoubleTapOutcome::Armed => {
+            state.double_tap_edges.insert(label.to_string(), now);
+            false
+        }
+        DoubleTapOutcome::Fired => {
+            state.double_tap_edges.remove(label);
+            true
+        }
+    }
+}
+
+/// Whether this binding must see two taps before it acts. Applies to the three
+/// capture-lane triggers only; mode hotkeys stay single-press, where a stray
+/// activation costs a mode switch rather than a lost or unwanted recording.
+fn requires_double_tap(state: &NativeTriggerState) -> bool {
+    state.config.activation_mode == NativeActivationMode::DoubleTap
+}
+
 fn begin_tap_press(state: &mut NativeTriggerState) -> bool {
     if state.tap_hotkey_down {
         return false;
@@ -1736,6 +1901,184 @@ mod tests {
             .registered_mode_hotkeys
             .iter()
             .any(|h| h.label == "agent" && h.display == "Ctrl+Alt+5"));
+    }
+
+    #[test]
+    fn activation_mode_parses_every_spelling() {
+        assert_eq!(NativeActivationMode::from_config("tap"), NativeActivationMode::Tap);
+        assert_eq!(NativeActivationMode::from_config("hold"), NativeActivationMode::Hold);
+        for value in ["double_tap", "doubleTap", "DOUBLE", " double_tap "] {
+            assert_eq!(
+                NativeActivationMode::from_config(value),
+                NativeActivationMode::DoubleTap,
+                "'{value}' should parse as double tap"
+            );
+        }
+        // Anything unknown stays on the safe, well-understood default.
+        assert_eq!(NativeActivationMode::from_config("wobble"), NativeActivationMode::Tap);
+    }
+
+    #[test]
+    fn a_single_tap_never_fires_in_double_tap_mode() {
+        // This is the whole point: a lone Ctrl+Alt must not act, so
+        // Ctrl+Alt+T keeps opening a terminal without also triggering
+        // WordScript.
+        let now = Instant::now();
+        assert_eq!(
+            resolve_double_tap(None, Duration::from_millis(400), now),
+            DoubleTapOutcome::Armed
+        );
+    }
+
+    #[test]
+    fn two_taps_inside_the_window_fire() {
+        let first = Instant::now();
+        assert_eq!(
+            resolve_double_tap(
+                Some(first),
+                Duration::from_millis(400),
+                first + Duration::from_millis(180),
+            ),
+            DoubleTapOutcome::Fired
+        );
+    }
+
+    #[test]
+    fn two_taps_outside_the_window_only_rearm() {
+        let first = Instant::now();
+        assert_eq!(
+            resolve_double_tap(
+                Some(first),
+                Duration::from_millis(400),
+                first + Duration::from_millis(900),
+            ),
+            DoubleTapOutcome::Armed
+        );
+    }
+
+    #[test]
+    fn double_tap_toggles_start_then_stop() {
+        let mut state = NativeTriggerState::new(NativeTriggerConfig {
+            hotkey: "Ctrl+Alt".to_string(),
+            activation_mode: NativeActivationMode::DoubleTap,
+            ..NativeTriggerConfig::default()
+        });
+
+        let t0 = Instant::now();
+        // First tap arms only.
+        assert!(apply_double_tap_edge(&mut state, None, false, t0).is_none());
+        // Second tap inside the window starts the capture.
+        assert_eq!(
+            apply_double_tap_edge(&mut state, None, false, t0 + Duration::from_millis(150)),
+            Some(TapShortcutIntent::Start)
+        );
+
+        // While capturing, the next double tap stops it.
+        let t1 = t0 + Duration::from_secs(5);
+        assert!(apply_double_tap_edge(
+            &mut state,
+            Some(NativeSessionStage::Capturing),
+            true,
+            t1
+        )
+        .is_none());
+        assert_eq!(
+            apply_double_tap_edge(
+                &mut state,
+                Some(NativeSessionStage::Capturing),
+                true,
+                t1 + Duration::from_millis(150),
+            ),
+            Some(TapShortcutIntent::Stop)
+        );
+    }
+
+    #[test]
+    fn a_slow_second_tap_rearms_instead_of_firing() {
+        let mut state = NativeTriggerState::new(NativeTriggerConfig {
+            hotkey: "Ctrl+Alt".to_string(),
+            activation_mode: NativeActivationMode::DoubleTap,
+            ..NativeTriggerConfig::default()
+        });
+
+        let t0 = Instant::now();
+        assert!(apply_double_tap_edge(&mut state, None, false, t0).is_none());
+        assert!(apply_double_tap_edge(
+            &mut state,
+            None,
+            false,
+            t0 + Duration::from_millis(900)
+        )
+        .is_none());
+        // …but the tap after that one is within the window of the re-arm.
+        assert_eq!(
+            apply_double_tap_edge(
+                &mut state,
+                None,
+                false,
+                t0 + Duration::from_millis(900 + 150),
+            ),
+            Some(TapShortcutIntent::Start)
+        );
+    }
+
+    #[test]
+    fn each_binding_keeps_its_own_double_tap_window() {
+        // Abort and pause must not consume each other's first tap, and a tap on
+        // one must not complete a double tap on the other.
+        let mut state = NativeTriggerState::new(NativeTriggerConfig {
+            activation_mode: NativeActivationMode::DoubleTap,
+            ..NativeTriggerConfig::default()
+        });
+
+        let t0 = Instant::now();
+        assert!(!double_tap_gate(&mut state, "abort", t0));
+        assert!(!double_tap_gate(&mut state, "pause", t0 + Duration::from_millis(50)));
+
+        // Each completes only with its own second tap.
+        assert!(double_tap_gate(&mut state, "abort", t0 + Duration::from_millis(100)));
+        assert!(double_tap_gate(&mut state, "pause", t0 + Duration::from_millis(150)));
+
+        // And both are disarmed again afterwards.
+        assert!(!double_tap_gate(&mut state, "abort", t0 + Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn double_tap_applies_to_the_capture_lane_only_when_the_mode_is_selected() {
+        for (mode, expected) in [
+            (NativeActivationMode::Tap, false),
+            (NativeActivationMode::Hold, false),
+            (NativeActivationMode::DoubleTap, true),
+        ] {
+            let state = NativeTriggerState::new(NativeTriggerConfig {
+                activation_mode: mode.clone(),
+                ..NativeTriggerConfig::default()
+            });
+            assert_eq!(
+                requires_double_tap(&state),
+                expected,
+                "unexpected gate for {mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn double_tap_uses_the_release_edge_only_for_modifier_only_shortcuts() {
+        let modifier_only = NativeTriggerState::new(NativeTriggerConfig {
+            hotkey: "Ctrl+Alt".to_string(),
+            activation_mode: NativeActivationMode::DoubleTap,
+            ..NativeTriggerConfig::default()
+        });
+        let with_key = NativeTriggerState::new(NativeTriggerConfig {
+            hotkey: "Ctrl+F9".to_string(),
+            activation_mode: NativeActivationMode::DoubleTap,
+            ..NativeTriggerConfig::default()
+        });
+
+        assert!(double_tap_uses_release_trigger(&modifier_only));
+        // A real key gives us the press edge, which is the more reliably
+        // delivered one on Linux.
+        assert!(!double_tap_uses_release_trigger(&with_key));
     }
 
     #[test]

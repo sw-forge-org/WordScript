@@ -218,6 +218,18 @@ reassign them in Settings.
 - **Tap to toggle**: the same shortcut starts and stops. Repeated presses of the
   same kind within `debounce_ms` (300) are debounced. A modifier-only shortcut
   acts on release rather than press.
+- **Double tap to toggle**: two taps within `double_tap_window_ms` (config,
+  default 400, clamped to 150-1000) start or stop the capture; a single tap does
+  nothing. This is the mode the mainstream dictation tools use — Wispr Flow
+  double-taps right Shift, macOS Dictation double-taps Fn — and the reason is
+  not comfort. A modifier-only trigger in tap mode acts on *every* single press,
+  so `Ctrl+Alt` as the trigger also fires when the user meant `Ctrl+Alt+T`.
+  Requiring two taps leaves the single press to the rest of the desktop.
+  The counted edge is the same one tap mode uses: the release for a
+  modifier-only shortcut, the press otherwise. The gate covers all three
+  capture-lane triggers — start/stop, pause and abort — each with its own
+  window, so one binding cannot complete another's double tap. Mode hotkeys stay
+  single-press: a stray mode switch costs a mode, not a recording.
 - **Hold to talk**: recording runs while the shortcut is held. A hold shorter
   than `hold_min_ms` (300) is extended to that length before stopping. A hold
   whose key release never arrives is ended by the watchdog after

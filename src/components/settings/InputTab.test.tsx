@@ -153,6 +153,36 @@ describe("InputTab", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers double tap and explains what it buys for a modifier-only trigger", async () => {
+    render(
+      <InputTab
+        config={createAppConfig({ hotkey: "Ctrl+Alt", activation_mode: "double_tap" })}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const select = await screen.findByRole("combobox", { name: /activation mode/i });
+    expect(
+      Array.from(select.querySelectorAll("option")).map((option) => option.value),
+    ).toEqual(["tap", "double_tap", "hold"]);
+
+    expect(await screen.findByText(/a single tap does nothing/i)).toBeInTheDocument();
+    expect(screen.getByText(/ctrl\+alt\+t is not intercepted/i)).toBeInTheDocument();
+  });
+
+  it("warns that a modifier-only trigger in tap mode takes the combination away", async () => {
+    render(
+      <InputTab
+        config={createAppConfig({ hotkey: "Ctrl+Alt", activation_mode: "tap" })}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/takes that combination away from other applications/i),
+    ).toBeInTheDocument();
+  });
+
   it("states that hold to talk has no observed key release in this session", async () => {
     // T10/D11: hold used to be offered as an equal choice while silently doing
     // nothing when the platform never delivers a release.

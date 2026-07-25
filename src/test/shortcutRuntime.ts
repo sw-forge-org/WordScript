@@ -79,6 +79,7 @@ export function createTriggerStatus(
     hold_min_ms: 300,
     debounce_ms: 300,
     hold_watchdog_seconds: 120,
+    double_tap_window_ms: 400,
     registered_mode_hotkeys: [],
     ...overrides,
   };
@@ -142,7 +143,7 @@ export function validateShortcutDouble(
     .filter(Boolean);
 
   if (parts.length === 0) {
-    return { ok: true, disabled: true, canonical: "", display: "", reason: null, warning: null };
+    return { ok: true, disabled: true, canonical: "", display: "", modifier_only: false, reason: null, warning: null };
   }
 
   const modifiers: string[] = [];
@@ -156,6 +157,7 @@ export function validateShortcutDouble(
         disabled: false,
         canonical: "",
         display: "",
+        modifier_only: false,
         reason: `'${part}' is not a key WordScript can register.`,
         warning: null,
       };
@@ -177,6 +179,7 @@ export function validateShortcutDouble(
         disabled: false,
         canonical: "",
         display: "",
+        modifier_only: false,
         reason: "This shortcut must include a non-modifier key.",
         warning: null,
       };
@@ -187,6 +190,7 @@ export function validateShortcutDouble(
         disabled: false,
         canonical: "",
         display: "",
+        modifier_only: false,
         reason: `A single ${modifiers[0]} would be grabbed from every application on this desktop.`,
         warning: null,
       };
@@ -196,6 +200,7 @@ export function validateShortcutDouble(
       disabled: false,
       canonical: modifiers.join("+"),
       display: modifiers.join(" + "),
+      modifier_only: true,
       reason: null,
       warning: null,
     };
@@ -207,6 +212,7 @@ export function validateShortcutDouble(
       disabled: false,
       canonical: "",
       display: "",
+      modifier_only: false,
       reason: `'${displayKey(key)}' alone would be grabbed from every application on this desktop.`,
       warning: null,
     };
@@ -222,6 +228,7 @@ export function validateShortcutDouble(
     disabled: false,
     canonical: [...modifiers, canonicalKey(key)].join("+"),
     display: [...modifiers, displayKey(key)].join(" + "),
+    modifier_only: false,
     reason: null,
     warning,
   };

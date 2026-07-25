@@ -77,14 +77,27 @@ function holdReleaseUnverified(binding?: ShortcutBindingInfo) {
 }
 
 function activationModeHint(
-  mode: "tap" | "hold",
+  mode: "tap" | "hold" | "double_tap",
   status: NativeTriggerStatus | null,
   binding?: ShortcutBindingInfo,
+  modifierOnly = false,
 ) {
+  if (mode === "double_tap") {
+    const base = `Two taps within ${
+      status?.double_tap_window_ms ?? 400
+    } ms start or stop the capture. A single tap does nothing.`;
+    return modifierOnly
+      ? `${base} With a modifier-only shortcut this is the recommended mode: one press stays available to the rest of the desktop, so a combination like Ctrl+Alt+T is not intercepted.`
+      : base;
+  }
+
   if (mode !== "hold") {
-    return `Tap starts and stops on the same shortcut. Repeated presses within ${
+    const base = `Tap starts and stops on the same shortcut. Repeated presses within ${
       status?.debounce_ms ?? 300
     } ms of the same kind are debounced.`;
+    return modifierOnly
+      ? `${base} Because this shortcut is modifier-only, every single press acts — which also takes that combination away from other applications. Double tap avoids that.`
+      : base;
   }
 
   const base =
@@ -209,18 +222,28 @@ export function InputTab({ config, onChange }: Props) {
   const selectedAudioDeviceLabel = hasExplicitAudioDevice
     ? config.audio_device
     : defaultAudioDevice?.name ?? "System default microphone";
-  const activationLabel = config.activation_mode === "hold" ? "Hold to talk" : "Tap to toggle";
+  const activationLabel =
+    config.activation_mode === "hold"
+      ? "Hold to talk"
+      : config.activation_mode === "double_tap"
+        ? "Double tap"
+        : "Tap to toggle";
   const autoStopLabel = silenceTimeoutSeconds > 0
     ? `${formatDurationCompact(silenceTimeoutSeconds)} silence`
     : "Manual stop";
   const captureBinding = bindingFor("capture");
   // The summary tile shows the human shortcut, never the raw token (T9, D9).
   const [captureDisplay, setCaptureDisplay] = useState("");
+  // Whether the trigger is modifier-only is the runtime's answer, not a rule
+  // the UI re-derives — the UI owns no key knowledge (ADR 0006).
+  const [captureIsModifierOnly, setCaptureIsModifierOnly] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void validateShortcut(config.hotkey)
       .then((result) => {
-        if (!cancelled) setCaptureDisplay(result.ok ? result.display : config.hotkey);
+        if (cancelled) return;
+        setCaptureDisplay(result.ok ? result.display : config.hotkey);
+        setCaptureIsModifierOnly(result.ok && result.modifier_only);
       })
       .catch(() => {
         if (!cancelled) setCaptureDisplay(config.hotkey);
@@ -287,7 +310,12 @@ export function InputTab({ config, onChange }: Props) {
         ))}
         <FormRow
           label="Activation mode"
-          hint={activationModeHint(config.activation_mode, triggerStatus, captureBinding)}
+          hint={activationModeHint(
+            config.activation_mode,
+            triggerStatus,
+            captureBinding,
+            captureIsModifierOnly,
+          )}
           hintTone={
             config.activation_mode === "hold" && holdReleaseUnverified(captureBinding)
               ? "danger"
@@ -300,9 +328,14 @@ export function InputTab({ config, onChange }: Props) {
               aria-label="Activation mode"
               className="w-[180px]"
               value={config.activation_mode}
-              onChange={(event) => onChange({ activation_mode: event.target.value as "tap" | "hold" })}
+              onChange={(event) =>
+                onChange({
+                  activation_mode: event.target.value as "tap" | "hold" | "double_tap",
+                })
+              }
             >
               <option value="tap">Tap to toggle</option>
+              <option value="double_tap">Double tap to toggle</option>
               <option value="hold">Hold to talk</option>
             </Select>
           }
