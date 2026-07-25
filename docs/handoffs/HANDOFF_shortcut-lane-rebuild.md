@@ -9,10 +9,13 @@ historical set until the branch merges.
 ## Where you are
 
 You are in the git worktree `.claude/worktrees/shortcut-lane-rebuild` on branch
-`worktree-shortcut-lane-rebuild`, seven commits ahead of `master`:
+`worktree-shortcut-lane-rebuild`, ahead of `master` by the commits below —
+`git log --oneline master..HEAD` is authoritative, this list names them in order
+so the subjects can be read without running it:
 
 ```
-HEAD    feat(shortcuts): gate activation modes on a measured capability matrix
+docs: record the untested Windows and macOS shortcut paths
+feat(shortcuts): gate activation modes on a measured capability matrix
 dffd35b docs: hand-off for the shortcut lane rebuild
 f056bd5 feat(trigger): add double-tap activation
 3cbc5d7 fix(overlay): confirm a per-mode hotkey on screen
