@@ -175,6 +175,44 @@ a comma is accepted and converted.
 - Normalization runs before collision validation. Legacy rewrites are gated on
   `shortcut_schema_version` and run once.
 
+### Default rotation
+
+One rotation on every platform. The previous per-OS branching is gone: divergent
+defaults are what let the legacy persist-time migration silently rewrite the
+Windows default on every save, and a single set is easier to keep honest.
+`Super` renders as `Cmd` on macOS and `Win` on Windows.
+
+| Binding | Default |
+| --- | --- |
+| Start / stop capture | `Ctrl+Super` |
+| Pause / resume | `Ctrl+Space` |
+| Abort | `Ctrl+Alt` |
+| Mode select | `Ctrl+S` |
+| Auto | `Ctrl+1` |
+| Verbatim | `Ctrl+2` |
+| Cleanup | `Ctrl+3` |
+| Rewrite | `Ctrl+4` |
+| Agent | `Ctrl+5` |
+| Prompt Enhance | `Ctrl+6` |
+
+Two properties of this set are asserted in `cargo test`
+(`every_default_shortcut_satisfies_the_contract`,
+`defaults_survive_normalization_unchanged`): every default parses and is
+registerable, no two collide, and a fresh config survives normalization
+byte-identically.
+
+Note that the capture and abort defaults are modifier-only, which the contract
+allows from two modifiers upward. A modifier-only trigger acts on key **release**
+rather than press, so it depends on the release event whose delivery is not
+guaranteed on every platform — see the activation-mode section below.
+
+Because these are global grabs, they are taken away from every other
+application: `Ctrl+S`, `Ctrl+1`-`Ctrl+6` and `Ctrl+Space` are widely used
+in-app shortcuts (save, tab switching, completion), and `Ctrl+Alt` fires on the
+leading edge of every `Ctrl+Alt+…` combination the desktop uses. This is a
+deliberate product decision, not an oversight; users who need those keys back
+reassign them in Settings.
+
 ### Activation modes
 
 - **Tap to toggle**: the same shortcut starts and stops. Repeated presses of the

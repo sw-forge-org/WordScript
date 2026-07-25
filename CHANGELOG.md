@@ -139,8 +139,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The old `hooks/pre-commit` location and regenerated legacy `BUILD_ID` and
   `build_info.json` behavior.
 
+### Changed
+
+- New default shortcut rotation, identical on Linux, Windows and macOS:
+  `Ctrl+Super` start/stop, `Ctrl+Space` pause, `Ctrl+Alt` abort, `Ctrl+S` mode
+  select and `Ctrl+1`-`Ctrl+6` for the six processing modes. The per-OS
+  branching is gone — divergent defaults are what let the legacy migration
+  rewrite the Windows default on every save — and the set is asserted in tests
+  to parse, register, not collide and survive normalization unchanged.
+
 ### Fixed
 
+- Mode hotkeys changed in Settings are now actually re-registered.
+  `configure_native_trigger` preserved them from in-memory state, so a new value
+  was written to disk and the OS grab kept firing on the value from the last
+  startup: mode select appeared dead no matter what you assigned, and configured
+  versus registered disagreed silently.
 - Shortcut recording is an explicitly ended state. It no longer commits on the
   first key release, so tapping `Ctrl` no longer writes `ctrl_l` and closes the
   recorder — the reason no further key could be added. The recorder accumulates

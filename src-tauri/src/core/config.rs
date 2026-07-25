@@ -1241,30 +1241,28 @@ pub fn emit_ready_event<R: Runtime>(app: &AppHandle<R>, config: &AppConfig) {
     );
 }
 
-fn default_hotkey() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "ctrl_l+cmd+space"
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+space"
-    } else {
-        "ctrl_l+f9"
-    }
+// Default shortcut rotation.
+//
+// One rotation for every platform, in canonical contract spelling. The previous
+// per-OS branching is gone on purpose: divergent defaults are what let the
+// legacy persist-time migration silently rewrite the Windows default on every
+// save (D6), and a single set is far easier to keep honest. `Super` renders as
+// Cmd on macOS and Win on Windows, so the same token reads correctly everywhere.
+//
+// The two capture triggers below are modifier-only, which the contract allows
+// from two modifiers upward (T3). A modifier-only trigger acts on key release
+// rather than press — see `tap_hotkey_uses_release_trigger`.
+
+pub(crate) fn default_hotkey() -> &'static str {
+    "Ctrl+Super"
 }
 
-fn default_abort_hotkey() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "cmd+escape"
-    } else {
-        "ctrl_l+alt_l+escape"
-    }
+pub(crate) fn default_abort_hotkey() -> &'static str {
+    "Ctrl+Alt"
 }
 
-fn default_pause_hotkey() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "ctrl_l+cmd+p"
-    } else {
-        "ctrl_l+f10"
-    }
+pub(crate) fn default_pause_hotkey() -> &'static str {
+    "Ctrl+Space"
 }
 
 fn default_overlay_monitor() -> &'static str {
@@ -1288,73 +1286,31 @@ fn default_legacy_auto_paste() -> bool {
 }
 
 fn default_mode_picker_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+alt_l+m".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+m".to_string()
-    } else {
-        "ctrl_l+f11".to_string()
-    }
+    "Ctrl+S".to_string()
 }
 
 fn default_mode_auto_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+alt_l+0".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+0".to_string()
-    } else {
-        "ctrl_l+f6".to_string()
-    }
+    "Ctrl+1".to_string()
 }
 
 fn default_mode_verbatim_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+alt_l+1".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+1".to_string()
-    } else {
-        "ctrl_l+f1".to_string()
-    }
+    "Ctrl+2".to_string()
 }
 
 fn default_mode_cleanup_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+alt_l+2".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+2".to_string()
-    } else {
-        "ctrl_l+f2".to_string()
-    }
+    "Ctrl+3".to_string()
 }
 
 fn default_mode_rewrite_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+alt_l+3".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+3".to_string()
-    } else {
-        "ctrl_l+f3".to_string()
-    }
+    "Ctrl+4".to_string()
 }
 
 fn default_mode_agent_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+alt_l+4".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+4".to_string()
-    } else {
-        "ctrl_l+f4".to_string()
-    }
+    "Ctrl+5".to_string()
 }
 
 fn default_mode_prompt_enhance_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+alt_l+5".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+5".to_string()
-    } else {
-        "ctrl_l+f5".to_string()
-    }
+    "Ctrl+6".to_string()
 }
 
 fn normalize_overlay_monitor_value(value: &str) -> String {
@@ -1958,6 +1914,53 @@ mod tests {
         };
 
         assert!(validate_hotkey_collisions(&config).is_err());
+    }
+
+    #[test]
+    fn every_default_shortcut_satisfies_the_contract() {
+        // A default that cannot be parsed or registered ships a broken lane to
+        // every new user, and a default that collides with another default is
+        // rejected at registration time. Both were reachable before: the
+        // Windows default was rewritten on every save (D6) and the platform
+        // branches were never checked against each other.
+        let config = AppConfig::default();
+        assert!(validate_hotkey_collisions(&config).is_ok());
+
+        let policy = super::super::shortcut::Policy::default();
+        for (label, value) in [
+            ("hotkey", &config.hotkey),
+            ("pause_hotkey", &config.pause_hotkey),
+            ("abort_hotkey", &config.abort_hotkey),
+            ("mode_picker", &config.mode_picker_hotkey),
+            ("mode_auto", &config.mode_auto_hotkey),
+            ("mode_verbatim", &config.mode_verbatim_hotkey),
+            ("mode_cleanup", &config.mode_cleanup_hotkey),
+            ("mode_rewrite", &config.mode_rewrite_hotkey),
+            ("mode_agent", &config.mode_agent_hotkey),
+            ("mode_prompt_enhance", &config.mode_prompt_enhance_hotkey),
+        ] {
+            let parsed = super::super::shortcut::parse(value, policy)
+                .unwrap_or_else(|error| panic!("default {label} ('{value}') is invalid: {error}"));
+            assert!(
+                parsed.parsed().is_some(),
+                "default {label} must not be empty"
+            );
+        }
+    }
+
+    #[test]
+    fn defaults_survive_normalization_unchanged() {
+        // The defaults are already in canonical form, so a fresh config must
+        // come back byte-identical from `normalize_for_runtime`.
+        let mut config = AppConfig::default();
+        let before = config.clone();
+        config.normalize_for_runtime();
+
+        assert_eq!(config.hotkey, before.hotkey);
+        assert_eq!(config.pause_hotkey, before.pause_hotkey);
+        assert_eq!(config.abort_hotkey, before.abort_hotkey);
+        assert_eq!(config.mode_picker_hotkey, before.mode_picker_hotkey);
+        assert_eq!(config.mode_agent_hotkey, before.mode_agent_hotkey);
     }
 
     #[test]

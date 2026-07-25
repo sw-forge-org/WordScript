@@ -464,16 +464,20 @@ pub fn configure_native_trigger(
     request: ConfigureNativeTriggerRequest,
     state: State<'_, Mutex<NativeTriggerState>>,
 ) -> Result<NativeTriggerStatus, String> {
-    // Preserve the existing mode hotkeys — configure_native_trigger only
-    // changes the base capture hotkeys. Mode hotkeys are managed via the
-    // config file (Settings → Modes) and re-loaded on the next startup or
-    // config-reload registration call.
-    let (existing_mode_hotkeys, existing_hold_watchdog) = {
+    // Mode hotkeys come from the persisted config, not from the in-memory
+    // state.
+    //
+    // Preserving them from state meant a mode hotkey changed in Settings was
+    // written to disk but never re-registered: the OS grab kept firing on the
+    // value from the last startup, so "no matter what I assign, mode select
+    // does nothing" — configured and registered disagreed silently, which is
+    // exactly what T8 forbids. The frontend calls this command only after
+    // `save_config` has resolved, so the file is authoritative here.
+    let persisted = AppConfig::load_from_disk();
+    let mode_hotkeys = ModeHotkeys::from_app_config(&persisted);
+    let existing_hold_watchdog = {
         let lock = state.lock().map_err(|error| error.to_string())?;
-        (
-            lock.config.mode_hotkeys.clone(),
-            lock.config.hold_watchdog_seconds,
-        )
+        lock.config.hold_watchdog_seconds
     };
 
     let config = NativeTriggerConfig {
@@ -487,7 +491,7 @@ pub fn configure_native_trigger(
         hold_watchdog_seconds: request
             .hold_watchdog_seconds
             .unwrap_or(existing_hold_watchdog),
-        mode_hotkeys: existing_mode_hotkeys,
+        mode_hotkeys,
     };
 
     register_native_shortcuts(&app, state.inner(), config)
@@ -1520,32 +1524,18 @@ fn is_modifier_only_shortcut(value: &str) -> bool {
     )
 }
 
+// The defaults live in `core::config` and are used from there. A second copy
+// here is how the two layers drifted apart in the first place.
 fn default_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "ctrl_l+cmd+space".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+space".to_string()
-    } else {
-        "ctrl_l+f9".to_string()
-    }
+    super::config::default_hotkey().to_string()
 }
 
 fn default_abort_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "cmd+escape".to_string()
-    } else if cfg!(target_os = "windows") {
-        "ctrl_l+alt_l+escape".to_string()
-    } else {
-        "ctrl_l+alt_l+escape".to_string()
-    }
+    super::config::default_abort_hotkey().to_string()
 }
 
 fn default_pause_hotkey() -> String {
-    if cfg!(target_os = "macos") {
-        "ctrl_l+cmd+p".to_string()
-    } else {
-        "ctrl_l+f10".to_string()
-    }
+    super::config::default_pause_hotkey().to_string()
 }
 
 #[cfg(test)]
@@ -1819,6 +1809,36 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(ids.len(), unique.len(), "shortcuts must be deduplicated");
+    }
+
+    #[test]
+    fn mode_hotkeys_are_read_from_the_persisted_config() {
+        // Regression: `configure_native_trigger` used to preserve the mode
+        // hotkeys from in-memory state, so a value changed in Settings was
+        // saved but never re-registered — the grab kept firing on the value
+        // from the last startup and mode select appeared dead whatever you
+        // assigned.
+        let config = AppConfig {
+            mode_picker_hotkey: "Ctrl+S".to_string(),
+            mode_auto_hotkey: "Ctrl+1".to_string(),
+            mode_verbatim_hotkey: "Ctrl+2".to_string(),
+            mode_cleanup_hotkey: "Ctrl+3".to_string(),
+            mode_rewrite_hotkey: "Ctrl+4".to_string(),
+            mode_agent_hotkey: "Ctrl+5".to_string(),
+            mode_prompt_enhance_hotkey: "Ctrl+6".to_string(),
+            ..AppConfig::default()
+        };
+
+        let hotkeys = ModeHotkeys::from_app_config(&config);
+
+        assert_eq!(hotkeys.picker, "Ctrl+S");
+        assert_eq!(hotkeys.auto, "Ctrl+1");
+        assert_eq!(hotkeys.verbatim, "Ctrl+2");
+        assert_eq!(hotkeys.cleanup, "Ctrl+3");
+        assert_eq!(hotkeys.rewrite, "Ctrl+4");
+        assert_eq!(hotkeys.agent, "Ctrl+5");
+        assert_eq!(hotkeys.prompt_enhance, "Ctrl+6");
+        assert_eq!(hotkeys.entries().len(), 7);
     }
 
     #[test]
