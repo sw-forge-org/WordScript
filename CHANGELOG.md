@@ -150,6 +150,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A per-mode hotkey now confirms itself on screen. The direct jump set the mode
+  in the runtime but revealed nothing, so `Ctrl+1`-`Ctrl+6` looked dead while
+  the mode had in fact changed. The overlay opens on the mode-select surface
+  showing the new mode and auto-dismisses; it never starts a capture.
 - Mode hotkeys changed in Settings are now actually re-registered.
   `configure_native_trigger` preserved them from in-memory state, so a new value
   was written to disk and the OS grab kept firing on the value from the last

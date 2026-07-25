@@ -943,7 +943,19 @@ pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: Trigg
                 core::runtime_log::record(format!(
                     "[WordScript] Per-mode hotkey failed: {error}"
                 ));
+                return;
             }
+
+            // A direct jump changed the mode but showed nothing, so the
+            // shortcut looked dead even though the runtime had done its work.
+            // Reveal the mode-select surface so the new mode is confirmed on
+            // screen, exactly like the select shortcut does — `show` opens it
+            // without cycling, so the mode stays the one the user asked for.
+            // Visibility stays frontend-owned (same rationale as ModeSelect).
+            let _ = app.emit(
+                "wordscript-mode-select",
+                serde_json::json!({ "event": "show" }),
+            );
         }
     }
 }

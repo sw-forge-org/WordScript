@@ -862,7 +862,16 @@ export default function OverlayWindow() {
   useEffect(() => { showModePickerRef.current = showModePicker; }, [showModePicker]);
 
   useEffect(() => {
-    const unlisten = listen<unknown>("wordscript-mode-select", () => {
+    const unlisten = listen<{ event?: string }>("wordscript-mode-select", (payload) => {
+      // `show` comes from a per-mode hotkey: the mode is already set, so only
+      // reveal the surface to confirm it. Cycling here would move the user off
+      // the mode they just picked.
+      if (payload.payload?.event === "show") {
+        void fetchEffectiveMode();
+        setShowModePicker(true);
+        return;
+      }
+
       if (showModePickerRef.current) {
         // Already open → cycle to the next mode.
         // D2: eager setEffectiveMode so pillMode/pillVisualEpoch update in the
