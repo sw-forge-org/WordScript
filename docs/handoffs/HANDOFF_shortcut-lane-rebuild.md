@@ -1,17 +1,27 @@
 # Hand-Off: Capture Shortcut Lane Rebuild
 
-Status: **Active — branch `worktree-shortcut-lane-rebuild` is NOT merged.**
+Status: **Merged into `master` on 2026-07-25.** Historical record.
 Date: 2026-07-25
 
-This is an active specification, not an archived record. Do not move it into the
-historical set until the branch merges.
+The branch `worktree-shortcut-lane-rebuild` was fast-forwarded into `master` and
+removed. This file is kept for the reasoning behind the rebuild — the invariants,
+the decisions and what was deliberately left open.
 
-## Where you are
+**The open work did not move here with it.** It lives where an active reader will
+find it:
 
-You are in the git worktree `.claude/worktrees/shortcut-lane-rebuild` on branch
-`worktree-shortcut-lane-rebuild`, ahead of `master` by the commits below —
-`git log --oneline master..HEAD` is authoritative, this list names them in order
-so the subjects can be read without running it:
+| Open item | Where it lives now |
+| --- | --- |
+| Hold to talk does not work (D11, open again) | [known-issues/capture-shortcut-recording.md](../known-issues/capture-shortcut-recording.md) |
+| The physical S0 measurement (run 2) | same record, with empty tables and the procedure |
+| Windows and macOS have never run this lane | [known-issues/cross-platform-shortcut-verification.md](../known-issues/cross-platform-shortcut-verification.md) |
+| Single modifier is Linux-only; right Shift inexpressible | ADR [0009](../decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md) and the same record |
+| Product state and gaps | [STATUS.md](../STATUS.md) |
+
+## Where this came from
+
+Thirteen commits in the worktree `.claude/worktrees/shortcut-lane-rebuild`,
+fast-forwarded into `master`. Newest first:
 
 ```
 docs: record hold to talk as open again after the first live result
@@ -21,22 +31,13 @@ fix(shortcuts): state the real reason a bare modifier is rejected
 docs: keep the hand-off commit list stable across amends
 docs: record the untested Windows and macOS shortcut paths
 feat(shortcuts): gate activation modes on a measured capability matrix
-dffd35b docs: hand-off for the shortcut lane rebuild
-f056bd5 feat(trigger): add double-tap activation
-3cbc5d7 fix(overlay): confirm a per-mode hotkey on screen
-9bca19d fix(shortcuts): re-register mode hotkeys on change; new default rotation
-b63f0bb docs: record the first S0 shortcut measurement
-7cf439f fix(shortcuts): rebuild the capture shortcut lane (S0-S5)
+docs: hand-off for the shortcut lane rebuild
+feat(trigger): add double-tap activation
+fix(overlay): confirm a per-mode hotkey on screen
+fix(shortcuts): re-register mode hotkeys on change; new default rotation
+docs: record the first S0 shortcut measurement
+fix(shortcuts): rebuild the capture shortcut lane (S0-S5)
 ```
-
-A `npm run tauri dev` build from this worktree is running in the user's own
-terminal. It shares `~/.config/WordScript/config.json` with the user's everyday
-instance, so **any config write you cause is a write to their real settings.**
-A pre-rebuild backup is not in the repo; if you need one, make it before you
-touch anything.
-
-Do not start a second instance. Global grabs are exclusive — a second process
-cannot register the same shortcuts, and the failures will look like bugs.
 
 ## What this branch delivers
 
@@ -112,7 +113,11 @@ These are the point of the rebuild. Breaking one silently re-opens a defect.
     explains why. Auto-correcting it is the same failure class as an empty
     shortcut reverting to a default (T7).
 
-## Open work, in priority order
+## What was open at merge time
+
+Kept as written at the moment of the merge. Current status lives in the records
+linked above; if this section and a known-issues record disagree, the record is
+right.
 
 ### A. Hold to talk does not work — narrowed, not diagnosed
 
@@ -167,14 +172,12 @@ do. It is a code-level finding, needs a real macOS session to confirm, and the
 fix is a product decision (accept, per-OS defaults, or patch the vendored crate)
 — not an agent's call.
 
-### D. Merge and cleanup
+### D. Merge and cleanup — DONE
 
-The branch stays unmerged, reaffirmed by the user on 2026-07-25: their everyday
-build runs from the main checkout, and merging puts the rebuilt lane into daily
-use before the physical verification is done. **Do not merge without asking.**
-When they decide to, it is a fast-forward (`master` is 0 commits behind).
-Afterwards this file moves to the archived set per [README.md](README.md), and
-the worktree plus branch can be removed.
+Merged on the user's decision of 2026-07-25, as a fast-forward (`master` was 0
+commits behind, the branch 13 ahead). The rebuilt lane went into daily use with
+hold to talk knowingly still broken and the physical verification still open —
+that was the explicit trade, not an oversight.
 
 ## Settled — do not re-open
 

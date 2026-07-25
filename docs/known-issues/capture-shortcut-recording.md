@@ -163,6 +163,30 @@ Press and hold the trigger for ~3 s, speak, release. Record the full block of
 `event=shortcut` and `event=decision` lines here. Until then this stays an open
 symptom with a narrowed cause, not a diagnosed defect.
 
+### Smaller open points from the same lane
+
+Recorded here because the hand-off that used to carry them is archived once the
+branch merges, and none of them is worth its own record:
+
+- **Abort and pause act on the press edge**, so the interruption flag cannot gate
+  them. `Ctrl+Alt` arms the abort double tap even when the user is heading for
+  `Ctrl+Alt+T`. Arming is harmless — firing needs a second press inside the window
+  — and this is unchanged behavior rather than a regression, but it is the reason
+  the press edge is not safe by construction the way the release edge now is.
+- **`MODIFIER_TOKENS` is side-agnostic**, so `Shift` covers both keys and "right
+  Shift only" cannot be expressed. Wispr Flow's default works precisely because
+  right Shift is rare in typing, so this is worth having; it touches the
+  vocabulary, the recorder's chord serialization and the display strings.
+- **Observation does not close the Wayland gap.** XInput2 raw events cover what
+  the X server sees, so on a Wayland session a keystroke delivered to a native
+  Wayland client is still invisible. That needs the
+  `org.freedesktop.portal.GlobalShortcuts` path.
+- **`workspace_context` has a flaky test pair.**
+  `resolve_project_root_reads_env_var` and
+  `resolve_project_root_falls_back_to_cwd_for_invalid_env` both mutate the
+  process-global `WORDSCRIPT_PROJECT_ROOT` and run in parallel, so either can
+  lose. Unrelated to this lane; the fix is to serialize them.
+
 ### S0 measurement, run 2 — physical keys (open, needs a person)
 
 XTEST injects through a different path than a hardware keyboard, so run 1 cannot
