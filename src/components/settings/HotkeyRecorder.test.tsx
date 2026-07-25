@@ -119,7 +119,13 @@ describe("HotkeyRecorder", () => {
     await startRecording();
 
     fireEvent.keyDown(window, { code: "ControlLeft", key: "Control" });
-    expect(await screen.findByText(/would be grabbed from every application/i)).toBeInTheDocument();
+    // The stated reason has to be the grab mechanism, and it has to say that the
+    // activation mode cannot lift it — otherwise "one key is enough in double
+    // tap mode" reads as an arbitrary restriction.
+    expect(
+      await screen.findByText(/would stop working everywhere else/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/double tap and hold change when wordscript acts/i)).toBeInTheDocument();
 
     fireEvent.keyDown(window, { code: "Enter", key: "Enter" });
     await waitFor(() => expect(screen.getByLabelText(/recording shortcut/i)).toBeInTheDocument());

@@ -79,6 +79,41 @@ What this needs is a decision, not a measurement:
 Confirm the failure on a real macOS session before acting on it: the expectation
 is code-level, and the surrounding OS behavior is not.
 
+### Windows: modifier-only shortcuts register and then never fire — **[code]**
+
+Worse than the macOS case, because it is invisible. Windows `register()` only
+inserts into a software registry after checking `key_to_vk`
+(`windows/mod.rs:44`), and `key_to_vk` does map `ControlLeft`, `AltLeft`,
+`ShiftLeft` and `MetaLeft` (`windows/mod.rs:301`). So a modifier-only shortcut
+**registers successfully** and Settings reports `registered=true`.
+
+The hook then never matches it. `ll_keyboard_proc` handles every modifier virtual
+key in an early branch that updates `MOD_STATE` and returns
+`CallNextHookEx` (`windows/mod.rs:124`) — the `HOTKEY_REGISTRY` lookup below is
+only reached for non-modifier keys. A hotkey whose main key is a modifier can
+therefore never be found.
+
+Consequence: **on Windows the default start/stop trigger `Ctrl+Super` and the
+default abort `Ctrl+Alt` are expected to register and do nothing.** Combined with
+the macOS finding above, the modifier-only defaults are expected to work on
+Linux/X11 only.
+
+This is the exact failure mode the rebuild was supposed to eliminate — the UI
+claiming runtime truth it does not have. Note that the honest-state surface
+cannot catch it: registration genuinely succeeded, so there is nothing for T8 to
+report. The evidence path does catch it after the fact (presses stay at 0, so the
+capability matrix reports `unobserved` forever), but nothing states it up front.
+
+Options, all needing Felix's decision:
+
+1. Patch the vendored crate so a modifier main key falls through to the registry
+   lookup, and pass the event on rather than consuming it. See the
+   single-modifier discussion below — same mechanism question.
+2. Different capture defaults on Windows, which reintroduces per-OS default
+   branching (D6).
+3. Reconsider modifier-only defaults for all platforms, since they are currently
+   the one class that works on exactly one of the three.
+
 ### macOS: the event tap is a fallback, not the primary path — **[code]**
 
 `register()` tries Carbon `RegisterEventHotKey` first and only falls back to the
@@ -110,6 +145,54 @@ The release fires when the grabbed keycode goes up, regardless of modifier order
 (`x11/mod.rs:277`). Releasing the modifier first while still holding the main key
 produces no release; releasing the main key does, even if the modifier is already
 up.
+
+## Why a single bare modifier is rejected, and what would change that
+
+Raised while trying to test double tap on Linux: if the trigger is a *single*
+Shift and the activation mode is double tap, then "a single modifier acts on every
+press" no longer applies — that is what double tap is for. Wispr Flow
+double-taps right Shift, macOS Dictation double-taps Fn. So why does the contract
+still demand two modifiers?
+
+Because the rule protects two different things and only one of them is about the
+activation mode:
+
+1. **Behavioral** — in tap mode every press acts. Double tap and hold do resolve
+   this. The objection is correct on this half.
+2. **Mechanical** — the shortcut is an OS-level **grab**, and a grabbed key is
+   delivered to the grab owner instead of the focused window. A grab on a bare
+   Shift means Shift no longer types capitals, in any activation mode. The
+   activation mode decides *when WordScript acts*, never *whether the key still
+   reaches anyone else*.
+
+The tools that do double-tap-Shift do not grab. They *observe* — a non-consuming
+system-wide key monitor — and let the keystroke through. That is the actual
+prerequisite, and it exists to different degrees in the three implementations
+**[code]**:
+
+| Platform | Mechanism | Consumes the key? | What single-modifier would need |
+| --- | --- | --- | --- |
+| Linux X11 / XWayland | passive `grab_key` | Yes, whenever the grab matches | A different mechanism entirely: XInput2 raw key events or the XRecord extension, observing rather than grabbing |
+| Windows | `WH_KEYBOARD_LL` hook with software matching, `return 1` only on a match (`windows/mod.rs:167`) | Selectively — the right shape already | Let modifier keys reach the registry lookup (see the finding above) **and** pass the event on instead of consuming it |
+| macOS | Carbon grab, with a `CGEventTap` created `ListenOnly` returning the event unchanged (`macos/mod.rs:231`, `:525`) | Tap: no | Modifier scancodes in `key_to_scancode`, routing modifier-only through the tap rather than Carbon |
+
+So the feature is possible on all three, but it is a change to the vendored crate
+on all three — not a relaxation of a validation rule. Relaxing the rule alone
+would, on this Linux machine today, register a grab on Shift and take Shift away
+from the whole desktop.
+
+Two things worth weighing before it is built:
+
+- A non-consuming system-wide key monitor is, structurally, a keylogger-shaped
+  component. On macOS it is exactly what Input Monitoring gates; on Windows the
+  low-level hook already is one. That deserves a deliberate decision and a
+  statement in the privacy documentation, not a quiet addition.
+- It would make the Windows finding above moot in passing, since both need the
+  same change to the same code path.
+
+Until then, the reason string states the mechanism and says explicitly that the
+activation mode cannot lift it, so the restriction does not read as arbitrary
+(`core::shortcut::build_modifier_only`).
 
 ## Windows run sheet
 

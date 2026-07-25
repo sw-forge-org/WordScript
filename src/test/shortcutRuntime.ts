@@ -267,7 +267,7 @@ export function validateShortcutDouble(
         canonical: "",
         display: "",
         modifier_only: false,
-        reason: `A single ${modifiers[0]} would be grabbed from every application on this desktop.`,
+        reason: `A single ${modifiers[0]} cannot be used on its own. The shortcut is registered as an OS-level grab, which delivers the key to WordScript instead of the focused window — so ${modifiers[0]} would stop working everywhere else. Double tap and hold change when WordScript acts, not whether the key is taken away, so they cannot lift this. Use at least two modifiers, or add a key.`,
         warning: null,
       };
     }

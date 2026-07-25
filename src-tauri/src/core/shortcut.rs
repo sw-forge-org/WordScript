@@ -250,11 +250,21 @@ fn build_modifier_only(
         return Err("This shortcut must include a non-modifier key.".to_string());
     }
 
+    // The reason is the grab mechanism, not the activation mode. It is worth
+    // stating in full, because "one key is enough in double tap mode" is the
+    // obvious and reasonable objection to this rule — and it is about *when*
+    // WordScript acts, while this rule is about whether the key still reaches
+    // anyone else. A grabbed shortcut is delivered to the grab owner instead of
+    // the focused window, so a grab on a bare Shift stops Shift from typing
+    // capitals anywhere on the desktop, in every activation mode.
     if modifiers.len() < MODIFIER_ONLY_MINIMUM {
         return Err(format!(
-            "A single {} would be grabbed from every application on this desktop. \
-             Use at least two modifiers, or add a key.",
-            modifiers.first().copied().unwrap_or("modifier")
+            "A single {modifier} cannot be used on its own. The shortcut is registered as an \
+             OS-level grab, which delivers the key to WordScript instead of the focused window — \
+             so {modifier} would stop working everywhere else. Double tap and hold change when \
+             WordScript acts, not whether the key is taken away, so they cannot lift this. Use at \
+             least two modifiers, or add a key.",
+            modifier = modifiers.first().copied().unwrap_or("modifier")
         ));
     }
 
@@ -1354,6 +1364,14 @@ mod tests {
         // a desktop-wide grab on Ctrl.
         let error = parse("ctrl_l", Policy::default()).unwrap_err();
         assert!(error.contains("single"), "unexpected reason: {error}");
+        // The reason must name the grab mechanism and must pre-empt the
+        // activation-mode objection: double tap changes when we act, not whether
+        // the key is taken from everyone else.
+        assert!(error.contains("grab"), "unexpected reason: {error}");
+        assert!(
+            error.contains("Double tap and hold"),
+            "the reason must state that the activation mode cannot lift this: {error}"
+        );
     }
 
     #[test]
