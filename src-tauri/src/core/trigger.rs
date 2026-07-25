@@ -225,7 +225,7 @@ impl Default for NativeTriggerConfig {
             hotkey: default_hotkey(),
             pause_hotkey: default_pause_hotkey(),
             abort_hotkey: default_abort_hotkey(),
-            activation_mode: NativeActivationMode::Tap,
+            activation_mode: NativeActivationMode::from_config(default_activation_mode()),
             enabled: true,
             debounce_ms: DEFAULT_DEBOUNCE_MS,
             hold_min_ms: DEFAULT_HOLD_MIN_MS,
@@ -495,6 +495,33 @@ impl NativeTriggerState {
                 .collect(),
         }
     }
+
+    /// What this session has actually delivered for the configured capture
+    /// shortcut. The counters reset whenever the shortcut is re-registered, so
+    /// the evidence always belongs to the value currently in force.
+    fn capture_release_evidence(&self) -> shortcut::ReleaseEvidence {
+        self.bindings
+            .iter()
+            .find(|binding| binding.label == "capture")
+            .map(|binding| shortcut::ReleaseEvidence::from_counters(binding.presses, binding.releases))
+            .unwrap_or(shortcut::ReleaseEvidence::Unobserved)
+    }
+}
+
+/// The per-OS capability matrix for the current session (T12, S7). Joins the
+/// session facts from `core::shortcut` with the press/release evidence this
+/// trigger lane recorded, so the UI can gate its options on runtime truth
+/// instead of re-deriving platform rules (ADR 0006).
+#[tauri::command]
+pub fn shortcut_capabilities(
+    state: State<'_, Mutex<NativeTriggerState>>,
+) -> shortcut::ShortcutCapabilities {
+    let evidence = state
+        .lock()
+        .map(|state| state.capture_release_evidence())
+        .unwrap_or(shortcut::ReleaseEvidence::Unobserved);
+
+    shortcut::capability_matrix(&shortcut::shortcut_platform(), evidence)
 }
 
 #[tauri::command]
@@ -1701,6 +1728,10 @@ fn default_abort_hotkey() -> String {
 
 fn default_pause_hotkey() -> String {
     super::config::default_pause_hotkey().to_string()
+}
+
+fn default_activation_mode() -> &'static str {
+    super::config::default_activation_mode()
 }
 
 #[cfg(test)]

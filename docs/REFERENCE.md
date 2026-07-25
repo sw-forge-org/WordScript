@@ -215,10 +215,16 @@ reassign them in Settings.
 
 ### Activation modes
 
+The default is **double tap** (ADR
+[0008](decisions/0008-double-tap-is-the-default-activation-mode.md)), because the
+default capture triggers are modifier-only. The default applies to a config that
+does not record an `activation_mode`; an existing config keeps the value it has,
+and no migration rewrites the field.
+
 - **Tap to toggle**: the same shortcut starts and stops. Repeated presses of the
   same kind within `debounce_ms` (300) are debounced. A modifier-only shortcut
   acts on release rather than press.
-- **Double tap to toggle**: two taps within `double_tap_window_ms` (config,
+- **Double tap to toggle** (default): two taps within `double_tap_window_ms` (config,
   default 400, clamped to 150-1000) start or stop the capture; a single tap does
   nothing. This is the mode the mainstream dictation tools use — Wispr Flow
   double-taps right Shift, macOS Dictation double-taps Fn — and the reason is
@@ -236,9 +242,24 @@ reassign them in Settings.
   `hold_watchdog_seconds` (config, default 120, `0` disables) with reason
   `native_hold_watchdog`, logged rather than left to the silence timeout.
   Whether the platform delivers a key release at all is not guaranteed — the
-  runtime counts presses and releases per binding and the UI states what it has
-  observed. See
+  runtime counts presses and releases per binding, and the capability matrix
+  turns those counters into the state of this option. See
   [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md).
+
+### Capability gating
+
+`shortcut_capabilities` reports which activation modes and key classes the
+current session can honor, derived in `core::shortcut::capability_matrix` from
+the session facts plus this session's measured press/release evidence (ADR
+[0007](decisions/0007-capability-matrix-is-measured-not-assumed.md)). The states
+are `available`, `conditional` (registerable, with a consequence that is stated)
+and `unavailable`.
+
+Settings -> Capture gates the activation selector on it: an unavailable option is
+unselectable and carries the runtime's reason. A stored mode that becomes
+unavailable stays selected and is explained — the UI never rewrites a chosen
+value. The full table per session type is in
+[PLATFORMS.md](PLATFORMS.md#shortcut-capability-matrix).
 
 ### Trigger observability
 

@@ -7,10 +7,16 @@ import { cn } from "../../lib/utils";
 import type {
   AppConfig,
   NativeTriggerStatus,
-  ShortcutBindingInfo,
+  ShortcutCapabilities,
+  ShortcutCapability,
   ShortcutPlatform,
 } from "../../types/ipc";
-import { loadShortcutPlatform, readTriggerStatus, validateShortcut } from "../../lib/shortcuts";
+import {
+  loadShortcutCapabilities,
+  loadShortcutPlatform,
+  readTriggerStatus,
+  validateShortcut,
+} from "../../lib/shortcuts";
 import { ShortcutField } from "./ShortcutField";
 import {
   buildProfileCapturePatch,
@@ -66,38 +72,59 @@ interface NativeCaptureStatus {
   active_capture_id: string | null;
 }
 
-/// Hold to talk depends entirely on a `Released` event that three different
-/// platform mechanisms deliver with three different sets of edge cases, and
-/// nothing verifies that one actually arrives. Until this session has observed
-/// a release for the configured shortcut, the mode selector says so instead of
-/// silently doing nothing (T10, D11).
-function holdReleaseUnverified(binding?: ShortcutBindingInfo) {
-  if (!binding) return false;
-  return binding.presses > 0 && binding.releases === 0;
+type ActivationMode = "tap" | "hold" | "double_tap";
+
+const ACTIVATION_MODE_ORDER: ActivationMode[] = ["tap", "double_tap", "hold"];
+
+const ACTIVATION_MODE_LABELS: Record<ActivationMode, string> = {
+  tap: "Tap to toggle",
+  double_tap: "Double tap to toggle",
+  hold: "Hold to talk",
+};
+
+/// Whether this session can honor a mode is the runtime's answer, taken from
+/// the capability matrix (T12). The UI neither knows platform rules nor
+/// re-derives them from the press/release counters (ADR 0006) — it renders the
+/// state and the reason it is given.
+function capabilityFor(
+  capabilities: ShortcutCapabilities | null,
+  mode: ActivationMode,
+): ShortcutCapability | undefined {
+  return capabilities?.activation_modes.find((capability) => capability.id === mode);
 }
 
+/// The mechanics of a mode — the timing constants it depends on — plus whatever
+/// the matrix says about this session. The first half is what the mode does,
+/// the second half is whether it can do it here.
 function activationModeHint(
-  mode: "tap" | "hold" | "double_tap",
+  mode: ActivationMode,
   status: NativeTriggerStatus | null,
-  binding?: ShortcutBindingInfo,
+  capability?: ShortcutCapability,
   modifierOnly = false,
 ) {
+  const withReason = (base: string) =>
+    capability?.reason ? `${base} ${capability.reason}` : base;
+
   if (mode === "double_tap") {
     const base = `Two taps within ${
       status?.double_tap_window_ms ?? 400
     } ms start or stop the capture. A single tap does nothing.`;
-    return modifierOnly
-      ? `${base} With a modifier-only shortcut this is the recommended mode: one press stays available to the rest of the desktop, so a combination like Ctrl+Alt+T is not intercepted.`
-      : base;
+    return withReason(
+      modifierOnly
+        ? `${base} With a modifier-only shortcut this is the recommended mode: one press stays available to the rest of the desktop, so a combination like Ctrl+Alt+T is not intercepted.`
+        : base,
+    );
   }
 
   if (mode !== "hold") {
     const base = `Tap starts and stops on the same shortcut. Repeated presses within ${
       status?.debounce_ms ?? 300
     } ms of the same kind are debounced.`;
-    return modifierOnly
-      ? `${base} Because this shortcut is modifier-only, every single press acts — which also takes that combination away from other applications. Double tap avoids that.`
-      : base;
+    return withReason(
+      modifierOnly
+        ? `${base} Because this shortcut is modifier-only, every single press acts — which also takes that combination away from other applications. Double tap avoids that.`
+        : base,
+    );
   }
 
   const base =
@@ -108,15 +135,7 @@ function activationModeHint(
       ? ` A hold whose key release never arrives is ended after ${status.hold_watchdog_seconds}s with a stated reason.`
       : "");
 
-  if (holdReleaseUnverified(binding)) {
-    return `${base} This session has seen ${binding?.presses} press(es) of this shortcut and no key release — hold to talk cannot work reliably here. Use Tap to toggle.`;
-  }
-
-  if (binding && binding.releases > 0) {
-    return `${base} Key releases have been observed for this shortcut in this session.`;
-  }
-
-  return `${base} Whether the key release arrives has not been observed yet in this session — press the shortcut once to find out.`;
+  return withReason(base);
 }
 
 function clampCaptureNumber(value: number, minimum: number, maximum: number, fallback: number) {
@@ -149,13 +168,19 @@ export function InputTab({ config, onChange }: Props) {
   const [isRefreshingAudio, setIsRefreshingAudio] = useState(false);
   const [triggerStatus, setTriggerStatus] = useState<NativeTriggerStatus | null>(null);
   const [platform, setPlatform] = useState<ShortcutPlatform | null>(null);
+  const [capabilities, setCapabilities] = useState<ShortcutCapabilities | null>(null);
 
   // The recorder itself releases and restores the OS grabs; refreshing the
-  // status afterwards keeps the per-row registration state honest (T8).
+  // status afterwards keeps the per-row registration state honest (T8). The
+  // capability matrix is refreshed with it because it carries this session's
+  // press/release evidence, which the same keystrokes change (T10, T12).
   const refreshTriggerStatus = useCallback(() => {
     void readTriggerStatus()
       .then(setTriggerStatus)
       .catch(() => setTriggerStatus(null));
+    void loadShortcutCapabilities()
+      .then(setCapabilities)
+      .catch(() => setCapabilities(null));
   }, []);
 
   useEffect(() => {
@@ -228,10 +253,13 @@ export function InputTab({ config, onChange }: Props) {
       : config.activation_mode === "double_tap"
         ? "Double tap"
         : "Tap to toggle";
+  const activeCapability = capabilityFor(capabilities, config.activation_mode);
+  // A mode the session cannot honor is named, never silently swapped: the
+  // persisted value stays the user's (T7, invariant "empty means empty").
+  const activeModeUnavailable = activeCapability?.state === "unavailable";
   const autoStopLabel = silenceTimeoutSeconds > 0
     ? `${formatDurationCompact(silenceTimeoutSeconds)} silence`
     : "Manual stop";
-  const captureBinding = bindingFor("capture");
   // The summary tile shows the human shortcut, never the raw token (T9, D9).
   const [captureDisplay, setCaptureDisplay] = useState("");
   // Whether the trigger is modifier-only is the runtime's answer, not a rule
@@ -290,6 +318,22 @@ export function InputTab({ config, onChange }: Props) {
                 {platform.notes.length > 0 && <> — {platform.notes.join(" ")}</>}
               </span>
             )}
+            {/* The key-class half of the capability matrix (T12). Only the rows
+                that carry a consequence are shown; listing what simply works
+                would bury the ones that do not. */}
+            {capabilities?.key_classes
+              .filter((capability) => capability.state !== "available" && capability.reason)
+              .map((capability) => (
+                <span
+                  key={capability.id}
+                  className={cn(
+                    "mt-1 block",
+                    capability.state === "unavailable" ? "text-[var(--red)]" : "text-fg-dim",
+                  )}
+                >
+                  {capability.label}: {capability.reason}
+                </span>
+              ))}
           </>
         }
       >
@@ -313,14 +357,10 @@ export function InputTab({ config, onChange }: Props) {
           hint={activationModeHint(
             config.activation_mode,
             triggerStatus,
-            captureBinding,
+            activeCapability,
             captureIsModifierOnly,
           )}
-          hintTone={
-            config.activation_mode === "hold" && holdReleaseUnverified(captureBinding)
-              ? "danger"
-              : undefined
-          }
+          hintTone={activeModeUnavailable ? "danger" : undefined}
           align="start"
           divider={false}
           control={
@@ -330,13 +370,28 @@ export function InputTab({ config, onChange }: Props) {
               value={config.activation_mode}
               onChange={(event) =>
                 onChange({
-                  activation_mode: event.target.value as "tap" | "hold" | "double_tap",
+                  activation_mode: event.target.value as ActivationMode,
                 })
               }
             >
-              <option value="tap">Tap to toggle</option>
-              <option value="double_tap">Double tap to toggle</option>
-              <option value="hold">Hold to talk</option>
+              {ACTIVATION_MODE_ORDER.map((mode) => {
+                const capability = capabilityFor(capabilities, mode);
+                const unavailable = capability?.state === "unavailable";
+                return (
+                  <option
+                    key={mode}
+                    value={mode}
+                    // An option this session cannot honor is offered as
+                    // unselectable with the reason in the hint, instead of
+                    // looking available and then doing nothing (T10, T12).
+                    disabled={unavailable && mode !== config.activation_mode}
+                  >
+                    {unavailable
+                      ? `${ACTIVATION_MODE_LABELS[mode]} — unavailable here`
+                      : ACTIVATION_MODE_LABELS[mode]}
+                  </option>
+                );
+              })}
             </Select>
           }
         />

@@ -45,3 +45,9 @@ Status: Proposed | Accepted | Superseded by NNNN
 - [0006](0006-rust-owns-the-shortcut-contract.md): one Rust module owns the
   shortcut token vocabulary, display strings and validity rules; the UI carries
   no key table.
+- [0007](0007-capability-matrix-is-measured-not-assumed.md): the shortcut
+  capability matrix is derived from session facts plus measured press/release
+  evidence, never from a per-OS assumption about hold to talk.
+- [0008](0008-double-tap-is-the-default-activation-mode.md): `double_tap` is the
+  default activation mode, because the default triggers are modifier-only;
+  existing configs keep their chosen value.

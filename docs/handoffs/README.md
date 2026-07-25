@@ -9,8 +9,9 @@ Naming: `HANDOFF_<branch-or-slug>.md`
 ## Contents
 
 - [Capture Shortcut Lane Rebuild](HANDOFF_shortcut-lane-rebuild.md): **active**,
-  branch `worktree-shortcut-lane-rebuild` not yet merged — implemented slices,
-  invariants to preserve, and the open measurement that gates the rest.
+  branch `worktree-shortcut-lane-rebuild` not yet merged — all slices S0-S8
+  implemented, the invariants to preserve, and the one physical measurement that
+  still needs a person at the keyboard.
 
 - [Overlay Mode-Cycling Ghosting - Accepted State](OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md): accepted operational state with permanent development-only diagnostics.
 - [Overlay Mode-Cycling Ghosting - Residual](OVERLAY_MODE_CYCLING_GHOSTING_RESIDUAL.md): predecessor investigation that reduced residual artifacts.

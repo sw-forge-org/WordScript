@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   NativeTriggerStatus,
+  ShortcutCapabilities,
   ShortcutPlatform,
   ShortcutValidation,
   ShortcutVocabulary,
@@ -25,6 +26,13 @@ export function loadShortcutVocabulary(): Promise<ShortcutVocabulary> {
 export function loadShortcutPlatform(): Promise<ShortcutPlatform> {
   platformPromise ??= invoke<ShortcutPlatform>("shortcut_platform");
   return platformPromise;
+}
+
+/// Reads the per-OS capability matrix (T12) for this session. Deliberately not
+/// cached: it carries the press/release evidence the trigger lane has collected
+/// so far, which changes while the window is open.
+export function loadShortcutCapabilities(): Promise<ShortcutCapabilities> {
+  return invoke<ShortcutCapabilities>("shortcut_capabilities");
 }
 
 /// Test seam: lets a test install a vocabulary without a Tauri host.

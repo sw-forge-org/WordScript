@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `native_hold_watchdog` instead of drifting into the silence timeout, and the
   activation-mode selector states whether a key release has actually been
   observed for the configured shortcut in this session.
+- A per-session shortcut capability matrix (`shortcut_capabilities`, ADR 0007).
+  `core::shortcut::capability_matrix` derives a state (`available`,
+  `conditional`, `unavailable`) and a user-facing reason for every activation
+  mode and key class, from the session facts plus the press/release evidence the
+  trigger lane measured — never from a per-OS assumption about hold to talk.
+  Settings gates the activation selector on it: an option this session cannot
+  honor is unselectable with the reason stated, and a stored mode that becomes
+  unavailable stays selected rather than being silently swapped.
 - A development-only key probe in the shortcut recorder that logs `event.code`,
   `event.key`, the modifier state and whether the code mapped to a registerable
   token, for diagnosing which keys a desktop actually delivers.
@@ -154,6 +162,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`double_tap` is now the default `activation_mode`** (ADR 0008), because the
+  default capture triggers are modifier-only and in tap mode every single press
+  of `Ctrl+Super` or `Ctrl+Alt` would act — taking that combination away from
+  every other application. The default applies to a config that does not record
+  an `activation_mode`; existing installations keep the value they have and no
+  migration rewrites the field.
 - New default shortcut rotation, identical on Linux, Windows and macOS:
   `Ctrl+Super` start/stop, `Ctrl+Space` pause, `Ctrl+Alt` abort, `Ctrl+S` mode
   select and `Ctrl+1`-`Ctrl+6` for the six processing modes. The per-OS

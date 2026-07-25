@@ -271,12 +271,51 @@ export interface ShortcutVocabulary {
   modifier_only_minimum: number;
 }
 
+/// Mirrors `core::shortcut::SessionKind` — the row of the capability matrix
+/// this session runs in.
+export type ShortcutSessionKind =
+  | "windows"
+  | "mac_os"
+  | "linux_x11"
+  | "linux_x_wayland"
+  | "linux_native_wayland";
+
 /// Mirrors `core::shortcut::ShortcutPlatform`.
 export interface ShortcutPlatform {
+  kind:                        ShortcutSessionKind;
   summary:                     string;
   global_shortcuts_available:  boolean;
   keys_the_desktop_swallows:   string[];
   notes:                       string[];
+}
+
+/// Mirrors `core::shortcut::ReleaseEvidence`. Measured from the trigger lane's
+/// press/release counters — never assumed from the platform.
+export type ShortcutReleaseEvidence = "unobserved" | "release_observed" | "release_missing";
+
+/// Mirrors `core::shortcut::CapabilityState`. `conditional` means registerable
+/// with a consequence the user has to know — distinct from both "fine" and
+/// "cannot work".
+export type ShortcutCapabilityState = "available" | "conditional" | "unavailable";
+
+/// Mirrors `core::shortcut::Capability`. The UI renders `state` and `reason`
+/// and derives neither (ADR 0006).
+export interface ShortcutCapability {
+  id:     string;
+  label:  string;
+  state:  ShortcutCapabilityState;
+  reason: string | null;
+}
+
+/// Mirrors `core::shortcut::ShortcutCapabilities` — the per-OS capability
+/// matrix (T12) for the current session, joined with this session's evidence.
+export interface ShortcutCapabilities {
+  session:                    ShortcutSessionKind;
+  summary:                    string;
+  global_shortcuts_available: boolean;
+  release_evidence:           ShortcutReleaseEvidence;
+  activation_modes:           ShortcutCapability[];
+  key_classes:                ShortcutCapability[];
 }
 
 /// Mirrors `core::trigger::BindingInfo` — runtime truth per shortcut slot.

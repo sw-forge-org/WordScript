@@ -9,9 +9,11 @@ historical set until the branch merges.
 ## Where you are
 
 You are in the git worktree `.claude/worktrees/shortcut-lane-rebuild` on branch
-`worktree-shortcut-lane-rebuild`, five commits ahead of `master`:
+`worktree-shortcut-lane-rebuild`, seven commits ahead of `master`:
 
 ```
+HEAD    feat(shortcuts): gate activation modes on a measured capability matrix
+dffd35b docs: hand-off for the shortcut lane rebuild
 f056bd5 feat(trigger): add double-tap activation
 3cbc5d7 fix(overlay): confirm a per-mode hotkey on screen
 9bca19d fix(shortcuts): re-register mode hotkeys on change; new default rotation
@@ -32,9 +34,9 @@ cannot register the same shortcuts, and the failures will look like bugs.
 
 The problem record is
 [known-issues/capture-shortcut-recording.md](../known-issues/capture-shortcut-recording.md)
-(defects D1-D12, target contract T1-T12, slice plan S0-S8). Slices **S0-S5 and
-the S8 documentation are implemented**. D1-D10 and D12 are addressed; D11 is
-partially addressed and is the main open thread.
+(defects D1-D12, target contract T1-T12, slice plan S0-S8). **All slices S0-S8
+are implemented and all twelve defects are addressed.** What is left is one
+measurement that only a person can take, and the merge decision.
 
 Two further defects were found and fixed while verifying against the live lane,
 neither of them in the original record:
@@ -81,80 +83,96 @@ These are the point of the rebuild. Breaking one silently re-opens a defect.
    logged under `[trigger]`. Keep new branches logged.
 9. **One default rotation for all platforms.** Per-OS branching is what let the
    legacy migration corrupt the Windows default. The defaults live in
-   `core::config`; `trigger.rs` delegates to them.
+   `core::config`; `trigger.rs` delegates to them. This now includes
+   `default_activation_mode()`.
+10. **The capability matrix is measured, not tabulated** (ADR
+    [0007](../decisions/0007-capability-matrix-is-measured-not-assumed.md)).
+    `capability_matrix` is a pure function of the session facts plus the
+    `ReleaseEvidence` the trigger lane counted. Do not add a per-OS verdict on
+    hold to talk that is not backed by a measurement recorded in the known-issues
+    file. A session type may contribute a caveat sentence naming a plausible
+    cause; it must not set the state on its own.
+11. **A mode the session cannot honor is named, never swapped.** If the stored
+    `activation_mode` becomes `unavailable`, it stays selected and the row
+    explains why. Auto-correcting it is the same failure class as an empty
+    shortcut reverting to a default (T7).
 
 ## Open work, in priority order
 
-### A. Physical S0 measurement — blocks B and C
+### A. Physical S0 measurement — the only open work item
 
-This is the only thing a person must do, and everything else about activation
-modes depends on it. The record's
-[S0 measurement section](../known-issues/capture-shortcut-recording.md) has the
-run-1 results, taken with XTEST-injected keys, and states their limit: XTEST is
-not physical input, so a negative result there proves nothing about hardware.
+This is the one thing a person must do. It no longer *blocks* anything: B and C
+were built so they do not depend on it (the matrix follows measured evidence per
+session instead of a per-OS claim). What the measurement buys is the ability to
+state something about the **platform** rather than about the current session.
 
-What run 1 established: registration works, all ten bindings register, presses
-arrive through the XWayland grab, and the migration preserves bare `F1`/`F4`.
-What it could not settle: whether a **held** shortcut reliably delivers its
-release. Under XTEST the counts were erratic — extra press/release pairs in some
-runs, a lost release entirely in others, not scaling with hold duration.
+The procedure is written out ready to execute, with empty tables, the probe to
+use, and what each possible outcome should change, in the
+[run 2 section of the record](../known-issues/capture-shortcut-recording.md).
+Do not re-derive it; walk the user through that section and fill in the tables.
 
-Ask the user to run, with `tail -f ~/.config/WordScript/logs/wordscript-runtime.log | grep trigger`:
+Two points worth repeating here because they are easy to get wrong:
 
-1. Hold the configured trigger physically for 1 s, 3 s and 6 s. Count
-   `state=pressed` versus `state=released` per run. Fill in the table next to
-   the XTEST one.
-2. Press it once with an **XWayland** application focused, then once with a
-   **native Wayland** application focused. Report whether both press and release
-   appear in each case. XTEST cannot reach a Wayland-focused client, which is
-   exactly why this half needs a human.
+- **Use the mode-select shortcut as the probe, not the capture trigger.** A lost
+  release on the capture trigger starts a real recording; on mode select it costs
+  nothing.
+- **XTEST is exhausted.** Run 1 used `xdotool` and found nondeterministic release
+  delivery, which establishes that the stranded-hold state is reachable but says
+  nothing about hardware keys, and XTEST structurally cannot deliver to a
+  Wayland-focused client. Do not try to automate this half.
 
-Record the answers in the known-issues file before designing B or C.
+### B. S6 — activation modes — DONE
 
-### B. S6 — activation modes
+Hold to talk keeps the watchdog (`hold_watchdog_seconds`, default 120, reason
+`native_hold_watchdog`) and the deferred stop below `hold_min_ms`, so a short tap
+in hold mode has defined behavior. All four timing constants (`hold_min_ms`,
+`debounce_ms`, `hold_watchdog_seconds`, `double_tap_window_ms`) are reported in
+`native_trigger_status` and stated in the Settings row. Double-tap activation
+(`f056bd5`) is implemented, verified live, and is now the default (ADR 0008).
+The selector is gated on the capability matrix from C.
 
-Currently: hold to talk stays selectable, a hold exceeding
-`hold_watchdog_seconds` (default 120) is ended explicitly with reason
-`native_hold_watchdog`, and the selector states whether a key release has been
-observed for the configured shortcut in this session. Real per-platform
-capability gating waits for A.
+### C. S7 — per-OS capability matrix — DONE
 
-Double-tap activation (`f056bd5`) is implemented and verified live: two taps
-within `double_tap_window_ms` (default 400, clamped 150-1000) toggle; a single
-tap does nothing. The gate covers start/stop, pause and abort, each with its own
-window; mode hotkeys stay single-press.
+`core::shortcut::capability_matrix` derives a `CapabilityState` plus a
+user-facing reason per activation mode and per key class, from
+`shortcut_platform`'s session facts (now carrying a `SessionKind`) plus the
+`ReleaseEvidence` measured from the trigger lane's counters. Exposed as
+`shortcut_capabilities` (registered in `lib.rs`, implemented in `trigger.rs`
+because it needs the trigger state). The UI disables activation options the
+session cannot honor and renders the reason; the key-class rows that carry a
+consequence are shown above the shortcut list. Asserted across all five session
+kinds and all three evidence states.
 
-### C. S7 — per-OS capability matrix
+**Read ADR
+[0007](../decisions/0007-capability-matrix-is-measured-not-assumed.md) before
+touching this.** The matrix deliberately contains no per-OS verdict on hold to
+talk, because none has been measured — see invariant 10.
 
-Not started. `shortcut_platform` already reports the session facts (compositor,
-session type, XWayland versus native Wayland, keys the desktop swallows), which
-is the input the matrix needs. The matrix should drive which options the UI
-offers, and be asserted in tests for every branch that differs per platform.
+### D. Product decisions — SETTLED
 
-### D. Two product decisions the user has not settled
-
-- **Should `double_tap` become the default `activation_mode`?** It fits the
-  modifier-only defaults better than `tap` does: in tap mode a modifier-only
-  trigger acts on every single press, which is what takes the combination away
-  from other applications. Raised, not decided.
-- **`Ctrl+S` and `Ctrl+1`-`Ctrl+6` as global grabs.** These are the user's own
-  rotation and were made the defaults on their explicit instruction, for all
-  three platforms. The concern was stated and they proceeded: as global grabs
-  these take Save and tab switching away from every application on first launch.
-  Comparable tools avoid this entirely — Wispr Flow double-taps right Shift,
-  macOS Dictation double-taps Fn, Windows Voice Typing uses the vendor-reserved
-  `Win+H`; none grab letter or digit combinations. The obvious middle ground is
-  an extra modifier (`Ctrl+Alt+S`, `Ctrl+Alt+1`…), one line per default in
-  `core::config`. **Do not change this unilaterally** — it is the user's call and
-  they have already been asked once.
+- **`double_tap` is the default `activation_mode`.** Decided yes by the user on
+  2026-07-25, recorded as ADR
+  [0008](../decisions/0008-double-tap-is-the-default-activation-mode.md).
+  Default only: `AppConfig` is `#[serde(default)]`, so an existing config keeps
+  its value and no migration touches the field.
+- **`Ctrl+S` and `Ctrl+1`-`Ctrl+6` stay the global grab defaults.** Reaffirmed by
+  the user on 2026-07-25 after the concern was stated a second time: as global
+  grabs these take Save and tab switching away from every application on first
+  launch, and comparable tools avoid it entirely (Wispr Flow double-taps right
+  Shift, macOS Dictation double-taps Fn, Windows Voice Typing uses the
+  vendor-reserved `Win+H`). The middle ground would be an extra modifier
+  (`Ctrl+Alt+S`, `Ctrl+Alt+1`…), one line per default in `core::config`.
+  **Do not change this unilaterally** — it is the user's call, they have now been
+  asked twice, and they kept it both times. Do not re-open it.
 
 ### E. Merge and cleanup
 
-The branch is unmerged by design: the user's everyday build runs from the main
-checkout, and merging puts the rebuilt lane into daily use before the physical
-verification is done. When they decide to merge it is a fast-forward
-(`master` is 0 commits behind). Afterwards this file moves to the archived set
-per [README.md](README.md), and the worktree plus branch can be removed.
+The branch stays unmerged, reaffirmed by the user on 2026-07-25: their everyday
+build runs from the main checkout, and merging puts the rebuilt lane into daily
+use before the physical verification is done. **Do not merge without asking.**
+When they decide to, it is a fast-forward (`master` is 0 commits behind).
+Afterwards this file moves to the archived set per [README.md](README.md), and
+the worktree plus branch can be removed.
 
 ## Traps found the hard way
 
@@ -180,9 +198,9 @@ per [README.md](README.md), and the worktree plus branch can be removed.
 ## Verification
 
 ```
-npm test                       # 94 tests
+npm test                       # 97 tests
 npm run build
-cd src-tauri && cargo test     # 339 tests
+cd src-tauri && cargo test     # 349 tests
 ```
 
 Native host checks cannot be done in a browser preview — grabs and key delivery
@@ -192,7 +210,7 @@ need the real host. The manual checklist is in the known-issues record.
 
 | Area | Path |
 | --- | --- |
-| Shortcut contract (single owner) | `src-tauri/src/core/shortcut.rs` |
+| Shortcut contract and capability matrix (single owner) | `src-tauri/src/core/shortcut.rs` |
 | Trigger state machine, logging, grab lifecycle | `src-tauri/src/core/trigger.rs` |
 | Config, defaults, migration, collision validation | `src-tauri/src/core/config.rs` |
 | Trigger effects, window restore | `src-tauri/src/lib.rs` |
@@ -201,6 +219,9 @@ need the real host. The manual checklist is in the known-issues record.
 | Shared shortcut row (Capture + Modes) | `src/components/settings/ShortcutField.tsx` |
 | Test double for the runtime contract | `src/test/shortcutRuntime.ts` |
 | Problem record and measurements | `docs/known-issues/capture-shortcut-recording.md` |
+| Activation-mode selector and capability gating | `src/components/settings/InputTab.tsx` |
 | Contract ownership decision | `docs/decisions/0006-rust-owns-the-shortcut-contract.md` |
-| Token vocabulary, defaults, activation modes | `docs/REFERENCE.md` |
-| Linux shortcut reality | `docs/PLATFORMS.md` |
+| Capability matrix decision | `docs/decisions/0007-capability-matrix-is-measured-not-assumed.md` |
+| Default activation mode decision | `docs/decisions/0008-double-tap-is-the-default-activation-mode.md` |
+| Token vocabulary, defaults, activation modes, gating | `docs/REFERENCE.md` |
+| Linux shortcut reality and the rendered matrix | `docs/PLATFORMS.md` |

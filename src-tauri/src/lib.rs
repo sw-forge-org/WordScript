@@ -2274,6 +2274,7 @@ pub fn run() {
             core::shortcut::validate_shortcut,
             core::shortcut::shortcut_vocabulary,
             core::shortcut::shortcut_platform,
+            core::trigger::shortcut_capabilities,
             core::workspace_context::get_workspace_context,
             core::mode_router::set_processing_mode_override,
             core::mode_router::clear_processing_mode_override,

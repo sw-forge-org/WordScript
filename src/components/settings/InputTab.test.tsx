@@ -2,11 +2,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppConfig } from "../../test/factories";
 import {
+  createShortcutCapabilities,
   createTriggerStatus,
   isShortcutCommand,
   shortcutInvokeDouble,
 } from "../../test/shortcutRuntime";
-import type { NativeTriggerStatus } from "../../types/ipc";
+import type {
+  NativeTriggerStatus,
+  ShortcutBindingInfo,
+  ShortcutCapabilities,
+} from "../../types/ipc";
 import { InputTab } from "./InputTab";
 
 const invokeMock = vi.fn();
@@ -15,8 +20,28 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
-function mockRuntime(triggerStatus?: NativeTriggerStatus) {
+function captureBinding(overrides: Partial<ShortcutBindingInfo> = {}): ShortcutBindingInfo {
+  return {
+    label: "capture",
+    role: "capture",
+    configured: "Ctrl+F9",
+    display: "Ctrl + F9",
+    registered: true,
+    error: null,
+    presses: 0,
+    releases: 0,
+    last_press_ms: null,
+    last_release_ms: null,
+    ...overrides,
+  };
+}
+
+function mockRuntime(triggerStatus?: NativeTriggerStatus, capabilities?: ShortcutCapabilities) {
   invokeMock.mockImplementation((command: string, args?: Record<string, unknown>) => {
+    if (command === "shortcut_capabilities" && capabilities) {
+      return Promise.resolve(capabilities);
+    }
+
     if (command === "list_native_input_devices") {
       return Promise.resolve([
         { name: "USB Podcast Mic", is_default: false },
@@ -32,12 +57,8 @@ function mockRuntime(triggerStatus?: NativeTriggerStatus) {
       });
     }
 
-    if (command === "native_trigger_status" && triggerStatus) {
-      return Promise.resolve(triggerStatus);
-    }
-
     if (isShortcutCommand(command)) {
-      return Promise.resolve(shortcutInvokeDouble(command, args));
+      return Promise.resolve(shortcutInvokeDouble(command, args, { triggerStatus }));
     }
 
     return Promise.resolve(undefined);
@@ -189,20 +210,7 @@ describe("InputTab", () => {
     mockRuntime(
       createTriggerStatus({
         activation_mode: "hold",
-        bindings: [
-          {
-            label: "capture",
-            role: "capture",
-            configured: "Ctrl+F9",
-            display: "Ctrl + F9",
-            registered: true,
-            error: null,
-            presses: 3,
-            releases: 0,
-            last_press_ms: 1,
-            last_release_ms: null,
-          },
-        ],
+        bindings: [captureBinding({ presses: 3, releases: 0, last_press_ms: 1 })],
       }),
     );
 
@@ -214,5 +222,96 @@ describe("InputTab", () => {
     );
 
     expect(await screen.findByText(/no key release/i)).toBeInTheDocument();
+  });
+
+  it("gates the activation selector on the runtime capability matrix", async () => {
+    // T10/T12/S7: an option the session cannot honor is unselectable with the
+    // runtime's reason, instead of looking available and doing nothing. The
+    // persisted value is still shown — it is the user's, and nothing rewrites it.
+    mockRuntime(
+      createTriggerStatus({
+        activation_mode: "tap",
+        bindings: [captureBinding({ presses: 4, releases: 0, last_press_ms: 1 })],
+      }),
+    );
+
+    render(
+      <InputTab
+        config={createAppConfig({ hotkey: "Ctrl+F9", activation_mode: "tap" })}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const select = await screen.findByRole("combobox", { name: /activation mode/i });
+    await waitFor(() =>
+      expect(
+        (select.querySelector('option[value="hold"]') as HTMLOptionElement).disabled,
+      ).toBe(true),
+    );
+    expect((select.querySelector('option[value="tap"]') as HTMLOptionElement).disabled).toBe(
+      false,
+    );
+    expect(
+      (select.querySelector('option[value="double_tap"]') as HTMLOptionElement).disabled,
+    ).toBe(false);
+    expect(screen.getByText(/hold to talk — unavailable here/i)).toBeInTheDocument();
+  });
+
+  it("keeps an unavailable mode selectable-as-current instead of silently swapping it", async () => {
+    // The user's persisted choice is never rewritten by the UI. Hold stays the
+    // selected value, is not disabled out from under the select, and the reason
+    // is stated in the hint.
+    mockRuntime(
+      createTriggerStatus({
+        activation_mode: "hold",
+        bindings: [captureBinding({ presses: 2, releases: 0, last_press_ms: 1 })],
+      }),
+    );
+
+    const onChange = vi.fn();
+    render(
+      <InputTab
+        config={createAppConfig({ hotkey: "Ctrl+F9", activation_mode: "hold" })}
+        onChange={onChange}
+      />,
+    );
+
+    const select = (await screen.findByRole("combobox", {
+      name: /activation mode/i,
+    })) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(screen.getByText(/hold to talk — unavailable here/i)).toBeInTheDocument(),
+    );
+    expect(select.value).toBe("hold");
+    expect((select.querySelector('option[value="hold"]') as HTMLOptionElement).disabled).toBe(
+      false,
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("names the key classes this session cannot record", async () => {
+    // The key-class half of the matrix (T12) has to be visible, not internal:
+    // Super on KDE is registerable but not recordable, and manual entry is the
+    // alternative the user needs to be told about at that point (T8).
+    mockRuntime(
+      undefined,
+      createShortcutCapabilities({
+        key_classes: [
+          {
+            id: "super_meta",
+            label: "Super / Meta",
+            state: "conditional",
+            reason:
+              "The desktop consumes Super before the focused window sees it, so the recorder cannot capture it. Assign a Super combination through manual entry.",
+          },
+        ],
+      }),
+    );
+
+    render(<InputTab config={createAppConfig()} onChange={vi.fn()} />);
+
+    expect(
+      await screen.findByText(/Super \/ Meta: The desktop consumes Super/i),
+    ).toBeInTheDocument();
   });
 });

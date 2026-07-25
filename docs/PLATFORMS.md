@@ -141,9 +141,68 @@ Consequences a user can hit:
 
 `shortcut_platform` reports the detected compositor, session type, backend and
 the keys the desktop swallows; Settings -> Capture renders it above the shortcut
-rows. The per-OS capability matrix that would drive which options are offered
-where is not built yet — see
-[known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md).
+rows.
+
+## Shortcut capability matrix
+
+`shortcut_capabilities` reports, for the current session, which activation modes
+and key classes can be honored. Settings -> Capture gates the activation selector
+on it: an option the session cannot honor is unselectable and carries the reason.
+The derivation lives in `core::shortcut::capability_matrix` and is the single
+owner — the table below renders it for humans and is not a second source of
+truth.
+
+Two inputs, no assumptions (ADR
+[0007](decisions/0007-capability-matrix-is-measured-not-assumed.md)):
+
+1. **Session facts** from `shortcut_platform`, named as a `SessionKind`:
+   `windows`, `mac_os`, `linux_x11`, `linux_x_wayland`, `linux_native_wayland`.
+2. **Release evidence** measured by the trigger lane from its own press/release
+   counters: `unobserved`, `release_observed` or `release_missing`.
+
+### Activation modes
+
+| Session | Tap | Double tap | Hold to talk |
+| --- | --- | --- | --- |
+| `windows` | available | available | follows the evidence |
+| `mac_os` | available | available | follows the evidence, caveat: needs Accessibility and Input Monitoring |
+| `linux_x11` | available | available | follows the evidence |
+| `linux_x_wayland` | available | available | follows the evidence, caveat: focus-dependent X11 passive grab |
+| `linux_native_wayland` | unavailable | unavailable | unavailable — no global-shortcut API in this session |
+
+"Follows the evidence" means exactly this, on every platform including Windows
+and macOS:
+
+| Evidence for the configured capture shortcut | Hold state |
+| --- | --- |
+| No press observed yet | `conditional` — nothing is known yet, and that is stated rather than assumed to be fine |
+| Presses and at least one release | `available` |
+| Presses and no release at all | `unavailable` — a hold would start and never stop on release |
+
+The caveats are appended to the reason as a *plausible cause*; they never set the
+state on their own. No platform is assumed to deliver a release, and none is
+assumed not to. The reason this is measured rather than tabulated is the S0
+finding: under XTEST on KDE Plasma 6 / XWayland, release delivery was
+nondeterministic, and the physical half of that measurement is still open (see
+[known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)).
+
+### Key classes
+
+| Session | Letters and digits | Function keys | Modifier-only | Super / Meta |
+| --- | --- | --- | --- | --- |
+| `windows` | available | conditional | available | available |
+| `mac_os` | available | conditional | available | available |
+| `linux_x11` / `linux_x_wayland` (KDE) | available | conditional | available | conditional — KWin swallows it, use manual entry |
+| `linux_native_wayland` | unavailable | unavailable | unavailable | unavailable |
+
+- **Letters and digits** need at least one modifier; a bare letter or digit is
+  rejected outright.
+- **Function keys** are `conditional` everywhere: a bare function key registers,
+  but it is a desktop-wide grab and is accepted with a stated warning.
+- **Modifier-only** is allowed from two modifiers upward. A single bare modifier
+  is rejected, so no grab is ever created without a modifier (D2).
+- **Super / Meta** is `conditional` wherever the desktop consumes it before the
+  focused window can see it. It stays assignable through manual entry.
 
 ## Linux / PipeWire -- microphone keep-alive against auto-suspend
 

@@ -44,7 +44,8 @@ Rust core modules in `src-tauri/src/core/`:
 - `runtime_log.rs` -- buffered structured runtime logs (ring buffer + persistent file)
 - `history.rs` -- persistent native history: raw vs transformed transcript, insert outcome, server-side filters, export, retention, retry
 - `paths.rs` -- product paths (config, scratchpad, logs)
-- `trigger.rs` -- global start/stop, pause/resume, abort hotkeys
+- `shortcut.rs` -- single owner of the shortcut contract (ADR 0006): token vocabulary, canonical form, display strings, validity rules, and the per-session capability matrix (ADR 0007)
+- `trigger.rs` -- global start/stop, pause/resume, abort hotkeys, activation modes (tap / double tap / hold), grab lifecycle and `[trigger]` observability
 - `capture.rs` -- audio capture, level/waveform events, silence/max-duration autostop, single stream rebuild after transient error
 - `sessions.rs` -- runtime status and shared session transitions
 - `sound.rs` -- start/stop/abort/startup/error cues

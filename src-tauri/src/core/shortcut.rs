@@ -13,6 +13,11 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
 /// Modifier tokens in canonical order. `Super` covers Win / Cmd / Meta.
 pub const MODIFIER_TOKENS: [&str; 4] = ["Ctrl", "Alt", "Shift", "Super"];
 
+/// How many modifiers a modifier-only shortcut needs (T3). One is rejected
+/// because registering a single part with an empty modifier set is exactly the
+/// bare-modifier grab this contract forbids (D2).
+pub const MODIFIER_ONLY_MINIMUM: usize = 2;
+
 /// Canonical key tokens grouped by class. The names are the browser
 /// `event.code` values wherever the vendored `global-hotkey` parser accepts
 /// them, which lets the recorder send `event.code` unchanged.
@@ -245,7 +250,7 @@ fn build_modifier_only(
         return Err("This shortcut must include a non-modifier key.".to_string());
     }
 
-    if modifiers.len() < 2 {
+    if modifiers.len() < MODIFIER_ONLY_MINIMUM {
         return Err(format!(
             "A single {} would be grabbed from every application on this desktop. \
              Use at least two modifiers, or add a key.",
@@ -626,8 +631,24 @@ pub fn shortcut_vocabulary() -> ShortcutVocabulary {
             group("Numpad", &NUMPAD_TOKENS),
             group("System", &SYSTEM_TOKENS),
         ],
-        modifier_only_minimum: 2,
+        modifier_only_minimum: MODIFIER_ONLY_MINIMUM,
     }
+}
+
+/// The row of the capability matrix (T12) this process is running in. Every
+/// branch that differs per platform selects on this instead of on scattered
+/// `cfg!` checks, which is what keeps the matrix assertable in tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionKind {
+    Windows,
+    MacOs,
+    /// Linux on a real X11 session.
+    LinuxX11,
+    /// Linux on a Wayland session with the app on XWayland (X11 passive grabs).
+    LinuxXWayland,
+    /// Linux on a Wayland session with the app as a native Wayland client.
+    LinuxNativeWayland,
 }
 
 /// What the current session can actually honor, named honestly at the point
@@ -635,6 +656,8 @@ pub fn shortcut_vocabulary() -> ShortcutVocabulary {
 /// the session facts and the consequences that follow from them.
 #[derive(Debug, Clone, Serialize)]
 pub struct ShortcutPlatform {
+    /// Which matrix row this session is.
+    pub kind: SessionKind,
     /// One-line summary, e.g. "KDE Plasma 6 · Wayland session, app on XWayland".
     pub summary: String,
     /// Whether global shortcuts can be registered at all in this session.
@@ -650,6 +673,7 @@ pub struct ShortcutPlatform {
 pub fn shortcut_platform() -> ShortcutPlatform {
     if cfg!(target_os = "macos") {
         return ShortcutPlatform {
+            kind: SessionKind::MacOs,
             summary: "macOS".to_string(),
             global_shortcuts_available: true,
             keys_the_desktop_swallows: Vec::new(),
@@ -663,6 +687,7 @@ pub fn shortcut_platform() -> ShortcutPlatform {
 
     if cfg!(target_os = "windows") {
         return ShortcutPlatform {
+            kind: SessionKind::Windows,
             summary: "Windows".to_string(),
             global_shortcuts_available: true,
             keys_the_desktop_swallows: vec!["Win + L".to_string(), "Ctrl + Alt + Delete".to_string()],
@@ -683,6 +708,14 @@ pub fn shortcut_platform() -> ShortcutPlatform {
         "native Wayland"
     } else {
         "XWayland (X11 grabs)"
+    };
+
+    let kind = if native_wayland {
+        SessionKind::LinuxNativeWayland
+    } else if session_type == "wayland" {
+        SessionKind::LinuxXWayland
+    } else {
+        SessionKind::LinuxX11
     };
 
     let summary = if session_type.is_empty() {
@@ -723,10 +756,266 @@ pub fn shortcut_platform() -> ShortcutPlatform {
     }
 
     ShortcutPlatform {
+        kind,
         summary,
         global_shortcuts_available,
         keys_the_desktop_swallows: swallowed,
         notes,
+    }
+}
+
+/// What the current session has actually delivered for the configured capture
+/// shortcut. This is measured, not assumed: the trigger lane counts every
+/// press and release it receives (T11), and the ratio is the only honest input
+/// to the question whether hold to talk can work here (T10, D11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseEvidence {
+    /// The shortcut has not been pressed yet in this session, so nothing is
+    /// known either way. Deliberately not the same as "works".
+    Unobserved,
+    /// Presses arrived and at least one matching release did too.
+    ReleaseObserved,
+    /// Presses arrived and no release ever did — the stranded hold of D11.
+    ReleaseMissing,
+}
+
+impl ReleaseEvidence {
+    pub fn from_counters(presses: u64, releases: u64) -> Self {
+        if presses == 0 {
+            Self::Unobserved
+        } else if releases == 0 {
+            Self::ReleaseMissing
+        } else {
+            Self::ReleaseObserved
+        }
+    }
+}
+
+/// Whether the current session can honor one capability. `Conditional` is a
+/// deliberate third state: it means "registerable, with a consequence the user
+/// has to know", which is different from both "fine" and "cannot work". The
+/// previous UI had only the first two and therefore had to guess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityState {
+    Available,
+    Conditional,
+    Unavailable,
+}
+
+/// One row of the matrix: a capability, its state in this session and the
+/// reason, phrased for the user. The UI renders `state` and `reason` and
+/// derives neither (ADR 0006).
+#[derive(Debug, Clone, Serialize)]
+pub struct Capability {
+    /// Stable id the UI matches on: an activation mode (`tap`, `double_tap`,
+    /// `hold`) or a key class (`letters_digits`, `function_keys`,
+    /// `modifier_only`, `super_meta`).
+    pub id: String,
+    pub label: String,
+    pub state: CapabilityState,
+    pub reason: Option<String>,
+}
+
+impl Capability {
+    fn new(id: &str, label: &str, state: CapabilityState, reason: Option<String>) -> Self {
+        Self {
+            id: id.to_string(),
+            label: label.to_string(),
+            state,
+            reason,
+        }
+    }
+}
+
+/// The per-OS capability matrix (T12, S7). One documented derivation drives
+/// which options the UI offers and what the tests assert, instead of each
+/// surface re-deciding what this platform can do.
+#[derive(Debug, Clone, Serialize)]
+pub struct ShortcutCapabilities {
+    pub session: SessionKind,
+    pub summary: String,
+    pub global_shortcuts_available: bool,
+    /// The evidence the activation-mode row was derived from, exposed so the UI
+    /// can be explicit about *why* an option is in the state it is in.
+    pub release_evidence: ReleaseEvidence,
+    pub activation_modes: Vec<Capability>,
+    pub key_classes: Vec<Capability>,
+}
+
+/// Why a hold might not deliver its release on this specific session type.
+/// Appended to the evidence sentence rather than replacing it — the session
+/// fact is a plausible cause, the counters are the actual finding.
+fn hold_delivery_caveat(kind: SessionKind) -> Option<&'static str> {
+    match kind {
+        SessionKind::LinuxXWayland => Some(
+            "Delivery goes through an X11 passive grab on XWayland, where whether the release \
+             arrives can depend on which client holds keyboard focus.",
+        ),
+        SessionKind::MacOs => Some(
+            "Low-level key observation needs Accessibility and Input Monitoring permission; \
+             without them a shortcut can register and still never report a release.",
+        ),
+        SessionKind::Windows | SessionKind::LinuxX11 | SessionKind::LinuxNativeWayland => None,
+    }
+}
+
+fn with_caveat(sentence: String, caveat: Option<&str>) -> Option<String> {
+    Some(match caveat {
+        Some(caveat) => format!("{sentence} {caveat}"),
+        None => sentence,
+    })
+}
+
+/// Derives the capability matrix from the session facts plus the release
+/// evidence this session produced. Pure on purpose: `shortcut_platform()`
+/// collects the facts once, and every matrix branch is unit-testable without a
+/// desktop (T12).
+pub fn capability_matrix(
+    platform: &ShortcutPlatform,
+    evidence: ReleaseEvidence,
+) -> ShortcutCapabilities {
+    let no_global_api =
+        "This session has no global-shortcut API, so no shortcut can fire outside the app window."
+            .to_string();
+
+    if !platform.global_shortcuts_available {
+        let unavailable = |id: &str, label: &str| {
+            Capability::new(
+                id,
+                label,
+                CapabilityState::Unavailable,
+                Some(no_global_api.clone()),
+            )
+        };
+
+        return ShortcutCapabilities {
+            session: platform.kind,
+            summary: platform.summary.clone(),
+            global_shortcuts_available: false,
+            release_evidence: evidence,
+            activation_modes: vec![
+                unavailable("tap", "Tap to toggle"),
+                unavailable("double_tap", "Double tap to toggle"),
+                unavailable("hold", "Hold to talk"),
+            ],
+            key_classes: vec![
+                unavailable("letters_digits", "Letters and digits"),
+                unavailable("function_keys", "Function keys"),
+                unavailable("modifier_only", "Modifier-only"),
+                unavailable("super_meta", "Super / Meta"),
+            ],
+        };
+    }
+
+    let caveat = hold_delivery_caveat(platform.kind);
+    let hold = match evidence {
+        ReleaseEvidence::ReleaseObserved => Capability::new(
+            "hold",
+            "Hold to talk",
+            CapabilityState::Available,
+            Some(
+                "Key releases have been observed for this shortcut in this session."
+                    .to_string(),
+            ),
+        ),
+        ReleaseEvidence::ReleaseMissing => Capability::new(
+            "hold",
+            "Hold to talk",
+            CapabilityState::Unavailable,
+            with_caveat(
+                "This session received presses of this shortcut and no key release, so a hold \
+                 would start and never stop on release — the watchdog would have to end every \
+                 one. Use tap or double tap."
+                    .to_string(),
+                caveat,
+            ),
+        ),
+        ReleaseEvidence::Unobserved => Capability::new(
+            "hold",
+            "Hold to talk",
+            CapabilityState::Conditional,
+            with_caveat(
+                "Whether the key release arrives has not been observed yet in this session — \
+                 press the shortcut once to find out."
+                    .to_string(),
+                caveat,
+            ),
+        ),
+    };
+
+    let super_swallowed = platform
+        .keys_the_desktop_swallows
+        .iter()
+        .any(|key| key.eq_ignore_ascii_case("super") || key.eq_ignore_ascii_case("meta"));
+
+    ShortcutCapabilities {
+        session: platform.kind,
+        summary: platform.summary.clone(),
+        global_shortcuts_available: true,
+        release_evidence: evidence,
+        activation_modes: vec![
+            Capability::new("tap", "Tap to toggle", CapabilityState::Available, None),
+            Capability::new(
+                "double_tap",
+                "Double tap to toggle",
+                CapabilityState::Available,
+                None,
+            ),
+            hold,
+        ],
+        key_classes: vec![
+            Capability::new(
+                "letters_digits",
+                "Letters and digits",
+                CapabilityState::Available,
+                Some(
+                    "Registerable with at least one modifier. A bare letter or digit is rejected \
+                     because it would be grabbed from every application on this desktop."
+                        .to_string(),
+                ),
+            ),
+            Capability::new(
+                "function_keys",
+                "Function keys",
+                CapabilityState::Conditional,
+                Some(
+                    "Registerable with or without a modifier, but a bare function key is a \
+                     desktop-wide grab — it is accepted with a stated warning, not silently."
+                        .to_string(),
+                ),
+            ),
+            Capability::new(
+                "modifier_only",
+                "Modifier-only",
+                CapabilityState::Available,
+                Some(format!(
+                    "Allowed from {} modifiers upward. A single bare modifier is rejected, so no \
+                     grab can ever be created without a modifier.",
+                    MODIFIER_ONLY_MINIMUM
+                )),
+            ),
+            Capability::new(
+                "super_meta",
+                "Super / Meta",
+                if super_swallowed {
+                    CapabilityState::Conditional
+                } else {
+                    CapabilityState::Available
+                },
+                if super_swallowed {
+                    Some(
+                        "The desktop consumes Super before the focused window sees it, so the \
+                         recorder cannot capture it. Assign a Super combination through manual \
+                         entry."
+                            .to_string(),
+                    )
+                } else {
+                    None
+                },
+            ),
+        ],
     }
 }
 
@@ -739,6 +1028,269 @@ mod tests {
             ShortcutParse::Valid(parsed) => *parsed,
             ShortcutParse::Disabled => panic!("expected a shortcut, got disabled"),
         }
+    }
+
+    /// Builds one matrix row's input without a desktop, which is what makes
+    /// every per-platform branch assertable (T12).
+    fn session(kind: SessionKind) -> ShortcutPlatform {
+        let (summary, global, swallowed) = match kind {
+            SessionKind::Windows => ("Windows", true, vec!["Win + L".to_string()]),
+            SessionKind::MacOs => ("macOS", true, Vec::new()),
+            SessionKind::LinuxX11 => ("KDE Plasma 6 · x11 session", true, vec!["Super".to_string()]),
+            SessionKind::LinuxXWayland => (
+                "KDE Plasma 6 · wayland session, app on XWayland (X11 grabs)",
+                true,
+                vec!["Super".to_string()],
+            ),
+            SessionKind::LinuxNativeWayland => (
+                "KDE Plasma 6 · wayland session, app on native Wayland",
+                false,
+                Vec::new(),
+            ),
+        };
+
+        ShortcutPlatform {
+            kind,
+            summary: summary.to_string(),
+            global_shortcuts_available: global,
+            keys_the_desktop_swallows: swallowed,
+            notes: Vec::new(),
+        }
+    }
+
+    fn capability<'a>(list: &'a [Capability], id: &str) -> &'a Capability {
+        list.iter()
+            .find(|capability| capability.id == id)
+            .unwrap_or_else(|| panic!("capability '{id}' missing from the matrix"))
+    }
+
+    const ALL_SESSIONS: [SessionKind; 5] = [
+        SessionKind::Windows,
+        SessionKind::MacOs,
+        SessionKind::LinuxX11,
+        SessionKind::LinuxXWayland,
+        SessionKind::LinuxNativeWayland,
+    ];
+
+    #[test]
+    fn release_evidence_reads_the_counters_and_nothing_else() {
+        assert_eq!(
+            ReleaseEvidence::from_counters(0, 0),
+            ReleaseEvidence::Unobserved
+        );
+        // Releases without presses is not evidence of a working release either;
+        // it is a state the lane should never reach, and it must not read as
+        // "hold works".
+        assert_eq!(
+            ReleaseEvidence::from_counters(0, 4),
+            ReleaseEvidence::Unobserved
+        );
+        assert_eq!(
+            ReleaseEvidence::from_counters(3, 0),
+            ReleaseEvidence::ReleaseMissing
+        );
+        assert_eq!(
+            ReleaseEvidence::from_counters(3, 3),
+            ReleaseEvidence::ReleaseObserved
+        );
+    }
+
+    #[test]
+    fn every_session_reports_all_matrix_rows() {
+        // T12 is one matrix, not per-platform ad-hoc lists: the UI must be able
+        // to look up the same ids everywhere.
+        for kind in ALL_SESSIONS {
+            let matrix = capability_matrix(&session(kind), ReleaseEvidence::Unobserved);
+            assert_eq!(matrix.session, kind);
+            let modes: Vec<&str> = matrix
+                .activation_modes
+                .iter()
+                .map(|capability| capability.id.as_str())
+                .collect();
+            assert_eq!(modes, vec!["tap", "double_tap", "hold"]);
+            let classes: Vec<&str> = matrix
+                .key_classes
+                .iter()
+                .map(|capability| capability.id.as_str())
+                .collect();
+            assert_eq!(
+                classes,
+                vec![
+                    "letters_digits",
+                    "function_keys",
+                    "modifier_only",
+                    "super_meta"
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn a_session_without_a_global_shortcut_api_offers_nothing() {
+        let matrix = capability_matrix(
+            &session(SessionKind::LinuxNativeWayland),
+            ReleaseEvidence::ReleaseObserved,
+        );
+
+        assert!(!matrix.global_shortcuts_available);
+        for capability in matrix.activation_modes.iter().chain(&matrix.key_classes) {
+            assert_eq!(
+                capability.state,
+                CapabilityState::Unavailable,
+                "'{}' must not be offered without a global-shortcut API",
+                capability.id
+            );
+            assert!(capability.reason.is_some(), "'{}' needs a reason", capability.id);
+        }
+    }
+
+    #[test]
+    fn tap_and_double_tap_are_available_wherever_grabs_exist() {
+        for kind in ALL_SESSIONS {
+            let platform = session(kind);
+            if !platform.global_shortcuts_available {
+                continue;
+            }
+            let matrix = capability_matrix(&platform, ReleaseEvidence::ReleaseMissing);
+            assert_eq!(
+                capability(&matrix.activation_modes, "tap").state,
+                CapabilityState::Available
+            );
+            assert_eq!(
+                capability(&matrix.activation_modes, "double_tap").state,
+                CapabilityState::Available
+            );
+        }
+    }
+
+    #[test]
+    fn hold_follows_the_evidence_not_the_platform() {
+        // The point of S0: no platform is assumed to deliver a release, and no
+        // platform is assumed not to. The counters decide (T10, D11).
+        for kind in ALL_SESSIONS {
+            let platform = session(kind);
+            if !platform.global_shortcuts_available {
+                continue;
+            }
+
+            let unobserved = capability_matrix(&platform, ReleaseEvidence::Unobserved);
+            assert_eq!(
+                capability(&unobserved.activation_modes, "hold").state,
+                CapabilityState::Conditional,
+                "{kind:?} must not claim hold works before a release was seen"
+            );
+
+            let observed = capability_matrix(&platform, ReleaseEvidence::ReleaseObserved);
+            assert_eq!(
+                capability(&observed.activation_modes, "hold").state,
+                CapabilityState::Available
+            );
+
+            let missing = capability_matrix(&platform, ReleaseEvidence::ReleaseMissing);
+            assert_eq!(
+                capability(&missing.activation_modes, "hold").state,
+                CapabilityState::Unavailable,
+                "{kind:?} must stop offering hold once a release went missing"
+            );
+        }
+    }
+
+    #[test]
+    fn hold_names_the_session_specific_delivery_risk() {
+        let xwayland = capability_matrix(
+            &session(SessionKind::LinuxXWayland),
+            ReleaseEvidence::Unobserved,
+        );
+        let reason = capability(&xwayland.activation_modes, "hold")
+            .reason
+            .clone()
+            .expect("hold needs a reason");
+        assert!(reason.contains("XWayland"), "{reason}");
+        assert!(reason.contains("keyboard focus"), "{reason}");
+
+        let macos = capability_matrix(&session(SessionKind::MacOs), ReleaseEvidence::Unobserved);
+        let reason = capability(&macos.activation_modes, "hold")
+            .reason
+            .clone()
+            .expect("hold needs a reason");
+        assert!(reason.contains("Input Monitoring"), "{reason}");
+
+        // Where there is no known session-specific cause, none is invented.
+        let x11 = capability_matrix(&session(SessionKind::LinuxX11), ReleaseEvidence::Unobserved);
+        let reason = capability(&x11.activation_modes, "hold")
+            .reason
+            .clone()
+            .expect("hold needs a reason");
+        assert!(!reason.contains("XWayland"), "{reason}");
+        assert!(!reason.contains("Input Monitoring"), "{reason}");
+    }
+
+    #[test]
+    fn a_release_that_never_arrived_is_stated_as_the_reason() {
+        let matrix = capability_matrix(
+            &session(SessionKind::LinuxXWayland),
+            ReleaseEvidence::ReleaseMissing,
+        );
+        let reason = capability(&matrix.activation_modes, "hold")
+            .reason
+            .clone()
+            .expect("hold needs a reason");
+        assert!(reason.contains("no key release"), "{reason}");
+        assert!(reason.contains("watchdog"), "{reason}");
+    }
+
+    #[test]
+    fn super_is_conditional_only_where_the_desktop_swallows_it() {
+        let kde = capability_matrix(
+            &session(SessionKind::LinuxXWayland),
+            ReleaseEvidence::Unobserved,
+        );
+        let super_meta = capability(&kde.key_classes, "super_meta");
+        assert_eq!(super_meta.state, CapabilityState::Conditional);
+        assert!(
+            super_meta
+                .reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("manual entry"),
+            "the alternative has to be named at the point of failure (T8)"
+        );
+
+        let macos = capability_matrix(&session(SessionKind::MacOs), ReleaseEvidence::Unobserved);
+        assert_eq!(
+            capability(&macos.key_classes, "super_meta").state,
+            CapabilityState::Available
+        );
+    }
+
+    #[test]
+    fn a_bare_function_key_is_conditional_rather_than_silently_fine() {
+        let matrix = capability_matrix(&session(SessionKind::Windows), ReleaseEvidence::Unobserved);
+        assert_eq!(
+            capability(&matrix.key_classes, "function_keys").state,
+            CapabilityState::Conditional
+        );
+        assert_eq!(
+            capability(&matrix.key_classes, "letters_digits").state,
+            CapabilityState::Available
+        );
+    }
+
+    #[test]
+    fn the_modifier_only_minimum_is_reported_from_the_one_constant() {
+        let matrix = capability_matrix(&session(SessionKind::Windows), ReleaseEvidence::Unobserved);
+        let reason = capability(&matrix.key_classes, "modifier_only")
+            .reason
+            .clone()
+            .expect("modifier-only needs a reason");
+        assert!(
+            reason.contains(&MODIFIER_ONLY_MINIMUM.to_string()),
+            "the matrix must quote the contract's own minimum, not a literal: {reason}"
+        );
+        assert_eq!(
+            shortcut_vocabulary().modifier_only_minimum,
+            MODIFIER_ONLY_MINIMUM
+        );
     }
 
     #[test]

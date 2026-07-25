@@ -1,13 +1,12 @@
 # Capture Shortcut Recording and Registration
 
-Status: **Partially resolved (2026-07-25). S0-S5 implemented; S6 and S7 open,
-pending the runtime evidence S0 now produces.**
+Status: **Largely resolved (2026-07-25). S0-S8 implemented. One open item that
+only a person can produce: the physical half of the S0 measurement.**
 
 ## Current State (2026-07-25)
 
-Slices S0-S5 from the plan below were implemented on branch
-`worktree-shortcut-lane-rebuild`, together with the S8 documentation. What
-changed:
+Slices S0-S8 from the plan below were implemented on branch
+`worktree-shortcut-lane-rebuild`. What changed:
 
 | Defect | State |
 | --- | --- |
@@ -21,20 +20,41 @@ changed:
 | D8 recorder vocabulary smaller than the runtime's | Fixed — the UI reads the runtime vocabulary and has no key table |
 | D9 physical key codes shown as US labels | Improved — human display strings everywhere, physical-key caveat stated |
 | D10 no test coverage for the recorder | Fixed — `HotkeyRecorder.test.tsx` covers the lifecycle rules |
-| D11 hold to talk not supported in practice | **Partial** — watchdog, release attribution and an honest note; capability gating still needs the S0 evidence |
+| D11 hold to talk not supported in practice | Fixed — watchdog, release attribution, and the mode is gated on measured release evidence rather than offered on an assumption |
 | D12 trigger lane has no observability | Fixed — every event, decision and registration outcome is logged |
 
-Still open:
+What S6 and S7 delivered:
 
-- **S6 Activation modes.** Hold to talk stays selectable. A hold that exceeds
-  `hold_watchdog_seconds` (default 120) is ended explicitly with reason
-  `native_hold_watchdog` instead of drifting into the silence timeout, and the
-  activation selector states whether a key release has actually been observed
-  for the configured shortcut in this session. Real per-platform capability
-  gating waits for the measurement.
-- **S7 Per-OS capability matrix.** Not started. `shortcut_platform` reports the
-  session facts (compositor, session type, XWayland versus native Wayland, keys
-  the desktop swallows), which is the input the matrix needs.
+- **S6 Activation modes.** A hold that exceeds `hold_watchdog_seconds` (default
+  120) is ended explicitly with reason `native_hold_watchdog` instead of drifting
+  into the silence timeout. A hold shorter than `hold_min_ms` becomes a
+  `DeferredStop` so a short tap in hold mode has defined behavior instead of
+  producing an empty capture. `hold_min_ms`, `debounce_ms`,
+  `hold_watchdog_seconds` and `double_tap_window_ms` are reported in
+  `native_trigger_status` and stated in the Settings row, so the timing constants
+  are no longer invisible. Double-tap activation is implemented and is now the
+  default (ADR 0008). The activation selector is gated on the capability matrix:
+  an option this session cannot honor is unselectable with the runtime's reason.
+- **S7 Per-OS capability matrix.** `core::shortcut::capability_matrix` derives,
+  per session, a state (`available` / `conditional` / `unavailable`) and a reason
+  for each activation mode and key class. It is a pure function of the session
+  facts from `shortcut_platform` plus the `ReleaseEvidence` measured from the
+  trigger lane's own counters, exposed to the UI as `shortcut_capabilities` and
+  asserted in tests across all five session kinds and all three evidence states.
+  The human-readable rendering is in
+  [PLATFORMS.md](../PLATFORMS.md#shortcut-capability-matrix).
+
+**The design decision that matters here**, recorded as ADR
+[0007](../decisions/0007-capability-matrix-is-measured-not-assumed.md): the
+matrix does not contain a per-OS verdict on hold to talk. Writing "hold works on
+Windows, not on Linux Wayland" would have encoded a guess — nothing has been
+measured on Windows or macOS, and on Linux the XTEST run below found
+nondeterminism rather than a clean negative. Instead hold follows the evidence on
+every platform, and the session type contributes only a caveat sentence naming a
+plausible cause. Consequently **the physical measurement can only tighten the
+matrix, never invalidate it**: if physical keys lose releases on XWayland as
+reliably as XTEST did, the change is one branch (`LinuxXWayland` gets a hard
+`unavailable` for hold regardless of the counters).
 
 ### S0 measurement, run 1 (2026-07-25, KDE Plasma 6 / Wayland session, app on XWayland)
 
@@ -95,19 +115,75 @@ prove that physical keys behave the same way. What it does establish is that the
 delivery is not deterministic on this path, and that the stranded-hold state is
 reachable in practice rather than hypothetical.
 
-### Evidence still to collect
+### S0 measurement, run 2 — physical keys (open, needs a person)
 
-Two things this run could not produce, both requiring a person at the keyboard:
+XTEST injects through a different path than a hardware keyboard, so run 1 cannot
+answer whether physical keys behave the same way. This run is the missing half.
+It is deliberately written out in full so it can be executed once, without
+re-deriving the procedure.
 
-1. **Physical key delivery.** Repeat the hold table above with real key presses
-   rather than XTEST, and compare.
-2. **Focus dependency.** Press the shortcut once with an XWayland application
-   focused and once with a native Wayland application focused. XTEST cannot
-   reach a Wayland-focused client, which is precisely the case in question.
-   Report whether `state=pressed` and `state=released` both appear in each case.
+**Setup.** With the dev build from this branch running in the native host, in a
+terminal:
 
-Until at least (1) is answered, S6 keeps hold to talk selectable with the
-watchdog and the honest note, rather than gating it on a guess.
+```
+tail -f ~/.config/WordScript/logs/wordscript-runtime.log | grep trigger
+```
+
+Use the **mode-select** shortcut (default `Ctrl+S`, shown in Settings -> Modes)
+as the probe. It is harmless: it opens the overlay mode selector and starts no
+capture, so a stranded state costs nothing. Do not use the capture trigger for
+the hold table — a lost release there starts a real recording.
+
+Count the `[trigger] event=shortcut … state=pressed` and `state=released` lines
+per run. One press and one release per hold is the correct result.
+
+**Part 1 — hold durations.** Hold the probe physically for each duration, then
+release. Leave two seconds between runs so the lines are unambiguous.
+
+| Hold duration | `state=pressed` | `state=released` | Notes |
+| --- | --- | --- | --- |
+| atomic tap | | | |
+| 1 s | | | |
+| 2 s | | | |
+| 3 s | | | |
+| 6 s | | | |
+
+Compare against the XTEST table above. The question is not "does it work once"
+but whether press and release come in matched pairs *every* time — run 1 failed
+by producing extra pairs in some runs and none in others.
+
+**Part 2 — focus dependency.** Press the probe once for each focus case. This is
+the half XTEST structurally cannot reach: it cannot deliver to a
+Wayland-focused client.
+
+| Focused application | `state=pressed`? | `state=released`? |
+| --- | --- | --- |
+| XWayland client (e.g. the WordScript settings window itself) | | |
+| Native Wayland client (e.g. a GNOME/KDE app started without `GDK_BACKEND=x11`) | | |
+
+Verify which one a candidate app actually is before recording the row —
+`xdotool getactivewindow` failing on the focused window is a practical indicator
+that it is a native Wayland client. Do not report a row you could not classify.
+
+**Part 3 — what to do with the result.** Record the filled tables here as
+"run 2", dated, and then:
+
+- **Matched pairs in every row:** hold to talk is sound on this session type.
+  Nothing in the matrix needs to change — the evidence path will report
+  `available` after the first press, which is already the intended behavior.
+- **Releases lost or duplicated with physical keys too:** give
+  `SessionKind::LinuxXWayland` a hard `unavailable` for hold in
+  `core::shortcut::capability_matrix`, independent of the counters, with this
+  measurement as the stated reason. One branch, one test.
+- **Delivery depends on the focused client:** that is a finding about the grab
+  path, not about hold alone. It belongs in
+  [PLATFORMS.md](../PLATFORMS.md#linux----global-shortcut-reality) as a named
+  consequence, and it is the argument for implementing the
+  `org.freedesktop.portal.GlobalShortcuts` path.
+
+Until this run exists, the matrix reports `conditional` for hold before the first
+press and follows the counters afterwards. That is honest but weaker than a
+measurement: it describes this session, not the platform.
 
 ---
 

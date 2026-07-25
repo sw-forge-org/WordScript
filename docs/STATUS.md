@@ -49,6 +49,15 @@ Status: 2026-07-25
 - permanent structured trigger logging (`[trigger]` in the runtime log): every
   received shortcut event, the decision taken, every registration outcome and
   every stranded hold ended by the watchdog
+- three activation modes with defined edge cases: tap, double tap (the default,
+  ADR 0008 — two taps within `double_tap_window_ms`, so a modifier-only trigger
+  no longer acts on every single press) and hold to talk with a watchdog for a
+  release that never arrives and a deferred stop below `hold_min_ms`
+- a per-session shortcut capability matrix (`shortcut_capabilities`, ADR 0007):
+  session facts plus the trigger lane's measured press/release evidence decide
+  which activation modes and key classes are available, conditional or
+  unavailable. Settings gates the activation selector on it and never rewrites a
+  stored mode that becomes unavailable
 - native microphone capture with waveform, level events, silence timeout and
   max-duration autostop
 - single capture stream rebuild after a transient cpal stream error
@@ -226,14 +235,14 @@ Additional rules:
   `prompt_enhance` or globally active agent mode; Conservative stays the
   default and protects against language-bias leakage into the Whisper initial
   prompt
-- the `hold to talk` activation mode is not capability gated per platform yet.
-  It depends on a key release event delivered by three different mechanisms on
-  Linux, Windows and macOS, and no per-OS capability matrix drives which
-  options are offered where. The runtime now counts presses and releases per
-  binding, states in Settings what it has observed in the current session and
-  ends a stranded hold with an explicit watchdog instead of letting it drift
-  into the silence timeout, but the gating itself waits for evidence from a
-  real session
+- the capability matrix that gates `hold to talk` reports **this session**, not
+  the platform. Hold follows the measured press/release evidence per session and
+  per shortcut, which is honest but weaker than a platform statement: the
+  physical half of the S0 measurement (real keys rather than XTEST-injected ones,
+  and delivery with a native Wayland client focused) has not been taken yet, so
+  no session type carries a hard verdict. The procedure is written out ready to
+  execute in
+  [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
 - no `org.freedesktop.portal.GlobalShortcuts` path: in a native Wayland session
   (`WORDSCRIPT_NATIVE_WAYLAND=1`) global shortcuts are unavailable and are named
   as unavailable rather than silently failing. Both points are tracked in

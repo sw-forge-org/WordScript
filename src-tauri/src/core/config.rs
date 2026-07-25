@@ -607,7 +607,7 @@ impl Default for AppConfig {
             hotkey: default_hotkey().to_string(),
             pause_hotkey: default_pause_hotkey().to_string(),
             abort_hotkey: default_abort_hotkey().to_string(),
-            activation_mode: "tap".to_string(),
+            activation_mode: default_activation_mode().to_string(),
             hold_watchdog_seconds: default_hold_watchdog_seconds(),
             double_tap_window_ms: default_double_tap_window_ms(),
             shortcut_schema_version: SHORTCUT_SCHEMA_VERSION,
@@ -1271,6 +1271,19 @@ pub(crate) fn default_abort_hotkey() -> &'static str {
 
 pub(crate) fn default_pause_hotkey() -> &'static str {
     "Ctrl+Space"
+}
+
+/// Default activation mode. `double_tap` rather than `tap` because the default
+/// capture triggers above are modifier-only: in tap mode every single press of
+/// `Ctrl+Super` would act, which takes that combination away from the rest of
+/// the desktop. Double tap gives the first press back — a lone `Ctrl+Alt` does
+/// nothing, so `Ctrl+Alt+T` still opens a terminal (ADR 0008).
+///
+/// This changes the default only. `AppConfig` is `#[serde(default)]`, so the
+/// value is used when the key is absent from the file; a config that already
+/// records an `activation_mode` keeps it. Nothing rewrites a chosen value.
+pub(crate) fn default_activation_mode() -> &'static str {
+    "double_tap"
 }
 
 fn default_overlay_monitor() -> &'static str {
