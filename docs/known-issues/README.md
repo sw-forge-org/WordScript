@@ -18,6 +18,12 @@ status change. Resolved bugs remain as references for the same failure class.
   recording, manual entry, normalization, registration and activation-mode
   failures in Capture and Modes, including the missing trigger observability
   and the rebuild plan (2026-07-25).
+- [cross-platform-shortcut-verification.md](cross-platform-shortcut-verification.md):
+  open — the shortcut lane has never run on Windows or macOS. Executable run
+  sheets for both, the findings already established from the vendored crate's
+  source (including that the modifier-only capture defaults cannot register on
+  macOS), and which questions need real hardware versus a VM or a CI runner
+  (2026-07-25).
 
 ## Boundaries
 

@@ -235,6 +235,14 @@ Additional rules:
   `prompt_enhance` or globally active agent mode; Conservative stays the
   default and protects against language-bias leakage into the Whisper initial
   prompt
+- the shortcut lane has never been executed on Windows or macOS. It is
+  implemented and unit-tested for all three platforms, but only Linux
+  (KDE Plasma 6 / Wayland, app on XWayland) has ever run it. One consequence is
+  already known from the vendored crate's source: the modifier-only capture
+  defaults (`Ctrl+Super`, `Ctrl+Alt`) are expected to fail registration on macOS,
+  because that platform implementation maps no modifier as a main key. Run sheets
+  and the source-level findings are in
+  [known-issues/cross-platform-shortcut-verification.md](known-issues/cross-platform-shortcut-verification.md)
 - the capability matrix that gates `hold to talk` reports **this session**, not
   the platform. Hold follows the measured press/release evidence per session and
   per shortcut, which is honest but weaker than a platform statement: the

@@ -121,6 +121,21 @@ Two points worth repeating here because they are easy to get wrong:
   nothing about hardware keys, and XTEST structurally cannot deliver to a
   Wayland-focused client. Do not try to automate this half.
 
+### F. Windows and macOS have never run this lane
+
+Separate from A and not blocked by it. The lane is implemented and unit-tested
+for all three platforms; only Linux has ever executed it. Run sheets for both,
+the findings already established from the vendored crate's source, and which
+questions a VM or a CI runner can answer instead of owned hardware are in
+[known-issues/cross-platform-shortcut-verification.md](../known-issues/cross-platform-shortcut-verification.md).
+
+The one item there worth knowing before reading anything else: **on macOS the
+modifier-only capture defaults are expected to fail registration**, because that
+platform implementation maps no modifier as a main key while X11 and Windows both
+do. It is a code-level finding, needs a real macOS session to confirm, and the
+fix is a product decision (accept, per-OS defaults, or patch the vendored crate)
+— not an agent's call.
+
 ### B. S6 — activation modes — DONE
 
 Hold to talk keeps the watchdog (`hold_watchdog_seconds`, default 120, reason

@@ -61,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Settings gates the activation selector on it: an option this session cannot
   honor is unselectable with the reason stated, and a stored mode that becomes
   unavailable stays selected rather than being silently swapped.
+- A cross-platform verification record for the shortcut lane
+  (`docs/known-issues/cross-platform-shortcut-verification.md`): executable run
+  sheets for Windows and macOS, the per-platform release mechanisms read from the
+  vendored `global-hotkey` source, and an assessment of which questions a VM or a
+  CI runner can answer instead of owned hardware. It records that the
+  modifier-only capture defaults are expected to fail registration on macOS,
+  because that platform implementation maps no modifier as a main key.
 - A development-only key probe in the shortcut recorder that logs `event.code`,
   `event.key`, the modifier state and whether the code mapped to a registerable
   token, for diagnosing which keys a desktop actually delivers.

@@ -19,6 +19,15 @@ the human-readable mirror of the native contract.
 | GNOME Mutter (Wayland) | Preview-lite | same path as KDE Plasma 6 via the `org.gnome.Shell` RemoteDesktop portal |
 | Hyprland / Sway / KDE Plasma 5 | Experimental | no persistent RemoteDesktop portal grant available; auto-paste stays clipboard-only |
 
+**Caveat on the two Tier 1 rows.** Development happens on Linux, and the shortcut
+lane has never been executed on Windows or macOS. "Native hotkey path" describes
+the implemented code, not a verified session. One consequence is already known
+from the vendored crate's source: the modifier-only capture defaults are expected
+to fail registration on macOS. Executable run sheets for both platforms, the
+source-level findings, and which questions can be answered by a VM or a CI runner
+rather than owned hardware are in
+[known-issues/cross-platform-shortcut-verification.md](known-issues/cross-platform-shortcut-verification.md).
+
 ## Platform diagnostics for insert and recovery
 
 The native platform diagnostics come from `core::insertion` and are shown in
