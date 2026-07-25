@@ -1,0 +1,441 @@
+# Capture Shortcut Recording and Registration
+
+Status: **Open; documentation and rebuild plan only (2026-07-25)**
+
+Scope of this record: the whole shortcut lane in Settings -> Capture (Input)
+and Settings -> Modes -- key recording, manual entry, normalization,
+persistence, OS registration and the activation modes (tap to toggle / hold to
+talk) that consume the registered shortcut. Both the recorder widget and the
+runtime contract behind it are affected. This is not a cosmetic UI complaint; the
+current behavior can leave the desktop in a state where a single modifier or a
+bare letter is grabbed system-wide.
+
+## Reported Symptom (2026-07-25)
+
+On a KDE Plasma 6 Wayland session:
+
+1. In the shortcut recorder, pressing `Ctrl` registers `Ctrl` -- and after that
+   no further key can be added. `Ctrl+A` and `Ctrl+Space` never appear.
+2. The Windows/Super key is never captured at all.
+3. The manual text field below the recorder cannot be used either: typing a
+   combination separated by `+` does not survive; the field fights back and the
+   value snaps away while typing.
+4. Net effect: the user cannot assign a working shortcut through either path.
+   The workflow was described as unusable.
+
+The reporter's own framing of the core problem: from the Settings capture
+surface the shortcuts cannot be configured at all, because the keys are never
+really intercepted. That is the primary symptom to design against -- the
+recorder appears to listen while the keys go somewhere else (D1, D3) or are
+consumed by the desktop before the window sees them (Super on KDE).
+
+The reporter's persisted state confirms the escape route taken instead of a
+real combination:
+
+```
+hotkey            = "f1"        # bare F1, no modifier
+abort_hotkey      = "f4"        # bare F4, no modifier
+pause_hotkey      = "ctrl_l+f10"
+activation_mode   = "tap"
+```
+
+A bare `F1` with `tap` activation means every `F1` press anywhere on the
+desktop starts or stops a dictation. That is a residue of the broken assignment
+flow, not a deliberate configuration.
+
+## Environment
+
+- `XDG_SESSION_TYPE=wayland`, `XDG_CURRENT_DESKTOP=KDE` (Plasma 6)
+- App windows run on XWayland by default (`GDK_BACKEND=x11`)
+- Global registration goes through the vendored `global-hotkey` crate
+  (X11 passive grabs via XWayland in this session)
+
+## Confirmed Code Defects
+
+Each item below was verified in the current tree, with the responsible
+location. They are independent defects; fixing only one does not repair the
+flow.
+
+### D1 -- The recorder commits on the first key release
+
+`src/components/settings/HotkeyRecorder.tsx:113` finalizes as soon as the held
+set becomes empty. `src/components/settings/InputTab.tsx:183` passes
+`allowModifierOnly={true}` for all three capture shortcuts, so a modifier alone
+is a valid result. Tapping `Ctrl` therefore commits `ctrl_l` and closes the
+recording immediately. Building a chord is only possible if every key is held
+down simultaneously, and nothing in the UI states that. This is the direct
+cause of symptom 1: "Ctrl is registered and then no other key can be pressed"
+-- the recorder is no longer listening.
+
+### D2 -- A single modifier becomes a bare OS-wide grab
+
+`build_modifier_only_shortcuts` (`src-tauri/src/core/trigger.rs:946`) expands a
+modifier-only value into one shortcut per part. For the single-part value
+`ctrl_l` it produces `Shortcut::new(None, Code::ControlLeft)`: a grab on `Ctrl`
+with no modifier. Consequences:
+
+- Every `Ctrl` press desktop-wide is consumed by WordScript, which breaks
+  `Ctrl`-based shortcuts in other applications and, with `tap` activation,
+  toggles dictation.
+- Because grabs are not released while the recorder is open (see D3), the
+  recorder can no longer observe `Ctrl` either. The failed assignment makes the
+  next assignment attempt harder -- a self-reinforcing trap that plausibly
+  explains why `Ctrl+A` and `Ctrl+Space` stopped registering after the first
+  accidental `Ctrl` commit.
+
+### D3 -- `pause_native_trigger` does not release OS grabs
+
+`src-tauri/src/core/trigger.rs:337` only sets `state.paused = true`. The
+registered shortcuts stay grabbed at the OS level. A grabbed combination is
+delivered to the grab owner, not to the focused WebKitGTK window, so any
+currently registered shortcut is invisible to the DOM recorder. Re-recording the
+shortcut you already use is structurally impossible. `ModesTab`
+(`src/components/settings/ModesTab.tsx:351` and `:359`) does not even call the
+soft pause, so pressing a live mode shortcut while recording fires the mode
+action instead of being captured.
+
+### D4 -- Manual entry is destroyed by instant save plus strict validation
+
+`SettingsWindow.tsx:177` persists every patch immediately, and the manual
+`Input` (`InputTab.tsx:202`) patches on every keystroke. `save_config`
+(`src-tauri/src/core/config.rs:1150`) runs `validate_hotkey_collisions` first,
+which normalizes through the strict trigger normalizer
+(`config.rs:1105` -> `trigger.rs:993`) and rejects anything unparsable. Typing
+`ctrl_l+f9` therefore walks through intermediate states that are hard errors
+(`c`, `ct`, `ctr`, ...). On rejection `SettingsWindow.tsx:246` reverts the form
+to the previous value, so the field snaps back mid-typing. Worse, some
+intermediate states *are* valid single-key shortcuts (`c`, `a`, `f`): they get
+persisted and registered as bare-letter global grabs, which then swallow the
+very letters being typed. This is symptom 3.
+
+### D5 -- Two divergent normalizers own the same string
+
+- `config.rs:1367` `normalize_shortcut_value`: lossy. Unknown tokens pass
+  through lowercased (`config.rs:1422`), an empty value silently becomes the
+  platform default (`config.rs:1375`).
+- `trigger.rs:993` `normalize_shortcut`: strict. Unknown tokens are errors.
+
+Effects: a value can be persisted that can never register (config accepts,
+registration fails, the failure survives only as a transient toast); a shortcut
+cannot be cleared or disabled, because an empty capture *or* mode shortcut is
+rewritten to the default on save even though `ModeHotkeys`
+(`trigger.rs:20`) documents empty as "disabled". Display strings also differ
+between the two layers (`win`/`cmd` versus `Super`).
+
+### D6 -- Persist-time normalization silently truncates three combinations
+
+`config.rs:1379` drops the trailing key of `ctrl_l+win+space`,
+`ctrl_l+cmd+space` and `ctrl_l+alt_l+space`, turning them into modifier-only
+shortcuts (which then hit D2). This is an ungated legacy migration, so those
+three combinations can never be chosen deliberately -- and
+`ctrl_l+alt_l+space` is the Windows default (`config.rs:1250`), meaning the
+Windows default hotkey is rewritten to `ctrl_l+alt_l` on every save.
+`is_legacy_autofilled_space_shortcut` (`config.rs:1399`) is unreachable for the
+`allow_modifier_only` path because the truncation above already matched.
+
+### D7 -- Collision validation runs before normalization
+
+`save_config` validates the raw incoming values (`config.rs:1150`) and then
+normalizes (`config.rs:843`). Because normalization can mutate values (D6), two
+fields that pass validation can collide on disk -- for example capture
+`ctrl_l+alt_l+space` (truncated to `ctrl_l+alt_l`) next to a mode shortcut
+`ctrl_l+alt_l`. Registration then fails for a state the validator approved.
+
+### D8 -- The recorder's key vocabulary is far smaller than the runtime's
+
+`CODE_TO_PYNPUT` / `codeToKey` (`HotkeyRecorder.tsx:6-22`) only maps modifiers,
+`Space`, `F1`-`F12`, letters and digits. Everything else is dropped silently:
+`Enter`, `Tab`, `Backspace`, arrows, `Insert`/`Delete`/`Home`/`End`/`PageUp`/
+`PageDown`, the numeric keypad, punctuation, `F13`+. The Rust side already
+accepts `escape`, `enter`, `tab` and `backspace` (`trigger.rs:1026`), so the UI
+is strictly weaker than the contract. `Escape` is additionally hardwired to
+"cancel" (`HotkeyRecorder.tsx:96`) before any modifier is considered, so the
+default abort shortcut `ctrl_l+alt_l+escape` (`config.rs:1256`) cannot be
+reproduced with the recorder that is supposed to manage it.
+
+### D9 -- Physical key codes are displayed as US labels
+
+Capture uses `event.code`, which is layout independent (correct for
+registration, since the Rust side also registers by `Code`). But the value is
+rendered as if it were a label: on a German keyboard the key printed `Z`
+reports `KeyY`, so the pill shows `Y` for the key the user actually pressed.
+The manual field and the summary tile (`InputTab.tsx:161`) additionally show
+raw internal tokens (`ctrl_l+f9`) instead of a human shortcut. Nothing in the
+UI explains this dual identity.
+
+### D10 -- No test coverage for the widget that carries the whole flow
+
+There is no `HotkeyRecorder.test.tsx`; the component is mocked out where it
+would be exercised (`InputTab.test.tsx:12`). The Rust normalizers and collision
+validation have tests, the interaction layer has none.
+
+### D11 -- "Hold to talk" is not a supported activation mode in practice
+
+Reported as not working at all. The state machine itself is plausible
+(`trigger.rs:656` start on `Pressed`, `trigger.rs:680` stop on `Released`, with
+`DeferredStop` wired at `lib.rs:896`), so the defect is not one missing branch
+-- it is that hold mode depends on guarantees the lane never establishes:
+
+- **It depends entirely on a `Released` event.** The vendored crate does emit
+  one on X11 (`vendor/global-hotkey/src/platform_impl/x11/mod.rs:277`), Windows
+  synthesizes it from a low-level keyboard hook
+  (`platform_impl/windows/mod.rs:176`) and macOS from hot-key/flags events
+  (`platform_impl/macos/mod.rs:409`). Three different mechanisms with three
+  different edge cases, and nothing in WordScript verifies that a release
+  actually arrives.
+- **A missed release strands the capture.** `hotkey_active` stays `true`
+  (`trigger.rs:667` then ignores further presses), so the recording only ends
+  through the silence timeout or the maximum-length cap. It self-heals once the
+  session ends (`sync_trigger_state_with_session`, `trigger.rs:920`), which is
+  why the symptom reads as erratic rather than permanently dead. There is no
+  watchdog and no user-visible "still holding?" state.
+- **X11 tracks the release per keycode of the grabbed key only.** Releasing the
+  modifier first while holding the main key produces no release; the release
+  fires whenever the main key goes up, regardless of modifier order.
+- **Windows keeps a single `ACTIVE_ID`/`ACTIVE_VK` pair**
+  (`platform_impl/windows/mod.rs:160`), so two overlapping hold shortcuts lose
+  the release of the first.
+- **The timing constants are invisible and hardcoded.** `hold_min_ms` and
+  `debounce_ms` are both 300 ms (`trigger.rs:17-18`), not configurable and not
+  explained. A short push-to-talk tap is turned into a deferred stop, and the
+  following press can be swallowed by the debounce -- push-to-talk in quick
+  succession feels dead.
+- **No tests cover hold mode on a real platform**; `activation_mode` is a
+  string in config with no UI feedback about whether the mode is actually
+  functional in the current session.
+
+Until the release guarantee is established per OS, "Hold to talk" must not be
+offered as an equal choice next to "Tap to toggle" -- an option that silently
+does nothing violates the runtime-truth rule.
+
+### D12 -- The trigger lane has no observability at all
+
+34,070 lines of the current runtime log contain zero trigger events: no line
+for a received shortcut event, its `Pressed`/`Released` state, the resolved
+activation mode, or a rejected/debounced press. Capture, provider, transform
+and insert all log their state transitions; the layer that decides whether a
+dictation starts logs nothing. Consequently neither the user nor an agent can
+distinguish "the key never arrived", "the shortcut is not registered", "the
+event was debounced" and "the release was missed" -- which is why this whole
+class of bug has been diagnosed by reading code rather than evidence.
+
+## Cross-Platform Coverage Gap
+
+The reporter also notes that the lane is not reliable in normal production use
+and not thought through across Linux, Windows and macOS. The code supports that
+assessment:
+
+- Three different platform mechanisms deliver shortcut events with different
+  press/release semantics (see D11), and the differences are neither abstracted
+  nor tested.
+- Platform defaults differ (`config.rs:1246`) and one of them is actively
+  corrupted by persist-time normalization (D6).
+- Modifier-only shortcuts are expanded into per-part grabs (D2) that behave
+  differently per OS and per desktop environment.
+- macOS additionally requires Accessibility/Input-Monitoring grants for
+  low-level key observation; nothing in the shortcut surface states or verifies
+  this.
+
+The rebuild therefore needs an explicit per-OS capability matrix -- which
+activation modes, key classes and modifier-only combinations are supported and
+verified where -- instead of one UI that offers every option everywhere.
+
+## Platform Constraints (not defects, but part of the target design)
+
+- KWin consumes `Meta`/`Super` before the focused window sees it, so a DOM
+  recorder cannot capture the Super key on KDE. Any design that expects the
+  browser layer to observe every physical key is wrong on Linux.
+- Wayland has no unprivileged global-hotkey API. Global grabs work in this
+  session only because the app runs through XWayland; a native Wayland session
+  (`WORDSCRIPT_NATIVE_WAYLAND=1`) would need the
+  `org.freedesktop.portal.GlobalShortcuts` portal. The current lane has no
+  portal path and no honest "not available here" state.
+- Desktop-reserved combinations exist on every OS; the runtime already knows
+  registration success per shortcut (`registered_hotkey` in
+  `trigger.rs:164`) but Settings does not make that truth prominent.
+- The X11 backend connects to the display server that is present
+  (`vendor/global-hotkey/src/platform_impl/x11/mod.rs:230`), which in this
+  session is XWayland. Passive X11 grabs are honored by KWin depending on what
+  currently holds keyboard focus, so the same shortcut can work while an
+  XWayland application is focused and do nothing while a native Wayland
+  application is focused. If that is what happens here, it explains both the
+  "works sometimes" impression during normal dictation and hold mode appearing
+  entirely broken (a `Released` that never arrives). This is the single most
+  important thing to measure before anything is rebuilt.
+
+## Impact
+
+- Users cannot reliably assign capture or mode shortcuts on Linux, and the
+  failure modes push them toward bare keys such as `F1`.
+- A single mis-recorded modifier can grab `Ctrl` for the whole desktop.
+- Bare-key grabs created by intermediate manual-entry states can steal
+  keystrokes from other applications.
+- Persisted configuration and OS registration can disagree, with the
+  disagreement visible only in a transient toast.
+- "Hold to talk" is offered as an equal activation mode but does not work
+  (D11); a stranded hold ends only through the silence timeout or the
+  maximum-length cap.
+- Nothing about any of this is visible in the runtime log (D12), so every
+  report degrades into guesswork.
+
+## Target Contract for the Rebuild
+
+- **T1 Explicit capture lifecycle.** Recording is a modal, explicitly ended
+  state: it stops on `Enter`/confirm, on `Escape`/cancel, on a timeout or on a
+  deliberate second click -- never implicitly on the first key release.
+  Recording accumulates the largest chord seen, shows it live, and requires
+  confirmation before it is written anywhere.
+- **T2 One normalizer, one source of truth.** A single Rust-side shortcut
+  parser owns tokens, display strings and validity. The UI must not carry a
+  second key table; the TypeScript layer only maps browser events to the
+  canonical token vocabulary exposed by the runtime, and every token it can
+  produce must be registerable.
+- **T3 Modifier-only is opt-in and never a single bare modifier.** A
+  modifier-only shortcut requires at least two modifiers. A single bare
+  modifier and a single bare letter/digit are rejected with a stated reason.
+  Bare function keys require an explicit confirmation because they are global.
+- **T4 Real grab release while recording.** Entering the recorder unregisters
+  the OS grabs (all capture and mode shortcuts) and re-registers them
+  afterwards -- for the recorder in Capture *and* in Modes. `paused` as a soft
+  flag is not sufficient.
+- **T5 Draft state for manual entry.** The manual field edits a local draft.
+  Nothing is persisted, validated destructively or registered until commit
+  (blur/Enter). Validation is shown inline while typing; intermediate states
+  never reach `save_config`.
+- **T6 Validate after normalization, never mutate silently.** Normalization
+  happens first, collision validation second. Legacy migrations are version
+  gated and never rewrite a value the user just chose; when a value must be
+  changed, the UI says so.
+- **T7 Clearing means disabled.** An empty shortcut disables that binding for
+  capture and mode shortcuts alike, with a visible "disabled" state instead of
+  a silent revert to the default.
+- **T8 Honest registration state and platform truth.** Each row shows whether
+  the shortcut is actually registered with the OS, and a persistent (not
+  transient) error when it is not, including the reason: desktop-reserved,
+  collision, unsupported token, or "no global shortcut API in this session".
+  Keys the desktop swallows (Super on KDE) are named as such at the point of
+  failure, with manual entry offered as the deliberate alternative.
+- **T9 Human display, canonical storage.** Pills and summaries render a human
+  shortcut (`Ctrl + F9`) derived from the canonical token, with the physical-key
+  caveat handled explicitly. Raw tokens appear only where the user opts into
+  manual editing.
+- **T10 Activation modes are capability gated.** Hold to talk is offered only
+  where a `Released` event is verified for the selected shortcut on the current
+  platform and session; otherwise the option is disabled with a stated reason
+  instead of silently doing nothing. A hold that loses its release is ended by
+  an explicit watchdog with a visible reason in history and the runtime log, not
+  by the silence timeout. `hold_min_ms` and the debounce become part of the
+  contract (configurable or at least documented and surfaced), and a short tap
+  in hold mode has defined behavior.
+- **T11 The trigger lane is observable.** Every received shortcut event is
+  logged with shortcut id, display string, `Pressed`/`Released`, activation
+  mode, and the decision taken (started, stopped, debounced, ignored because
+  already active, no matching binding). Registration and unregistration log
+  their outcome per shortcut. This is permanent infrastructure, not a temporary
+  debug patch -- the same principle as the dev-only overlay diagnostics.
+- **T12 Per-OS capability matrix.** One documented matrix -- key classes,
+  modifier-only, activation modes, session types (X11, XWayland, native
+  Wayland, Windows, macOS with and without input-monitoring grants) -- drives
+  both the UI's offered options and what the tests assert. Options the current
+  platform cannot honor are not shown as available.
+
+## Planned Work Slices
+
+Each slice is independently testable; the order matters because later slices
+depend on the measurement from S0 and on the single normalizer from S1.
+
+0. **S0 Trigger observability and key probe.** Permanent structured logging in
+   the trigger lane (T11) plus a development-only key probe in the recorder that
+   records `event.code`, `event.key` and the modifier state for every
+   keydown/keyup. Deliverable is evidence, not a fix: which keys reach the
+   window, whether `Released` arrives for the configured shortcut, and whether
+   delivery depends on the focused application being XWayland or native Wayland
+   (test with a native Wayland app and an XWayland app focused). This slice
+   decides the shape of S3 and whether hold to talk is fixable on Linux at all
+   or has to be capability gated (T10, T12).
+1. **S1 Runtime shortcut contract.** Consolidate normalization, the token
+   vocabulary, modifier-only rules and clear/disable semantics into one Rust
+   module; expose the vocabulary and a `validate_shortcut` command to the UI;
+   move collision validation after normalization; version gate the legacy
+   space migration. Tests: normalizer table tests (D5, D6, D7), collision
+   ordering, empty-means-disabled.
+2. **S2 Grab lifecycle.** Real unregister/re-register around recording, shared
+   by Capture and Modes, with a guaranteed restore on window close, error or
+   crash-safe drop. Tests: registration state transitions in `trigger.rs`.
+3. **S3 Recorder rebuild.** Explicit lifecycle (T1), full token vocabulary from
+   S1 (D8), chord accumulation, confirm/cancel affordances, live conflict and
+   reserved-key feedback, keyboard accessibility. Tests: a real
+   `HotkeyRecorder.test.tsx` covering tap-modifier, chord, release order,
+   Escape-in-chord, unsupported key, cancel-on-blur.
+4. **S4 Manual entry as draft.** Local draft state, inline validation via the
+   S1 command, commit on blur/Enter, no per-keystroke save (D4). Tests:
+   `InputTab` typing test asserting no save until commit.
+5. **S5 Honest state surfaces.** Registered-versus-configured per row,
+   persistent failure reason, platform capability line (XWayland/portal),
+   human display strings (T8, T9, D9).
+6. **S6 Activation modes.** Release-guarantee handling per platform, hold
+   watchdog with a visible reason, capability gating of the mode selector,
+   defined short-tap behavior, `hold_min_ms`/debounce surfaced (T10, D11).
+   Tests: hold start/stop, missed release, short tap below `hold_min_ms`,
+   debounced repeat press.
+7. **S7 Per-OS capability matrix.** Derive the matrix (T12) from the S0
+   evidence, drive the UI's available options from it, and assert it in tests
+   for every branch that differs per platform.
+8. **S8 Documentation and decision.** ADR in `docs/decisions/` for the
+   shortcut contract ownership, updates to `REFERENCE.md` (token vocabulary and
+   mode semantics), `PLATFORMS.md` (Linux shortcut reality plus the capability
+   matrix), `STATUS.md` and `CHANGELOG.md`.
+
+## Validation Required
+
+- `npm test`, `npm run build` and `cd src-tauri && cargo test` for every slice
+  that touches both sides.
+- Manual verification in the native host (grabs and key delivery cannot be
+  validated in a browser preview): KDE Plasma 6 Wayland/XWayland at minimum;
+  Windows and macOS before the lane is called done.
+- A migration check that the reporter's current state (`hotkey = "f1"`,
+  `abort_hotkey = "f4"`) is either preserved deliberately or surfaced as a
+  warning about global bare keys, not silently rewritten.
+- Activation modes must be validated per platform in the native host, with the
+  focused application varied between XWayland and native Wayland on Linux: tap
+  start, tap stop, hold start, hold stop, short tap in hold mode, and a
+  deliberately missed release.
+
+## Already Ruled Out
+
+- No competing global key listener steals the events: the only
+  `window` keydown/keyup listeners in the settings tree are the recorder's own
+  (`HotkeyRecorder.tsx:118`) plus the development-only inspector
+  (`src/components/shell/Inspector.tsx:34`). The "keys are not intercepted"
+  symptom is therefore not a DOM listener-ordering problem.
+- The recorder does start: the pill switches to the recording state and shows
+  the first modifier, which is why the failure reads as "the first key works,
+  nothing after it does" rather than "nothing happens".
+
+## Open Questions -- Runtime Evidence Still Needed
+
+- Whether `Ctrl+A` / `Ctrl+Space` keydowns reach the WebKitGTK window at all in
+  this session once no conflicting grab is held. D1 alone explains the report,
+  but a temporary development-only key-event probe (log `event.code`,
+  `event.key`, modifier state for every keydown/keyup in the recorder) should
+  confirm it before S3 is designed around it.
+- Which combinations KWin swallows beyond `Meta` in this configuration
+  (Plasma global shortcuts may already own candidates the user would pick).
+- Whether the vendored `global-hotkey` crate reports a distinguishable error
+  for "reserved by the desktop" versus "already grabbed", which T8 needs to
+  give a precise reason.
+- Whether a `Released` event arrives for the configured shortcut in this
+  session, and whether press and release delivery depend on the focused
+  application being an XWayland or a native Wayland client. This is the
+  measurement that decides whether hold to talk can exist on Linux without the
+  GlobalShortcuts portal (D11, S0).
+- Whether normal-use unreliability during ordinary dictation is the same
+  focus-dependent delivery problem rather than a capture or provider issue --
+  S0 logging should make the two distinguishable for the first time.
+
+## Scope
+
+This record documents the problem and the intended contract. It does not
+authorize the implementation. The rebuild starts as an explicitly approved
+slice sequence (S0 onward) with the ADR from S8 written when the contract
+ownership is decided.

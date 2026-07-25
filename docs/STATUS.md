@@ -211,6 +211,22 @@ Additional rules:
   `prompt_enhance` or globally active agent mode; Conservative stays the
   default and protects against language-bias leakage into the Whisper initial
   prompt
+- shortcut assignment in Capture and Modes is not usable end to end: the
+  recorder commits on the first key release (so a tapped modifier becomes the
+  whole shortcut), a single modifier is registered as a bare desktop-wide grab,
+  the soft trigger pause does not release OS grabs, and manual entry is
+  destroyed by per-keystroke saving plus strict validation; the recorder's key
+  vocabulary is also smaller than the runtime contract
+- the `hold to talk` activation mode does not work in practice: it depends on a
+  platform `Released` event that is delivered by three different mechanisms on
+  Linux, Windows and macOS and is never verified, a missed release strands the
+  capture until the silence timeout, and `hold_min_ms`/debounce are hardcoded
+  at 300 ms and invisible
+- the trigger lane has no observability at all: no log line for a received
+  shortcut event, its press/release state, the activation mode or the decision
+  taken, so shortcut reports cannot be diagnosed from evidence. All three
+  points are documented with a rebuild plan in
+  [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
 - no published versioned releases
 - no signed in-place auto-updater
 - release and signing validation with real secrets is not a routine path yet

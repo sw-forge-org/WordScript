@@ -14,6 +14,10 @@ status change. Resolved bugs remain as references for the same failure class.
   remembered overlay drag-position failure (2026-07-08).
 - [transcription-hallucination.md](transcription-hallucination.md): open raw
   transcription language drift and hallucination problem.
+- [capture-shortcut-recording.md](capture-shortcut-recording.md): open shortcut
+  recording, manual entry, normalization, registration and activation-mode
+  failures in Capture and Modes, including the missing trigger observability
+  and the rebuild plan (2026-07-25).
 
 ## Boundaries
 
