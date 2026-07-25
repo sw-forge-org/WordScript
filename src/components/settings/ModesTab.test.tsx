@@ -1,8 +1,15 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppConfig } from "../../test/factories";
+import { isShortcutCommand, shortcutInvokeDouble } from "../../test/shortcutRuntime";
 import type { AppConfig } from "../../types/ipc";
 import { ModesTab } from "./ModesTab";
+
+const invokeMock = vi.fn();
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
+}));
 
 afterEach(() => {
   cleanup();
@@ -13,6 +20,10 @@ describe("ModesTab", () => {
 
   beforeEach(() => {
     onChange.mockReset();
+    invokeMock.mockReset();
+    invokeMock.mockImplementation((command: string, args?: Record<string, unknown>) =>
+      Promise.resolve(isShortcutCommand(command) ? shortcutInvokeDouble(command, args) : undefined),
+    );
   });
 
   it("renders the processing mode radio selectors with one mode selected", () => {
@@ -123,14 +134,28 @@ describe("ModesTab", () => {
     expect(hotkeyRecorderLabels.length).toBeGreaterThanOrEqual(6);
   });
 
-  it("fires onChange for mode select hotkey", () => {
+  it("releases the OS grabs when a mode shortcut recording starts", async () => {
+    // D3: this surface previously called neither pause nor resume, so pressing
+    // a live mode shortcut while recording fired the mode action instead of
+    // being captured.
     render(<ModesTab config={createAppConfig()} onChange={onChange} />);
 
-    const recorders = screen.getAllByRole("button", { name: /click to record/i });
-    const modePickerRecorder = recorders[0];
-    fireEvent.click(modePickerRecorder);
+    const recorder = await screen.findByRole("button", { name: /record mode select/i });
+    fireEvent.click(recorder);
 
     expect(screen.getByText(/press your shortcut/i)).toBeInTheDocument();
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("pause_native_trigger"));
+  });
+
+  it("puts the OS grabs back when the recording is cancelled", async () => {
+    render(<ModesTab config={createAppConfig()} onChange={onChange} />);
+
+    const recorder = await screen.findByRole("button", { name: /record mode select/i });
+    fireEvent.click(recorder);
+    fireEvent.keyDown(window, { code: "Escape", key: "Escape" });
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("resume_native_trigger"));
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("shows agent controls when agent mode is selected", () => {

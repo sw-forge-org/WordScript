@@ -1,43 +1,51 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
-import { HOTKEY_SEPARATOR_HINT, getHotkeyValidationMessage, normalizeManualHotkey } from "../../lib/hotkeys";
 import { FormCard, FormRow, Select, StatTiles, Stepper } from "../shell";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { cn } from "../../lib/utils";
-import type { AppConfig } from "../../types/ipc";
-import { HotkeyRecorder } from "./HotkeyRecorder";
+import type {
+  AppConfig,
+  NativeTriggerStatus,
+  ShortcutBindingInfo,
+  ShortcutPlatform,
+} from "../../types/ipc";
+import { loadShortcutPlatform, readTriggerStatus, validateShortcut } from "../../lib/shortcuts";
+import { ShortcutField } from "./ShortcutField";
 import {
   buildProfileCapturePatch,
   resolveActiveTextProfile,
   resolveProfileCaptureSettings,
 } from "../../lib/textProfiles";
 
-type ShortcutField = "hotkey" | "pause_hotkey" | "abort_hotkey";
+type ShortcutSlot = "hotkey" | "pause_hotkey" | "abort_hotkey";
 
 const SHORTCUT_FIELDS: Array<{
-  field: ShortcutField;
+  field: ShortcutSlot;
+  binding: string;
   label: string;
   placeholder: string;
   description: string;
 }> = [
   {
     field: "hotkey",
+    binding: "capture",
     label: "Start / Stop Hotkey",
-    placeholder: "ctrl_l+f9",
+    placeholder: "Ctrl+F9",
     description: "Starts or stops the active capture.",
   },
   {
     field: "pause_hotkey",
+    binding: "pause",
     label: "Pause / Resume Hotkey",
-    placeholder: "ctrl_l+f10",
+    placeholder: "Ctrl+F10",
     description: "Pause toggles the active recording without finishing the capture.",
   },
   {
     field: "abort_hotkey",
+    binding: "abort",
     label: "Abort Hotkey",
-    placeholder: "ctrl_l+alt_l+escape",
+    placeholder: "Ctrl+Alt+Escape",
     description: "Abort stops the active recording and discards the current capture.",
   },
 ];
@@ -56,6 +64,46 @@ interface NativeCaptureStatus {
   is_recording: boolean;
   device_name: string | null;
   active_capture_id: string | null;
+}
+
+/// Hold to talk depends entirely on a `Released` event that three different
+/// platform mechanisms deliver with three different sets of edge cases, and
+/// nothing verifies that one actually arrives. Until this session has observed
+/// a release for the configured shortcut, the mode selector says so instead of
+/// silently doing nothing (T10, D11).
+function holdReleaseUnverified(binding?: ShortcutBindingInfo) {
+  if (!binding) return false;
+  return binding.presses > 0 && binding.releases === 0;
+}
+
+function activationModeHint(
+  mode: "tap" | "hold",
+  status: NativeTriggerStatus | null,
+  binding?: ShortcutBindingInfo,
+) {
+  if (mode !== "hold") {
+    return `Tap starts and stops on the same shortcut. Repeated presses within ${
+      status?.debounce_ms ?? 300
+    } ms of the same kind are debounced.`;
+  }
+
+  const base =
+    `Hold records while the shortcut is pressed and stops on release. A hold shorter than ${
+      status?.hold_min_ms ?? 300
+    } ms is extended to that length before stopping.` +
+    (status?.hold_watchdog_seconds
+      ? ` A hold whose key release never arrives is ended after ${status.hold_watchdog_seconds}s with a stated reason.`
+      : "");
+
+  if (holdReleaseUnverified(binding)) {
+    return `${base} This session has seen ${binding?.presses} press(es) of this shortcut and no key release — hold to talk cannot work reliably here. Use Tap to toggle.`;
+  }
+
+  if (binding && binding.releases > 0) {
+    return `${base} Key releases have been observed for this shortcut in this session.`;
+  }
+
+  return `${base} Whether the key release arrives has not been observed yet in this session — press the shortcut once to find out.`;
 }
 
 function clampCaptureNumber(value: number, minimum: number, maximum: number, fallback: number) {
@@ -86,8 +134,27 @@ export function InputTab({ config, onChange }: Props) {
   const [captureStatus, setCaptureStatus] = useState<NativeCaptureStatus | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isRefreshingAudio, setIsRefreshingAudio] = useState(false);
-  const pauseNativeTrigger = () => { void invoke("pause_native_trigger").catch(() => {}); };
-  const resumeNativeTrigger = () => { void invoke("resume_native_trigger").catch(() => {}); };
+  const [triggerStatus, setTriggerStatus] = useState<NativeTriggerStatus | null>(null);
+  const [platform, setPlatform] = useState<ShortcutPlatform | null>(null);
+
+  // The recorder itself releases and restores the OS grabs; refreshing the
+  // status afterwards keeps the per-row registration state honest (T8).
+  const refreshTriggerStatus = useCallback(() => {
+    void readTriggerStatus()
+      .then(setTriggerStatus)
+      .catch(() => setTriggerStatus(null));
+  }, []);
+
+  useEffect(() => {
+    refreshTriggerStatus();
+    void loadShortcutPlatform()
+      .then(setPlatform)
+      .catch(() => setPlatform(null));
+  }, [refreshTriggerStatus]);
+
+  useEffect(() => {
+    refreshTriggerStatus();
+  }, [config.hotkey, config.pause_hotkey, config.abort_hotkey, refreshTriggerStatus]);
 
   // Read capture settings from active profile
   const activeProfile = resolveActiveTextProfile(config);
@@ -119,16 +186,17 @@ export function InputTab({ config, onChange }: Props) {
     void refreshAudioSetup();
   }, [refreshAudioSetup]);
 
-  const updateShortcut = (field: ShortcutField, value: string) => {
-    onChange({ [field]: value } as Pick<AppConfig, ShortcutField>);
-  };
+  const updateShortcut = useCallback(
+    (field: ShortcutSlot, value: string) => {
+      onChange({ [field]: value } as Pick<AppConfig, ShortcutSlot>);
+    },
+    [onChange],
+  );
 
-  const normalizeShortcutField = (field: ShortcutField) => {
-    const normalized = normalizeManualHotkey(config[field]);
-    if (normalized !== config[field]) {
-      updateShortcut(field, normalized);
-    }
-  };
+  const bindingFor = useCallback(
+    (label: string) => triggerStatus?.bindings.find((binding) => binding.label === label),
+    [triggerStatus],
+  );
 
   const defaultAudioDevice = useMemo(
     () => audioDevices.find((device) => device.is_default) ?? null,
@@ -145,7 +213,22 @@ export function InputTab({ config, onChange }: Props) {
   const autoStopLabel = silenceTimeoutSeconds > 0
     ? `${formatDurationCompact(silenceTimeoutSeconds)} silence`
     : "Manual stop";
-  const startHotkeyIssue = getHotkeyValidationMessage(config.hotkey, { allowModifierOnly: true });
+  const captureBinding = bindingFor("capture");
+  // The summary tile shows the human shortcut, never the raw token (T9, D9).
+  const [captureDisplay, setCaptureDisplay] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void validateShortcut(config.hotkey)
+      .then((result) => {
+        if (!cancelled) setCaptureDisplay(result.ok ? result.display : config.hotkey);
+      })
+      .catch(() => {
+        if (!cancelled) setCaptureDisplay(config.hotkey);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config.hotkey]);
   const audioStatusMessage = audioError
     ? audioError
     : captureStatus?.is_recording && captureStatus.device_name
@@ -158,7 +241,11 @@ export function InputTab({ config, onChange }: Props) {
     <div className="flex flex-col gap-8">
       <StatTiles
         items={[
-          { label: "Trigger", value: activationLabel, hint: config.hotkey || "Start / stop shortcut not set" },
+          {
+            label: "Trigger",
+            value: activationLabel,
+            hint: captureDisplay || "Start / stop shortcut not set",
+          },
           {
             label: "Capture",
             value: selectedAudioDeviceLabel,
@@ -171,50 +258,42 @@ export function InputTab({ config, onChange }: Props) {
         title="Shortcuts"
         description={
           <>
-            Shortcuts are registered in the native trigger layer and stay active after this window closes. Use manual
-            entry only when the desktop intercepts a key such as Win/Super on Linux.{" "}
-            <span className="text-fg-dim">{HOTKEY_SEPARATOR_HINT}</span>
+            Shortcuts are registered in the native trigger layer and stay active after this window closes. Each row
+            shows whether the operating system actually accepted the combination.
             <span className="block text-fg-muted">Mode hotkeys (picker, cycle, per-mode) live in Modes.</span>
+            {platform && (
+              <span className="mt-1 block text-fg-dim">
+                {platform.summary}
+                {platform.notes.length > 0 && <> — {platform.notes.join(" ")}</>}
+              </span>
+            )}
           </>
         }
       >
-        {SHORTCUT_FIELDS.map((shortcut) => {
-          const value = config[shortcut.field];
-          const allowModifierOnly = true;
-          const issue = getHotkeyValidationMessage(value, { allowModifierOnly });
-
-          return (
-            <FormRow
-              key={shortcut.field}
-              label={shortcut.label}
-              hint={issue ?? shortcut.description}
-              hintTone={issue ? "danger" : undefined}
-              align="start"
-              control={
-                <div className="flex flex-col items-end gap-2">
-                  <HotkeyRecorder
-                    value={value}
-                    allowModifierOnly={allowModifierOnly}
-                    onChange={(nextValue) => updateShortcut(shortcut.field, nextValue)}
-                    onStartRecording={pauseNativeTrigger}
-                    onStopRecording={resumeNativeTrigger}
-                  />
-                  <Input
-                    aria-label={`${shortcut.label} manual format`}
-                    className="w-[200px] font-mono text-[12px]"
-                    value={value}
-                    placeholder={`e.g. ${shortcut.placeholder}`}
-                    onChange={(event) => updateShortcut(shortcut.field, event.target.value)}
-                    onBlur={() => normalizeShortcutField(shortcut.field)}
-                  />
-                </div>
-              }
-            />
-          );
-        })}
+        {SHORTCUT_FIELDS.map((shortcut) => (
+          <ShortcutField
+            key={shortcut.field}
+            label={shortcut.label}
+            description={shortcut.description}
+            placeholder={shortcut.placeholder}
+            value={config[shortcut.field]}
+            binding={bindingFor(shortcut.binding)}
+            takenValues={SHORTCUT_FIELDS.filter((other) => other.field !== shortcut.field)
+              .map((other) => config[other.field])
+              .filter(Boolean)}
+            onCommit={(next) => updateShortcut(shortcut.field, next)}
+            onStopRecording={refreshTriggerStatus}
+          />
+        ))}
         <FormRow
           label="Activation mode"
-          hint="Tap starts and stops on the same shortcut. Hold records while the shortcut is pressed and stops on release."
+          hint={activationModeHint(config.activation_mode, triggerStatus, captureBinding)}
+          hintTone={
+            config.activation_mode === "hold" && holdReleaseUnverified(captureBinding)
+              ? "danger"
+              : undefined
+          }
+          align="start"
           divider={false}
           control={
             <Select

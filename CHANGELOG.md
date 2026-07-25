@@ -33,6 +33,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A single Rust-owned shortcut contract (`core::shortcut`, ADR 0006) covering
+  the token vocabulary, canonical storage form, human display strings and every
+  validity rule. The UI no longer carries a key table: it reads the vocabulary
+  from the runtime, so every token it can produce is registerable by
+  construction. New commands: `validate_shortcut`, `shortcut_vocabulary`,
+  `shortcut_platform`.
+- Permanent structured trigger observability. Every received shortcut event,
+  the decision taken (`start`, `stop`, `debounced`, `ignored_*`, `hold_start`,
+  …), every registration and unregistration outcome and every stranded hold
+  ended by the watchdog are logged to the runtime log under `[trigger]`, plus
+  press/release counters per binding in `native_trigger_status`.
+- Per-shortcut runtime truth in Settings: registered versus configured with a
+  persistent reason when registration failed, observed press/release evidence,
+  and a platform line naming the session type, the backend and the keys the
+  desktop swallows.
+- A hold-to-talk watchdog (`hold_watchdog_seconds`, default 120, `0` disables).
+  A hold whose key release never arrives is ended explicitly with reason
+  `native_hold_watchdog` instead of drifting into the silence timeout, and the
+  activation-mode selector states whether a key release has actually been
+  observed for the configured shortcut in this session.
+- A development-only key probe in the shortcut recorder that logs `event.code`,
+  `event.key`, the modifier state and whether the code mapped to a registerable
+  token, for diagnosing which keys a desktop actually delivers.
+- Test coverage for the shortcut recorder (`HotkeyRecorder.test.tsx`), which
+  previously had none and was mocked out wherever it would have been exercised.
 - Repository documentation now follows the SW labs template: canonical
   `AGENTS.md` with `CLAUDE.md` symlink, `.editorconfig`, `.claude` examples,
   `.agents` guidance, contribution and security policies, staging guidance,
@@ -116,6 +141,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shortcut recording is an explicitly ended state. It no longer commits on the
+  first key release, so tapping `Ctrl` no longer writes `ctrl_l` and closes the
+  recorder — the reason no further key could be added. The recorder accumulates
+  the largest chord seen and requires confirmation.
+- A single bare modifier can no longer be registered. It used to be expanded
+  into a grab with no modifier at all, which consumed every `Ctrl` press
+  desktop-wide and broke `Ctrl` shortcuts in other applications. Modifier-only
+  shortcuts now require at least two modifiers.
+- Opening a shortcut recorder now really releases the OS grabs, in Capture and
+  in Modes. The previous soft pause left every shortcut grabbed, so the
+  combination you already use was invisible to the recorder and could never be
+  re-recorded; in Modes, pressing a live mode shortcut fired the mode action
+  instead.
+- Manual shortcut entry edits a local draft and only reaches the runtime on
+  commit. Saving on every keystroke walked through intermediate values such as
+  `c`, which are themselves valid single-key shortcuts and were registered as
+  bare global grabs that then swallowed the very letters being typed.
+- Persist-time normalization no longer truncates `Ctrl+Alt+Space`,
+  `Ctrl+Super+Space` and `Ctrl+Cmd+Space`. The Windows default hotkey was
+  rewritten to a modifier-only shortcut on every save. Legacy rewrites are now
+  gated on `shortcut_schema_version` and run once.
+- Clearing a shortcut disables it. An empty capture or mode shortcut used to be
+  silently rewritten to the platform default, so a shortcut could not be turned
+  off.
+- Collision validation runs after normalization, not before, so two spellings of
+  the same combination can no longer both pass validation and then collide on
+  disk.
+- A shortcut value that cannot be parsed is stored unchanged and surfaced as
+  "not registerable" instead of being lowercased into something that can never
+  register, with the failure visible only in a transient toast.
+- The recorder accepts the runtime's full key vocabulary — arrows, numpad,
+  punctuation, `Insert`/`Delete`/`Home`/`End`/`PageUp`/`PageDown`, `F13`+ — and
+  `Escape` held together with a modifier is a chord member, so the default abort
+  shortcut `Ctrl+Alt+Escape` can finally be recorded with the recorder that
+  manages it.
+- Shortcuts render as human strings (`Ctrl + F9`) in pills and summaries;
+  raw tokens appear only behind the per-row "Enter manually" affordance.
 - Pipeline watchdog and one transient provider retry prevent indefinite
   processing states and make failures visible in persistent logs.
 - Native audio handling no longer retains a long-lived `rodio` output stream;

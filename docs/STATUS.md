@@ -34,6 +34,21 @@ Status: 2026-07-25
 ## Implemented core features
 
 - native start/stop, pause/resume and abort hotkeys
+- one Rust-owned shortcut contract (`core::shortcut`, ADR 0006): a single token
+  vocabulary, canonical storage form, human display strings and validity rules,
+  consumed by config, trigger and UI alike. Clearing a shortcut disables it, a
+  single bare modifier or bare letter can no longer become a desktop-wide grab,
+  and a value that cannot register is surfaced instead of silently rewritten
+- shortcut recording as an explicitly ended state: chord accumulation with
+  confirm, cancel, blur and timeout, the runtime's full key vocabulary, real
+  release of the OS grabs while recording (Capture and Modes), and manual token
+  entry as a local draft that only reaches the runtime on commit
+- per-shortcut registration truth in Settings: registered versus configured,
+  persistent failure reasons, observed press/release counts and a platform line
+  naming the session type and the keys the desktop swallows
+- permanent structured trigger logging (`[trigger]` in the runtime log): every
+  received shortcut event, the decision taken, every registration outcome and
+  every stranded hold ended by the watchdog
 - native microphone capture with waveform, level events, silence timeout and
   max-duration autostop
 - single capture stream rebuild after a transient cpal stream error
@@ -211,21 +226,17 @@ Additional rules:
   `prompt_enhance` or globally active agent mode; Conservative stays the
   default and protects against language-bias leakage into the Whisper initial
   prompt
-- shortcut assignment in Capture and Modes is not usable end to end: the
-  recorder commits on the first key release (so a tapped modifier becomes the
-  whole shortcut), a single modifier is registered as a bare desktop-wide grab,
-  the soft trigger pause does not release OS grabs, and manual entry is
-  destroyed by per-keystroke saving plus strict validation; the recorder's key
-  vocabulary is also smaller than the runtime contract
-- the `hold to talk` activation mode does not work in practice: it depends on a
-  platform `Released` event that is delivered by three different mechanisms on
-  Linux, Windows and macOS and is never verified, a missed release strands the
-  capture until the silence timeout, and `hold_min_ms`/debounce are hardcoded
-  at 300 ms and invisible
-- the trigger lane has no observability at all: no log line for a received
-  shortcut event, its press/release state, the activation mode or the decision
-  taken, so shortcut reports cannot be diagnosed from evidence. All three
-  points are documented with a rebuild plan in
+- the `hold to talk` activation mode is not capability gated per platform yet.
+  It depends on a key release event delivered by three different mechanisms on
+  Linux, Windows and macOS, and no per-OS capability matrix drives which
+  options are offered where. The runtime now counts presses and releases per
+  binding, states in Settings what it has observed in the current session and
+  ends a stranded hold with an explicit watchdog instead of letting it drift
+  into the silence timeout, but the gating itself waits for evidence from a
+  real session
+- no `org.freedesktop.portal.GlobalShortcuts` path: in a native Wayland session
+  (`WORDSCRIPT_NATIVE_WAYLAND=1`) global shortcuts are unavailable and are named
+  as unavailable rather than silently failing. Both points are tracked in
   [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
 - no published versioned releases
 - no signed in-place auto-updater

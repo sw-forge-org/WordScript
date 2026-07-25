@@ -42,3 +42,6 @@ Status: Proposed | Accepted | Superseded by NNNN
 - [0003](0003-native-fensterdekorationen.md): native window decorations on every platform.
 - [0004](0004-agpl-3-0-lizenz.md): AGPL-3.0 licensing.
 - [0005](0005-local-first-sync-richtung.md): optional WordScript-owned local-first sync direction.
+- [0006](0006-rust-owns-the-shortcut-contract.md): one Rust module owns the
+  shortcut token vocabulary, display strings and validity rules; the UI carries
+  no key table.

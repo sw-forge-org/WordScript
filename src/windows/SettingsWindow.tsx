@@ -215,6 +215,7 @@ export default function SettingsWindow() {
                   pause_hotkey: saved.pause_hotkey,
                   abort_hotkey: saved.abort_hotkey,
                   activation_mode: saved.activation_mode,
+                  hold_watchdog_seconds: saved.hold_watchdog_seconds ?? null,
                 },
               });
               setForm((f) => f ? {

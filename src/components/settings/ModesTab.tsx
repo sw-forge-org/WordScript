@@ -1,6 +1,7 @@
 import { memo, useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { HotkeyRecorder } from "./HotkeyRecorder";
+import { ShortcutField } from "./ShortcutField";
+import { readTriggerStatus } from "../../lib/shortcuts";
 import { FormCard, FormRow, Select, StatusBadge, Stepper, Toggle } from "../shell";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -11,7 +12,7 @@ import {
   resolveActiveTextProfile,
   resolveProfileModesSettings,
 } from "../../lib/textProfiles";
-import type { AppConfig, ProcessingMode, EnhanceSubMode, PromptTarget, TextProfile, TextProfileWorkMode } from "../../types/ipc";
+import type { AppConfig, NativeTriggerStatus, ProcessingMode, EnhanceSubMode, PromptTarget, TextProfile, TextProfileWorkMode } from "../../types/ipc";
 
 interface Props {
   config: AppConfig;
@@ -161,6 +162,46 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
   const handlePerModeHotkey = useCallback((mode: ProcessingMode, value: string) => {
     onChange({ [MODE_HOTKEY_FIELDS[mode]]: value });
   }, [onChange]);
+
+  // Mode hotkeys carry the same runtime truth as capture shortcuts: whether
+  // the OS actually accepted them (T8). Previously this surface showed only
+  // the configured value and called no suspend/resume at all, so pressing a
+  // live mode shortcut while recording fired the mode action instead of being
+  // captured (D3).
+  const [triggerStatus, setTriggerStatus] = useState<NativeTriggerStatus | null>(null);
+
+  const refreshTriggerStatus = useCallback(() => {
+    void readTriggerStatus()
+      .then(setTriggerStatus)
+      .catch(() => setTriggerStatus(null));
+  }, []);
+
+  useEffect(() => {
+    refreshTriggerStatus();
+  }, [refreshTriggerStatus]);
+
+  const bindingFor = useCallback(
+    (label: string) => triggerStatus?.bindings.find((binding) => binding.label === label),
+    [triggerStatus],
+  );
+
+  const otherModeValues = useCallback(
+    (self: string) => {
+      const entries: Array<[string, string]> = [
+        ["mode_picker", config.mode_picker_hotkey ?? ""],
+        ...(Object.keys(MODE_HOTKEY_FIELDS) as ProcessingMode[]).map(
+          (mode) => [mode, (config[MODE_HOTKEY_FIELDS[mode]] as string | undefined) ?? ""] as [string, string],
+        ),
+        ["capture", config.hotkey],
+        ["pause", config.pause_hotkey],
+        ["abort", config.abort_hotkey],
+      ];
+      return entries
+        .filter(([label, value]) => label !== self && Boolean(value))
+        .map(([, value]) => value);
+    },
+    [config],
+  );
 
   const precedenceLine = resolved
     ? resolved.is_override
@@ -346,21 +387,30 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
             </>
           }
         >
-          <FormRow
+          <ShortcutField
             label="Mode select"
-            control={<HotkeyRecorder value={modePickerHotkey} onChange={handleModePickerHotkey} />}
+            description="Opens the overlay mode selector; press again to cycle. Leave empty to disable."
+            placeholder="Ctrl+Alt+M"
+            value={modePickerHotkey}
+            binding={bindingFor("mode_picker")}
+            takenValues={otherModeValues("mode_picker")}
+            clearable
+            onCommit={handleModePickerHotkey}
+            onStopRecording={refreshTriggerStatus}
           />
         {(Object.keys(MODE_LABELS) as ProcessingMode[]).map((mode, index, arr) => (
-          <FormRow
+          <ShortcutField
             key={mode}
             label={processingModeLabel(mode)}
+            description={`Jumps straight to ${processingModeLabel(mode)}. Leave empty to disable.`}
+            placeholder="Ctrl+Alt+1"
+            value={(config[MODE_HOTKEY_FIELDS[mode]] as string | undefined) ?? ""}
+            binding={bindingFor(mode)}
+            takenValues={otherModeValues(mode)}
+            clearable
             divider={index < arr.length - 1}
-            control={
-              <HotkeyRecorder
-                value={(config[MODE_HOTKEY_FIELDS[mode]] as string | undefined) ?? ""}
-                onChange={(value) => handlePerModeHotkey(mode, value)}
-              />
-            }
+            onCommit={(value) => handlePerModeHotkey(mode, value)}
+            onStopRecording={refreshTriggerStatus}
           />
         ))}
       </FormCard>

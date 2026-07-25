@@ -837,11 +837,29 @@ fn install_hide_on_close<R: Runtime>(window: &tauri::WebviewWindow<R>) {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
             let _ = window_clone.hide();
+            restore_shortcuts_after_recording(&window_clone.app_handle().clone());
         }
     });
 }
 
-fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: TriggerEffect) {
+/// Guaranteed restore of the OS grabs a shortcut recorder released (T4).
+///
+/// The recorder resumes them itself on confirm, cancel and blur, but a window
+/// that is closed or hidden mid-recording would otherwise leave the whole lane
+/// ungrabbed — dictation would silently stop working until the next restart.
+fn restore_shortcuts_after_recording<R: Runtime>(app: &AppHandle<R>) {
+    let Some(state) = app.try_state::<Mutex<NativeTriggerState>>() else {
+        return;
+    };
+
+    if let Err(error) = core::trigger::resume_native_shortcuts(app, state.inner()) {
+        core::runtime_log::record(format!(
+            "[WordScript] Could not restore shortcuts after the settings window closed: {error}"
+        ));
+    }
+}
+
+pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: TriggerEffect) {
     match effect {
         TriggerEffect::StartCapture => match core::capture::start_native_capture(app) {
             Ok(status) => {
@@ -2241,6 +2259,9 @@ pub fn run() {
             core::updates::check_app_update,
             core::runtime_log::runtime_log_entries,
             core::runtime_log::clear_runtime_log_entries,
+            core::shortcut::validate_shortcut,
+            core::shortcut::shortcut_vocabulary,
+            core::shortcut::shortcut_platform,
             core::workspace_context::get_workspace_context,
             core::mode_router::set_processing_mode_override,
             core::mode_router::clear_processing_mode_override,

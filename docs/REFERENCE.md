@@ -132,6 +132,74 @@ Relevant external Groq limit for the product path:
 These values are only part of the product reference insofar as they affect
 the active desktop flow.
 
+## Shortcut contract
+
+`src-tauri/src/core/shortcut.rs` is the single owner of the shortcut token
+vocabulary, the canonical storage form, the human display string and every
+validity rule (see [ADR 0006](decisions/0006-rust-owns-the-shortcut-contract.md)).
+The UI carries no key table: it reads the vocabulary over
+`shortcut_vocabulary`, sends browser `event.code` values unchanged and asks
+`validate_shortcut` for validity and display.
+
+### Token vocabulary
+
+- Modifiers: `Ctrl`, `Alt`, `Shift`, `Super`. `Super` covers Win, Cmd and Meta;
+  it is displayed as `Cmd` on macOS and `Win` on Windows.
+- Letters `A`-`Z` and digits `0`-`9`, stored in short form, accepted in both
+  short and `event.code` form (`M` and `KeyM` both parse).
+- Function keys `F1`-`F24`.
+- Editing: `Space`, `Enter`, `Tab`, `Backspace`, `Escape`, `Insert`, `Delete`,
+  `Home`, `End`, `PageUp`, `PageDown`, `CapsLock`.
+- Navigation: `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`.
+- Punctuation: `Backquote`, `Minus`, `Equal`, `BracketLeft`, `BracketRight`,
+  `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`.
+- Numpad: `Numpad0`-`Numpad9`, `NumpadAdd`, `NumpadSubtract`,
+  `NumpadMultiply`, `NumpadDivide`, `NumpadDecimal`, `NumpadEnter`, `NumLock`.
+- System: `PrintScreen`, `ScrollLock`, `Pause`.
+
+Legacy pynput spellings (`ctrl_l`, `alt_l`, `win`, `cmd`, `esc`) are accepted on
+read and rewritten to the canonical form on save. Parts are separated by `+`;
+a comma is accepted and converted.
+
+### Validity rules
+
+- An empty value means **disabled**, for capture and mode shortcuts alike. It is
+  never replaced by a platform default.
+- A single bare modifier is rejected. A modifier-only shortcut requires at least
+  two modifiers, so no registration can produce a grab with no modifier.
+- A bare letter or digit is rejected. A bare function key is accepted and
+  carries a warning naming it as a desktop-wide grab.
+- One non-modifier key per shortcut.
+- A value that cannot be parsed is stored unchanged and surfaced as "not
+  registerable" — it is never rewritten into something that merely looks valid.
+- Normalization runs before collision validation. Legacy rewrites are gated on
+  `shortcut_schema_version` and run once.
+
+### Activation modes
+
+- **Tap to toggle**: the same shortcut starts and stops. Repeated presses of the
+  same kind within `debounce_ms` (300) are debounced. A modifier-only shortcut
+  acts on release rather than press.
+- **Hold to talk**: recording runs while the shortcut is held. A hold shorter
+  than `hold_min_ms` (300) is extended to that length before stopping. A hold
+  whose key release never arrives is ended by the watchdog after
+  `hold_watchdog_seconds` (config, default 120, `0` disables) with reason
+  `native_hold_watchdog`, logged rather than left to the silence timeout.
+  Whether the platform delivers a key release at all is not guaranteed — the
+  runtime counts presses and releases per binding and the UI states what it has
+  observed. See
+  [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md).
+
+### Trigger observability
+
+The trigger lane logs to the runtime log under the `[trigger]` prefix:
+`event=shortcut` for every received event (shortcut id, binding, pressed or
+released), `event=decision` for what the state machine did with it (`start`,
+`stop`, `abort`, `toggle_pause`, `mode_select`, `set_mode`, `debounced`,
+`ignored_*`, `hold_start`, `hold_stop`, `no_binding`), `event=register` and
+`event=unregister` for registration outcomes, and `event=hold_watchdog` when a
+stranded hold is ended. This is permanent infrastructure, not a debug patch.
+
 ## Planning state for later sync topics
 
 These points describe no active function, only the current direction for

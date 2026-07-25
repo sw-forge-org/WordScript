@@ -112,6 +112,39 @@ If the portal daemon or interface is unreachable, the status reports
 WordScript detects these compositor special cases and shows the respective
 hint in `paste_disabled_reason`.
 
+## Linux -- global shortcut reality
+
+Global shortcuts on Linux are X11 passive grabs taken through the vendored
+`global-hotkey` crate. Since WordScript runs on XWayland by default
+(`GDK_BACKEND=x11`), that path also applies inside a Wayland session.
+
+Consequences a user can hit:
+
+- **Whether a grab is honored can depend on keyboard focus.** A shortcut may
+  work while an X11 application is focused and do nothing while a native Wayland
+  application is focused. If a shortcut feels intermittent, this is the first
+  thing to check — the runtime log now records every event that arrives, so
+  "the key never came" and "the key came and was ignored" are distinguishable.
+- **KWin consumes `Meta`/`Super` before the focused window sees it.** The
+  recorder therefore cannot capture it on KDE. Settings names this at the point
+  of failure and offers manual entry as the deliberate alternative.
+- **A native Wayland session has no unprivileged global-shortcut API.** Starting
+  with `WORDSCRIPT_NATIVE_WAYLAND=1` gives up global shortcuts entirely;
+  supporting them there needs the `org.freedesktop.portal.GlobalShortcuts`
+  portal, which this build does not implement. Settings states this instead of
+  offering shortcuts that cannot work.
+- **Hold to talk depends on a key release event** that the three platform
+  backends deliver by three different mechanisms. Nothing guarantees one
+  arrives. The runtime counts presses and releases per binding, states what it
+  has observed in this session, and ends a stranded hold with an explicit
+  watchdog rather than letting it drift into the silence timeout.
+
+`shortcut_platform` reports the detected compositor, session type, backend and
+the keys the desktop swallows; Settings -> Capture renders it above the shortcut
+rows. The per-OS capability matrix that would drive which options are offered
+where is not built yet — see
+[known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md).
+
 ## Linux / PipeWire -- microphone keep-alive against auto-suspend
 
 ### Root cause

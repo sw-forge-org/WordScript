@@ -238,6 +238,77 @@ export interface AppConfig {
   mode_rewrite_hotkey?:     string;
   mode_agent_hotkey?:       string;
   mode_prompt_enhance_hotkey?: string;
+  hold_watchdog_seconds?:   number;
+  shortcut_schema_version?: number;
+}
+
+/// Mirrors `core::shortcut::ShortcutValidation`.
+export interface ShortcutValidation {
+  ok:        boolean;
+  disabled:  boolean;
+  canonical: string;
+  display:   string;
+  reason:    string | null;
+  warning:   string | null;
+}
+
+export interface ShortcutVocabularyToken {
+  token:   string;
+  display: string;
+}
+
+/// Mirrors `core::shortcut::ShortcutVocabulary`. The UI derives its key
+/// handling from this instead of carrying a second key table — every token in
+/// here is registerable by the runtime.
+export interface ShortcutVocabulary {
+  modifiers:             ShortcutVocabularyToken[];
+  modifier_codes:        Array<[string, string]>;
+  key_groups:            Array<{ label: string; tokens: ShortcutVocabularyToken[] }>;
+  modifier_only_minimum: number;
+}
+
+/// Mirrors `core::shortcut::ShortcutPlatform`.
+export interface ShortcutPlatform {
+  summary:                     string;
+  global_shortcuts_available:  boolean;
+  keys_the_desktop_swallows:   string[];
+  notes:                       string[];
+}
+
+/// Mirrors `core::trigger::BindingInfo` — runtime truth per shortcut slot.
+export interface ShortcutBindingInfo {
+  label:           string;
+  role:            "capture" | "mode";
+  configured:      string;
+  display:         string;
+  registered:      boolean;
+  error:           string | null;
+  presses:         number;
+  releases:        number;
+  last_press_ms:   number | null;
+  last_release_ms: number | null;
+}
+
+/// Mirrors `core::trigger::NativeTriggerStatus`.
+export interface NativeTriggerStatus {
+  configured:               boolean;
+  enabled:                  boolean;
+  paused:                   boolean;
+  suspended:                boolean;
+  hotkey:                   string;
+  pause_hotkey:             string;
+  abort_hotkey:             string;
+  registered_hotkey:        string | null;
+  registered_pause_hotkey:  string | null;
+  registered_abort_hotkey:  string | null;
+  activation_mode:          "tap" | "hold";
+  last_error:               string | null;
+  owner:                    string;
+  bindings:                 ShortcutBindingInfo[];
+  hold_min_ms:              number;
+  debounce_ms:              number;
+  hold_watchdog_seconds:    number;
+  registered_mode_hotkeys:  Array<{ label: string; display: string }>;
 }
 
 export type BackendEvent =

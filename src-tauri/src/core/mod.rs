@@ -10,6 +10,7 @@ pub mod prompt_enhance;
 pub mod providers;
 pub mod runtime_log;
 pub mod sessions;
+pub mod shortcut;
 pub mod sound;
 pub mod text_rules;
 pub mod transcription_hints;

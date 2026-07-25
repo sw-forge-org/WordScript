@@ -1,6 +1,52 @@
 # Capture Shortcut Recording and Registration
 
-Status: **Open; documentation and rebuild plan only (2026-07-25)**
+Status: **Partially resolved (2026-07-25). S0-S5 implemented; S6 and S7 open,
+pending the runtime evidence S0 now produces.**
+
+## Current State (2026-07-25)
+
+Slices S0-S5 from the plan below were implemented on branch
+`worktree-shortcut-lane-rebuild`, together with the S8 documentation. What
+changed:
+
+| Defect | State |
+| --- | --- |
+| D1 recorder commits on first key release | Fixed — recording ends only on confirm, cancel, blur or timeout |
+| D2 single modifier becomes a bare OS-wide grab | Fixed — a single bare modifier is rejected; modifier-only needs two |
+| D3 `pause_native_trigger` does not release grabs | Fixed — it unregisters every capture and mode grab; Modes calls it too |
+| D4 manual entry destroyed by instant save | Fixed — the field edits a local draft, committed on blur/Enter |
+| D5 two divergent normalizers | Fixed — `core::shortcut` is the single owner (ADR 0006) |
+| D6 persist-time truncation of three combinations | Fixed — truncation removed, legacy rewrites version gated |
+| D7 collision validation before normalization | Fixed — normalize first, then validate |
+| D8 recorder vocabulary smaller than the runtime's | Fixed — the UI reads the runtime vocabulary and has no key table |
+| D9 physical key codes shown as US labels | Improved — human display strings everywhere, physical-key caveat stated |
+| D10 no test coverage for the recorder | Fixed — `HotkeyRecorder.test.tsx` covers the lifecycle rules |
+| D11 hold to talk not supported in practice | **Partial** — watchdog, release attribution and an honest note; capability gating still needs the S0 evidence |
+| D12 trigger lane has no observability | Fixed — every event, decision and registration outcome is logged |
+
+Still open:
+
+- **S6 Activation modes.** Hold to talk stays selectable. A hold that exceeds
+  `hold_watchdog_seconds` (default 120) is ended explicitly with reason
+  `native_hold_watchdog` instead of drifting into the silence timeout, and the
+  activation selector states whether a key release has actually been observed
+  for the configured shortcut in this session. Real per-platform capability
+  gating waits for the measurement.
+- **S7 Per-OS capability matrix.** Not started. `shortcut_platform` reports the
+  session facts (compositor, session type, XWayland versus native Wayland, keys
+  the desktop swallows), which is the input the matrix needs.
+
+### Evidence still to collect
+
+The press/release counters per binding are now in `native_trigger_status` and
+every event is in the runtime log. To decide S6 and S7, run the app in the
+native host and press the configured shortcut twice: once with an XWayland
+application focused, once with a native Wayland application focused. Report
+whether both `state=pressed` and `state=released` appear in each case.
+
+---
+
+## Original Record (2026-07-25)
 
 Scope of this record: the whole shortcut lane in Settings -> Capture (Input)
 and Settings -> Modes -- key recording, manual entry, normalization,

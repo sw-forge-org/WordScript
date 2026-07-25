@@ -46,6 +46,10 @@ pub const DEFAULT_AGENT_MODEL: &str = "llama-3.3-70b-versatile";
 pub const DEFAULT_LOCAL_AGENT_MODEL: &str = "llama3.2:latest";
 pub const DEFAULT_AGENT_NAME: &str = "WordScript";
 
+/// Current version of the shortcut half of the config schema. Legacy shortcut
+/// rewrites are gated on this so they run once instead of on every save.
+pub const SHORTCUT_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessingMode {
@@ -489,6 +493,15 @@ pub struct AppConfig {
     pub pause_hotkey: String,
     pub abort_hotkey: String,
     pub activation_mode: String,
+    /// Upper bound in seconds for a single hold before the watchdog ends it
+    /// with a stated reason. `0` disables the watchdog.
+    #[serde(default = "default_hold_watchdog_seconds")]
+    pub hold_watchdog_seconds: u64,
+    /// Migration gate for the shortcut lane. Legacy rewrites run once at
+    /// version `0` and never again — a migration that fires on every save
+    /// silently rewrites values the user just chose (D6).
+    #[serde(default)]
+    pub shortcut_schema_version: u32,
     pub overlay_position_mode: OverlayPositionMode,
     pub overlay_monitor: String,
     pub overlay_anchor: OverlayAnchor,
@@ -591,6 +604,8 @@ impl Default for AppConfig {
             pause_hotkey: default_pause_hotkey().to_string(),
             abort_hotkey: default_abort_hotkey().to_string(),
             activation_mode: "tap".to_string(),
+            hold_watchdog_seconds: default_hold_watchdog_seconds(),
+            shortcut_schema_version: SHORTCUT_SCHEMA_VERSION,
             overlay_position_mode: OverlayPositionMode::Preset,
             overlay_monitor: default_overlay_monitor().to_string(),
             overlay_anchor: OverlayAnchor::BottomCenter,
@@ -840,44 +855,19 @@ impl AppConfig {
             }
         }
         self.auto_paste = false;
-        self.hotkey = normalize_shortcut_value(&self.hotkey, default_hotkey(), true);
-        self.pause_hotkey =
-            normalize_shortcut_value(&self.pause_hotkey, default_pause_hotkey(), true);
-        self.abort_hotkey =
-            normalize_shortcut_value(&self.abort_hotkey, default_abort_hotkey(), true);
-        self.mode_picker_hotkey = normalize_shortcut_value(
-            &self.mode_picker_hotkey,
-            &default_mode_picker_hotkey(),
-            true,
-        );
-        self.mode_auto_hotkey = normalize_shortcut_value(
-            &self.mode_auto_hotkey,
-            &default_mode_auto_hotkey(),
-            true,
-        );
-        self.mode_verbatim_hotkey = normalize_shortcut_value(
-            &self.mode_verbatim_hotkey,
-            &default_mode_verbatim_hotkey(),
-            true,
-        );
-        self.mode_cleanup_hotkey = normalize_shortcut_value(
-            &self.mode_cleanup_hotkey,
-            &default_mode_cleanup_hotkey(),
-            true,
-        );
-        self.mode_rewrite_hotkey = normalize_shortcut_value(
-            &self.mode_rewrite_hotkey,
-            &default_mode_rewrite_hotkey(),
-            true,
-        );
-        self.mode_agent_hotkey = normalize_shortcut_value(
-            &self.mode_agent_hotkey,
-            &default_mode_agent_hotkey(),
-            true,
-        );
+        migrate_shortcut_schema(self);
+        self.hold_watchdog_seconds = self.hold_watchdog_seconds.min(3600);
+        self.hotkey = normalize_shortcut_value(&self.hotkey, true);
+        self.pause_hotkey = normalize_shortcut_value(&self.pause_hotkey, true);
+        self.abort_hotkey = normalize_shortcut_value(&self.abort_hotkey, true);
+        self.mode_picker_hotkey = normalize_shortcut_value(&self.mode_picker_hotkey, true);
+        self.mode_auto_hotkey = normalize_shortcut_value(&self.mode_auto_hotkey, true);
+        self.mode_verbatim_hotkey = normalize_shortcut_value(&self.mode_verbatim_hotkey, true);
+        self.mode_cleanup_hotkey = normalize_shortcut_value(&self.mode_cleanup_hotkey, true);
+        self.mode_rewrite_hotkey = normalize_shortcut_value(&self.mode_rewrite_hotkey, true);
+        self.mode_agent_hotkey = normalize_shortcut_value(&self.mode_agent_hotkey, true);
         self.mode_prompt_enhance_hotkey = normalize_shortcut_value(
             &self.mode_prompt_enhance_hotkey,
-            &default_mode_prompt_enhance_hotkey(),
             true,
         );
         self.overlay_monitor = normalize_overlay_monitor_value(&self.overlay_monitor);
@@ -1100,8 +1090,11 @@ pub fn load_app_config() -> Result<AppConfig, String> {
 /// conflicting assignments when a collision is detected. Empty hotkey strings
 /// (disabled) are skipped.
 ///
-/// Normalizes each raw value via the trigger shortcut normalizer so that
-/// `ctrl_l+alt_l+m` and `Ctrl+Alt+M` are treated as identical.
+/// Runs on already-normalized values (see `save_config`), so two spellings of
+/// the same combination cannot slip past. A value that does not parse is
+/// skipped rather than rejected: it cannot be registered and is surfaced per
+/// row as "not registerable" (T8), and failing the whole save would leave the
+/// user unable to change anything else.
 pub fn validate_hotkey_collisions(config: &AppConfig) -> Result<(), String> {
     // (label, raw_value) for every hotkey field. Order matters only for the
     // error message (the first-registered label is reported as "already in use").
@@ -1126,8 +1119,9 @@ pub fn validate_hotkey_collisions(config: &AppConfig) -> Result<(), String> {
         if trimmed.is_empty() {
             continue;
         }
-        let normalized = super::trigger::normalize_shortcut(trimmed, true)
-            .map_err(|error| format!("{}: invalid shortcut '{}': {}", label, trimmed, error))?;
+        let Ok(normalized) = super::trigger::normalize_shortcut(trimmed, true) else {
+            continue;
+        };
 
         if let Some((existing_label, existing_display)) = seen
             .iter()
@@ -1147,7 +1141,10 @@ pub fn validate_hotkey_collisions(config: &AppConfig) -> Result<(), String> {
 
 #[tauri::command]
 pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<AppConfig, String> {
-    validate_hotkey_collisions(&config)?;
+    // Validate AFTER normalization, never before (D7). Normalization can change
+    // a value, so two fields that pass a raw-value check can still collide on
+    // disk — a state the validator would have approved and registration would
+    // then reject.
     // Hold the config file lock across the legacy-secret reconcile + normalize
     // + write so a parallel read-modify-write command (e.g.
     // set_active_profile_processing_mode from the mode hotkey, or a
@@ -1160,6 +1157,7 @@ pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<A
         AppConfig::reconcile_legacy_secret_before_save()?;
         let mut sanitized = config.without_secrets();
         sanitized.normalize_for_runtime();
+        validate_hotkey_collisions(&sanitized)?;
         sanitized.save_to_disk()?;
         Ok::<AppConfig, String>(sanitized)
     })??;
@@ -1273,6 +1271,10 @@ fn default_overlay_monitor() -> &'static str {
     "primary"
 }
 
+fn default_hold_watchdog_seconds() -> u64 {
+    120
+}
+
 fn default_result_actions_timeout_s() -> u64 {
     9
 }
@@ -1364,67 +1366,43 @@ fn normalize_overlay_monitor_value(value: &str) -> String {
     }
 }
 
-fn normalize_shortcut_value(value: &str, fallback: &str, allow_modifier_only: bool) -> String {
-    let parts = value
-        .split(['+', ','])
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .map(normalize_shortcut_part)
-        .collect::<Vec<_>>();
-
-    if parts.is_empty() {
-        return fallback.to_string();
-    }
-
-    if allow_modifier_only
-        && matches!(
-            parts.join("+").as_str(),
-            "ctrl_l+win+space" | "ctrl_l+cmd+space" | "ctrl_l+alt_l+space"
-        )
-    {
-        return parts[..parts.len().saturating_sub(1)].join("+");
-    }
-
-    if is_legacy_autofilled_space_shortcut(&parts, allow_modifier_only) {
-        return fallback.to_string();
-    }
-
-    if !allow_modifier_only && parts.iter().all(|part| is_modifier_only(part)) {
-        return fallback.to_string();
-    }
-
-    parts.join("+")
+/// Canonicalizes a persisted shortcut through the single contract owner
+/// (`core::shortcut`).
+///
+/// Three deliberate departures from the previous behavior:
+/// - an empty value stays empty, meaning "disabled", instead of silently
+///   becoming the platform default (T7);
+/// - a value that cannot be parsed is stored unchanged so the UI can show it as
+///   "not registerable", instead of being lowercased into something that can
+///   never register (D5);
+/// - nothing is truncated or rewritten here. The one legacy rewrite that used
+///   to run on every save now lives in `migrate_shortcut_schema` behind a
+///   version gate (D6).
+fn normalize_shortcut_value(value: &str, allow_modifier_only: bool) -> String {
+    super::shortcut::normalize_for_storage(
+        value,
+        super::shortcut::Policy {
+            allow_modifier_only,
+        },
+    )
 }
 
-fn is_legacy_autofilled_space_shortcut(parts: &[String], allow_modifier_only: bool) -> bool {
-    let joined = parts.join("+");
-    if allow_modifier_only {
-        return joined == "ctrl_l+cmd+space";
+/// One-shot migration of shortcut values written by older builds. Runs only
+/// while `shortcut_schema_version` is below the current version, so a value the
+/// user chose today can never be rewritten by a legacy rule tomorrow.
+///
+/// Version 1: the pre-contract normalizer dropped the trailing key of
+/// `ctrl_l+win+space`, `ctrl_l+cmd+space` and `ctrl_l+alt_l+space` on every
+/// save, which turned the Windows default hotkey into a modifier-only shortcut
+/// and made those three combinations unselectable. Configs written by that
+/// build therefore hold the truncated value; there is nothing to repair, but
+/// the version is recorded so the truncation cannot come back.
+fn migrate_shortcut_schema(config: &mut AppConfig) {
+    if config.shortcut_schema_version >= SHORTCUT_SCHEMA_VERSION {
+        return;
     }
 
-    joined == "ctrl_l+alt_l+space"
-}
-
-fn normalize_shortcut_part(part: &str) -> String {
-    let lower = part.trim().to_ascii_lowercase();
-    match lower.as_str() {
-        "ctrl" | "control" | "ctrl_l" | "ctrl_r" => "ctrl_l".to_string(),
-        "alt" | "alt_l" | "alt_r" | "option" => "alt_l".to_string(),
-        "shift" | "shift_l" | "shift_r" => "shift_l".to_string(),
-        "win" | "super" | "meta" if cfg!(target_os = "macos") => "cmd".to_string(),
-        "win" | "super" | "meta" => "win".to_string(),
-        "cmd" | "command" => "cmd".to_string(),
-        "space" => "space".to_string(),
-        "esc" | "escape" => "escape".to_string(),
-        "enter" | "return" => "enter".to_string(),
-        "tab" => "tab".to_string(),
-        "backspace" => "backspace".to_string(),
-        _ => lower,
-    }
-}
-
-fn is_modifier_only(part: &str) -> bool {
-    matches!(part, "ctrl_l" | "alt_l" | "shift_l" | "win" | "cmd")
+    config.shortcut_schema_version = SHORTCUT_SCHEMA_VERSION;
 }
 
 fn default_local_prompt_strength() -> &'static str {
@@ -1878,29 +1856,118 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_legacy_shortcuts_to_valid_runtime_values() {
-        // "win" maps to "cmd" on macOS, "win" elsewhere.
-        let win_token = if cfg!(target_os = "macos") { "cmd" } else { "win" };
+    fn normalizes_legacy_shortcuts_to_the_canonical_contract_form() {
+        assert_eq!(normalize_shortcut_value("ctrl_l, win", true), "Ctrl+Super");
+        assert_eq!(normalize_shortcut_value("ctrl_l+alt_l", true), "Ctrl+Alt");
+        assert_eq!(normalize_shortcut_value("Ctrl+F9", true), "Ctrl+F9");
+        assert_eq!(normalize_shortcut_value("ctrl_l+f9", true), "Ctrl+F9");
+    }
+
+    #[test]
+    fn space_combinations_survive_persist_time_normalization() {
+        // D6: these three used to lose their trailing key on every save, which
+        // silently rewrote the Windows default hotkey to a modifier-only value.
         assert_eq!(
-            normalize_shortcut_value("ctrl_l, win", "ctrl_l+f9", true),
-            format!("ctrl_l+{win_token}")
+            normalize_shortcut_value("ctrl_l+alt_l+space", true),
+            "Ctrl+Alt+Space"
         );
         assert_eq!(
-            normalize_shortcut_value("ctrl_l+alt_l", "ctrl_l+alt_l+escape", true),
-            "ctrl_l+alt_l"
+            normalize_shortcut_value("ctrl_l+win+space", true),
+            "Ctrl+Super+Space"
         );
         assert_eq!(
-            normalize_shortcut_value("ctrl_l+win+space", "ctrl_l+f9", true),
-            format!("ctrl_l+{win_token}")
+            normalize_shortcut_value("ctrl_l+cmd+space", true),
+            "Ctrl+Super+Space"
         );
-        assert_eq!(
-            normalize_shortcut_value("ctrl_l+alt_l+space", "ctrl_l+alt_l+escape", true),
-            "ctrl_l+alt_l"
-        );
-        assert_eq!(
-            normalize_shortcut_value("Ctrl+F9", "ctrl_l+f9", true),
-            "ctrl_l+f9"
-        );
+    }
+
+    #[test]
+    fn empty_shortcut_stays_disabled_instead_of_reverting_to_the_default() {
+        // T7: clearing a mode hotkey means "disabled". Reverting to the
+        // platform default made a shortcut impossible to switch off.
+        let mut config = AppConfig {
+            mode_agent_hotkey: String::new(),
+            mode_rewrite_hotkey: "   ".to_string(),
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+
+        assert_eq!(config.mode_agent_hotkey, "");
+        assert_eq!(config.mode_rewrite_hotkey, "");
+    }
+
+    #[test]
+    fn bare_function_key_shortcuts_are_preserved_not_rewritten() {
+        // The reporter's escaped state (`hotkey = "f1"`, `abort_hotkey = "f4"`)
+        // must survive the migration; it is surfaced as a warning, not silently
+        // replaced.
+        let mut config = AppConfig {
+            hotkey: "f1".to_string(),
+            abort_hotkey: "f4".to_string(),
+            pause_hotkey: "ctrl_l+f10".to_string(),
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+
+        assert_eq!(config.hotkey, "F1");
+        assert_eq!(config.abort_hotkey, "F4");
+        assert_eq!(config.pause_hotkey, "Ctrl+F10");
+    }
+
+    #[test]
+    fn unparsable_shortcut_is_kept_verbatim_instead_of_being_mangled() {
+        // D5: the old normalizer lowercased unknown tokens and stored a value
+        // that could never register, with the failure visible only in a toast.
+        let mut config = AppConfig {
+            mode_cleanup_hotkey: "ctrl_l+florp".to_string(),
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+
+        assert_eq!(config.mode_cleanup_hotkey, "ctrl_l+florp");
+    }
+
+    #[test]
+    fn shortcut_schema_version_is_stamped_once() {
+        let mut config = AppConfig {
+            shortcut_schema_version: 0,
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+        assert_eq!(config.shortcut_schema_version, SHORTCUT_SCHEMA_VERSION);
+
+        // Re-running must not change anything else either.
+        let before = config.clone();
+        config.normalize_for_runtime();
+        assert_eq!(config.hotkey, before.hotkey);
+        assert_eq!(config.shortcut_schema_version, before.shortcut_schema_version);
+    }
+
+    #[test]
+    fn collision_validation_sees_normalized_values() {
+        // D7: `ctrl_l+f9` and `Ctrl+F9` are the same grab. Validating raw
+        // values let two spellings of one combination through.
+        let config = AppConfig {
+            hotkey: "Ctrl+F9".to_string(),
+            mode_agent_hotkey: "ctrl_l+f9".to_string(),
+            ..AppConfig::default()
+        };
+
+        assert!(validate_hotkey_collisions(&config).is_err());
+    }
+
+    #[test]
+    fn collision_validation_skips_unparsable_values() {
+        let config = AppConfig {
+            mode_agent_hotkey: "ctrl_l+florp".to_string(),
+            ..AppConfig::default()
+        };
+
+        assert!(validate_hotkey_collisions(&config).is_ok());
     }
 
     #[test]
