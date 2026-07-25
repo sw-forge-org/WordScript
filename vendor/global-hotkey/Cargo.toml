@@ -95,7 +95,11 @@ version = "0.30"
 
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies.x11rb]
 version = "0.13.1"
-features = ["xkb"]
+# `xinput` carries the XInput2 raw key events used to *observe* a modifier-only
+# shortcut instead of grabbing it. A grab delivers the key to the grab owner
+# instead of the focused window, which is acceptable for `Ctrl+F9` and not
+# acceptable for a bare `Shift`.
+features = ["xkb", "xinput"]
 
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies.xkeysym]
 version = "0.2.1"

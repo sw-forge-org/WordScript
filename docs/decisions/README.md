@@ -51,3 +51,7 @@ Status: Proposed | Accepted | Superseded by NNNN
 - [0008](0008-double-tap-is-the-default-activation-mode.md): `double_tap` is the
   default activation mode, because the default triggers are modifier-only;
   existing configs keep their chosen value.
+- [0009](0009-modifier-only-shortcuts-are-observed-not-grabbed.md): a
+  modifier-only shortcut is observed through the raw key stream instead of
+  grabbed, so the modifier keeps working for everyone else; a shortcut with a real
+  key is still grabbed.

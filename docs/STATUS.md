@@ -53,6 +53,12 @@ Status: 2026-07-25
   ADR 0008 — two taps within `double_tap_window_ms`, so a modifier-only trigger
   no longer acts on every single press) and hold to talk with a watchdog for a
   release that never arrives and a deferred stop below `hold_min_ms`
+- modifier-only shortcuts are observed rather than grabbed (ADR 0009): the raw
+  key stream is watched without consuming the keystroke, so a trigger like
+  `Ctrl+Super` no longer takes that combination away from every other
+  application. A shortcut with a real key is still grabbed, which is what it
+  should be. Implemented for Linux/X11; Windows and macOS still need the same
+  routing in their platform implementations
 - a per-session shortcut capability matrix (`shortcut_capabilities`, ADR 0007):
   session facts plus the trigger lane's measured press/release evidence decide
   which activation modes and key classes are available, conditional or
@@ -235,6 +241,11 @@ Additional rules:
   `prompt_enhance` or globally active agent mode; Conservative stays the
   default and protects against language-bias leakage into the Whisper initial
   prompt
+- a *single* modifier as a trigger (double-tap Shift, push-to-talk on one key) is
+  not possible yet. Observation makes it harmless to the desktop, but the lane
+  cannot distinguish a deliberate tap from the same modifier pressed while typing.
+  It needs an interruption signal in the event contract and side-specific modifier
+  tokens (`ShiftRight`), both described in ADR 0009
 - the shortcut lane has never been executed on Windows or macOS. It is
   implemented and unit-tested for all three platforms, but only Linux
   (KDE Plasma 6 / Wayland, app on XWayland) has ever run it. One consequence is

@@ -176,23 +176,51 @@ prerequisite, and it exists to different degrees in the three implementations
 | Windows | `WH_KEYBOARD_LL` hook with software matching, `return 1` only on a match (`windows/mod.rs:167`) | Selectively — the right shape already | Let modifier keys reach the registry lookup (see the finding above) **and** pass the event on instead of consuming it |
 | macOS | Carbon grab, with a `CGEventTap` created `ListenOnly` returning the event unchanged (`macos/mod.rs:231`, `:525`) | Tap: no | Modifier scancodes in `key_to_scancode`, routing modifier-only through the tap rather than Carbon |
 
-So the feature is possible on all three, but it is a change to the vendored crate
-on all three — not a relaxation of a validation rule. Relaxing the rule alone
-would, on this Linux machine today, register a grab on Shift and take Shift away
-from the whole desktop.
+**The Linux half of this is now built** (ADR
+[0009](../decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md)):
+modifier-only shortcuts are routed to XInput2 raw key events instead of a grab, so
+`Ctrl+Super` no longer takes that combination from the desktop. `Grab` versus
+`Observe` is derived in `core::shortcut::Delivery` from the shortcut itself, and
+the platform layer applies the same rule, so the two cannot disagree. Windows and
+macOS still need the same routing in their implementations; until then
+modifier-only stays broken on both, in the two different ways recorded above.
 
-Two things worth weighing before it is built:
+### A single modifier is still rejected — for a different reason now
 
-- A non-consuming system-wide key monitor is, structurally, a keylogger-shaped
-  component. On macOS it is exactly what Input Monitoring gates; on Windows the
-  low-level hook already is one. That deserves a deliberate decision and a
-  statement in the privacy documentation, not a quiet addition.
-- It would make the Windows finding above moot in passing, since both need the
-  same change to the same code path.
+With observation in place, "a bare grab would take the key from the desktop" is no
+longer true, so it is no longer the reason. What remains is that the trigger lane
+cannot tell a deliberate tap of a modifier from the same modifier pressed while
+typing. Typing "Hello World" presses Shift twice, and inside a 400 ms double-tap
+window that is indistinguishable from a deliberate double tap. Two modifiers make
+the combination rare enough to read as intentional.
 
-Until then, the reason string states the mechanism and says explicitly that the
-activation mode cannot lift it, so the restriction does not read as arbitrary
-(`core::shortcut::build_modifier_only`).
+Lifting it needs two things that are not in the contract yet:
+
+1. **An interruption signal** — "was another key pressed while this modifier was
+   held" — so `Ctrl+Alt` on the way to `Ctrl+Alt+T`, and Shift on the way to a
+   capital, are distinguishable from a deliberate tap. The clean shape is to fire
+   modifier-only triggers on the release edge (which the lane already does) and
+   suppress that edge when the hold was interrupted. That means a third piece of
+   state on `GlobalHotKeyEvent`, which every platform implementation constructs —
+   so it is a coordinated change across all four backends, including `no-op`.
+2. **Side-specific modifier tokens.** `MODIFIER_TOKENS` is side-agnostic
+   (`Shift`, not `ShiftLeft`/`ShiftRight`) and both `event.code` values map to the
+   same token. Right Shift works as a trigger for Wispr Flow precisely because it
+   is rarely used in typing; the contract cannot currently express it. This
+   touches the vocabulary, the recorder's chord serialization and the display
+   strings.
+
+Neither is blocked by hardware. Both are ordinary work, and (1) is the one that
+actually makes the feature safe.
+
+### Privacy
+
+A non-consuming system-wide key monitor is structurally a keylogger-shaped
+component — on macOS it is exactly what Input Monitoring gates, and on Windows the
+low-level hook already is one. The mitigation is scope: the Linux path tracks the
+eight modifier keycodes and discards every other keycode on arrival, without
+recording, forwarding or logging it. That belongs in the privacy documentation and
+not only in a code comment.
 
 ## Windows run sheet
 

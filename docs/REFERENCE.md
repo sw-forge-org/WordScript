@@ -246,6 +246,30 @@ and no migration rewrites the field.
   turns those counters into the state of this option. See
   [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md).
 
+### Delivery: grab versus observe
+
+A shortcut with a real key (`Ctrl+F9`, `F1`) is registered as an OS-level **grab**
+— the key is delivered to WordScript instead of the focused window, which is what
+a hotkey with a real key should do. A **modifier-only** shortcut is **observed**
+instead: the raw key stream is watched without consuming the keystroke, so
+`Ctrl+Super` as a trigger no longer takes that combination away from other
+applications (ADR
+[0009](decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md)).
+`validate_shortcut` reports which of the two applies in `delivery`.
+
+A *single* bare modifier is still rejected, with the reason that follows from the
+new mechanism rather than the old one: nothing distinguishes a deliberate tap of
+Shift from the Shift pressed to type a capital, and two of those inside the
+double-tap window is ordinary text entry. Two modifiers make the combination rare
+enough to read as deliberate. Lifting this needs an interruption signal in the
+event contract and side-specific modifier tokens — both listed as consequences in
+the ADR.
+
+On Linux the observation path is XInput2 raw key events. It tracks the eight
+modifier keycodes and discards every other keycode on arrival. It is still an X11
+mechanism, so on a Wayland session a keystroke delivered to a native Wayland
+client stays invisible — observation removes the key theft, not the Wayland gap.
+
 ### Capability gating
 
 `shortcut_capabilities` reports which activation modes and key classes the

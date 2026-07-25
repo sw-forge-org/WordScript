@@ -252,6 +252,10 @@ export interface ShortcutValidation {
   /** True when the shortcut is modifiers only — it acts on key release and, in
    *  tap mode, on every single press. */
   modifier_only: boolean;
+  /** How the OS delivers the shortcut: `grab` takes the key from every other
+   *  application, `observe` leaves it available (ADR 0009). Null when the value
+   *  is disabled or could not be parsed. */
+  delivery:  "grab" | "observe" | null;
   reason:    string | null;
   warning:   string | null;
 }

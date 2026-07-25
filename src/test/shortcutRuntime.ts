@@ -127,7 +127,12 @@ export function createShortcutCapabilities(
         "conditional",
         "Registerable with or without a modifier, but a bare function key is a desktop-wide grab.",
       ),
-      capability("modifier_only", "Modifier-only", "available", null),
+      capability(
+        "modifier_only",
+        "Modifier-only",
+        "available",
+        "Allowed from 2 modifiers upward, and observed rather than grabbed — the combination stays available to other applications.",
+      ),
       capability("super_meta", "Super / Meta", "available", null),
     ],
     ...overrides,
@@ -219,7 +224,7 @@ export function validateShortcutDouble(
     .filter(Boolean);
 
   if (parts.length === 0) {
-    return { ok: true, disabled: true, canonical: "", display: "", modifier_only: false, reason: null, warning: null };
+    return { ok: true, disabled: true, canonical: "", display: "", modifier_only: false, delivery: null, reason: null, warning: null };
   }
 
   const modifiers: string[] = [];
@@ -234,6 +239,7 @@ export function validateShortcutDouble(
         canonical: "",
         display: "",
         modifier_only: false,
+        delivery: null,
         reason: `'${part}' is not a key WordScript can register.`,
         warning: null,
       };
@@ -256,6 +262,7 @@ export function validateShortcutDouble(
         canonical: "",
         display: "",
         modifier_only: false,
+        delivery: null,
         reason: "This shortcut must include a non-modifier key.",
         warning: null,
       };
@@ -267,7 +274,8 @@ export function validateShortcutDouble(
         canonical: "",
         display: "",
         modifier_only: false,
-        reason: `A single ${modifiers[0]} cannot be used on its own. The shortcut is registered as an OS-level grab, which delivers the key to WordScript instead of the focused window — so ${modifiers[0]} would stop working everywhere else. Double tap and hold change when WordScript acts, not whether the key is taken away, so they cannot lift this. Use at least two modifiers, or add a key.`,
+        delivery: null,
+        reason: `A single ${modifiers[0]} cannot be a trigger. Modifier-only shortcuts are observed rather than grabbed, so ${modifiers[0]} keeps working normally — but nothing separates a deliberate tap from the ${modifiers[0]} you press while typing, and two of those inside the double-tap window is ordinary text entry. Two modifiers make the combination rare enough to read as deliberate. Use at least two modifiers, or add a key.`,
         warning: null,
       };
     }
@@ -277,6 +285,7 @@ export function validateShortcutDouble(
       canonical: modifiers.join("+"),
       display: modifiers.join(" + "),
       modifier_only: true,
+      delivery: "observe",
       reason: null,
       warning: null,
     };
@@ -289,6 +298,7 @@ export function validateShortcutDouble(
       canonical: "",
       display: "",
       modifier_only: false,
+      delivery: null,
       reason: `'${displayKey(key)}' alone would be grabbed from every application on this desktop.`,
       warning: null,
     };
@@ -305,6 +315,7 @@ export function validateShortcutDouble(
     canonical: [...modifiers, canonicalKey(key)].join("+"),
     display: [...modifiers, displayKey(key)].join(" + "),
     modifier_only: false,
+    delivery: "grab",
     reason: null,
     warning,
   };

@@ -61,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Settings gates the activation selector on it: an option this session cannot
   honor is unselectable with the reason stated, and a stored mode that becomes
   unavailable stays selected rather than being silently swapped.
+- Modifier-only shortcuts are observed instead of grabbed (ADR 0009). A grab
+  delivers the key to WordScript instead of the focused window, which is right for
+  `Ctrl+F9` and wrong for `Ctrl+Super`: the combination was taken from every other
+  application. Modifier-only shortcuts now go through XInput2 raw key events on
+  Linux, which do not consume the keystroke. `validate_shortcut` reports which of
+  the two mechanisms applies in `delivery`. The vendored `global-hotkey` crate
+  carries the new observation path; Windows and macOS still need the same routing.
 - A cross-platform verification record for the shortcut lane
   (`docs/known-issues/cross-platform-shortcut-verification.md`): executable run
   sheets for Windows and macOS, the per-platform release mechanisms read from the
@@ -169,6 +176,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The reason a single bare modifier is rejected changed with the mechanism. It is
+  no longer "it would be grabbed from every application" — with observation that is
+  no longer true. It is that nothing distinguishes a deliberate tap of Shift from
+  the Shift pressed to type a capital, and two of those inside the double-tap
+  window is ordinary text entry. The stated reason says so, so the restriction does
+  not read as arbitrary.
 - **`double_tap` is now the default `activation_mode`** (ADR 0008), because the
   default capture triggers are modifier-only and in tap mode every single press
   of `Ctrl+Super` or `Ctrl+Alt` would act — taking that combination away from

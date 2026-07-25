@@ -8,12 +8,37 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use keyboard_types::{Code, Modifiers};
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
+use x11rb::protocol::xinput;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, KeyButMask, Keycode, ModMask, Window};
 use x11rb::protocol::{xkb, ErrorKind, Event};
 use x11rb::rust_connection::RustConnection;
 use xkeysym::RawKeysym;
 
 use crate::{hotkey::HotKey, Error, GlobalHotKeyEvent};
+
+// WordScript patch: modifier-only shortcuts are *observed*, not grabbed.
+//
+// A passive `grab_key` delivers the key to the grab owner instead of the focused
+// window. For `Ctrl+F9` that is exactly right. For a shortcut whose main key is
+// a modifier it is not: a grab on a bare `Shift` stops Shift from typing
+// capitals anywhere on the desktop, and no activation mode can change that,
+// because the activation mode decides when the consumer acts and not whether the
+// key still reaches anyone else.
+//
+// So a hotkey whose main key is a modifier is routed to XInput2 raw key events
+// instead. Raw events are delivered without consuming the keystroke and without
+// regard to focus, which is what the double-tap-a-modifier idiom needs.
+//
+// Two properties of this path that matter and are easy to lose:
+//
+// - **Raw events carry no modifier state.** The state has to be tracked from the
+//   raw stream itself, the way the Windows low-level hook does. Only the eight
+//   modifier keycodes are tracked; every other keycode is discarded on arrival
+//   without being recorded, forwarded or logged.
+// - **On XWayland it is still an X11 mechanism.** Raw events cover what the X
+//   server sees, so a keystroke delivered to a native Wayland client is invisible
+//   here — the same focus limitation grabs have. Observation removes the key
+//   theft, not the Wayland gap.
 
 enum ThreadMessage {
     RegisterHotKey(HotKey, Sender<crate::Result<()>>),
@@ -115,6 +140,7 @@ fn register_hotkey(
     conn: &RustConnection,
     root: Window,
     hotkeys: &mut BTreeMap<Keycode, Vec<HotKeyState>>,
+    observer: &mut Observer,
     hotkey: HotKey,
 ) -> crate::Result<()> {
     let (mods, key) = (
@@ -137,6 +163,12 @@ fn register_hotkey(
             hotkey.key
         )));
     };
+
+    // A modifier as the main key is observed, never grabbed. See the note at the
+    // top of this file.
+    if is_modifier_code(hotkey.key) {
+        return observer.register(hotkey, keycode);
+    }
 
     for m in ignored_mods() {
         let result = conn
@@ -190,6 +222,7 @@ fn unregister_hotkey(
     conn: &RustConnection,
     root: Window,
     hotkeys: &mut BTreeMap<Keycode, Vec<HotKeyState>>,
+    observer: &mut Observer,
     hotkey: HotKey,
 ) -> crate::Result<()> {
     let (modifiers, key) = (
@@ -207,6 +240,11 @@ fn unregister_hotkey(
         return Err(Error::FailedToUnRegister(hotkey));
     };
 
+    if is_modifier_code(hotkey.key) {
+        observer.unregister(hotkey, keycode);
+        return Ok(());
+    }
+
     for m in ignored_mods() {
         if let Ok(result) = conn.ungrab_key(keycode, root, modifiers | m) {
             result.ignore_error();
@@ -222,6 +260,191 @@ struct HotKeyState {
     id: u32,
     pressed: bool,
     mods: ModMask,
+}
+
+/// The eight modifier keys, with the `ModMask` bit each contributes. This is the
+/// only key material the observation path retains.
+const OBSERVED_MODIFIERS: [(Code, ModMask); 8] = [
+    (Code::ControlLeft, ModMask::CONTROL),
+    (Code::ControlRight, ModMask::CONTROL),
+    (Code::ShiftLeft, ModMask::SHIFT),
+    (Code::ShiftRight, ModMask::SHIFT),
+    (Code::AltLeft, ModMask::M1),
+    (Code::AltRight, ModMask::M1),
+    (Code::MetaLeft, ModMask::M4),
+    (Code::MetaRight, ModMask::M4),
+];
+
+pub(crate) fn is_modifier_code(code: Code) -> bool {
+    OBSERVED_MODIFIERS
+        .iter()
+        .any(|(modifier, _)| *modifier == code)
+}
+
+/// Non-consuming observation of the modifier keys through XInput2 raw events.
+struct Observer {
+    /// `None` until XInput2 has been negotiated; `Some(false)` when the server
+    /// does not offer it, in which case observed hotkeys cannot be registered and
+    /// say so rather than failing silently.
+    available: bool,
+    /// Modifier keycode -> the mask bit it contributes. Built once from the
+    /// server's keyboard mapping.
+    modifier_keycodes: BTreeMap<Keycode, ModMask>,
+    /// Which modifier keycodes are currently down. Tracked as keycodes rather
+    /// than as a mask so releasing one of a pair (left Ctrl while right Ctrl is
+    /// still down) does not clear the bit prematurely.
+    held: Vec<Keycode>,
+    /// Registered observed hotkeys, keyed by the keycode of their main key.
+    hotkeys: BTreeMap<Keycode, Vec<HotKeyState>>,
+}
+
+impl Observer {
+    fn new() -> Self {
+        Self {
+            available: false,
+            modifier_keycodes: BTreeMap::new(),
+            held: Vec::new(),
+            hotkeys: BTreeMap::new(),
+        }
+    }
+
+    /// Negotiates XInput2 and selects raw key events on the root window. Raw
+    /// events are delivered regardless of which client has focus and without
+    /// consuming the keystroke.
+    fn init(&mut self, conn: &RustConnection, root: Window) {
+        let negotiated = match xinput::ConnectionExt::xinput_xi_query_version(conn, 2, 0) {
+            Ok(cookie) => cookie.reply().is_ok(),
+            Err(_) => false,
+        };
+        if !negotiated {
+            return;
+        }
+
+        let event_mask = xinput::EventMask {
+            deviceid: u16::from(xinput::Device::ALL_MASTER),
+            mask: vec![xinput::XIEventMask::RAW_KEY_PRESS | xinput::XIEventMask::RAW_KEY_RELEASE],
+        };
+
+        if xinput::ConnectionExt::xinput_xi_select_events(conn, root, &[event_mask])
+            .map(|cookie| cookie.check())
+            .is_err()
+        {
+            return;
+        }
+
+        for (code, mask) in OBSERVED_MODIFIERS {
+            let Some(keysym) = keycode_to_x11_keysym(code) else {
+                continue;
+            };
+            if let Ok(Some(keycode)) = keysym_to_keycode(conn, keysym) {
+                self.modifier_keycodes.insert(keycode, mask);
+            }
+        }
+
+        self.available = true;
+    }
+
+    /// The modifier mask currently held, ignoring one keycode. Used to compare
+    /// against a hotkey's own modifier set: the key that just went down is the
+    /// main key, not one of its modifiers.
+    fn held_mask_excluding(&self, excluded: Keycode) -> ModMask {
+        let mut mask = ModMask::default();
+        for keycode in &self.held {
+            if *keycode == excluded {
+                continue;
+            }
+            if let Some(bit) = self.modifier_keycodes.get(keycode) {
+                mask |= *bit;
+            }
+        }
+        mask
+    }
+
+    fn register(&mut self, hotkey: HotKey, keycode: Keycode) -> crate::Result<()> {
+        if !self.available {
+            return Err(Error::FailedToRegister(format!(
+                "'{}' needs XInput2 raw key events to be observed rather than grabbed, and this \
+                 X server does not offer them.",
+                hotkey.key
+            )));
+        }
+
+        let mods = modifiers_to_x11_mods(hotkey.mods);
+        let entry = self.hotkeys.entry(keycode).or_default();
+        if entry.iter().any(|state| state.mods == mods) {
+            return Err(Error::AlreadyRegistered(hotkey));
+        }
+
+        entry.push(HotKeyState {
+            id: hotkey.id(),
+            mods,
+            pressed: false,
+        });
+        Ok(())
+    }
+
+    fn unregister(&mut self, hotkey: HotKey, keycode: Keycode) {
+        let mods = modifiers_to_x11_mods(hotkey.mods);
+        if let Some(entry) = self.hotkeys.get_mut(&keycode) {
+            entry.retain(|state| state.mods != mods);
+        }
+    }
+
+    /// A raw key press. Returns nothing and emits at most one `Pressed` per
+    /// registered hotkey whose modifier set is exactly what is held.
+    fn on_raw_press(&mut self, keycode: Keycode) {
+        let is_modifier = self.modifier_keycodes.contains_key(&keycode);
+        let held_mask = self.held_mask_excluding(keycode);
+
+        if is_modifier && !self.held.contains(&keycode) {
+            self.held.push(keycode);
+        }
+
+        // Everything that is not a tracked modifier is discarded here, before
+        // anything is stored or reported.
+        //
+        // Note what this does NOT do: it does not mark the held chord as
+        // interrupted. `Ctrl+Alt` as a trigger still reports a press when the
+        // user is on their way to `Ctrl+Alt+T`, exactly as the grab path did.
+        // Suppressing that needs an interruption signal in the event type, which
+        // is the prerequisite for a *single* modifier being a usable trigger —
+        // see `docs/known-issues/cross-platform-shortcut-verification.md`.
+        if !is_modifier {
+            return;
+        }
+
+        if let Some(entry) = self.hotkeys.get_mut(&keycode) {
+            for state in entry {
+                if state.mods == held_mask && !state.pressed {
+                    GlobalHotKeyEvent::send(GlobalHotKeyEvent {
+                        id: state.id,
+                        state: crate::HotKeyState::Pressed,
+                    });
+                    state.pressed = true;
+                }
+            }
+        }
+    }
+
+    fn on_raw_release(&mut self, keycode: Keycode) {
+        if self.modifier_keycodes.contains_key(&keycode) {
+            self.held.retain(|held| *held != keycode);
+        } else {
+            return;
+        }
+
+        if let Some(entry) = self.hotkeys.get_mut(&keycode) {
+            for state in entry {
+                if state.pressed {
+                    GlobalHotKeyEvent::send(GlobalHotKeyEvent {
+                        id: state.id,
+                        state: crate::HotKeyState::Released,
+                    });
+                    state.pressed = false;
+                }
+            }
+        }
+    }
 }
 
 fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
@@ -249,6 +472,9 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
     .map_err(|err| format!("xkb_per_client_flags request to x11 server has failed: {err}"))?;
 
     let root = conn.setup().roots[screen].root;
+
+    let mut observer = Observer::new();
+    observer.init(&conn, root);
 
     // X11 sends masks for Lock keys as well, and we only care about the 4 below
     let full_mask = KeyButMask::CONTROL | KeyButMask::SHIFT | KeyButMask::MOD4 | KeyButMask::MOD1;
@@ -289,6 +515,12 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
                         }
                     }
                 }
+                Event::XinputRawKeyPress(event) => {
+                    observer.on_raw_press(event.detail as Keycode);
+                }
+                Event::XinputRawKeyRelease(event) => {
+                    observer.on_raw_release(event.detail as Keycode);
+                }
                 _ => {}
             }
         }
@@ -296,22 +528,38 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
         if let Ok(msg) = thread_rx.try_recv() {
             match msg {
                 ThreadMessage::RegisterHotKey(hotkey, tx) => {
-                    let _ = tx.send(register_hotkey(&conn, root, &mut hotkeys, hotkey));
+                    let _ = tx.send(register_hotkey(
+                        &conn,
+                        root,
+                        &mut hotkeys,
+                        &mut observer,
+                        hotkey,
+                    ));
                 }
                 ThreadMessage::RegisterHotKeys(keys, tx) => {
                     for hotkey in keys {
-                        if let Err(e) = register_hotkey(&conn, root, &mut hotkeys, hotkey) {
+                        if let Err(e) =
+                            register_hotkey(&conn, root, &mut hotkeys, &mut observer, hotkey)
+                        {
                             let _ = tx.send(Err(e));
                         }
                     }
                     let _ = tx.send(Ok(()));
                 }
                 ThreadMessage::UnRegisterHotKey(hotkey, tx) => {
-                    let _ = tx.send(unregister_hotkey(&conn, root, &mut hotkeys, hotkey));
+                    let _ = tx.send(unregister_hotkey(
+                        &conn,
+                        root,
+                        &mut hotkeys,
+                        &mut observer,
+                        hotkey,
+                    ));
                 }
                 ThreadMessage::UnRegisterHotKeys(keys, tx) => {
                     for hotkey in keys {
-                        if let Err(e) = unregister_hotkey(&conn, root, &mut hotkeys, hotkey) {
+                        if let Err(e) =
+                            unregister_hotkey(&conn, root, &mut hotkeys, &mut observer, hotkey)
+                        {
                             let _ = tx.send(Err(e));
                         }
                     }

@@ -13,9 +13,14 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
 /// Modifier tokens in canonical order. `Super` covers Win / Cmd / Meta.
 pub const MODIFIER_TOKENS: [&str; 4] = ["Ctrl", "Alt", "Shift", "Super"];
 
-/// How many modifiers a modifier-only shortcut needs (T3). One is rejected
-/// because registering a single part with an empty modifier set is exactly the
-/// bare-modifier grab this contract forbids (D2).
+/// How many modifiers a modifier-only shortcut needs (T3).
+///
+/// Originally two, because a single part expanded to a grab with no modifier at
+/// all — the desktop-wide bare-modifier grab of D2. Since modifier-only
+/// shortcuts are observed rather than grabbed (ADR 0009) that is no longer the
+/// reason. It stays two because the lane cannot distinguish a deliberate tap of
+/// a modifier from the same modifier pressed while typing; see
+/// `build_modifier_only` for the full reasoning and what would lift it.
 pub const MODIFIER_ONLY_MINIMUM: usize = 2;
 
 /// Canonical key tokens grouped by class. The names are the browser
@@ -96,8 +101,9 @@ pub const SYSTEM_TOKENS: [&str; 3] = ["PrintScreen", "ScrollLock", "Pause"];
 #[derive(Debug, Clone, Copy)]
 pub struct Policy {
     /// Whether a shortcut made only of modifiers may be used at all. Even when
-    /// true, a *single* bare modifier stays rejected (it would grab that
-    /// modifier desktop-wide).
+    /// true, a *single* bare modifier stays rejected — not because of the grab
+    /// any more (ADR 0009), but because one modifier cannot be told apart from
+    /// ordinary typing.
     pub allow_modifier_only: bool,
 }
 
@@ -105,6 +111,42 @@ impl Default for Policy {
     fn default() -> Self {
         Self {
             allow_modifier_only: true,
+        }
+    }
+}
+
+/// How the OS delivers a registered shortcut, which decides whether the key is
+/// still available to the rest of the desktop (ADR 0009).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Delivery {
+    /// A passive grab. The key is delivered to WordScript instead of the focused
+    /// window, so the combination is taken from every other application. Correct
+    /// for a shortcut with a real key: `Ctrl+F9` should not also type into the
+    /// editor underneath.
+    Grab,
+    /// A non-consuming observation of the raw key stream. The keystroke still
+    /// reaches the focused window. Used for modifier-only shortcuts, where a grab
+    /// would stop the modifier from doing its ordinary job.
+    Observe,
+}
+
+impl Delivery {
+    /// Derived from the shortcut itself, not from configuration: a modifier as
+    /// the main key is observed, anything else is grabbed. The platform layer
+    /// applies the same rule, so the two cannot disagree.
+    fn for_shortcut(modifier_only: bool) -> Self {
+        if modifier_only {
+            Self::Observe
+        } else {
+            Self::Grab
+        }
+    }
+
+    pub fn as_token(self) -> &'static str {
+        match self {
+            Self::Grab => "grab",
+            Self::Observe => "observe",
         }
     }
 }
@@ -123,6 +165,9 @@ pub struct ParsedShortcut {
     /// on key release rather than press, which the trigger state machine has to
     /// know about.
     pub modifier_only: bool,
+    /// Whether the OS delivers this shortcut by grabbing the key or by observing
+    /// it. Decides whether the key stays available to other applications.
+    pub delivery: Delivery,
     /// Non-blocking caveat the UI must show, e.g. a bare function key that is
     /// grabbed globally.
     pub warning: Option<String>,
@@ -238,6 +283,7 @@ fn build_with_key(
         canonical,
         shortcuts: vec![shortcut],
         modifier_only: false,
+        delivery: Delivery::for_shortcut(false),
         warning,
     })
 }
@@ -250,29 +296,31 @@ fn build_modifier_only(
         return Err("This shortcut must include a non-modifier key.".to_string());
     }
 
-    // The reason is the grab mechanism, not the activation mode. It is worth
-    // stating in full, because "one key is enough in double tap mode" is the
-    // obvious and reasonable objection to this rule — and it is about *when*
-    // WordScript acts, while this rule is about whether the key still reaches
-    // anyone else. A grabbed shortcut is delivered to the grab owner instead of
-    // the focused window, so a grab on a bare Shift stops Shift from typing
-    // capitals anywhere on the desktop, in every activation mode.
+    // Since modifier-only shortcuts are observed rather than grabbed (ADR 0009),
+    // the old reason for this rule — a bare grab would take the key from the
+    // desktop — no longer applies. What remains is a different problem, and it is
+    // the honest one to state: the trigger lane cannot tell a deliberate tap of a
+    // modifier from the same modifier pressed while typing. Two of those inside
+    // the double-tap window is ordinary text entry ("Hello World" presses Shift
+    // twice), so a single modifier would fire during normal use. Distinguishing
+    // them needs an interruption signal — "was another key pressed in between" —
+    // which the event type does not carry yet.
     if modifiers.len() < MODIFIER_ONLY_MINIMUM {
         return Err(format!(
-            "A single {modifier} cannot be used on its own. The shortcut is registered as an \
-             OS-level grab, which delivers the key to WordScript instead of the focused window — \
-             so {modifier} would stop working everywhere else. Double tap and hold change when \
-             WordScript acts, not whether the key is taken away, so they cannot lift this. Use at \
-             least two modifiers, or add a key.",
+            "A single {modifier} cannot be a trigger. Modifier-only shortcuts are observed rather \
+             than grabbed, so {modifier} keeps working normally — but nothing separates a \
+             deliberate tap from the {modifier} you press while typing, and two of those inside \
+             the double-tap window is ordinary text entry. Two modifiers make the combination \
+             rare enough to read as deliberate. Use at least two modifiers, or add a key.",
             modifier = modifiers.first().copied().unwrap_or("modifier")
         ));
     }
 
     // Each part is registered once as the main key, with the remaining parts as
     // modifiers, so the combination fires whichever modifier is pressed last.
-    // Registering a part with an EMPTY modifier set is exactly the bare-modifier
-    // grab this contract forbids, which is why fewer than two parts is rejected
-    // above.
+    // Every one of these has a modifier as its main key, so the platform layer
+    // observes them instead of grabbing them (ADR 0009) — which is what keeps the
+    // combination available to the rest of the desktop.
     let mut shortcuts = Vec::with_capacity(modifiers.len());
     for (index, main) in modifiers.iter().enumerate() {
         let rest = modifiers
@@ -294,6 +342,7 @@ fn build_modifier_only(
         display: display_string(modifiers, None),
         shortcuts,
         modifier_only: true,
+        delivery: Delivery::for_shortcut(true),
         warning: None,
     })
 }
@@ -538,6 +587,10 @@ pub struct ShortcutValidation {
     /// acts on key release and, in tap mode, on every single press — which is
     /// what makes double-tap activation worth offering for it.
     pub modifier_only: bool,
+    /// How the OS would deliver this shortcut: `grab` takes the key from every
+    /// other application, `observe` leaves it available (ADR 0009). The UI states
+    /// this instead of leaving the consequence invisible.
+    pub delivery: Option<&'static str>,
     pub reason: Option<String>,
     pub warning: Option<String>,
 }
@@ -569,6 +622,7 @@ pub fn validate_shortcut(request: ValidateShortcutRequest) -> ShortcutValidation
             canonical: String::new(),
             display: String::new(),
             modifier_only: false,
+            delivery: None,
             reason: None,
             warning: None,
         },
@@ -578,6 +632,7 @@ pub fn validate_shortcut(request: ValidateShortcutRequest) -> ShortcutValidation
             canonical: parsed.canonical,
             display: parsed.display,
             modifier_only: parsed.modifier_only,
+            delivery: Some(parsed.delivery.as_token()),
             reason: None,
             warning: parsed.warning,
         },
@@ -587,6 +642,7 @@ pub fn validate_shortcut(request: ValidateShortcutRequest) -> ShortcutValidation
             canonical: String::new(),
             display: String::new(),
             modifier_only: false,
+            delivery: None,
             reason: Some(reason),
             warning: None,
         },
@@ -1001,8 +1057,12 @@ pub fn capability_matrix(
                 "Modifier-only",
                 CapabilityState::Available,
                 Some(format!(
-                    "Allowed from {} modifiers upward. A single bare modifier is rejected, so no \
-                     grab can ever be created without a modifier.",
+                    "Allowed from {} modifiers upward, and observed rather than grabbed — the \
+                     combination stays available to other applications, so a trigger like \
+                     Ctrl+Super does not stop Ctrl+Super+other-key from working elsewhere. A \
+                     single bare modifier is still rejected: it would fire on ordinary typing, \
+                     because nothing distinguishes a deliberate tap from the Shift you press to \
+                     type a capital.",
                     MODIFIER_ONLY_MINIMUM
                 )),
             ),
@@ -1364,14 +1424,48 @@ mod tests {
         // a desktop-wide grab on Ctrl.
         let error = parse("ctrl_l", Policy::default()).unwrap_err();
         assert!(error.contains("single"), "unexpected reason: {error}");
-        // The reason must name the grab mechanism and must pre-empt the
-        // activation-mode objection: double tap changes when we act, not whether
-        // the key is taken from everyone else.
-        assert!(error.contains("grab"), "unexpected reason: {error}");
+        // The reason must be the current one. Modifier-only is observed now, so
+        // "it would be grabbed from the desktop" is no longer true; what remains
+        // is that a lone modifier cannot be told apart from ordinary typing.
         assert!(
-            error.contains("Double tap and hold"),
-            "the reason must state that the activation mode cannot lift this: {error}"
+            error.contains("while typing"),
+            "the reason must name the real remaining problem: {error}"
         );
+        assert!(
+            !error.contains("would stop working everywhere"),
+            "stale grab-based reason: {error}"
+        );
+    }
+
+    #[test]
+    fn modifier_only_is_observed_and_a_real_key_is_grabbed() {
+        // ADR 0009: the delivery mechanism follows from the shortcut itself, and
+        // it is what decides whether the key stays available to other
+        // applications.
+        assert_eq!(valid("ctrl_l+win").delivery, Delivery::Observe);
+        assert_eq!(valid("ctrl_l+alt_l").delivery, Delivery::Observe);
+        assert_eq!(valid("ctrl_l+f9").delivery, Delivery::Grab);
+        assert_eq!(valid("F1").delivery, Delivery::Grab);
+        assert_eq!(Delivery::Observe.as_token(), "observe");
+        assert_eq!(Delivery::Grab.as_token(), "grab");
+    }
+
+    #[test]
+    fn the_default_capture_triggers_are_observed_not_grabbed() {
+        // The complaint that started the rebuild was shortcuts swallowing keys
+        // other applications need. Both modifier-only defaults are observed, so
+        // they no longer do.
+        for default in [
+            super::super::config::default_hotkey(),
+            super::super::config::default_abort_hotkey(),
+        ] {
+            let parsed = valid(default);
+            assert_eq!(
+                parsed.delivery,
+                Delivery::Observe,
+                "'{default}' must not take its keys from the desktop"
+            );
+        }
     }
 
     #[test]
