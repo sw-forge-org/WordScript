@@ -1,121 +1,184 @@
-# WordScript — Reference
+# WordScript -- Reference
 
-Stand: 2026-06-20
+Status: 2026-07-25
 
-## Zweck
+> The consolidated spec lives at `docs/spec/SPEC.md`; this file bundles
+> project-wide constants that do not belong in a single architecture, status
+> or platform file: brand/product context, provider/runtime limits, mode
+> semantics, external API limits and later sync planning.
 
-Dieses Dokument buendelt projektweite Konstanten, die nicht in eine einzelne Architektur-, Status- oder Plattform-Datei gehoeren: Marken- und Produktkontext, Provider- und Runtime-Grenzen, Modus-Semantik, externe API-Limits und spaetere Sync-Planung.
+## License
 
-Wenn README, Vision oder Architektur eine aktuelle Produktaussage brauchen, soll sie von hier aus belegbar sein.
+- AGPL-3.0 (since 2026-06-17, see ADR `docs/decisions/0004-agpl-3-0-lizenz.md`)
+- Contributions: see `CONTRIBUTING.md`; security reports: see `SECURITY.md`
 
-## Lizenz
+## Overlay constants (Linux)
 
-- AGPL-3.0 (seit 2026-06-17)
+- Fixed window sizes: 440x60 (flat) / 460x164 (edit)
+- `resizable: true` in `tauri.conf.json` (GTK ignored `set_size` with
+  `resizable: false`)
+- XWayland default: `GDK_BACKEND=x11`, native-Wayland opt-in:
+  `WORDSCRIPT_NATIVE_WAYLAND=1`
+- KDE Plasma 6 always-on-top: `packaging/kwin-wordscript-overlay/`
+- CSS variables: `--ov-shadow: none`, `--ov-shadow-recording: none` in
+  `overlay-pill.css`
+- `pointer-events: auto` on `.ov-scope` (not `none` on overlay-roots)
 
-## Overlay-Konstanten (Linux)
+## Project context
 
-- Fixe Fenstergroessen: 440×60 (flat) / 460×164 (edit)
-- `resizable: true` in `tauri.conf.json` (GTK ignorierte `set_size` bei `resizable: false`)
-- XWayland-Default: `GDK_BACKEND=x11`, opt-in nativ Wayland: `WORDSCRIPT_NATIVE_WAYLAND=1`
-- KDE Plasma 6 Always-on-Top: `packaging/kwin-wordscript-overlay/`
-- CSS-Variablen: `--ov-shadow: none`, `--ov-shadow-recording: none` in `overlay-pill.css`
-- `pointer-events: auto` auf `.ov-scope` (nicht `none` auf overlay-roots)
+- SW forge: open-source brand of SW labs
+- WordScript: the active desktop dictation path within SW forge
+- Product goal: a genuine, serious alternative to paid AI voice-dictation
+  apps
 
-## Projektkontext
+## Provider and runtime limits
 
-- SW bench: Open-Source-brand von SW labs
-- WordScript: der aktive Desktop-Diktierpfad innerhalb von SW bench
-- Produktziel: eine offene, ernstzunehmende Alternative zu bezahlten AI-Voice-Dictation-Angeboten
+### Provider lanes today
 
-## Provider- und Runtime-Grenzen
+- `groq` is the cloud-first production path.
+- `local_preview` is the internal compatibility id for the local runtime
+  lane with `whisper-cli` for STT and Ollama for cleanup.
+- The user stores their own Groq API key locally in the OS secret store.
+- The JSON config is scrubbed on save; old JSON Groq secrets are migrated
+  natively into the secret store.
+- `ProviderStatus` carries typed modes (`fast`, `quality`, `local`, later
+  `self_hosted`) and capabilities for Transcription, Chat-Cleanup, Local,
+  API-Key-Required, Prompt-Bias, Language, Segments and model management.
+- `ProviderCommandError` carries text plus `kind`, HTTP status, Retry-After,
+  `retryable` and a `user_action`; settings and runtime events must relay
+  this semantics, not build their own error categories.
+- There is no WordScript proxy or hosted mode.
 
-### Provider-Lanes heute
+### Mode semantics today
 
-- `groq` ist der cloud-first Produktionspfad
-- `local_preview` ist die interne Kompatibilitaets-ID fuer die lokale Runtime-Lane mit `whisper-cli` fuer STT und Ollama fuer Cleanup
-- der Nutzer speichert den eigenen Groq-API-Key lokal im OS secret store
-- die JSON-Konfiguration wird beim Speichern gescrubbt und alte JSON-Groq-Secrets werden nativ in den Secret Store migriert
-- Provider-Status enthaelt typisierte Modi (`fast`, `quality`, `local`, spaeter `self_hosted`) und Capabilities fuer Transcription, Chat-Cleanup, Local, API-Key-Pflicht, Prompt-Bias, Language, Segments und Modellmanagement
-- Provider-Fehler enthalten neben Text auch `kind`, HTTP-Status, Retry-After, `retryable` und eine `user_action`; Settings und Runtime-Events sollen diese Semantik weiterreichen statt eigene Fehlerkategorien zu bauen
-- ein WordScript-Proxy oder Hosted Mode existiert nicht
+- `fast` and `quality` describe quality/latency presets within the same
+  provider lane.
+- `local` means a local or on-device runtime path without a WordScript
+  backend; at WordScript this is currently the `local_preview` lane with a
+  local runner, local model path and local cleanup endpoint.
+- `self_hosted` is not an active product lane yet; the term stays reserved
+  for later user-run remote or LAN services that would not be WordScript's
+  own hosted mode.
+- these terms must not be conflated in UI and docs while the second
+  production lane and the guided setup path are still missing.
 
-### Modus-Semantik heute
+### Processing modes (processing contract)
 
-- `fast` und `quality` beschreiben heute Qualitaets-/Latenz-Presets innerhalb derselben Provider-Lane
-- `local` bedeutet einen lokalen oder on-device Laufzeitpfad ohne WordScript-Backend; bei WordScript ist das aktuell die `local_preview`-Lane mit lokalem Runner, lokalem Modellpfad und lokalem Cleanup-Endpoint
-- `self_hosted` ist noch keine aktive Produktlane; der Begriff bleibt fuer spaetere nutzerbetriebene Remote- oder LAN-Dienste reserviert, die nicht WordScripts eigener Hosted Mode waeren
-- diese Begriffe duerfen in UI und Doku nicht zusammengeschoben werden, solange die zweite Produktionslane und der gefuehrte Setup-Pfad noch fehlen
+These modes are **orthogonal** to the provider modes above and describe what
+happens to the dictated text:
 
-### Processing-Modi (Verarbeitungsvertrag)
+- `auto`: meta-mode; per transcription an LLM-based routing picks among
+  cleanup, prompt enhance and agent (from transcript text, agent name and
+  optional workspace context).
+- `cleanup`: standard correction over the active provider; the default for
+  most dictations.
+- `rewrite`: polishing style with stronger reformulation; corresponds to the
+  legacy option `polished`; only manually selectable (not auto-detected).
+- `agent`: dictation is interpreted as a command to the agent; intent
+  classification confirms before execution.
+- `prompt_enhance`: dictation is understood as a prompt, structured or
+  expanded via `prompt_enhance` and given to the provider with a `PromptTarget`.
+- `verbatim`: raw text without cleanup, with a `clipboard_only` preview
+  before commit.
 
-Diese Modi sind **orthogonal** zu den Provider-Modi oben und beschreiben, was mit dem diktierten Text passiert:
+The effective mode is resolved per session by
+`mode_router::resolve_processing_mode`:
+1. manual override (mode picker / mode cycle / per-mode hotkey)
+2. active `TextProfile.work_mode.processing_mode`
+3. legacy global `AppConfig.processing_mode` only when the active profile
+   cannot be resolved; its default is `auto`
 
-- `auto`: Meta-Modus; pro Transkription entscheidet ein LLM-basiertes Routing zwischen Cleanup, Prompt Enhance und Agent (basierend auf Transkript-Text, Agent-Name und optionalem Workspace-Kontext)
-- `cleanup`: Standard-Korrektur ueber den aktiven Provider; Standard fuer die meisten Diktate
-- `rewrite`: polishing-Stil mit staerkerer Umformulierung; verhaelt sich zur Legacy-Option `polished`; nur manuell waehlbar (nicht auto-detektiert)
-- `agent`: Diktat wird als Befehl an den Agenten interpretiert; Intent-Klassifizierung bestaetigt vor Ausfuehrung
-- `prompt_enhance`: Diktat wird als Prompt verstanden, ueber `prompt_enhance` strukturiert oder expandiert und mit `PromptTarget` an den Provider gegeben
-- `verbatim`: Rohtext ohne Cleanup, mit `clipboard_only`-Preview vor Commit
+When the effective mode is `auto`, `mode_router::resolve_auto_mode` resolves
+a concrete mode per transcription once the transcript text is available.
+Signals: agent name + imperative verb -> `agent`; imperative + IDE workspace
+context -> `prompt_enhance`; otherwise -> `cleanup`.
 
-Der effektive Modus wird pro Session durch `mode_router::resolve_processing_mode` aufgeloest:
-1. manueller Override (Mode-Picker / Mode-Cycle / per-Mode-Hotkey)
-2. aktiver Profil-Work-Mode (`processing_mode` aus `AppConfig`)
-3. Fallback: `auto`
+The workspace context is only a probability signal, not a deterministic
+mapping (`workspace_app_map` was removed).
 
-Wenn der effektive Modus `auto` ist, wird er pro Transkription durch `mode_router::resolve_auto_mode` in einen konkreten Modus aufgeloest, sobald der Transkript-Text verfuegbar ist. Signale:
-- Agent-Name + imperativer Verb → `agent`
-- Imperativ + IDE-Workspace-Kontext → `prompt_enhance`
-- sonst → `cleanup`
+### Local runtime prerequisites
 
-Der Workspace-Kontext ist nur ein Wahrscheinlichkeitssignal, kein deterministisches Mapping (`workspace_app_map` wurde entfernt).
+- `whisper-cli` in `PATH` or `WORDSCRIPT_LOCAL_WHISPER_CLI`
+- `WORDSCRIPT_LOCAL_MODEL_PATH` for a ggml file or `WORDSCRIPT_LOCAL_MODEL_DIR`
+  for `ggml-<model>.bin` and common variants like quantized or `.en` files
+- Ollama locally at `http://127.0.0.1:11434` or `WORDSCRIPT_LOCAL_CHAT_BASE_URL`
+- a local cleanup model selected via `local_correction_model` or
+  `WORDSCRIPT_LOCAL_CHAT_MODEL`
+- Provider & Models shows these prerequisites as a native preflight
+  checklist, not just as env text; the checklist reads `local_setup`, not
+  its own UI heuristics.
+- the lane is no longer STT-only; AI cleanup runs locally over the separate
+  cleanup model and only falls back to the raw local transcript when the
+  cleanup model is unavailable or a guardrail rejects.
 
-### Lokale Runtime-Voraussetzungen
+### Audio and upload relevance
 
-- `whisper-cli` in `PATH` oder `WORDSCRIPT_LOCAL_WHISPER_CLI`
-- `WORDSCRIPT_LOCAL_MODEL_PATH` fuer eine ggml-Datei oder `WORDSCRIPT_LOCAL_MODEL_DIR` fuer `ggml-<model>.bin` sowie gaengige Varianten wie quantisierte oder `.en`-Dateien
-- Ollama lokal unter `http://127.0.0.1:11434` oder `WORDSCRIPT_LOCAL_CHAT_BASE_URL`
-- ein installiertes lokales Cleanup-Modell, ausgewaehlt ueber `local_correction_model` oder `WORDSCRIPT_LOCAL_CHAT_MODEL`
-- Provider & Models zeigt diese Voraussetzungen jetzt als native Preflight-Checkliste statt nur als Env-Text; die Checkliste liest `local_setup` und nicht eigene UI-Heuristiken
-- die Lane ist nicht mehr STT-only; AI cleanup laeuft lokal ueber das separate Cleanup-Modell und faellt nur bei Nichtverfuegbarkeit oder Guardrail-Rejects auf das rohe lokale Transkript zurueck
+- Capture files are normalized to 16 kHz mono WAV for Groq.
+- The runtime path uses a short interactive timeout of `18_000` to `35_000`
+  milliseconds.
+- The active transcription request has exactly one retry (`max_retries = 1`,
+  since pipeline hardening 2026-07-03; only for retryable status
+  429/5xx/Timeout/Network, respects `Retry-After`).
+- Async provider, transform and insert results are bound to the active
+  `processing` session id; stale results after abort, a new capture or an
+  already-finalized session are discarded and only noted in the runtime log.
 
-### Audio- und Upload-Relevanz
+Relevant external Groq limit for the product path:
 
-- Capture-Dateien werden fuer Groq auf 16 kHz Mono-WAV normalisiert
-- der Runtime-Pfad nutzt ein kurzes interaktives Timeout von `18_000` bis `35_000` Millisekunden
-- die aktive Transkriptionsanfrage hat genau einen Retry (`max_retries = 1`, seit Pipeline-Hardening 2026-07-03; nur fuer retryable Status 429/5xx/Timeout/Network, respektiert `Retry-After`)
-- async Provider-, Transform- und Insert-Ergebnisse werden an die aktive `processing`-Session-ID gebunden; stale Ergebnisse nach Abort, neuer Aufnahme oder bereits finalisierter Session werden verworfen und nur im Runtime-Log notiert
+- `413 request_too_large` relates to upload size, not only duration.
+- Documented reference values from the current integration: Free `25 MiB`,
+  Dev `100 MiB` per upload.
 
-Relevante externe Groq-Grenze fuer den Produktpfad:
+These values are only part of the product reference insofar as they affect
+the active desktop flow.
 
-- `413 request_too_large` bezieht sich auf Upload-Groesse, nicht nur auf Dauer
-- dokumentierte Richtwerte aus der aktuellen Integration: Free `25 MiB`, Dev `100 MiB` pro Upload
+## Planning state for later sync topics
 
-Diese Werte sind nur insofern Teil der Produktreferenz, wie sie den aktiven Desktop-Flow beeinflussen.
+These points describe no active function, only the current direction for
+later expansion:
 
-## Planungsstand fuer spaetere Sync-Themen
+- WordScript stays local-first; an account would be additive, not a
+  prerequisite for the product core.
+- if sync comes later it is a WordScript-owned service for WordScript data,
+  not a mandatory dependency on an external product hub.
+- the primary expansion path is not a peer-to-peer or client-to-client
+  primary model.
+- early sync candidates are profiles, dictionary, snippets, selected
+  settings and later optionally history or workspaces.
+- provider credentials like the Groq API key stay local in the OS secret
+  store and are not an implicit sync part.
 
-Diese Punkte beschreiben keine aktive Funktion, sondern die aktuelle Zielrichtung fuer spaeteren Ausbau:
+## Documentation set
 
-- WordScript bleibt local-first; ein Konto waere additiv und nicht Voraussetzung fuer den Produktkern
-- wenn spaeter Sync kommt, dann als WordScript-eigener Dienst fuer WordScript-Daten statt als Pflicht-Abhaengigkeit von einem externen Produkt-Hub
-- der primaere Ausbaupfad ist kein Peer-to-Peer- oder Client-to-Client-Primarmodell
-- fruehe Sync-Kandidaten sind Profile, Dictionary, Snippets, ausgewaehlte Settings und spaeter optional Verlauf oder Workspaces
-- Provider-Credentials wie der Groq-API-Key bleiben lokal im OS secret store und sind kein impliziter Sync-Bestandteil
+The intentionally small documentation set is:
 
-## Verbleibender Dokumentensatz
+- `README.md` for project overview
+- `AGENTS.md` (canonical agent instruction; `CLAUDE.md` is a symlink to it)
+- `CONTRIBUTING.md` for the contribution workflow
+- `SECURITY.md` for security reports and secret handling
+- `CHANGELOG.md` for published changes
+- `docs/spec/SPEC.md` for the consolidated spec (Layer 1)
+- `docs/VISION.md` for product goal and V1/V2 scope
+- `docs/ARCHITECTURE.md` for system truth and ownership
+- `docs/DEVELOPMENT.md` for working mode and validation
+- `docs/DESIGN_SYSTEM.md` for UI rules
+- `docs/STATUS.md` for current product state, implemented core features,
+  insertion/recovery model, open gaps, release status
+- `docs/PLATFORMS.md` for the platform support matrix and
+  insert/recovery diagnostics
+- `docs/REFERENCE.md` for project-wide constants, provider/runtime limits,
+  mode semantics (this file)
+- `docs/ROADMAP.md` for the V1 consolidation phases
+- `docs/RELEASE_RUNBOOK.md` for the current release build-up path
+- `docs/UI_UX_OVERHAUL_PLAN.md` for the UI overhaul plan
+- `docs/decisions/` for Architecture Decision Records (append-only)
+- `docs/known-issues/` for living bug documentation (open and resolved)
+- `docs/handoffs/` for completed implementation specs and historical
+  hand-offs
+- `docs/donors/` for frozen donor references and slice planning
+- `docs/templates/` for reference templates (SPEC, VISION, DATA-MODEL,
+  DESIGN-SYSTEM)
+- `staging/` for the consolidation staging area of unstructured material
+- `.agents/`, `.claude/`, `.githooks/`, `.github/` for meta structure
 
-Das absichtlich kleine Doku-Set ist:
-
-- `README.md` fuer Projektueberblick
-- `docs/VISION.md` fuer Produktziel und V1/V2-Einordnung
-- `docs/ARCHITECTURE.md` fuer Systemwahrheit und Ownership
-- `docs/DEVELOPMENT.md` fuer Arbeitsmodus und Validation
-- `docs/DESIGN_SYSTEM.md` fuer UI-Regeln
-- `docs/STATUS.md` fuer aktuellen Produktstand, implementierte Kernfunktionen, Insertion-/Recovery-Modell, offene Luecken, Release-Status
-- `docs/PLATFORMS.md` fuer plattformspezifische Support-Matrix und Insert-/Recovery-Diagnostik
-- `docs/REFERENCE.md` fuer projektweite Konstanten, Provider-/Runtime-Grenzen, Modus-Semantik
-- `docs/RELEASE_RUNBOOK.md` fuer den aktuellen Release-Aufbaupfad
-- `docs/handoffs/` fuer abgeschlossene Implementation-Specs und historische Hand-Offs
-- `docs/donors/` fuer eingefrorene Donor-Referenzen und Slice-Planung
-
-Weitere Dateien brauchen einen engeren Zweck als diese elf Einstiegspunkte.
+Any further file needs a narrower purpose than these entry points.

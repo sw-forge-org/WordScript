@@ -1,0 +1,20 @@
+#!/bin/sh
+# Layer 4 enforcement for "never commit secrets" (shared AGENTS.md, Security).
+# This is tool-agnostic and runs regardless of which agent or person commits.
+# Commit-time scanning prevents leaks without blocking legitimate local reads.
+#
+# Enable once per checkout:
+#   git config core.hooksPath .githooks
+#   chmod +x .githooks/pre-commit
+#
+# Legacy build metadata is not part of the active Tauri/Rust repository and is
+# removed before every commit instead of being regenerated.
+
+rm -f BUILD_ID build_info.json
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact -v
+else
+  echo "gitleaks is not installed -- skipping the secret scan."
+  echo "Installation: https://github.com/gitleaks/gitleaks"
+fi

@@ -3,8 +3,8 @@ name = "wordscript"
 version = "0.2.2-alpha"
 description = "WordScript — lightweight speech-to-text desktop utility"
 authors = []
-license = "MIT"
-repository = "https://github.com/SW-Bench/WordScript"
+license = "AGPL-3.0-only"
+repository = "https://github.com/sw-forge-org/WordScript"
 edition = "2021"
 
 [lib]

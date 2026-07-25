@@ -39,14 +39,14 @@ else
     sudo apt-get update -qq
     sudo apt-get install -y --no-install-recommends \
       libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev \
-      librsvg2-dev libxdo-dev build-essential curl wget file
+      librsvg2-dev libxdo-dev libasound2-dev build-essential curl wget file
   elif command -v dnf &>/dev/null; then
     sudo dnf install -y webkit2gtk4.1-devel openssl-devel gtk3-devel \
       libappindicator-gtk3-devel librsvg2-devel libxdo-devel \
-      gcc curl wget file
+      alsa-lib-devel gcc curl wget file
   elif command -v pacman &>/dev/null; then
     sudo pacman -Syu --noconfirm webkit2gtk-4.1 openssl gtk3 \
-      libappindicator-gtk3 librsvg xdotool base-devel curl wget
+      libappindicator-gtk3 librsvg xdotool alsa-lib base-devel curl wget
   else
     echo -e "${YELLOW}      Unknown package manager — install Tauri Linux deps manually:${NC}"
     echo -e "${GRAY}      https://tauri.app/start/prerequisites/#linux${NC}"
@@ -66,14 +66,14 @@ fi
 # ── 4. Node.js check ──────────────────────────────────────────────────────────
 if command -v node &>/dev/null; then
   NODE_VER=$(node -e "process.stdout.write(process.versions.node)")
-  NODE_MAJOR="${NODE_VER%%.*}"
-  if [[ "$NODE_MAJOR" -lt 18 ]]; then
-    echo -e "${RED}[4/6] Node.js $NODE_VER found but 18+ is required. Please upgrade.${NC}"
+  NODE_SUPPORTED=$(node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.stdout.write(String((major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major > 22))")
+  if [[ "$NODE_SUPPORTED" != "true" ]]; then
+    echo -e "${RED}[4/6] Node.js $NODE_VER found but Node 20.x (20.19+) or >=22.12 is required. Please upgrade.${NC}"
     exit 1
   fi
   echo -e "${GREEN}[4/6] Node.js $NODE_VER already installed.${NC}"
 else
-  echo -e "${RED}[4/6] Node.js not found. Install v18+ from https://nodejs.org then re-run.${NC}"
+  echo -e "${RED}[4/6] Node.js not found. Install Node 20.x (20.19+) or >=22.12 from https://nodejs.org then re-run.${NC}"
   exit 1
 fi
 

@@ -1,109 +1,147 @@
-# WordScript — Platforms
+# WordScript -- Platforms
 
-Stand: 2026-07-18
+Status: 2026-07-25
 
-Plattform-Supportmatrix und plattformspezifische Insert- und Recovery-Diagnostik. Quelle ist `core::insertion` (`NativeInsertionPlatformStatus`); diese Datei ist die menschenlesbare Spiegelung des nativen Vertrags.
+Platform support matrix and platform-specific insert/recovery diagnostics.
+Source is `core::insertion` (`NativeInsertionPlatformStatus`); this file is
+the human-readable mirror of the native contract.
 
-## Support- und Plattformmatrix
+## Support and platform matrix
 
-| Plattform | Status | Aktuelle Realitaet |
+| Platform | Status | Current reality |
 |---|---|---|
-| macOS | Tier 1 Zielpfad | nativer Hotkey-, Capture- und Insert-Pfad; Dev-Mode-Auto-Paste braucht Privacy-Freigaben |
-| Windows | Tier 1 Zielpfad | nativer Hotkey-, Capture- und Insert-Pfad; UAC-Grenzen gelten fuer simuliertes Paste |
-| Linux X11 | Preview | nutzbarer Produktpfad mit kleinerem Stabilitaetsversprechen |
-| Linux Wayland hybrid (X11+Wayland mit xdotool) | Preview-lite | `xdotool type` (Fake-Input ueber XWayland) direkt, sonst Clipboard + manuelles Paste |
-| Linux Wayland rein (kein X11-Display) | Experimental | Auto-Paste deaktiviert, Clipboard-only + manuelles Paste; verhindert Wayland-Portal-Prompt "Control input devices" |
-| KDE Plasma 6 (Wayland, mit xdg-desktop-portal-kde) | Preview-lite | einmaliger RemoteDesktop-Portal-Grant ueber den Session-Bus; danach direkter Auto-Paste ohne wiederholten Dialog. Always-on-Top fuer Overlay via KWin-Script (`packaging/kwin-wordscript-overlay/`) |
-| GNOME Mutter (Wayland) | Preview-lite | gleicher Pfad wie KDE Plasma 6 via `org.gnome.Shell` RemoteDesktop-Portal |
-| Hyprland / Sway / KDE Plasma 5 | Experimental | kein persistenter RemoteDesktop-Portal-Grant verfuegbar; Auto-Paste bleibt Clipboard-only |
+| macOS | Tier 1 target | native hotkey, capture and insert path; dev-mode auto-paste needs privacy grants |
+| Windows | Tier 1 target | native hotkey, capture and insert path; UAC limits apply to simulated paste |
+| Linux X11 | Preview | usable product path with a smaller stability promise |
+| Linux Wayland hybrid (X11+Wayland with xdotool) | Preview-lite | `xdotool type` (fake input over XWayland) directly, else clipboard + manual paste |
+| Linux Wayland pure (no X11 display) | Experimental | auto-paste disabled, clipboard-only + manual paste; avoids the Wayland portal prompt "Control input devices" |
+| KDE Plasma 6 (Wayland, with xdg-desktop-portal-kde) | Preview-lite | one-time RemoteDesktop portal grant over the session bus; then direct auto-paste without repeated dialog. Always-on-top for overlay via KWin script (`packaging/kwin-wordscript-overlay/`) |
+| GNOME Mutter (Wayland) | Preview-lite | same path as KDE Plasma 6 via the `org.gnome.Shell` RemoteDesktop portal |
+| Hyprland / Sway / KDE Plasma 5 | Experimental | no persistent RemoteDesktop portal grant available; auto-paste stays clipboard-only |
 
-## Plattformdiagnostik fuer Insert und Recovery
+## Platform diagnostics for insert and recovery
 
-Die native Plattformdiagnostik kommt aus `core::insertion` und wird sichtbar in der About-Flaeche ausgespielt. Sie besteht nicht nur aus einem Support-Tier, sondern aus:
+The native platform diagnostics come from `core::insertion` and are shown in
+the About area. They consist not only of a support tier but of: platform
+label, insert strategy, support message, visible prerequisites and visible
+honest limits.
 
-- Plattformlabel
-- Insert-Strategie
-- Support-Message
-- sichtbaren Voraussetzungen
-- sichtbaren ehrlichen Grenzen
+### macOS dev mode
 
-### macOS Dev-Mode
-
-- fuer direktes Cmd+V-Auto-Paste braucht der ausfuehrende Prozess Accessibility in `System Settings -> Privacy & Security -> Accessibility`
-- wenn macOS fuer synthetische Eingaben zusaetzlich `Input Monitoring` verlangt, muss dieselbe Launcher-App freigegeben werden
-- im Dev-Mode kann dieser Eintrag unter Terminal oder VS Code erscheinen statt unter einem paketierten WordScript-App-Namen
-- einzelne sandboxes, Remote-Desktop-Sitzungen oder Apps mit hoeheren Rechten koennen simuliertes Paste trotzdem ablehnen
+- direct Cmd+V auto-paste needs Accessibility in
+  `System Settings -> Privacy & Security -> Accessibility` for the launching
+  process.
+- if macOS additionally requires Input Monitoring for synthetic input, the
+  same launcher app must be granted.
+- in dev mode this entry can appear under Terminal or VS Code instead of a
+  packaged WordScript app name.
+- individual sandboxes, remote-desktop sessions or apps with higher
+  privileges can still reject simulated paste.
 
 ### Windows
 
-- der aktive Tier-1-Pfad nutzt simuliertes `Ctrl+V` oder Clipboard-Handoff
-- elevated Ziel-Apps koennen synthetisches Paste von einem nicht-elevated WordScript-Prozess blockieren
-- Scratchpad und Last-Transcript-Restore bleiben der offizielle Recovery-Pfad
+- the active Tier 1 path uses simulated `Ctrl+V` or clipboard handoff.
+- elevated target apps can block synthetic paste from a non-elevated
+  WordScript process.
+- scratchpad and last-transcript restore stay the official recovery path.
 
-### Linux Wayland — bewusste Default-Wahl
+### Linux Wayland -- deliberate default choice
 
-Auf reinen Wayland-Sessions (kein `DISPLAY`, nur `WAYLAND_DISPLAY`) ist die Paste-Driver-Chette leer. Begruendung: jeder Versuch, `wtype`, `ydotool` oder `enigo` fuer Input-Simulation zu starten, loest den KDE-Plasma-Portal-Dialog "Remote Control – Control input devices" aus. Diese bewusste Default-Wahl vermeidet den Portal-Dialog, schraenkt aber die Auto-Paste-Bequemlichkeit auf pure Wayland ein. Hybrid-Sessions (X11+Wayland mit xdotool) sind davon nicht betroffen.
+On pure Wayland sessions (no `DISPLAY`, only `WAYLAND_DISPLAY`) the paste
+driver chain is empty. Reason: any attempt to launch `wtype`, `ydotool` or
+`enigo` for input simulation triggers the KDE Plasma portal dialog "Remote
+Control -- Control input devices". This deliberate default avoids the portal
+dialog but limits auto-paste convenience to pure Wayland. Hybrid sessions
+(X11+Wayland with xdotool) are not affected.
 
-Overlay auf Linux: XWayland-Default (`GDK_BACKEND=x11`) mit `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in fuer nativ Wayland. Always-on-Top auf KDE Plasma 6 via KWin-Script (`packaging/kwin-wordscript-overlay/`), installiert mit `kpackagetool6 --type=KWin/Script -i packaging/kwin-wordscript-overlay && qdbus org.kde.KWin /KWin reconfigure`.
+Overlay on Linux: XWayland default (`GDK_BACKEND=x11`) with
+`WORDSCRIPT_NATIVE_WAYLAND=1` opt-in for native Wayland. Always-on-top on
+KDE Plasma 6 via KWin script (`packaging/kwin-wordscript-overlay/`),
+installed with
+`kpackagetool6 --type=KWin/Script -i packaging/kwin-wordscript-overlay && qdbus org.kde.KWin /KWin reconfigure`.
 
-### Linux Wayland — Portal-Diagnose zur Laufzeit
+### Linux Wayland -- runtime portal diagnosis
 
-Die native Insert-Logik klassifiziert stderr-Ausgaben von `xdotool`, `xdotool type`, `wtype`, `ydotool` und `enigo` anhand bekannter Portal-Signaturen. Erkennt der Klassifizierer einen KDE-Plasma- oder InputCapture-Portal-Prompt, wird der Insert-Lauf in den Clipboard-only-Modus geschaltet und der Status enthaelt:
+The native insert logic classifies stderr from `xdotool`, `xdotool type`,
+`wtype`, `ydotool` and `enigo` against known portal signatures. When the
+classifier detects a KDE Plasma or InputCapture portal prompt, the insert run
+is switched to clipboard-only mode and the status carries:
 
 - `last_portal_prompt.signal` (`kde_remote_desktop` | `input_capture` | `unknown`)
-- `last_portal_prompt.driver` (welcher Treiber den Trigger ausgeloest hat)
-- `last_portal_prompt.stderr_excerpt` (gekuerzte Originalmeldung, bis 280 Zeichen)
-- `paste_disabled_reason` (statisch abgeleitet aus Compositor + Portal-Status)
+- `last_portal_prompt.driver` (which driver triggered it)
+- `last_portal_prompt.stderr_excerpt` (short original message, up to 280 chars)
+- `paste_disabled_reason` (statically derived from compositor + portal status)
 
-Damit weiss die UI bei jedem Insert-Versuch, **warum** Auto-Paste nicht verfuegbar ist, und kann den naechsten konkreten Schritt anzeigen.
+This lets the UI show at every insert attempt **why** auto-paste is not
+available and the next concrete step.
 
-### Linux Wayland — RemoteDesktop-Portal auf KDE Plasma 6 / GNOME Mutter
+### Linux Wayland -- RemoteDesktop portal on KDE Plasma 6 / GNOME Mutter
 
-Auf Compositor mit stabiler RemoteDesktop-Portal-Schnittstelle (KDE Plasma 6 mit `xdg-desktop-portal-kde`, GNOME Mutter) versucht WordScript beim ersten `native_insertion_status`-Aufruf eine RemoteDesktop-Session ueber den Session-Bus anzufordern:
+On compositors with a stable RemoteDesktop portal interface (KDE Plasma 6
+with `xdg-desktop-portal-kde`, GNOME Mutter), WordScript requests a
+RemoteDesktop session over the session bus on the first
+`native_insertion_status` call:
 
-1. `org.freedesktop.portal.Desktop` / `org.freedesktop.portal.RemoteDesktop` `CreateSession`
-2. `SelectDevices` fuer Keyboard + Pointer (Gerateetypen `1` und `2`)
-3. `Start` ohne URI
+1. `org.freedesktop.portal.Desktop` / `org.freedesktop.portal.RemoteDesktop`
+   `CreateSession`
+2. `SelectDevices` for Keyboard + Pointer (device types `1` and `2`)
+3. `Start` without URI
 
-Das Restore-Token wird persistent unter `$XDG_RUNTIME_DIR/wordscript/remote-desktop.token` abgelegt (mode `0600`) und bei der naechsten Session wiederverwendet. Damit erscheint der Dialog "Control input devices" **nur einmal pro User** und nachfolgende Auto-Paste-Versuche laufen ohne weitere Rueckfrage.
+The restore token is persisted under `$XDG_RUNTIME_DIR/wordscript/remote-desktop.token`
+(mode `0600`) and reused for the next session. The "Control input devices"
+dialog then appears **only once per user** and subsequent auto-paste
+attempts run without further prompt.
 
-Voraussetzungen:
+Prerequisites:
 
-- `xdg-desktop-portal` als Daemon im User-Session-Bus
-- `xdg-desktop-portal-kde` (KDE Plasma 6) bzw. `xdg-desktop-portal-gnome` (GNOME)
-- `busctl` aus `systemd` (von Tauri ueber `Command::new` aufgerufen) als IPC-Helfer
+- `xdg-desktop-portal` as a daemon in the user session bus
+- `xdg-desktop-portal-kde` (KDE Plasma 6) or `xdg-desktop-portal-gnome` (GNOME)
+- `busctl` from `systemd` (called by Tauri via `Command::new`) as the IPC helper
 
-Sind Portal-Daemon oder Interface nicht erreichbar, meldet der Status `PortalSessionUnavailable` mit konkretem `PortalError::label()`.
+If the portal daemon or interface is unreachable, the status reports
+`PortalSessionUnavailable` with the concrete `PortalError::label()`.
 
-### Linux Wayland — Hyprland, Sway, KDE Plasma 5
+### Linux Wayland -- Hyprland, Sway, KDE Plasma 5
 
-| Compositor | Warum Auto-Paste eingeschraenkt ist | Konkreter naechster Schritt |
+| Compositor | Why auto-paste is restricted | Next concrete step |
 |---|---|---|
-| Hyprland | Kein stabiler RemoteDesktop-Portal-Grant; XTEST ueber XWayland triggert weiterhin den KDE-/KWin-Dialog nicht, aber wlroots-`virtual-keyboard` braucht Admin-Rechte oder `wlr-virtual-input` mit `uinput`-Backend | `wlr-virtual-input` einrichten oder Auto-Paste dauerhaft auslassen |
-| Sway | `xdg-desktop-portal-wlr` kann nur Screen-Capture, keinen Keyboard-Input | Auf KDE Plasma 6 / GNOME Mutter wechseln, falls Auto-Paste benoetigt wird |
-| KDE Plasma 5 | `org.kde.kwin.RemoteDesktop` ist erst ab Plasma 6 verfuegbar | Distribution-Upgrade auf KDE Plasma 6 oder Auto-Paste deaktiviert lassen |
+| Hyprland | no stable RemoteDesktop portal grant; XTEST over XWayland does not trigger the KDE/KWin dialog, but wlroots `virtual-keyboard` needs admin rights or `wlr-virtual-input` with the `uinput` backend | set up `wlr-virtual-input` or permanently skip auto-paste |
+| Sway | `xdg-desktop-portal-wlr` can only screen-capture, no keyboard input | switch to KDE Plasma 6 / GNOME Mutter if auto-paste is needed |
+| KDE Plasma 5 | `org.kde.kwin.RemoteDesktop` is only available from Plasma 6 | distribution upgrade to KDE Plasma 6 or leave auto-paste disabled |
 
-WordScript erkennt diese Compositor-Spezialfaelle und blendet in `paste_disabled_reason` den jeweiligen Hint ein.
+WordScript detects these compositor special cases and shows the respective
+hint in `paste_disabled_reason`.
 
-## Linux / PipeWire — Mikrofon-Keep-Alive gegen Auto-Suspend
+## Linux / PipeWire -- microphone keep-alive against auto-suspend
 
-### Wurzel
+### Root cause
 
-PipeWire/WirePlumber suspendiert idle Input-Sources automatisch (es gibt `module-always-sink` fuer Sinks, aber **kein** `module-always-source`-Äquivalent). cpal muss beim Capture-Start eine suspendierte Source reaktivieren — genau das ist der wahrscheinlichste Trigger fuer transiente `Native capture stream error`-Events waehrend aktiver Aufnahmen (Suspend/Resume-Hickup, WirePlumber-Rescan, Source-Reenumerate, Config-Mismatch nach resume).
+PipeWire/WirePlumber auto-suspends idle input sources (there is
+`module-always-sink` for sinks but **no** `module-always-source` equivalent).
+cpal must reactivate a suspended source on capture start -- exactly the most
+likely trigger for transient `Native capture stream error` events during
+active recordings (suspend/resume hiccup, WirePlumber rescan, source
+reenumeration, config mismatch after resume).
 
-WordScript hat zwei Verteidigungslinien dagegen:
+WordScript has two defense lines:
 
-1. **App-seitig (Capture-Stream-Rebuild):** Siehe `docs/STATUS.md` — wenn der StreamError waehrend einer Aufnahme feuert, startet WordScript genau einen Rebuild-Versuch mit `cpal::default_host()`/`default_input_device()`, bevor der Recovery-Flow (Error-Pill → Processing-Preview mit Copy) greift. Das **heilt** den Abbruch, wenn er passiert.
-2. **System-seitig (WirePlumber-Keep-Alive, praeventiv):** Verhindert das Suspend *proaktiv*, sodass der transiente Error gar nicht erst entsteht. Diese Massnahme ist **User-Ownership** — WordScript schreibt System-Settings nicht automatisch.
+1. **App-side (capture stream rebuild):** see `docs/STATUS.md` -- when the
+   stream error fires during a recording, WordScript starts exactly one
+   rebuild attempt with `cpal::default_host()`/`default_input_device()`
+   before the recovery flow (error pill -> processing preview with copy)
+   kicks in. This **heals** the abort when it happens.
+2. **System-side (WirePlumber keep-alive, preventive):** prevents the
+   suspend *proactively* so the transient error never occurs. This measure
+   is **user ownership** -- WordScript does not write system settings.
 
-### WirePlumber-Keep-Alive einrichten (empfohlener Weg)
+### WirePlumber keep-alive setup (recommended)
 
-Datei `~/.config/wireplumber/main.lua.d/51-wordscript-keepalive.lua` anlegen mit folgendem Inhalt:
+Create `~/.config/wireplumber/main.lua.d/51-wordscript-keepalive.lua`:
 
 ```lua
--- WordScript: Input-Source-Auto-Suspend deaktivieren
--- Verhindert transiente cpal-StreamError-Events beim Capture-Start
--- nach idle-Suspend einer Input-Source.
+-- WordScript: disable input-source auto-suspend
+-- Prevents transient cpal stream-error events on capture start
+-- after idle-suspend of an input source.
 rule = {
   matches = {
     {
@@ -121,38 +159,49 @@ rule = {
 table.insert(alsa_monitor.rules, rule)
 ```
 
-Anschliessend WirePlumber neu starten:
+Then restart WirePlumber:
 
 ```bash
 systemctl --user restart wireplumber
 ```
 
-### Verifikation
+### Verification
 
-Nach 5 Minuten Idle (keine Aufnahme, kein anderer Stream, der die Source referenziert):
+After 5 minutes idle (no recording, no other stream referencing the source):
 
 ```bash
 pactl list sources short
 ```
 
-Die Default-Input-Source sollte weiterhin auf `RUNNING` stehen statt `SUSPENDED`. Bei 2+ Stunden Normalbetrieb mit WordScript sollten keine `[WordScript] Native capture stream error`-Eintraege mehr im persistenten Runtime-Log auftauchen.
+The default input source should still be `RUNNING` instead of `SUSPENDED`.
+Over 2+ hours of normal use with WordScript there should be no
+`[WordScript] Native capture stream error` entries in the persistent
+runtime log.
 
-### Alternative fuer reine PulseAudio-Systeme (ohne WirePlumber)
+### Alternative for pure PulseAudio systems (without WirePlumber)
 
-Auf Systemen mit klassischem PulseAudio (nicht PipeWire-Pulse) das Auto-Suspend-Modul entladen:
+On systems with classic PulseAudio (not PipeWire-Pulse) unload the auto-suspend
+module:
 
 ```bash
 pactl unload-module module-suspend-on-idle
 ```
 
-Persistenter: in `~/.config/pulse/default.pa` die Zeile `load-module module-suspend-on-idle` auskommentieren oder entfernen und PulseAudio neu starten (`systemctl --user restart pulseaudio`).
+Persistent: in `~/.config/pulse/default.pa` comment out or remove the line
+`load-module module-suspend-on-idle` and restart PulseAudio
+(`systemctl --user restart pulseaudio`).
 
-### Kontrollierte Reproduktion fuer Verifikation des Rebuild-Pfads
+### Controlled reproduction to verify the rebuild path
 
-Fuer die Verifikation des **app-seitigen** Rebuild-Pfads (unabhaengig vom Keep-Alive) laesst sich der StreamError kontrolliert provozieren:
+To verify the **app-side** rebuild path (independent of the keep-alive) the
+stream error can be provoked in a controlled way:
 
 ```bash
 pactl suspend-source <default-source> 1
 ```
 
-`<default-source>` ist der Source-Name aus `pactl list sources short` (mit `*`-Marker). Waehrend einer aktiven WordScript-Aufnahme ausgefuehrt, feuert der cpal-StreamError-Callback; das persistente Runtime-Log sollte `[WordScript] Native capture stream rebuilt session_id=… new_device=… new_sample_rate=… rebuild_attempt=1` zeigen und die Aufnahme sollte ohne Error-Pill weiterlaufen.
+`<default-source>` is the source name from `pactl list sources short` (with
+`*` marker). Run during an active WordScript recording: the cpal
+stream-error callback fires; the persistent runtime log should show
+`[WordScript] Native capture stream rebuilt session_id=... new_device=... new_sample_rate=... rebuild_attempt=1`
+and the recording should continue without an error pill.

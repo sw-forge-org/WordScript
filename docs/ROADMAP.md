@@ -1,154 +1,166 @@
-# WordScript — Phasen-Roadmap
+# WordScript Roadmap
 
-Stand: 2026-06-20
+Status: 2026-07-25
 
-Diese Roadmap bündelt die geplanten V1-Konsolidierungs- und Ausbauphasen, ihre Reihenfolge, ihre Bedingungen und was bewusst noch nicht zu einer Phase gehört. Sie ist die ausführliche Form der Phasen-Pointer, die in `STATUS.md`, `VISION.md` und `DEVELOPMENT.md` jeweils nur angerissen werden.
+> This is the canonical phase detail. [STATUS.md](STATUS.md) reports the
+> current state; [VISION.md](VISION.md) defines the product direction.
 
-V1-Nordstern bleibt: Trigger, Sprechen, brauchbarer Text, saubere Recovery, Weiterarbeiten. Jede Phase muss diesen Kern stabiler oder ehrlicher machen, nicht breiter.
+The V1 goal is simple: trigger, speak, receive usable text, recover safely,
+and continue working. Each phase must make that path more dependable or more
+honest, not merely broader.
 
-## Status der Phasen
+## Phase Status
 
-- [x] **Phase 1 — Transkriptions-Bias, Profil-Health, Korpus** (Commit `a6005ca` auf master, 2026-06-10): Korpus-Skelett, profilgebundene Bias-Policy (`BiasMode` Conservative / Manual / Off + `ManualBias`), Profile-Health um `BiasPolicyWeak`-Flag erweitert, persistente `profile_health_acknowledged_flags`, Bias-Preview (`cloud_prompt_preview` / `local_prompt_preview`) in `TextRulesAnalysis`, Bias-Policy-Stage im Text-Rules-Tab. 246 Rust-Tests + 70 Frontend-Tests grün, 0 Warnings.
-- [x] **Phase 2 — Settings-Shell Polish** (2026-06-10 bis 2026-06-20): Design-System v2 mit Storybook, Liquid Glass Polish, macOS-Utility-Shell mit gruppierter Sidebar, Home-Screen v2.1 mit 3 Background-Layern und 5-Stufen-Type-Scale, CSS @layer base Fix, Content-Visibility-Utilities, Wordmark-Sidebar-Header, standardisierte Border-Radius. Overlay-Refinement mit fixen Linux-Fenster-Groessen, KWin-Script fuer KDE Plasma 6 Always-on-Top, Black-Block- und Compositing-Fixes.
-- [ ] **Phase 3 — Live-Preview und kontrollierter Commit im Overlay**: Sprecher sieht rohen Transkript, bereinigten Text, aktiven Modus und kann vor dem finalen Insert entscheiden. Erweitert den bereits umgesetzten `clipboard_only`-Preview-Stop auf alle Insert-Modi. Siehe `VISION.md:165`.
-- [ ] **Phase 4 — Provider-Stack-Ausbau**: Zweiter Produktionsprovider neben Groq, klare Modi `fast` / `quality` / `local` / `self_hosted` mit ehrlich getrennter Semantik. Siehe `VISION.md:166` und `REFERENCE.md` Modus-Semantik.
-- [ ] **Phase 5 — Lokale Runtime als first-class Produktoption**: Geführtes Modellmanagement, Pull-Checks, Health-Diagnostics, Bias-Prompting und Quality-vs-Latency-Presets. Aufbauend auf der heutigen `local_preview`-Lane. Siehe `VISION.md:167`.
-- [ ] **Phase 6 — Geführter Setup- und Packaging-Pfad**: Install, Permissions und erste brauchbare Diktation als zusammenhängender Produktpfad statt verstreuter Diagnostics. Siehe `VISION.md:168`.
+- [x] **Phase 1 - Transcription Bias, Profile Health, Corpus**
+- [x] **Phase 2 - Settings Shell Polish**
+- [ ] **Phase 3 - Live Preview and Controlled Commit**
+- [ ] **Phase 4 - Provider Stack Expansion**
+- [ ] **Phase 5 - Local Runtime as a Product Option**
+- [ ] **Phase 6 - Guided Setup and Packaging**
 
-Bewusst ausserhalb der aktuellen Phasen-Pipeline:
+Outside this pipeline are Notes, Search, Sync, MCP, assistant identities,
+accounts, hosted workspaces, and browser or computer use. They are V2 or later
+work and must not dilute V1. Visible Chat, Upload, Notes and Account settings
+layouts are previews only and do not change this phase boundary.
 
-- `openwhispr`-Scope wie Notes, Search, Sync, MCP, Assistant-Identitäten. Diese Themen bleiben bis nach V1-Konsolidierung nachgelagert (`VISION.md:174`).
-- Team-/Sync-Logik und automatische Profilaktivierung. Lokale manuelle Profile bleiben der V1-Vertrag.
-- V2-Themen (siehe `VISION.md:51-72`) wie Workspace-Sync, Accounts, gehostete Workspaces, Browser-Use-Workflows. Diese sind explizit von V1 getrennt.
+## Phase 1 - Transcription Bias, Profile Health, Corpus
 
-## Phase 1 — Transkriptions-Bias, Profil-Health, Korpus (abgeschlossen)
+**Status:** completed
 
-**Ziel:** Profilabhängige Transkriptions-Drift unsichtbar machen, indem Bias explizit konfigurierbar wird, reale Failure-Modes als Korpus festsitzen und die Profil-Health bewusst fuehrbar ist.
+**Goal:** Prevent profile-driven transcription drift by making bias explicit,
+capturing real failures as regression data, and exposing profile health.
 
-**Eingeführte Vertragspunkte:**
+**Delivered:**
 
-- `TextProfileWorkMode.bias_mode: Conservative | Manual | Off` mit Migration `bias_policy_migrated`.
-- `TextProfileWorkMode.manual_bias: { cloud_include_profile_terms, local_include_profile_terms, stt_hints_override }` als opt-in-Erweiterung.
-- `TranscriptionBiasPreview` traegt jetzt `cloud_prompt_preview`, `local_prompt_preview`, `manual_overrides_applied`, `effective_stt_hints_source` und propagiert ueber `analyze_document_with_context` in die UI.
-- `ProfileHealthFlag::BiasPolicyWeak` mit eigenem Hint, Red-Level nur in Kombination mit `agent` / `prompt_enhance` oder global aktivem Agent Mode.
-- `AppConfig.profile_health_acknowledged_flags: HashMap<profile_id, HashSet<flag_kind>>` mit Tauri-Commands `acknowledge_profile_health_flag` und `unacknowledge_profile_health_flag`.
-- Korpus unter `src-tauri/tests/fixtures/regression_transcripts.json` plus Loader in `core::regression_corpus`. Schema-Validierung, Bias-Assertions, Text-Rules-Assertions, Profile-Health-Init, Dictionary-Struktur.
+- `BiasMode` with conservative, manual, and off behavior plus migration.
+- Per-profile manual bias controls and a native/UI transcription-bias preview.
+- `ProfileHealthFlag::BiasPolicyWeak` and persisted acknowledgements.
+- The regression corpus and loader at
+  `src-tauri/tests/fixtures/regression_transcripts.json`.
+- A Text Rules bias-policy stage that shows effective cloud and local prompts.
 
-**Initialer Korpus-Inhalt:**
+**Success measure:** profile bias is inspectable, regression-tested, and does
+not silently turn broad context or snippets into transcription prompts.
 
-- `cs_profile_multilingual_topic_drift`: 6 generische CS-Phrasen, erwartet 0 accepted profile hints, 6 ignored lines.
-- `cs_profile_length_explosion_via_english_boilerplate`: Profil-Bias-Pfad mit Multilingual-Boilerplate, erwartet `assistant_like_correction_rejected` als Guardrail.
-- `cs_profile_question_answered_german`: Profil-getriebene LLM-Tendenz, Frage zu beantworten, erwartet `question_answered_guardrail_fallback`.
+## Phase 2 - Settings Shell Polish
 
-**Eingeführte UI-Stage:** 4. Step "Bias policy" im Text-Rules-Tab mit Conservative/Manual/Off-Radio, conditional Manual-Flags, Live-Preview (Cloud sieht / Local sieht), Health-Flag-Liste mit Acknowledge-Buttons. Funktional, nicht poliert (Polish kommt mit Phase 2).
+**Status:** completed
 
-**Validierung:** 246 Rust-Tests + 70 Frontend-Tests, `cargo check` ohne Warnings, `npm run build` erfolgreich.
+**Goal:** Make the native utility surfaces calmer and clearer without adding
+new runtime heuristics.
 
-## Phase 2 — Settings-Shell Polish (abgeschlossen, 2026-06-20)
+**Delivered:**
 
-**Ziel:** Die Settings-Fenster werden ruhiger, klarer und nativer. Keine neue Runtime-Heuristik.
+- Tailwind v4, shadcn/ui components, and shared shell primitives.
+- Grouped settings navigation, stable content surfaces, and native window
+  decorations on every platform.
+- Three background layers, a five-step type scale, standard spacing, and
+  focused status primitives.
+- WebKitGTK performance work: no card shadows or backdrop filters, contained
+  scroll surfaces, fixed background attachment, and a slower history refresh.
+- Fixed Linux overlay surfaces, KWin support for KDE Plasma 6, and compositor
+  reliability fixes.
 
-**Umgesetzte Vertragspunkte:**
+**Success measure:** settings, diagnostics, and overlay states remain readable
+and stable in the native host on supported platforms.
 
-- Design-System v2 mit Storybook v2 als visuelle Regression-Basis (`c3f5195`, `5d96da7`, `9479309`).
-- Liquid Glass Polish fuer Overlay und Settings (`dc24c1f`).
-- Native macOS Utility-Shell mit gruppierter 200px-Sidebar, kompaktem Tab-Header, dominanter Content-Surface und Footer-Save-Bar.
-- Home-Screen v2.1 mit 3 expliziten Background-Layern (`--bg-base` / `--bg-surface` / `--bg-elevated`), 5-Stufen-Type-Scale (12/14/16/20/28px), 4-Point-Spacing und einzelnen `StatusDot`-Primitiven (`f70aae4`).
-- CSS @layer base Fix: universeller Reset in `@layer base` gewrappt, damit Tailwind-Utilities nicht mehr ueberschrieben werden (`9acf6ce`).
-- Content-Visibility-Utilities (`content-visibility: auto`, `contain-intrinsic-size`) fuer lange Listen wie Diagnostics-History und Text-Rules-Karten (`8b647d0`).
-- Scroll-Performance-Fix: GPU-Compositing standardmaessig aktiviert (`WEBKIT_DISABLE_COMPOSITING_MODE` entfernt), `shadow-card` von Settings-Karten entfernt, `backdrop-filter` von `.material`-Klasse entfernt, `body` background-gradient auf `background-attachment: fixed`, `contain: layout paint` auf FormCard und Scroll-Container, `transition-colors` auf Scroll-Containern entfernt, History-Refresh-Interval von 1.5s auf 5s, Tab-Wechsel-Animation entfernt. Opt-out via `WORDSCRIPT_DISABLE_WEBKIT_COMPOSITING=1`.
-- Wordmark-Sidebar-Header statt separatem Icon + Text (`391dfd8`).
-- Standardisierte Border-Radius und Component-Spacing (`f1ac34a`).
-- Overlay-Refinement: fixe Linux-Fenster-Groessen (440x60 flat / 460x164 edit), Black-Block-Fix, Compositing-Fixes, Drag/Button/Clipping zuverlaessig (`544673e` bis `3e06fd2`).
-- KWin-Script fuer KDE Plasma 6 Always-on-Top (`packaging/kwin-wordscript-overlay/`).
-- AGPL-3.0 Lizenz-Update (`3a2f393`).
+## Phase 3 - Live Preview and Controlled Commit
 
-**Validierung:** Frontend-Build und Rust-Tests gruen, Overlay-Tests auf Linux/XWayland und KDE Plasma 6 bestanden.
+**Status:** planned
 
-## Phase 3 — Live-Preview und kontrollierter Commit im Overlay (geplant)
+**Goal:** Let a speaker inspect raw and transformed text, the active mode, and
+the delivery decision before final insertion.
 
-**Ziel:** Sprecher sieht rohen Transkript, bereinigten Text, aktiven Modus und entscheidet vor dem finalen Insert. Erweitert den bereits umgesetzten `clipboard_only`-Preview-Stop auf alle Insert-Modi.
+**Scope:**
 
-**Scope (nicht final):**
+- Extend the current `clipboard_only` preview stop to every insert mode.
+- Use one native state path: `idle -> capturing -> processing -> preview ->
+  commit | cancel`.
+- Use `commit_pending_transcription_preview` as the single commit action.
+- Show raw versus transformed text and meaningful guardrail interventions.
+- Route commit, retry, restore, cancel, and copy actions through native events
+  and history.
 
-- `processing_preview` fuer `direct_paste` und `clipboard_fallback` analog zu `clipboard_only`.
-- Overlay-State-Machine `idle -> capturing -> processing -> preview -> commit | cancel`.
-- `commit_pending_transcription_preview` Command (existiert bereits) wird zur zentralen Commit-Aktion fuer alle Modi.
-- Diff-Ansicht im Overlay: roh vs. bereinigt, markierte Halluzinationsfilter- und Guardrail-Eingriffe.
-- Aktionen: `commit`, `retry`, `restore`, `cancel`, `copy_raw`, `copy_cleaned`. Alle Aktionen muessen den nativen `wordscript-event`-Pfad nutzen, keine UI-eigenen Commits.
-- `clipboard_only`-Preview-Verhalten bleibt, wird aber auf gleicher Buehne wie andere Modi gerendert.
+**Out of scope:** new auto-commit heuristics, a second insertion implementation,
+or changed clipboard restoration rules.
 
-**Aussenvor:** Neue Heuristiken, Auto-Commit-Logik, Clipboard-Restore-Aenderungen.
+**Success measure:** users can make a delivery decision without duplicating the
+native insert or recovery path.
 
-**Erfolgsmetrik:** Nutzer kann in mindestens zwei Drittel der Realfaelle vor dem Commit entscheiden, ohne Insert-Pfad zu duplizieren.
+## Phase 4 - Provider Stack Expansion
 
-## Phase 4 — Provider-Stack-Ausbau (geplant)
+**Status:** planned
 
-**Ziel:** WordScript wird von einem ersten Adapter zu einem echten Modellsystem. Modi `fast` / `quality` / `local` / `self_hosted` mit ehrlich getrennter Semantik.
+**Goal:** Evolve from one production adapter to clear `fast`, `quality`,
+`local`, and future `self_hosted` semantics.
 
-**Scope (nicht final):**
+**Scope:**
 
-- Zweiter Produktionsprovider (z. B. OpenAI Whisper API, Anthropic, oder ein nicht-US-Anbieter). Auswahl erfordert Diskussion zu Kosten, Latenz, Datenschutz.
-- `self_hosted`-Lane als explizite, von `local` getrennte Provider-Lane. `local` = on-device, `self_hosted` = nutzerbetriebener Remote- oder LAN-Dienst. Siehe `REFERENCE.md` Modus-Semantik.
-- Provider-Adapter unter `src-tauri/src/core/providers/<name>.rs` mit dem gemeinsamen `Provider`-Vertrag.
-- Provider-Capabilities aus `ProviderStatus` (Transcription, Chat-Cleanup, Local, API-Key-Pflicht, Prompt-Bias, Segments) statt Modell-Heuristiken.
-- `ProviderCommandError` bleibt Single Source of Truth fuer Fehler-Semantik; UI darf daraus anzeigen, aber nicht eigene Fehlerkategorien erfinden.
+- Add a second production provider through the shared Rust provider contract.
+- Reserve `self_hosted` for user-operated remote or LAN services; it is not
+  another name for on-device `local`.
+- Drive UI capability, setup, and error copy from `ProviderStatus` and
+  `ProviderCommandError`.
 
-**Aussenvor:** Provider-wechsel zur Laufzeit ohne Save, Account-Bindings, WordScript-eigener Proxy.
+**Out of scope:** runtime provider switching without save, account binding, or
+a WordScript proxy.
 
-**Erfolgsmetrik:** Mindestens zwei Produktionsprovider laufen in Settings, Diagnostics und History mit demselben Vertrag; `self_hosted` hat einen Stub-Adapter, der in `local` nicht reinfaellt.
+**Success measure:** at least two production providers work through the same
+settings, diagnostics, history, capability, and error contracts.
 
-## Phase 5 — Lokale Runtime als first-class Produktoption (geplant)
+## Phase 5 - Local Runtime as a Product Option
 
-**Ziel:** Die `local_preview`-Lane wird von env-basierter Expertenkonfiguration zu einer sichtbaren, gefuehrten Produktoption mit Modell-Management, Pull-Checks und Health-Diagnostics.
+**Status:** planned
 
-**Scope (nicht final):**
+**Goal:** Turn `local_preview` from expert environment configuration into a
+guided on-device runtime lane.
 
-- `Provider & Models` zeigt fuer `local_preview` einen gefuehrten Pfad: Runner-Probe, STT-Modell-Liste aus nativer Discovery, Cleanup-Endpoint-Probe, Cleanup-Modell-Probe. Heute existieren alle Preflight-Checks, aber ohne "Fix-it"-Aktionen.
-- "Pull"-Aktionen: Whisper-Modell aus einer kuratierten Quelle herunterladen, Ollama-Cleanup-Modell pullen. Voraussetzung: klare no-License-Pfad (Open-Modelle aus offiziellen Quellen).
-- Decode-Presets werden in den Profil-Editor verschoben (heute liegen sie global in `local_beam_size` / `local_best_of`).
-- Bias-Prompting fuer lokale Lane: getrennte UI fuer `local_prompt_strength` und Carry-Behavior, mit Vorschau was `whisper-cli --prompt` tatsaechlich bekommt.
-- Quality-vs-Latency-Presets: sichtbar als Fast/Quality-Wahl im Profil, nicht nur als Modellname.
+**Scope:**
 
-**Aussenvor:** Nicht-Whisper STT-Engines, verteilte lokale Pipelines, Custom-Model-Training.
+- Guided readiness and remediation for the runner, STT model, cleanup endpoint,
+  and cleanup model.
+- Explicit model download or pull actions from approved sources.
+- Profile-owned decode and prompt-bias controls with truthful preview.
+- Clear fast-versus-quality tradeoffs.
 
-**Erfolgsmetrik:** Ein Erstkontakt-Nutzer kann die lokale Lane ohne `WORDSCRIPT_*`-Env-Variablen und ohne Terminal aktivieren und benutzen.
+**Out of scope:** non-Whisper engines, distributed local pipelines, and custom
+model training.
 
-## Phase 6 — Geführter Setup- und Packaging-Pfad (geplant)
+**Success measure:** a first-time user can configure and use local dictation
+without assembling the full runtime from terminal-only instructions.
 
-**Ziel:** Install, Permissions und erste brauchbare Diktation als zusammenhängender Produktpfad statt verstreuter Diagnostics.
+## Phase 6 - Guided Setup and Packaging
 
-**Scope (nicht final):**
+**Status:** planned
 
-- Einstiegs-Dialog (oder `Onboarding`-Tab) mit klarer Reihenfolge: Mikrofon-Permission, Accessibility-Permission, Provider-Key, Modellwahl, Test-Diktation.
-- `Diagnostics` behält die Detail-Ebene, wird aber im Normalfall nicht der erste Anlauf.
-- "Get started"-Hints in den Settings-Tabs, die erklaeren warum ein Tab jetzt wichtig ist und welcher Schritt fehlt.
-- `About`-Fläche zeigt ehrlich, ob ein Setup-Schritt blockierend fehlt.
-- ehrliche Release-Status-Signale: `check_app_update` bleibt auf publizierte GitHub-Releases beschraenkt, der interne Draft-Handoff wird in `About` klar als interner Pfad markiert.
+**Goal:** Connect installation, permissions, provider setup, and first useful
+dictation into one honest path.
 
-**Aussenvor:** Auto-Updater als geliefertes Feature, Signatur-Pipeline, App-Store-Builds.
+**Scope:**
 
-**Erfolgsmetrik:** Ein Erstkontakt-Nutzer kann WordScript vom Installer bis zur ersten brauchbaren Diktation fuehren, ohne `Diagnostics` zu öffnen.
+- Ordered onboarding for microphone, accessibility, provider key or local
+  setup, trigger, and a test dictation.
+- Settings hints that explain the next blocking action while diagnostics retain
+  detail.
+- Honest release and update status that distinguishes internal drafts from
+  published releases.
 
-## Bedingungen fuer Phasen-Reihenfolge
+**Out of scope:** a shipped auto-updater, signing infrastructure, and app-store
+delivery.
 
-Phase 1 ist Voraussetzung fuer Phase 2 (Bias-Policy-Stage muss existieren, bevor die Settings-Shell poliert wird) und fuer Phase 3 (Preview braucht Bias-Klarheit).
+**Success measure:** an installer-to-first-dictation path works without asking a
+new user to discover Diagnostics first.
 
-Phase 4 ist unabhaengig von Phase 3, solange der Vertrag von `ProviderCommandError` und `ProviderStatus` stabil bleibt. Phase 4 ist explizit vor Phase 5, weil die Provider-Lane-Mechanik (Capabilities, Modi, Fehler) auch fuer `local` gilt.
+## Dependencies
 
-Phase 5 setzt Phase 4 voraus (gleicher Provider-Vertrag, gleiche Modi-Semantik).
+Phase 1 underpins trustworthy preview and settings work. Phase 4 establishes
+the contract needed by Phase 5. Phase 6 comes last because setup cannot be
+truthful until the paths it guides are reliable. Phase 3 and Phase 4 can move
+independently as long as native provider and session contracts remain stable.
 
-Phase 6 haengt am wenigsten an den anderen, kommt aber bewusst zuletzt, weil Setup-Gefuehrte nur dann ehrlich ist, wenn die zugrunde liegenden Pfade selbst ehrlich sind.
+## Maintaining This Roadmap
 
-## Was diese Roadmap nicht macht
-
-- Sie ersetzt nicht `VISION.md`. VISION bleibt der Nordstern, die Roadmap ist die ausfuehrbare Sicht.
-- Sie ersetzt nicht `STATUS.md`. STATUS bleibt der aktuelle Produktstand mit offenen Luecken, die Roadmap blickt nach vorn.
-- Sie ersetzt nicht `DEVELOPMENT.md`. Workflow und Validation bleiben dort.
-- Sie ersetzt nicht die Plan-Dateien in `.kilo/plans/`. Die Phasen-Beschreibungen hier sind die Kurzform fuer Doku-Leser; ausfuehrbare Specs kommen weiterhin als Plan-Dateien pro Slice.
-
-## Mitfuehren, wenn sich der Plan aendert
-
-- Phase-Reihenfolge oder Scope-Anpassung: hier editieren und in der Commit-Message referenzieren.
-- Neue Phasen: am Ende des "Status der Phasen"-Blocks einfuegen, im `STATUS.md` als "geplant" markieren.
-- Phase abgeschlossen: Haken setzen, Datum eintragen, im `STATUS.md` den zugehoerigen Punkt aus "Bekannte offene Produktluecken" in "Heute implementierte Kernfunktionen" verschieben.
+Update this document when phase order, scope, or completion changes. Keep the
+summary in [STATUS.md](STATUS.md) aligned, but do not duplicate phase detail in
+other documents. A new architecture decision requires an ADR rather than a
+roadmap note.

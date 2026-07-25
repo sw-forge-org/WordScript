@@ -1,6 +1,0 @@
-#!/bin/sh
-# Legacy build metadata files are not part of the active Tauri/Rust repo.
-# Keep the hook path alive, but avoid regenerating BUILD_ID/build_info.json.
-
-rm -f BUILD_ID build_info.json
-exit 0

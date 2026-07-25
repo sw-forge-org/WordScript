@@ -1,165 +1,318 @@
-# WordScript — Status
+# WordScript -- Status
 
-Stand: 2026-07-18
+Status: 2026-07-25
 
-Aktueller Produktstand, implementierte Kernfunktionen, Insertion/Recovery-Modell, offene Produktluecken und Release-Build-Up.
+> Meta structure: bug documentation lives in `docs/known-issues/`,
+> architecture decisions in `docs/decisions/` (ADRs), the contribution
+> workflow in `CONTRIBUTING.md`. This file stays the current product state.
+> Per-commit histories belong in `CHANGELOG.md`, not here.
 
-## Produktstand
+## Product state
 
-- Release-Linie: `0.2.2-alpha`
-- aktiver Produktpfad: Tauri/React UI plus nativer Rust-Core
-- heute benutzbare Version: Dev-Version aus dem Repo via `npm run tauri dev`
-- aktive Fenster: Overlay, Settings und das Diagnostics-Pop-out
-- UI-Stand: Auf `feat/ui-overhaul-v2` ist die Settings-Flaeche eine native-macOS-inspirierte **WordScript Shell** (gruppierte 200px-Sidebar, shadcn/ui + Tailwind v4 auf den v2-Tokens, native Titelleiste auf jedem OS, `useTransition`-Crossfade).
-- aktive Areas: WORKSPACE (Home, History, Profiles) · ENGINE (Speech & AI, Modes, Capture, Overlay) · SYSTEM (Insert & Recovery, Diagnostics, About) · MORE (Chat, Upload, Notes, Account); alle Areas sind voll im Form-Kit gebaut.
-- Settings-IA-Restrukturierung (2026-06-21): Die Tab-Struktur wurde auf Redundanz und Auffindbarkeit auditiert und neu geordnet.insert/Recovery/Diagnostics-Daten waren bis zu 4-fach dupliziert (Input, Permissions, About, Diagnostics) und sind jetzt konsolidiert: **Insert & Recovery** (Merge aus Permissions + Input-Delivery/Recovery, config-bearing) ist die einzige Recovery-Flaeche; **Overlay** wurde aus Input extrahiert (Placement/Display/Anchor/Result-Timeout); **About** wurde auf Version + Release-Path entschlankt (Platform-support-Karte entfernt). History-Liste + -Policy wurden aus Diagnostics entfernt (History ist jetzt die einzige History-Flaeche). Diagnostics erhielt interne Sub-Tabs (Slice runner / Diagnostics preview / Runtime logs). Profile-`work_mode`-Defaults (processing_mode/rewrite_style/insert_behavior/enhance_sub_mode/target) sind jetzt in Profiles editierbar ("Profile defaults"-Karte); Modes zeigt einen "Effective mode"-Praezedenz-Indikator (Profil-Default → Global → Runtime-Override via `resolve_current_processing_mode` IPC). AI-Cleanup-Verhalten (post_process/filter_fillers/professionalize) und AI-Agent-Mode (agent_mode_enabled/agent_name) wanderten von Speech & AI zu Modes (beschreiben die AI-Reaktion, nicht den Provider); Speech & AI behaelt nur Provider/Key/Local-Setup/STT/Language + Cleanup-/Agent-**Model**-Selects. Profile-Gallery ("Use any profile already loaded") entfiel; Vorschau-Chips sind in die Active-Profile-Select-Optionen eingefoldet. Das tote Preview-Nav (Chat/Upload/Notes/Workspace/Account) wurde durch 4 aktive MORE-Areas ersetzt (Workspace-Intent ist in Modes erfuellt, Account ist eigenstaendig). Storybook (`.storybook/`, `src/stories/`, Storybook-deps + scripts) und die Glass-Prototypen (`src/components/glass/`) wurden komplett geloescht; die 4 MORE-Areas sind im Settings-Kit (`@/components/ui/*` + shell) gebaut, nicht im isolierten Glass-Kit. Details in `.kilo/plans/1782040423014-settings-ia-audit.md` und `docs/UI_UX_OVERHAUL_PLAN.md`.
+- Release line: `0.2.2-alpha`
+- Active product path: Tauri/React UI plus native Rust core
+- Usable today: dev build from the repo via `npm run tauri dev`
+- Active windows: overlay, settings and the diagnostics pop-out
+- UI state: settings surface is a native-macOS-inspired **WordScript shell**
+  (grouped 232px sidebar, shadcn/ui + Tailwind v4 on v2 tokens, native title
+  bar on every OS, immediate area changes and automatic settings persistence).
+- Active areas: WORKSPACE (Home, History, Profiles) -- ENGINE (Speech & AI,
+  Modes, Capture, Overlay) -- SYSTEM (Insert & Recovery, Diagnostics, About)
+  -- MORE (Chat, Upload, Notes, Account). The first three groups are
+  runtime-backed product surfaces. MORE contains visible, explicitly labeled
+  layout previews with sample or component-local state only.
+- Settings IA restructuring (2026-06-21): the tab structure was audited for
+  redundancy and findability and re-ordered. Insert/Recovery/Diagnostics data
+  was duplicated up to 4x and is now consolidated: **Insert & Recovery** is
+  the only recovery surface; **Overlay** was extracted from Input;
+  **About** was slimmed to version + release path; History is now the only
+  history surface; Diagnostics got internal sub-tabs. Profile work-mode
+  defaults are editable in Profiles; Modes shows an effective-mode
+  precedence indicator. Storybook and Glass prototypes were removed; the
+  MORE areas are built in the settings kit, not the isolated Glass kit.
 
-## Heute implementierte Kernfunktionen
+## Implemented core features
 
-- **macOS/Windows-CI-Fix (2026-07-19):** Behebt den pre-existing macOS/Windows-CI-Rot (seit Wochen, nicht durch PR #1/#2 introduziert) mit zwei unabhaengigen Fixes: (1) **cpal 0.16 -> 0.17 Upgrade** — cpal 0.16's CoreAudio-`Stream` ist nicht `Send`, weil `AudioObjectPropertyListener` einen `Box<dyn FnMut()>` (nicht-Send) haelt; `ActiveCapture.stream: cpal::Stream` in `Mutex<NativeCaptureState>` fordert `Send` via `tauri::State<T: Send + Sync>` + `tauri::async_runtime::spawn`. cpal 0.17 behebt das via `DisconnectManager` (dedicated Thread fuer `AudioObjectPropertyListener`), macht CoreAudio-`Stream: Send` und WASAPI-`Stream: Send + Sync`. Breaking in 0.17: `SampleRate` ist jetzt `u32` type alias (war struct) — 4 `.0`-Zugriffe in `capture.rs` angepasst. rodio-Mitupgrade 0.21.1 -> 0.22.2 (erfordert cpal ^0.17): `OutputStreamBuilder` -> `DeviceSinkBuilder`, `open_default_stream` -> `open_default_sink`, `SamplesBuffer::new` nimmt jetzt `NonZero<u16>`/`NonZero<u32>` fuer Channels/Sample-Rate. (2) **Windows-Vendor-Fix** — `vendor/global-hotkey/src/platform_impl/windows/mod.rs` uebergab Integer-Literal `0` (usize) an windows-sys 0.59-Functions, die `*mut c_void` erwarten (`HMODULE`/`HWND`/`HHOOK`); 8 Compile-Fehler. Fix: `std::ptr::null_mut()` fuer Pointer-Parameter, `.is_null()` fuer `HHOOK`-Vergleich. Linux-CI weiterhin gruen (keine Regression, `cargo test --lib` 291 passed). Branch `fix/cpal-stream-send`. Plan `.kilo/plans/1784414959917-cpal-stream-send-fix.md`.
-- **Capture-Stream-Rebuild nach transistentem StreamError (2026-07-18):** Ergaenzung zur Capture-Stream-Error-Diagnose (s. denselben Tag). Wenn der cpal-StreamError-Callback waehrend einer aktiven Aufnahme feuert (PulseAudio/PipeWire-Suspend/Resume, Compositor-Restart, Device-Reenumerate), startet WordScript jetzt **genau einen** Rebuild-Versuch, bevor der bestehende Recovery-Flow (Error-Pill → Processing-Preview mit Copy) greift. Neues Feld `ActiveCapture.rebuild_attempted: bool` erlaubt genau einen Versuch pro Session (verhindert Retry-Loops); `SharedCaptureData.rebuild_in_progress: bool` pausiert den Sample-Write- und Level-Emit-Pfad waehrend des Rebuilds (keine Muelle-Samples, keine falsche Silence/MaxDuration-Stop-Entscheidung). Neue Funktion `rebuild_stream_after_error(app, capture_id) -> Result<RebuildOutcome, String>` in `src-tauri/src/core/capture.rs`: holt frisch `cpal::default_host()`/`default_input_device()`/`default_input_config()`, **Matching-Gate** (nur identische Sample-Rate/Channels/Format wie der alte Stream — Sample-Rate-Wechsel mitten in der Aufnahme wuerde heterogene Samples erzeugen und das einfache End-Resampling kaputt machen; bei Mismatch → `RebuildOutcome::Failed` und Fall-through zum bestehenden Recovery-Flow), baut den neuen Stream via `build_stream` mit frischem `stream_error`-AtomicBool, dropt den kaputten alten Stream, ersetzt `stream`/`stream_error`/`device_name` in `ActiveCapture`, resettet `last_voice_at` (sonst triggert sofort SilenceTimeout). `monitor_native_capture` liefert die neue `NativeCaptureMonitorState::RebuildEligible`-Variante, wenn `stream_error==true && !rebuild_attempted`; `spawn_native_capture_monitor` in `lib.rs` ruft den Rebuild **ausserhalb** des State-Locks aus (vermeidet Deadlock, weil `build_stream` blockiert) und geht bei `Rebuilt` weiter im Loop, bei `Failed`/`NotEligible`/Error in den bestehenden `Stop(StreamError)`-Flow ueber `stop_native_capture_after_stream_error`. Log-Zeile `[WordScript] Native capture stream rebuilt session_id={} host={} new_device={} new_sample_rate={} new_channels={} new_sample_format={} rebuild_attempt=1` im persist Runtime-Log; zusaetzlich `capture_rebuilt`-Event an das Frontend (silent MVP, noch keine eigene Overlay-Visualisierung). `RebuildOutcome`-Enum (`Rebuilt`/`Failed`/`NotEligible`). 3 neue Unit-Tests (`does_not_stop_while_rebuild_is_in_progress`, `rollback_rebuild_pause_*`); `Rebuilt`-Pfad manuell via `pactl suspend-source <default-source> 1` waehrend aktiver Aufnahme verifizierbar (kontrollierte Reproduktion, kein Warten auf natuerliches Auftreten noetig). Recovery-UX unangetastet — der Rebuild **verhindert** den Error-Pill im Erfolgsfall, im Misserfolgsfall gilt der bestehende Flow. Praeventiv ergaenzt: WirePlumber-Keep-Alive-Doku gegen PipeWire-Auto-Suspend idle Input-Sources (siehe `docs/PLATFORMS.md`). Branch `fix/capture-stream-rebuild`. Plan `.kilo/plans/1784377955445-capture-stream-error-diagnosis.md` Task 4 + §0c.
-- **Capture-Stream-Error-Diagnose (2026-07-18):** Der asynchrone cpal-StreamError-Callback (`src-tauri/src/core/capture.rs` `build_stream` `error_callback`) setzte bisher nur das `stream_error`-AtomicBool und emittierte ein `event: error` an das Frontend (→ Error-Pill), schrieb aber **nicht** ins persistente Runtime-Log — deshalb war der vom User beobachtete Abbruch-Error in `~/.config/WordScript/logs/wordscript-runtime.log` nicht auffindbar, obwohl die Pipeline danach sauber bis `preview_ready` durchlief (Recovery-UX bleibt unangetastet). Drei Massnahmen: (1) **[P0]** Der Callback ruft jetzt `runtime_log::record("[WordScript] Native capture stream error: {cpal error}")` auf — der rohe cpal/PulseAudio/PipeWire-Error-String ist beim naechsten Auftreten im persistenten Log sichtbar und identifiziert die Wurzel (Suspend/Resume, Device-Loss, Permission-Revocation, Sample-Rate-Mismatch). `runtime_log::record` ist thread-safe (`Mutex<VecDeque>` + append-File), der Audio-Thread-Call bleibt kurz (kein Lock-Hold ueber `emit`). (2) **[P1]** `start_native_capture` protokolliert beim Capture-Start `[WordScript] Native capture start host={} device={} sample_rate={} channels={} sample_format={}` (cpal 0.16 `Host::id().name()` liefert `pulse`/`alsa`/…), sodass PulseAudio vs ALSA vs JACK unterscheidbar und die Start-Bedingung reproduzierbar ist. (3) **[P1]** Neue Helper-Funktion `classify_capture_stream_error(&str) -> String` uebersetzt den rohen cpal-String in eine benutzerfreundliche, klassifizierte Meldung fuer den Frontend-Error-Pill (Permission revoked / Device lost / Timeout / unverarbeitet), analog dem `portal.rs::detect_portal_prompt_from_stderr`-Pattern; der rohe String bleibt im Log erhalten. 6 Unit-Tests in `core::capture::tests::classify_capture_stream_error_*` decken die Klassifikation ab. Task 4 (cpal-Stream-Rebuild) ist **optional und nur nach Befund** aus dem naechsten StreamError-Log-Eintrag zu entscheiden (Hypothese Suspend/Resume vs Device-Loss). Branch `fix/capture-stream-error-diagnosis`. Plan `.kilo/plans/1784377955445-capture-stream-error-diagnosis.md`.
-- **Pipeline-Hardening gegen Backend-Abbrueche (2026-07-03):** Drei Massnahmen gegen das wiederkehrende Symptom "alle paar Sessions bricht die Transkription ab". (1) **Pipeline-Watchdog** (`src-tauri/src/lib.rs`): ein Hard-Deadline-Spawn (`PIPELINE_HARD_DEADLINE_SECS=120`) failt native Sessions, die nach Ablauf noch im `Processing`-Stage kleben, mit Error-Event + Sound-Cue — deckt Panic, Task-Drop und Stillstand der Pipeline-Task ab (bisher: kein Error-Event → Overlay blieb in Processing/Recording haengen, ohne Recovery). (2) **Transkriptions-Retry** (`lib.rs:938` `max_retries: 0 → 1`): ein einzelner transienter Groq-Fehler (429/5xx/Timeout/Network) fuehrte bisher zum sofortigen sichtbaren Error-Abbruch; jetzt wird genau einmal retried (respektiert `Retry-After`, nur fuer retryable Status). (3) **Persistente Runtime-Log-Datei** (`src-tauri/src/core/runtime_log.rs`): zusaetzlich zum 400-Einträge-Ringpuffer wird nach `~/.config/WordScript/logs/wordscript-runtime.log` geschrieben (Append + 4 MiB-Rotation), sodass der Abbruch-Fehler beim Naechschauen nicht mehr aus dem Ringpuffer herausgefallen ist.
-- globale Start/Stop-, Pause/Resume- und Abort-Hotkeys
-- native Mikrofonaufnahme mit Waveform-/Level-Events
-- Silence-Timeout und Max-Duration-Autostop
-- Groq-BYOK mit OS secret store
-- `local_preview` als lokale Runtime-Lane ueber externes `whisper-cli`, lokale ggml-Modelle und lokales Ollama-Cleanup
-- Provider-&-Models-Preflight fuer die lokale Runtime-Lane mit nativer Runner-, STT-Modell-, Cleanup-Endpoint- und Cleanup-Modell-Readiness
-- bounded STT-Promptbias fuer Groq und `local_preview` aus aktivem Profil-Context, Dictionary-Schreibweisen und wahrscheinlichen Phrasen; der Mechanismus ist aktiv, aber einige nicht-generische Profile sind damit noch nicht verlaesslich genug fuer Alltagsdiktate
-- der automatische Bias-Pfad ist inzwischen konservativer: generische Profilkategorien werden nicht mehr automatisch an STT und Cleanup weitergereicht, und eingeschlossene Profiles starten ohne vorbefuellte snippetartige `stt_hints`
-- Text Rules zeigt diesen konservativen Bias-Vertrag jetzt direkt an und warnt, wenn Profil- oder Hint-Zeilen fuer den automatischen Pfad ignoriert werden oder gar keine konkreten STT-Hinweise uebrig bleiben
-- Halluzinationsfilter und optionale AI-Nachkorrektur mit konservativen Preserve-Hinweisen aus aktivem Profil-Context und Dictionary-Schreibweisen; lokal und cloud nutzen dafuer getrennte Modell-Slots
-- lokale Textprofile fuer Transcription Context, Dictionary, Snippets und Work-Mode-Defaults im nativen Transform-/Insert-/History-Pfad
-- explizite Processing-Modi (`auto`, `cleanup`, `rewrite`, `agent`, `prompt_enhance`, `verbatim`) mit `mode_router`-Aufloesung aus manuellem Override und Profil-Work-Mode; bei `auto` wird der konkrete Modus pro Transkription durch `resolve_auto_mode` aufgeloest (Agent-Name + imperativ → agent, imperativ + IDE-Kontext → prompt_enhance, sonst cleanup); Renderer fragt die effektive Mode ueber `resolve_current_processing_mode` ab, Overlay-Side-Label und ProfileDock zeigen den aktiven Modus
-- `workspace_context` mit Foreground-App-Detection auf macOS, Windows und Linux; der Detektor nutzt `run_with_timeout` mit dedizierten Pipe-Drain-Threads, damit stdout/stderr nicht leer zurueckkommen
-- `prompt_enhance`-Modus mit `enhance`/`expand` Sub-Mode und `PromptTarget` (system/developer/user) sowie Guardrail-Chain (empty, prompt_executes, language_mismatch, length_budget, semantic_drift)
-- kurzer Overlay-Nachlauf innerhalb derselben kompakten Host-Buehne mit nativen `copy`-, `retry`-, `restore`- und Dismiss-Aktionen, breiterem Preview-/Result-Frame fuer voll lesbare Action-Labels, echter `clipboard_only`-Preview vor dem Commit, gemerkter Manual-Position oder preset-basiertem Display-Anchor, bewegungsbasiertem Drag statt Sofort-Drag und nativem Offscreen-Parking im Idle statt einer vergroesserten zweiten Preview-Flaeche
-- Linux-Overlay mit fixen Fenstergroessen (440×60 flat / 460×164 edit) statt dynamischem pill-Resize, `set_background_color` bei jedem Reveal, `park_overlay_window` mit `hide()`, XWayland-Default (`GDK_BACKEND=x11`) mit `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in, KWin-Script fuer Always-on-Top auf KDE Plasma 6 (`packaging/kwin-wordscript-overlay/`)
-- atomarer Overlay-State-Swap bei neuen Triggern (2026-06-29): Die Overlay-Surface-Sichtbarkeit ist vom Runtime-Reducer abgeleitet statt parallel gefuehrt; ein neuer Trigger (`RECORDING_STARTED`) kippt `status` und loescht `lastResult`/`pendingResult`/`error` in einem Reducer-Commit, sodass die Recording-Surface in demselben Render erscheint, in dem die vorherige Epoche (Result/Edit/Error) verschwindet. Fehler hatten bisher harte Vorrang-Prioritaet ueber eine neue Aufnahme und blockierten den Trigger; die `pillState`-Reihenfolge stellt jetzt eine aktive Session vor herumhaengende Idle-Surfaces. `autoCloseResult`-, `showError`- und `actionPending`-/`editText`-States werden beim Session-Start synchron zurueckgesetzt. Gedeckt durch `OverlayWindow`-Tests fuer Result-, Error- und Edit-Swap sowie Trigger-waehrend-Leaving. Plan 1782750354086.
-- Linux/XWayland – flat→flat-Ghosting endgueltig behoben (2026-06-29): WebKitGTK behielt beim Surface-Wechsel die Compositor-Layer der vorherigen Pill (animierte `ov-shimmer`-Bars, `ov-spin`-Spinner, `.ov-pill-shell`-Wrapper-Cache) verzögert -> alte States blitzten unter dem neuen durch. Drei deterministische Massnahmen: (1) `<OverlayPill key={kind}>` remountet die Subtree pro Surface; (2) `reveal_overlay_window` oszilliert die flat-Fensterhoehe pro Reveal 60<->61px (`OVERLAY_FLAT_REVEAL_TICK`) -> echte `set_size`-Aenderung -> Backing-Store-Reallokation -> vollstaendiger Repaint, der alle retained Layer loescht; (3) ein zusaetzlicher `useLayoutEffect` triggert diesen Repaint auch bei reinen Kind-Wechseln ohne Surface-Wechsel (recording->processing, beide `compact`), bei denen vorher kein Reveal feuerte. Die 1px-Oszillation ist im transparenten, zentrierten Fenster unsichtbar. Bestaetigt auf KDE Plasma 6 / XWayland.
-- Linux/XWayland – Overlay-Position stabil innerhalb einer Session (2026-06-29): `reveal_overlay_window` repositionierte auf `if !was_visible`, aber `window.is_visible()` ist auf XWayland unzuverlaessig (wie `outer_size()` -> 0x0) -> jeder Reveal repositionierte neu -> verschiedene Overlay-States landeten innerhalb derselben Session auf unterschiedlichen Monitoren. Eine autoritative Visibility-Flagge (`OVERLAY_WINDOW_SHOWN`, true bei `show()`, false bei `park`/`hide`) macht das hidden->visible-Gate deterministisch: innerhalb einer Session bleibt das Fenster sichtbar, States behalten ihre einzige, gemeinsam genutzte Position; nur ein echter park->reveal (zwischen Sessions) repositioniert. Die Position ist nicht per-Surface (`manual_overlay_reference_position`/`manual_overlay_surface_position` ignorieren `_surface`) -> es gibt genau eine gespeicherte Position fuer alle States. Plan 1782750354086.
-- Overlay – Stopp-Ghosting beim Processing-Preview -> Result-Übergang behoben (2026-07-01): Beim Stoppen/Commit gab es einen `pillState=null`-Zwischenrender (Processing Preview -> unmount -> Result mount), auf WebKitGTK orphanierten dabei die Compositor-Layer der vorigen Pill -> intermittierendes Ghosting ("Processing Preview statt Result", "komische Ecken und Kanten"). Eine `bridgeResultFromProcessing`-Hold-Logik hält das Result durch diesen Übergang, sobald `lastResult` verfügbar ist, solange das Overlay noch "open" ist und das Result nicht unterdrückt ist (Commit/Edit-Confirm arm `suppressNextResultActionsRef`). Eingebunden in `isActive`, damit der Swap nie in leaving->entering abrutscht (das ebenfalls Layer orphanete). `overlaySurfaceRef` trackt jetzt die tatsächliche gerenderte Surface (`renderOverlaySurface`) statt der Raw-`overlaySurface`, damit Drag-Persistenz und native Visibility-Sync übereinstimmen. Workflow-Wahrheit: die Processing Preview (State 05, Commit/Abort) gehört zu `insert_behavior="clipboard_only"` (Backend `lib.rs:1216` emittiert `preview_ready` nur dort und wartet auf Commit); bei `auto_paste` kommt State 05 nie (direkter Insert). Diese Kopplung ist bereits über den Event-Flow korrekt, kein zusaetzliches Frontend-Gate noetig.
-- Overlay – mode_picker hat eigenen `kind: "mode-picker"` (2026-07-01): Der mode_picker recycelte bisher `kind: "recording"`, sodass der `key={pillState.kind}`-Remount beim Wechsel Picker -> echtes Recording NICHT feuerte -> interne Animation-/Layer-State der RecordingPill blieb stale. Neuer eigener Kind + `ModePickerPill`-Komponente (idle-Silhouette + ModeChip) erzwingt den Remount; Gallery-Card "05b Mode picker" ergaenzt. Plan 1782836201272.
-- Insert – clipboard_only-Clipboard-Write auf Wayland verlässlich (2026-07-01): Bei `insert_behavior="clipboard_only"` kam der Text unzuverlässig in die Wayland-Zwischenablage. Zwei Wurzeln: (1) `write_wayland_clipboard` returned fire-and-forget `Ok(())` und maskierte einen fehlschlagenden `wl-copy` (Compositor-Race / nicht erreichbares Display) als erfolgreichen Clipboard-Write -> `clipboard_written=true` log, der Text war weg und die Chain fiel nicht auf arboard durch. Jetzt blockiert der Write bis zu `WL_COPY_WAIT_MS` (400ms) auf den wl-copy-Exit, prüft den Status und fängt stderr fuer Diagnostik; nur echter Erfolg meldet `Ok`, sonst `Err` -> Chain faellt auf arboard. (2) Der arboard-Fallback schrieb unter WordScripts Default-Vertrag (`GDK_BACKEND=x11`, `WAYLAND_DISPLAY` von `main.rs` entfernt) das X11-Clipboard (XWayland-Buffer) statt das Wayland-Clipboard `wayland-0`, das die Ziel-Apps lesen. `write_clipboard_with_arboard` stellt nun auf original-Wayland-Sessions `WAYLAND_DISPLAY` (aus `WORDSCRIPT_WAYLAND_DISPLAY`) fuer den `Clipboard::new()`-Aufruf wieder her und entfernt es danach, sodass arboard den Wayland-Backend waehlt, ohne WebKitGTKs X11-Vertrag zu stoeren. `auto_paste` war unbeeinträchtigt (laeuft zusaetzlich der Paste-Driver, der das Clipboard sofort liest).
-- Config – Race auf config.json serialisiert (2026-07-02): `insert_behavior` (Copy & Insert at Cursor vs. Copy to Clipboard Only) switchte ungewollt auf clipboard_only zurück, wenn der Nutzer es in Settings änderte. Wurzel: parallel laufende Tauri-Commands (`save_config` vom Frontend + `set_active_profile_processing_mode` vom mode-select/mode-picker-Hotkey) machen beide load->modify->save auf `config.json` ohne Serialisierung. Der mode-hotkey las eine stale Datei und schrieb sie nach dem Frontend-save zurück -> überschrieb die `insert_behavior`-Änderung. Ein globaler `CONFIG_FILE_LOCK` (`OnceLock<Mutex<()>>`) in `config.rs` + `with_config_file_lock`-Helper serialisiert jetzt jede load->modify->save-Sequenz (`save_config`, `switch_active_text_profile`, `set_active_profile_processing_mode`, `acknowledge_/unacknowledge_profile_health_flag`), sodass jeder Command die aktuellste Datei liest. Bekannter Nebenfall (out of scope): `save_config` überschreibt die ganze Datei mit dem Frontend-Snapshot; ein fast-gleichzeitiger mode-hotkey-Wechsel kann dadurch verloren gehen — wird durch den Frontend-Form-Sync beim ready-Event in der Praxis aufgefangen.
-- Overlay/Insert/Config – Verbleibende Bugs tiefer gewurzelt, zweite Fix-Runde (2026-07-02): Die drei Commits `0dff69f`/`2644f9b`/`41cca67`/`95b6a80` waren aktiv und `tauri dev` war neu gestartet, aber die Bugs bestanden weiter — die Wurzeln lagen tiefer als die erste Hypothese. Plan `.kilo/plans/1782892412000-overlay-clipboard-config-remaining-bugs.md`.
-  - **P2 – eckige Pill / Kanten bei clipboard_only-Commit:** `bridgeResultFromStop` ist suppression-gated (darf beim unterdrückten Commit kein Result zeigen, sonst Regression von `2644f9b`), also griff der Hold beim clipboard_only-Commit nicht. Der Commit konsumiert `pendingResult`, der `renderProcessingPreview`-Hold (der `pendingPreviewResult` verlangte) fiel aus -> `pillState=null`-Unmount -> auf WebKitGTK orphanierten die Compositor-Layer -> eckige Pill. Fix: ein `lastProcessingPreviewSnapshotRef` hält den letzten LIVE Processing-Preview-Inhalt (text + clipboardOnly) und speist während `overlayMotion!=="idle"` einen STATISchen Processing-Hold (ohne Spinner/pending), bis das saubere idle-Unmount kommt. Zeigt kein Result, regressiert `2644f9b` nicht.
-  - **P1 – insert_behavior-Revert:** Zwei Wurzeln zusätzlich zum `95b6a80`-Lock. **(C1 Frontend)** `SettingsWindow`'s `setForm({ ...state.config })`-Effect überschrieb die Form bei JEDEM `ready`-Event; überlappende Saves (save_config ist lock-serialisiert, ready(A) landet nach Edit zu B) revertierten die Form A->B->A->B ("ständig switchend"). Ein `inFlightSaveCountRef`-Guard unterdrückt den externen Form-Sync während eines in-flight Saves und re-synct einmal aus dem autoritativen Runtime-Config, wenn der letzte Save settle'd. **(C2 unlocked re-save)** `resolve_current_processing_mode` (häufiges Overlay-/Mode-Event-Polling) rief `load_from_disk()` ohne Lock auf; dessen bedingter Re-save (Migration/Normalize-Delta) raste mit `save_config`. `load_from_disk` nimmt jetzt den Lock für ungelockte Caller (`load_from_disk()`); gelockte Caller nutzen die reentrancy-sichere `load_from_disk_within_lock()` (std-Mutex ist nicht reentrant). `reconcile_legacy_secret_before_save` läuft jetzt innerhalb von `save_config`'s Lock (schließt den zweiten ungelockten Write). Zusaetzlich ein nahezu geräuschfreier Diagnostic-Log in `normalize_text_profiles`, der NUR feuert, wenn Normalization `insert_behavior` tatsaechlich umschreibt (Steady-State-Config: nie).
-  - **P3 – Text kommt nicht ins Clipboard (clipboard_only, Wayland):** `write_wayland_clipboard` returned auf dem 400ms-Timeout-Zweig optimistisch `Ok(())` ("assuming daemon forked") — das maskierte einen wl-copy, der keinen serving Daemon geforkt hatte (Compositor-Race / nicht erreichbares Display), als `clipboard_written=true`, der Text fehlte und die Chain fiel nicht auf arboard durch. Fix: auf dem Timeout-Zweig (und nach schnellem Exit-0) verifiziert ein geboundeder `wl-paste`-Read-back (`verify_wayland_clipboard`) dass das Clipboard unseren Text haelt; bei Mismatch/Leerlauf -> `Err` -> Chain faellt auf arboard. `wl-paste`-unavailable bleibt konservativ `Ok` (kann Erfolg nicht widerlegen). Zusaetzlich gezielte Diagnostics: Clipboard-Chain-Entry-Log (`is_wayland`, `has_wl_copy`, `wayland_display`, Chain) und wl-copy-Write-/Read-back-Logs, in der Diagnostics-Ansicht sichtbar.
-- Overlay – Ghosting deterministisch behoben + ClipboardPipeline-Fixes (2026-07-08): (1) **Opaker Pill-Hintergrund:** Das WebKitGTK-Compositor-Layer-Ghosting ("eckige Kanten", "switcht zwischen runden und eckigen Ecken", besonders beim zweiten clipboard_only-Lauf) war nach drei Repaint-Runden nicht deterministisch zuverlaessig. Wurzel: die halbtransparente Pill-Hintergrundfarbe `rgba(27,27,29,0.90)` liess 10% der gecachten Raster der vorigen Surface durchscheinen. Fix: `--ov-surface: #1b1b1d` (opak) und `--ov-surface-strong: #141416` (opak) in `overlay-pill.css` — blockiert jedes residuelle Durchscheinen, selbst wenn die alte Layer gecached bleibt. (2) **06b-Fix (Accent-Soft-Border):** `ResultActionsPill` setzt bei `clipboardOnly` die Modifier-Klasse `pill--clipboard` auf den Container. (3) **ClipboardFallback→06b-Wiring:** Der auto_paste-Pfad, der zur Laufzeit auf Clipboard zurueckfaellt (`NativeInsertMode::ClipboardFallback`), zeigt jetzt dieselbe 06b-Darstellung. Backend emittiert `delivery: "inserted" | "clipboard"` im `transcription`-Event. (4) **Commit-Double-Dispatch-Race:** Der Commit-Pfad emittiert `transcription` auf zwei Channels; der native-event-Pfad dispatcht jetzt `NATIVE_TRANSCRIPTION_SYNC` (ohne `lastResult` zu setzen), sodass die Suppression nur vom autoritativen `wordscript-event` konsumiert wird. (5) **ResultActions-Breite 440→480px:** 06b mit Insert-Button (4 Buttons) brauchte mehr Platz. (6) **Copy schliesst Surface nicht:** `finishCopyAction` laesst die Result-Actions-Surface nach Copy offen (kein leaving-Uebergang → kein Layer-Orphaning).
-- Overlay – Mode-Cycling-Ghosting in der Praxis behoben, Workaround revertiert (2026-07-20): Der Vorgänger-Workaround (feste ModeChip-Breite `min-width: 80px` + `key={state.mode}` + `.pill--open` transform entfernt) reduzierte das Ghosting von 27px auf ~1px residual, war aber optisch als Workaround erkennbar. Revertiert: die Pill hat ihre natürliche `max-content`-Breite zurück, die Keys sind entfernt, `.pill--open` transform ist wiederhergestellt. **Live verifiziert:** ohne Workaround funktioniert das Mode-Cycling in der Praxis ohne State-Überlagerung. Zwei Rest-Artefakte (kleiner schwarzer Blitz, kaum sichtbarer horizontaler Strich) sind bewusst akzeptiert — Stand auf unbestimmte Zeit so. Behalten: A2 `queueMicrotask` (schwarzer Blitz) + A1.i `zoom: 0.87` (Layer-Promotion-Vermeidung). Zusätzlich permanente DEV-only Diagnose-Infrastruktur: `overlay_open_devtools`/`append_diag_log`/`read_diag_log`/`clear_diag_log` Rust-Commands + `OverlayDiagPanel` in Settings (Sidebar-Area "Overlay Diag") + `[ov-tap]`/`[ov-render]`/`[ov-sched]`/`[ov-repaint]` Frontend-Logs nach `/tmp/kilo/overlay-diag.log`. Plan 1784433288646. Handoff `docs/handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md`.
-- persistenter nativer Transkriptverlauf mit Retry, Delete/Clear, serverseitigen Filtern, JSON-Export und separater Diagnostics-Darstellung neben Runtime-Logs
-- Text-Rules-Validation, Preview, Import/Export und Konfliktbehandlung
-- Profile Health und Bias Policy: automatische Erkennung systemischer Verhaltensverzerrungen in einem Profil (Laengen-Asymmetrie im Dictionary, widerspruechliche Stil-Anweisungen im Prompt, Cleanup-unterdrueckende Prompt-Muster) mit Traffic-Light-Anzeige (gruen / gelb / rot) im Text-Rules-Tab und als Punkt im Profil-Dock; einzelne Flags koennen per Acknowledge-Toggle unterdrückt werden, ohne die Konfiguration anzufassen; persistente `profile_health_acknowledged_flags`-Map ueber `acknowledge_profile_health_flag` / `unacknowledge_profile_health_flag` Tauri-Commands, geladen in `get_profile_health` aus der AppConfig
-- native Insertion mit mehreren Fallback-Stufen
-- Scratchpad und Last-Transcript-Restore
-- Input-Preflight fuer die erste Diktation mit Trigger- und Mikrofon-Status aus nativer Wahrheit; Insert- und Recovery-Status leben jetzt in der Insert & Recovery-Area
-- native Sound-Cues fuer Startup, Start, Stop, Abort und Fehler
-- gepufferte Runtime-Logs in Diagnostics
-- nativer Release-Status-Check fuer die About-Flaeche mit ehrlichem GitHub-Release-Signal
+- native start/stop, pause/resume and abort hotkeys
+- native microphone capture with waveform, level events, silence timeout and
+  max-duration autostop
+- single capture stream rebuild after a transient cpal stream error
+  (matching-gate on sample rate/channels/format; one attempt per session;
+  persistent runtime log + classified error pill)
+- pipeline hardening against backend aborts: a hard-deadline watchdog, a
+  single transcription retry (retryable only), and a persistent runtime log
+  file so abort errors no longer fall out of the ring buffer
+- Groq BYOK with OS secret-store storage
+- `local_preview` as a full local runtime lane over external `whisper-cli`,
+  local ggml models and local Ollama cleanup (STT plus cleanup, not STT-only)
+- Provider & Models preflight for the local runtime lane with native runner,
+  STT-model, cleanup-endpoint and cleanup-model readiness
+- bounded STT prompt bias for Groq and `local_preview` from active profile
+  context, dictionary spellings and likely phrases; the mechanism is active
+  but some non-generic profiles are still not reliable enough for everyday
+  dictation
+- the automatic bias path is now more conservative: generic profile
+  categories are no longer forwarded to STT and cleanup; included profiles
+  start without prefilled snippet-like `stt_hints`
+- Text Rules shows this conservative bias contract and warns when profile or
+  hint lines are ignored by the automatic path or when no concrete STT hints
+  remain
+- hallucination filter and optional AI cleanup with conservative preserve
+  hints from active profile context and dictionary spellings; local and
+  cloud use separate model slots
+- local text profiles for transcription context, dictionary, snippets and
+  work-mode defaults in the native transform/insert/history path
+- explicit processing modes (`auto`, `cleanup`, `rewrite`, `agent`,
+  `prompt_enhance`, `verbatim`) with `mode_router` resolution from manual
+  override and profile work-mode; `auto` is resolved per transcription via
+  `resolve_auto_mode` (agent name + imperative -> agent; imperative + IDE
+  context -> prompt_enhance; else cleanup); the renderer queries the
+  effective mode via `resolve_current_processing_mode`; overlay side label
+  and profile dock show the active mode
+- `workspace_context` with foreground-app detection on macOS, Windows and
+  Linux via `run_with_timeout` with dedicated pipe-drain threads
+- `prompt_enhance` mode with `enhance`/`expand` sub-mode and `PromptTarget`
+  (system/developer/user) plus a guardrail chain (empty, prompt_executes,
+  language_mismatch, length_budget, semantic_drift)
+- compact live overlay stage with native `copy`/`retry`/`restore`/dismiss
+  actions, a real `clipboard_only` processing preview before commit,
+  remembered manual placement or preset display anchor, movement-threshold
+  dragging, native offscreen parking in idle, and state-specific right-side
+  spacing
+- Linux overlay with fixed window sizes (440x60 flat / 460x164 edit),
+  `set_background_color` on every reveal, `park_overlay_window` with
+  `hide()`, XWayland default with native-Wayland opt-in, KWin script for
+  always-on-top on KDE Plasma 6
+- atomic overlay state swap on new triggers (recording starts in the same
+  render that the previous epoch disappears)
+- Linux/XWayland transition state bleeding is resolved through opaque pill
+  surfaces and compositor guards. A separate mode-cycling artifact is in an
+  accepted residual state: a small black flash or faint horizontal line can
+  still appear during rapid mode changes.
+- persistent native transcription history with retry, delete/clear,
+  server-side filters, JSON export and a separate diagnostics view from
+  transient runtime logs
+- Text Rules validation, preview, import/export and conflict handling
+- profile health and bias policy: automatic detection of systemic behavioral
+  distortion in a profile (length bias in dictionary, contradictory style
+  instructions, cleanup-suppressing prompt patterns) with a traffic-light
+  display in the Text Rules tab and a dot in the profile dock; individual
+  flags can be acknowledged without changing config; persistent
+  `profile_health_acknowledged_flags` map
+- native insertion with multiple fallback levels
+- scratchpad and last-transcript restore
+- input preflight for the first dictation with trigger and microphone status
+  from native truth; insert and recovery status live in the Insert &
+  Recovery area
+- native sound cues for startup, start, stop, abort and errors
+- buffered runtime logs in diagnostics
+- native release status check for the About area with an honest
+  GitHub-release signal
 
-## Text Rules und Profilstatus
+## Text Rules and profile state
 
-### Heute aktiv
+### Active today
 
-- lokale Textprofile mit aktivem `Transcription Context`
-- Work-Mode-Defaults fuer Processing-Modus, Insert-Verhalten und Recovery-Verhalten; `rewrite_style` ist nur noch Migrations-Eingang (`polished`/`clean`/`verbatim`) und wird ueber `migrate_legacy_processing_mode` auf den primaeren `ProcessingMode`-Vertrag abgebildet
-- profileigenes Personal Dictionary
-- profileigene Snippet-Liste
-- globale Schalter fuer AI cleanup, filler filter und rewrite phrasing nur noch als Fallback fuer Profile ohne expliziten Work-Mode
-- ein dedizierter Modes-Tab in Settings (zwischen Input und Text Rules) exposiert den aktiven Modus, den Sub-Mode (nur fuer `prompt_enhance`), den Prompt-Target, den `auto_detect_mode`-Schalter (Workspace-Kontext als Wahrscheinlichkeitssignal fuer Auto-Mode) sowie acht per-Mode-Hotkeys (`mode_picker_hotkey`, `mode_cycle_hotkey`, `mode_auto_hotkey`, `mode_verbatim_hotkey`, `mode_cleanup_hotkey`, `mode_rewrite_hotkey`, `mode_agent_hotkey`, `mode_prompt_enhance_hotkey`) mit plattformspezifischen Defaults
+- local text profiles with active `Transcription Context`
+- work-mode defaults for processing mode, insert behavior and recovery
+  behavior; `rewrite_style` is only a migration input now and is mapped to
+  the primary `ProcessingMode` contract via `migrate_legacy_processing_mode`
+- profile-owned personal dictionary
+- profile-owned snippet list
+- global switches for AI cleanup, filler filter and rewrite phrasing only as
+  a fallback for profiles without an explicit work mode
+- a dedicated Modes tab in settings exposing the active mode, sub-mode,
+  prompt target, the `auto_detect_mode` switch and seven mode shortcuts
+  (one picker/cycler plus six direct modes) with platform-specific defaults
 
-### Heute nicht aktiv
+### Not active today
 
-- keine Prompt-Library als Produktfunktion
-- keine Assistant-Identitaeten
-- kein Team- oder Sync-Modell
+- no prompt library as a product function
+- no assistant identities
+- no team or sync model
 
-### Profilrealitaet heute
+### Profile reality today
 
-- Profile werden lokal in der nativen Config gehalten
-- der alte globale Rule-Zustand wird beim Laden in ein Standardprofil migriert
-- die Settings-Sidebar zeigt den aktiven Profilnamen global und erlaubt manuellen Wechsel oder schnelles Anlegen neuer Profile
-- die Text-Rules-UI kann Profile anlegen, duplizieren, waehlen und loeschen; eingeschlossene Profile erscheinen in derselben Profilbibliothek wie eigene Profile und koennen normal verwendet oder weiterbearbeitet werden
-- die Text-Rules-UI ist als Workspace organisiert: Profilbibliothek links, aktive Context-/Preview-Karten oben und getrennte Dictionary-/Snippet-Arbeitsbereiche darunter
-- History speichert den aktiven Profilnamen und den aktiven Work-Mode als Teil des Verlaufs
-- automatische app- oder hotkey-basierte Profilaktivierung existiert noch nicht
+- profiles are kept locally in the native config
+- the old global rule state is migrated into a standard profile on load
+- the settings sidebar shows the active profile name globally and allows
+  manual switching or quick creation of new profiles
+- the Text Rules UI can create, duplicate, select and delete profiles;
+  included profiles appear in the same profile library and can be used or
+  edited like normal profiles
+- the Text Rules UI is organized as a workspace: profile library left,
+  active context/preview cards top, separated dictionary/snippet work areas
+  below
+- history stores the active profile name and active work mode as part of the
+  transcript record
+- automatic app- or hotkey-based profile activation does not exist yet
 
-Wichtige Doku-Regel dazu:
+Documentation rules:
 
-- `Transcription Context` bleibt eine STT-Hilfe
-- Profile sind implementiert, aber bleiben lokal und manuell aktiviert
-- eingeschlossene Profile sind lokale Baselines fuer zentrale ICPs und keine serverseitige Prompt-Library
+- `Transcription Context` stays an STT aid.
+- profiles are implemented but stay local and manually activated.
+- included profiles are local baselines for central ICPs, not a server-side
+  prompt library.
 
-## Insertion- und Recovery-Modell
+## Insertion and recovery model
 
-Der Insert-Pfad kann heute in vier sichtbare Modi enden:
+The insert path can end in four visible modes today:
 
 - `direct_paste`
 - `clipboard_only`
 - `clipboard_fallback`
 - `scratchpad_fallback`
 
-Zusatzregeln des aktiven Pfads:
+Additional rules:
 
-- erfolgreicher Direct Insert stellt den vorherigen Clipboard-Inhalt best effort wieder her
-- Scratchpad und Last-Transcript-Restore bleiben sichtbar in der Insert & Recovery-UX (einzige Recovery-Flaeche; Home behaelt nur einen Quick-Restore-Button mit Link dorthin)
-- aktuelle Insert-Ergebnisse enthalten `recovery_action`, `recovery_message` und `clipboard_restore`, damit Settings und Diagnostics klar zwischen keiner Aktion, manuellem Paste, Scratchpad-Recovery und Clipboard-Restore-Signal unterscheiden koennen
-- persistierte History-Eintraege und History-Exporte tragen dieselben Recovery-Felder, damit Retry, Export und Diagnostics dieselbe Insert-Wahrheit behalten
-- Scratchpad-Recovery in Insert & Recovery, diagnostische Preview-Transkripte in Diagnostics und der persistente History-Store sind drei getrennte native Datenflaechen
-- Overlay, Insert & Recovery und Diagnostics lesen denselben nativen Plattformstatus; About zeigt keinen Plattformstatus mehr
-- Overlay-Sichtbarkeit selbst folgt inzwischen ebenfalls dem nativen Host-Vertrag: aktive Sessions werden bottom-center sichtbar gemacht, Idle-Zustaende ausserhalb des sichtbaren Bereichs geparkt
-- Overlay-Placement folgt ebenfalls dem nativen Host-Vertrag: Drag speichert die letzte Manual-Position, Settings kann auf preset-basierte Display-Anker umschalten und beides bleibt Teil desselben `AppConfig`
+- successful direct insert best-effort restores the previous clipboard content
+- scratchpad and last-transcript restore stay visible in the Insert &
+  Recovery UX (the only recovery surface; Home keeps only a quick-restore
+  button linking there)
+- current insert results carry `recovery_action`, `recovery_message` and
+  `clipboard_restore` so settings and diagnostics can clearly distinguish no
+  action, manual paste, scratchpad recovery and clipboard-restore signal
+- persisted history entries and history exports carry the same recovery
+  fields so retry, export and diagnostics keep the same insert truth
+- scratchpad recovery in Insert & Recovery, diagnostic preview transcripts in
+  Diagnostics and the persistent history store are three separate native data
+  surfaces
+- overlay, Insert & Recovery and Diagnostics read the same native platform
+  status; About no longer shows platform status
+- overlay visibility itself follows the native host contract: active
+  sessions are revealed bottom-center, idle states are parked offscreen
+- overlay placement also follows the native host contract: drag stores the
+  last manual position, settings can switch to preset display anchors, both
+  stay part of the same `AppConfig`
 
-## Bekannte offene Produktluecken
+## Known open product gaps
 
-- die Transkriptionszuverlaessigkeit ist ausserhalb von `General Writing` oder keinem Profil noch nicht belastbar genug; einzelne kuratierte Profile wie `Customer Success Replies` koennen Rohtranskripte aktuell mit mehrsprachigen Fragmenten, Fantasietokens und Topic-Drift sichtbar verschlechtern
-- der AI-Cleanup-Schritt antwortet nicht mehr auf diktierte Fragen; ein expliziter Guardrail in `normalize_correction` faengt Faelle ab, in denen das Modell ein Fragezeichen aus dem Output entfernt; Regressionstests fuer diesen Pfad sind vorhanden
-- reale Regression-Faelle aus misslungenen Diktaten werden jetzt ueber den Korpus in `src-tauri/tests/fixtures/regression_transcripts.json` plus Loader in `core::regression_corpus` abgefahren: Schema-Validierung, Bias-Pfad-Assertions, Text-Rules-Analyse-Assertions, Profile-Health-Init-Tests und Dictionary-Struktur-Tests; initiale Beispiele decken `cs_profile_multilingual_topic_drift`, `cs_profile_length_explosion_via_english_boilerplate` und `cs_profile_question_answered_german` ab; weitere reale Beispiele werden manuell nachgezogen und muessen jeweils in den Korpus und in passende synthetische Tests in `core::transform::tests` / `core::transcription_hints::tests` einfliessen
-- Text Rules warnt heute ueber schwachen automatischen Bias; eine explizite profilgebundene Bias-Policy und sichtbare Profilgesundheit sind jetzt fuehrbar: `TextProfileWorkMode.bias_mode` (Conservative / Manual / Off) und `manual_bias` (cloud_include_profile_terms, local_include_profile_terms, stt_hints_override) werden in der AppConfig persistiert und ueber `analyze_document_with_context` als Provider-spezifische `cloud_prompt_preview` / `local_prompt_preview` an die UI zurueckgegeben; `BiasPolicyWeak`-Health-Flag warnt, wenn `Off` mit `agent` / `prompt_enhance` oder global aktivem Agent-Mode kollidiert; Conservative-Modus bleibt Default und schuetzt vor Sprachbias-Leakage in den Whisper-Initial-Prompt
-- keine publizierten versionierten Releases
-- kein signierter In-Place-Auto-Updater
-- Release- und Signing-Validation mit echten Secrets ist noch kein regelmaessiger Routinepfad
-- Linux Wayland ist compositorspezifisch: KDE Plasma 6 / GNOME Mutter erreichen direkten Auto-Paste ueber einen einmaligen xdg-desktop-portal-RemoteDesktop-Grant; Hyprland, Sway und KDE Plasma 5 bleiben experimentell ohne stabilen Portal-Pfad
-- **Linux Wayland – Auto-Paste-Verhalten pro Compositor:** Auf KDE Plasma 6 und GNOME Mutter fordert WordScript beim ersten Status-Pull eine RemoteDesktop-Portal-Session ueber `busctl` an, persistiert das Restore-Token unter `$XDG_RUNTIME_DIR/wordscript/remote-desktop.token` und nutzt die Session fuer nachfolgende Auto-Paste-Versuche, sodass der "Control input devices"-Dialog nur einmal erscheint. Auf reinen Wayland-Sessions ohne aktive XWayland-Bridge bleibt Auto-Paste deaktiviert; der Transkript landet im Clipboard und muss manuell eingefuegt werden. Hybrid-Sessions (X11+Wayland mit xdotool) verwenden `xdotool type` als ersten Paste-Pfad, klassifizieren aber den stderr zur Laufzeit (KDE RemoteDesktop / InputCapture / unknown) und degradieren bei einem erkannten Portal-Prompt automatisch auf Clipboard-only mit sichtbarem `last_portal_prompt`-Treiber und stderr-Excerpt in der UI. Hyprland, Sway und KDE Plasma 5 haben keinen stabilen Portal-Grant; `paste_disabled_reason` nennt den konkreten naechsten Schritt (Plasma-6-Upgrade, `wlr-virtual-input`, etc.).
-- **Linux Wayland – Overlay Click-Through nicht loesbar:** Das Overlay-Fenster blockiert auf Wayland Mausklicks auf den transparenten Bereich ausserhalb der sichtbaren Pill. Alle drei evaluierten Loesungsansaetze scheitern an architektonischen Grenzen: (1) GTK `input_shape_combine_region` schraenkt die Input-Region auf die Pill ein und gibt Click-Through frei, bricht aber `xdg_toplevel.move` auf dem getesteten Compositor – Drag funktioniert dann ueberhaupt nicht mehr. (2) `setIgnoreCursorEvents` ist auf dem getesteten Setup nicht wirksam. (3) JS-seitiges `setPosition`/`set_outer_position` bewegt sichtbare XDG-Toplevel-Fenster auf nativem Wayland nicht (Compositor-Ownership). **Aktueller Stand (2026-06-20):** Drag, Button-Click und Clipping funktionieren jetzt zuverlaessig (siehe `docs/handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md`). Always-on-Top via KWin-Script (`packaging/kwin-wordscript-overlay/`). Click-Through zu Apps unter dem Overlay bleibt die einzige offene Grenze — Loesung erfordert Tauri-seitige Layer-Shell-Unterstuetzung oder einen Compositor-spezifischen Protokollpfad.
-- **Linux Overlay – Black Block und Compositing-Artefakte behoben:** WebKitGTK malt `outer box-shadow` opak, was zu schwarzen Bloecken um die Pill fuehrte. Behoben durch `--ov-shadow: none` in `overlay-pill.css`. Das native `set_background_color` bei jedem Reveal deckt die Black-Bar nach Resize, reicht aber nicht fuer das flat→flat-Stale-Layer-Overlap: die via `transform: scale(0.87)` skalierte `.pill` wurde auf eine eigene Compositor-Layer gehoben und beim Surface-Wechsel (recording → processing → result → error) als orphaned Layer von WebKitGTK retained → Ghost/Bleed des vorherigen Pill-States. Fix (1): die visuelle `scale(0.87)` liegt jetzt auf einem persistenten Wrapper `.ov-pill-shell` (wird beim kind-Swap nie unmountet), die `.pill` selbst ist transformfrei (auch `.pill--error`, dessen 2px-Lift entfaellt); damit gibt es keine promoted Pill-Layer mehr, die persistieren koennte. `.overlay-shell` bleibt bewusst transformfrei (Fenster-Sizing-Messung). `will-change` kommt im App-Pfad nicht vor (nur im Storybook-only `overlay.css`). Plan 1782308448580. **Fix (2) – flat→flat-Ghosting vollstaendig behoben (2026-06-29, Plan 1782750354086):** Der Wrapper-Fix war unvollstaendig, weil (a) die animierten Child-Layer (`ov-shimmer`-Bars, `ov-spin`-Spinner) beim Surface-Wechsel weiterhin orphanen und (b) ein `set_size`/`set_background_color` auf denselben Wert fuer WebKitGTK ein No-op ist (keine Backing-Store-Reallokation). Zwei deterministische Massnahmen: `<OverlayPill>` erhaelt `key={kind}` und remountet pro Surface vollstaendig (Child-Layer werden freigegeben); `reveal_overlay_window` oszilliert die flat-Fensterhoehe um 1px (60↔61) pro Reveal und erzwingt so eine echte `set_size`-Aenderung → Backing-Store-Reallokation → vollstaendiger Repaint, der alle retained Layer loescht, bevor der neue Surface malt. Die 1px-Oszillation ist im transparenten, zentrierten Fenster unsichtbar. Bestaetigt auf KDE Plasma 6 / XWayland.
-- **Linux Settings – Scroll-Ruckeln durch GPU-Compositing und CSS-Kostenreduktion behoben:** `WEBKIT_DISABLE_COMPOSITING_MODE=1` zwang WebKitGTK in den Cairo-Software-Rendering-Pfad, was das Overlay vor Black-Blocks schuetzte, aber jedes Scrollen im Settings-Fenster CPU-gebunden und ruckelig machte (besonders bei Fenster-Skalierung). GPU-Compositing ist jetzt standardmaessig aktiviert; der Overlay-Shadow-Fix (`--ov-shadow: none`) und `WEBKIT_DISABLE_DMABUF_RENDERER=1` halten das Overlay auch mit GPU-Compositor korrekt. Zusaetzlich wurden die CSS-Kosten im Settings-Scroll-Pfad reduziert: `shadow-card` komplett von FormCard/StatTile/Rule-Cards entfernt (Elevation kommt jetzt nur noch durch Background + Border), `backdrop-filter` von der `material`-Klasse entfernt, `transition-colors` auf Scroll-Containern entfernt, `body` background-gradient auf `background-attachment: fixed` gesetzt (verhindert Re-Composite pro Scroll-Frame), `contain: layout paint` auf FormCard ergaenzt, History-Refresh-Interval von 1.5s auf 5s erhoeht, Tab-Wechsel-Animation (`animate-in fade-in-50`) entfernt und `contain: layout paint` + `overscroll-contain` + `scrollbar-gutter: stable` auf dem Scroll-Container ergaenzt. Opt-out via `WORDSCRIPT_DISABLE_WEBKIT_COMPOSITING=1` fuer Hardware, auf der das Overlay dennoch Black-Blocks zeigt.
-- ein vollstaendiger gefuehrter Setup-, Permissions- und Packaging-Pfad von Install bis erster brauchbarer Diktation ist noch nicht implementiert; lokale Runtime und Input haben aber bereits Preflight-Flaechen fuer die wichtigsten ersten Schritte
-- die lokale Runtime-Lane braucht noch automatisches Modellmanagement, Pull-/Install-Aktionen und einen nutzerfaehigen Erststartpfad ueber die aktuelle env-basierte Runtime-Verdrahtung hinaus
-- mehrere vollwertige Produktionsprovider ueber Groq hinaus sind noch nicht implementiert; ebenso fehlt noch ein explizites Mode-Modell wie `fast`, `quality`, `local` oder `self_hosted`
-- Settings-Tabs brauchen noch eine klarere Informationshierarchie und mehr native macOS-Produktpolish; die aktuelle Shell ist brauchbar, aber noch nicht der Zielzustand. Das Overlay ist derzeit nicht die primaere UI-Baustelle
-- **Profilansicht-UI muss ausgearbeitet werden:** Der User sieht derzeit nicht vollstaendig, was ein Textprofil beinhaltet (Work-Mode-Defaults wie `processing_mode`/`insert_behavior`/`enhance_sub_mode`, Capture-Settings wie `max_recording_seconds`/`silence_timeout_seconds`, Modes-Settings wie `post_process`/`filter_fillers`/`agent_name`, Speech-Settings wie Provider/Modell/Sprache, Dictionary und Snippets) und was global bleibt (Hotkeys, Overlay-Placement, Display-Timeouts, Sound). Ein umfassendes Profil-Summary- oder Detail-View ist offen.
-- Linux Overlay: Drag, Button-Click und Clipping funktionieren zuverlaessig (2026-06-20), aber Click-Through zu Apps unter dem Overlay bleibt offen (siehe `docs/handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md`)
-- **Linux Overlay – Monitor-Restore mit Identity-Miss-Rederivation:** Gemerkte Overlay-Positionen liegen pro Monitor-Identity (Name oder Work-Area-Fingerprint) plus rohen logischen `overlay_manual_x/y` vor. Bei Identity-Match landet das Overlay wieder auf demselben Monitor. Bei Identity-Miss (Monitor-Reconnect/Sleep/Treiber-Reenumerateation aendert Name oder Geometrie) rederiviert `resolve_overlay_monitor` im Manual-Modus den Zielmonitor aus den gespeicherten Koordinaten gegen alle Work-Areas (Containment, bei Punkt ausserhalb aller Work-Areas der naechste Monitor), sodass das Overlay nahe seiner letzten Position bleibt statt auf Primary zu springen. Primary bleibt nur der letzte Fallback (Preset-Mode ohne Identity-Match). Gedeckt durch `resolve_overlay_monitor_id`-Tests in `lib.rs` (Plan 1782308448580).
-- **Overlay-Placement — Remember Last Drag Position behoben (2026-07-08):** Drei plattformunabhaengige Wurzeln behoben — (1) der 180ms-Persist-Debounce setzte `dragSessionActiveRef` nach dem ersten Persist auf `false`, sodass bei jedem Drag >180ms nur eine Zwischenposition statt der Endposition gespeichert wurde; (2) die 420ms-Reveal-Grace-Suppression verwarf `onMoved`-Events auch bei gesetztem `dragIntentRef`, sodass schnelle Drags nach Reveal nie persistiert wurden; (3) `set_position` vor `show()` wurde von GTK/XWayland verworfen, zusaetzlich ein Race zwischen Rust-Trigger und Frontend-Sync. Fix: `set_position` nach `show()` auf allen Plattformen; `OVERLAY_WINDOW_SHOWN` sofort setzen. Bestaetigt auf CachyOS KDE Plasma XWayland. Siehe `docs/BUG_OVERLAY_PLACEMENT_PERSIST.md`.
-- spaetere app- oder mode-basierte automatische Aktivierung fuer Arbeitsmodi bleibt offen
-- Overlay ist noch kein vollstaendiger Live-Preview- und Controlled-Commit-Pfad; aktuell zeigt es einen festen In-Pill-Nachlauf mit `copy`, `retry`, `restore` und Dismiss nach erfolgreichem Lauf sowie einen echten Processing-Preview-Stop fuer `clipboard_only`, aber noch keinen allgemeinen Pre-Commit-Entscheidungsweg fuer alle Delivery-Modi oder feinere Placement-Regeln jenseits des aktuellen Manual-vs-Preset-Vertrags
-- spaetere Notes- und weitergehende Workflow-Aufbauten auf Basis des neuen History-Kerns sind noch nicht implementiert
+- transcription reliability outside `General Writing` or no profile is still
+  not robust enough; individual curated profiles like `Customer Success
+  Replies` can still visibly worsen raw transcripts with multilingual
+  fragments, fantasy tokens and topic drift
+- the AI cleanup step no longer answers dictated questions; an explicit
+  guardrail in `normalize_correction` catches cases where the model removes a
+  question mark from the output; regression tests for this path exist
+- real regression cases from failed dictations now run through the corpus at
+  `src-tauri/tests/fixtures/regression_transcripts.json` plus the loader in
+  `core::regression_corpus`: schema validation, bias-path assertions,
+  text-rules analysis assertions, profile-health init tests and dictionary
+  structure tests; initial examples cover `cs_profile_multilingual_topic_drift`,
+  `cs_profile_length_explosion_via_english_boilerplate` and
+  `cs_profile_question_answered_german`; more real examples are added
+  manually and must each flow into the corpus and matching synthetic tests
+- Text Rules warns today about weak automatic bias; an explicit profile-bound
+  bias policy and visible profile health are now available:
+  `TextProfileWorkMode.bias_mode` (Conservative / Manual / Off) and
+  `manual_bias` are persisted in AppConfig and returned via
+  `analyze_document_with_context` as provider-specific previews; the
+  `BiasPolicyWeak` health flag warns when `Off` collides with `agent` /
+  `prompt_enhance` or globally active agent mode; Conservative stays the
+  default and protects against language-bias leakage into the Whisper initial
+  prompt
+- no published versioned releases
+- no signed in-place auto-updater
+- release and signing validation with real secrets is not a routine path yet
+- Linux Wayland is compositor-specific: KDE Plasma 6 / GNOME Mutter reach
+  direct auto-paste via a one-time xdg-desktop-portal RemoteDesktop grant;
+  Hyprland, Sway and KDE Plasma 5 stay experimental without a stable portal
+  path
+- Linux Wayland auto-paste behavior per compositor: KDE Plasma 6 and GNOME
+  Mutter request a RemoteDesktop portal session via `busctl`, persist the
+  restore token under `$XDG_RUNTIME_DIR/wordscript/remote-desktop.token` and
+  reuse it so the "Control input devices" dialog appears only once; pure
+  Wayland sessions without an active XWayland bridge stay clipboard-only;
+  hybrid sessions use `xdotool type`, classify stderr at runtime and
+  degrade to clipboard-only on a detected portal prompt
+- Linux Wayland overlay click-through to apps beneath the overlay is not
+  solvable with current tooling (needs Tauri layer-shell support or a
+  compositor-specific protocol path); drag, button-click and clipping are
+  reliable
+- Linux settings scroll performance was fixed by enabling GPU compositing by
+  default and reducing CSS cost (shadows, backdrop-filter, background-attachment,
+  contain, transition-colors, history refresh interval); opt-out via
+  `WORDSCRIPT_DISABLE_WEBKIT_COMPOSITING=1`
+- a full guided setup, permissions and packaging path from install to the
+  first useful dictation is not implemented yet; local runtime and Input
+  already have preflight surfaces for the most important first steps
+- the local runtime lane still needs automatic model management, pull/install
+  actions and a user-friendly first-run path beyond the current env-based
+  runtime wiring
+- multiple full production providers beyond Groq are not implemented yet;
+  the typed `fast`/`quality`/`local`/`self_hosted` provider-mode contract
+  exists, but it is not yet backed by a real multi-provider production stack
+- settings still need native-host polish and clearer boundaries around the
+  visible MORE previews; the runtime-backed information architecture is
+  usable and the overlay is not the primary UI work site
+- a comprehensive profile summary/detail view is open: the user does not yet
+  fully see what a text profile contains (work-mode defaults, capture
+  settings, modes settings, speech settings, dictionary, snippets) and what
+  stays global (hotkeys, overlay placement, display timeouts, sound)
+- overlay monitor restore with identity-miss rederivation is implemented
+  (manual mode rederives the target monitor from saved coordinates against
+  all work areas; primary is only the last fallback)
+- remembered overlay placement is implemented; the three roots (persist
+  debounce ending the drag session too early, reveal-grace suppression
+  discarding fast drags, `set_position` before `show()` dropped by GTK) are
+  fixed
+- later app- or mode-based automatic activation for work modes stays open
+- the overlay is not yet a full live-preview/controlled-commit path; it has a
+  fixed in-pill post-run with `copy`/`retry`/`restore`/dismiss and a real
+  processing-time preview stop for `clipboard_only`, but no general
+  pre-commit decision path for all delivery modes
+- later notes and deeper workflow builds on top of the new history core are
+  not implemented
 
-Explizit nicht naechste Baustelle dieser Produktphase sind `openwhispr`-Themen wie Notes, Search, Sync, MCP oder Assistant-Scope. Diese bleiben nachgelagert, bis WordScript als taegliches Diktierprodukt persoenlicher und vertrauenswuerdiger geworden ist.
+Explicitly not the next work site of this product phase are `openwhispr`
+topics like notes, search, sync, MCP or assistant scope. These stay
+downstream until WordScript has become a more personal and trustworthy daily
+dictation product.
 
-## Phasen-Status (V1-Konsolidierung)
+## Phase status (V1 consolidation)
 
-Die ausfuehrliche Roadmap mit Reihenfolge, Bedingungen und Phasen-Scope liegt in [docs/ROADMAP.md](./ROADMAP.md). Hier nur der aktuelle Stand der einzelnen V1-Phasen:
+The detailed roadmap with order, conditions and phase scope lives in
+[docs/ROADMAP.md](./ROADMAP.md). Here only the current state of each V1
+phase:
 
-- [x] **Phase 1 — Transkriptions-Bias, Profil-Health, Korpus** (Commit `a6005ca`, gemerged 2026-06-10). Korpus-Skelett unter `src-tauri/tests/fixtures/regression_transcripts.json`, profilgebundene Bias-Policy (`BiasMode` Conservative / Manual / Off + `ManualBias`), Profile-Health um `BiasPolicyWeak`-Flag erweitert, persistente `profile_health_acknowledged_flags`, Bias-Preview (`cloud_prompt_preview` / `local_prompt_preview`) in `TextRulesAnalysis`, Bias-Policy-Stage im Text-Rules-Tab. 246 Rust-Tests + 70 Frontend-Tests gruen, 0 Warnings.
-- [x] **Phase 2 — Settings-Shell Polish** (abgeschlossen 2026-06-20). Design-System v2 mit Storybook, Liquid Glass Polish, macOS-Utility-Shell, Home-Screen v2.1, CSS @layer base Fix, Content-Visibility-Utilities, Overlay-Refinement mit fixen Linux-Groessen, KWin-Script fuer KDE Plasma 6 Always-on-Top, Black-Block- und Compositing-Fixes, AGPL-3.0 Lizenz.
-- [ ] **Phase 3 — Live-Preview und kontrollierter Commit im Overlay.** Voraussetzung: Phase 1 (Preview braucht Bias-Klarheit). Siehe `VISION.md:165`.
-- [ ] **Phase 4 — Provider-Stack-Ausbau** mit ehrlich getrennter `local` vs. `self_hosted` Semantik. Voraussetzung: stabiler `ProviderCommandError` / `ProviderStatus`-Vertrag. Siehe `VISION.md:166` und `REFERENCE.md` Modus-Semantik.
-- [ ] **Phase 5 — Lokale Runtime als first-class Produktoption.** Voraussetzung: Phase 4 (gleicher Provider-Vertrag). Siehe `VISION.md:167`.
-- [ ] **Phase 6 — Gefuehrter Setup- und Packaging-Pfad.** Kommt bewusst zuletzt, weil Setup-Gefuehrte nur dann ehrlich ist, wenn die zugrunde liegenden Pfade selbst ehrlich sind. Siehe `VISION.md:168`.
+- [x] **Phase 1 -- Transcription bias, profile health, corpus** (commit
+  `a6005ca`, merged 2026-06-10).
+- [x] **Phase 2 -- Settings shell polish** (completed 2026-06-20).
+- [ ] **Phase 3 -- Live preview and controlled commit in the overlay.**
+  Prerequisite: phase 1 (preview needs bias clarity).
+- [ ] **Phase 4 -- Provider stack build-up** with honestly separated
+  `local` vs `self_hosted` semantics. Prerequisite: stable
+  `ProviderCommandError` / `ProviderStatus` contract.
+- [ ] **Phase 5 -- Local runtime as a first-class product option.**
+  Prerequisite: phase 4 (same provider contract).
+- [ ] **Phase 6 -- Guided setup and packaging path.** Comes last on
+  purpose, because guided setup is only honest once the underlying paths are
+  honest.
 
 ## Release build-up status
 
-- der aktive Repo-Pfad bleibt source-first mit `tauri dev`, hat aber wieder einen Build-Matrix-Workflow und Bundle-Ziele fuer Linux, macOS und Windows
-- die aktuelle Nutzerrealitaet bleibt die Dev-Version via `npm run tauri dev`
-- parallel entsteht ein interner Cross-Platform-Build-Up fuer Linux, macOS und Windows; er ist aber kein Signal, dass WordScript schon release-ready waere
-- die aktuelle Launch-Blockade liegt vor allem bei der profilabhaengigen Transkriptionszuverlaessigkeit und beim noch unvollstaendigen gefuehrten Local-Setup, nicht beim Fehlen weiterer Packaging-Mechanik
-- `check_app_update` signalisiert aktuell ehrlich, dass noch keine publizierten Releases existieren; interne Draft-Handoffs aendern diese Oeffentlichkeitswahrheit bewusst nicht
-- es gibt aktuell keinen aktiven Installer-Kanal und keinen vertrauenswuerdigen Download-Handoff fuer Endnutzer; der neue Draft-Handoff bleibt maintainer-intern
-- PR-CI validiert Frontend-Tests, Frontend-Build, `cargo check` und `cargo test` auf Ubuntu, macOS und Windows; `push: main`-Trigger ist temporaer deaktiviert (manueller `workflow_dispatch` bleibt verfuegbar), um wiederholte rote Runs waehrend der Development-Phase zu vermeiden
-- der manuelle Release-Build-Up-Workflow fuehrt Frontend-Tests, Rust-Tests und Frontend-Build vor dem Bundling aus, sammelt die Bundles in checksummierte Handoff-Archive und kann sie optional in einen internen Draft-Release legen
-- Linux-AppImage-Packaging ist aktuell noch nicht release-stabil und kann im Build-Up-Pfad an `linuxdeploy` scheitern
-- Packaging, Signing und Updater-Arbeit sind im Aufbau, aber noch nicht als live Nutzerpfad freigegeben
+- the active repo path stays source-first with `tauri dev`, but there is
+  again a build-matrix workflow and bundle targets for Linux, macOS and
+  Windows
+- the current user reality stays the dev build via `npm run tauri dev`
+- in parallel an internal cross-platform build-up for Linux, macOS and
+  Windows is being maintained; it is not a signal that WordScript is
+  release-ready
+- the current launch blocker is mainly profile-dependent transcription
+  reliability and the still-incomplete guided local setup, not the lack of
+  further packaging mechanics
+- `check_app_update` honestly reports that no published releases exist;
+  internal draft handoffs intentionally do not change this public truth
+- there is no active installer channel and no trusted download handoff for
+  end users; the new draft handoff stays maintainer-internal
+- PR CI validates frontend tests, frontend build, `cargo check` and
+  `cargo test` on Ubuntu, macOS and Windows; the `push: main` trigger is
+  temporarily disabled (manual `workflow_dispatch` stays available) to avoid
+  repeated red runs during the development phase
+- the manual release build-up workflow runs frontend tests, Rust tests and
+  frontend build before bundling, collects bundles into checksummed handoff
+  archives and can optionally put them in an internal draft release
+- Linux AppImage packaging is not release-stable yet and can fail at
+  `linuxdeploy` in the build-up path
+- packaging, signing and updater work is in build-up, but not released as a
+  live user path

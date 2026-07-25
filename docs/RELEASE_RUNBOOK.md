@@ -1,69 +1,83 @@
-# WordScript — Release Runbook
+# WordScript Release Runbook
 
-Stand: 2026-06-10
+Status: 2026-07-25
 
-## Zweck
+## Purpose
 
-Dieses Dokument beschreibt den aktuellen Release-Aufbaupfad fuer WordScript. Es ist bewusst kein Versprechen, dass bereits ein oeffentlicher Installer- oder Update-Kanal live ist.
+This runbook describes the current internal release build-up. It does not
+claim that WordScript has a public installer, a trusted download channel, or a
+working in-place updater.
 
-## Aktuelle Wahrheit
+## Current Reality
 
-- die heute benutzbare Version ist die Dev-Version aus dem Repo via `npm run tauri dev`
-- der manuelle Build-Up-Workflow liegt in `.github/workflows/release.yml` und heisst `Release Build-Up Matrix`
-- er baut aktuell plattformweise Bundle-Artefakte fuer Linux, macOS und Windows
-- er aggregiert diese Bundle-Artefakte jetzt zusaetzlich in checksummierte Handoff-Archive fuer Maintainer-Review
-- optional kann derselbe Workflow einen internen Draft-Release auf GitHub erzeugen oder aktualisieren
-- der Workflow ist Teil der Arbeit am ersten offiziellen Cross-Platform-App-Release
-- der Workflow bleibt trotzdem ein interner Maintainer-Pfad; die aktuelle oeffentliche Launch-Reife ist weiter durch profilabhaengige Transkriptionsprobleme und unvollstaendiges guided local setup blockiert
-- vor dem Bundling laufen jetzt Frontend-Tests, Rust-Tests und der Frontend-Build als feste Gates
-- die About-Flaeche und `check_app_update` muessen deshalb weiterhin ehrlich `no published releases yet` bzw. `in progress` signalisieren; GitHubs `releases/latest` bildet nur publizierte Releases ab, nicht interne Drafts
-- Signierung und In-Place-Updater gelten weiterhin als Aufbauarbeit, nicht als fertiger Nutzerpfad
-- Linux-AppImage-Packaging ist aktuell noch ein fragiler Build-Up-Pfad; `linuxdeploy`-Fehler sind im Moment offenes Packaging-Feedback, nicht eine gebrochene veroeffentlichte Release-Linie
+- The usable build is `npm run tauri dev` from this repository.
+- `.github/workflows/release.yml` provides the `Release Build-Up Matrix`.
+- The workflow builds Tauri artifacts for Linux, macOS, and Windows.
+- It aggregates platform artifacts into checksummed maintainer handoff archives.
+- It can optionally create or update an internal GitHub draft release.
+- GitHub's public latest-release endpoint and `check_app_update` remain limited
+  to published releases. Internal drafts are not a user release channel.
+- Signing, in-place updates, and reliable Linux AppImage packaging remain open
+  release work. A `linuxdeploy` failure is known build-up feedback, not a
+  regression in a published delivery path.
 
-## Vor jedem Release-Track-Build
+Public release readiness remains blocked by transcription reliability outside
+`General Writing` and incomplete guided local setup.
 
-1. `npm test`, `npm run build` und `cargo test --manifest-path src-tauri/Cargo.toml` muessen gruen sein.
-2. Fuer jeden oeffentlichen Release-Kandidaten muss die Transkriptionsbasis ausserhalb von `General Writing` belastbar sein; solange aktive Profile wie `Customer Success Replies` noch mehrsprachige Fragmente, Fantasietokens oder Topic-Drift in Rohtranskripte ziehen, bleibt der Lauf rein intern.
-3. Die Version in `package.json` und `src-tauri/tauri.conf.json` muss dem geplanten Build-Stand entsprechen.
-4. README, REFERENCE, CHANGELOG und About-Copy duerfen keine Verfuegbarkeit behaupten, die es noch nicht gibt.
-5. Wenn ein Draft-Release erzeugt werden soll, muss klar sein, welches Tag den internen Handoff bezeichnet; standardmaessig nutzt der Workflow `v<package.json version>`.
+## Pre-Build Gates
 
-## Manueller Build-Matrix-Lauf
+Before any release-track build:
 
-1. GitHub Actions oeffnen.
-2. `Release Build-Up Matrix` auswaehlen.
-3. Den gewuenschten `ref` setzen, standardmaessig `main`.
-4. Optional `create_draft_release` aktivieren, wenn derselbe Lauf die Handoff-Archive in einen internen Draft-Release legen soll.
-5. Optional `release_tag` oder `release_title` ueberschreiben; ohne Override wird `v<package.json version>` plus ein Standardtitel verwendet.
-6. Workflow starten.
-7. Nach Abschluss zuerst das aggregierte Artifact `wordscript-release-handoff` pruefen; dort liegen die checksummierten Archivdateien, `SHA256SUMS.txt` und `release-build-metadata.md`.
-8. Falls `create_draft_release` aktiv war, den GitHub-Draft auf korrekten Tag, Titel, Notes und Asset-Liste pruefen.
+1. Run `npm test`, `npm run build`, and
+   `cargo test --manifest-path src-tauri/Cargo.toml` successfully.
+2. Confirm that active profiles do not make raw transcription less reliable
+   than `General Writing` through multilingual drift, garbage tokens, or topic
+   drift.
+3. Align the planned version in `package.json` and `src-tauri/tauri.conf.json`.
+4. Ensure README, REFERENCE, CHANGELOG, and About copy do not imply a public
+   availability that does not exist.
+5. When creating a draft, confirm the intended handoff tag. The default is
+   `v<package.json version>`.
 
-## Was der Workflow jetzt erzeugt
+## Run the Build Matrix
 
-- pro Plattform weiterhin den nativen Tauri-Bundle-Ordner als Workflow-Artefakt
-- zusaetzlich ein aggregiertes Maintainer-Handoff mit `tar.gz`-Archiven pro Plattform-Artefakt
-- `SHA256SUMS.txt` fuer diese Archive
-- `release-build-metadata.md` mit Ref, Version, Tag, Workflow-Run und explizitem Hinweis, dass dies kein publizierter Nutzerkanal ist
-- optional einen internen Draft-Release, der dieselben Archive und Checksummen traegt
+1. Open GitHub Actions and select `Release Build-Up Matrix`.
+2. Choose the target ref, normally `main`.
+3. Enable `create_draft_release` only when the artifacts belong in an internal
+   maintainer draft.
+4. Optionally override `release_tag` or `release_title`; otherwise the workflow
+   uses the version-derived defaults.
+5. Start the workflow.
+6. Review the aggregated `wordscript-release-handoff` artifact first.
+7. If a draft was requested, verify its tag, title, notes, and asset list.
 
-## Was nach dem Lauf geprueft wird
+## Workflow Output
 
-- Linux: wenn die Packaging-Lane durchlaeuft, Bundle-Struktur fuer AppImage/DEB vorhanden; ein `linuxdeploy`-Fehler bleibt bis auf Weiteres ein bekannter Build-Up-Befund
-- macOS: DMG/Bundle-Artefakte vorhanden
-- Windows: Installer-/Bundle-Artefakte vorhanden
-- Handoff: `SHA256SUMS.txt` passt zu den aggregierten Archivdateien und `release-build-metadata.md` benennt denselben Ref-/Version-/Tag-Stand
-- Draft-Release: falls aktiviert, ist der Release weiterhin `draft`, traegt dieselben Assets und bleibt bewusst ausserhalb des oeffentlichen Installer- und Updater-Pfads
-- keine About-/Doku-Copy suggeriert bereits live funktionierende Downloads oder Updates
+- Native Tauri bundle artifacts for each platform
+- An aggregated maintainer handoff with `tar.gz` archives
+- `SHA256SUMS.txt` for every archive
+- `release-build-metadata.md` with ref, version, tag, workflow run, and an
+  explicit internal-only notice
+- An optional internal draft GitHub release carrying the same assets
 
-## Vor dem ersten oeffentlichen Release noch offen
+## Post-Run Checks
 
-- Transkriptionszuverlaessigkeit fuer `General Writing` und aktive Profile auf eine belastbare Alltagsbasis bringen; profilgefuehrte STT-Hinweise duerfen Rohtranskripte nicht schlechter machen als kein Profil
-- den gefuehrten Local-Setup-Pfad soweit schliessen, dass Nutzer nicht mehr den Grossteil von Runner-, Modell- und Cleanup-Konfiguration manuell zusammensuchen muessen
-- Signierung pro Plattform verbindlich schliessen
-- Release-Notes-, Tagging- und Promotion-Prozess vom internen Draft zum ersten publizierten Release festziehen
-- In-Place-Updater-Semantik und Vertrauenspfad definieren
-- Linux-Packaging ohne `linuxdeploy`-Abbruch stabil durchziehen
-- final entscheiden, wann `release.yml` ueber interne Draft-Handoffs hinaus wirklich veroeffentlichen darf
+- Linux: verify the expected AppImage or DEB structure when packaging completes;
+  record a `linuxdeploy` failure as an open packaging finding.
+- macOS: verify DMG or bundle artifacts.
+- Windows: verify installer or bundle artifacts.
+- Verify `SHA256SUMS.txt` against the handoff archives and ensure metadata names
+  the same ref, version, and tag.
+- Verify any GitHub draft is still marked `draft` and does not imply public
+  downloads or updates.
+- Verify the product and documentation still state the actual release status.
 
-Bis diese Punkte geschlossen sind, bleibt der Release-Pfad ein interner Aufbaupfad.
+## Gates Before the First Public Release
+
+- Dependable transcription for `General Writing` and active profiles
+- Guided local runner, model, and cleanup setup
+- Platform signing and a defined trust path
+- A reviewed release-note, tag, and promotion process
+- Defined updater semantics
+- Stable Linux packaging without the current `linuxdeploy` failure
+- An explicit decision to promote the workflow beyond internal draft handoffs

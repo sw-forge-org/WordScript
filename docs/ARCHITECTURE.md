@@ -1,46 +1,66 @@
-# WordScript — Architecture
+# WordScript -- Architecture
 
-Stand: 2026-06-20
+Status: 2026-07-25
 
-## Zweck
+> This file is the living architecture overview. Hard architecture decisions
+> (e.g. Tauri/Rust as runtime owner, native window decorations, cloud-first
+> BYOK) live as append-only ADRs in `docs/decisions/` -- see
+> `docs/decisions/README.md`. A consolidated machine-facing spec lives in
+> `docs/spec/SPEC.md`. An ARCHITECTURE.md used as the sole overview drifts
+> from code; ADRs keep the individual decisions immutable, SPEC keeps the
+> contracts, this file keeps the narrative.
 
-Dieses Dokument beschreibt die aktive Systemarchitektur von WordScript. Es soll zeigen, wo Verhalten heute wirklich entschieden wird und wie neue Arbeit verortet werden muss.
+## Purpose
 
-Der alte Python-Sidecar ist nicht mehr der Referenzpfad.
+This document describes the active system architecture of WordScript: where
+behavior is really decided today and where new work must be located.
 
-## Leitprinzipien
+The old Python sidecar is no longer the reference path (ADR 0001).
 
-- Rust ist Runtime-Owner fuer Trigger, Capture, Provider, Transform, Insert und Recovery.
-- React stellt dar, konfiguriert und erklaert denselben nativen Zustand.
-- WordScript ist cloud-first im aktuellen Produktpfad.
-- Typed contracts zwischen UI und Runtime sind Pflicht.
-- Recovery und Support-Grenzen sind Teil der Architektur, nicht nur Begleittext.
+## Guiding principles
 
-## Aktive Schichten
+- Rust is the runtime owner for trigger, capture, provider, transform, insert
+  and recovery.
+- React displays, configures and explains the same native state.
+- WordScript is cloud-first in the current product path (ADR 0002).
+- Typed contracts between UI and runtime are mandatory.
+- Recovery and support limits are part of the architecture, not just
+  accompanying text.
+
+## Active layers
 
 ```text
 React UI
-    overlay + settings + diagnostics tab
-                |
-                | invoke() + events
-                v
+  overlay + settings + diagnostics tab
+            |
+            | invoke() + events
+            v
 Tauri host
-    windows + tray + commands + event bridge
-                |
-                v
+  windows + tray + commands + event bridge
+            |
+            v
 Rust core
-    config + trigger + capture + sessions + providers + transform + insertion + sound
+  config + trigger + capture + sessions + providers + transform + insertion + sound
 ```
 
-## UI-Schicht
+## UI layer
 
-Die aktive UI besteht derzeit aus drei Fenstern in der Tauri-Konfiguration:
+Three windows in the Tauri config:
 
-- `overlay`: transparente kompakte Overlay-Buehne mit einer Pill fuer Aufnahme-/Processing-Zustand, die nach einem Lauf innerhalb derselben Flaeche zu nativen `copy`-, `retry`-, `restore`- und `done`-Aktionen umschaltet; fuer `clipboard_only`-Arbeitsmodi haelt dieselbe Runtime im Processing-Schritt auf einem echten Preview vor dem Commit, ohne dafuer eine zweite vergroesserte Overlay-Flaeche oder einen separaten Shell-Backdrop aufzumachen, der Host parkt das Fenster im Idle nativ ausserhalb des sichtbaren Bereichs, respektiert gemerkte Manual-Positionen oder preset-basierte Display-Anker, verwendet fuer Compact-, Preview- und Result-Surface dieselbe gemerkte Top-Left-Position, variiert aber die rechte Status-/Action-Zone je nach Overlay-Zustand statt ein einziges statisches Seitenlayout ueber Recording, `working` und Action zu ziehen, und leitet den Zielmonitor fuer Manual-Placement aus der gespeicherten logischen Drag-Referenz statt aus dem fenstergebundenen `current_monitor()`-Snapshot ab
-- `settings`: native-dekorierte Shell mit den Tabs Provider & Models, Input, Modes, Text Rules, About und Diagnostics, gruppierter Sidebar-Navigation, persistentem Profil-Dock, kompaktem Tab-Header, einer dominanten Content-Surface und Footer-Save-Bar
-- `rebuild-lab`: native-dekoriertes Diagnostics-Pop-out mit demselben Rebuild-Lab-Panel, kompaktem Preview-Header und einer einzelnen scrollbaren Content-Surface fuer den technischen Check ausserhalb des Settings-Fensters
+- `overlay`: transparent compact stage with a pill for recording/processing
+  state that switches after a run to native `copy`/`retry`/`restore`/`done`
+  actions within the same area; `clipboard_only` work modes hold a real
+  processing preview before commit; idle is parked offscreen natively;
+  placement comes from a remembered manual position or a preset display anchor.
+- `settings`: native-decorated shell with grouped Workspace, Engine, System
+  and More areas, persistent profile dock, compact toolbar, one dominant
+  content surface, immediate auto-save and a footer status bar. Chat, Upload,
+  Notes and Account are explicitly labeled layout previews without native
+  runtime ownership.
+- `rebuild-lab`: native-decorated diagnostics pop-out reusing the same Rebuild
+  Lab panel.
 
-Wichtige Frontend-Bausteine:
+Key frontend building blocks:
 
 - `src/windows/OverlayWindow.tsx`
 - `src/windows/SettingsWindow.tsx`
@@ -52,105 +72,143 @@ Wichtige Frontend-Bausteine:
 - `src/hooks/useProcessingMode.ts`
 - `src/components/settings/*`
 
-Die UI ist verantwortlich fuer:
+The UI is responsible for: displaying runtime status, waveform and errors;
+the guarded in-pill action state after a run; config maintenance; the global
+manual profile switch in the sidebar plus included profiles, preview,
+validation and import/export in Text Rules; tab-specific orientation via the
+compact header; the About release build-up explanation (strictly separating
+public release visibility from workflow-internal draft handoffs); Text Rules
+as a workspace with a short process summary, compact profile library and
+pinned stage navigation; visible recovery actions and diagnostics; separate
+rendering of transient runtime logs and durable native transcript history
+with filters, export and the visible history store path.
 
-- Anzeige von Runtime-Status, Waveform und Fehlermeldungen
-- Anzeige des guardierten In-Pill-Action-Zustands nach einem Lauf, ohne eine zweite vergroesserte Preview-Surface, eine passive Mic-Zone im Action-Modus oder Overlay-Heuristik neben der nativen Runtime einzufuehren
-- Pflege der Config-Werte
-- global sichtbare manuelle Profilumschaltung in der Sidebar plus eingeschlossene Profile, Preview, Validation und Import/Export in den Text Rules
-- tab-spezifische Orientierung ueber kompakten Header, Runtime-/Save-State-Chips und Section-Blurb, ohne neue UI-Heuristiken neben dem nativen Vertrag einzufuehren
-- die About-Flaeche darf den Release-Aufbaupfad erklaeren, muss aber oeffentliche Release-Sichtbarkeit strikt von workflow-internen Draft-Handoffs trennen; publizierte GitHub-Releases bleiben die einzige Update-Wahrheit fuer `check_app_update`
-- Text Rules als Workspace mit knapper Prozesszusammenfassung, kompakter Profilbibliothek und praesent bleibender Schritt-Navigation; darunter steht immer nur eine dominante Bearbeitungsstufe fuer Context/Preview, Dictionary oder Snippets
-- Sichtbare Recovery-Aktionen und Diagnostics
-- getrennte Darstellung von transienten Runtime-Logs und dauerhaftem nativen Transkriptverlauf inklusive Filter, Export und sichtbarem History-Store-Pfad; Recovery-Scratchpad bleibt davon getrennt
-- render-sensible Settings-Teilbaeume muessen strukturell stabil bleiben: lange Listen wie Diagnostics-History, decoded Runtime-Log-Hints sowie Dictionary-/Snippet-Karten werden als isolierte Subtrees gehalten und duerfen nicht durch per-render Deep-Clones aller Profile oder Eintraege wieder unnoetig invalidiert werden
+The UI is **not** responsible for: global shortcut registration, microphone
+capture, session state machine, insert decisions.
 
-Die UI ist nicht verantwortlich fuer:
+## Tauri host
 
-- globale Shortcut-Registrierung
-- Mikrofon-Capture
-- Session-State-Machine
-- Insert-Entscheidungen
+`src-tauri/src/lib.rs` is the product shell. It holds: window setup for
+overlay and settings; native visibility and positioning for the overlay
+(bottom-center reveal, offscreen parking in idle via `window.hide()` in
+`park_overlay_window`); monitor- and anchor-based overlay placement plus
+persistence of the last manual drag position (host repositions for
+reveal/hide/surface changes must not overwrite the remembered position as
+new user intent); Linux overlay specifics (fixed sizes 440x60 flat /
+460x164 edit, `set_background_color` on every reveal, XWayland default with
+native-Wayland opt-in); KDE Plasma 6 always-on-top via KWin script
+(`packaging/kwin-wordscript-overlay/`); tray menu and window opening;
+command registration; event emission for `wordscript-event` and
+`wordscript-native-event`; coarse orchestration between trigger effect,
+capture end, provider call and runtime feedback.
 
-## Tauri-Host
+The host is the bridge, not the business logic.
 
-`src-tauri/src/lib.rs` ist die Huelle des Produkts. Dort liegen:
+## Rust core modules
 
-- Window-Setup fuer Overlay und Settings
-- native Sichtbarkeits- und Positionierungssteuerung fuer das Overlay inklusive Bottom-Center-Reveal und Offscreen-Parking im Idle (via `window.hide()` in `park_overlay_window`)
-- monitor- und anchor-basierte Overlay-Placement-Aufloesung plus Persistenz der letzten manuellen Drag-Position; Host-seitige Repositionierungen fuer Reveal, Hide oder Surface-Wechsel duerfen diese gemerkte Position nicht als neue Nutzerabsicht ueberschreiben
-- Linux-Overlay: fixe Fenstergroessen (440×60 flat / 460×164 edit), `set_background_color` bei jedem Reveal, `resizable: true` in `tauri.conf.json` (GTK ignorierte `set_size` bei `resizable: false`), XWayland-Default (`GDK_BACKEND=x11`) mit `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in fuer nativ Wayland
-- KDE Plasma 6 Always-on-Top via KWin-Script (`packaging/kwin-wordscript-overlay/`), installiert mit `kpackagetool6 --type=KWin/Script -i packaging/kwin-wordscript-overlay && qdbus org.kde.KWin /KWin reconfigure`
-- Tray-Menue und Fensteroeffnung
-- Command-Registrierung
-- Event-Emission fuer `wordscript-event` und `wordscript-native-event`
-- Grobe Orchestrierung zwischen Trigger-Effekt, Capture-Ende, Provider-Aufruf und Runtime-Feedback
+The active product core lives in `src-tauri/src/core/`.
 
-Der Host ist die Bruecke, nicht die Business-Logik.
+### Config and status
 
-## Rust-Core-Module
+- `config.rs`: config lifecycle, disk I/O, scrubbing of sensitive values,
+  local text-profile model. Config writes are lock-serialized
+  (`CONFIG_FILE_LOCK`) so overlapping commands cannot clobber each other.
+- `runtime_log.rs`: buffered structured runtime logs for the diagnostics UI,
+  plus a persistent ring-rotated file (`~/.config/WordScript/logs/wordscript-runtime.log`).
+- `history.rs`: persistent native history with raw vs transformed
+  transcript, insert outcome, server-side filters, export, retention policy,
+  retry.
+- `paths.rs`: product paths (config, scratchpad, logs).
 
-Der aktive Produktkern sitzt in `src-tauri/src/core/`.
+### Capture and session
 
-### Konfiguration und Status
+- `trigger.rs`: global start/stop, pause/resume and abort hotkeys.
+- `capture.rs`: audio capture, level/waveform events, silence/max-duration
+  autostop, single stream rebuild after a transient cpal stream error
+  (matching-gate on sample rate/channels/format; one attempt per session).
+- `sessions.rs`: runtime status and shared session transitions for trigger,
+  commands and native pipeline completion.
+- `sound.rs`: start/stop/abort/startup/error cues.
 
-- `config.rs`: Config-Lifecycle, Disk-I/O, Scrubbing sensibler Werte und lokales Textprofil-Modell
-- `runtime_log.rs`: gepufferte strukturierte Runtime-Logs fuer die Diagnostics-UI
-- `history.rs`: persistenter nativer Verlauf mit raw vs transformed transcript, Insert-Outcome, serverseitigen Filtern, Export, Retention-Policy und Retry
-- `paths.rs`: Produktpfade wie Config und Scratchpad
+### Provider and text processing
 
-### Aufnahme und Session
+- `providers/mod.rs`: shared provider contract, dispatch and typed
+  command surface (modes, capabilities, errors).
+- `providers/groq.rs`: cloud-first production implementation (BYOK, secret
+  store, Groq-specific HTTP errors).
+- `providers/local_preview.rs`: local runtime lane with `whisper-cli` for
+  STT, local Ollama cleanup, native model discovery, probe-based runner
+  health, selected-model/cleanup setup truth over the same response
+  contract.
+- `transform.rs`: hallucination filter, optional AI cleanup (correction
+  guardrail stack), dictionary and snippet resolution.
+- `agent.rs`: hybrid intent detection (heuristic + LLM classifier) and agent
+  execution; sits as a routing layer before `transform.rs`.
+- `text_rules.rs`: analysis, preview, import/export, conflict handling and
+  profile health analysis of Text Rules.
 
-- `trigger.rs`: globale Start/Stop-, Pause/Resume- und Abort-Hotkeys
-- `capture.rs`: Audioaufnahme, Level-/Waveform-Events, Silence-/Max-Duration-Autostop
-- `sessions.rs`: Laufzeitstatus und gemeinsame Session-Uebergaenge fuer Trigger, Commands und nativen Pipeline-Abschluss
-- `sound.rs`: Start-, Stop-, Abort-, Startup- und Error-Cues
+### Mode routing and workspace
 
-### Provider und Textverarbeitung
+- `mode_router.rs`: resolves the effective `ProcessingMode` per session from
+  manual override and active profile work-mode; when the effective mode is
+  `auto`, `resolve_auto_mode` picks a concrete mode per transcription
+  (agent/prompt_enhance/cleanup) from transcript text, agent name and
+  optional workspace context; exposes the `resolve_current_processing_mode`
+  Tauri command.
+- `workspace_context.rs`: foreground-app detection on macOS, Windows and
+  Linux; uses `run_with_timeout` with dedicated pipe-drain threads (otherwise
+  `Output.stdout`/`stderr` come back empty). IDE-framework and
+  browser-domain detection are currently macOS-only; cross-platform paths
+  stay behind `#[allow(dead_code)]` until the next slice turns them on.
+- `prompt_enhance.rs`: prompt structuring/expansion over the active LLM lane,
+  guardrail chain (empty, prompt_executes, language_mismatch, length_budget,
+  semantic_drift) and routing of the cleaned result into `transform.rs`.
 
-- `providers/mod.rs`: gemeinsamer Provider-Vertrag, Dispatch und generische Command-Oberflaechen
-- `providers/groq.rs`: erste produktive Cloud-Implementierung fuer BYOK, Secret Store und Groq-spezifische HTTP-Fehler
-- `providers/local_preview.rs`: lokale Runtime-Lane mit `whisper-cli` fuer STT, lokalem Ollama-Cleanup, nativer Modell-Discovery, probe-basierter Runner-Gesundheit und selected-model-/cleanup-Setup-Wahrheit ueber denselben Antwortvertrag
-- `transform.rs`: Halluzinationsfilter, optionale Nachkorrektur mit mehrstufigem Guardrail Stack, Dictionary- und Snippet-Aufloesung
-- `agent.rs`: hybrid Intent-Detection (Heuristik + LLM-Classifier) und Agent-Execution; sitzt als Routing-Layer vor `transform.rs`
-- `text_rules.rs`: Analyse, Preview, Import/Export, Konfliktbehandlung und Profile-Health-Analyse der Text Rules
+### Insertion and recovery
 
-### Mode-Routing und Workspace
+- `insertion.rs`: paste strategies, clipboard restore, scratchpad and
+  platform status.
 
-- `mode_router.rs`: Aufloesung des effektiven `ProcessingMode` pro Session aus manuellem Override und aktivem Profil-Work-Mode; wenn der effektive Modus `auto` ist, wird er pro Transkription durch `resolve_auto_mode` in einen konkreten Modus (cleanup/agent/prompt_enhance) aufgeloest, basierend auf Transkript-Text, Agent-Name und optionalem Workspace-Kontext; exponiert den Tauri-Command `resolve_current_processing_mode`
-- `workspace_context.rs`: Foreground-App-Detection auf macOS, Windows und Linux; nutzt `run_with_timeout` mit dedizierten Pipe-Drain-Threads (sonst bleibt `Output.stdout`/`stderr` leer), klassifiziert die App, erkennt Browser-Domain und IDE-Framework (aktuell nur macOS-Pfad produktiv, Cross-Plattform-Sniffing steht hinter `#[allow(dead_code)]` und ist Teil der naechsten Ausbau-Slice)
-- `prompt_enhance.rs`: Prompt-Strukturierung und -Expansion ueber den aktiven LLM-Pfad, Guardrail-Chain (empty, prompt_executes, language_mismatch, length_budget, semantic_drift) und Routing des bereinigten Ergebnisses in `transform.rs`
+`NativeInsertionPlatformStatus` is the support contract of this path. It
+carries label, support tier, insert strategy, free text, concrete
+prerequisites and honest limits for the UI. For Linux it also carries an
+explicit driver chain for clipboard and paste helpers including the active
+lane and missing helpers.
 
-Hinweis: IDE-Framework- und Browser-Domain-Detection in `workspace_context` sind aktuell macOS-only; die Cross-Plattform-Pfade bleiben ueber `#[allow(dead_code)]` markiert, bis der naechste `workspace_context`-Slice die Linux-/Windows-Heuristiken produktiv schaltet.
+## Session flow
 
-### Insertion und Recovery
+1. Hotkey recognized in the native trigger.
+2. `capture.rs` starts recording and emits level/waveform events.
+3. Recording ends via stop hotkey, silence timeout, max duration or abort.
+4. Audio is prepared as 16 kHz mono WAV for the provider.
+5. `mode_router.rs` resolves the effective `ProcessingMode` before transform
+   (manual override > active profile work-mode, with the legacy global
+   `AppConfig.processing_mode` used only if the active profile cannot be
+   resolved). An effective `auto` value becomes a concrete mode per
+   transcription via `resolve_auto_mode`. The renderer can query the effective
+   mode via `resolve_current_processing_mode`.
+6. `providers/mod.rs` resolves the active provider and dispatches today to
+   `providers/groq.rs` or `providers/local_preview.rs`.
+7. `transform.rs` checks and cleans the transcription output using the same
+   provider contract for AI cleanup; for `prompt_enhance` mode the cleaned
+   text additionally runs the `prompt_enhance` guardrail chain.
 
-- `insertion.rs`: Paste-Strategien, Clipboard-Restore, Scratchpad und Plattformstatus
+For diagnostics, persisted config alone is no longer a sufficient source of
+truth: `v1_slice_status` must combine the persisted provider/profile contract
+with real runtime sources -- `provider_status` for local setup readiness and
+resolved runner/model paths, `native_capture_status` for running capture
+state and active device.
 
-`NativeInsertionPlatformStatus` ist der Support-Vertrag dieses Pfads. Er liefert Label, Support-Tier, Insert-Strategie, Freitext sowie konkrete Voraussetzungen und ehrliche Grenzen fuer die UI.
-Fuer Linux liefert derselbe Vertrag jetzt auch eine explizite Driver-Kette fuer Clipboard- und Paste-Helfer inklusive aktiver Lane und fehlender Helfer.
+8. `insertion.rs` chooses and runs the insert mode.
+9. `history.rs` writes raw vs transformed transcript, active text profile,
+   effective `ProcessingMode`, insert outcome and errors.
+10. `sessions.rs` finalizes exactly once (`completed`/`aborted`/`error`) and
+    accepts async pipeline results only for the active `processing`
+    session id.
+11. UI receives status, last transcript, effective mode, history and any
+    recovery data.
 
-## Session-Fluss
-
-Der aktive Fluss sieht so aus:
-
-1. Hotkey wird im nativen Trigger erkannt.
-2. `capture.rs` startet die Aufnahme und emittiert Level-/Waveform-Events.
-3. Aufnahme endet durch Stop-Hotkey, Silence-Timeout, Max-Duration oder Abort.
-4. Audio wird als 16 kHz Mono-WAV fuer den Provider vorbereitet.
-5. `mode_router.rs` loest vor dem Transform den effektiven `ProcessingMode` (auto/cleanup/rewrite/agent/prompt_enhance/verbatim) aus manuellem Override und aktivem Profil-Work-Mode auf; bei `auto` wird der konkrete Modus pro Transkription durch `resolve_auto_mode` bestimmt (Agent-Name + imperativ → agent, imperativ + IDE-Kontext → prompt_enhance, sonst cleanup); der Renderer kann die effektive Mode ueber den `resolve_current_processing_mode`-Tauri-Command abfragen.
-6. `providers/mod.rs` loest den aktiven Provider auf und delegiert heute an `providers/groq.rs` oder `providers/local_preview.rs`.
-7. `transform.rs` prueft und bereinigt den Transkriptionsoutput und nutzt denselben Provider-Vertrag fuer AI cleanup; bei `prompt_enhance`-Mode wird der bereinigte Text zusaetzlich durch die `prompt_enhance`-Guardrail-Chain geschickt.
-
-Fuer Diagnostics reicht persistierte Config hier nicht mehr als Wahrheitsquelle. `v1_slice_status` muss den persistierten Provider-/Profilvertrag mit echten Runtime-Statusquellen kombinieren: `provider_status` fuer Local-Setup-Readiness und aufgeloeste Runner-/Modellpfade sowie `native_capture_status` fuer laufenden Capture-Zustand und aktives Device.
-7. `insertion.rs` waehlt den Insert-Modus und fuehrt ihn aus.
-8. `history.rs` schreibt raw vs transformed transcript, aktives Textprofil, effektive `ProcessingMode`, Insert-Outcome und Fehler in den nativen Verlauf.
-9. `sessions.rs` finalisiert danach genau einmal `completed`, `aborted` oder `error` und akzeptiert async Pipeline-Ergebnisse nur fuer die aktive `processing`-Session-ID.
-10. UI bekommt Status, letztes Transkript, effektive Mode, History und moegliche Recovery-Daten zurueck.
-
-## Session-State-Machine
-
-Die Session-Stufen werden natuerlich im Core gehalten.
+## Session state machine
 
 ```text
 idle -> capturing -> processing -> completed
@@ -160,93 +218,123 @@ idle -> capturing -> processing -> completed
     +-------------------------------
 ```
 
-`paused` ist kein eigener Stage-Name, sondern ein Capture-Zustand innerhalb von `capturing`.
+`paused` is not its own stage name but a capture sub-state within
+`capturing`.
 
-Provider-, Transform- und Insert-Ergebnisse laufen nach dem Capture-Ende asynchron weiter, duerfen aber den Runtime-Zustand nur veraendern, solange ihre Session-ID noch zur aktiven `processing`-Session passt. Spaete Ergebnisse nach Abort, neuer Aufnahme oder bereits finalisierter Session werden im Runtime-Log als stale markiert und nicht mehr an Overlay oder Settings ausgespielt.
+Provider, transform and insert results continue asynchronously after
+capture end, but may only change runtime state while their session id still
+matches the active `processing` session. Late results after abort, a new
+capture or an already-finalized session are marked stale in the runtime log
+and no longer reach overlay or settings.
 
-## Transform-Reihenfolge
+## Transform order
 
-Die Textverarbeitung ist im aktiven Pfad keine Black Box. Die Reihenfolge ist bewusst fest:
+Text processing is intentionally not a black box. The order is fixed:
 
-1. Halluzinationsmuster ablehnen oder markieren
-2. wenn Agent Mode aktiv: Intent-Detection, bei bestaetiger Anweisung `apply_agent_transform` aufrufen und Correction ueberspringen
-3. optionale AI-Nachkorrektur ausfuehren (Correction Guardrail Stack)
-4. Dictionary anwenden
-5. Snippets anwenden
+1. Reject or flag hallucination patterns.
+2. If agent mode is active: intent detection; on a confirmed instruction call
+   `apply_agent_transform` and skip correction.
+3. Optional AI cleanup (correction guardrail stack).
+4. Apply dictionary.
+5. Apply snippets.
 
-### Agent Mode
+### Agent mode
 
-Der Agent Mode sitzt als Routing-Layer vor der Correction und entscheidet, ob ein Transkript als Benutzer-Diktat oder als direkte Anweisung an den konfigurierten Agenten behandelt wird.
-
-Der Entscheidungspfad ist hybrid:
+Agent mode sits as a routing layer before correction and decides whether a
+transcript is treated as user dictation or as a direct instruction to the
+configured agent. The decision path is hybrid:
 
 ```text
-heuristic score >= 0.75  →  sicherer AGENT-Pfad, kein LLM-Call noetig
-heuristic score < 0.20   →  sicherer DIKTAT-Pfad, direkt zu Correction
-score 0.20 – 0.74        →  Uncertain Zone → LLM-Classifier entscheidet
+heuristic score >= 0.75  ->  safe AGENT path, no LLM call needed
+heuristic score < 0.20   ->  safe DICTATION path, straight to correction
+score 0.20 - 0.74        ->  uncertain zone -> LLM classifier decides
 ```
 
-Heuristik-Signale (O(n), kein API-Call):
+Heuristic signals (O(n), no API call): agent name in words 1-4 (+0.55),
+words 5-10 (+0.35), later (+0.15); imperative verb as first word (+0.45),
+words 2-10 (+0.25); text length > 60 words (-0.15).
 
-- Agent-Name in Worten 1–4: +0.55 (direkte Eroeffnung mit dem Agenten)
-- Agent-Name in Worten 5–10: +0.35 (nach kurzer Einleitung wie "Also ich dachte, WordScript, schreib…")
-- Agent-Name spaeter im Text: +0.15 (beilaeufige Erwaehnung, schwaches Signal)
-- Imperativverb als erstes Wort: +0.45
-- Imperativverb in Worten 2–10: +0.25
-- Textlaenge > 60 Woerter: -0.15 (Agenten-Anweisungen sind meist kurz)
+LLM classifier (only in the uncertain zone): decides "yes" or "no", nothing
+else; "yes" only when the user directly addresses the agent **and** assigns
+a task; fallback on error is always "no" (safe dictation path).
 
-LLM-Classifier (nur in der Uncertain Zone):
+If agent mode is off or the classifier returns "no", the text runs through
+`apply_native_transform` with the full correction guardrail stack.
 
-- Entscheidet mit "yes" oder "no", kein weiterer Text
-- "yes" nur wenn Nutzer den Agenten **direkt adressiert** UND eine Aufgabe beauftragt
-- "no" bei beilaeufiger Namenerwaehnung ohne Auftrag
-- "no" bei Imperativ ohne Agent-Namen-Adressierung (das ist Diktat, kein Befehl an den Agenten)
-- Fallback bei Fehler: immer "no" (sicher auf Diktat-Pfad)
+### Correction guardrail stack
 
-Wenn der Agent Mode deaktiviert ist oder der Classifier "no" liefert, laeuft der Text durch `apply_native_transform` mit dem vollen Correction Guardrail Stack.
+AI correction in `normalize_correction` defends the dictation path in several
+layers against assistant-like behavior of the correction LLM. Each rejection
+writes a structured entry into the runtime log (visible in Rebuild Lab):
 
-### Correction Guardrail Stack
-
-Die AI-Korrektur in `normalize_correction` verteidigt den Diktatpfad in mehreren Schichten gegen Antwort-artiges Verhalten des Correction-LLMs. Jede Ablehnung schreibt einen strukturierten Eintrag in den Runtime-Log (sichtbar in Rebuild Lab):
-
-| Guard | Ausloeser | Regel-ID |
+| Guard | Trigger | Rule id |
 |---|---|---|
-| Empty correction | Korrektur leer | `empty_correction_fallback` |
-| Question answered | Original hat `?`, Korrektur hat kein `?` | `question_answered_guardrail_fallback` |
-| Length explosion | Korrektur > 1.5× Original + 50 Zeichen | `assistant_like_correction_rejected` |
-| Over-shortened | Korrektur < min_ratio × Original | `over_shortened_correction_rejected` |
-| Assistant phrase | Neu eingefuegte Assistenz-Phrasen (z.B. "ich verstehe", "gerne erledige", "task completed") | `correction_guardrail_fallback` |
-| Suspicious start | Korrektur beginnt neu mit Ich/Bitte/Gerne/Klar/Here/I/… | `correction_guardrail_fallback` |
-| First-person action start (polished) | Korrektur beginnt neu mit Ich-Aktionsverb wie "ich schicke", "i'll send" — nur in `polished` mode, weil `suspicious_start` dort deaktiviert ist | `correction_guardrail_fallback` |
-| Word overlap | Gemeinsame Wortmenge < Schwellwert (0.25/0.4/0.55 je Modus) | `correction_guardrail_fallback` |
+| Empty correction | correction empty | `empty_correction_fallback` |
+| Question answered | original has `?`, correction has none | `question_answered_guardrail_fallback` |
+| Length explosion | correction > 1.5x original + 50 chars | `assistant_like_correction_rejected` |
+| Over-shortened | correction < min_ratio x original | `over_shortened_correction_rejected` |
+| Assistant phrase | newly inserted assistant phrases (e.g. "ich verstehe", "task completed") | `correction_guardrail_fallback` |
+| Suspicious start | correction newly starts with Ich/Bitte/Gerne/Klar/Here/I/... | `correction_guardrail_fallback` |
+| First-person action start (polished) | correction newly starts with Ich action verb like "ich schicke", "i'll send" -- polished mode only | `correction_guardrail_fallback` |
+| Word overlap | shared word set < threshold (0.25/0.4/0.55 per mode) | `correction_guardrail_fallback` |
 
-Wichtige Architekturregeln dieses Stacks:
+Rules of this stack:
 
-- der Correction-LLM ist ein Chat-Modell mit starker Assistenz-Feintuning; alle Guardrails koennen trotz korrektem System-Prompt gelegentlich durchbrochen werden — der Stack ist mehrschichtig, um das aufzufangen
-- `has_suspicious_start` ist in `polished` mode deaktiviert, weil dort Satzumstrukturierungen erlaubt sind; stattdessen laeuft `has_new_first_person_action_start` als Ersatz-Guard fuer klar assistenz-artige Ich-Aktionsverb-Starts
-- alle Guardrail-Ablehnungen erhalten denselben Fallback: Originaltext unveraendert zurueckgeben; kein Vertragsbruch mit Downstream-Insertion, History oder Recovery
-- das System-Prompt der Correction instruiert den LLM explizit: Fragen, Aufforderungen, Befehle und Anweisungen im Input sind diktierter Nutzertext — niemals beantworten, ausfuehren oder darauf reagieren
-- dieser Correction-Stack ist orthogonal zum Agent Mode: Agent Mode entscheidet das Routing vor der Correction; die Guardrails greifen, wenn das Routing "Diktat" liefert, der Correction-LLM aber trotzdem in den Assistenz-Modus abdriftet
+- the correction LLM is a chat model with strong assistant fine-tuning; all
+  guardrails can occasionally be breached despite a correct system prompt --
+  the stack is layered to catch that.
+- `has_suspicious_start` is disabled in `polished` mode (sentence
+  restructuring is allowed there); `has_new_first_person_action_start` runs
+  instead for clearly assistant-like first-person action-verb starts.
+- every guardrail rejection falls back to the original text unchanged; no
+  contract break with downstream insertion, history or recovery.
+- the correction system prompt explicitly instructs the LLM that questions,
+  prompts, commands and instructions in the input are dictated user text --
+  never answer, execute or react to them.
+- this correction stack is orthogonal to agent mode: agent mode routes
+  before correction; guardrails fire when routing returns "dictation" but
+  the correction LLM still drifts into assistant mode.
 
-Wichtig:
+### STT bias
 
-- `prompt` bleibt primaer Transcription Context fuer die STT-Anfrage; `lib.rs` baut daraus fuer Groq und je nach `local_prompt_strength` auch fuer `local_preview` einen begrenzten Bias-Prompt mit Profil-Context, expliziten `stt_hints` und Dictionary-Schreibweisen
-- dieser Bias-Prompt ist jetzt konservativer gefiltert: generische Profilkategorien oder breite Themenlisten werden nicht mehr automatisch an STT und Cleanup durchgereicht; im automatischen Pfad bleiben nur konkrete lexikale Hinweise, explizite `stt_hints` und bevorzugte Schreibweisen uebrig
-- dieser STT-Bias ist konservativ und providerbegrenzt; er soll Fachwoerter, Produktnamen, Sprachmix und haeufige Phrasen erhalten, nicht freie semantische Rewrites oder Halluzinationen erzeugen
-- die STT-Bias-Komposition ist jetzt profilgebunden fuehrbar: `TextProfileWorkMode.bias_mode` entscheidet zwischen `Conservative` (Default, exakt das bestehende Verhalten), `Manual` (User entscheidet explizit ueber `manual_bias.cloud_include_profile_terms` / `local_include_profile_terms` und kann `manual_bias.stt_hints_override` setzen) und `Off` (kein STT-Prompt); die Migration `bias_policy_migrated` initialisiert bestehende Profile auf Conservative ohne Datenverlust
-- `text_rules::analyze_document_with_context` propagiert die aktive Bias-Policy in `transcription_bias.cloud_prompt_preview` und `transcription_bias.local_prompt_preview`; die UI rendert beide Preview-Strings in der Bias-Policy-Stage des Text-Rules-Tabs, sodass sichtbar ist, was jeder Provider tatsaechlich bekommt
-- `text_rules::analyze_document` zeigt denselben Vertrag inzwischen sichtbar im Settings-Tab: konkrete automatisch uebernommene Vokabeln, bevorzugte Schreibweisen, explizite STT-Hints sowie Warnings fuer ignorierte breite Kontextzeilen oder unbrauchbare STT-Hints
-- `text_rules::analyze_profile_health` analysiert zusaetzlich das gesamte Profil auf systemische Verhaltensverzerrungen, die AI-Cleanup beeinflussen: LengthBias (Woerterlaenge-Asymmetrie in Dictionary-Eintraegen), FormConflict (widerspruechliche Stil-Anweisungen im Prompt) und CleanupInterference (Prompt-Muster, die AI-Cleanup aktiv unterdruecken); die resultierenden Flags werden im Text-Rules-Tab als Bias Policy angezeigt und koennen per Acknowledge-Toggle pro Flag unterdrückt werden, ohne die Konfiguration zu aendern; der Healthstatus (green / yellow / red) erscheint ausserdem als kleiner Farbpunkt im Profil-Dock der Settings-Sidebar; `BiasPolicyWeak` ist ein zusaetzliches Red-Flag, das feuert, wenn `bias_mode == Off` mit `agent` / `prompt_enhance` Processing-Mode oder global aktivem Agent-Mode kombiniert wird; `profile_health_acknowledged_flags` ist eine persistente Map `profile_id -> {flag_kind, ...}` in der AppConfig, geschrieben via `acknowledge_profile_health_flag` / `unacknowledge_profile_health_flag` Tauri-Commands und gelesen in `get_profile_health`
-- wenn Profil-Context, `stt_hints` oder Dictionary-Schreibweisen dennoch zu schlechteren Rohtranskripten als `General Writing` fuehren, ist das ein Vertragsbruch dieses Pfads; mehrsprachige Fragmente, Fantasietokens oder Topic-Drift sind dann nicht "nur Profilrauschen", sondern ein Kernproblem der Diktierlane
-- Dictionary- und Snippet-Matches sind literal und case-insensitive
-- Snippet-Trigger sind kein automatischer Teil des STT-Bias; wenn kurze gesprochene Cues oder alternative Phrasen in die STT-Anfrage sollen, muessen sie explizit ueber `stt_hints` im Profil gepflegt werden
-- lokale Textprofile kapseln heute `prompt`, optionale `stt_hints`, Dictionary, Snippets und Work-Mode-Defaults als aktive Runtime-Konfiguration; der primaere Work-Mode-Vertrag ist `processing_mode` (`cleanup` / `rewrite` / `agent` / `prompt_enhance` / `verbatim`) plus optional `enhance_sub_mode` und `prompt_target`, das Legacy-Feld `rewrite_style` (`polished` / `clean` / `verbatim`) ist nur noch Migrations-Eingang und wird ueber `migrate_legacy_processing_mode` auf den primaeren Vertrag abgebildet
-- AI cleanup muss Sprachmix, Umgangssprache, eingedeutschte Borrowings und technische Tokens konservativ erhalten; unsichere oder assistant-artige Rewrites fallen weiter ueber Guardrails auf das Rohtranskript zurueck
-- die aktuelle Local-Preview-Lane ist STT-only; wenn AI cleanup aktiv bleibt, faellt `transform.rs` auf das rohe lokale Transkript zurueck
+- `prompt` stays primarily transcription context for the STT request; `lib.rs`
+  builds a bounded bias prompt from it for Groq and (depending on
+  `local_prompt_strength`) for `local_preview`, with profile context,
+  explicit `stt_hints` and dictionary spellings.
+- the bias prompt is now conservatively filtered: generic profile categories
+  or broad topic lists are no longer forwarded to STT and cleanup; only
+  concrete lexical hints, explicit `stt_hints` and preferred spellings remain.
+- STT bias composition is profile-bound via `TextProfileWorkMode.bias_mode`
+  (`Conservative` default, `Manual` user-decided, `Off`); the `bias_policy_migrated`
+  migration initializes existing profiles to Conservative without data loss.
+- `text_rules::analyze_document_with_context` propagates the active bias
+  policy into `transcription_bias.cloud_prompt_preview` and
+  `local_prompt_preview`; the UI renders both preview strings so it is
+  visible what each provider actually gets.
+- if profile context, `stt_hints` or dictionary spellings still produce worse
+  raw transcripts than `General Writing`, that is a contract break of this
+  path; multilingual fragments, fantasy tokens or topic drift are then a
+  core problem of the dictation lane, not "just profile noise".
+- dictionary and snippet matches are literal and case-insensitive.
+- snippet triggers are not part of STT bias automatically; short spoken cues
+  or alternative phrases must be maintained explicitly via `stt_hints`.
+- local text profiles encapsulate `prompt`, optional `stt_hints`, dictionary,
+  snippets and work-mode defaults; the primary work-mode contract is
+  `processing_mode` (`cleanup`/`rewrite`/`agent`/`prompt_enhance`/`verbatim`)
+  plus optional `enhance_sub_mode` and `target`; the legacy
+  `rewrite_style` field is only a migration input mapped via
+  `migrate_legacy_processing_mode`.
+- AI cleanup must conservatively preserve language mixing, colloquial
+  speech, Germanized borrowings and technical tokens; unsafe or
+  assistant-like rewrites fall back to the raw transcript via guardrails.
+- the current local preview lane is no longer STT-only; if AI cleanup stays
+  active, `transform.rs` falls back to the raw local transcript when the
+  local model is unavailable or returns unsafe text.
 
-## Insertion-Modi
+## Insertion modes
 
-`insertion.rs` entscheidet ueber mehrere echte Modi, nicht nur ueber einen simplen Paste-Versuch.
+`insertion.rs` decides among several real modes, not just a single paste
+attempt:
 
 ```text
 if direct paste succeeds
@@ -259,90 +347,171 @@ else
     -> scratchpad_fallback
 ```
 
-Wichtige Architekturregeln dieses Pfads:
+Rules of this path:
 
-- erfolgreicher Direct Insert stellt den vorherigen Clipboard-Inhalt best effort wieder her
-- Scratchpad und Last-Transcript-Restore sind Teil des Produktpfads
-- jeder Insert-Outcome traegt eine maschinenlesbare Recovery-Aktion, eine Recovery-Message und den Clipboard-Restore-Status; UI und History duerfen Recovery nicht aus Freitext-Fallbacks erraten
-- dieselbe Recovery-Semantik wird in persistierter History, History-Export und Diagnostics-Karten weitergereicht; diese Flaechen duerfen keine zweite Recovery-Wahrheit bilden
-- der Overlay-Nachlauf-Snapshot darf nur Quick Actions zeigen, die ueber dieselbe native History- oder Insert-Wahrheit ausgeloest werden; `retry` braucht die echte `history.entry_id`, und `insert` oder `restore` duerfen nur bestehende Native-Commands aufrufen
-- der neue Processing-Preview fuer `clipboard_only`-Profile bleibt dieselbe Runtime-Wahrheit: Transform liefert den Preview-Text, die Session bleibt in `processing`, und der spaetere Commit muss ueber denselben nativen Insert-, History- und Sessionpfad laufen
-- Overlay, Input und About nutzen denselben nativen Plattformstatus als Quelle
-- About zeigt Voraussetzungen und Grenzen aus diesem nativen Vertrag, statt pro Plattform neue UI-Nebenwahrheiten zu erfinden
-- Linux/X11/Wayland werden als explizite Driver-Ketten modelliert; `wl-copy`, `xdotool`, `wtype`, `ydotool`, `enigo` und Scratchpad stehen im Status nicht mehr nur implizit im Code
-- Rebuild-Lab-Diagnostics zeigt fuer die V1-Slice nicht nur `stage`, sondern eine native Step-Timeline fuer `capture`, `provider`, `transform` und `insert` inklusive `state`, `duration_ms` und stabilem `error_code`
-- derselbe V1-Slice-Vertrag traegt jetzt auch ein explizites `provider_profile`; Diagnostics, Preview und Tests duerfen Cloud- oder Local-Modi nicht mehr aus Modellnamen oder lokaler Disk-Config erraten
+- successful direct insert best-effort restores the previous clipboard content.
+- scratchpad and last-transcript restore are part of the product path.
+- every insert outcome carries a machine-readable recovery action, a
+  recovery message and the clipboard-restore status; UI and history must not
+  guess recovery from free-text fallbacks.
+- the same recovery semantics are carried through persisted history, history
+  export and diagnostics cards; these surfaces must not form a second
+  recovery truth.
+- the overlay post-run snapshot may only show quick actions triggered from
+  the same native history/insert truth; `retry` needs the real
+  `history.entry_id`, and `insert`/`restore` may only call existing native
+  commands.
+- the processing preview for `clipboard_only` profiles stays the same runtime
+  truth: transform provides the preview text, the session stays in
+  `processing`, and the later commit runs through the same native
+  insert/history/session path.
+- overlay, input and About use the same native platform status as source.
+- About shows prerequisites and limits from this native contract instead of
+  inventing per-platform UI side-truths.
+- Linux/X11/Wayland are modeled as explicit driver chains; `wl-copy`,
+  `xdotool`, `wtype`, `ydotool`, `enigo` and scratchpad are no longer just
+  implicit in the code.
+- Rebuild Lab diagnostics shows a native step timeline for `capture`,
+  `provider`, `transform` and `insert` including `state`, `duration_ms` and
+  a stable `error_code`.
+- the same V1 slice contract also carries an explicit `provider_profile`;
+  diagnostics, preview and tests must not guess cloud or local modes from
+  model names or local disk config.
 
-## Plattformmodell
+## Platform model
 
-WordScript modelliert Plattformgrenzen explizit:
+WordScript models platform limits explicitly:
 
-- macOS und Windows sind die Tier-1-Zielpfade
-- Linux X11 ist Preview
-- Linux Wayland ist compositorspezifisch: KDE Plasma 6 und GNOME Mutter erreichen direkten Auto-Paste ueber einen einmaligen `xdg-desktop-portal`-RemoteDesktop-Grant (Status `Preview-lite`); hybride X11+Wayland-Sessions bleiben auf `xdotool type` ueber XWayland, klassifizieren aber den KDE-Plasma-Portal-Prompt und fallen bei Erkennung auf Clipboard-only zurueck; reine Wayland-Sessions (kein `DISPLAY`) bleiben Clipboard-only, weil `wtype`/`ydotool`/`enigo` weiterhin den "Control input devices"-Dialog ausloesen wuerden; Hyprland, Sway und KDE Plasma 5 haben keinen stabilen Portal-Grant und bleiben daher experimental. Overlay auf Linux: XWayland-Default (`GDK_BACKEND=x11`) mit `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in fuer nativ Wayland; Always-on-Top auf KDE Plasma 6 via KWin-Script (`packaging/kwin-wordscript-overlay/`).
+- macOS and Windows are the Tier 1 target paths.
+- Linux X11 is Preview.
+- Linux Wayland is compositor-specific: KDE Plasma 6 and GNOME Mutter reach
+  direct auto-paste via a one-time `xdg-desktop-portal` RemoteDesktop grant
+  (status `Preview-lite`); hybrid X11+Wayland sessions stay on `xdotool type`
+  over XWayland, classify the KDE Plasma portal prompt and fall back to
+  clipboard-only on detection; pure Wayland sessions (no `DISPLAY`) stay
+  clipboard-only because `wtype`/`ydotool`/`enigo` would still trigger the
+  "Control input devices" dialog; Hyprland, Sway and KDE Plasma 5 have no
+  stable portal grant and stay experimental. Overlay on Linux: XWayland
+  default with native-Wayland opt-in; always-on-top on KDE Plasma 6 via KWin
+  script (`packaging/kwin-wordscript-overlay/`).
 
-Das ist keine Marketing-Sprache, sondern Teil des Insert- und Support-Modells.
+This is not marketing language but part of the insert and support model.
 
-## Provider-Modell
+## Provider model
 
-Im aktiven Produktpfad gibt es zwei klar getrennte Provider-Lanes:
+Two clearly separated provider lanes are active:
 
-- `groq`: cloud-first Produktionspfad fuer BYOK, Secret Store und AI cleanup
-- `local_preview`: Kompatibilitaets-ID fuer die lokale Runtime-Lane mit externem `whisper-cli`-Runner fuer STT, lokalen ggml-Modellen und lokalem Ollama-Cleanup-Modell
+- `groq`: cloud-first production path for BYOK, secret store and AI cleanup.
+- `local_preview`: compatibility id for the local runtime lane with external
+  `whisper-cli` runner for STT, local ggml models and local Ollama cleanup.
 
-Architekturregeln dafuer:
+Rules:
 
-- Groq laeuft als BYOK-Modell
-- der API-Key liegt im OS secret store
-- die JSON-Config wird beim Speichern gescrubbt
-- `ProviderStatus` liefert neben Profilen auch typisierte Modi (`fast`, `quality`, `local`, spaeter `self_hosted`) und Capabilities wie Transcription, Chat-Cleanup, Prompt-Bias, Segments, Local und API-Key-Pflicht
-- `local` und `self_hosted` sind keine austauschbaren Labels: `local` meint den aktuellen on-device beziehungsweise lokalen Runtime-Pfad, `self_hosted` bleibt fuer spaetere nutzerbetriebene Remote- oder LAN-Dienste reserviert und existiert heute noch nicht als aktive Lane
-- `ProviderCommandError` traegt Fehlerart, Status, Retry-After, `retryable` und eine `user_action`, damit Runtime-Events und Settings dieselbe Recovery-Semantik verwenden
-- `local_preview` nutzt keine API-Keys, sondern sichtbare lokale Runtime-Voraussetzungen in Settings und Diagnostics
-- diese lokalen Voraussetzungen laufen jetzt ueber einen typed `local_setup`-Vertrag mit `readiness`, stabilem `issue_code`, aufgeloestem Runner- und Modellpfad sowie aufgeloestem Cleanup-Endpoint und Cleanup-Modell; der Vertrag wird gegen das aktuell gewaehlte lokale STT-Modell und das aktuell gewaehlte lokale Cleanup-Modell ausgewertet und darf lokale Readiness nicht aus `credential.configured` oder Copy rekonstruieren
-- Provider & Models rendert denselben Vertrag als Preflight-Checkliste fuer Speech Runner, STT-Modell, Cleanup-Endpoint und Cleanup-Modell; diese UI ist Anzeige und Fuehrung, nicht eine zweite Setup-Quelle
-- `local_preview` prueft den Runner nicht nur ueber Dateisystem-Praesenz, sondern ueber einen aktiven nativen Probe-Spawn; Fehlercodes wie `runner_probe_failed` oder `runner_probe_timed_out` sind Teil derselben Produktwahrheit
-- lokale Modellprofile kommen nativ aus `WORDSCRIPT_LOCAL_MODEL_PATH` oder `WORDSCRIPT_LOCAL_MODEL_DIR`; die UI darf fuer die Local Lane keine statische Modellliste als Source of Truth behandeln
-- die lokale Lane trennt STT-Profil und Cleanup-Modell explizit; diese Trennung folgt der donor-orientierten Struktur aus `Handy` fuer Runtime-Ownership, `voxtype` fuer klare Engine-/Mode-Pfade und `openwhispr` fuer getrennte Cleanup-Scopes statt impliziter Modellwiederverwendung
-- `local_preview` reicht den aktiven STT-Prompt als initialen `whisper-cli --prompt` durch und meldet Prompt-Bias deshalb als echte Capability statt als UI-only Wunsch; die Staerke dieses Bias lebt jetzt explizit in `off`, `profile`, `profile_and_terms` plus optionalem `carry_initial_prompt`
-- lokale `local_preview`-Profile sind jetzt echte Provider-Profile mit eigener ID pro Modell und Preset (`...-fast`, `...-quality`); dieselbe Auswahl lebt in Config, Settings und dem nativen Provider-Request statt in einer Modellfamilien-Heuristik
-- dieselbe lokale Runtime-Konfiguration traegt jetzt zusaetzlich explizite Decode-Regler (`beam_size`, `best_of`); Fast/Quality liefern nur noch Defaults, die eigentliche Decoder-Suchtiefe ist Teil des persistierten AppConfig- und Provider-Request-Vertrags
-- dieselbe lokale Runtime-Konfiguration traegt jetzt auch ein separates `local_correction_model`; das lokale Cleanup-Modell darf nicht mehr implizit aus dem Cloud-Cleanup-Modell oder einem UI-Fallback rekonstruiert werden
-- native Diagnostics und Transcription History muessen fuer `local_preview` nicht nur Provider und Modell, sondern auch `provider_profile`, Prompt-Bias-Staerke, Carry-Flag, Decode-Werte, Cleanup-Endpoint und Cleanup-Modell zeigen; diese Metadaten gehoeren zur Runtime-Wahrheit eines lokalen Runs
-- diese Decode-Regler leben jetzt profilgebunden in AppConfig. `local_beam_size` und `local_best_of` bleiben nur der aktive Mirror des aktuell gewaehlten Profils, waehrend die eigentliche Persistenz pro `local_profile` erfolgt
-- Rebuild-Lab-Diagnostics darf den Local-Runtime-Vertrag nicht mehr aus dem Fenster-Draft ableiten. Der Snapshot kommt nativ aus der aktuell geladenen Runtime-Config, und die UI vergleicht ihn gegen unsaved Settings-Aenderungen statt beides zu vermischen
-- `local_preview` ist jetzt ein voller lokaler Dictation-Pfad fuer STT plus Cleanup innerhalb derselben Runtime-Lane; Capture, Insertion und Recovery bleiben bewusst dieselben Produktpfade wie bei Groq
-- ein eigener WordScript-Proxy oder Hosted Mode existiert nicht
+- Groq runs as BYOK; the API key lives in the OS secret store; the JSON
+  config is scrubbed on save; legacy JSON Groq secrets are migrated natively
+  into the secret store.
+- `ProviderStatus` carries typed modes (`fast`, `quality`, `local`, later
+  `self_hosted`) and capabilities (Transcription, Chat-Cleanup, Prompt-Bias,
+  Language, Segments, Local, API-Key-Required).
+- `local` and `self_hosted` are not interchangeable labels: `local` is the
+  current on-device path, `self_hosted` is reserved for later user-run
+  remote/LAN services and is not an active lane today.
+- `ProviderCommandError` carries error kind, status, Retry-After,
+  `retryable` and a `user_action` so runtime events and settings use the same
+  recovery semantics.
+- `local_preview` uses no API keys but visible local runtime prerequisites in
+  settings and diagnostics, over a typed `local_setup` contract with
+  `readiness`, stable `issue_code`, resolved runner/model paths and resolved
+  cleanup endpoint/model; the contract is evaluated against the currently
+  selected local STT and cleanup models and must not reconstruct local
+  readiness from `credential.configured` or copy.
+- Provider & Models renders the same contract as a preflight checklist for
+  speech runner, STT model, cleanup endpoint and cleanup model; this UI is
+  display and guidance, not a second setup source.
+- `local_preview` probes the runner via an active native spawn, not just
+  filesystem presence; error codes like `runner_probe_failed` or
+  `runner_probe_timed_out` are part of the same product truth.
+- local model profiles come natively from `WORDSCRIPT_LOCAL_MODEL_PATH` or
+  `WORDSCRIPT_LOCAL_MODEL_DIR`; the UI must not treat a static model list as
+  the source of truth for the local lane.
+- the local lane separates STT profile and cleanup model explicitly (following
+  the donor-oriented structure: `Handy` for runtime ownership, `voxtype` for
+  explicit engine/mode paths, `openwhispr` for separated cleanup scopes).
+- `local_preview` forwards the active STT prompt as an initial
+  `whisper-cli --prompt` and reports prompt bias as a real capability, not a
+  UI-only wish; the strength lives explicitly in `off`/`profile`/`profile_and_terms`
+  plus optional `carry_initial_prompt`.
+- local `local_preview` profiles are now real provider profiles with their
+  own id per model and preset (`...-fast`, `...-quality`); the same selection
+  lives in config, settings and the native provider request instead of a
+  model-family heuristic.
+- the same local runtime config carries explicit decode controls
+  (`beam_size`, `best_of`); fast/quality only provide defaults now, the
+  actual decoder search depth is part of the persisted AppConfig and
+  provider-request contract.
+- the same local runtime config carries a separate `local_correction_model`;
+  the local cleanup model must not be reconstructed implicitly from the
+  cloud cleanup model or a UI fallback.
+- native diagnostics and transcription history for `local_preview` must show
+  `provider_profile`, prompt-bias strength, carry flag, decode values,
+  cleanup endpoint and cleanup model; these belong to the runtime truth of a
+  local run.
+- decode controls live profile-bound in AppConfig; `local_beam_size` and
+  `local_best_of` are only the active mirror of the currently selected
+  profile, while persistence is per `local_profile`.
+- Rebuild Lab diagnostics must not derive the local runtime contract from the
+  window form; the snapshot comes natively from the currently loaded runtime
+  config. The UI may report a short-lived difference while an immediate
+  auto-save or runtime reconfiguration is still in flight, but it must not
+  mix the two sources.
+- `local_preview` is now a full local dictation path for STT plus cleanup
+  within the same runtime lane; capture, insertion and recovery stay
+  deliberately the same product paths as for Groq.
+- there is no WordScript proxy or hosted mode.
 
-Die aktuelle Local-Runtime-Verdrahtung erwartet:
+The current local runtime wiring expects:
 
-- `whisper-cli` in `PATH` oder `WORDSCRIPT_LOCAL_WHISPER_CLI`
-- `WORDSCRIPT_LOCAL_MODEL_PATH` fuer eine einzelne ggml-Datei oder `WORDSCRIPT_LOCAL_MODEL_DIR` fuer `ggml-<model>.bin` und gaengige Varianten wie quantisierte oder `.en`-Dateien
-- Ollama lokal unter `http://127.0.0.1:11434` oder `WORDSCRIPT_LOCAL_CHAT_BASE_URL`
-- ein installiertes lokales Cleanup-Modell, das ueber `local_correction_model` oder `WORDSCRIPT_LOCAL_CHAT_MODEL` ausgewaehlt wird
+- `whisper-cli` in `PATH` or `WORDSCRIPT_LOCAL_WHISPER_CLI`
+- `WORDSCRIPT_LOCAL_MODEL_PATH` for a single ggml file or
+  `WORDSCRIPT_LOCAL_MODEL_DIR` for `ggml-<model>.bin` and common variants
+  like quantized or `.en` files
+- Ollama locally at `http://127.0.0.1:11434` or `WORDSCRIPT_LOCAL_CHAT_BASE_URL`
+- a local cleanup model selected via `local_correction_model` or
+  `WORDSCRIPT_LOCAL_CHAT_MODEL`
 
-Wenn spaeter weitere Provider dazukommen, gehoeren sie unter `src-tauri/src/core/providers/` und muessen denselben Fehler- und Antwortvertrag bedienen.
+When more providers arrive later they go under
+`src-tauri/src/core/providers/` and must serve the same error and response
+contract.
 
-## Was bewusst noch nicht Architekturrealitaet ist
+## What is intentionally not architecture reality yet
 
-Diese Themen sind moegliche spaetere Produktstufen, aber heute nicht aktive Architektur:
+These are possible later product stages but not active architecture today:
 
-- automatisches Modellmanagement mit Download-/Pull-Flow und Installer-nahen Checks ueber die aktuelle env-basierte Runtime-Verdrahtung und Provider-&-Models-Preflight-Flaeche hinaus
-- automatische oder permission-basierte App-/Mode-Aktivierung fuer Arbeitsmodi
-- voller Live-Preview-/Controlled-Commit-Pfad im Overlay mit Aktionen vor dem finalen Commit
-- weiteres Produktionsprovider-System mit expliziten Modi wie `fast`, `quality`, `local` und `self_hosted`
-- gefuehrter Setup- und Permissions-Pfad von Install bis erster brauchbarer Diktation
-- Team- oder Sync-Modell
-- AI-Assistant- oder Screen-Context-Workflows
-- veroeffentlichter Installer-Kanal und fertiger In-Place-Updater
+- automatic model management with download/pull flow and installer-like
+  checks beyond the current env-based runtime wiring and the Provider &
+  Models preflight surface
+- automatic or permission-based app/mode activation for work modes
+- a full live-preview / controlled-commit path in the overlay with actions
+  before the final commit
+- another production provider system with explicit modes like `fast`,
+  `quality`, `local` and `self_hosted`
+- a guided setup/permissions path from install to the first useful dictation
+- a team or sync model
+- AI-assistant or screen-context workflows
+- a published installer channel and a finished in-place updater
 
-Wenn spaeter ein Sync- oder Workspace-Pfad entsteht, ist die aktuelle Zielrichtung dafuer kein Peer-to-Peer-Primarmodell. Erwartet ist stattdessen eine WordScript-eigene Sync-Schicht auf einem lokalen Datenmodell mit optionalem Account- und Cloud-Workspace-Layer.
+If a sync or workspace path is built later, the current direction is not a
+peer-to-peer primary model. The expectation is a WordScript-owned sync layer
+on a local data model with an optional account and cloud-workspace layer
+(ADR 0005).
 
-Daraus folgen fuer die spaetere Architektur diese Leitplanken:
+This implies for later architecture:
 
-- der lokale Dictation-Pfad bleibt ohne Account benutzbar
-- Profile, Verlauf und spaetere Voice-Workspaces bleiben WordScript-owned
-- ein spaeterer Sync-Service ist keine allgemeine Fremd-Hub-Abhaengigkeit
-- Provider-Traffic bleibt nicht automatisch an einen WordScript-Proxy gebunden; Sync und STT-Transport sind getrennte Entscheidungen
+- the local dictation path stays usable without an account
+- profiles, history and later voice workspaces stay WordScript-owned
+- a later sync service is not a general foreign-hub dependency
+- provider traffic is not automatically bound to a WordScript proxy; sync and
+  STT transport are separate decisions
 
-Wenn die Doku eines dieser Themen beschreibt, muss klar markiert sein, dass es geplant und nicht aktiv ist.
+If documentation describes any of these topics it must clearly mark them as
+planned, not active.

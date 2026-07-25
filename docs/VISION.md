@@ -1,186 +1,190 @@
-# WordScript — Vision
+# WordScript -- Vision
 
-Stand: 2026-06-20
+Status: 2026-07-25
 
-## Nordstern
+> Architecture decisions that ground this vision live as append-only ADRs in
+> `docs/decisions/`. This file is the living north star; the roadmap is the
+> executable view (`docs/ROADMAP.md`), STATUS holds the current phase state.
+> The consolidated spec is `docs/spec/SPEC.md`.
 
-WordScript soll eine offene Desktop-Diktier-App werden, die fuer Vielschreiber schneller und ehrlicher ist als generische Sprachtools.
+## North Star
 
-Nicht als allgemeiner AI-Assistent. Nicht als Feature-Sammlung. Sondern als Produkt fuer einen klaren Moment:
+WordScript is an open desktop dictation app that is faster and more honest
+for heavy writers than generic voice tools.
 
-**Trigger. Sprechen. Brauchbarer Text. Saubere Recovery. Weiterarbeiten.**
+Not a general AI assistant. Not a feature collection. A product for one
+clear moment:
 
-## Community-Haltung
+**Trigger. Speak. Usable text. Clean recovery. Keep working.**
 
-WordScript entsteht unter SW bench, der Open-Source-brand von SW labs. Das Produkt soll als Community-Build wachsen: offen im Repo, nachvollziehbar im Runtime-Pfad und attraktiv fuer Leute, die ein gutes Diktierprodukt bauen wollen statt nur ein weiteres Abo-Modell. 
+## Community posture
 
-Ein spaeterer kommerzieller Release-Aufbau ist nicht ausgeschlossen. Aber die Richtung ist klar: zuerst ein richtig gutes Produkt, keine kuenstliche Bezahlschranke auf Basis-Produktivitaet wie Sprechen, Tippen und Weiterarbeiten. 
+WordScript is built under SW forge, the open-source brand of SW labs. The
+product is meant to grow as a community build: open in the repo, traceable in
+the runtime path, attractive to people who want to build a good dictation
+product rather than ship another subscription model.
 
-## Was WordScript einmal werden soll
+A later commercial release path is not excluded. But the direction is clear:
+first a genuinely good product, no artificial paywall on basic productivity
+like speaking, typing and continuing to work.
 
-Langfristig soll WordScript eine starke, offene Diktierbasis fuer Desktop-Workflows werden:
+## What WordScript should become
 
-- schnell genug fuer IDEs, Chat, Mail und Dokumente
-- flexibel genug fuer unterschiedliche Provider und spaetere Arbeitsprofile
-- ehrlich genug, um Plattformgrenzen und Recovery nicht hinter Marketing zu verstecken
-- offen genug, dass Nutzer ihre Regeln, Daten und Workflows kontrollieren koennen
+Long term, a strong open dictation base for desktop workflows:
 
-## Was V1 ist
+- fast enough for IDEs, chat, mail and documents
+- flexible enough for different providers and later work profiles
+- honest enough to not hide platform limits and recovery behind marketing
+- open enough that users control their rules, data and workflows
 
-V1 ist ein enges Diktierprodukt fuer Desktop-Textfelder.
+## What V1 is
 
-V1 bedeutet:
+V1 is a narrow dictation product for desktop text fields:
 
-- globaler Trigger
-- stabiler Capture-to-Insert-Loop
-- cloud-first Transkription als Standardpfad
-- persoenliches Dictionary und erste Snippets
-- klares Recovery-Modell
-- ehrliche Support-Tiers
-- eine kleine, produktive Desktopoberflaeche statt Tool-Sammlung
+- global trigger
+- stable capture-to-insert loop
+- cloud-first transcription as the default path
+- personal dictionary and first snippets
+- a clear recovery model
+- honest support tiers
+- one small, productive desktop surface instead of a tool collection
 
-V1 bedeutet nicht:
+V1 is **not**:
 
-- kein allgemeiner AI-Assistant
-- kein Screen-Context-System
-- keine Team- oder Admin-Flaeche
-- keine mobile Paritaet
-- kein als fertig verkaufter halb fertiger Auto-Updater
+- a general AI assistant
+- a screen-context system
+- a team or admin surface
+- mobile parity
+- an auto-updater sold as finished while half-done
 
-## Was V2 ist
+## What V2 is
 
-V2 beginnt erst auf einem funktionierenden Diktierkern.
+V2 only begins on top of a working dictation core. Only then do topics like
+these make sense:
 
-Erst dann werden Themen wie diese sinnvoll:
+- later rewrite styles and more productive text modes
+- team dictionaries or shared snippet sets
+- deeper IDE integrations
+- later assistant or command workflows
+- a possible hosted mode with its own backend
 
-- spaetere Rewrite-Styles und produktivere Textmodi
-- Team-Dictionaries oder geteilte Snippet-Sets
-- tieferere IDE-Integrationen
-- spaetere Assistant- oder Command-Workflows
-- moeglicher Hosted Mode mit eigenem Backend
+V2 is expansion on top of a good core, not a shortcut past V1.
 
-V2 ist also ein Ausbau auf Basis eines guten Kerns, nicht eine Abkuerzung an V1 vorbei.
+## Long-term platform direction
 
-Wenn WordScript spaeter Sync, Accounts oder gehostete Arbeitsraeume bekommt, dann als eigene WordScript-Schicht auf einem lokalen Kern, nicht als Voraussetzung fuer den Basis-Flow.
+Long term WordScript may grow larger than a pure dictation product, toward an
+open voice workstation for desktop work: dictation and text modes for
+IDE/mail/chat/documents, later meeting transcription, speaker diarization
+and history, notes, search, sync, API and MCP, local profiles, shared work
+contexts and later team models, a later voice assistant that executes tools,
+and later browser-use / computer-use workflows with clear permissions and
+visible control.
 
-Die aktuelle Planungsrichtung dafuer ist:
+This direction is real, but it is **not** the current V1 core and must not
+blur the active dictation, recovery and support focus.
 
-- local-first statt account-first
-- optionaler WordScript-Account statt Zwangslogin
-- WordScript-eigener Sync-Service statt externer Produkt-Hub als Pflicht-Backend
-- kein Peer-to-Peer-Primarmodell fuer die langfristige Plattform
-- **UI/UX-Overhaul zur nativen macOS-Shell** als Voraussetzung fuer den V2-Ausbau; siehe `docs/UI_UX_OVERHAUL_PLAN.md`
-- **Ausgegraute Preview-Tabs** (Chat, Upload, Notes, Workspace, Account) als ehrlicher Vorgeschmack auf zukuenftigen Scope
+The current settings shell exposes Chat, Upload, Notes and Account only as
+clearly labeled layout previews. Their sample or component-local state is not
+evidence that the later platform behavior exists.
 
-## Langfristige Plattform-Richtung
+Even in that later platform stage the core stays the same: WordScript stays
+usable without an account, while later sync and workspace features add on.
 
-Langfristig darf WordScript groesser werden als ein reines Diktierprodukt.
+## Where we are
 
-Die Richtung dahinter ist nicht "mehr Features um jeden Preis", sondern eine offene Voice-Workstation fuer Desktop-Arbeit:
+Current state: `0.2.2-alpha`.
 
-- Diktat und Textmodi fuer IDE, Mail, Chat und Dokumente
-- spaetere Meeting-Transkription, Speaker-Diarization und Verlauf
-- Notes, Search, Sync, API und MCP
-- lokale Profile, geteilte Arbeitskontexte und spaetere Team-Modelle
-- ein spaeterer Voice-Assistant, der nicht nur Text produziert, sondern Werkzeuge ausfuehrt
-- spaetere Browser-Use- und Computer-Use-Workflows mit klaren Permissions und sichtbarer Kontrolle
+The product core is real: native hotkeys, native capture, Groq BYOK, a local
+runtime lane for STT plus cleanup, a native transform pipeline, local text
+profiles for context/dictionary/snippets, native insertion with recovery,
+native history with retry/filter/export, active settings and diagnostics
+surfaces.
 
-Wichtig:
+What is still missing is mostly product consolidation:
 
-- Diese Richtung ist echt.
-- Sie ist aber nicht der aktuelle V1-Produktkern.
-- Sie darf den heutigen Dictation-, Recovery- und Support-Fokus nicht verwischen.
+- transcription reliability outside `General Writing` or no profile still falls
+  behind the baseline too often; profile-bound STT bias must not pull
+  multilingual fragments, fantasy tokens or topic drift into raw transcripts
+- today WordScript is effectively used as a dev build via
+  `npm run tauri dev`
+- a clean commercial release build-up without false release or update promises
+- more sharpening on recovery, support communication, text rules and guided
+  local setup
 
-Auch in dieser spaeteren Plattformstufe bleibt der Kern gleich: WordScript soll ohne Konto benutzbar bleiben, waehrend spaetere Sync- und Workspace-Funktionen additiv darauf aufbauen.
+In parallel an internal cross-platform release build-up for Linux, macOS and
+Windows is maintained. It is not the current launch release and does not
+replace reliable dictation quality.
 
-WordScript soll also erst ein starkes Diktierprodukt werden und darauf spaeter eine groessere offene Arbeitsplattform aufbauen.
+## Current decisions
 
-## Wo wir gerade stehen
+- Active core stays Tauri/Rust plus React UI (ADR 0001).
+- Cloud is the V1 default path; Groq is the first real provider; BYOK stays
+  the credential strategy (ADR 0002).
+- Dictionary and snippets live in the native transform path.
+- Recovery with clipboard, scratchpad and last-transcript restore is part of
+  the product promise.
+- Distribution, signing and updater are active build-up paths, not finished
+  user promises.
+- If sync comes later, it is an optional WordScript-owned local-first layer,
+  not a peer-to-peer primary model (ADR 0005).
+- UI architecture: settings are a native-macOS-inspired WordScript shell with
+  grouped sidebar and a system-settings grouped-form kit. Stack is shadcn/ui
+  + Tailwind v4 on the existing v2 CSS-variable tokens. Window chrome stays
+  **native on every OS** (`decorations: true`) -- no frameless window, no
+  fake traffic lights, no `macOSPrivateApi` on the main window (ADR 0003).
 
-Der aktuelle Stand ist `0.2.2-alpha`.
+## Platform target
 
-Der Produktkern ist real:
-
-- native Hotkeys
-- native Aufnahme
-- Groq-BYOK
-- lokale Runtime-Lane fuer STT plus Cleanup
-- native Transform-Pipeline
-- lokale Textprofile fuer Context, Dictionary und Snippets
-- native Insertion mit Recovery
-- nativer Verlauf mit Retry, Filter- und Exportpfad
-- aktive Settings- und Diagnostics-Flaechen
-
-Was noch fehlt, ist vor allem Produktkonsolidierung:
-
-- die Transkriptionszuverlaessigkeit faellt ausserhalb von `General Writing` oder keinem Profil noch zu oft hinter die Basis zurueck; profilgebundener STT-Bias darf keine mehrsprachigen Fragmente, Fantasietokens oder Topic-Drift in Rohtranskripte ziehen
-- heute wird WordScript praktisch als Dev-Version via `npm run tauri dev` benutzt
-- ein sauberer kommerzieller Release-Aufbau ohne falsche Release- oder Update-Versprechen
-- weitere Schaerfung bei Recovery, Support-Kommunikation, Text Rules und gefuehrter lokaler Einrichtung
-
-Parallel dazu wird ein interner Cross-Platform-Release-Aufbau fuer Linux, macOS und Windows weiter gepflegt. Er ist aber nicht die aktuelle Launch-Freigabe und ersetzt keine belastbare Diktierqualitaet.
-
-## Aktuelle Entscheidungen
-
-- Der aktive Kern bleibt Tauri/Rust plus React-UI.
-- Cloud ist fuer V1 der Standardpfad.
-- Groq ist der erste echte Provider im Produkt.
-- BYOK bleibt die aktuelle Credential-Strategie.
-- Dictionary und Snippets liegen im nativen Transform-Pfad.
-- Recovery mit Clipboard, Scratchpad und Last-Transcript-Restore ist Teil des Produktversprechens.
-- Distribution, Signierung und Updater sind aktive Aufbaupfade, aber noch kein fertiges Nutzer-Versprechen.
-- falls spaeter Sync kommt, dann als optionale WordScript-eigene local-first Schicht und nicht als P2P-Primarmodell
-- UI-Architektur: Die Settings sind eine native-macOS-inspirierte WordScript Shell mit gruppierter Sidebar und System-Settings-Grouped-Form-Kit. Stack ist shadcn/ui + Tailwind v4 auf den bestehenden v2-CSS-Variablen-Tokens. Window-Chrome bleibt **nativ auf jedem OS** (`decorations: true`) — kein frameless Fenster, keine fake Traffic-Lights, kein `macOSPrivateApi`; das native Gefuehl kommt aus dem Content-Design.
-
-## Plattformziel
-
-- macOS: Tier 1 Zielpfad
-- Windows: Tier 1 Zielpfad
+- macOS: Tier 1 target
+- Windows: Tier 1 target
 - Linux X11: Preview
 - Linux Wayland: Experimental
 
-## Was jetzt nicht passieren soll
+## What must not happen now
 
-Die aktuelle Arbeit darf nicht wieder in diese Richtung driften:
+The current work must not drift back into:
 
-- Scope-Ausweitung auf Assistant-, Agent- oder Account-Themen vor einem stabilen Kern
-- den internen Release-Aufbau mit Launch-Reife zu verwechseln, solange profilabhaengige Transkriptionsfehler die Alltagsnutzung noch untergraben
-- aggressiven Profil- oder Prompt-Bias auszurollen, der Rohtranskripte gegenueber `General Writing` verschlechtert
-- neue tote Settings-Optionen ohne echten Runtime-Pfad
-- Dokumentation, die geplante Themen als implementiert beschreibt
+- scope expansion into assistant, agent or account topics before a stable core
+- confusing the internal release build-up with launch readiness while
+  profile-dependent transcription errors still undermine everyday use
+- rolling out aggressive profile or prompt bias that worsens raw transcripts
+  versus `General Writing`
+- new dead settings options without a real runtime path
+- documentation that describes planned topics as implemented
 
-## Was wir jetzt konkret bearbeiten
+## Immediate product priorities
 
-Die unmittelbaren Produktprioritaeten sind:
+1. Harden transcription reliability in the active dictation path. Active
+   profiles must not make raw transcripts less reliable than `General
+   Writing` or no profile. The next concrete steps are a fixed regression
+   corpus from real failed transcripts, then visible profile health with an
+   explicit profile-bound bias policy instead of only implicit conservative
+   defaults.
+2. Continue the settings tabs as a calmer, clearer, more native-feeling
+   product surface -- closer to a small macOS utility app than a web config
+   panel. The overlay is not the primary work site right now.
+3. Densify profiles from static rule sets into visible local work modes for
+   context, dictionary, snippets, processing mode, insert and recovery
+   defaults, but keep them local and manual for now.
+4. Grow the provider stack from Groq plus `local_preview` into a real model
+   system with at least one second production provider and clear modes
+   `fast`, `quality`, `local` and later `self_hosted`; the `local` vs
+   `self_hosted` semantics must be clear and honest first.
+5. Move the local runtime lane from env-based expert config toward a
+   first-class local product option with guided model management, pull
+   checks, health diagnostics, bias prompting and setup help.
+6. Keep the commercial release build-up honestly internal, without
+   pretending published releases or working updates, until the product base
+   actually supports that release.
 
-1. Die Transkriptionszuverlaessigkeit im aktiven Diktierpfad haerten. Aktive Profile wie `Customer Success Replies` duerfen Rohtranskripte nicht unzuverlaessiger machen als `General Writing` oder kein Profil. Die zwei naechsten konkreten Ausfuehrungsschritte darunter sind ein fixes Regression-Korpus aus realen Fehltranskripten und danach eine sichtbare Profilgesundheit mit expliziter profilgebundener Bias-Policy statt nur impliziter konservativer Defaults.
-2. Die Settings-Tabs als ruhigere, klarere und nativer wirkende Produktoberflaeche weiterziehen, im Ziel eher wie eine kleine macOS Utility-App als wie eine Web-Konfigurationsflaeche. Das Overlay ist dafuer aktuell nicht die primaere Baustelle.
-3. Profile von statischen Rule-Sets zu sichtbaren lokalen Arbeitsmodi fuer Context, Dictionary, Snippets, Processing-Modus, Insert- und Recovery-Defaults verdichten, aber vorerst lokal und manuell halten; der primaere Work-Mode-Vertrag ist `ProcessingMode` (`cleanup` / `rewrite` / `agent` / `prompt_enhance` / `verbatim`), die Aufloesung pro Session laeuft ueber `mode_router` und kann optional `workspace_context` fuer Foreground-App-Auto-Detection nutzen, sobald `auto_detect_mode` aktiviert ist
-4. Den Provider-Stack von Groq plus `local_preview` zu einem echten Modellsystem mit mindestens einem zweiten Produktionsprovider und klaren Modi wie `fast`, `quality`, `local` und spaeter `self_hosted` ausbauen; die Semantik von `local` vs `self_hosted` muss davor klar und ehrlich erklaert sein.
-5. Die lokale Runtime-Lane von env-basierter Expertenkonfiguration zu einer first-class lokalen Produktoption mit gefuehrtem Modellmanagement, Pull-Checks, Health-Diagnostics, Bias-Prompting und Setup-Hilfe weiterziehen.
-6. Den kommerziellen Release-Aufbau ehrlich intern halten, ohne publizierte Releases oder funktionierende Updates vorzutaeuschen, bis die Produktbasis diese Freigabe wirklich traegt.
+The most acute product gap versus paid alternatives is not primarily
+packaging or more platform scope, but the combination of profile-dependent
+transcription reliability and UI guidance of the settings shell.
 
-Die akuteste Produktluecke gegenueber bezahlten Alternativen ist derzeit nicht primaer Packaging oder weiterer Plattform-Scope, sondern die Kombination aus profilabhaengiger Transkriptionszuverlaessigkeit und der UI-Fuehrung der Settings-Shell. Die bestehende Settings-Shell ist eine brauchbare Basis, muss aber in Informationsarchitektur, Motion, Hierarchie und wahrgenommener Ruhe noch einmal bewusst ueberarbeitet werden.
+## Phase roadmap
 
-Sobald die Transkriptionsbasis fuer `General Writing` und aktive Profile wieder belastbar ist, ist die naechste Produktphase nach dem bisherigen Kern daher:
-
-1. Profile von statischen Rule-Sets zu sichtbaren Arbeitsmodi fuer Context, Dictionary, Snippets, spaetere Rewrite-Defaults, Insert-Verhalten und Recovery-Verhalten verdichten.
-2. Live-Preview und kontrollierten Commit zwischen Sprechen und finalem Insert einziehen, damit WordScript mehr Vertrauen und weniger Dev-Tool-Gefuehl erzeugt.
-3. den Provider-Stack von einem ersten Adapter zu einem echten Modellsystem mit mindestens einem zweiten Produktionsprovider und klaren Modi wie `fast`, `quality`, `local` und `self_hosted` ausbauen.
-4. die lokale Runtime-Lane von env-basierter Expertenkonfiguration zu einer first-class lokalen Produktoption mit gefuehrtem Modellmanagement, Pull-Checks, Health-Diagnostics, Bias-Prompting und Quality-vs-Latency-Presets weiterziehen.
-5. Setup, Permissions und Packaging als gefuehrten Produktpfad behandeln, damit Nutzer von Install bis erster brauchbarer Diktation nicht durch verstreute Diagnostics stolpern.
-
-Solange aktive Profile die Rohtranskription noch sichtbar destabilisieren, bleibt dieser Ausbau eine Folgephase und kein Argument, Release-Aufbau oder Packaging als eigentliche Hauptarbeit voranzuziehen.
-
-Was wir dafuer bewusst noch nicht in die naechste Baustelle ziehen:
-
-- `openwhispr`-Scope wie Notes, Search, Sync, MCP oder Assistant-Scope
-- weitere Plattformbreite, bevor die taegliche Dictation-Nutzung persoenlicher und vertrauenswuerdiger geworden ist
-
-Wenn Profile vorgezogen werden, dann nur als lokaler, diktiernaher Ausbau fuer Context, Dictionary, Snippets, kuratierte Starter-Baselines und spaetere Rewrite-Defaults, nicht als verkappter Assistant-Scope.
-
-Dieser lokale Profilausbau ist jetzt Teil des aktiven Produkts. Was weiter strikt ausserhalb des aktuellen Kerns bleibt, ist jede automatische Profilaktivierung, Team-Sync-Logik oder eine Assistant-Identitaet um diese Profile herum.
-
-## Phasen-Roadmap
-
-Die Reihenfolge und der Scope der V1-Konsolidierungs-Phasen (Transkriptions-Bias, Settings-Polish, Live-Preview, Provider-Stack, lokale Runtime, gefuehrter Setup-Pfad) ist in [docs/ROADMAP.md](./ROADMAP.md) ausfuehrlich dokumentiert. VISION bleibt der Nordstern, ROADMAP ist die ausfuehrbare Sicht, STATUS haelt den aktuellen Phasen-Status.
+The order and scope of the V1 consolidation phases (transcription bias,
+settings polish, live preview, provider stack, local runtime, guided setup
+path) is documented in detail in [docs/ROADMAP.md](./ROADMAP.md). VISION stays
+the north star, ROADMAP is the executable view, STATUS holds the current
+phase state.

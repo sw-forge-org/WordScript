@@ -1,6 +1,6 @@
 # WordScript — Tauri dev environment setup (Windows)
 # Run once after cloning: .\setup-tauri.ps1
-# Requires: Node.js 18+ already installed (https://nodejs.org)
+# Requires: Node.js 20.x (20.19+) or >=22.12 (https://nodejs.org)
 
 $ErrorActionPreference = "Stop"
 Write-Host "WordScript Tauri Setup (Windows)" -ForegroundColor Cyan
@@ -47,7 +47,17 @@ if ($wv2) {
     Write-Host "[3/5] WebView2 installed." -ForegroundColor Green
 }
 
-# ── 4. npm install ────────────────────────────────────────────────────────────
+# ── 4. Node.js check and npm install ──────────────────────────────────────────
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host "[4/5] Node.js not found. Install Node 20.x (20.19+) or >=22.12 from https://nodejs.org then re-run." -ForegroundColor Red
+    exit 1
+}
+$nodeVersion = (node -p "process.versions.node").Trim()
+node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit((major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major > 22 ? 0 : 1)"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[4/5] Node.js $nodeVersion found but Node 20.x (20.19+) or >=22.12 is required. Please upgrade." -ForegroundColor Red
+    exit 1
+}
 Write-Host "[4/5] Installing npm dependencies..." -ForegroundColor Yellow
 npm install
 Write-Host "[4/5] npm dependencies installed." -ForegroundColor Green

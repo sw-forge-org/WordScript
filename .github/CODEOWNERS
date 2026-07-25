@@ -1,0 +1,5 @@
+# CODEOWNERS
+# Format: <pfad> @github-user
+# Sobald mehr als eine Person arbeitet, hier echte Owner setzen.
+
+* @felixontv

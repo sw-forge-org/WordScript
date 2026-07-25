@@ -1,71 +1,94 @@
-# ── Legacy Python / local experiments ─────────────────────────────────────
+# Secrets and credentials -- never commit
+*.env
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+id_*
+*.pub
+*credentials*
+*secrets*
+
+# Machine-specific overrides
+*.override.md
+*.local.md
+settings.local.json
+AGENTS.override.md
+CLAUDE.local.md
+
+# Legacy Python and local experiments
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 
-# ── Virtual environment ───────────────────────────────────────────────────
+# Virtual environments
 .venv/
 venv/
 env/
 
-# ── PyInstaller ───────────────────────────────────────────────────────────
+# PyInstaller
 build/
 dist/
 dist-python/
 *.spec
 
-# ── Node / npm ────────────────────────────────────────────────────────────
+# Node and npm
 node_modules/
 .npm/
 
-# ── Tauri / Rust ──────────────────────────────────────────────────────────
+# Tauri and Rust
 src-tauri/target/
 src-tauri/gen/
 
-# ── Icon source (build artefact, not for version control) ─────────────────
+# Icon source build artifacts
 src-tauri/icons/ws-logo.png
 src-tauri/icons/ws-logo-sq.png
 
-# ── Runtime / user data ───────────────────────────────────────────────────
+# Runtime and user data
 *.log
 config.json
 BUILD_ID
 build_info.json
 
-# ── Temp / Claude tooling ─────────────────────────────────────────────────
+# Temporary tooling
 tmpclaude-*
 nul
 .playwright-mcp/
 
-# ── OS ────────────────────────────────────────────────────────────────────
+# Operating-system files
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ── IDE ───────────────────────────────────────────────────────────────────
+# IDE files
 .vscode/settings.json
 .idea/
 
-# ── Personal notes (may contain secrets) ─────────────────────────────────
+# Personal notes that may contain secrets
 notes.md
 
 # Claude Code
-tmpclaude-*
 CLAUDE.local.md
 .claude/settings.local.json
 CREDENTIALS.md
 
-# ── donors (third-party reference repos, not committed) ──────────
+# Third-party donor repositories
 donors/
 assets/doner-screenshots/
 openwhispr donor-screenshots
 
-# Allow the documented, frozen WordScript-owned reference folders under docs/
+# WordScript-owned documentation folders
 !docs/donors/
 !docs/handoffs/
+!docs/decisions/
+!docs/templates/
+!docs/known-issues/
+!docs/spec/
 
-# ── Kilo (local agent tooling: config, plans, worktree bookkeeping) ───────
+# Kilo local agent tooling
 .kilo/
 
 *storybook.log
