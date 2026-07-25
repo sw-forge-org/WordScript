@@ -8,6 +8,10 @@ Naming: `HANDOFF_<branch-or-slug>.md`
 
 ## Contents
 
+- [Capture Shortcut Lane Rebuild](HANDOFF_shortcut-lane-rebuild.md): **active**,
+  branch `worktree-shortcut-lane-rebuild` not yet merged — implemented slices,
+  invariants to preserve, and the open measurement that gates the rest.
+
 - [Overlay Mode-Cycling Ghosting - Accepted State](OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md): accepted operational state with permanent development-only diagnostics.
 - [Overlay Mode-Cycling Ghosting - Residual](OVERLAY_MODE_CYCLING_GHOSTING_RESIDUAL.md): predecessor investigation that reduced residual artifacts.
 - [Hotkey Cross-Platform Fix](HOTKEY_HANDOFF_easy-wins-hotkey-hygiene.md): historical cross-platform hotkey work, superseded by current per-mode hotkey behavior.
