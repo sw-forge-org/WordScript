@@ -100,18 +100,45 @@ pub const SYSTEM_TOKENS: [&str; 3] = ["PrintScreen", "ScrollLock", "Pause"];
 /// not reintroduce two rule sets.
 #[derive(Debug, Clone, Copy)]
 pub struct Policy {
-    /// Whether a shortcut made only of modifiers may be used at all. Even when
-    /// true, a *single* bare modifier stays rejected — not because of the grab
-    /// any more (ADR 0009), but because one modifier cannot be told apart from
-    /// ordinary typing.
+    /// Whether a shortcut made only of modifiers may be used at all.
     pub allow_modifier_only: bool,
+    /// Whether this session can tell a deliberate tap of a modifier apart from
+    /// the same modifier pressed while typing. True only where the platform
+    /// delivers an interruption signal with the observed key edges (ADR 0009);
+    /// without it a single modifier would fire during ordinary text entry, so it
+    /// stays rejected and two modifiers remain the minimum.
+    ///
+    /// Deliberately `false` in `Default`, so every call site that means the real
+    /// session has to say so — and so the rule under test never depends on the
+    /// machine the test runs on.
+    pub interruption_signal: bool,
 }
 
 impl Default for Policy {
     fn default() -> Self {
         Self {
             allow_modifier_only: true,
+            interruption_signal: false,
         }
+    }
+}
+
+/// Whether the current session delivers the interruption signal that makes a
+/// single modifier distinguishable from typing. Linux routes modifier-only
+/// shortcuts through XInput2 raw events and reports it; Windows and macOS still
+/// grab or drop them entirely, so they do not (see
+/// `docs/known-issues/cross-platform-shortcut-verification.md`).
+pub fn session_has_interruption_signal(kind: SessionKind) -> bool {
+    matches!(kind, SessionKind::LinuxX11 | SessionKind::LinuxXWayland)
+}
+
+/// The policy for the current session. The one place that turns platform facts
+/// into validation rules, so config normalization, the trigger layer and the
+/// UI's inline validation cannot disagree about what is allowed.
+pub fn session_policy(allow_modifier_only: bool) -> Policy {
+    Policy {
+        allow_modifier_only,
+        interruption_signal: session_has_interruption_signal(shortcut_platform().kind),
     }
 }
 
@@ -296,22 +323,31 @@ fn build_modifier_only(
         return Err("This shortcut must include a non-modifier key.".to_string());
     }
 
-    // Since modifier-only shortcuts are observed rather than grabbed (ADR 0009),
-    // the old reason for this rule — a bare grab would take the key from the
-    // desktop — no longer applies. What remains is a different problem, and it is
-    // the honest one to state: the trigger lane cannot tell a deliberate tap of a
-    // modifier from the same modifier pressed while typing. Two of those inside
-    // the double-tap window is ordinary text entry ("Hello World" presses Shift
-    // twice), so a single modifier would fire during normal use. Distinguishing
-    // them needs an interruption signal — "was another key pressed in between" —
-    // which the event type does not carry yet.
-    if modifiers.len() < MODIFIER_ONLY_MINIMUM {
+    // Two reasons have been retired here, and the history is worth keeping
+    // straight because each retirement was earned by a mechanism change:
+    //
+    // 1. Originally: a single part expanded to a grab with no modifier at all,
+    //    taking that key from the whole desktop (D2). Retired by observation
+    //    (ADR 0009) — an observed key is not taken from anyone.
+    // 2. Then: nothing separated a deliberate tap from the `Shift` pressed to
+    //    type a capital. Retired by the interruption signal, which reports
+    //    whether another key went down while the trigger was held.
+    //
+    // What is left is a platform question, not a rule: where the session cannot
+    // report interruption, a single modifier really would fire during ordinary
+    // typing, so it stays rejected there.
+    let minimum = if policy.interruption_signal {
+        1
+    } else {
+        MODIFIER_ONLY_MINIMUM
+    };
+
+    if modifiers.len() < minimum {
         return Err(format!(
-            "A single {modifier} cannot be a trigger. Modifier-only shortcuts are observed rather \
-             than grabbed, so {modifier} keeps working normally — but nothing separates a \
-             deliberate tap from the {modifier} you press while typing, and two of those inside \
-             the double-tap window is ordinary text entry. Two modifiers make the combination \
-             rare enough to read as deliberate. Use at least two modifiers, or add a key.",
+            "A single {modifier} needs this session to report when another key interrupts the \
+             hold, and it does not. Without that, {modifier} pressed to type a capital cannot be \
+             told apart from a deliberate tap, so the trigger would fire while typing. Use at \
+             least two modifiers, or add a key.",
             modifier = modifiers.first().copied().unwrap_or("modifier")
         ));
     }
@@ -333,8 +369,16 @@ fn build_modifier_only(
             .try_fold(Modifiers::empty(), |acc, token| {
                 modifier_flag(token).map(|flag| acc | flag)
             })?;
-        debug_assert!(!mods.is_empty());
-        shortcuts.push(Shortcut::new(Some(mods), modifier_code(main)?));
+        // A single modifier is the one case that produces a binding with no
+        // modifier at all. That used to be forbidden outright, because it meant a
+        // bare grab; it is safe now precisely because such a binding is observed
+        // rather than grabbed (ADR 0009), and it is only reachable when the
+        // session reports interruption.
+        debug_assert!(!mods.is_empty() || modifiers.len() == 1);
+        shortcuts.push(Shortcut::new(
+            (!mods.is_empty()).then_some(mods),
+            modifier_code(main)?,
+        ));
     }
 
     Ok(ParsedShortcut {
@@ -611,9 +655,7 @@ fn default_allow_modifier_only() -> bool {
 /// manual entry (T5).
 #[tauri::command]
 pub fn validate_shortcut(request: ValidateShortcutRequest) -> ShortcutValidation {
-    let policy = Policy {
-        allow_modifier_only: request.allow_modifier_only,
-    };
+    let policy = session_policy(request.allow_modifier_only);
 
     match parse(&request.value, policy) {
         Ok(ShortcutParse::Disabled) => ShortcutValidation {
@@ -1424,17 +1466,53 @@ mod tests {
         // a desktop-wide grab on Ctrl.
         let error = parse("ctrl_l", Policy::default()).unwrap_err();
         assert!(error.contains("single"), "unexpected reason: {error}");
-        // The reason must be the current one. Modifier-only is observed now, so
-        // "it would be grabbed from the desktop" is no longer true; what remains
-        // is that a lone modifier cannot be told apart from ordinary typing.
+        // The reason has to be the current one: not the retired grab argument,
+        // and not "cannot be told apart" as an absolute — it is a property of the
+        // session, and the message says which one is missing.
         assert!(
-            error.contains("while typing"),
-            "the reason must name the real remaining problem: {error}"
+            error.contains("interrupts the hold"),
+            "the reason must name the missing signal: {error}"
         );
         assert!(
             !error.contains("would stop working everywhere"),
             "stale grab-based reason: {error}"
         );
+    }
+
+    #[test]
+    fn a_single_modifier_is_allowed_where_interruption_is_reported() {
+        // The whole point of the interruption signal: with it, a deliberate tap
+        // of Shift is distinguishable from the Shift pressed to type a capital,
+        // so the two-modifier minimum has no reason to apply.
+        let policy = Policy {
+            allow_modifier_only: true,
+            interruption_signal: true,
+        };
+
+        let parsed = match parse("shift_l", policy).expect("a single modifier should parse") {
+            ShortcutParse::Valid(parsed) => *parsed,
+            ShortcutParse::Disabled => panic!("expected a shortcut"),
+        };
+
+        assert_eq!(parsed.canonical, "Shift");
+        assert!(parsed.modifier_only);
+        assert_eq!(parsed.delivery, Delivery::Observe);
+        // One part means one binding, and it carries no modifier — which is only
+        // safe because it is observed rather than grabbed.
+        assert_eq!(parsed.shortcuts.len(), 1);
+    }
+
+    #[test]
+    fn the_interruption_signal_is_a_session_property_not_a_platform_guess() {
+        // Linux routes modifier-only through XInput2 raw events and reports
+        // interruption. Windows and macOS do not yet, and must not be assumed to.
+        assert!(session_has_interruption_signal(SessionKind::LinuxX11));
+        assert!(session_has_interruption_signal(SessionKind::LinuxXWayland));
+        assert!(!session_has_interruption_signal(SessionKind::Windows));
+        assert!(!session_has_interruption_signal(SessionKind::MacOs));
+        assert!(!session_has_interruption_signal(
+            SessionKind::LinuxNativeWayland
+        ));
     }
 
     #[test]
@@ -1531,6 +1609,7 @@ mod tests {
     fn modifier_only_can_be_forbidden_per_slot() {
         let policy = Policy {
             allow_modifier_only: false,
+            ..Policy::default()
         };
         assert!(parse("ctrl_l+alt_l", policy).is_err());
         assert!(parse("ctrl_l+alt_l+f9", policy).is_ok());
@@ -1570,8 +1649,22 @@ mod tests {
         });
         assert!(disabled.ok && disabled.disabled);
 
-        let rejected = validate_shortcut(ValidateShortcutRequest {
+        // A single modifier depends on whether this session can report an
+        // interrupted hold, so the command is asserted against the same helper
+        // rather than against a fixed expectation.
+        let single = validate_shortcut(ValidateShortcutRequest {
             value: "ctrl_l".to_string(),
+            allow_modifier_only: true,
+        });
+        assert_eq!(
+            single.ok,
+            session_has_interruption_signal(shortcut_platform().kind)
+        );
+        assert_eq!(single.ok, single.reason.is_none());
+
+        // A bare letter is rejected in every session.
+        let rejected = validate_shortcut(ValidateShortcutRequest {
+            value: "a".to_string(),
             allow_modifier_only: true,
         });
         assert!(!rejected.ok);

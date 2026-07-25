@@ -1202,6 +1202,23 @@ pub fn handle_global_shortcut_event<R: Runtime>(
             }
         }
         ShortcutState::Released if is_hotkey => {
+            // An interrupted hold is not a tap of the trigger: another key went
+            // down while it was held, so this was `Shift` on the way to a capital
+            // or `Ctrl+Alt` on the way to `Ctrl+Alt+T`. Only the edge-counting
+            // modes discard it — hold mode started something on the press edge
+            // and still has to end it (ADR 0009).
+            if event.interrupted
+                && matches!(
+                    state.config.activation_mode,
+                    NativeActivationMode::Tap | NativeActivationMode::DoubleTap
+                )
+            {
+                end_tap_press(&mut state);
+                state.last_tap_shortcut_intent = None;
+                decide("ignored_interrupted_chord");
+                return None;
+            }
+
             if state.config.activation_mode == NativeActivationMode::DoubleTap {
                 end_tap_press(&mut state);
                 if !double_tap_uses_release_trigger(&state) {
@@ -1691,9 +1708,7 @@ fn build_shortcut_binding(
     input: &str,
     allow_modifier_only: bool,
 ) -> Result<RegisteredShortcutBinding, String> {
-    let policy = shortcut::Policy {
-        allow_modifier_only,
-    };
+    let policy = shortcut::session_policy(allow_modifier_only);
 
     match shortcut::parse(input, policy)? {
         shortcut::ShortcutParse::Disabled => Err("Shortcut must not be empty.".to_string()),
@@ -1791,11 +1806,23 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_single_bare_modifier() {
-        // D2: a lone modifier used to be expanded into a grab with no modifier
-        // at all, which swallowed every Ctrl press on the desktop.
-        assert!(build_shortcut_binding("ctrl_l", true).is_err());
-        assert!(build_shortcut_binding("win", true).is_err());
+    fn a_single_bare_modifier_follows_the_session_capability() {
+        // D2 rejected a lone modifier because it expanded into a grab with no
+        // modifier at all, swallowing every Ctrl press on the desktop. Both
+        // reasons for the blanket rule are gone (observation, then the
+        // interruption signal — ADR 0009), so what is left is a session
+        // property. The assertion has to follow the same helper the runtime
+        // does, or it would pass on one machine and fail on another.
+        let interruption_reported =
+            shortcut::session_has_interruption_signal(shortcut::shortcut_platform().kind);
+
+        assert_eq!(build_shortcut_binding("ctrl_l", true).is_ok(), interruption_reported);
+        assert_eq!(build_shortcut_binding("win", true).is_ok(), interruption_reported);
+
+        // What no session ever allows: a bare letter, and a modifier-only value
+        // in a slot that forbids modifier-only at all.
+        assert!(build_shortcut_binding("a", true).is_err());
+        assert!(build_shortcut_binding("ctrl_l+alt_l", false).is_err());
     }
 
     #[test]

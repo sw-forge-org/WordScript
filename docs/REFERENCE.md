@@ -257,13 +257,16 @@ applications (ADR
 [0009](decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md)).
 `validate_shortcut` reports which of the two applies in `delivery`.
 
-A *single* bare modifier is still rejected, with the reason that follows from the
-new mechanism rather than the old one: nothing distinguishes a deliberate tap of
-Shift from the Shift pressed to type a capital, and two of those inside the
-double-tap window is ordinary text entry. Two modifiers make the combination rare
-enough to read as deliberate. Lifting this needs an interruption signal in the
-event contract and side-specific modifier tokens — both listed as consequences in
-the ADR.
+A **single** modifier is allowed where the session can report an *interrupted*
+hold — another key went down while the trigger was held. Tap and double tap
+discard an interrupted edge, so `Shift` on the way to a capital and `Ctrl+Alt` on
+the way to `Ctrl+Alt+T` stop counting as taps; hold to talk ignores the flag,
+because it started on the press edge and still has to end on release. Today Linux
+reports it and Windows and macOS do not, so there the minimum stays two and the
+rejection names the missing signal rather than asserting an absolute.
+
+`MODIFIER_TOKENS` is side-agnostic, so `Shift` covers both keys and "right Shift
+only" cannot be expressed yet.
 
 On Linux the observation path is XInput2 raw key events. It tracks the eight
 modifier keycodes and discards every other keycode on arrival. It is still an X11

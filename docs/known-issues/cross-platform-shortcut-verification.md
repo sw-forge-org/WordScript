@@ -185,33 +185,26 @@ the platform layer applies the same rule, so the two cannot disagree. Windows an
 macOS still need the same routing in their implementations; until then
 modifier-only stays broken on both, in the two different ways recorded above.
 
-### A single modifier is still rejected — for a different reason now
+### A single modifier now works on Linux, and is blocked on the other two
 
-With observation in place, "a bare grab would take the key from the desktop" is no
-longer true, so it is no longer the reason. What remains is that the trigger lane
-cannot tell a deliberate tap of a modifier from the same modifier pressed while
-typing. Typing "Hello World" presses Shift twice, and inside a 400 ms double-tap
-window that is indistinguishable from a deliberate double tap. Two modifiers make
-the combination rare enough to read as intentional.
+The interruption signal is built. `GlobalHotKeyEvent` carries an `interrupted`
+flag, set by the observation path when another key went down while the trigger was
+held; tap and double tap discard an interrupted edge, hold to talk ignores it and
+still ends on release. That is what makes `Shift` distinguishable from the `Shift`
+pressed to type a capital, and it turned out to be sufficient on its own — the
+*left* Shift is usable, so side-specific tokens are polish rather than a
+prerequisite.
 
-Lifting it needs two things that are not in the contract yet:
+The two-modifier minimum is therefore a **session property**
+(`Policy::interruption_signal`), not a fixed rule. Linux reports interruption;
+Windows and macOS do not, because modifier-only shortcuts do not work there at all
+yet. That is the same blocker as the two findings above, and closing it closes this
+too.
 
-1. **An interruption signal** — "was another key pressed while this modifier was
-   held" — so `Ctrl+Alt` on the way to `Ctrl+Alt+T`, and Shift on the way to a
-   capital, are distinguishable from a deliberate tap. The clean shape is to fire
-   modifier-only triggers on the release edge (which the lane already does) and
-   suppress that edge when the hold was interrupted. That means a third piece of
-   state on `GlobalHotKeyEvent`, which every platform implementation constructs —
-   so it is a coordinated change across all four backends, including `no-op`.
-2. **Side-specific modifier tokens.** `MODIFIER_TOKENS` is side-agnostic
-   (`Shift`, not `ShiftLeft`/`ShiftRight`) and both `event.code` values map to the
-   same token. Right Shift works as a trigger for Wispr Flow precisely because it
-   is rarely used in typing; the contract cannot currently express it. This
-   touches the vocabulary, the recorder's chord serialization and the display
-   strings.
-
-Neither is blocked by hardware. Both are ordinary work, and (1) is the one that
-actually makes the feature safe.
+Still not expressible: "right Shift only". `MODIFIER_TOKENS` is side-agnostic, so
+`Shift` covers both keys. Wispr Flow's default works precisely because right Shift
+is rare in typing, so this is worth having eventually — it touches the vocabulary,
+the recorder's chord serialization and the display strings.
 
 ### Privacy
 

@@ -78,6 +78,19 @@ pub struct GlobalHotKeyEvent {
     pub id: u32,
     /// State of the associated [`HotKey`].
     pub state: HotKeyState,
+    /// WordScript patch: true when another key was pressed while this hotkey was
+    /// held, so the hold was not a clean tap of the combination.
+    ///
+    /// This exists for observed modifier-only shortcuts, where it is the only
+    /// thing that separates a deliberate tap from ordinary typing: pressing
+    /// `Shift` to type a capital, or `Ctrl+Alt` on the way to `Ctrl+Alt+T`, both
+    /// produce a press and a release of the trigger. A consumer that counts tap
+    /// edges must ignore an interrupted one. A consumer that runs while the key is
+    /// held (push to talk) must not — the capture still has to stop on release.
+    ///
+    /// Always false on the `Pressed` edge, and always false for grabbed shortcuts,
+    /// where a real main key already makes the intent unambiguous.
+    pub interrupted: bool,
 }
 
 /// A reciever that could be used to listen to global hotkey events.

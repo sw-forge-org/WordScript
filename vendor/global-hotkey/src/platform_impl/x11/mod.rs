@@ -209,6 +209,7 @@ fn register_hotkey(
                 id: hotkey.id(),
                 mods,
                 pressed: false,
+                interrupted: false,
             };
             entry.push(state);
             Ok(())
@@ -260,6 +261,9 @@ struct HotKeyState {
     id: u32,
     pressed: bool,
     mods: ModMask,
+    /// Only meaningful on the observation path: another key went down while this
+    /// trigger was held, so the hold was not a clean tap.
+    interrupted: bool,
 }
 
 /// The eight modifier keys, with the `ModMask` bit each contributes. This is the
@@ -379,6 +383,7 @@ impl Observer {
             id: hotkey.id(),
             mods,
             pressed: false,
+            interrupted: false,
         });
         Ok(())
     }
@@ -400,27 +405,46 @@ impl Observer {
             self.held.push(keycode);
         }
 
-        // Everything that is not a tracked modifier is discarded here, before
-        // anything is stored or reported.
-        //
-        // Note what this does NOT do: it does not mark the held chord as
-        // interrupted. `Ctrl+Alt` as a trigger still reports a press when the
-        // user is on their way to `Ctrl+Alt+T`, exactly as the grab path did.
-        // Suppressing that needs an interruption signal in the event type, which
-        // is the prerequisite for a *single* modifier being a usable trigger —
-        // see `docs/known-issues/cross-platform-shortcut-verification.md`.
+        // A key that is not a tracked modifier is discarded as key material, but
+        // the fact that *something* was pressed is kept: it interrupts every
+        // currently held trigger. That is what separates a deliberate tap of a
+        // modifier from `Shift` on the way to a capital letter, and it is the only
+        // reason a single modifier can be a trigger at all.
         if !is_modifier {
+            for entry in self.hotkeys.values_mut() {
+                for state in entry {
+                    if state.pressed {
+                        state.interrupted = true;
+                    }
+                }
+            }
             return;
+        }
+
+        // A second modifier going down also interrupts a held trigger whose own
+        // set is now exceeded: holding `Shift` and adding `Ctrl` is not a tap of
+        // `Shift`.
+        for (registered, entry) in self.hotkeys.iter_mut() {
+            if *registered == keycode {
+                continue;
+            }
+            for state in entry {
+                if state.pressed {
+                    state.interrupted = true;
+                }
+            }
         }
 
         if let Some(entry) = self.hotkeys.get_mut(&keycode) {
             for state in entry {
                 if state.mods == held_mask && !state.pressed {
+                    state.pressed = true;
+                    state.interrupted = false;
                     GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                         id: state.id,
                         state: crate::HotKeyState::Pressed,
+                        interrupted: false,
                     });
-                    state.pressed = true;
                 }
             }
         }
@@ -436,11 +460,16 @@ impl Observer {
         if let Some(entry) = self.hotkeys.get_mut(&keycode) {
             for state in entry {
                 if state.pressed {
+                    // The release is always reported, interrupted or not: a
+                    // consumer that started something on the press edge has to be
+                    // able to end it. The flag is the information, not a filter.
                     GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                         id: state.id,
                         state: crate::HotKeyState::Released,
+                        interrupted: state.interrupted,
                     });
                     state.pressed = false;
+                    state.interrupted = false;
                 }
             }
         }
@@ -494,6 +523,7 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
                                 GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                                     id: state.id,
                                     state: crate::HotKeyState::Pressed,
+                                    interrupted: false,
                                 });
                                 state.pressed = true;
                             }
@@ -509,6 +539,7 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
                                 GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                                     id: state.id,
                                     state: crate::HotKeyState::Released,
+                                    interrupted: false,
                                 });
                                 state.pressed = false;
                             }

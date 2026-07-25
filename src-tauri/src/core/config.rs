@@ -1362,9 +1362,7 @@ fn normalize_overlay_monitor_value(value: &str) -> String {
 fn normalize_shortcut_value(value: &str, allow_modifier_only: bool) -> String {
     super::shortcut::normalize_for_storage(
         value,
-        super::shortcut::Policy {
-            allow_modifier_only,
-        },
+        super::shortcut::session_policy(allow_modifier_only),
     )
 }
 

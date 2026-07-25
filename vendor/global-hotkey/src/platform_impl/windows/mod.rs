@@ -180,6 +180,7 @@ unsafe extern "system" fn ll_keyboard_proc(
                 GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                     id: active_id,
                     state: HotKeyState::Released,
+                    interrupted: false,
                 });
                 return 1;
             }

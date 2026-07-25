@@ -68,6 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Linux, which do not consume the keystroke. `validate_shortcut` reports which of
   the two mechanisms applies in `delivery`. The vendored `global-hotkey` crate
   carries the new observation path; Windows and macOS still need the same routing.
+- A **single modifier** can be the capture trigger where the session supports it —
+  double-tap Shift, or push-to-talk on one key, the idiom the mainstream dictation
+  tools use. It rests on an `interrupted` flag the observation path now reports
+  with each key edge: tap and double tap discard an interrupted edge, so `Shift`
+  pressed to type a capital and `Ctrl+Alt` on the way to `Ctrl+Alt+T` no longer
+  count as taps, while hold to talk ignores it and still ends on release. The
+  two-modifier minimum became a session property rather than a fixed rule; where a
+  platform cannot report interruption it still applies, and the stated reason names
+  the missing signal. Linux reports it today; Windows and macOS do not yet.
 - A cross-platform verification record for the shortcut lane
   (`docs/known-issues/cross-platform-shortcut-verification.md`): executable run
   sheets for Windows and macOS, the per-platform release mechanisms read from the

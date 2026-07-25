@@ -241,11 +241,12 @@ Additional rules:
   `prompt_enhance` or globally active agent mode; Conservative stays the
   default and protects against language-bias leakage into the Whisper initial
   prompt
-- a *single* modifier as a trigger (double-tap Shift, push-to-talk on one key) is
-  not possible yet. Observation makes it harmless to the desktop, but the lane
-  cannot distinguish a deliberate tap from the same modifier pressed while typing.
-  It needs an interruption signal in the event contract and side-specific modifier
-  tokens (`ShiftRight`), both described in ADR 0009
+- a *single* modifier as a trigger (double-tap Shift, push-to-talk on one key)
+  works on Linux and not on Windows or macOS. It depends on the interruption
+  signal that comes with the observed key edges, and only the Linux path reports
+  it so far; the other two say so instead of offering it. `Shift` also cannot be
+  narrowed to the right-hand key yet, because the token vocabulary is
+  side-agnostic (ADR 0009)
 - the shortcut lane has never been executed on Windows or macOS. It is
   implemented and unit-tested for all three platforms, but only Linux
   (KDE Plasma 6 / Wayland, app on XWayland) has ever run it. One consequence is

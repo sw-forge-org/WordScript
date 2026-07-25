@@ -119,12 +119,11 @@ describe("HotkeyRecorder", () => {
     await startRecording();
 
     fireEvent.keyDown(window, { code: "ControlLeft", key: "Control" });
-    // The stated reason has to be the current one. Modifier-only shortcuts are
-    // observed rather than grabbed now, so "it would be taken from the desktop"
-    // is no longer true; what remains is that a lone modifier cannot be told
-    // apart from the same key pressed while typing.
-    expect(await screen.findByText(/you press while typing/i)).toBeInTheDocument();
-    expect(screen.getByText(/observed rather than grabbed/i)).toBeInTheDocument();
+    // The stated reason has to be the current one: not the retired grab
+    // argument, and not an absolute — a single modifier is allowed where the
+    // session reports an interrupted hold, and the message names that.
+    expect(await screen.findByText(/interrupts the hold/i)).toBeInTheDocument();
+    expect(screen.getByText(/fire while typing/i)).toBeInTheDocument();
 
     fireEvent.keyDown(window, { code: "Enter", key: "Enter" });
     await waitFor(() => expect(screen.getByLabelText(/recording shortcut/i)).toBeInTheDocument());

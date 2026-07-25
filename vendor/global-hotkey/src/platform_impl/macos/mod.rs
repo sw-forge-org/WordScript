@@ -404,11 +404,13 @@ unsafe extern "C" fn hotkey_handler(
             kEventHotKeyPressed => GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                 id: event_hotkey.id,
                 state: crate::HotKeyState::Pressed,
+                interrupted: false,
             }),
             #[allow(non_upper_case_globals)]
             kEventHotKeyReleased => GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                 id: event_hotkey.id,
                 state: crate::HotKeyState::Released,
+                interrupted: false,
             }),
             _ => {}
         };

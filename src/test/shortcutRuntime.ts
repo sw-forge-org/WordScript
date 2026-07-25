@@ -275,7 +275,7 @@ export function validateShortcutDouble(
         display: "",
         modifier_only: false,
         delivery: null,
-        reason: `A single ${modifiers[0]} cannot be a trigger. Modifier-only shortcuts are observed rather than grabbed, so ${modifiers[0]} keeps working normally — but nothing separates a deliberate tap from the ${modifiers[0]} you press while typing, and two of those inside the double-tap window is ordinary text entry. Two modifiers make the combination rare enough to read as deliberate. Use at least two modifiers, or add a key.`,
+        reason: `A single ${modifiers[0]} needs this session to report when another key interrupts the hold, and it does not. Without that, ${modifiers[0]} pressed to type a capital cannot be told apart from a deliberate tap, so the trigger would fire while typing. Use at least two modifiers, or add a key.`,
         warning: null,
       };
     }
