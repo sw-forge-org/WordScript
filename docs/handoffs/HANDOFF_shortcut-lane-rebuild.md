@@ -14,6 +14,11 @@ You are in the git worktree `.claude/worktrees/shortcut-lane-rebuild` on branch
 so the subjects can be read without running it:
 
 ```
+docs: record hold to talk as open again after the first live result
+feat(shortcuts): allow a single modifier where an interrupted hold is reported
+feat(shortcuts): observe modifier-only shortcuts instead of grabbing them
+fix(shortcuts): state the real reason a bare modifier is rejected
+docs: keep the hand-off commit list stable across amends
 docs: record the untested Windows and macOS shortcut paths
 feat(shortcuts): gate activation modes on a measured capability matrix
 dffd35b docs: hand-off for the shortcut lane rebuild
@@ -38,8 +43,9 @@ cannot register the same shortcuts, and the failures will look like bugs.
 The problem record is
 [known-issues/capture-shortcut-recording.md](../known-issues/capture-shortcut-recording.md)
 (defects D1-D12, target contract T1-T12, slice plan S0-S8). **All slices S0-S8
-are implemented and all twelve defects are addressed.** What is left is one
-measurement that only a person can take, and the merge decision.
+are implemented.** Eleven of the twelve defects are addressed; D11, hold to talk,
+is open again — a live session shows the mode still doing nothing while double tap
+on the same trigger works.
 
 Two further defects were found and fixed while verifying against the live lane,
 neither of them in the original record:
@@ -70,8 +76,14 @@ These are the point of the rebuild. Breaking one silently re-opens a defect.
    in TypeScript is a contract break.
 2. **Empty means disabled**, for capture and mode shortcuts alike. Never fall
    back to a platform default for a value the user set.
-3. **A single bare modifier is never registered.** Modifier-only requires two or
-   more modifiers, so no grab can ever be created with no modifier at all.
+3. **A single bare modifier depends on the session, not on taste** (ADR
+   [0009](../decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md)).
+   Modifier-only shortcuts are *observed*, not grabbed, so a lone modifier no
+   longer creates a desktop-wide grab. It is allowed exactly where the session
+   reports an interrupted hold — `Policy::interruption_signal`, from
+   `session_has_interruption_signal`. Do not hard-code the minimum back to two, and
+   do not offer a single modifier where interruption is not reported: it would fire
+   on ordinary typing.
 4. **Normalize first, validate collisions second.** Never the other way round.
 5. **Legacy rewrites are version gated** on `shortcut_schema_version`. A
    migration that runs on every save rewrites values the user just chose.
@@ -102,9 +114,25 @@ These are the point of the rebuild. Breaking one silently re-opens a defect.
 
 ## Open work, in priority order
 
-### A. Physical S0 measurement — the only open work item
+### A. Hold to talk does not work — narrowed, not diagnosed
 
-This is the one thing a person must do. It no longer *blocks* anything: B and C
+Reported live on 2026-07-25 with a single `Shift` trigger: double tap works, hold
+to talk does nothing. Because double tap counts release edges that only exist
+after a counted press edge, **key delivery is ruled out for this session** — the
+fault is in the hold path or in what it starts.
+
+Four candidates and the single log block that separates them are in the
+[known-issues record](../known-issues/capture-shortcut-recording.md). Do not start
+by reading the state machine: the trap at the bottom of this file applies exactly
+here. One hold attempt with `[trigger]` running names the branch.
+
+D11 is marked open again in that record. It was closed on the strength of the
+watchdog, the release attribution and the evidence gating — all of which are real,
+and none of which made the mode work.
+
+### B. Physical S0 measurement
+
+A person has to do this one. It blocks nothing: B and C
 were built so they do not depend on it (the matrix follows measured evidence per
 session instead of a per-OS claim). What the measurement buys is the ability to
 state something about the **platform** rather than about the current session.
@@ -124,7 +152,7 @@ Two points worth repeating here because they are easy to get wrong:
   nothing about hardware keys, and XTEST structurally cannot deliver to a
   Wayland-focused client. Do not try to automate this half.
 
-### F. Windows and macOS have never run this lane
+### C. Windows and macOS have never run this lane
 
 Separate from A and not blocked by it. The lane is implemented and unit-tested
 for all three platforms; only Linux has ever executed it. Run sheets for both,
@@ -139,7 +167,21 @@ do. It is a code-level finding, needs a real macOS session to confirm, and the
 fix is a product decision (accept, per-OS defaults, or patch the vendored crate)
 — not an agent's call.
 
-### B. S6 — activation modes — DONE
+### D. Merge and cleanup
+
+The branch stays unmerged, reaffirmed by the user on 2026-07-25: their everyday
+build runs from the main checkout, and merging puts the rebuilt lane into daily
+use before the physical verification is done. **Do not merge without asking.**
+When they decide to, it is a fast-forward (`master` is 0 commits behind).
+Afterwards this file moves to the archived set per [README.md](README.md), and
+the worktree plus branch can be removed.
+
+## Settled — do not re-open
+
+Delivered and decided. Listed so the next session does not redo the analysis
+behind them.
+
+### S6 — activation modes
 
 Hold to talk keeps the watchdog (`hold_watchdog_seconds`, default 120, reason
 `native_hold_watchdog`) and the deferred stop below `hold_min_ms`, so a short tap
@@ -149,7 +191,7 @@ in hold mode has defined behavior. All four timing constants (`hold_min_ms`,
 (`f056bd5`) is implemented, verified live, and is now the default (ADR 0008).
 The selector is gated on the capability matrix from C.
 
-### C. S7 — per-OS capability matrix — DONE
+### S7 — per-OS capability matrix
 
 `core::shortcut::capability_matrix` derives a `CapabilityState` plus a
 user-facing reason per activation mode and per key class, from
@@ -166,7 +208,7 @@ kinds and all three evidence states.
 touching this.** The matrix deliberately contains no per-OS verdict on hold to
 talk, because none has been measured — see invariant 10.
 
-### D. Product decisions — SETTLED
+### Product decisions
 
 - **`double_tap` is the default `activation_mode`.** Decided yes by the user on
   2026-07-25, recorded as ADR
@@ -182,15 +224,6 @@ talk, because none has been measured — see invariant 10.
   (`Ctrl+Alt+S`, `Ctrl+Alt+1`…), one line per default in `core::config`.
   **Do not change this unilaterally** — it is the user's call, they have now been
   asked twice, and they kept it both times. Do not re-open it.
-
-### E. Merge and cleanup
-
-The branch stays unmerged, reaffirmed by the user on 2026-07-25: their everyday
-build runs from the main checkout, and merging puts the rebuilt lane into daily
-use before the physical verification is done. **Do not merge without asking.**
-When they decide to, it is a fast-forward (`master` is 0 commits behind).
-Afterwards this file moves to the archived set per [README.md](README.md), and
-the worktree plus branch can be removed.
 
 ## Traps found the hard way
 
@@ -218,7 +251,7 @@ the worktree plus branch can be removed.
 ```
 npm test                       # 97 tests
 npm run build
-cd src-tauri && cargo test     # 349 tests
+cd src-tauri && cargo test     # 353 tests
 ```
 
 Native host checks cannot be done in a browser preview — grabs and key delivery

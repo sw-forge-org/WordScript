@@ -204,6 +204,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rewrite the Windows default on every save — and the set is asserted in tests
   to parse, register, not collide and survive normalization unchanged.
 
+### Known issues
+
+- Hold to talk does not work, observed live on a session where double tap on the
+  same trigger does. Since double tap counts release edges that only follow a
+  counted press edge, key delivery is ruled out and the fault is in the hold path
+  or in what it starts. Narrowed to four candidates in
+  `docs/known-issues/capture-shortcut-recording.md`, each of which names itself in
+  the `[trigger]` log.
+
 ### Fixed
 
 - A per-mode hotkey now confirms itself on screen. The direct jump set the mode

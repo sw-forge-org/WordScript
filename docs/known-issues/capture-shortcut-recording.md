@@ -1,7 +1,8 @@
 # Capture Shortcut Recording and Registration
 
-Status: **Largely resolved (2026-07-25). S0-S8 implemented. One open item that
-only a person can produce: the physical half of the S0 measurement.**
+Status: **Largely resolved (2026-07-25). S0-S8 implemented. Two open items: the
+physical half of the S0 measurement, and hold to talk, which a live session shows
+still not working while double tap does.**
 
 ## Current State (2026-07-25)
 
@@ -20,7 +21,7 @@ Slices S0-S8 from the plan below were implemented on branch
 | D8 recorder vocabulary smaller than the runtime's | Fixed — the UI reads the runtime vocabulary and has no key table |
 | D9 physical key codes shown as US labels | Improved — human display strings everywhere, physical-key caveat stated |
 | D10 no test coverage for the recorder | Fixed — `HotkeyRecorder.test.tsx` covers the lifecycle rules |
-| D11 hold to talk not supported in practice | Fixed — watchdog, release attribution, and the mode is gated on measured release evidence rather than offered on an assumption |
+| D11 hold to talk not supported in practice | **Open again** — watchdog, release attribution and evidence-based gating are in place, but a live session with a working double tap shows hold to talk still doing nothing. Delivery is ruled out; see the first physical result below |
 | D12 trigger lane has no observability | Fixed — every event, decision and registration outcome is logged |
 
 What S6 and S7 delivered:
@@ -114,6 +115,53 @@ different path than physical hardware input, so a negative XTEST result does not
 prove that physical keys behave the same way. What it does establish is that the
 delivery is not deterministic on this path, and that the stranded-hold state is
 reachable in practice rather than hypothetical.
+
+### First physical result (2026-07-25): double tap works, hold to talk does not
+
+Reported from a live session on the observation path (ADR 0009), with a single
+`Shift` as the capture trigger:
+
+- **Double tap works.** Two clean taps start and stop a capture; `Shift` pressed
+  while typing does not trigger, so the interruption filter does what it was built
+  for.
+- **Hold to talk does not work at all.**
+
+**What this already establishes**, without any further measurement: on this
+session, **key delivery is not the problem**. Double tap on a modifier-only
+trigger counts *release* edges, and a release edge is only counted for a binding
+whose *press* edge set it pressed. Working double tap therefore proves both edges
+arrive, and arrive reliably enough to be counted. That is the first piece of
+evidence that separates the two halves of D11: delivery versus state machine.
+
+The failure is consequently in the hold path itself or in what it starts. Open
+candidates, none of them confirmed — **do not treat any of these as the cause
+until the log says so**:
+
+1. **The stop is dropped as "release without press".** The Released branch
+   requires `hotkey_active`, and `sync_trigger_state_with_session` clears that flag
+   on every event where the session stage is not `Capturing`. A release that
+   arrives while the session is still starting, or already processing, would clear
+   the flag first and then be discarded as `ignored_release_without_press`. This
+   would read as "starts and never stops", not as "nothing happens".
+2. **The start never happens.** `start_session` returning an error would surface
+   through `fail_from_native_error` rather than silently.
+3. **The press is discarded before the hold branch.** `ignored_disabled`,
+   `ignored_suspended_for_recording`, `ignored_paused`, `debounced` or
+   `ignored_already_active` each name themselves in the log.
+4. **The capture starts and ends immediately.** A hold shorter than `hold_min_ms`
+   becomes a `DeferredStop`; a mis-set `hold_min_ms` would make every hold look
+   like a short tap.
+
+Each of the four writes a different `[trigger] event=decision` line, so one hold
+attempt with the log running distinguishes them:
+
+```
+tail -f ~/.config/WordScript/logs/wordscript-runtime.log | grep trigger
+```
+
+Press and hold the trigger for ~3 s, speak, release. Record the full block of
+`event=shortcut` and `event=decision` lines here. Until then this stays an open
+symptom with a narrowed cause, not a diagnosed defect.
 
 ### S0 measurement, run 2 — physical keys (open, needs a person)
 

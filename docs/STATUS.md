@@ -255,6 +255,12 @@ Additional rules:
   because that platform implementation maps no modifier as a main key. Run sheets
   and the source-level findings are in
   [known-issues/cross-platform-shortcut-verification.md](known-issues/cross-platform-shortcut-verification.md)
+- **hold to talk does not work**, confirmed in a live session on 2026-07-25 in
+  which double tap on the same trigger works. Because double tap counts release
+  edges that only exist after a counted press edge, this rules out key delivery and
+  places the fault in the hold path or in what it starts. Four candidates and the
+  one log line that separates them are in
+  [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
 - the capability matrix that gates `hold to talk` reports **this session**, not
   the platform. Hold follows the measured press/release evidence per session and
   per shortcut, which is honest but weaker than a platform statement: the
