@@ -315,6 +315,52 @@ struct SharedCaptureData {
     samples: Vec<i16>,
     max_samples: usize,
     rebuild_in_progress: bool,
+    // Level-emit accounting (overlay-recording-freeze investigation). The
+    // overlay renders once per delivered `audio_level`, so a shortfall against
+    // the expected count is the runtime-side signature of a stalled webview.
+    // `slowest_level_emit` measures `app.emit` itself from inside the realtime
+    // audio callback — a large value indicates the emit path is blocking there.
+    level_emits_attempted: u64,
+    level_emits_failed: u64,
+    slowest_level_emit: Duration,
+}
+
+/// Accounting for the `audio_level` events of one capture.
+///
+/// The overlay re-renders once per delivered event, so comparing the number of
+/// events the runtime actually attempted against the number the 42 ms interval
+/// implies turns "the overlay looked frozen" into a number. A shortfall means
+/// the emit path itself stalled; `slowest_emit_ms` says whether `app.emit`
+/// blocked inside the realtime audio callback while that happened.
+#[derive(Debug, Clone, PartialEq)]
+struct LevelEmitSummary {
+    wall_seconds: f64,
+    expected: u64,
+    attempted: u64,
+    failed: u64,
+    shortfall_ratio: f64,
+    slowest_emit_ms: u128,
+}
+
+impl LevelEmitSummary {
+    fn new(wall: Duration, attempted: u64, failed: u64, slowest: Duration) -> Self {
+        let expected = (wall.as_millis() as u64) / AUDIO_LEVEL_INTERVAL_MS;
+        let shortfall_ratio = if expected == 0 {
+            0.0
+        } else {
+            let delivered = attempted.saturating_sub(failed);
+            (expected.saturating_sub(delivered)) as f64 / expected as f64
+        };
+
+        Self {
+            wall_seconds: wall.as_secs_f64(),
+            expected,
+            attempted,
+            failed,
+            shortfall_ratio,
+            slowest_emit_ms: slowest.as_millis(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -600,6 +646,9 @@ pub fn start_native_capture<R: Runtime + 'static>(
         samples: Vec::new(),
         max_samples,
         rebuild_in_progress: false,
+        level_emits_attempted: 0,
+        level_emits_failed: 0,
+        slowest_level_emit: Duration::ZERO,
     }));
 
     let stream = build_stream(
@@ -652,7 +701,7 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         let _ = active.stream.pause();
     }
 
-    let (has_voice_activity, samples, level) = active
+    let (has_voice_activity, samples, level, level_emits) = active
         .shared
         .lock()
         .map_err(|error| error.to_string())
@@ -665,8 +714,28 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
                     shared.clipped_samples,
                     shared.measured_samples,
                 ),
+                LevelEmitSummary::new(
+                    shared.started_at.elapsed(),
+                    shared.level_emits_attempted,
+                    shared.level_emits_failed,
+                    shared.slowest_level_emit,
+                ),
             )
         })?;
+
+    // Always recorded, including for discarded captures: the shortfall between
+    // expected and attempted level emits is the runtime-side measurement for
+    // the overlay-recording-freeze investigation, and a discarded capture is
+    // exactly as interesting as a kept one there.
+    runtime_log::record(format!(
+        "[WordScript] Capture level emits wall_seconds={:.3} expected={} attempted={} failed={} shortfall_ratio={:.4} slowest_emit_ms={}",
+        level_emits.wall_seconds,
+        level_emits.expected,
+        level_emits.attempted,
+        level_emits.failed,
+        level_emits.shortfall_ratio,
+        level_emits.slowest_emit_ms,
+    ));
 
     if samples.is_empty() || !has_voice_activity {
         runtime_log::record(format!(
@@ -1113,7 +1182,8 @@ fn process_samples<R: Runtime>(
     }
 
     if should_emit_level {
-        let _ = app.emit(
+        let emit_started_at = Instant::now();
+        let outcome = app.emit(
             "wordscript-event",
             serde_json::json!({
                 "event": "audio_level",
@@ -1122,6 +1192,18 @@ fn process_samples<R: Runtime>(
                 "waveform": if muted || paused { vec![0.0_f32; WAVEFORM_BUCKET_COUNT] } else { waveform }
             }),
         );
+        let emit_elapsed = emit_started_at.elapsed();
+
+        // Record the outcome instead of discarding it. A silently dropped emit
+        // is one lost overlay frame, and dropping them without a trace is what
+        // made the freeze unfalsifiable in the first place.
+        if let Ok(mut shared) = shared.lock() {
+            shared.level_emits_attempted += 1;
+            if outcome.is_err() {
+                shared.level_emits_failed += 1;
+            }
+            shared.slowest_level_emit = shared.slowest_level_emit.max(emit_elapsed);
+        }
     }
 }
 
@@ -1352,6 +1434,45 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn level_emit_summary_reports_no_shortfall_when_every_interval_landed() {
+        let summary = LevelEmitSummary::new(Duration::from_secs(10), 238, 0, Duration::ZERO);
+
+        assert_eq!(summary.expected, 10_000 / AUDIO_LEVEL_INTERVAL_MS);
+        assert_eq!(summary.attempted, 238);
+        assert_eq!(summary.shortfall_ratio, 0.0);
+    }
+
+    #[test]
+    fn level_emit_summary_quantifies_a_stalled_overlay_window() {
+        // The observed 52 s capture: ~17 s of missing UI activity.
+        let summary = LevelEmitSummary::new(Duration::from_secs(52), 833, 0, Duration::ZERO);
+
+        assert_eq!(summary.expected, 52_000 / AUDIO_LEVEL_INTERVAL_MS);
+        assert!(
+            (summary.shortfall_ratio - 0.327).abs() < 0.01,
+            "expected roughly a third of the emits to be missing, got {}",
+            summary.shortfall_ratio
+        );
+    }
+
+    #[test]
+    fn level_emit_summary_counts_failed_emits_as_undelivered() {
+        let summary = LevelEmitSummary::new(Duration::from_secs(1), 23, 23, Duration::from_millis(4));
+
+        assert_eq!(summary.failed, 23);
+        assert_eq!(summary.shortfall_ratio, 1.0);
+        assert_eq!(summary.slowest_emit_ms, 4);
+    }
+
+    #[test]
+    fn level_emit_summary_stays_defined_for_a_capture_shorter_than_one_interval() {
+        let summary = LevelEmitSummary::new(Duration::from_millis(10), 0, 0, Duration::ZERO);
+
+        assert_eq!(summary.expected, 0);
+        assert_eq!(summary.shortfall_ratio, 0.0);
+    }
+
+    #[test]
     fn clamps_f32_to_i16_range() {
         assert_eq!(f32_to_i16(1.5), i16::MAX);
         assert_eq!(f32_to_i16(-1.5), i16::MIN + 1);
@@ -1497,6 +1618,9 @@ mod tests {
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
+            level_emits_attempted: 0,
+            level_emits_failed: 0,
+            slowest_level_emit: Duration::ZERO,
         }));
 
         let reason = capture_stop_reason(
@@ -1528,6 +1652,9 @@ mod tests {
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
+            level_emits_attempted: 0,
+            level_emits_failed: 0,
+            slowest_level_emit: Duration::ZERO,
         }));
 
         let reason = capture_stop_reason(
@@ -1559,6 +1686,9 @@ mod tests {
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
+            level_emits_attempted: 0,
+            level_emits_failed: 0,
+            slowest_level_emit: Duration::ZERO,
         };
 
         let reason = capture_stop_reason(
@@ -1652,6 +1782,9 @@ mod tests {
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
+            level_emits_attempted: 0,
+            level_emits_failed: 0,
+            slowest_level_emit: Duration::ZERO,
         };
 
         let reason = capture_stop_reason(
@@ -1683,6 +1816,9 @@ mod tests {
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
+            level_emits_attempted: 0,
+            level_emits_failed: 0,
+            slowest_level_emit: Duration::ZERO,
         }));
 
         rollback_rebuild_pause(&shared);
@@ -1710,6 +1846,9 @@ mod tests {
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
+            level_emits_attempted: 0,
+            level_emits_failed: 0,
+            slowest_level_emit: Duration::ZERO,
         }));
 
         rollback_rebuild_pause(&shared);

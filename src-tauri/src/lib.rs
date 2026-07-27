@@ -1,6 +1,6 @@
 use std::{
     fs::OpenOptions,
-    io::Write,
+    io::{Read, Seek, SeekFrom, Write},
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
         Mutex, Once,
@@ -106,6 +106,18 @@ static OVERLAY_REVEAL_SCHEDULED: AtomicBool = AtomicBool::new(false);
 // `npm run tauri dev` session starts with a fresh log.
 const OVERLAY_DIAG_LOG_PATH: &str = "/tmp/kilo/overlay-diag.log";
 static OVERLAY_DIAG_LOG_TRUNCATED: Once = Once::new();
+
+// The panel only ever displays the tail, so `read_diag_log` returns at most this
+// many bytes. Reading the whole file put an unbounded, session-length-dependent
+// payload on every 500 ms poll — several MB per poll after an hour — which is
+// exactly the kind of main-thread load this log exists to diagnose.
+const OVERLAY_DIAG_LOG_READ_TAIL_BYTES: u64 = 64 * 1024;
+// Hard ceiling for the file itself. Without it a long session grows it without
+// bound; the log is a live diagnostic, not an archive.
+const OVERLAY_DIAG_LOG_MAX_BYTES: u64 = 8 * 1024 * 1024;
+// One process-wide append handle. Re-opening per line cost three syscalls per
+// write at the overlay's ~24 Hz render rate.
+static OVERLAY_DIAG_LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -2061,40 +2073,98 @@ async fn overlay_open_devtools(app: AppHandle) -> Result<(), String> {
     }
 }
 
-/// Append a diagnostic line to /tmp/kilo/overlay-diag.log. The first call per
-/// process run truncates the file (via `Once`) so each dev session starts
-/// fresh. Called from the frontend under `import.meta.env.DEV` only.
+/// Append a diagnostic line to /tmp/kilo/overlay-diag.log, prefixed with the
+/// same epoch-millisecond stamp the runtime log uses so the two can be lined up
+/// against each other and against `journalctl`. The first call per process run
+/// truncates the file (via `Once`) so each dev session starts fresh. Called from
+/// the frontend under `import.meta.env.DEV` only.
 #[tauri::command]
 async fn append_diag_log(line: String) -> Result<(), String> {
+    let epoch_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+
+    let mut handle = OVERLAY_DIAG_LOG_FILE
+        .lock()
+        .map_err(|error| error.to_string())?;
+
     OVERLAY_DIAG_LOG_TRUNCATED.call_once(|| {
-        // Best-effort truncate on the first call. Ignore errors — the append
-        // below will create the file if it doesn't exist.
+        // Ensure /tmp/kilo exists (it should, but be defensive on fresh
+        // machines), then best-effort truncate. Ignore errors — the open below
+        // creates the file if it doesn't exist.
+        if let Some(parent) = std::path::Path::new(OVERLAY_DIAG_LOG_PATH).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let _ = std::fs::File::create(OVERLAY_DIAG_LOG_PATH);
     });
-    // Ensure /tmp/kilo exists (it should, but be defensive on fresh machines).
-    if let Some(parent) = std::path::Path::new(OVERLAY_DIAG_LOG_PATH).parent() {
-        let _ = std::fs::create_dir_all(parent);
+
+    // Drop the cached handle once the file outgrows the ceiling so the next
+    // append starts a fresh file rather than growing without bound.
+    if handle.is_some()
+        && std::fs::metadata(OVERLAY_DIAG_LOG_PATH)
+            .map(|metadata| metadata.len() >= OVERLAY_DIAG_LOG_MAX_BYTES)
+            .unwrap_or(false)
+    {
+        *handle = None;
+        let _ = std::fs::File::create(OVERLAY_DIAG_LOG_PATH);
     }
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(OVERLAY_DIAG_LOG_PATH)
-        .map_err(|e| e.to_string())?;
-    writeln!(file, "{line}").map_err(|e| e.to_string())?;
+
+    if handle.is_none() {
+        *handle = Some(
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(OVERLAY_DIAG_LOG_PATH)
+                .map_err(|error| error.to_string())?,
+        );
+    }
+
+    let file = handle.as_mut().expect("diag log handle was just opened");
+    writeln!(file, "[{epoch_ms}] {line}").map_err(|error| error.to_string())?;
     Ok(())
 }
 
-/// Read the current diagnostic log. Used by the Settings-Window Diagnose-Panel
-/// for live polling.
+/// Read the tail of the diagnostic log. Used by the Settings-Window Diagnose-
+/// Panel for live polling, which only ever renders the tail anyway. Returning
+/// the whole file here made the poll payload grow with session length.
 #[tauri::command]
 async fn read_diag_log() -> Result<String, String> {
-    Ok(std::fs::read_to_string(OVERLAY_DIAG_LOG_PATH).unwrap_or_default())
+    let Ok(mut file) = std::fs::File::open(OVERLAY_DIAG_LOG_PATH) else {
+        return Ok(String::new());
+    };
+
+    let len = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+    if len > OVERLAY_DIAG_LOG_READ_TAIL_BYTES {
+        let _ = file.seek(SeekFrom::End(-(OVERLAY_DIAG_LOG_READ_TAIL_BYTES as i64)));
+    }
+
+    let mut buffer = Vec::new();
+    if file.read_to_end(&mut buffer).is_err() {
+        return Ok(String::new());
+    }
+
+    let mut text = String::from_utf8_lossy(&buffer).into_owned();
+    // A tail seek can land mid-line; drop the partial head so the panel never
+    // shows a truncated first entry.
+    if len > OVERLAY_DIAG_LOG_READ_TAIL_BYTES {
+        if let Some(newline) = text.find('\n') {
+            text = text[newline + 1..].to_string();
+        }
+    }
+    Ok(text)
 }
 
 /// Clear the diagnostic log (truncates to empty).
 #[tauri::command]
 async fn clear_diag_log() -> Result<(), String> {
-    std::fs::write(OVERLAY_DIAG_LOG_PATH, "").map_err(|e| e.to_string())?;
+    let mut handle = OVERLAY_DIAG_LOG_FILE
+        .lock()
+        .map_err(|error| error.to_string())?;
+    // Drop the append handle first — it holds a file offset that a truncate
+    // would otherwise leave stranded past the new end of file.
+    *handle = None;
+    std::fs::write(OVERLAY_DIAG_LOG_PATH, "").map_err(|error| error.to_string())?;
     Ok(())
 }
 

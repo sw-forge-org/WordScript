@@ -69,6 +69,15 @@ KDE Plasma 6 via KWin script (`packaging/kwin-wordscript-overlay/`),
 installed with
 `kpackagetool6 --type=KWin/Script -i packaging/kwin-wordscript-overlay && qdbus org.kde.KWin /KWin reconfigure`.
 
+Open observation: the overlay is reported to freeze mid-capture at irregular
+intervals, pill and seconds timer and all input at once, while capture and
+pipeline continue normally. Seen so far only under `npm run tauri dev` on
+KDE Plasma 6 / XWayland with a hybrid Intel + NVIDIA GPU where
+`__NV_PRIME_RENDER_OFFLOAD=1` is set globally, so the WebKitGTK compositor is
+offloaded to the discrete GPU as a side effect. Diagnostics, the measurement
+order and the hardware-level opt-outs to test against are in
+[known-issues/overlay-recording-freeze.md](known-issues/overlay-recording-freeze.md).
+
 ### Linux Wayland -- runtime portal diagnosis
 
 The native insert logic classifies stderr from `xdotool`, `xdotool type`,

@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Diagnostics for the overlay freeze reported during long captures
+  (`docs/known-issues/overlay-recording-freeze.md`). Runtime log lines now carry
+  an epoch-millisecond and a monotonic timestamp, overlay diagnostic lines carry
+  the matching epoch stamp, and every capture records its `audio_level` emit
+  accounting on stop (`expected` / `attempted` / `failed` / `shortfall_ratio` /
+  `slowest_emit_ms`). A dev-only `[ov-beat]` main-thread heartbeat in the
+  overlay reports intervals that land late. Together these separate a genuine
+  freeze from the overlay legitimately not re-rendering during silence, which
+  the previous telemetry could not distinguish.
 - A complete audio-feedback rework (ADR 0010). Cues are synthesised from one
   G-major theme: a startup signature (G3 -> D4 -> G4) that every operational
   cue quotes a fragment of. New `Done` cue on a successful insert — the first
@@ -151,6 +160,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The overlay's dev-only per-render trace is now opt-in behind
+  `VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1` and runs in an effect rather than in
+  the render body, and `read_diag_log` returns only the tail of the diagnostic
+  log instead of the whole file. The panel polls that command every 500 ms while
+  it is open, so the previous behaviour put an unbounded, session-length-
+  dependent payload on the main thread — load heavy enough to be a candidate
+  cause of the very stall the log exists to diagnose.
 - Sound cues no longer open a fresh output device per cue. One stream, owned by
   a dedicated thread, is opened at startup and primed with silence, so cues no
   longer contend with the microphone device and are rendered at the real device

@@ -134,11 +134,31 @@ function audioPayloadToLevel(payload: AudioLevelEvent): number {
 // `append_diag_log`. The Settings-Window Diagnose-Panel polls that file for
 // live display. Fire-and-forget — never blocks the render or reveal path.
 // In production (import.meta.env.DEV === false) this is a no-op.
+//
+// `console.debug` rather than `console.warn`: at the overlay's ~24 Hz render
+// rate a warn-level line per render is expensive once an inspector is attached,
+// and this is trace output, not a warning.
 function diagLog(line: string) {
   if (!import.meta.env.DEV) return;
-  console.warn(line);
+  console.debug(line);
   void invoke("append_diag_log", { line }).catch(() => {});
 }
+
+// Per-render tracing is opt-in even in dev builds (see
+// docs/known-issues/overlay-recording-freeze.md). It fires on every commit,
+// which during a capture means one extra IPC round trip per audio_level event
+// — enough load that it can plausibly cause the very main-thread stall it is
+// meant to observe. Enable with `WORDSCRIPT_OVERLAY_RENDER_TRACE=1` in the
+// environment `npm run tauri dev` inherits.
+const RENDER_TRACE_ENABLED =
+  import.meta.env.DEV && import.meta.env.VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE === "1";
+
+// Main-thread heartbeat. A blocked WebKit main thread cannot run this interval
+// on time, so an actual delay far above HEARTBEAT_INTERVAL_MS is direct proof
+// of a stall — and it is exactly what distinguishes a real freeze from the
+// overlay legitimately not re-rendering because the input was silent.
+const HEARTBEAT_INTERVAL_MS = 250;
+const HEARTBEAT_REPORT_THRESHOLD_MS = 400;
 
 export default function OverlayWindow() {
   const { state, toggleMute, togglePause } = useRuntime();
@@ -740,9 +760,17 @@ export default function OverlayWindow() {
   const pillMode: OverlayProcessingMode = effectiveMode ?? configFallbackMode ?? "auto";
 
   // [ov-render] (plan 1784433288646, Phase 1.2): per-commit diagnostic of the
-  // mode resolution + surface + motion state. Confirms 1 pillMode-sprung per
-  // tap (NI2/NI4 widelegt) und zeigt den Render-Kontext pro Commit.
-  diagLog(`[ov-render] pillMode=${pillMode} eff=${effectiveMode ?? "null"} fb=${configFallbackMode ?? "null"} surface=${overlaySurface} motion=${overlayMotion} active=${isActive}`);
+  // mode resolution + surface + motion state. Confirms one pillMode step per
+  // tap (disproving NI2/NI4) and shows the render context per commit.
+  //
+  // Runs in an effect rather than in the render body: an effect fires once per
+  // commit, which is what this claims to measure, whereas the render body also
+  // fires on discarded renders and twice under StrictMode. Opt-in via
+  // RENDER_TRACE_ENABLED — see the note there on measurement cost.
+  useEffect(() => {
+    if (!RENDER_TRACE_ENABLED) return;
+    diagLog(`[ov-render] pillMode=${pillMode} eff=${effectiveMode ?? "null"} fb=${configFallbackMode ?? "null"} surface=${overlaySurface} motion=${overlayMotion} active=${isActive}`);
+  });
 
   // Refs mirroring the effective/fallback mode so the stable mode-select
   // listener can read the current value without re-subscribing every render.
@@ -818,6 +846,32 @@ export default function OverlayWindow() {
     });
     return () => { unlisten.then(fn => fn()); };
   }, [paused]);
+
+  // [ov-beat]: main-thread heartbeat for the overlay-recording-freeze
+  // investigation (docs/known-issues/overlay-recording-freeze.md).
+  //
+  // Runs only while a session is active, and logs only when an interval lands
+  // late — a quiet log means a healthy main thread, so the diagnostic costs
+  // nothing in the normal case. A reported gap is the discriminator the
+  // existing telemetry lacks: if the render rate drops without a gap here, the
+  // overlay was idle because the input was silent, not frozen.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const isSessionActive = status === "recording" || status === "processing";
+    if (!isSessionActive) return;
+
+    let previous = performance.now();
+    const interval = window.setInterval(() => {
+      const now = performance.now();
+      const delta = now - previous;
+      previous = now;
+      if (delta >= HEARTBEAT_REPORT_THRESHOLD_MS) {
+        diagLog(`[ov-beat] stalled_ms=${Math.round(delta)} expected_ms=${HEARTBEAT_INTERVAL_MS} status=${status}`);
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, [status]);
 
   // Session lifecycle events (aborted, empty, error, recording_started) arrive
   // on the native-event channel, not the wordscript-event channel. Dismiss the

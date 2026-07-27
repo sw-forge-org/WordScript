@@ -276,6 +276,15 @@ Additional rules:
   (`WORDSCRIPT_NATIVE_WAYLAND=1`) global shortcuts are unavailable and are named
   as unavailable rather than silently failing. Both points are tracked in
   [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
+- the recording overlay is reported to freeze mid-capture at irregular
+  intervals — pill, seconds timer and all input at once — while capture and
+  pipeline continue and the transcription completes normally. Observed only
+  under `npm run tauri dev` so far, never checked against a release build, and
+  the telemetry available at the time could not separate a real freeze from the
+  overlay legitimately not re-rendering during silence. Timestamped logs, level-
+  emit accounting per capture and an `[ov-beat]` main-thread heartbeat are now
+  in place to decide it; the measurement order is in
+  [known-issues/overlay-recording-freeze.md](known-issues/overlay-recording-freeze.md)
 - no published versioned releases
 - no signed in-place auto-updater
 - release and signing validation with real secrets is not a routine path yet

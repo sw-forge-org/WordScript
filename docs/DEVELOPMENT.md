@@ -147,6 +147,28 @@ They are intentionally not duplicated here. In particular, fixed overlay sizes,
 native parking, background repainting, drag persistence, and compositor-safe
 CSS are runtime constraints rather than styling preferences.
 
+### Overlay Tracing
+
+The overlay writes `[ov-*]` trace lines to `/tmp/kilo/overlay-diag.log` in dev
+builds; the `overlay_diag` tab in Settings displays the tail live and can open
+the overlay webview's DevTools.
+
+Per-render tracing (`[ov-render]`) is **opt-in**, because it fires on every
+commit — during a capture that is one extra IPC round trip per `audio_level`
+event, enough load to distort what it is measuring:
+
+```
+VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1 npm run tauri dev
+```
+
+The `[ov-beat]` main-thread heartbeat needs no flag and logs only when an
+interval lands late, so a quiet log means a healthy main thread. Runtime and
+overlay log lines share an epoch-millisecond prefix and can be lined up against
+each other and against `journalctl`; convert one with `date -d @<seconds>`.
+Interpretation of a heartbeat gap against the per-capture level-emit accounting
+is in
+[known-issues/overlay-recording-freeze.md](known-issues/overlay-recording-freeze.md).
+
 ## Validation
 
 Run the smallest relevant validation first, then broaden it for cross-cutting
