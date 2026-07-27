@@ -48,10 +48,14 @@ Rust core
 Three windows in the Tauri config:
 
 - `overlay`: transparent compact stage with a pill for recording/processing
-  state that switches after a run to native `copy`/`retry`/`restore`/`done`
-  actions within the same area; `clipboard_only` work modes hold a real
-  processing preview before commit; idle is parked offscreen natively;
-  placement comes from a remembered manual position or a preset display anchor.
+  state. Each delivery mode has exactly one decision surface (ADR 0011):
+  `clipboard_only` work modes hold a real processing preview
+  (`copy`/`edit`/`abort`) before commit and close afterwards; `auto_paste`
+  delivers first and then shows the result surface
+  (`copy`/`edit`/`insert`/`dismiss`) within the same area. Which surface is
+  shown follows from `RuntimeState.resultSurfaceOpen`, set in the same reducer
+  commit that ends the session. Idle is parked offscreen natively; placement
+  comes from a remembered manual position or a preset display anchor.
 - `settings`: native-decorated shell with grouped Workspace, Engine, System
   and More areas, persistent profile dock, compact toolbar, one dominant
   content surface, immediate auto-save and a footer status bar. Chat, Upload,
@@ -371,7 +375,15 @@ Rules of this path:
 - the processing preview for `clipboard_only` profiles stays the same runtime
   truth: transform provides the preview text, the session stays in
   `processing`, and the later commit runs through the same native
-  insert/history/session path.
+  insert/history/session path. An overlay edit on that preview goes through the
+  same commit with its corrected text, so the delivered text, the completed
+  session and the history entry can never describe different wording.
+- every `transcription` event carries `delivery` from
+  `NativeInsertMode::delivery_label` (`inserted` for a completed paste,
+  `clipboard` for every fallback), so the UI reads what happened to the text
+  instead of inferring it from the configured mode.
+- audio cues are emitted by the session lifecycle next to the event that tells
+  the UI the same thing, never from inside the insert helper (ADR 0012).
 - overlay, input and About use the same native platform status as source.
 - About shows prerequisites and limits from this native contract instead of
   inventing per-platform UI side-truths.

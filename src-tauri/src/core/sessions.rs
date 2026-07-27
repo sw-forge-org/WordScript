@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use super::config::{AppConfig, TextProfileWorkMode};
 use super::history;
 use super::insertion::{insert_transcription_from_legacy, NativeInsertResult};
+use super::sound;
 use super::transform::NativeTransformResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -406,6 +407,13 @@ pub fn complete_native_session(
 #[tauri::command]
 pub async fn commit_pending_transcription_preview(
     app: AppHandle,
+    // The overlay's edit surface sends the corrected text back through the
+    // commit instead of writing it out on its own. Editing before delivery is
+    // the whole point of the clipboard_only preview, and going through the
+    // commit is what keeps session completion, history and the insert result
+    // consistent with an unedited commit — a separate `insert_text_native`
+    // call would deliver the text while the session ended with the stale one.
+    text: Option<String>,
     state: State<'_, Mutex<NativeSessionState>>,
 ) -> Result<NativeInsertResult, String> {
     // MUST be async: the clipboard write (wl-copy + verify) can block for up to
@@ -414,10 +422,14 @@ pub async fn commit_pending_transcription_preview(
     // forever (State 09), and the overlay freezes. Running the blocking work on
     // a background thread via spawn_blocking keeps the main thread free so JS
     // timers and IPC events flow normally.
-    let (session_id, preview) = {
+    let (session_id, mut preview) = {
         let mut state = state.lock().map_err(|error| error.to_string())?;
         state.take_pending_preview()?
     };
+
+    if let Some(edited) = text {
+        apply_edited_preview_text(&mut preview.transformed, &edited)?;
+    }
 
     let final_text = preview.transformed.text.trim().to_string();
     if final_text.is_empty() {
@@ -477,9 +489,15 @@ pub async fn commit_pending_transcription_preview(
                                 "entry_id": entry.id,
                                 "retry_of": entry.retry_of,
                             })),
+                            "delivery": result.insert_mode.delivery_label(),
                             "insertion": result
                         }),
                     );
+                    // The delivery point for this mode: the user committed and
+                    // the text has landed. Same position in the lifecycle as
+                    // the auto_paste pipeline's Done, so both modes sound the
+                    // same thing at the same meaning (ADR 0012).
+                    sound::play_if_enabled(sound::SoundCue::Done);
                     Ok(result)
                 }
                 Ok(false) => {
@@ -494,6 +512,7 @@ pub async fn commit_pending_transcription_preview(
                             "message": error
                         }),
                     );
+                    sound::play_if_enabled(sound::SoundCue::Error);
                     Err("The pending transcription preview is no longer current.".to_string())
                 }
             }
@@ -524,6 +543,7 @@ pub async fn commit_pending_transcription_preview(
                     "insertion": result
                 }),
             );
+            sound::play_if_enabled(sound::SoundCue::Error);
             Ok(result)
         }
         Err(error) => {
@@ -542,9 +562,33 @@ pub async fn commit_pending_transcription_preview(
                     "message": format!("Native insertion failed: {error}")
                 }),
             );
+            sound::play_if_enabled(sound::SoundCue::Error);
             Err(error)
         }
     }
+}
+
+/// Replaces a pending preview's text with what the user typed in the overlay's
+/// edit surface, before it is delivered.
+fn apply_edited_preview_text(
+    transformed: &mut NativeTransformResult,
+    edited: &str,
+) -> Result<(), String> {
+    let edited = edited.trim();
+    if edited.is_empty() {
+        return Err("The edited transcript does not contain any text to commit.".to_string());
+    }
+    if edited == transformed.text.trim() {
+        return Ok(());
+    }
+
+    transformed.text = edited.to_string();
+    // The text is now the user's, not the transform's. Reporting it as
+    // machine-corrected would make history and the diagnostics claim a rewrite
+    // that never ran over this wording.
+    transformed.corrected = false;
+    transformed.applied_rules.push("overlay_edit".to_string());
+    Ok(())
 }
 
 pub fn stage_pending_transcription_preview<R: Runtime>(
@@ -716,6 +760,48 @@ pub fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn transformed(text: &str, corrected: bool) -> NativeTransformResult {
+        NativeTransformResult {
+            text: text.to_string(),
+            corrected,
+            applied_rules: vec!["removed_fillers".to_string()],
+            warning: None,
+        }
+    }
+
+    #[test]
+    fn an_overlay_edit_replaces_the_pending_text_and_drops_the_corrected_claim() {
+        let mut result = transformed("Wir shippen das morgen.", true);
+
+        apply_edited_preview_text(&mut result, "  Wir shippen das übermorgen.  ").unwrap();
+
+        assert_eq!(result.text, "Wir shippen das übermorgen.");
+        // The wording is the user's now; claiming a machine correction over it
+        // would misreport history and the diagnostics.
+        assert!(!result.corrected);
+        assert!(result.applied_rules.iter().any(|rule| rule == "overlay_edit"));
+    }
+
+    #[test]
+    fn an_unchanged_overlay_edit_leaves_the_preview_untouched() {
+        let mut result = transformed("Wir shippen das morgen.", true);
+
+        apply_edited_preview_text(&mut result, "Wir shippen das morgen.").unwrap();
+
+        assert!(result.corrected, "opening the editor is not itself an edit");
+        assert_eq!(result.applied_rules, vec!["removed_fillers".to_string()]);
+    }
+
+    #[test]
+    fn an_emptied_overlay_edit_is_refused_instead_of_delivering_nothing() {
+        let mut result = transformed("Wir shippen das morgen.", true);
+
+        let error = apply_edited_preview_text(&mut result, "   ").unwrap_err();
+
+        assert!(error.contains("does not contain any text"));
+        assert_eq!(result.text, "Wir shippen das morgen.");
+    }
 
     #[test]
     fn resolves_capture_to_completed_session() {

@@ -260,6 +260,8 @@ describe("OverlayWindow", () => {
         },
         error: null,
         recordingStartMs: null,
+        previewStaged: false,
+        resultSurfaceOpen: true,
       },
       toggleMute: vi.fn(),
       togglePause: vi.fn(),
@@ -373,6 +375,8 @@ describe("OverlayWindow", () => {
         lastResult: null,
         error: null,
         recordingStartMs: null,
+        previewStaged: true,
+        resultSurfaceOpen: false,
       },
       toggleMute: vi.fn(),
       togglePause: vi.fn(),
@@ -392,6 +396,72 @@ describe("OverlayWindow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Abort" }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("abort_native_session"));
+  });
+
+  // The preview is the one surface where the text has NOT been delivered yet,
+  // so it is the only place an edit can still change what the user gets. The
+  // corrected text goes back through the commit rather than a separate insert,
+  // so session completion, history and the insert result describe the same
+  // text that was delivered.
+  it("delivers an edited transcript through the commit from the processing preview", async () => {
+    useRuntimeMock.mockReturnValue({
+      state: {
+        status: "processing",
+        config: createTestConfig(),
+        muted: false,
+        paused: false,
+        lastTranscription: null,
+        pendingResult: {
+          provider: "groq",
+          active_profile: "Support reply",
+          work_mode: {
+            rewrite_style: "polished",
+            insert_behavior: "clipboard_only",
+            recovery_behavior: "standard",
+          },
+          raw_text: "ähm wir shippen das morgen",
+          final_text: "Wir shippen das morgen.",
+          corrected: true,
+          transform: { applied_rules: ["removed_fillers"], warning: null },
+          history: null,
+          delivery: null,
+          insertion: null,
+          occurred_at_ms: 1716500000000,
+        },
+        lastResult: null,
+        error: null,
+        recordingStartMs: null,
+        previewStaged: true,
+        resultSurfaceOpen: false,
+      },
+      toggleMute: vi.fn(),
+      togglePause: vi.fn(),
+      saveConfig: vi.fn(),
+      openSettings: vi.fn(),
+    });
+
+    render(<OverlayWindow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+
+    const textarea = screen.getByLabelText("Edit transcription text");
+    expect(textarea).toHaveValue("Wir shippen das morgen.");
+    // The label must state what confirming does — here: deliver, not just copy
+    // somewhere. clipboard_only delivery means the corrected text lands on the
+    // clipboard as the committed transcript.
+    const confirm = screen.getByRole("button", { name: "Copy corrected text" });
+
+    fireEvent.change(textarea, { target: { value: "Wir shippen das übermorgen." } });
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("commit_pending_transcription_preview", {
+        text: "Wir shippen das übermorgen.",
+      }),
+    );
+    // Not through the standalone insert path — that would deliver one text
+    // while the session completed with another.
+    expect(invokeMock.mock.calls.some(([command]) => command === "insert_text_native")).toBe(false);
   });
 
   it("resyncs the native overlay window when the active surface changes while the overlay stays visible", async () => {
@@ -427,6 +497,8 @@ describe("OverlayWindow", () => {
         lastResult: null,
         error: null,
         recordingStartMs: 1716500000000,
+        previewStaged: pendingResult != null,
+        resultSurfaceOpen: false,
       },
       toggleMute: vi.fn(),
       togglePause: vi.fn(),
@@ -577,6 +649,85 @@ describe("OverlayWindow", () => {
       // intermediate one.
       const lastCall = calls[calls.length - 1];
       expect(lastCall[1]).toMatchObject({ x: 999, y: 888, surface: "result_actions" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Regression (K3): the persist handler used to CANCEL the grace timeout that
+  // ends a drag session, and deliberately did not clear `dragSessionActiveRef`
+  // itself. Since `clearDragIntent` only arms that timeout, nothing ever ended
+  // the session again. Both overlay layout effects bail on
+  // `dragSessionActiveRef`, so from the first drag onwards the per-surface size
+  // sync and the visual-epoch repaint were dead for the rest of the process —
+  // and the visual-epoch repaint is the ONLY native repaint trigger for a
+  // same-kind visual change such as a mode cycle, which is why cycling modes in
+  // the idle picker left the previous mode's pill painted underneath.
+  it("ends the drag session after the moves stop so a mode change still repaints (K3)", async () => {
+    // The backend confirms whatever mode was just set; otherwise the eager
+    // optimistic update and the confirming refetch collapse into one commit
+    // inside `act` and the epoch never changes for a harness reason.
+    let backendMode = "auto";
+    invokeMock.mockImplementation((command: string, args?: unknown) => {
+      if (command === "set_active_profile_processing_mode") {
+        backendMode = (args as { mode: string }).mode;
+        return Promise.resolve();
+      }
+      if (command === "resolve_current_processing_mode") {
+        return Promise.resolve({ mode: backendMode, is_override: false, auto_detected: false, detected_from: null });
+      }
+      return Promise.resolve();
+    });
+    useRuntimeMock.mockReturnValue(buildRecordingState());
+    render(<OverlayWindow />);
+
+    await waitFor(() => expect(movedHandlers.length).toBeGreaterThan(0));
+    const modeChip = await screen.findByRole("button", { name: /^Mode / });
+    vi.useFakeTimers();
+
+    try {
+      await act(async () => {
+        fireEvent.pointerDown(modeChip, { button: 0, pointerId: 51, clientX: 20, clientY: 16 });
+        fireEvent.pointerMove(window, { buttons: 1, pointerId: 51, clientX: 40, clientY: 36 });
+        vi.advanceTimersByTime(500);
+
+        // The native drag takes pointer ownership and the webview sees the
+        // pointer end early — this is what arms the grace timeout.
+        fireEvent.pointerUp(window, { pointerId: 51 });
+
+        // The window keeps moving; the persist handler runs and used to cancel
+        // that very timeout.
+        movedHandlers[0]?.({ payload: { x: 320, y: 240 } });
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        // Past the grace window with no further movement: the session must be over.
+        vi.advanceTimersByTime(3000);
+        await Promise.resolve();
+      });
+
+      invokeMock.mockClear();
+
+      // A mode change keeps `pillState.kind`, so `key={pillState.kind}` does not
+      // remount and the surface does not change. The visual-epoch layout effect
+      // is the ONLY thing that can force a native repaint here — and it bails on
+      // `dragSessionActiveRef`. With the stuck ref this produced no reveal at
+      // all, which is why cycling modes left the previous pill painted.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /^Mode / }));
+        vi.advanceTimersByTime(50);
+        await Promise.resolve();
+      });
+
+      const reveals = invokeMock.mock.calls.filter(
+        ([command]) => command === "sync_overlay_window_visibility",
+      );
+      expect(
+        reveals.length,
+        "a mode change after a drag must still force a native repaint",
+      ).toBeGreaterThan(0);
     } finally {
       vi.useRealTimers();
     }
@@ -745,6 +896,8 @@ describe("OverlayWindow", () => {
         },
         error: null,
         recordingStartMs: null,
+        previewStaged: false,
+        resultSurfaceOpen: true,
         ...overrides,
       },
       toggleMute: vi.fn(),
@@ -762,8 +915,55 @@ describe("OverlayWindow", () => {
       pendingResult: null,
       error: null,
       recordingStartMs: 1716500005000,
+      resultSurfaceOpen: false,
     });
   }
+
+  // ── Gap-free processing -> result swap (auto_paste) ───────────────────────
+  // The auto_paste path goes compact(processing) -> result_actions directly:
+  // there is no processing_preview in between. The reducer therefore flips
+  // `status` to "idle" and `resultSurfaceOpen` to true in ONE commit, and the
+  // pill must swap in that same render. If it did not, the pill would fall to
+  // `pillState = null` for a frame, and unmounting the processing spinner
+  // orphans its WebKitGTK compositor layer — the ghosting mechanism in
+  // docs/known-issues/overlay-ghosting.md, seen as the result surface stacking
+  // on top of a processing surface that never went away.
+  it("swaps processing to result-actions in one render without an empty pill", async () => {
+    let runtimeValue = buildIdleResultState({
+      status: "processing",
+      lastResult: null,
+      lastTranscription: null,
+      resultSurfaceOpen: false,
+    });
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    const { rerender, container } = render(<OverlayWindow />);
+
+    await waitFor(() => expect(container.querySelector(".ov-pill-shell")).not.toBeNull());
+    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+
+    // The commit the runtime produces: idle + result surface, together.
+    runtimeValue = buildIdleResultState();
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    rerender(<OverlayWindow />);
+
+    // Synchronous, no waitFor: the surface must be there in this very render.
+    expect(container.querySelector(".ov-pill-shell")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  // A clipboard_only commit already had its decision surface (the processing
+  // preview), so no result surface follows it — structurally, via
+  // `resultSurfaceOpen`, not via a suppression flag.
+  it("does not open a result surface for a session that decided on the preview", async () => {
+    const runtimeValue = buildIdleResultState({ resultSurfaceOpen: false, previewStaged: true });
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    render(<OverlayWindow />);
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  });
 
   it("clears a visible result-actions surface in the same render a new recording starts", async () => {
     let runtimeValue = buildIdleResultState();
@@ -883,6 +1083,8 @@ describe("OverlayWindow", () => {
         },
         error: null,
         recordingStartMs: null,
+        previewStaged: false,
+        resultSurfaceOpen: true,
       },
       toggleMute: vi.fn(),
       togglePause: vi.fn(),

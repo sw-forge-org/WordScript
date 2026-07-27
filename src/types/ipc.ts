@@ -403,4 +403,16 @@ export interface RuntimeState {
   lastResult:        RuntimeTranscriptionResult | null;
   error:             string | null;
   recordingStartMs:  number | null;   // Date.now() when recording started
+  /** Whether a processing preview was staged for the current session. One
+   *  decision surface per delivery mode: a session that stopped on the preview
+   *  (clipboard_only) has already had the user's decision and must not show a
+   *  second surface afterwards. Sticky for the whole session so it survives the
+   *  native/authoritative event ordering race that `pendingResult` alone does
+   *  not. */
+  previewStaged: boolean;
+  /** Whether the overlay's result-actions surface belongs on screen for
+   *  `lastResult`. Set in the SAME reducer commit that flips `status` to
+   *  "idle", so the overlay never renders a frame where the session has ended
+   *  but no surface has taken over. */
+  resultSurfaceOpen: boolean;
 }

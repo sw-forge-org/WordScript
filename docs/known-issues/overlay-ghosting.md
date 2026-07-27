@@ -51,6 +51,34 @@ The following ideas were tested before the final root cause was confirmed:
 - A stable pill DOM remains a useful design principle, but opacity was the
   required correctness fix.
 
+## Addendum 2026-07-27: the auto_paste bridge render
+
+A second, independent trigger of the same failure class was found in the
+`auto_paste` ("Copy and insert at cursor") path and removed structurally.
+
+The result surface's visibility was set in a React effect, one render after the
+reducer flipped `status` to `idle`. In that render the session had ended but no
+surface had claimed the pill, so a six-condition predicate
+(`bridgeResultFromStop`) carried it across. Only the `auto_paste` path reached
+that predicate. When any of its conditions did not hold, `pillState` became
+`null` and the pill unmounted for a frame — orphaning the processing pill's
+animated children's compositor layers. The result surface then mounted on top of
+that stale raster: the final overlay appeared to stack on a processing overlay
+that never went away.
+
+The same render also held two disagreeing surface values: the raw one drove the
+native reveal, the rendered one drove the window size, so Rust was told
+`compact` while `result_actions` was painted. That was only harmless because
+every flat surface is 480x60.
+
+Fix: `RuntimeState.resultSurfaceOpen` is now set in the same reducer commit that
+flips `status` to `idle`, so the gap render does not exist and the bridge
+predicate is gone; and `renderOverlaySurface` is the single surface value that
+leaves the overlay component. See ADR 0011.
+
+This does not change the opacity finding above — it removes a cause of unmount
+gaps, it does not make WebKitGTK's layer retention safe to ignore.
+
 ## Regression Checks
 
 - Recording -> processing -> result actions -> edit/error -> idle has no visual

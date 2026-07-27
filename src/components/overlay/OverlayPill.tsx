@@ -47,6 +47,7 @@ export type OverlayPillState =
       preview?: { text: string; clipboardOnly: boolean };
       pending?: OverlayPendingPreview;
       onCommit?: () => void;
+      onEdit?: () => void;
       onAbort?: () => void;
       onCycleMode?: () => void;
     }
@@ -64,6 +65,13 @@ export type OverlayPillState =
   | {
       kind: "edit-mode";
       text: string;
+      /** What confirming actually does, which depends on where the edit was
+       *  opened. From the pre-delivery preview it delivers the corrected text;
+       *  from the result surface the original text is already at the cursor and
+       *  cannot be retracted, so confirming only puts the correction on the
+       *  clipboard. The label must say which. */
+      confirmLabel: string;
+      busy?: boolean;
       onTextChange?: (text: string) => void;
       onConfirm?: () => void;
       onCancel?: () => void;
@@ -168,6 +176,7 @@ function ProcessingPill({ state }: { state: Extract<OverlayPillState, { kind: "p
           clipboardOnly={state.preview.clipboardOnly}
           pending={state.pending}
           onCommit={state.onCommit}
+          onEdit={state.onEdit}
           onAbort={state.onAbort}
         />
         <span className="pill__divider" aria-hidden="true" />
@@ -246,14 +255,16 @@ function EditPill({ state }: { state: Extract<OverlayPillState, { kind: "edit-mo
         <div className="pill__edit-footer">
           <IconAction
             icon={<Check size={16} strokeWidth={2.25} />}
-            label="Confirm"
+            label={state.confirmLabel}
             primary
+            busy={state.busy}
             disabled={!state.text.trim()}
             onClick={state.onConfirm}
           />
           <IconAction
             icon={<X size={16} strokeWidth={2.25} />}
             label="Cancel"
+            disabled={state.busy}
             onClick={state.onCancel}
           />
         </div>
@@ -374,11 +385,13 @@ function PreviewActions({
   clipboardOnly,
   pending,
   onCommit,
+  onEdit,
   onAbort,
 }: {
   clipboardOnly: boolean;
   pending?: OverlayPendingPreview;
   onCommit?: () => void;
+  onEdit?: () => void;
   onAbort?: () => void;
 }) {
   const committing = pending?.action === "commit";
@@ -394,6 +407,15 @@ function PreviewActions({
         primary
         disabled={Boolean(pending)}
         onClick={onCommit}
+      />
+      {/* This is the surface where the text has NOT been delivered yet, so it
+          is the one place where editing can still change what gets delivered.
+          The result surface's Edit can only offer a corrected copy. */}
+      <IconAction
+        icon={<Pencil size={16} strokeWidth={2.25} />}
+        label="Edit"
+        disabled={Boolean(pending)}
+        onClick={onEdit}
       />
       <IconAction
         icon={<Square size={16} strokeWidth={2.25} />}
