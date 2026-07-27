@@ -12,6 +12,11 @@ status change. Resolved bugs remain as references for the same failure class.
   [accepted-state hand-off](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md).
 - [overlay-placement-persist.md](overlay-placement-persist.md): resolved
   remembered overlay drag-position failure (2026-07-08).
+- [overlay-drag-session-never-ends.md](overlay-drag-session-never-ends.md):
+  resolved — the drag session never ended after the first overlay drag, which
+  silently disabled both overlay layout effects and therefore the only native
+  repaint trigger for a mode change. Reported as mode-picker overlay stacking;
+  not a compositor problem (2026-07-27).
 - [transcription-hallucination.md](transcription-hallucination.md): open raw
   transcription language drift and hallucination problem.
 - [capture-shortcut-recording.md](capture-shortcut-recording.md): open shortcut

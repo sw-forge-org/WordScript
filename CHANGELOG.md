@@ -293,6 +293,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Switching processing modes in the idle mode picker left the previous mode's
+  pill painted underneath the new one. It looked like the compositor artifact
+  accepted on 2026-07-20, but it was not: `dragSessionActiveRef` stayed true for
+  the rest of the process after the first overlay drag, because the position
+  persist handler cancelled the only timeout that ever ends a drag session.
+  Both overlay layout effects bail on that ref, so from the first drag onwards
+  the per-surface size sync and the visual-epoch repaint were dead — and the
+  visual-epoch repaint is the only native repaint trigger for a change that
+  keeps the same pill kind, such as a mode cycle. The grace timeout is now
+  re-armed instead of cancelled, which keeps the long-drag persistence fix (K1)
+  intact. See `docs/known-issues/overlay-drag-session-never-ends.md`.
 - In "Copy and insert at cursor", the final result overlay could appear stacked
   on top of the previous overlay, which never went away. The visibility of the
   result surface was set in a React effect one render after the session ended,

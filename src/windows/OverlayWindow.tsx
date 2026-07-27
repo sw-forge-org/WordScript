@@ -29,6 +29,10 @@ const OVERLAY_ENTER_MS = 320;
 const OVERLAY_LEAVE_MS = 240;
 const DRAG_DISTANCE_THRESHOLD = 6;
 const DRAG_CLICK_SUPPRESS_MS = 1000;
+// How long after the last drag signal the drag session is considered over. Long
+// enough that a slow drag's `onMoved` debounce (180 ms) keeps re-arming it, and
+// bounded so a drag whose pointer-end never reaches the webview still releases.
+const DRAG_SESSION_END_GRACE_MS = 2000;
 // Matches the .overlay-shell padding so the native window hugs the pill plus its
 // transparent breathing room on every edge.
 const SHELL_PADDING = 4;
@@ -428,6 +432,22 @@ export default function OverlayWindow() {
     };
   }, []);
 
+  // Ends the drag session once the moves stop. Every caller RE-ARMS rather than
+  // cancels, so a long drag keeps pushing the deadline out while a finished one
+  // always releases the session. `dragSessionActiveRef` gates both overlay
+  // layout effects, so a session that never ends silently disables the
+  // per-surface size sync and the visual-epoch repaint for the rest of the
+  // process.
+  const armDragSessionEnd = useCallback(() => {
+    if (dragSessionEndTimeoutRef.current) {
+      window.clearTimeout(dragSessionEndTimeoutRef.current);
+    }
+    dragSessionEndTimeoutRef.current = window.setTimeout(() => {
+      dragSessionActiveRef.current = false;
+      dragSessionEndTimeoutRef.current = null;
+    }, DRAG_SESSION_END_GRACE_MS);
+  }, []);
+
   useEffect(() => {
     const currentWindow = getCurrentWindow();
     const unlistenPromise = currentWindow.onMoved(({ payload }) => {
@@ -474,10 +494,18 @@ export default function OverlayWindow() {
         // position was persisted instead of the final drag end position.
         // That was the root cause of "overlay placement is not always
         // saved" (see docs/BUG_OVERLAY_PLACEMENT_PERSIST.md, K1).
-        if (dragSessionEndTimeoutRef.current) {
-          window.clearTimeout(dragSessionEndTimeoutRef.current);
-          dragSessionEndTimeoutRef.current = null;
-        }
+        //
+        // RE-ARM, never cancel. This used to clear the grace timeout outright,
+        // which left `dragSessionActiveRef` stuck at true for the rest of the
+        // process: `clearDragIntent` only ARMS that timeout, so cancelling it
+        // removed the one path that ever ends a drag session. Both overlay
+        // layout effects bail on `dragSessionActiveRef`, so from the first drag
+        // onwards the per-surface size sync and the visual-epoch repaint were
+        // dead — and with them the only native repaint trigger for a same-kind
+        // visual change such as a mode cycle. Re-arming keeps K1 intact (a long
+        // drag keeps pushing the deadline out) while still ending the session
+        // once the moves stop.
+        armDragSessionEnd();
       }, 180);
     });
 
@@ -492,7 +520,7 @@ export default function OverlayWindow() {
       }
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
-  }, []);
+  }, [armDragSessionEnd]);
 
   useEffect(() => {
     const handlePointerMove = (event: globalThis.PointerEvent) => {
@@ -527,16 +555,11 @@ export default function OverlayWindow() {
       if (dragIntentRef.current?.dragged) {
         // On Windows, startDragging() causes WebView2 to fire pointercancel/pointerup
         // immediately (native drag takes pointer ownership), before any onMoved events
-        // arrive. Do not clear dragSessionActive here; let the onMoved persist handler
-        // clear it after saving the position. A fallback timeout covers the case where
+        // arrive. Do not clear dragSessionActive here; the onMoved persist handler
+        // still needs the session alive to save the final position. It re-arms the
+        // same deadline on every persist, so this arming also covers the case where
         // onMoved never fires (e.g. window not actually moved).
-        if (dragSessionEndTimeoutRef.current) {
-          window.clearTimeout(dragSessionEndTimeoutRef.current);
-        }
-        dragSessionEndTimeoutRef.current = window.setTimeout(() => {
-          dragSessionActiveRef.current = false;
-          dragSessionEndTimeoutRef.current = null;
-        }, 2000);
+        armDragSessionEnd();
         suppressNextClickRef.current = true;
         suppressClickUntilRef.current = Date.now() + DRAG_CLICK_SUPPRESS_MS;
       }
@@ -554,7 +577,7 @@ export default function OverlayWindow() {
       window.removeEventListener("pointercancel", clearDragIntent);
       window.removeEventListener("blur", clearDragIntent);
     };
-  }, []);
+  }, [armDragSessionEnd]);
 
   // Auto-dismiss the error pill after 4.2 s. `errorHidden` only suppresses the
   // display; visibility stays derived (see `showError`), so a new trigger

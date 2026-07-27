@@ -654,6 +654,85 @@ describe("OverlayWindow", () => {
     }
   });
 
+  // Regression (K3): the persist handler used to CANCEL the grace timeout that
+  // ends a drag session, and deliberately did not clear `dragSessionActiveRef`
+  // itself. Since `clearDragIntent` only arms that timeout, nothing ever ended
+  // the session again. Both overlay layout effects bail on
+  // `dragSessionActiveRef`, so from the first drag onwards the per-surface size
+  // sync and the visual-epoch repaint were dead for the rest of the process —
+  // and the visual-epoch repaint is the ONLY native repaint trigger for a
+  // same-kind visual change such as a mode cycle, which is why cycling modes in
+  // the idle picker left the previous mode's pill painted underneath.
+  it("ends the drag session after the moves stop so a mode change still repaints (K3)", async () => {
+    // The backend confirms whatever mode was just set; otherwise the eager
+    // optimistic update and the confirming refetch collapse into one commit
+    // inside `act` and the epoch never changes for a harness reason.
+    let backendMode = "auto";
+    invokeMock.mockImplementation((command: string, args?: unknown) => {
+      if (command === "set_active_profile_processing_mode") {
+        backendMode = (args as { mode: string }).mode;
+        return Promise.resolve();
+      }
+      if (command === "resolve_current_processing_mode") {
+        return Promise.resolve({ mode: backendMode, is_override: false, auto_detected: false, detected_from: null });
+      }
+      return Promise.resolve();
+    });
+    useRuntimeMock.mockReturnValue(buildRecordingState());
+    render(<OverlayWindow />);
+
+    await waitFor(() => expect(movedHandlers.length).toBeGreaterThan(0));
+    const modeChip = await screen.findByRole("button", { name: /^Mode / });
+    vi.useFakeTimers();
+
+    try {
+      await act(async () => {
+        fireEvent.pointerDown(modeChip, { button: 0, pointerId: 51, clientX: 20, clientY: 16 });
+        fireEvent.pointerMove(window, { buttons: 1, pointerId: 51, clientX: 40, clientY: 36 });
+        vi.advanceTimersByTime(500);
+
+        // The native drag takes pointer ownership and the webview sees the
+        // pointer end early — this is what arms the grace timeout.
+        fireEvent.pointerUp(window, { pointerId: 51 });
+
+        // The window keeps moving; the persist handler runs and used to cancel
+        // that very timeout.
+        movedHandlers[0]?.({ payload: { x: 320, y: 240 } });
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        // Past the grace window with no further movement: the session must be over.
+        vi.advanceTimersByTime(3000);
+        await Promise.resolve();
+      });
+
+      invokeMock.mockClear();
+
+      // A mode change keeps `pillState.kind`, so `key={pillState.kind}` does not
+      // remount and the surface does not change. The visual-epoch layout effect
+      // is the ONLY thing that can force a native repaint here — and it bails on
+      // `dragSessionActiveRef`. With the stuck ref this produced no reveal at
+      // all, which is why cycling modes left the previous pill painted.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /^Mode / }));
+        vi.advanceTimersByTime(50);
+        await Promise.resolve();
+      });
+
+      const reveals = invokeMock.mock.calls.filter(
+        ([command]) => command === "sync_overlay_window_visibility",
+      );
+      expect(
+        reveals.length,
+        "a mode change after a drag must still force a native repaint",
+      ).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("persists onMoved events during a drag started within the reveal grace window (K2)", async () => {
     // Regression: the 420ms reveal-grace suppression dropped onMoved events
     // even when a real drag (pointerdown) had already started, so a fast drag
