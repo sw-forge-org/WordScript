@@ -160,6 +160,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The mode lane moved from `Ctrl` to `Alt` (ADR 0011): mode select is `Alt+S`
+  instead of `Ctrl+S`, and the six per-mode jumps are `Alt+1`-`Alt+6` instead of
+  `Ctrl+1`-`Ctrl+6`. The old defaults were global grabs on **save** and on
+  **browser tab switching** — the two reflexes a writing tool must not take
+  away. One stored value covers every platform: macOS renders the lane as
+  `Option+S` and `Option+1`-`Option+6`, Windows and Linux as `Alt+…`. Existing
+  configs are migrated once (`SHORTCUT_SCHEMA_VERSION` 1 -> 2), per slot, and
+  only where the slot still holds its untouched `Ctrl` default; an assigned
+  shortcut, an empty (disabled) slot, and any slot whose new value is already
+  taken are left alone.
 - The overlay's dev-only per-render trace is now opt-in behind
   `VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1` and runs in an effect rather than in
   the render body, and `read_diag_log` returns only the tail of the diagnostic

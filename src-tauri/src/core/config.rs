@@ -48,7 +48,20 @@ pub const DEFAULT_AGENT_NAME: &str = "WordScript";
 
 /// Current version of the shortcut half of the config schema. Legacy shortcut
 /// rewrites are gated on this so they run once instead of on every save.
-pub const SHORTCUT_SCHEMA_VERSION: u32 = 1;
+pub const SHORTCUT_SCHEMA_VERSION: u32 = 2;
+
+/// The mode lane defaults up to shortcut schema version 1, in the order the
+/// version-2 migration walks them. Kept as a table so the migration recognizes
+/// an untouched old default instead of guessing at a value the user picked.
+const LEGACY_MODE_HOTKEYS: [&str; 7] = [
+    "Ctrl+S",
+    "Ctrl+1",
+    "Ctrl+2",
+    "Ctrl+3",
+    "Ctrl+4",
+    "Ctrl+5",
+    "Ctrl+6",
+];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -1341,32 +1354,37 @@ fn default_play_startup_sound() -> bool {
     true
 }
 
+/// The mode lane sits on `Alt`, not on `Ctrl`. `Ctrl+S` took the save shortcut
+/// away from every editor on the desktop and `Ctrl+1`-`Ctrl+6` took tab
+/// switching away from every browser — the two collisions of the rotation users
+/// hit daily. `Alt` renders as `Option` on macOS and stays `Alt` on Windows and
+/// Linux, so one stored value carries the right platform spelling on its own.
 fn default_mode_picker_hotkey() -> String {
-    "Ctrl+S".to_string()
+    "Alt+S".to_string()
 }
 
 fn default_mode_auto_hotkey() -> String {
-    "Ctrl+1".to_string()
+    "Alt+1".to_string()
 }
 
 fn default_mode_verbatim_hotkey() -> String {
-    "Ctrl+2".to_string()
+    "Alt+2".to_string()
 }
 
 fn default_mode_cleanup_hotkey() -> String {
-    "Ctrl+3".to_string()
+    "Alt+3".to_string()
 }
 
 fn default_mode_rewrite_hotkey() -> String {
-    "Ctrl+4".to_string()
+    "Alt+4".to_string()
 }
 
 fn default_mode_agent_hotkey() -> String {
-    "Ctrl+5".to_string()
+    "Alt+5".to_string()
 }
 
 fn default_mode_prompt_enhance_hotkey() -> String {
-    "Ctrl+6".to_string()
+    "Alt+6".to_string()
 }
 
 fn normalize_overlay_monitor_value(value: &str) -> String {
@@ -1407,12 +1425,77 @@ fn normalize_shortcut_value(value: &str, allow_modifier_only: bool) -> String {
 /// and made those three combinations unselectable. Configs written by that
 /// build therefore hold the truncated value; there is nothing to repair, but
 /// the version is recorded so the truncation cannot come back.
+///
+/// Version 2: the whole mode lane moved from `Ctrl` to `Alt` (`Ctrl+S` ->
+/// `Alt+S`, `Ctrl+1`-`Ctrl+6` -> `Alt+1`-`Alt+6`). A slot that still holds
+/// exactly its old default is moved along, so an installation that never
+/// touched the binding ends up on the new standard instead of keeping the save
+/// and tab-switching grabs forever. Every other value — a shortcut the user
+/// assigned, an empty slot meaning "disabled", and a `Ctrl+…` value re-entered
+/// after this migration ran — is left alone, because the version gate makes
+/// this a one-shot rule.
 fn migrate_shortcut_schema(config: &mut AppConfig) {
     if config.shortcut_schema_version >= SHORTCUT_SCHEMA_VERSION {
         return;
     }
 
+    if config.shortcut_schema_version < 2 {
+        migrate_mode_lane_from_ctrl_to_alt(config);
+    }
+
     config.shortcut_schema_version = SHORTCUT_SCHEMA_VERSION;
+}
+
+/// Moves every mode slot that still holds its pre-version-2 `Ctrl` default onto
+/// the matching `Alt` default.
+///
+/// A slot is skipped when its new value is already held by a hotkey that is not
+/// itself migrating — a user who put `Alt+2` on mode auto by hand must not have
+/// mode verbatim migrated on top of it, because a colliding pair cannot be
+/// registered and would leave both bindings dead.
+fn migrate_mode_lane_from_ctrl_to_alt(config: &mut AppConfig) {
+    let replacements = [
+        default_mode_picker_hotkey(),
+        default_mode_auto_hotkey(),
+        default_mode_verbatim_hotkey(),
+        default_mode_cleanup_hotkey(),
+        default_mode_rewrite_hotkey(),
+        default_mode_agent_hotkey(),
+        default_mode_prompt_enhance_hotkey(),
+    ];
+    let mut slots = [
+        &mut config.mode_picker_hotkey,
+        &mut config.mode_auto_hotkey,
+        &mut config.mode_verbatim_hotkey,
+        &mut config.mode_cleanup_hotkey,
+        &mut config.mode_rewrite_hotkey,
+        &mut config.mode_agent_hotkey,
+        &mut config.mode_prompt_enhance_hotkey,
+    ];
+
+    let moves: Vec<bool> = slots
+        .iter()
+        .zip(LEGACY_MODE_HOTKEYS)
+        .map(|(slot, legacy)| normalize_shortcut_value(slot, true) == legacy)
+        .collect();
+
+    let mut taken: Vec<String> = [&config.hotkey, &config.pause_hotkey, &config.abort_hotkey]
+        .into_iter()
+        .map(|value| normalize_shortcut_value(value, true))
+        .collect();
+    taken.extend(
+        slots
+            .iter()
+            .zip(&moves)
+            .filter(|(_, moving)| !**moving)
+            .map(|(slot, _)| normalize_shortcut_value(slot, true)),
+    );
+
+    for ((slot, moving), replacement) in slots.iter_mut().zip(moves).zip(replacements) {
+        if moving && !taken.contains(&replacement) {
+            **slot = replacement;
+        }
+    }
 }
 
 fn default_local_prompt_strength() -> &'static str {
@@ -1955,6 +2038,82 @@ mod tests {
         config.normalize_for_runtime();
         assert_eq!(config.hotkey, before.hotkey);
         assert_eq!(config.shortcut_schema_version, before.shortcut_schema_version);
+    }
+
+    #[test]
+    fn the_untouched_ctrl_mode_lane_moves_to_alt() {
+        // Schema version 2: an installation that never touched the mode lane
+        // must land on `Alt+S` and `Alt+1`-`Alt+6` instead of keeping the save
+        // and tab-switching grabs. The raw legacy spellings count too, because
+        // the migration runs before normalization.
+        let mut config = AppConfig {
+            shortcut_schema_version: 1,
+            mode_picker_hotkey: "ctrl_l+s".to_string(),
+            mode_auto_hotkey: "Ctrl+1".to_string(),
+            mode_verbatim_hotkey: "Ctrl+2".to_string(),
+            mode_cleanup_hotkey: "Ctrl+3".to_string(),
+            mode_rewrite_hotkey: "Ctrl+4".to_string(),
+            mode_agent_hotkey: "ctrl_l+5".to_string(),
+            mode_prompt_enhance_hotkey: "Ctrl+6".to_string(),
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+
+        assert_eq!(config.mode_picker_hotkey, "Alt+S");
+        assert_eq!(config.mode_auto_hotkey, "Alt+1");
+        assert_eq!(config.mode_verbatim_hotkey, "Alt+2");
+        assert_eq!(config.mode_cleanup_hotkey, "Alt+3");
+        assert_eq!(config.mode_rewrite_hotkey, "Alt+4");
+        assert_eq!(config.mode_agent_hotkey, "Alt+5");
+        assert_eq!(config.mode_prompt_enhance_hotkey, "Alt+6");
+        assert_eq!(config.shortcut_schema_version, SHORTCUT_SCHEMA_VERSION);
+        assert!(validate_hotkey_collisions(&config).is_ok());
+    }
+
+    #[test]
+    fn a_chosen_mode_shortcut_survives_the_default_change() {
+        // Only untouched old defaults move. A shortcut the user assigned stays,
+        // an empty slot stays disabled, and a `Ctrl+…` value re-entered after
+        // the migration ran is never taken away again — the version gate makes
+        // the rule one-shot.
+        let mut config = AppConfig {
+            shortcut_schema_version: 1,
+            mode_picker_hotkey: "Ctrl+Alt+M".to_string(),
+            mode_auto_hotkey: String::new(),
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+        assert_eq!(config.mode_picker_hotkey, "Ctrl+Alt+M");
+        assert_eq!(config.mode_auto_hotkey, "");
+
+        let mut reassigned = AppConfig {
+            mode_picker_hotkey: "Ctrl+S".to_string(),
+            ..AppConfig::default()
+        };
+
+        reassigned.normalize_for_runtime();
+        assert_eq!(reassigned.mode_picker_hotkey, "Ctrl+S");
+    }
+
+    #[test]
+    fn the_migration_never_moves_a_slot_onto_an_occupied_shortcut() {
+        // A user who put `Alt+2` on mode auto by hand must not get mode
+        // verbatim migrated on top of it: a colliding pair cannot be registered
+        // and would leave both bindings dead.
+        let mut config = AppConfig {
+            shortcut_schema_version: 1,
+            mode_auto_hotkey: "Alt+2".to_string(),
+            mode_verbatim_hotkey: "Ctrl+2".to_string(),
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+
+        assert_eq!(config.mode_auto_hotkey, "Alt+2");
+        assert_eq!(config.mode_verbatim_hotkey, "Ctrl+2");
+        assert!(validate_hotkey_collisions(&config).is_ok());
     }
 
     #[test]

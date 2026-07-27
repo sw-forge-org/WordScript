@@ -180,20 +180,25 @@ a comma is accepted and converted.
 One rotation on every platform. The previous per-OS branching is gone: divergent
 defaults are what let the legacy persist-time migration silently rewrite the
 Windows default on every save, and a single set is easier to keep honest.
-`Super` renders as `Cmd` on macOS and `Win` on Windows.
+One stored value carries the right platform spelling on its own: `Super` renders
+as `Cmd` on macOS and `Win` on Windows, `Alt` renders as `Option` on macOS and
+stays `Alt` on Windows and Linux.
 
 | Binding | Default |
 | --- | --- |
 | Start / stop capture | `Ctrl+Super` |
 | Pause / resume | `Ctrl+Space` |
 | Abort | `Ctrl+Alt` |
-| Mode select | `Ctrl+S` |
-| Auto | `Ctrl+1` |
-| Verbatim | `Ctrl+2` |
-| Cleanup | `Ctrl+3` |
-| Rewrite | `Ctrl+4` |
-| Agent | `Ctrl+5` |
-| Prompt Enhance | `Ctrl+6` |
+| Mode select | `Alt+S` |
+| Auto | `Alt+1` |
+| Verbatim | `Alt+2` |
+| Cleanup | `Alt+3` |
+| Rewrite | `Alt+4` |
+| Agent | `Alt+5` |
+| Prompt Enhance | `Alt+6` |
+
+The whole mode lane sits on `Alt`, which macOS shows as `Option` — mode select
+reads `Option+S` there, the per-mode keys `Option+1`-`Option+6`.
 
 Two properties of this set are asserted in `cargo test`
 (`every_default_shortcut_satisfies_the_contract`,
@@ -207,11 +212,21 @@ rather than press, so it depends on the release event whose delivery is not
 guaranteed on every platform — see the activation-mode section below.
 
 Because these are global grabs, they are taken away from every other
-application: `Ctrl+S`, `Ctrl+1`-`Ctrl+6` and `Ctrl+Space` are widely used
-in-app shortcuts (save, tab switching, completion), and `Ctrl+Alt` fires on the
-leading edge of every `Ctrl+Alt+…` combination the desktop uses. This is a
-deliberate product decision, not an oversight; users who need those keys back
-reassign them in Settings.
+application: `Ctrl+Space` is a widely used in-app shortcut (completion, input
+source switching), `Ctrl+Alt` fires on the leading edge of every `Ctrl+Alt+…`
+combination the desktop uses, and on the `Alt` lane `Alt+letter` is a menu
+mnemonic in some applications while `Alt+1`-`Alt+9` switches tabs in Firefox on
+Linux and Windows. This is a deliberate product decision, not an oversight;
+users who need those keys back reassign them in Settings.
+
+The mode lane moved off `Ctrl` for exactly that reason: `Ctrl+S` is save and
+`Ctrl+1`-`Ctrl+6` is tab switching in every browser, which made those the
+collisions of the rotation users hit daily. The `Alt` lane is not free of
+collisions either, but it costs less on all three platforms. Configs written
+before shortcut schema version 2 are moved once, per slot, and only where the
+slot still holds its untouched `Ctrl` default — a value the user chose stays,
+an empty slot stays disabled, and a slot is skipped when its new value is
+already assigned elsewhere.
 
 ### Activation modes
 

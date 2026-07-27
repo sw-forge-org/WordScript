@@ -2220,25 +2220,25 @@ mod tests {
         // from the last startup and mode select appeared dead whatever you
         // assigned.
         let config = AppConfig {
-            mode_picker_hotkey: "Ctrl+S".to_string(),
-            mode_auto_hotkey: "Ctrl+1".to_string(),
-            mode_verbatim_hotkey: "Ctrl+2".to_string(),
-            mode_cleanup_hotkey: "Ctrl+3".to_string(),
-            mode_rewrite_hotkey: "Ctrl+4".to_string(),
-            mode_agent_hotkey: "Ctrl+5".to_string(),
-            mode_prompt_enhance_hotkey: "Ctrl+6".to_string(),
+            mode_picker_hotkey: "Alt+S".to_string(),
+            mode_auto_hotkey: "Alt+1".to_string(),
+            mode_verbatim_hotkey: "Alt+2".to_string(),
+            mode_cleanup_hotkey: "Alt+3".to_string(),
+            mode_rewrite_hotkey: "Alt+4".to_string(),
+            mode_agent_hotkey: "Alt+5".to_string(),
+            mode_prompt_enhance_hotkey: "Alt+6".to_string(),
             ..AppConfig::default()
         };
 
         let hotkeys = ModeHotkeys::from_app_config(&config);
 
-        assert_eq!(hotkeys.picker, "Ctrl+S");
-        assert_eq!(hotkeys.auto, "Ctrl+1");
-        assert_eq!(hotkeys.verbatim, "Ctrl+2");
-        assert_eq!(hotkeys.cleanup, "Ctrl+3");
-        assert_eq!(hotkeys.rewrite, "Ctrl+4");
-        assert_eq!(hotkeys.agent, "Ctrl+5");
-        assert_eq!(hotkeys.prompt_enhance, "Ctrl+6");
+        assert_eq!(hotkeys.picker, "Alt+S");
+        assert_eq!(hotkeys.auto, "Alt+1");
+        assert_eq!(hotkeys.verbatim, "Alt+2");
+        assert_eq!(hotkeys.cleanup, "Alt+3");
+        assert_eq!(hotkeys.rewrite, "Alt+4");
+        assert_eq!(hotkeys.agent, "Alt+5");
+        assert_eq!(hotkeys.prompt_enhance, "Alt+6");
         assert_eq!(hotkeys.entries().len(), 7);
     }
 

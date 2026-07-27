@@ -201,7 +201,7 @@ terminal:
 tail -f ~/.config/WordScript/logs/wordscript-runtime.log | grep trigger
 ```
 
-Use the **mode-select** shortcut (default `Ctrl+S`, shown in Settings -> Modes)
+Use the **mode-select** shortcut (default `Alt+S`, shown in Settings -> Modes)
 as the probe. It is harmless: it opens the overlay mode selector and starts no
 capture, so a stranded state costs nothing. Do not use the capture trigger for
 the hold table — a lost release there starts a real recording.
