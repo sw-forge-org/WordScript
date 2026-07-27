@@ -65,7 +65,28 @@ fn main() {
             // the microphone capture, where PulseAudio would then apply
             // notification-sound routing and ducking rules to it.
             //
+            // Three variables, because the name lives in three places and the
+            // mixers do not all read the same one:
+            //
+            // - PIPEWIRE_ALSA is read by the ALSA plugin itself and names the
+            //   *client* object. This is the one KDE's Audio Volume applet
+            //   displays. Without it the plugin hard-codes
+            //   "PipeWire ALSA [<binary>]" (`PipeWire ALSA [%s]` in
+            //   libasound_module_pcm_pipewire.so), for the cue playback and
+            //   the microphone capture alike.
+            // - PIPEWIRE_PROPS names the *stream* node, which is what
+            //   `module-stream-restore` keys the remembered per-application
+            //   volume on.
+            // - PULSE_PROP covers a real PulseAudio server rather than
+            //   PipeWire's implementation of it.
+            //
             // Must be set before any audio device is opened.
+            if std::env::var_os("PIPEWIRE_ALSA").is_none() {
+                std::env::set_var(
+                    "PIPEWIRE_ALSA",
+                    r#"{ application.name = "WordScript" application.icon_name = "wordscript" }"#,
+                );
+            }
             if std::env::var_os("PIPEWIRE_PROPS").is_none() {
                 std::env::set_var(
                     "PIPEWIRE_PROPS",

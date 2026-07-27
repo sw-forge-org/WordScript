@@ -45,9 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pack and cue to WAV so the sound can be judged by ear without building the
   app.
 - WordScript now names itself in the system volume mixer on Linux
-  (`application.name=WordScript` via `PIPEWIRE_PROPS`/`PULSE_PROP`) instead of
-  appearing twice as "PipeWire ALSA [wordscript]" — once for the sound cues and
-  once for the microphone. PipeWire keys the remembered per-application volume
+  (`application.name=WordScript` via `PIPEWIRE_ALSA`, `PIPEWIRE_PROPS` and
+  `PULSE_PROP`) instead of appearing twice as "PipeWire ALSA [wordscript]" —
+  once for the sound cues and once for the microphone. `PIPEWIRE_ALSA` names
+  the client object, which is what the KDE applet shows; `PIPEWIRE_PROPS` names
+  the stream node, which is what the remembered volume is keyed on. PipeWire keys the remembered per-application volume
   on that name, so the system-mixer setting is now both findable and durable.
   Windows already names packaged builds from `productName`, and macOS has no
   per-application mixer to name.

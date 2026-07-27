@@ -243,13 +243,31 @@ PipeWire keys the remembered per-application volume on that name
 (`module-stream-restore.id = sink-input-by-application-name:...`) — so the name
 is what makes the volume setting both findable and durable across restarts.
 
-Only `application.name` and `application.icon_name` are set. Both variables
+The name lives in **two different objects**, and mixers do not agree on which
+one they show:
+
+| Variable | Names | Read by |
+|---|---|---|
+| `PIPEWIRE_ALSA` | the **client** object | the ALSA plugin itself; this is what KDE's Audio Volume applet displays |
+| `PIPEWIRE_PROPS` | the **stream** node | what `module-stream-restore` keys the remembered volume on |
+| `PULSE_PROP` | both, on a real PulseAudio server | the pulse client library |
+
+Setting only `PIPEWIRE_PROPS` renames the stream while the applet keeps showing
+`PipeWire ALSA [wordscript]`, because the plugin hard-codes that client name
+(`PipeWire ALSA [%s]` in `libasound_module_pcm_pipewire.so`) for the cue
+playback and the microphone capture alike. Both variables are therefore
+required.
+
+Only `application.name` and `application.icon_name` are set. These variables
 apply to the **whole process**, so a stream-specific property such as
 `media.role=event` would also be stamped onto the microphone capture, where
 PulseAudio would apply notification-sound routing and ducking rules to it.
 
 Verified on PipeWire 1.6.6 through the ALSA compatibility layer — the path cpal
-actually takes, which is not the same as a native PipeWire client.
+actually takes, which is not the same as a native PipeWire client. Checking the
+stream properties alone is not enough: `pactl list sink-inputs` can read
+`application.name = "WordScript"` while `pactl list clients` still reports
+`PipeWire ALSA [wordscript]`, which is what the user sees.
 
 ### The two volumes are deliberately not synchronised
 
