@@ -23,6 +23,14 @@ status change. Resolved bugs remain as references for the same failure class.
   and pipeline continue. Observed only under `tauri dev` so far; the existing
   telemetry cannot yet separate a real freeze from legitimate silence
   (2026-07-27).
+- [diag-log-write-surface.md](diag-log-write-surface.md): open — hardening
+  finding, no observed failure. The overlay diagnostic log uses a predictable
+  path in the world-writable `/tmp`, and its three commands are registered in
+  release builds although only dev code calls them (2026-07-27).
+- [dependency-advisories.md](dependency-advisories.md): open — one real
+  advisory without an available patch (`react-router-dom` 6.x), two
+  non-breaking transitive fixes, four stale Dependabot alerts, and no advisory
+  coverage at all for the Rust tree (2026-07-27).
 - [cross-platform-shortcut-verification.md](cross-platform-shortcut-verification.md):
   open — the shortcut lane has never run on Windows or macOS. Executable run
   sheets for both, the findings already established from the vendored crate's

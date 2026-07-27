@@ -193,6 +193,8 @@ rotates at 8 MB.
 - [PLATFORMS.md](../PLATFORMS.md): Linux runtime behavior
 - [DESIGN_SYSTEM.md](../DESIGN_SYSTEM.md): `WORDSCRIPT_DISABLE_WEBKIT_COMPOSITING`
   hardware opt-out
+- [diag-log-write-surface.md](diag-log-write-surface.md): the hardening finding
+  against the diagnostic log this investigation relies on
 - [overlay-ghosting.md](overlay-ghosting.md): the related but distinct retained
   compositor layer failure class
 - [OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md):

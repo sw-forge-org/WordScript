@@ -285,6 +285,18 @@ Additional rules:
   emit accounting per capture and an `[ov-beat]` main-thread heartbeat are now
   in place to decide it; the measurement order is in
   [known-issues/overlay-recording-freeze.md](known-issues/overlay-recording-freeze.md)
+- `react-router-dom` 6.30.4 carries an open advisory with no patch in the 6.x
+  line; the app has no `<Link>` or `useNavigate` call site the advisory could
+  act on, but the move to v7 is still owed. Two further transitive advisories
+  (`postcss` at build time, `undici` in the test environment) have non-breaking
+  fixes, four Dependabot alerts are stale, and the Rust tree has no advisory
+  coverage because `cargo audit` is not part of the checks yet. All of it is in
+  [known-issues/dependency-advisories.md](known-issues/dependency-advisories.md)
+- the overlay diagnostic log writes to a predictable path in the world-writable
+  `/tmp`, and its three commands are registered in release builds although only
+  dev code calls them. A hardening finding rather than an observed failure, with
+  the measures in
+  [known-issues/diag-log-write-surface.md](known-issues/diag-log-write-surface.md)
 - no published versioned releases
 - no signed in-place auto-updater
 - release and signing validation with real secrets is not a routine path yet
