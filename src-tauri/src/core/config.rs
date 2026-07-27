@@ -2386,6 +2386,18 @@ mod tests {
     }
 
     #[test]
+    fn ships_double_tap_and_insert_at_cursor_out_of_the_box() {
+        let mut config = AppConfig::default();
+        config.normalize_for_runtime();
+
+        assert_eq!(config.activation_mode, "double_tap");
+        assert_eq!(
+            config.active_text_profile().work_mode.effective_insert_behavior(),
+            "auto_paste"
+        );
+    }
+
+    #[test]
     fn keeps_existing_active_text_profile_as_runtime_owner() {
         let mut config = AppConfig {
             active_text_profile_id: "support".to_string(),
