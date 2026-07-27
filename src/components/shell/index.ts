@@ -13,6 +13,8 @@ export type { StatusDotTone } from "./StatusDot";
 export { Stepper } from "./Stepper";
 export { Select } from "./Select";
 export { Toggle } from "./Toggle";
+export { VolumeSlider } from "./VolumeSlider";
+export { InputLevelMeter } from "./InputLevelMeter";
 export { StatTiles } from "./StatTile";
 export type { StatTileItem } from "./StatTile";
 export { ProfileSwitcher } from "./ProfileSwitcher";

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
-import { FormCard, FormRow, Select, StatTiles, Stepper } from "../shell";
+import { FormCard, FormRow, InputLevelMeter, Select, StatTiles, Stepper } from "../shell";
+import { useInputLevel } from "../../hooks/useInputLevel";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import type {
@@ -236,6 +237,9 @@ export function InputTab({ config, onChange }: Props) {
     [triggerStatus],
   );
 
+  // Live level from the runtime's existing audio_level event. Read-only.
+  const inputLevel = useInputLevel();
+
   const defaultAudioDevice = useMemo(
     () => audioDevices.find((device) => device.is_default) ?? null,
     [audioDevices],
@@ -431,6 +435,12 @@ export function InputTab({ config, onChange }: Props) {
               </Button>
             </div>
           }
+        />
+        <FormRow
+          label="Input level"
+          hint="Measured live while you dictate. A capture whose loudest moment never crosses the marked threshold is discarded as empty — which is what a microphone set too quietly looks like. Set the level for this microphone in your system sound settings; WordScript never changes it, because that setting is shared with every other app using the same microphone."
+          layout="stacked"
+          control={<InputLevelMeter reading={inputLevel} />}
         />
         <FormRow
           label="Max recording"

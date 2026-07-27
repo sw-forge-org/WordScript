@@ -27,6 +27,19 @@ export type TextProfileInsertBehavior = "auto_paste" | "clipboard_only";
 export type TextProfileRecoveryBehavior = "standard";
 
 export type ProcessingMode = "auto" | "cleanup" | "rewrite" | "agent" | "prompt_enhance" | "verbatim";
+
+/** Mirrors `core::capture::InputLevelVerdict`. Diagnosis only — WordScript
+ *  never writes the OS input volume, which is per device rather than per app. */
+export type InputLevelVerdict = "ok" | "too_quiet" | "silent" | "clipping";
+
+/** Mirrors `core::capture::InputLevelSummary`. */
+export interface InputLevelSummary {
+  peak:                 number;
+  peak_dbfs:            number;
+  clipped_ratio:        number;
+  verdict:              InputLevelVerdict;
+  voice_threshold_dbfs: number;
+}
 export type EnhanceSubMode = "enhance" | "expand";
 export type PromptTarget = "general" | "claude_code" | "cursor" | "chatgpt" | "copilot";
 
@@ -220,6 +233,9 @@ export interface AppConfig {
   result_actions_timeout_s:       number;
   mode_select_timeout_s:          number;
   play_sounds:                    boolean;
+  sound_volume:                   number;
+  sound_pack:                     string;
+  play_startup_sound:             boolean;
   log_level:               string;
   temp_audio_dir:          string;
   history_limit:           number;
@@ -366,7 +382,7 @@ export type BackendEvent =
   | { event: "processing" }
   | ({ event: "preview_ready" } & RuntimeResultEvent)
   | ({ event: "transcription" } & RuntimeResultEvent)
-  | { event: "empty" }
+  | ({ event: "empty" } & { message?: string; input_level?: InputLevelSummary })
   | { event: "muted";            muted: boolean }
   | { event: "paused";           paused: boolean }
   | { event: "error";            message: string }

@@ -128,7 +128,14 @@ The active product core lives in `src-tauri/src/core/`.
   (matching-gate on sample rate/channels/format; one attempt per session).
 - `sessions.rs`: runtime status and shared session transitions for trigger,
   commands and native pipeline completion.
-- `sound.rs`: start/stop/abort/startup/error cues.
+- `capture.rs`: also measures the input level across every capture
+  (`InputLevelSummary`, `InputLevelVerdict`) so a discarded capture can name
+  its own cause. Read-only -- the OS input volume is per device, not per app,
+  and is never written (see PLATFORMS.md).
+- `sound/`: startup signature plus listen/handoff/done/abort/error cues.
+  `cue.rs` owns the score, `pack.rs` the timbre, `synth.rs` renders at the
+  device sample rate, `engine.rs` owns the one persistent output stream
+  (see ADR 0010).
 
 ### Provider and text processing
 

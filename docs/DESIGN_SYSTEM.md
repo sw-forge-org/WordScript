@@ -26,6 +26,36 @@ The active technical stack is Tailwind CSS v4 with shadcn/ui patterns. Tokens in
 `src/styles/globals.css` exposed through `@theme inline` remain the single
 source of truth. Do not create parallel color, spacing, or component token sets.
 
+## Sonic Identity
+
+Sound is a second status channel, not decoration. The user is usually looking
+at another application while dictating, so the cues carry state the overlay
+cannot deliver.
+
+Everything derives from one G-major theme. The startup signature states it in
+full (G3 -> D4 -> G4 with a quiet B4 on the arrival); every operational cue is
+a fragment of it. That shared derivation is the recognisability — not any
+single sound.
+
+- **Cues report runtime truth, exactly like the overlay.** `Handoff` fires when
+  capture stops and must not sound conclusive, because the work is still
+  running. `Done` is the only cue that reports a finished round trip, and it
+  fires on a successful insert. Never sound completion the runtime has not
+  reached.
+- **Loudness is a hierarchy, not a volume war.** Cues are normalised to a
+  common peak and then trimmed: `Done` is the quietest because it is the most
+  frequent, and `Error` distinguishes itself by interval and damping rather
+  than by being louder.
+- **Register stays low.** Fundamentals sit below 500 Hz with damped harmonics.
+  Bare high sine tones read as a hearing test, which is what the previous
+  implementation sounded like.
+- **Timbre is configurable, the motif is not.** The four packs (`timber`,
+  `glass`, `air`, `tap`) change the voice; all of them play the same score.
+- Cues never overlap. A new cue replaces the running one.
+
+Judge cues by ear in a real dictation loop, not in isolation:
+`cargo run --example audition_cues -- --out /tmp/ws-cues --sequence`.
+
 ## Surface Model
 
 ### Overlay

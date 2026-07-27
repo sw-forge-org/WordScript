@@ -206,7 +206,15 @@ export function useRuntime() {
           dispatch({ type: "TRANSCRIPTION", result: buildRuntimeTranscriptionResult(payload, configRef.current) });
           break;
         case "empty":
-          dispatch({ type: "EMPTY" });
+          // A capture that produced nothing but has a diagnosable cause — an
+          // input level that never cleared the speech threshold, a muted or
+          // wrong device — must reach the user. Silently returning to idle is
+          // what made a misconfigured microphone look like a broken app.
+          if (payload.input_level && payload.input_level.verdict !== "ok" && payload.message) {
+            dispatch({ type: "ERROR", message: payload.message });
+          } else {
+            dispatch({ type: "EMPTY" });
+          }
           break;
         case "muted":
           dispatch({ type: "MUTED", muted: payload.muted });

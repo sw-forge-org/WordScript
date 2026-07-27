@@ -48,7 +48,9 @@ Rust core modules in `src-tauri/src/core/`:
 - `trigger.rs` -- global start/stop, pause/resume, abort hotkeys, activation modes (tap / double tap / hold), grab lifecycle and `[trigger]` observability
 - `capture.rs` -- audio capture, level/waveform events, silence/max-duration autostop, single stream rebuild after transient error
 - `sessions.rs` -- runtime status and shared session transitions
-- `sound.rs` -- start/stop/abort/startup/error cues
+- `sound/` -- one synthesised G-major theme: startup signature plus listen,
+  handoff, done, abort and error cues, four timbre packs, played on a single
+  persistent output stream (see ADR 0010)
 - `providers/mod.rs` -- shared provider contract, dispatch, typed modes/capabilities/errors
 - `providers/groq.rs` -- cloud-first production lane (BYOK, secret store, Groq HTTP errors)
 - `providers/local_preview.rs` -- local runtime lane (whisper-cli STT, Ollama cleanup, native model discovery, probe-based runner health)

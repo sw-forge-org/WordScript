@@ -13,7 +13,9 @@ use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime};
 
 
-mod core;
+// Public so design-time tooling can drive the runtime directly — see
+// `examples/audition_cues.rs`, which renders the sound cues to WAV.
+pub mod core;
 mod v1_slice;
 
 use crate::core::capture::{NativeCaptureConfig, NativeCaptureState};
@@ -864,7 +866,7 @@ pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: Trigg
         TriggerEffect::StartCapture => match core::capture::start_native_capture(app) {
             Ok(status) => {
                 reveal_overlay_window(app, OverlaySurface::Compact, None, None);
-                core::sound::play_if_enabled(core::sound::SoundCue::Start);
+                core::sound::play_if_enabled(core::sound::SoundCue::Listen);
                 if let Some(capture_id) = status.active_capture_id {
                     spawn_native_capture_monitor(app.clone(), capture_id);
                 }
@@ -898,17 +900,22 @@ pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: Trigg
             }
         }
         TriggerEffect::AbortCapture => {
-            core::sound::play_if_enabled(core::sound::SoundCue::Abort);
-            if let Err(error) = core::capture::abort_native_capture(app) {
-                core::sound::play_if_enabled(core::sound::SoundCue::Error);
-                core::sessions::fail_from_native_error(app, &error);
-                let _ = app.emit(
-                    "wordscript-event",
-                    serde_json::json!({
-                        "event": "error",
-                        "message": error
-                    }),
-                );
+            // The abort cue only reports an abort that actually happened. A
+            // failed abort is an error, and firing both cues told the user two
+            // contradictory things about one action.
+            match core::capture::abort_native_capture(app) {
+                Ok(()) => core::sound::play_if_enabled(core::sound::SoundCue::Abort),
+                Err(error) => {
+                    core::sound::play_if_enabled(core::sound::SoundCue::Error);
+                    core::sessions::fail_from_native_error(app, &error);
+                    let _ = app.emit(
+                        "wordscript-event",
+                        serde_json::json!({
+                            "event": "error",
+                            "message": error
+                        }),
+                    );
+                }
             }
         }
         TriggerEffect::DeferredStop {
@@ -961,17 +968,30 @@ pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: Trigg
 }
 
 fn finalize_native_capture_stop<R: Runtime + 'static>(app: &AppHandle<R>, session_id: String) {
-    core::sound::play_if_enabled(core::sound::SoundCue::Stop);
+    core::sound::play_if_enabled(core::sound::SoundCue::Handoff);
     match core::capture::stop_native_capture(app) {
-        Ok(Some(value)) => handle_audio_ready(app.clone(), value, session_id),
-        Ok(None) => {
+        Ok(core::capture::CaptureOutcome::Ready(value)) => {
+            handle_audio_ready(app.clone(), value, session_id)
+        }
+        Ok(core::capture::CaptureOutcome::Empty(level)) => {
+            // An empty capture used to end here with a fixed sentence, so a
+            // microphone whose input level never cleared the speech threshold
+            // was indistinguishable from a user who said nothing.
+            let message = level.message();
             match core::sessions::empty_processing_session_from_native(
                 app,
                 &session_id,
-                "No speech detected in recording.",
+                &message,
             ) {
                 Ok(true) => {
-                    let _ = app.emit("wordscript-event", serde_json::json!({ "event": "empty" }));
+                    let _ = app.emit(
+                        "wordscript-event",
+                        serde_json::json!({
+                            "event": "empty",
+                            "message": message,
+                            "input_level": level
+                        }),
+                    );
                 }
                 Ok(false) => log_stale_pipeline_result(app, &session_id, "empty_capture"),
                 Err(error) => {
@@ -2194,7 +2214,9 @@ pub fn run() {
 
             let initial_config = AppConfig::load_from_disk();
             core::config::emit_ready_event(app.handle(), &initial_config);
-            core::sound::schedule_startup_if_enabled();
+            core::sound::apply_config(&initial_config);
+            core::sound::init();
+            core::sound::play_startup(&initial_config);
 
             let trigger_state = app.state::<Mutex<NativeTriggerState>>();
             if let Err(error) = core::trigger::register_native_shortcuts(
@@ -2219,6 +2241,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             core::config::load_app_config,
             core::config::save_config,
+            core::sound::preview_sound_cue,
             core::config::switch_active_text_profile,
             open_settings_window,
             open_rebuild_lab_window,

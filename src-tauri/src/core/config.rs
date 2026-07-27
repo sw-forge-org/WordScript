@@ -535,6 +535,12 @@ pub struct AppConfig {
     #[serde(default = "default_legacy_auto_paste", skip_serializing)]
     pub auto_paste: bool,
     pub play_sounds: bool,
+    #[serde(default = "default_sound_volume")]
+    pub sound_volume: f32,
+    #[serde(default = "default_sound_pack")]
+    pub sound_pack: String,
+    #[serde(default = "default_play_startup_sound")]
+    pub play_startup_sound: bool,
     pub log_level: String,
     pub temp_audio_dir: String,
     pub history_limit: usize,
@@ -628,6 +634,9 @@ impl Default for AppConfig {
             mode_select_timeout_ms: 0,
             auto_paste: true,
             play_sounds: true,
+            sound_volume: default_sound_volume(),
+            sound_pack: default_sound_pack(),
+            play_startup_sound: default_play_startup_sound(),
             log_level: "INFO".to_string(),
             temp_audio_dir: String::new(),
             history_limit: 200,
@@ -844,6 +853,16 @@ impl AppConfig {
         self.result_actions_timeout_s = self.result_actions_timeout_s.clamp(1, 60);
         // Mode-select overlay: 1–30s. Two minutes is too long for a picker.
         self.mode_select_timeout_s = self.mode_select_timeout_s.clamp(1, 30);
+        // Sound volume is a linear gain on top of the OS volume. NaN from a
+        // hand-edited config would silently poison every later comparison.
+        if !self.sound_volume.is_finite() {
+            self.sound_volume = super::sound::DEFAULT_VOLUME;
+        }
+        self.sound_volume = self.sound_volume.clamp(0.0, 1.0);
+        // An unknown pack name must resolve to a real pack, never to silence.
+        self.sound_pack = super::sound::SoundPack::from_str_or_default(&self.sound_pack)
+            .as_str()
+            .to_string();
         self.result_actions_timeout_ms = 0;
         self.mode_select_timeout_ms = 0;
         // Migrate legacy global `auto_paste: false` into per-profile
@@ -1169,7 +1188,7 @@ pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<A
         sanitized.save_to_disk()?;
         Ok::<AppConfig, String>(sanitized)
     })??;
-    super::sound::set_enabled(sanitized.play_sounds);
+    super::sound::apply_config(&sanitized);
     emit_ready_event(&app, &sanitized);
     Ok(sanitized)
 }
@@ -1187,7 +1206,7 @@ pub fn switch_active_text_profile<R: Runtime>(
         config.save_to_disk()?;
         Ok::<AppConfig, String>(config)
     })??;
-    super::sound::set_enabled(config.play_sounds);
+    super::sound::apply_config(&config);
     emit_ready_event(&app, &config);
     Ok(config.without_secrets())
 }
@@ -1307,6 +1326,18 @@ fn default_mode_select_timeout_s() -> u64 {
 }
 
 fn default_legacy_auto_paste() -> bool {
+    true
+}
+
+fn default_sound_volume() -> f32 {
+    super::sound::DEFAULT_VOLUME
+}
+
+fn default_sound_pack() -> String {
+    super::sound::DEFAULT_PACK.as_str().to_string()
+}
+
+fn default_play_startup_sound() -> bool {
     true
 }
 

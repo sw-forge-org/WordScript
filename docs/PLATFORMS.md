@@ -1,6 +1,6 @@
 # WordScript -- Platforms
 
-Status: 2026-07-25
+Status: 2026-07-27
 
 Platform support matrix and platform-specific insert/recovery diagnostics.
 Source is `core::insertion` (`NativeInsertionPlatformStatus`); this file is
@@ -212,6 +212,97 @@ nondeterministic, and the physical half of that measurement is still open (see
   is rejected, so no grab is ever created without a modifier (D2).
 - **Super / Meta** is `conditional` wherever the desktop consumes it before the
   focused window can see it. It stays assignable through manual entry.
+
+## Sound cue output and per-application volume
+
+WordScript keeps one output stream open for the whole process (ADR 0010). That
+is what makes it appear as a stable entry in the system volume mixer rather
+than as a stream that flickers in and out for 300 ms per cue.
+
+| Platform | Per-app volume in the OS mixer | Notes |
+|---|---|---|
+| Linux (PipeWire / PulseAudio) | Yes | Appears as its own playback stream in `pavucontrol` or the KDE volume applet; the level is remembered per application |
+| Windows | Yes | Own entry in the Volume Mixer, remembered per application |
+| macOS | **No** | macOS offers no per-application volume at all. The in-app slider is the only control there |
+
+### How WordScript is named in the mixer
+
+WordScript shows up with two streams: a playback stream for the sound cues and
+a capture stream for the microphone. Both carry the application name; the
+mixer distinguishes them by direction.
+
+| Platform | Where the name comes from | State |
+|---|---|---|
+| Linux | `PIPEWIRE_PROPS` / `PULSE_PROP` with `application.name=WordScript`, set in `main()` before any audio device is opened | explicit, verified |
+| Windows | the executable's version-info ProductName; `productName` in `tauri.conf.json` is already `WordScript`, so a packaged build names itself. A `cargo run` dev build shows the binary name | default is correct, no code |
+| macOS | no per-application volume mixer exists | nothing to name |
+
+On Linux the name is not cosmetic. Without the override the ALSA compatibility
+layer names both streams after the binary ("PipeWire ALSA [wordscript]"), and
+PipeWire keys the remembered per-application volume on that name
+(`module-stream-restore.id = sink-input-by-application-name:...`) — so the name
+is what makes the volume setting both findable and durable across restarts.
+
+Only `application.name` and `application.icon_name` are set. Both variables
+apply to the **whole process**, so a stream-specific property such as
+`media.role=event` would also be stamped onto the microphone capture, where
+PulseAudio would apply notification-sound routing and ducking rules to it.
+
+Verified on PipeWire 1.6.6 through the ALSA compatibility layer — the path cpal
+actually takes, which is not the same as a native PipeWire client.
+
+### The two volumes are deliberately not synchronised
+
+`sound_volume` and the OS per-application volume are independent gains that
+multiply, and that is the intended design, not a gap:
+
+- They answer different questions. `sound_volume` is how loud the cues are
+  *within WordScript*. The OS per-app volume is how loud *WordScript* is
+  against every other application — that one belongs to the user, and an app
+  that writes it overwrites a deliberate user setting.
+- No cross-platform API exists for it. Linux would need PulseAudio/PipeWire
+  sink-input calls, Windows WASAPI `ISimpleAudioVolume`, and macOS offers no
+  per-application volume at all, so a synchronised slider would behave
+  differently on each of the three targets.
+- It matches the field. None of the reference dictation apps in `donors/`
+  synchronise: Handy (same Tauri/Rust stack) keeps `audio_feedback_volume` as
+  an internal `Sink::set_volume` gain, VoiceInk hard-codes `player.volume`,
+  vocalinux shells out to `paplay` per cue. The only OS-volume API usage
+  anywhere in the donor set is for the *microphone input* device. It is also
+  how Discord, Slack, Spotify and Zoom behave.
+
+On a failure reported by the audio backend — device removal, server restart,
+Bluetooth sleep — the stream is discarded and reopened, at most three times per
+minute; after that cues stay silent until the sound settings change, and the
+reason is in the runtime log.
+
+## Microphone input level -- measured, never written
+
+WordScript reads the microphone level and never sets it. The OS microphone
+volume is a property of the **device**, not of the application, so writing it
+would silently re-level every other app using the same microphone. This is a
+stronger reason than the playback case, where the per-app volume at least only
+affects WordScript. None of the reference apps in `donors/` writes it either --
+OpenSuperWhisper implements `setInputVolume` and never calls it.
+
+What is measured, per capture, in `core::capture`:
+
+| Verdict | Condition | What the user is told |
+|---|---|---|
+| `silent` | peak < 0.001 (-60 dBFS) | no signal arrived; check device selection and mute |
+| `too_quiet` | peak <= 0.02 (the speech threshold) | the measured peak in dBFS against the threshold it failed, and to raise the system input level |
+| `clipping` | > 0.5% of samples at >= 0.99 | the clipped share, and to lower the system input level |
+| `ok` | otherwise | nothing |
+
+This matters because `stop_native_capture` discards a capture entirely when no
+sample ever crossed the speech threshold. Before, that produced a bare "no
+speech detected", so a microphone at a low input level and a user who said
+nothing were indistinguishable. The verdict now travels with the `empty` event
+(`message`, `input_level`) and, when it is actionable, reaches the overlay.
+
+Settings shows a live meter under the microphone selector with the speech
+threshold drawn in, fed by the existing `audio_level` event. It reads out while
+a capture runs -- the runtime only measures during capture.
 
 ## Linux / PipeWire -- microphone keep-alive against auto-suspend
 

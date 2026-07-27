@@ -1,7 +1,16 @@
 import { type ReactNode } from "react";
-import { CheckCircle2, Circle, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { CheckCircle2, Circle, Play, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FormCard, FormRow, Select, StatusBadge, Toggle, type StatusTone } from "@/components/shell";
+import {
+  FormCard,
+  FormRow,
+  Select,
+  StatusBadge,
+  Toggle,
+  VolumeSlider,
+  type StatusTone,
+} from "@/components/shell";
 import { useNativeInsertion } from "@/hooks/useNativeInsertion";
 import { relativeTime, truncate } from "@/lib/format";
 import { buildTextProfilesPatch, resolveActiveTextProfile } from "@/lib/textProfiles";
@@ -18,6 +27,25 @@ interface Props {
   config: AppConfig;
   onChange: (p: Partial<AppConfig>) => void;
 }
+
+// Mirrors `core::sound::pack::SoundPack` and `core::sound::cue::SoundCue`.
+// The runtime clamps unknown pack ids back to the default, so a stale entry
+// here degrades to the default voice rather than to silence.
+const SOUND_PACKS = [
+  { id: "timber", label: "Timber — warm mallet" },
+  { id: "glass", label: "Glass — soft bell" },
+  { id: "air", label: "Air — breath" },
+  { id: "tap", label: "Tap — short and dry" },
+] as const;
+
+const SOUND_CUES = [
+  { id: "startup", label: "Startup" },
+  { id: "listen", label: "Listen" },
+  { id: "handoff", label: "Handoff" },
+  { id: "done", label: "Done" },
+  { id: "abort", label: "Abort" },
+  { id: "error", label: "Error" },
+] as const;
 
 const tierTone: Record<string, StatusTone> = {
   tier1: "success",
@@ -135,8 +163,8 @@ export function InsertRecoveryArea({ config, onChange }: Props) {
     ? "Clipboard only keeps the transcript ready for manual paste and never sends a paste shortcut into the active app."
     : "Direct insert copies the transcript, pastes it at the cursor and restores your previous clipboard afterwards.";
   const soundSummary = config.play_sounds
-    ? "Native sound cues are on for start, stop, abort and runtime errors."
-    : "Native sound cues are off.";
+    ? "Listen when capture starts, handoff when it stops, done when the text landed, plus abort and error."
+    : "Native sound cues are off. Preview still works.";
   const deliveryDriverSummary = platform
     ? `${insertPreflightLabel}: ${platform.readiness_message} Current driver: ${activeDriverLabel}. ${platform.platform_label} reports ${driverChainSummary}.`
     : "WordScript is checking the current native insert chain.";
@@ -299,6 +327,7 @@ export function InsertRecoveryArea({ config, onChange }: Props) {
           label="Native insert chain"
           hint={deliveryDriverSummary}
           align="start"
+          divider={Boolean(portalDiagnosticSummary)}
           control={
             <StatusBadge tone={platform?.readiness === "ready" ? "success" : "warning"} dot>
               {activeDriverLabel}
@@ -311,19 +340,96 @@ export function InsertRecoveryArea({ config, onChange }: Props) {
             hint={portalDiagnosticSummary}
             hintTone="danger"
             align="start"
+            divider={false}
           />
         )}
+      </FormCard>
+
+      <FormCard
+        title="Sound"
+        description="Audio cues report what the runtime is actually doing: listening, handing off to the pipeline, and confirming that text landed."
+      >
         <FormRow
-          label="Play sound feedback for start, stop, abort and errors"
+          label="Play sound cues"
           hint={soundSummary}
           htmlFor="play-sounds-toggle"
-          divider={false}
           control={
             <Toggle
               id="play-sounds-toggle"
               checked={config.play_sounds}
               onCheckedChange={(checked) => onChange({ play_sounds: checked })}
             />
+          }
+        />
+        <FormRow
+          label="Play the signature at launch"
+          hint="The full G-major theme, once when WordScript starts. The operational cues are fragments of it."
+          htmlFor="startup-sound-toggle"
+          control={
+            <Toggle
+              id="startup-sound-toggle"
+              checked={config.play_startup_sound}
+              disabled={!config.play_sounds}
+              onCheckedChange={(checked) => onChange({ play_startup_sound: checked })}
+            />
+          }
+        />
+        <FormRow
+          label="Sound pack"
+          hint="All packs play the same motif, so cues stay recognisable across packs."
+          htmlFor="sound-pack-select"
+          control={
+            <Select
+              id="sound-pack-select"
+              value={config.sound_pack}
+              onChange={(event) => onChange({ sound_pack: event.target.value })}
+            >
+              {SOUND_PACKS.map((pack) => (
+                <option key={pack.id} value={pack.id}>
+                  {pack.label}
+                </option>
+              ))}
+            </Select>
+          }
+        />
+        <FormRow
+          label="Cue volume"
+          hint="How loud the cues are within WordScript. How loud WordScript is against other apps stays yours to set in the system mixer, where it appears as its own entry — the two are deliberately separate, the same way Discord, Slack or Spotify handle it."
+          htmlFor="sound-volume-slider"
+          control={
+            <VolumeSlider
+              id="sound-volume-slider"
+              value={config.sound_volume}
+              onChange={(value) => onChange({ sound_volume: value })}
+            />
+          }
+        />
+        <FormRow
+          label="Preview"
+          hint="Plays through the native runtime, so this is exactly what you will hear in use — also while cues are switched off."
+          layout="stacked"
+          divider={false}
+          control={
+            <div className="flex flex-wrap gap-1.5">
+              {SOUND_CUES.map((cue) => (
+                <Button
+                  key={cue.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void invoke("preview_sound_cue", {
+                      cue: cue.id,
+                      pack: config.sound_pack,
+                      volume: config.sound_volume,
+                    }).catch(() => undefined);
+                  }}
+                >
+                  <Play className="size-3" />
+                  {cue.label}
+                </Button>
+              ))}
+            </div>
           }
         />
       </FormCard>

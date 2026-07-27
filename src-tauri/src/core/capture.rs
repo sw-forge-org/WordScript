@@ -32,6 +32,95 @@ const MIN_SILENCE_AUTOSTOP_SECONDS: u64 = 1;
 const WAVEFORM_BUCKET_COUNT: usize = 19;
 const TRANSCRIPTION_SAMPLE_RATE: u32 = 16_000;
 const TRANSCRIPTION_CHANNELS: u16 = 1;
+/// Below this the signal is indistinguishable from a muted or wrong device.
+const SILENT_PEAK_THRESHOLD: f32 = 0.001;
+/// A sample this close to full scale has lost its peak to the converter.
+const CLIPPING_SAMPLE_THRESHOLD: f32 = 0.99;
+/// Sustained clipping, not the occasional transient.
+const CLIPPING_RATIO_THRESHOLD: f32 = 0.005;
+
+/// What the measured input level says about the microphone setup.
+///
+/// This is diagnosis only. WordScript never writes the operating system's
+/// input volume: that setting is per device, not per application, so changing
+/// it would silently re-level every other app using the same microphone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputLevelVerdict {
+    /// Usable signal.
+    Ok,
+    /// Signal present, but never loud enough to count as speech.
+    TooQuiet,
+    /// Effectively nothing arrived.
+    Silent,
+    /// Sustained full-scale samples; the recording is distorted.
+    Clipping,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct InputLevelSummary {
+    pub peak: f32,
+    pub peak_dbfs: f32,
+    pub clipped_ratio: f32,
+    pub verdict: InputLevelVerdict,
+    /// The threshold speech detection had to clear, so the UI can state the
+    /// measurement against the bar it failed.
+    pub voice_threshold_dbfs: f32,
+}
+
+impl InputLevelSummary {
+    fn new(peak: f32, clipped_samples: u64, total_samples: u64) -> Self {
+        let clipped_ratio = if total_samples == 0 {
+            0.0
+        } else {
+            clipped_samples as f32 / total_samples as f32
+        };
+        let verdict = if clipped_ratio > CLIPPING_RATIO_THRESHOLD {
+            InputLevelVerdict::Clipping
+        } else if peak < SILENT_PEAK_THRESHOLD {
+            InputLevelVerdict::Silent
+        } else if peak <= DEFAULT_VOICE_THRESHOLD {
+            InputLevelVerdict::TooQuiet
+        } else {
+            InputLevelVerdict::Ok
+        };
+
+        Self {
+            peak,
+            peak_dbfs: to_dbfs(peak),
+            clipped_ratio,
+            verdict,
+            voice_threshold_dbfs: to_dbfs(DEFAULT_VOICE_THRESHOLD),
+        }
+    }
+
+    /// A sentence naming the measurement and the next concrete step. The user
+    /// otherwise only sees that the recording vanished.
+    pub fn message(&self) -> String {
+        match self.verdict {
+            InputLevelVerdict::Silent => format!(
+                "No microphone signal arrived (peak {:.0} dBFS). Check that the right input device is selected and not muted.",
+                self.peak_dbfs
+            ),
+            InputLevelVerdict::TooQuiet => format!(
+                "No speech detected. The loudest moment reached {:.0} dBFS, below the {:.0} dBFS needed to register as speech. Raise the input level for this microphone in your system sound settings.",
+                self.peak_dbfs, self.voice_threshold_dbfs
+            ),
+            InputLevelVerdict::Clipping => format!(
+                "The input is clipping ({:.0}% of samples at full scale), which distorts the recording. Lower the input level for this microphone in your system sound settings.",
+                self.clipped_ratio * 100.0
+            ),
+            InputLevelVerdict::Ok => "No speech detected in recording.".to_string(),
+        }
+    }
+}
+
+fn to_dbfs(amplitude: f32) -> f32 {
+    if amplitude <= 0.0 {
+        return -120.0;
+    }
+    (20.0 * amplitude.log10()).max(-120.0)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeCaptureConfig {
@@ -220,6 +309,9 @@ struct SharedCaptureData {
     paused_at: Option<Instant>,
     accumulated_paused: Duration,
     has_voice_activity: bool,
+    peak_observed: f32,
+    clipped_samples: u64,
+    measured_samples: u64,
     samples: Vec<i16>,
     max_samples: usize,
     rebuild_in_progress: bool,
@@ -502,6 +594,9 @@ pub fn start_native_capture<R: Runtime + 'static>(
         paused_at: None,
         accumulated_paused: Duration::ZERO,
         has_voice_activity: false,
+        peak_observed: 0.0,
+        clipped_samples: 0,
+        measured_samples: 0,
         samples: Vec::new(),
         max_samples,
         rebuild_in_progress: false,
@@ -537,9 +632,14 @@ pub fn start_native_capture<R: Runtime + 'static>(
     Ok(state.status())
 }
 
-pub fn stop_native_capture<R: Runtime>(
-    app: &AppHandle<R>,
-) -> Result<Option<serde_json::Value>, String> {
+/// Why a capture ended, so the caller can explain an empty result instead of
+/// only reporting that one happened.
+pub enum CaptureOutcome {
+    Ready(serde_json::Value),
+    Empty(InputLevelSummary),
+}
+
+pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutcome, String> {
     let state = app
         .try_state::<Mutex<NativeCaptureState>>()
         .ok_or_else(|| "Native capture state is not available.".to_string())?;
@@ -552,14 +652,35 @@ pub fn stop_native_capture<R: Runtime>(
         let _ = active.stream.pause();
     }
 
-    let (has_voice_activity, samples) = active
+    let (has_voice_activity, samples, level) = active
         .shared
         .lock()
         .map_err(|error| error.to_string())
-        .map(|shared| (shared.has_voice_activity, shared.samples.clone()))?;
+        .map(|shared| {
+            (
+                shared.has_voice_activity,
+                shared.samples.clone(),
+                InputLevelSummary::new(
+                    shared.peak_observed,
+                    shared.clipped_samples,
+                    shared.measured_samples,
+                ),
+            )
+        })?;
 
     if samples.is_empty() || !has_voice_activity {
-        return Ok(None);
+        runtime_log::record(format!(
+            "[WordScript] Capture discarded as empty peak_dbfs={:.1} verdict={:?} clipped_ratio={:.4}",
+            level.peak_dbfs, level.verdict, level.clipped_ratio,
+        ));
+        return Ok(CaptureOutcome::Empty(level));
+    }
+
+    if level.verdict == InputLevelVerdict::Clipping {
+        runtime_log::record(format!(
+            "[WordScript] Capture input clipping clipped_ratio={:.4} peak_dbfs={:.1}",
+            level.clipped_ratio, level.peak_dbfs,
+        ));
     }
 
     let audio_path = write_capture_wav(
@@ -572,8 +693,9 @@ pub fn stop_native_capture<R: Runtime>(
     let audio_duration_seconds =
         capture_duration_seconds(samples.len(), active.sample_rate, active.channels);
 
-    Ok(Some(serde_json::json!({
+    Ok(CaptureOutcome::Ready(serde_json::json!({
         "event": "audio_ready",
+        "input_level": level,
         "audio_path": audio_path.to_string_lossy(),
         "audio_duration_seconds": audio_duration_seconds,
         "provider": active.config.provider,
@@ -590,6 +712,7 @@ pub fn stop_native_capture<R: Runtime>(
         "professionalize": active.config.professionalize
     })))
 }
+
 
 pub fn abort_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let state = app
@@ -961,6 +1084,18 @@ fn process_samples<R: Runtime>(
             }
         }
 
+        // Level statistics for the whole capture, so an empty result can name
+        // its own cause instead of just reporting that nothing was heard.
+        if !muted && !paused {
+            for sample in &normalized_samples {
+                if sample.abs() >= CLIPPING_SAMPLE_THRESHOLD {
+                    shared.clipped_samples += 1;
+                }
+            }
+            shared.measured_samples += normalized_samples.len() as u64;
+            shared.peak_observed = shared.peak_observed.max(peak);
+        }
+
         if !normalized_samples.is_empty() && !paused {
             rms = (rms / normalized_samples.len() as f32).sqrt();
             waveform = waveform_buckets(&normalized_samples).to_vec();
@@ -1224,6 +1359,73 @@ mod tests {
     }
 
     #[test]
+    fn a_peak_below_the_voice_threshold_is_reported_as_too_quiet() {
+        // This is the case that used to vanish: the capture is discarded and
+        // the user is told nothing, so a microphone at a low input level looks
+        // exactly like a broken app.
+        let summary = InputLevelSummary::new(0.01, 0, 48_000);
+        assert_eq!(summary.verdict, InputLevelVerdict::TooQuiet);
+        assert!(summary.peak_dbfs < summary.voice_threshold_dbfs);
+        assert!(summary.message().contains("dBFS"));
+        assert!(summary.message().contains("input level"));
+    }
+
+    #[test]
+    fn a_dead_input_is_reported_as_silent_not_merely_quiet() {
+        let summary = InputLevelSummary::new(0.0, 0, 48_000);
+        assert_eq!(summary.verdict, InputLevelVerdict::Silent);
+        assert_eq!(summary.peak_dbfs, -120.0);
+        assert!(summary.message().contains("muted"));
+    }
+
+    #[test]
+    fn sustained_full_scale_samples_are_reported_as_clipping() {
+        let summary = InputLevelSummary::new(1.0, 1_000, 48_000);
+        assert_eq!(summary.verdict, InputLevelVerdict::Clipping);
+        assert!(summary.message().contains("clipping"));
+    }
+
+    #[test]
+    fn an_occasional_transient_is_not_clipping() {
+        // A handful of full-scale samples in a long capture is a transient,
+        // not a badly set input level. Flagging it would train the user to
+        // ignore the warning.
+        let summary = InputLevelSummary::new(1.0, 10, 48_000);
+        assert_eq!(summary.verdict, InputLevelVerdict::Ok);
+    }
+
+    #[test]
+    fn a_healthy_speech_peak_is_reported_as_ok() {
+        let summary = InputLevelSummary::new(0.4, 0, 48_000);
+        assert_eq!(summary.verdict, InputLevelVerdict::Ok);
+        assert!(summary.peak_dbfs > summary.voice_threshold_dbfs);
+    }
+
+    #[test]
+    fn clipping_outranks_a_quiet_peak() {
+        // Both cannot be acted on at once; the distorting one is the problem
+        // worth naming.
+        let summary = InputLevelSummary::new(0.005, 5_000, 48_000);
+        assert_eq!(summary.verdict, InputLevelVerdict::Clipping);
+    }
+
+    #[test]
+    fn an_empty_measurement_does_not_divide_by_zero() {
+        let summary = InputLevelSummary::new(0.0, 0, 0);
+        assert_eq!(summary.clipped_ratio, 0.0);
+        assert_eq!(summary.verdict, InputLevelVerdict::Silent);
+    }
+
+    #[test]
+    fn dbfs_conversion_matches_known_reference_points() {
+        assert!((to_dbfs(1.0) - 0.0).abs() < 0.001);
+        assert!((to_dbfs(0.5) + 6.02).abs() < 0.01);
+        assert!((to_dbfs(0.1) + 20.0).abs() < 0.01);
+        assert_eq!(to_dbfs(0.0), -120.0);
+        assert_eq!(to_dbfs(-1.0), -120.0);
+    }
+
+    #[test]
     fn builds_waveform_buckets_from_real_sample_amplitudes() {
         let samples = [
             0.0, 0.5, -1.0, 0.25, 0.75, -0.25, 0.0, 1.0, -0.5, 0.25, 0.0, 0.0, 0.25, 0.5, 0.75,
@@ -1289,6 +1491,9 @@ mod tests {
             paused_at: None,
             accumulated_paused: Duration::ZERO,
             has_voice_activity: true,
+            peak_observed: 0.0,
+            clipped_samples: 0,
+            measured_samples: 0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
@@ -1317,6 +1522,9 @@ mod tests {
             paused_at: None,
             accumulated_paused: Duration::ZERO,
             has_voice_activity: true,
+            peak_observed: 0.0,
+            clipped_samples: 0,
+            measured_samples: 0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
@@ -1345,6 +1553,9 @@ mod tests {
             paused_at: Some(Instant::now() - Duration::from_secs(6)),
             accumulated_paused: Duration::ZERO,
             has_voice_activity: true,
+            peak_observed: 0.0,
+            clipped_samples: 0,
+            measured_samples: 0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
@@ -1435,6 +1646,9 @@ mod tests {
             paused_at: None,
             accumulated_paused: Duration::ZERO,
             has_voice_activity: true,
+            peak_observed: 0.0,
+            clipped_samples: 0,
+            measured_samples: 0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
@@ -1463,6 +1677,9 @@ mod tests {
             paused_at: Some(Instant::now()),
             accumulated_paused: Duration::ZERO,
             has_voice_activity: false,
+            peak_observed: 0.0,
+            clipped_samples: 0,
+            measured_samples: 0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
@@ -1487,6 +1704,9 @@ mod tests {
             paused_at: None,
             accumulated_paused: Duration::ZERO,
             has_voice_activity: false,
+            peak_observed: 0.0,
+            clipped_samples: 0,
+            measured_samples: 0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,

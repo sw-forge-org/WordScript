@@ -33,6 +33,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A complete audio-feedback rework (ADR 0010). Cues are synthesised from one
+  G-major theme: a startup signature (G3 -> D4 -> G4) that every operational
+  cue quotes a fragment of. New `Done` cue on a successful insert — the first
+  audible confirmation that a round trip actually finished. Four selectable
+  timbre packs (`timber`, `glass`, `air`, `tap`), a volume slider, a startup
+  toggle and per-cue preview buttons in Settings. New config:
+  `sound_volume`, `sound_pack`, `play_startup_sound`; new command
+  `preview_sound_cue`.
+- `cargo run --example audition_cues -- --out DIR [--sequence]` renders every
+  pack and cue to WAV so the sound can be judged by ear without building the
+  app.
+- WordScript now names itself in the system volume mixer on Linux
+  (`application.name=WordScript` via `PIPEWIRE_PROPS`/`PULSE_PROP`) instead of
+  appearing twice as "PipeWire ALSA [wordscript]" — once for the sound cues and
+  once for the microphone. PipeWire keys the remembered per-application volume
+  on that name, so the system-mixer setting is now both findable and durable.
+  Windows already names packaged builds from `productName`, and macOS has no
+  per-application mixer to name.
+- Microphone input-level diagnosis. A capture whose loudest moment never
+  crosses the speech threshold used to be discarded in silence, so a microphone
+  set too quietly was indistinguishable from a broken app. The runtime now
+  measures peak and clipping across every capture and reports the verdict
+  (`ok`, `too_quiet`, `silent`, `clipping`) with the measurement in dBFS and
+  the next concrete step. Settings gained a live input meter with the speech
+  threshold drawn in, under the microphone selector. Read-only throughout:
+  WordScript never writes the OS input volume, which is per device rather than
+  per application and shared with every other app on that microphone.
 - A single Rust-owned shortcut contract (`core::shortcut`, ADR 0006) covering
   the token vocabulary, canonical storage form, human display strings and every
   validity rule. The UI no longer carries a key table: it reads the vocabulary
@@ -122,6 +149,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Sound cues no longer open a fresh output device per cue. One stream, owned by
+  a dedicated thread, is opened at startup and primed with silence, so cues no
+  longer contend with the microphone device and are rendered at the real device
+  sample rate instead of being resampled at playback time.
+- `SoundCue::Start`/`Stop` became `Listen`/`Handoff`. `Handoff` fires when
+  capture stops and is deliberately unresolved: at that point the pipeline is
+  still running, so the old conclusive-sounding tone asserted a completion that
+  had not happened.
 - Documentation was audited against the active Rust, React, Tauri, workflow
   and packaging code. The spec now names the registered session commands,
   distinguishes Tauri channels from payload discriminators and internal UI
@@ -215,6 +250,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Sound cues were sometimes swallowed entirely, started chopped, or fired
+  twice. The per-cue device open could fail silently, the device was played
+  before it had warmed up, and rapid cue chains overlapped acoustically. A
+  failed abort also played `Abort` and then `Error` for one action; it now
+  reports only the error.
 - A per-mode hotkey now confirms itself on screen. The direct jump set the mode
   in the runtime but revealed nothing, so `Ctrl+1`-`Ctrl+6` looked dead while
   the mode had in fact changed. The overlay opens on the mode-select surface

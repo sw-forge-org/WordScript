@@ -55,3 +55,7 @@ Status: Proposed | Accepted | Superseded by NNNN
   modifier-only shortcut is observed through the raw key stream instead of
   grabbed, so the modifier keeps working for everyone else; a shortcut with a real
   key is still grabbed.
+- [0010](0010-audio-cues-are-a-synthesised-motif-on-one-persistent-stream.md):
+  audio cues are synthesised from one G-major theme -- a startup signature the
+  operational cues quote fragments of -- and play on a single persistent output
+  stream instead of a device opened per cue.

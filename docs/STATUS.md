@@ -134,7 +134,10 @@ Status: 2026-07-25
 - input preflight for the first dictation with trigger and microphone status
   from native truth; insert and recovery status live in the Insert &
   Recovery area
-- native sound cues for startup, start, stop, abort and errors
+- native sound cues: a startup signature plus listen, handoff, done, abort and
+  error, with four selectable timbre packs, a volume slider and per-cue preview
+- microphone input-level diagnosis: an empty capture names its own cause with
+  the measured peak in dBFS, plus a live input meter in Settings
 - buffered runtime logs in diagnostics
 - native release status check for the About area with an honest
   GitHub-release signal

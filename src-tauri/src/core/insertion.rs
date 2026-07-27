@@ -612,6 +612,10 @@ pub fn insert_transcription_from_legacy<R: Runtime>(
     ));
     if result.error.is_some() {
         super::sound::play_if_enabled(super::sound::SoundCue::Error);
+    } else {
+        // The only cue that reports a finished round trip. Everything before
+        // this point is still work in progress.
+        super::sound::play_if_enabled(super::sound::SoundCue::Done);
     }
 
     Ok(result)

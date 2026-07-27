@@ -47,6 +47,37 @@ fn main() {
             } else {
                 std::env::remove_var("WEBKIT_DISABLE_COMPOSITING_MODE");
             }
+
+            // How WordScript identifies itself in the system volume mixer.
+            // cpal goes through the ALSA compatibility layer, which otherwise
+            // names both streams after the binary ("PipeWire ALSA [wordscript]")
+            // — the playback stream carrying the sound cues and the capture
+            // stream carrying the microphone.
+            //
+            // The name matters beyond cosmetics: PipeWire keys the remembered
+            // per-application volume on it (`module-stream-restore.id =
+            // sink-input-by-application-name:...`), so a stable, readable name
+            // is what makes that setting findable and durable.
+            //
+            // Deliberately only `application.name` and the icon. These
+            // variables apply to the whole process, so a stream-specific
+            // property such as `media.role=event` would also be stamped onto
+            // the microphone capture, where PulseAudio would then apply
+            // notification-sound routing and ducking rules to it.
+            //
+            // Must be set before any audio device is opened.
+            if std::env::var_os("PIPEWIRE_PROPS").is_none() {
+                std::env::set_var(
+                    "PIPEWIRE_PROPS",
+                    r#"{application.name="WordScript" application.icon_name="wordscript"}"#,
+                );
+            }
+            if std::env::var_os("PULSE_PROP").is_none() {
+                std::env::set_var(
+                    "PULSE_PROP",
+                    "application.name=WordScript application.icon_name=wordscript",
+                );
+            }
         }
     }
 
