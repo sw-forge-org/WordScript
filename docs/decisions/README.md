@@ -59,3 +59,10 @@ Status: Proposed | Accepted | Superseded by NNNN
   audio cues are synthesised from one G-major theme -- a startup signature the
   operational cues quote fragments of -- and play on a single persistent output
   stream instead of a device opened per cue.
+- [0011](0011-one-decision-surface-per-delivery-mode.md): each delivery mode has
+  exactly one surface on which the user decides -- `clipboard_only` before
+  delivery, `auto_paste` after it -- and the overlay derives it from runtime
+  state set in one reducer commit instead of per-mode bridge predicates.
+- [0012](0012-cues-are-anchored-to-the-delivery-point.md): audio cues are emitted
+  by the session lifecycle next to the event that tells the UI the same thing,
+  not from inside the insert helper.

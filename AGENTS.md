@@ -34,9 +34,10 @@ voice tools.
 - Mode: **Lean** -- a single consolidated spec lives at `docs/spec/SPEC.md`.
   The living overview docs (`docs/ARCHITECTURE.md`, `docs/VISION.md`,
   `docs/REFERENCE.md`, `docs/STATUS.md`) expand on it but do not replace it.
-- Current state: Spec created 2026-07-24; last drift check 2026-07-27 (audio
-  feedback rework merged: `core::sound` as a synthesised cue motif on one
-  persistent output stream, ADR 0010).
+- Current state: Spec created 2026-07-24; last drift check 2026-07-27 (delivery
+  mode rework merged: one decision surface per delivery mode with the overlay
+  surface derived from one reducer commit, ADR 0011; audio cues anchored to the
+  delivery point in the session lifecycle, ADR 0012).
 - Decisions: see `docs/decisions/` (append-only ADRs).
 - Drift check/sync: the `spec-sync` skill (global, see dotfiles -- not
   duplicated in this repo).

@@ -35,6 +35,8 @@ const initial: RuntimeState = {
   lastResult: null,
   error: null,
   recordingStartMs: null,
+  previewStaged: false,
+  resultSurfaceOpen: false,
 };
 
 function buildRuntimeTranscriptionResult(
@@ -77,11 +79,20 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         lastResult: null,
         error: null,
         recordingStartMs: Date.now(),
+        previewStaged: false,
+        resultSurfaceOpen: false,
       };
     case "RECORDING_STOPPED":
       return { ...state, paused: false, recordingStartMs: null };
     case "PROCESSING":
-      return { ...state, status: "processing", paused: false, pendingResult: null };
+      return {
+        ...state,
+        status: "processing",
+        paused: false,
+        pendingResult: null,
+        previewStaged: false,
+        resultSurfaceOpen: false,
+      };
     case "PREVIEW_READY":
       return {
         ...state,
@@ -89,6 +100,8 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         paused: false,
         pendingResult: action.result,
         error: null,
+        previewStaged: true,
+        resultSurfaceOpen: false,
       };
     case "TRANSCRIPTION":
       {
@@ -109,6 +122,28 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
           lastTranscription: mergedResult.final_text,
           pendingResult: null,
           lastResult: mergedResult,
+          // Atomic with `status: "idle"`, the same guarantee RECORDING_STARTED
+          // gives on the way in. The overlay's result surface is therefore
+          // visible in the very commit the session ends — there is no render
+          // where the session is over but no surface has taken over, and hence
+          // no bridge predicate is needed to carry the pill across one.
+          //
+          // One decision surface per delivery mode: a session that staged a
+          // processing preview (clipboard_only) already had the user's decision
+          // there and closes without a second surface. Everything else — the
+          // auto_paste pipeline, a history retry — never had a decision surface
+          // and gets the result one.
+          //
+          // `previewStaged` rather than `pendingResult`: the native-channel sync
+          // clears `pendingResult` and can arrive BEFORE this authoritative
+          // event, which would read as "no preview" and flash a result surface
+          // on a clipboard_only commit (the "eckiger 06b-State" regression).
+          //
+          // Deliberately NOT keyed on `delivery`: an auto_paste run whose paste
+          // fell back to the clipboard also reports `delivery: "clipboard"`, and
+          // that is exactly the case where the user needs the result surface to
+          // retry the insert.
+          resultSurfaceOpen: !state.previewStaged,
         };
       }
     case "NATIVE_TRANSCRIPTION_SYNC":
@@ -118,16 +153,16 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         // shortly before (or after) the authoritative wordscript-event
         // transcription. Treating it as a separate TRANSCRIPTION dispatch would
         // set lastResult with a fresh occurred_at_ms and fire the OverlayWindow
-        // lastResult-Effect a second time for the same commit — the one-shot
-        // suppressNextResultActionsRef would be consumed by whichever dispatch
-        // arrived first, and the second would slip through, showing an
-        // unwanted result-actions pill on a clipboard_only commit (the
-        // "eckiger 06b-State" regression). Instead, only update status +
+        // lastResult-Effect a second time for the same commit, and it would
+        // open a result surface on a clipboard_only commit (the "eckiger
+        // 06b-State" regression). Instead, only update status +
         // lastTranscription and clear pendingResult here; the authoritative
-        // wordscript-event transcription owns lastResult and the surface
-        // decision. Clearing pendingResult is safe: the native-event arrives
-        // only after the session has completed, so the preview is no longer
-        // valid.
+        // wordscript-event transcription owns lastResult, `resultSurfaceOpen`
+        // and therefore the surface decision. Clearing pendingResult is safe:
+        // the native-event arrives only after the session has completed, so the
+        // preview is no longer valid — and `previewStaged` deliberately stays,
+        // because it is what tells the authoritative event that this session
+        // already had its decision surface.
         return {
           ...state,
           status: "idle",
@@ -137,13 +172,29 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         };
       }
     case "EMPTY":
-      return { ...state, status: "idle", paused: false, pendingResult: null, lastResult: null };
+      return {
+        ...state,
+        status: "idle",
+        paused: false,
+        pendingResult: null,
+        lastResult: null,
+        previewStaged: false,
+        resultSurfaceOpen: false,
+      };
     case "MUTED":
       return { ...state, muted: action.muted };
     case "PAUSED":
       return { ...state, paused: action.paused };
     case "ERROR":
-      return { ...state, status: "idle", paused: false, pendingResult: null, error: action.message };
+      return {
+        ...state,
+        status: "idle",
+        paused: false,
+        pendingResult: null,
+        error: action.message,
+        previewStaged: false,
+        resultSurfaceOpen: false,
+      };
     default:
       return state;
   }

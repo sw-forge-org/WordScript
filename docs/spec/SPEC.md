@@ -30,8 +30,13 @@ Rust core
 Three windows:
 
 - `overlay`: transparent compact stage. Recording/processing/result/error
-  states share one fixed-size pill. `clipboard_only` profiles stop on a real
-  processing preview before commit. Idle is parked offscreen natively.
+  states share one fixed-size pill. Each delivery mode has exactly one decision
+  surface (ADR 0011): `clipboard_only` stops on a real processing preview
+  (Copy / Edit / Abort) before delivery and closes after the commit;
+  `auto_paste` delivers first and then shows the result surface
+  (Copy / Edit / Dismiss). Which surface is shown follows from runtime state set
+  in one reducer commit, not from per-mode predicates. Idle is parked offscreen
+  natively.
 - `settings`: native-decorated shell. Grouped 232px sidebar (profile dock +
   areas), compact toolbar, one dominant content surface, immediate auto-save
   and a footer status bar.
@@ -73,7 +78,8 @@ Rust core modules in `src-tauri/src/core/`:
 - `resolve_current_processing_mode` (effective mode source of truth)
 - `switch_active_text_profile`, `set_active_profile_processing_mode`
 - `acknowledge_profile_health_flag`, `unacknowledge_profile_health_flag`
-- `commit_pending_transcription_preview` (clipboard_only commit)
+- `commit_pending_transcription_preview` (clipboard_only commit; optional
+  `text` replaces the preview text for an overlay edit before delivery)
 - `native_insertion_status` (platform support contract)
 - `check_app_update` (restricted to published GitHub releases)
 
@@ -84,7 +90,9 @@ Tauri event channels and their payload discriminators are separate contracts:
 - `wordscript-event` carries the typed `BackendEvent` union. Its
   `preview_ready` payload is emitted only for
   `insert_behavior == "clipboard_only"`; `transcription` is the authoritative
-  completed result and owns `lastResult`.
+  completed result and owns `lastResult`. Every `transcription` payload carries
+  `delivery` (`inserted` | `clipboard`, from `NativeInsertMode::delivery_label`)
+  so the UI never has to infer what happened to the text.
 - `wordscript-native-event` carries native session-status snapshots with
   payload event names such as `recording_started`, `recording_stopped`,
   `processing`, `transcription`, `transcription_corrected`, `empty`, `aborted`
@@ -193,9 +201,13 @@ no account. Entities:
 
 Same as dictation through step 7, but `insert_behavior == "clipboard_only"`
 emits the `preview_ready` payload on `wordscript-event` and stays in
-`processing` on a real preview. The user commits via
-`commit_pending_transcription_preview`, which runs the same native
-insert/history/session path (no frontend-only commit layer).
+`processing` on a real preview. The user commits, edits or aborts there. Commit
+and edit-confirm both go through `commit_pending_transcription_preview`, which
+runs the same native insert/history/session path (no frontend-only commit
+layer); the edit passes the corrected text as its optional `text` argument, so
+session completion, history and the insert result all describe the text that was
+actually delivered. The overlay closes after the commit -- this mode has no
+result surface (ADR 0011).
 
 ## Known Deviations / Open Questions
 

@@ -234,5 +234,111 @@ describe("useRuntime", () => {
     expect(result.current.state.status).toBe("idle");
     expect(result.current.state.lastResult?.raw_text).toBe("ähm wir shippen das morgen");
     expect(result.current.state.lastResult?.transform?.applied_rules).toEqual(["removed_fillers"]);
+    // One decision surface per delivery mode: this session decided on the
+    // processing preview, so no result surface follows. `previewStaged` carries
+    // that across the native sync, which already cleared `pendingResult`.
+    expect(result.current.state.previewStaged).toBe(true);
+    expect(result.current.state.resultSurfaceOpen).toBe(false);
+  });
+
+  it("opens the result surface atomically with idle when no preview was staged", async () => {
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.config?.active_text_profile_id).toBe("support"));
+
+    await act(async () => {
+      emit("wordscript-event", { event: "processing" });
+    });
+
+    expect(result.current.state.resultSurfaceOpen).toBe(false);
+
+    await act(async () => {
+      emit("wordscript-event", {
+        event: "transcription",
+        text: "Wir shippen das morgen.",
+        corrected: true,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "ähm wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "auto_paste",
+          recovery_behavior: "standard",
+        },
+        transform: { applied_rules: [], warning: null },
+        delivery: "inserted",
+      });
+    });
+
+    // status and surface flip in the SAME commit — the overlay never sees a
+    // render where the session has ended but no surface has taken over. That
+    // render was the only reason the old `bridgeResultFromStop` predicate
+    // existed, and it only ever occurred on this (auto_paste) path.
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.state.previewStaged).toBe(false);
+    expect(result.current.state.resultSurfaceOpen).toBe(true);
+  });
+
+  it("opens the result surface when an auto_paste run falls back to the clipboard", async () => {
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.config?.active_text_profile_id).toBe("support"));
+
+    await act(async () => {
+      emit("wordscript-event", { event: "processing" });
+      emit("wordscript-event", {
+        event: "transcription",
+        text: "Wir shippen das morgen.",
+        corrected: false,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "auto_paste",
+          recovery_behavior: "standard",
+        },
+        transform: { applied_rules: [], warning: null },
+        // The paste failed and the text only reached the clipboard. This is
+        // exactly the case where the user needs the result surface to retry,
+        // so the decision must not be keyed on `delivery`.
+        delivery: "clipboard",
+      });
+    });
+
+    expect(result.current.state.resultSurfaceOpen).toBe(true);
+  });
+
+  it("closes the result surface again when the next session starts", async () => {
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.config?.active_text_profile_id).toBe("support"));
+
+    await act(async () => {
+      emit("wordscript-event", { event: "processing" });
+      emit("wordscript-event", {
+        event: "transcription",
+        text: "Wir shippen das morgen.",
+        corrected: false,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "auto_paste",
+          recovery_behavior: "standard",
+        },
+        transform: { applied_rules: [], warning: null },
+        delivery: "inserted",
+      });
+    });
+
+    expect(result.current.state.resultSurfaceOpen).toBe(true);
+
+    await act(async () => {
+      emit("wordscript-event", { event: "recording_started" });
+    });
+
+    expect(result.current.state.resultSurfaceOpen).toBe(false);
   });
 });

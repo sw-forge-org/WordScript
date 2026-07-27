@@ -188,6 +188,24 @@ pub enum NativeInsertMode {
     ScratchpadFallback,
 }
 
+impl NativeInsertMode {
+    /// What the runtime actually did with the text, as the overlay contract
+    /// spells it (`RuntimeTranscriptionResult.delivery` in `src/types/ipc.ts`).
+    /// Only a real paste counts as `inserted`; every fallback leaves the text
+    /// on the clipboard and nowhere else. The overlay derives its surface from
+    /// this, so it must be emitted on EVERY `transcription` event — a missing
+    /// field would read as "not inserted" and open a result surface for a
+    /// delivery path that already closed.
+    pub fn delivery_label(&self) -> &'static str {
+        match self {
+            NativeInsertMode::DirectPaste => "inserted",
+            NativeInsertMode::ClipboardOnly
+            | NativeInsertMode::ClipboardFallback
+            | NativeInsertMode::ScratchpadFallback => "clipboard",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeInsertRecoveryAction {
@@ -610,14 +628,13 @@ pub fn insert_transcription_from_legacy<R: Runtime>(
         insert_emit_started_at.elapsed().as_millis(),
         started_at.elapsed().as_millis(),
     ));
-    if result.error.is_some() {
-        super::sound::play_if_enabled(super::sound::SoundCue::Error);
-    } else {
-        // The only cue that reports a finished round trip. Everything before
-        // this point is still work in progress.
-        super::sound::play_if_enabled(super::sound::SoundCue::Done);
-    }
-
+    // No cue is played here. This helper is called from three flows that reach
+    // "finished" at three different moments, and it runs BEFORE each caller's
+    // staleness gate — so a cue emitted here announced a delivery that the
+    // session might still discard, and on the auto_paste path it sounded
+    // before the result surface appeared (sound ahead of picture). The cues
+    // belong to the session lifecycle, next to the event that tells the UI the
+    // same thing; see ADR 0012.
     Ok(result)
 }
 
@@ -1904,6 +1921,26 @@ fn save_scratchpad_entries(entries: &[ScratchpadEntry]) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn only_a_real_paste_reports_inserted_delivery() {
+        assert_eq!(
+            NativeInsertMode::DirectPaste.delivery_label(),
+            "inserted",
+            "a completed paste is the only delivery that reached the cursor"
+        );
+        for mode in [
+            NativeInsertMode::ClipboardOnly,
+            NativeInsertMode::ClipboardFallback,
+            NativeInsertMode::ScratchpadFallback,
+        ] {
+            assert_eq!(
+                mode.delivery_label(),
+                "clipboard",
+                "{mode:?} left the text on the clipboard, not at the cursor"
+            );
+        }
+    }
 
     struct FakeInsertIo {
         clipboard_results: HashMap<NativeInsertDriver, Result<(), String>>,

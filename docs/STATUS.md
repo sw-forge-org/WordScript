@@ -104,11 +104,12 @@ Status: 2026-07-25
 - `prompt_enhance` mode with `enhance`/`expand` sub-mode and `PromptTarget`
   (system/developer/user) plus a guardrail chain (empty, prompt_executes,
   language_mismatch, length_budget, semantic_drift)
-- compact live overlay stage with native `copy`/`retry`/`restore`/dismiss
-  actions, a real `clipboard_only` processing preview before commit,
-  remembered manual placement or preset display anchor, movement-threshold
-  dragging, native offscreen parking in idle, and state-specific right-side
-  spacing
+- compact live overlay stage with one decision surface per delivery mode
+  (ADR 0011): a real `clipboard_only` processing preview with copy, edit and
+  abort before commit, and an `auto_paste` result surface with copy, edit,
+  insert and dismiss after delivery; plus remembered manual placement or preset
+  display anchor, movement-threshold dragging, native offscreen parking in idle,
+  and state-specific right-side spacing
 - Linux overlay with fixed window sizes (440x60 flat / 460x164 edit),
   `set_background_color` on every reveal, `park_overlay_window` with
   `hide()`, XWayland default with native-Wayland opt-in, KWin script for
@@ -343,10 +344,11 @@ Additional rules:
   discarding fast drags, `set_position` before `show()` dropped by GTK) are
   fixed
 - later app- or mode-based automatic activation for work modes stays open
-- the overlay is not yet a full live-preview/controlled-commit path; it has a
-  fixed in-pill post-run with `copy`/`retry`/`restore`/dismiss and a real
-  processing-time preview stop for `clipboard_only`, but no general
-  pre-commit decision path for all delivery modes
+- the overlay is not yet a full live-preview/controlled-commit path; every
+  delivery mode has exactly one decision surface (ADR 0011), but only
+  `clipboard_only` decides *before* delivery. A pre-commit decision path for
+  `auto_paste` as well stays a deliberate non-goal for now: it would add a
+  confirmation step to every dictation
 - later notes and deeper workflow builds on top of the new history core are
   not implemented
 

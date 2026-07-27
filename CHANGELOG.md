@@ -33,6 +33,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Editing a transcript before it is delivered. The `clipboard_only` processing
+  preview now carries an Edit action next to Copy and Abort — the one surface
+  where the text has not left the app yet, so a correction there changes what
+  actually gets delivered. Confirming goes through
+  `commit_pending_transcription_preview` (new optional `text` argument) rather
+  than a separate insert, so the delivered text, the completed session and the
+  history entry can never describe different wording; the edit clears the
+  machine-corrected flag and records an `overlay_edit` rule. Edit on the
+  `auto_paste` result surface is unchanged in behaviour but honest in wording
+  now: the button reads "Copy corrected text", because a text already pasted at
+  the cursor cannot be retracted.
+- Every `transcription` event carries `delivery` (`inserted` | `clipboard`) from
+  the new `NativeInsertMode::delivery_label`. Previously only the `auto_paste`
+  pipeline emitted it, so the commit and history-retry paths left the UI
+  inferring what had happened to the text.
 - Diagnostics for the overlay freeze reported during long captures
   (`docs/known-issues/overlay-recording-freeze.md`). Runtime log lines now carry
   an epoch-millisecond and a monotonic timestamp, overlay diagnostic lines carry
@@ -278,6 +293,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In "Copy and insert at cursor", the final result overlay could appear stacked
+  on top of the previous overlay, which never went away. The visibility of the
+  result surface was set in a React effect one render after the session ended,
+  so a six-condition bridge predicate — reachable only on this delivery path —
+  had to carry the pill across that render. When it did not hold, the pill
+  unmounted for a frame and orphaned the processing pill's WebKitGTK compositor
+  layers. The surface is now decided in the same reducer commit that ends the
+  session (`RuntimeState.resultSurfaceOpen`), so the gap render no longer
+  exists; the bridge, the commit-suppression ref and the sticky suppressed-result
+  marker are gone. The overlay also emits a single surface value now, so the
+  runtime is never told a different surface than the one being painted — that
+  had been harmless only because every flat surface happens to be 480x60.
+  (ADR 0011)
+- The "finished" cue in "Copy and insert at cursor" sounded before the result
+  overlay appeared, and could fire for a result the runtime then discarded as
+  stale. `Done` and `Error` were played from inside the insert helper, which
+  three flows call at three different moments and always before their staleness
+  gate. Cues now come from the session lifecycle, next to the event that tells
+  the UI the same thing, so both delivery modes fire the same cue at the same
+  meaning. `Handoff` moved into the branch that actually hands audio to the
+  pipeline, after the capture teardown — an empty capture no longer announces
+  work in progress and then contradicts itself. The insert-error arm that
+  previously played no cue at all now reports one. (ADR 0012)
 - Sound cues were sometimes swallowed entirely, started chopped, or fired
   twice. The per-cue device open could fail silently, the device was played
   before it had warmed up, and rapid cue chains overlapped acoustically. A

@@ -980,9 +980,14 @@ pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: Trigg
 }
 
 fn finalize_native_capture_stop<R: Runtime + 'static>(app: &AppHandle<R>, session_id: String) {
-    core::sound::play_if_enabled(core::sound::SoundCue::Handoff);
+    // Handoff is played AFTER the capture teardown and only on the branch that
+    // actually hands work to the pipeline. Playing it first meant an empty
+    // capture or a failed stop announced work in progress and then immediately
+    // contradicted itself with Error, and it put the cue into the same instant
+    // in which the cpal input stream is torn down.
     match core::capture::stop_native_capture(app) {
         Ok(core::capture::CaptureOutcome::Ready(value)) => {
+            core::sound::play_if_enabled(core::sound::SoundCue::Handoff);
             handle_audio_ready(app.clone(), value, session_id)
         }
         Ok(core::capture::CaptureOutcome::Empty(level)) => {
@@ -1635,14 +1640,15 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                                 "entry_id": entry.id,
                                                 "retry_of": entry.retry_of,
                                             })),
-                                            "delivery": if matches!(result.insert_mode, core::insertion::NativeInsertMode::DirectPaste) {
-                                                "inserted"
-                                            } else {
-                                                "clipboard"
-                                            },
+                                            "delivery": result.insert_mode.delivery_label(),
                                             "insertion": result
                                         }),
                                     );
+                                    // The delivery point: the session is
+                                    // completed and the UI is being told about
+                                    // it in the same breath, so the cue and the
+                                    // result surface arrive together.
+                                    core::sound::play_if_enabled(core::sound::SoundCue::Done);
                                 }
                                 Ok(false) => {
                                     log_stale_pipeline_result(&app, &session_id, "completion")
@@ -1656,6 +1662,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                             "message": error
                                         }),
                                     );
+                                    core::sound::play_if_enabled(core::sound::SoundCue::Error);
                                 }
                             }
                         }
@@ -1708,6 +1715,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                             "insertion": result
                                         }),
                                     );
+                                    core::sound::play_if_enabled(core::sound::SoundCue::Error);
                                 }
                                 Ok(false) => log_stale_pipeline_result(
                                     &app,
@@ -1723,6 +1731,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                             "message": gate_error
                                         }),
                                     );
+                                    core::sound::play_if_enabled(core::sound::SoundCue::Error);
                                 }
                             }
                         }
@@ -1762,6 +1771,11 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                             "message": format!("Native insertion failed: {error}")
                                         }),
                                     );
+                                    // This arm used to be the only failure path
+                                    // in the pipeline with no cue at all: the
+                                    // insert helper never returned, so the cue
+                                    // it used to own never ran.
+                                    core::sound::play_if_enabled(core::sound::SoundCue::Error);
                                 }
                                 Ok(false) => {
                                     log_stale_pipeline_result(&app, &session_id, "insert_error")
@@ -1775,6 +1789,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                             "message": gate_error
                                         }),
                                     );
+                                    core::sound::play_if_enabled(core::sound::SoundCue::Error);
                                 }
                             }
                         }

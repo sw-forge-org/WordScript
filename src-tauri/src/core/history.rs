@@ -454,9 +454,15 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                         "entry_id": entry.id,
                         "retry_of": entry.retry_of,
                     },
+                    "delivery": insert_result.insert_mode.delivery_label(),
                     "insertion": insert_result,
                 }),
             );
+            // The retry's delivery point, next to the event that tells the UI
+            // the same thing (ADR 0012).
+            super::sound::play_if_enabled(super::sound::SoundCue::Done);
+        } else {
+            super::sound::play_if_enabled(super::sound::SoundCue::Error);
         }
 
         entry

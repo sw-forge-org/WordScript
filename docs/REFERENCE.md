@@ -62,6 +62,26 @@ Status: 2026-07-25
 - these terms must not be conflated in UI and docs while the second
   production lane and the guided setup path are still missing.
 
+### Transcript delivery modes (delivery contract)
+
+Set per text profile as `work_mode.insert_behavior`; the settings label is
+"Transcript delivery" under *Insert & Recovery*. Unknown values normalize to
+`auto_paste`.
+
+| Value | UI label | Decision surface | Edit means |
+|---|---|---|---|
+| `auto_paste` | Copy and insert at cursor | result surface, *after* delivery | the original is already at the cursor and cannot be retracted, so confirming puts the correction on the clipboard |
+| `clipboard_only` | Copy to clipboard only | processing preview, *before* delivery | confirming delivers the corrected text through the commit |
+
+Exactly one of these surfaces is shown per session (ADR 0011). `clipboard_only`
+never shows a result surface after its commit.
+
+Do not confuse the delivery mode with the delivery *outcome*: every
+`transcription` event carries `delivery` (`inserted` | `clipboard`) derived from
+`NativeInsertMode`. An `auto_paste` run whose paste failed reports
+`delivery: "clipboard"` and still gets the result surface -- that is the case
+where the Insert retry affordance matters most.
+
 ### Processing modes (processing contract)
 
 These modes are **orthogonal** to the provider modes above and describe what

@@ -175,11 +175,25 @@ export default function OverlayGallery() {
             />
           </Card>
 
-          <Card index="07" title="Edit mode" hint="Tall capsule · editable textarea · Confirm / Cancel · resize handle">
+          <Card index="07" title="Edit mode" hint="Tall capsule · editable textarea · confirm label states what confirming does · resize handle">
             <OverlayPill
               state={{
                 kind: "edit-mode",
                 text: editText,
+                confirmLabel: "Copy corrected text",
+                onTextChange: setEditText,
+                onConfirm: () => {},
+                onCancel: () => {},
+              }}
+            />
+          </Card>
+
+          <Card index="07b" title="Edit mode · from preview" hint="Opened before delivery — confirming delivers the corrected text">
+            <OverlayPill
+              state={{
+                kind: "edit-mode",
+                text: editText,
+                confirmLabel: "Insert corrected text",
                 onTextChange: setEditText,
                 onConfirm: () => {},
                 onCancel: () => {},
