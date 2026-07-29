@@ -17,12 +17,22 @@ status change. Resolved bugs remain as references for the same failure class.
   silently disabled both overlay layout effects and therefore the only native
   repaint trigger for a mode change. Reported as mode-picker overlay stacking;
   not a compositor problem (2026-07-27).
-- [transcription-hallucination.md](transcription-hallucination.md): open raw
-  transcription language drift and hallucination problem.
-- [capture-shortcut-recording.md](capture-shortcut-recording.md): open shortcut
-  recording, manual entry, normalization, registration and activation-mode
-  failures in Capture and Modes, including the missing trigger observability
-  and the rebuild plan (2026-07-25).
+- [transcription-hallucination.md](transcription-hallucination.md): mitigated —
+  raw transcription language drift and hallucination. The approved slice landed
+  on 2026-07-29 (ADR 0015, ADR 0016): the capture config now reaches the runtime
+  as one resolved source, which is what silently disabled per-profile bias and
+  every local decode setting; a speech gate and a confidence gate sit before AI
+  cleanup; a language mismatch alone never discards anything. Not resolved: real
+  language identification and segment confidence on the local lane stay
+  deferred, and everything above the slice heading remains the historical record
+  of the problem.
+- [capture-shortcut-recording.md](capture-shortcut-recording.md): resolved for
+  the activation modes — shortcut recording, manual entry, normalization,
+  registration and activation-mode failures in Capture and Modes, including the
+  missing trigger observability and the rebuild plan. S0-S8 implemented and
+  D1-D12 closed; D11 (hold to talk) turned out to be a threshold-semantics
+  defect rather than a delivery one and was corrected under ADR 0013
+  (2026-07-29). One open item: the physical half of the S0 measurement.
 - [overlay-recording-freeze.md](overlay-recording-freeze.md): open — the
   recording overlay freezes mid-capture, timer and input included, while capture
   and pipeline continue. Observed only under `tauri dev` so far; the existing
