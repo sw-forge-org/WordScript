@@ -51,8 +51,10 @@ Status: 2026-07-25
   every stranded hold ended by the watchdog
 - three activation modes with defined edge cases: tap, double tap (the default,
   ADR 0008 — two taps within `double_tap_window_ms`, so a modifier-only trigger
-  no longer acts on every single press) and hold to talk with a watchdog for a
-  release that never arrives and a deferred stop below `hold_min_ms`
+  no longer acts on every single press) and hold to talk, which is strictly
+  momentary (ADR 0013): a press below `hold_arm_ms` is discarded rather than
+  extended into a recording, the microphone still opens on the press edge so no
+  word is lost, and a release that never arrives is ended by the watchdog
 - modifier-only shortcuts are observed rather than grabbed (ADR 0009): the raw
   key stream is watched without consuming the keystroke, so a trigger like
   `Ctrl+Super` no longer takes that combination away from every other
@@ -105,7 +107,7 @@ Status: 2026-07-25
   (system/developer/user) plus a guardrail chain (empty, prompt_executes,
   language_mismatch, length_budget, semantic_drift)
 - compact live overlay stage with one decision surface per delivery mode
-  (ADR 0011): a real `clipboard_only` processing preview with copy, edit and
+  (ADR 0011a): a real `clipboard_only` processing preview with copy, edit and
   abort before commit, and an `auto_paste` result surface with copy, edit,
   insert and dismiss after delivery; plus remembered manual placement or preset
   display anchor, movement-threshold dragging, native offscreen parking in idle,
@@ -259,11 +261,25 @@ Additional rules:
   because that platform implementation maps no modifier as a main key. Run sheets
   and the source-level findings are in
   [known-issues/cross-platform-shortcut-verification.md](known-issues/cross-platform-shortcut-verification.md)
-- **hold to talk does not work**, confirmed in a live session on 2026-07-25 in
-  which double tap on the same trigger works. Because double tap counts release
-  edges that only exist after a counted press edge, this rules out key delivery and
-  places the fault in the hold path or in what it starts. Four candidates and the
-  one log line that separates them are in
+- **one set of shortcut defaults serves all three activation modes**, and the
+  gesture each mode actually wants cannot be expressed yet: a single modifier is
+  rejected outside Linux, modifiers cannot be told apart by side, and the
+  observation path exists only in the x11 backend of the vendored crate. The
+  full plan is in
+  [handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](handoffs/HANDOFF_activation-mode-gestures-and-defaults.md)
+- the fix that stops the shipped abort default from discarding a capture under
+  an unrelated `Ctrl+Alt+<key>` chord is **in code but unobserved**. Pause and
+  abort now follow start/stop's rule — a modifier-only binding is decided at the
+  release edge, where the interruption signal exists (ADR 0014) — and seven unit
+  tests cover it, but neither the defect nor the fix has been seen in a running
+  app. On Windows and macOS the defect is untouched, because those backends
+  report no interruption at all. Run sheet in
+  [known-issues/pause-abort-interrupted-chord.md](known-issues/pause-abort-interrupted-chord.md)
+- the `[trigger]` log block for hold to talk **has not been captured yet**. The
+  mode was corrected on 2026-07-29 (ADR 0013) after a live session showed it
+  acting on both edges but treating every press length alike; the behavior was
+  observed by use, the log transcript was not recorded, and the decision tokens
+  changed with the fix. The run and what it should show are written out in
   [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
 - the capability matrix that gates `hold to talk` reports **this session**, not
   the platform. Hold follows the measured press/release evidence per session and
@@ -345,7 +361,7 @@ Additional rules:
   fixed
 - later app- or mode-based automatic activation for work modes stays open
 - the overlay is not yet a full live-preview/controlled-commit path; every
-  delivery mode has exactly one decision surface (ADR 0011), but only
+  delivery mode has exactly one decision surface (ADR 0011a), but only
   `clipboard_only` decides *before* delivery. A pre-commit decision path for
   `auto_paste` as well stays a deliberate non-goal for now: it would add a
   confirmation step to every dictation
@@ -397,6 +413,15 @@ phase:
   `cargo test` on Ubuntu, macOS and Windows; the `push: main` trigger is
   temporarily disabled (manual `workflow_dispatch` stays available) to avoid
   repeated red runs during the development phase
+- `cargo test` is reliably green again on a clean tree. Two `core::runtime_log`
+  tests and the `core::workspace_context` env-var pair used to mutate process
+  globals and fail at random under parallel execution (2 of 22 consecutive runs
+  on 2026-07-29). Both sites now assert through a seam instead of the global —
+  a local `VecDeque` for the ring buffer, an argument for the project-root
+  lookup — so no test writes process state any more. Measured after the fix:
+  10 consecutive parallel runs green, `--test-threads=1` green, 413 tests.
+  Recorded in
+  [known-issues/rust-test-global-state-isolation.md](known-issues/rust-test-global-state-isolation.md)
 - the manual release build-up workflow runs frontend tests, Rust tests and
   frontend build before bundling, collects bundles into checksummed handoff
   archives and can optionally put them in an internal draft release

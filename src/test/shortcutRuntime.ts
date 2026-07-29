@@ -157,7 +157,7 @@ export function createTriggerStatus(
     last_error: null,
     owner: "native_tauri_global_shortcut",
     bindings: [],
-    hold_min_ms: 300,
+    hold_arm_ms: 300,
     debounce_ms: 300,
     hold_watchdog_seconds: 120,
     double_tap_window_ms: 400,

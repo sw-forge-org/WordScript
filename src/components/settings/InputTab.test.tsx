@@ -224,6 +224,29 @@ describe("InputTab", () => {
     expect(await screen.findByText(/no key release/i)).toBeInTheDocument();
   });
 
+  it("states that a press below the hold threshold is discarded", async () => {
+    // ADR 0013: the old wording promised that a too-short hold was *extended*
+    // to the minimum, which is what made a stray tap produce a transcript and
+    // hold to talk feel like tap to toggle. The mode now discards it, and the
+    // hint has to say so — otherwise the mode looks broken instead of strict.
+    mockRuntime(
+      createTriggerStatus({
+        activation_mode: "hold",
+        bindings: [captureBinding({ presses: 3, releases: 3, last_press_ms: 1 })],
+      }),
+    );
+
+    render(
+      <InputTab
+        config={createAppConfig({ hotkey: "Ctrl+F9", activation_mode: "hold" })}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(/shorter than 300 ms is discarded/i)).toBeInTheDocument();
+    expect(screen.getByText(/use one of the toggle modes/i)).toBeInTheDocument();
+  });
+
   it("gates the activation selector on the runtime capability matrix", async () => {
     // T10/T12/S7: an option the session cannot honor is unselectable with the
     // runtime's reason, instead of looking available and doing nothing. The

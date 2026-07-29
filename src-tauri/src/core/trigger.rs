@@ -15,7 +15,12 @@ use super::sessions::{NativeSessionStage, NativeSessionState};
 use super::shortcut;
 
 const DEFAULT_DEBOUNCE_MS: u64 = 300;
-const DEFAULT_HOLD_MIN_MS: u64 = 300;
+/// How long the trigger has to stay down before a hold becomes a real session.
+/// Below it the press never produced anything the user can see, so there is
+/// nothing to undo (ADR 0013). This is deliberately not the old `hold_min_ms`,
+/// which stretched a too-short hold up to this length instead of discarding it
+/// and thereby made every stray tap produce a transcript.
+const HOLD_ARM_MS: u64 = 300;
 const DEFAULT_HOLD_WATCHDOG_SECONDS: u64 = 120;
 const DEFAULT_DOUBLE_TAP_WINDOW_MS: u64 = 400;
 
@@ -206,7 +211,9 @@ pub struct NativeTriggerConfig {
     pub activation_mode: NativeActivationMode,
     pub enabled: bool,
     pub debounce_ms: u64,
-    pub hold_min_ms: u64,
+    /// Lower bound: how long the trigger must stay down before a hold commits
+    /// to a session. See `HOLD_ARM_MS`.
+    pub hold_arm_ms: u64,
     /// Upper bound for a single hold before the watchdog ends it with a stated
     /// reason. A hold whose `Released` event never arrives would otherwise run
     /// until the silence timeout or the maximum-length cap and look like an
@@ -228,7 +235,7 @@ impl Default for NativeTriggerConfig {
             activation_mode: NativeActivationMode::from_config(default_activation_mode()),
             enabled: true,
             debounce_ms: DEFAULT_DEBOUNCE_MS,
-            hold_min_ms: DEFAULT_HOLD_MIN_MS,
+            hold_arm_ms: HOLD_ARM_MS,
             hold_watchdog_seconds: DEFAULT_HOLD_WATCHDOG_SECONDS,
             double_tap_window_ms: DEFAULT_DOUBLE_TAP_WINDOW_MS,
             mode_hotkeys: ModeHotkeys::default(),
@@ -288,7 +295,7 @@ pub struct NativeTriggerStatus {
     pub bindings: Vec<BindingInfo>,
     /// Timing constants the activation modes depend on, surfaced so the UI can
     /// state them instead of leaving them invisible (D11).
-    pub hold_min_ms: u64,
+    pub hold_arm_ms: u64,
     pub debounce_ms: u64,
     pub hold_watchdog_seconds: u64,
     pub double_tap_window_ms: u64,
@@ -370,7 +377,26 @@ pub enum TriggerEffect {
     StopCapture { session_id: String },
     TogglePause,
     AbortCapture,
-    DeferredStop { hold_session: u64, delay_ms: u64 },
+    /// Hold mode, press edge: open the microphone immediately but keep the
+    /// session invisible. No overlay, no cue, no session id. The audio from
+    /// the very first instant is already being kept, so a hold that goes on to
+    /// commit loses no word — but a press that never reaches `HOLD_ARM_MS`
+    /// leaves nothing behind (ADR 0013).
+    StartCaptureProvisional { hold_session: u64 },
+    /// The provisional hold stayed down long enough. This is where the session
+    /// becomes real to the user: overlay and listen cue fire here, nowhere
+    /// else.
+    CommitHold { hold_session: u64 },
+    /// The provisional hold was released below the threshold. Drop the buffer
+    /// without an abort cue — nothing had been announced, so nothing is
+    /// retracted.
+    DiscardProvisional,
+    /// Pause or abort in hold mode, held past `HOLD_ARM_MS`. Carries the effect
+    /// that the press would have had in the other activation modes.
+    DeferredHoldAction {
+        hold_action: HoldAction,
+        arm_generation: u64,
+    },
     /// Mode-select hotkey: toggle signal for the overlay. First press opens
     /// the overlay in the mode-select surface (current mode shown, tap to
     /// cycle). Second press cycles to the next mode persistently. The frontend
@@ -378,6 +404,42 @@ pub enum TriggerEffect {
     ModeSelect,
     /// Jump directly to a specific processing mode (per-mode hotkey).
     SetModeDirect(ProcessingMode),
+}
+
+/// Where a hold stands between its press and its release.
+///
+/// `Provisional` is the state the rest of the lane has to know about: the key
+/// is genuinely held, but no session exists yet on purpose. Without an explicit
+/// name for it, "key held" and "session capturing" look like the same fact, and
+/// `sync_trigger_state_with_session` treats the difference as corruption to
+/// repair — it clears `hotkey_active` mid-hold, the release is then dropped as
+/// a release without a press, and the provisional capture is stranded with the
+/// microphone open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HoldPhase {
+    /// No hold in flight.
+    Idle,
+    /// Held, below the threshold. Microphone open, nothing announced.
+    Provisional,
+    /// Held, past the threshold. A real session exists.
+    Committed,
+}
+
+/// Which of the two non-capture capture-lane bindings a deferred hold belongs
+/// to. Start/stop is not in here: it owns the provisional-capture path instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum HoldAction {
+    Pause,
+    Abort,
+}
+
+impl HoldAction {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Pause => "pause",
+            Self::Abort => "abort",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -420,6 +482,22 @@ pub struct NativeTriggerState {
     /// Whether a `Released` event was seen for the current hold session. The
     /// watchdog only ends a hold that never got one.
     hold_release_seen: bool,
+    /// Where the current hold stands. A release decides between stopping and
+    /// discarding on this alone, never on a re-measured duration — the arm
+    /// timer already made the call, and re-deciding it at release is how the
+    /// two could disagree.
+    hold_phase: HoldPhase,
+    /// Monotonic counter for pause/abort holds, so a release invalidates the
+    /// arm timer of exactly the press it belongs to.
+    hold_action_generation: u64,
+    /// The pause/abort hold currently waiting for its arm timer, if any.
+    pending_hold_action: Option<HoldAction>,
+    /// When a modifier-only pause binding went down. The decision itself waits
+    /// for the release edge, so hold mode needs the press timestamp to measure
+    /// the duration there instead of on an arm timer.
+    pause_pressed_at: Option<Instant>,
+    /// The same for a modifier-only abort binding.
+    abort_pressed_at: Option<Instant>,
     /// Timestamp of the first tap per binding, while waiting for the second.
     /// Keyed by binding label so capture, pause and abort each get their own
     /// window instead of stealing each other's arm.
@@ -458,6 +536,11 @@ impl NativeTriggerState {
             hold_session: 0,
             hold_started_at: None,
             hold_release_seen: false,
+            hold_phase: HoldPhase::Idle,
+            hold_action_generation: 0,
+            pending_hold_action: None,
+            pause_pressed_at: None,
+            abort_pressed_at: None,
             double_tap_edges: std::collections::HashMap::new(),
             last_hotkey_press: None,
             last_tap_shortcut_intent: None,
@@ -481,7 +564,7 @@ impl NativeTriggerState {
             owner: "native_tauri_global_shortcut".to_string(),
             suspended: self.suspended,
             bindings: self.bindings.clone(),
-            hold_min_ms: self.config.hold_min_ms,
+            hold_arm_ms: self.config.hold_arm_ms,
             debounce_ms: self.config.debounce_ms,
             hold_watchdog_seconds: self.config.hold_watchdog_seconds,
             double_tap_window_ms: self.config.double_tap_window_ms,
@@ -561,7 +644,7 @@ pub fn configure_native_trigger(
         activation_mode: NativeActivationMode::from_config(&request.activation_mode),
         enabled: true,
         debounce_ms: DEFAULT_DEBOUNCE_MS,
-        hold_min_ms: DEFAULT_HOLD_MIN_MS,
+        hold_arm_ms: HOLD_ARM_MS,
         hold_watchdog_seconds: request
             .hold_watchdog_seconds
             .unwrap_or(existing_hold_watchdog),
@@ -615,6 +698,14 @@ pub fn suspend_native_shortcuts<R: Runtime>(
             lock.pause_active = false;
             lock.abort_active = false;
             lock.hold_started_at = None;
+            // Invalidate any arm timer still in flight. Suspending drops the
+            // grabs, so the release that would have resolved this hold will
+            // never arrive — without the bump the timer would commit a session
+            // for a key nobody is holding any more.
+            lock.hold_session += 1;
+            lock.hold_phase = HoldPhase::Idle;
+            lock.hold_action_generation += 1;
+            lock.pending_hold_action = None;
             lock.last_tap_shortcut_intent = None;
             (shortcuts, false)
         }
@@ -1072,23 +1163,61 @@ pub fn handle_global_shortcut_event<R: Runtime>(
                 return None;
             }
             state.abort_active = true;
+            // A modifier-only binding has no press edge worth acting on: this
+            // may be `Ctrl+Alt` on the way to `Ctrl+Alt+T`, and the crate can
+            // only say so once that third key has gone down. Every mode waits
+            // for the release, where `interrupted` is finally known.
+            if abort_uses_release_trigger(&state) {
+                state.abort_pressed_at = Some(Instant::now());
+                decide("deferred_to_release_modifier_only");
+                return None;
+            }
             if requires_double_tap(&state) && !double_tap_gate(&mut state, "abort", Instant::now())
             {
                 decide("double_tap_armed");
                 return None;
             }
-            state.hotkey_active = false;
-            state.tap_hotkey_down = false;
-            state.toggled_on = false;
-            state.hold_started_at = None;
+            // In hold mode every capture-lane binding costs a deliberate hold,
+            // not a brush of the key. Abort is the one where a stray press is
+            // most expensive, so it gets the same gate as start/stop.
+            if requires_hold_arm(&state) {
+                decide("hold_arm_pending");
+                return Some(arm_hold_action(&mut state, HoldAction::Abort));
+            }
+            clear_capture_state_for_abort(&mut state);
             decide("abort");
             drop(state);
             abort_session(app, "Capture aborted by native abort shortcut.")
         }
         ShortcutState::Released if is_abort => {
             state.abort_active = false;
-            decide("armed_for_next_press");
-            None
+            if cancel_hold_action(&mut state, HoldAction::Abort) {
+                decide("hold_released_below_arm");
+                return None;
+            }
+            if !abort_uses_release_trigger(&state) {
+                decide("armed_for_next_press");
+                return None;
+            }
+            let pressed_at = state.abort_pressed_at.take();
+            match resolve_deferred_action_release(
+                &mut state,
+                "abort",
+                pressed_at,
+                event.interrupted,
+                Instant::now(),
+            ) {
+                DeferredActionRelease::Fire => {
+                    clear_capture_state_for_abort(&mut state);
+                    decide("abort");
+                    drop(state);
+                    abort_session(app, "Capture aborted by native abort shortcut.")
+                }
+                DeferredActionRelease::Discard(reason) => {
+                    decide(reason);
+                    None
+                }
+            }
         }
         ShortcutState::Pressed if is_pause => {
             if state.pause_active {
@@ -1096,10 +1225,19 @@ pub fn handle_global_shortcut_event<R: Runtime>(
                 return None;
             }
             state.pause_active = true;
+            if pause_uses_release_trigger(&state) {
+                state.pause_pressed_at = Some(Instant::now());
+                decide("deferred_to_release_modifier_only");
+                return None;
+            }
             if requires_double_tap(&state) && !double_tap_gate(&mut state, "pause", Instant::now())
             {
                 decide("double_tap_armed");
                 return None;
+            }
+            if requires_hold_arm(&state) {
+                decide("hold_arm_pending");
+                return Some(arm_hold_action(&mut state, HoldAction::Pause));
             }
             decide("toggle_pause");
             drop(state);
@@ -1107,8 +1245,32 @@ pub fn handle_global_shortcut_event<R: Runtime>(
         }
         ShortcutState::Released if is_pause => {
             state.pause_active = false;
-            decide("armed_for_next_press");
-            None
+            if cancel_hold_action(&mut state, HoldAction::Pause) {
+                decide("hold_released_below_arm");
+                return None;
+            }
+            if !pause_uses_release_trigger(&state) {
+                decide("armed_for_next_press");
+                return None;
+            }
+            let pressed_at = state.pause_pressed_at.take();
+            match resolve_deferred_action_release(
+                &mut state,
+                "pause",
+                pressed_at,
+                event.interrupted,
+                Instant::now(),
+            ) {
+                DeferredActionRelease::Fire => {
+                    decide("toggle_pause");
+                    drop(state);
+                    Some(TriggerEffect::TogglePause)
+                }
+                DeferredActionRelease::Discard(reason) => {
+                    decide(reason);
+                    None
+                }
+            }
         }
         ShortcutState::Pressed if is_hotkey => {
             let now = Instant::now();
@@ -1179,25 +1341,29 @@ pub fn handle_global_shortcut_event<R: Runtime>(
                         decide("debounced");
                         return None;
                     }
-                    if state.hotkey_active {
+                    if state.hotkey_active || state.hold_phase != HoldPhase::Idle {
                         decide("ignored_already_active");
                         return None;
                     }
-                    state.last_hotkey_press = Some(now);
-                    state.last_tap_shortcut_intent = None;
-                    state.hotkey_active = true;
-                    state.hold_session += 1;
-                    state.hold_started_at = Some(now);
-                    state.hold_release_seen = false;
-                    let hold_session = state.hold_session;
-                    let watchdog_seconds = state.config.hold_watchdog_seconds;
-                    decide("hold_start");
-                    drop(state);
-                    let effect = start_session(app, "native_hold_hotkey");
-                    if effect.is_some() {
-                        arm_hold_watchdog(app, hold_session, watchdog_seconds);
+                    // The previous capture is still being transcribed. Tap mode
+                    // refuses this press outright (`TapShortcutIntent::Ignore`)
+                    // and hold has to do the same — opening a microphone for
+                    // 300 ms only to be rejected at the commit is how a quick
+                    // second hold turned into an error banner.
+                    if matches!(session_stage, Some(NativeSessionStage::Processing)) {
+                        decide("ignored_processing");
+                        return None;
                     }
-                    effect
+                    let hold_session = begin_hold_press(&mut state, now);
+                    // The microphone opens now, the session does not. Waiting
+                    // for the threshold before opening the stream would cost
+                    // the first word of every dictation; announcing the
+                    // session now would mean every stray brush of the key
+                    // produced a visible recording. Only the commit at
+                    // `HOLD_ARM_MS` does both (ADR 0013).
+                    decide("hold_provisional_start");
+                    drop(state);
+                    Some(TriggerEffect::StartCaptureProvisional { hold_session })
                 }
             }
         }
@@ -1281,29 +1447,27 @@ pub fn handle_global_shortcut_event<R: Runtime>(
 
             state.last_tap_shortcut_intent = None;
             state.hold_release_seen = true;
-            if state.config.activation_mode != NativeActivationMode::Hold || !state.hotkey_active {
+            // A hold in flight is reason enough to handle this release even if
+            // `hotkey_active` was lost somewhere: the phase says a microphone
+            // may be open, and dropping the release is what would strand it.
+            let hold_in_flight = state.hold_phase != HoldPhase::Idle;
+            if state.config.activation_mode != NativeActivationMode::Hold
+                || (!state.hotkey_active && !hold_in_flight)
+            {
                 decide("ignored_release_without_press");
                 return None;
             }
-            state.hotkey_active = false;
-            let held_for = state
-                .hold_started_at
-                .map(|start| start.elapsed())
-                .unwrap_or_default();
-            let min_hold = Duration::from_millis(state.config.hold_min_ms);
-            let hold_session = state.hold_session;
-            state.hold_started_at = None;
-
-            if held_for >= min_hold {
-                decide("hold_stop");
-                drop(state);
-                stop_session(app, active_capture_is_recording(app))
-            } else {
-                decide("hold_stop_deferred_below_hold_min");
-                Some(TriggerEffect::DeferredStop {
-                    hold_session,
-                    delay_ms: (min_hold - held_for).as_millis().min(u128::from(u64::MAX)) as u64,
-                })
+            match resolve_hold_release(&mut state) {
+                HoldReleaseOutcome::Stop => {
+                    decide("hold_stop");
+                    drop(state);
+                    stop_session(app, active_capture_is_recording(app))
+                }
+                HoldReleaseOutcome::Discard => {
+                    decide("hold_discarded_below_arm");
+                    drop(state);
+                    Some(TriggerEffect::DiscardProvisional)
+                }
             }
         }
         _ => {
@@ -1371,6 +1535,7 @@ fn arm_hold_watchdog<R: Runtime>(app: &AppHandle<R>, hold_session: u64, watchdog
             if stranded {
                 state.hotkey_active = false;
                 state.hold_started_at = None;
+                state.hold_phase = HoldPhase::Idle;
             }
             stranded
         };
@@ -1394,20 +1559,276 @@ fn arm_hold_watchdog<R: Runtime>(app: &AppHandle<R>, hold_session: u64, watchdog
     });
 }
 
-pub fn resolve_deferred_hold_stop<R: Runtime>(
+/// How long a hold has to stay down before it becomes a session, in
+/// milliseconds. Read from the live config so the arm timer and the state
+/// machine can never be armed against two different numbers.
+pub fn hold_arm_ms<R: Runtime>(app: &AppHandle<R>) -> u64 {
+    app.try_state::<Mutex<NativeTriggerState>>()
+        .and_then(|state| state.lock().ok().map(|state| state.config.hold_arm_ms))
+        .unwrap_or(HOLD_ARM_MS)
+}
+
+/// Fires `HOLD_ARM_MS` after a provisional hold started. If the key is still
+/// down and this is still the same hold, the session becomes real.
+pub fn resolve_hold_arm<R: Runtime>(
     app: &AppHandle<R>,
     hold_session: u64,
 ) -> Option<TriggerEffect> {
     let trigger_state = app.try_state::<Mutex<NativeTriggerState>>()?;
-    let state = trigger_state.lock().ok()?;
-    if state.hold_session == hold_session
-        && state.config.activation_mode == NativeActivationMode::Hold
-    {
-        drop(state);
-        stop_session(app, active_capture_is_recording(app))
-    } else {
-        None
+    let mut state = trigger_state.lock().ok()?;
+
+    if !hold_arm_is_still_valid(&state, hold_session) {
+        // The release already resolved this hold — it discarded the buffer,
+        // and this timer is now talking about a hold that no longer exists.
+        return None;
     }
+
+    state.hold_phase = HoldPhase::Committed;
+    let watchdog_seconds = state.config.hold_watchdog_seconds;
+    drop(state);
+
+    log_trigger(
+        "hold_arm",
+        &[
+            ("hold_session", hold_session.to_string()),
+            ("outcome", "committed".to_string()),
+        ],
+    );
+
+    // The watchdog guards a session, so it starts when the session does.
+    arm_hold_watchdog(app, hold_session, watchdog_seconds);
+    Some(TriggerEffect::CommitHold { hold_session })
+}
+
+/// Fires `HOLD_ARM_MS` after a pause or abort was pressed in hold mode.
+pub fn resolve_hold_action<R: Runtime>(
+    app: &AppHandle<R>,
+    hold_action: HoldAction,
+    arm_generation: u64,
+) -> Option<TriggerEffect> {
+    let trigger_state = app.try_state::<Mutex<NativeTriggerState>>()?;
+    let mut state = trigger_state.lock().ok()?;
+
+    if state.hold_action_generation != arm_generation
+        || state.pending_hold_action != Some(hold_action)
+    {
+        return None;
+    }
+    state.pending_hold_action = None;
+
+    let effect = match hold_action {
+        HoldAction::Pause => TriggerEffect::TogglePause,
+        HoldAction::Abort => {
+            state.hotkey_active = false;
+            state.tap_hotkey_down = false;
+            state.toggled_on = false;
+            state.hold_started_at = None;
+            state.hold_phase = HoldPhase::Idle;
+            state.hold_session += 1;
+            drop(state);
+            log_trigger(
+                "hold_arm",
+                &[
+                    ("binding", hold_action.label().to_string()),
+                    ("outcome", "committed".to_string()),
+                ],
+            );
+            return abort_session(app, "Capture aborted by native abort shortcut.");
+        }
+    };
+    drop(state);
+
+    log_trigger(
+        "hold_arm",
+        &[
+            ("binding", hold_action.label().to_string()),
+            ("outcome", "committed".to_string()),
+        ],
+    );
+    Some(effect)
+}
+
+/// Abandons the hold in flight without ending a session, for the case where
+/// the press could not open a microphone at all. Leaving the phase set would be
+/// worse than the failed start: the arm timer would go on to commit a session
+/// with no audio behind it, and the release would try to discard a capture that
+/// never existed.
+pub fn cancel_hold_in_flight<R: Runtime>(app: &AppHandle<R>) {
+    let Some(trigger_state) = app.try_state::<Mutex<NativeTriggerState>>() else {
+        return;
+    };
+    let Ok(mut state) = trigger_state.lock() else {
+        return;
+    };
+    state.hold_phase = HoldPhase::Idle;
+    state.hotkey_active = false;
+    state.hold_started_at = None;
+    state.hold_session += 1;
+}
+
+/// Whether the capture lane currently gates its bindings on a held key.
+fn requires_hold_arm(state: &NativeTriggerState) -> bool {
+    state.config.activation_mode == NativeActivationMode::Hold
+}
+
+/// What a release of the capture trigger means in hold mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HoldReleaseOutcome {
+    /// The hold had committed: end the session and process what was recorded.
+    Stop,
+    /// The hold never reached the threshold: drop the buffer, silently.
+    Discard,
+}
+
+/// Press bookkeeping for a hold. Returns the id of the new hold session, which
+/// the arm timer carries so it can tell its own hold apart from a later one.
+fn begin_hold_press(state: &mut NativeTriggerState, now: Instant) -> u64 {
+    state.last_hotkey_press = Some(now);
+    state.last_tap_shortcut_intent = None;
+    state.hotkey_active = true;
+    state.hold_session += 1;
+    state.hold_started_at = Some(now);
+    state.hold_release_seen = false;
+    state.hold_phase = HoldPhase::Provisional;
+    state.hold_session
+}
+
+/// Whether an arm timer that just fired still belongs to the hold in progress.
+/// False once the key came up, the mode changed, or a newer hold took over.
+fn hold_arm_is_still_valid(state: &NativeTriggerState, hold_session: u64) -> bool {
+    state.config.activation_mode == NativeActivationMode::Hold
+        && state.hold_session == hold_session
+        && state.hold_phase == HoldPhase::Provisional
+        && state.hotkey_active
+        && !state.hold_release_seen
+}
+
+/// Release bookkeeping for a hold. The verdict comes from the commit flag the
+/// arm timer set, never from re-measuring the elapsed time — one hold must not
+/// be judged twice by two clocks that can disagree at the boundary.
+fn resolve_hold_release(state: &mut NativeTriggerState) -> HoldReleaseOutcome {
+    state.hotkey_active = false;
+    state.hold_started_at = None;
+    let phase = state.hold_phase;
+    state.hold_phase = HoldPhase::Idle;
+    // Invalidate the arm timer of this hold: a release landing just before it
+    // fires must not be followed by a commit for a key that is already up.
+    state.hold_session += 1;
+
+    match phase {
+        HoldPhase::Committed => HoldReleaseOutcome::Stop,
+        // `Idle` means the press was never seen as a hold — a lost press edge,
+        // or a release left over from another mode. Discarding is still the
+        // right answer: it releases a microphone that may be open and cannot
+        // end a session, because none was announced.
+        HoldPhase::Provisional | HoldPhase::Idle => HoldReleaseOutcome::Discard,
+    }
+}
+
+/// Starts the arm timer for a pause or abort press and returns the effect that
+/// carries it. The generation makes the release able to cancel exactly this
+/// press and no later one.
+fn arm_hold_action(state: &mut NativeTriggerState, hold_action: HoldAction) -> TriggerEffect {
+    state.hold_action_generation += 1;
+    state.pending_hold_action = Some(hold_action);
+    TriggerEffect::DeferredHoldAction {
+        hold_action,
+        arm_generation: state.hold_action_generation,
+    }
+}
+
+/// Resets the capture-lane bookkeeping an abort invalidates. Both abort paths —
+/// the press edge for a binding with a real key, the release edge for a
+/// modifier-only one — have to leave exactly the same state behind.
+fn clear_capture_state_for_abort(state: &mut NativeTriggerState) {
+    state.hotkey_active = false;
+    state.tap_hotkey_down = false;
+    state.toggled_on = false;
+    state.hold_started_at = None;
+    state.hold_phase = HoldPhase::Idle;
+    state.hold_session += 1;
+}
+
+/// What a release of a deferred (modifier-only) pause/abort binding means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeferredActionRelease {
+    /// The gesture completed: run the action now.
+    Fire,
+    /// Nothing happens. Carries the decision token for the `[trigger]` log.
+    Discard(&'static str),
+}
+
+/// Decides a modifier-only pause/abort release. This is where `interrupted` is
+/// finally knowable, so it is also the only place the three activation modes can
+/// be applied honestly (ADR 0009).
+fn resolve_deferred_action_release(
+    state: &mut NativeTriggerState,
+    label: &str,
+    pressed_at: Option<Instant>,
+    interrupted: bool,
+    now: Instant,
+) -> DeferredActionRelease {
+    // Another key went down while these modifiers were held, so this was
+    // `Ctrl+Alt` on the way to `Ctrl+Alt+T` and not a gesture aimed at us.
+    // Unlike start/stop — which has already opened a microphone on the press
+    // edge and must be able to end it — pause and abort have started nothing
+    // and can be withdrawn without a trace.
+    if interrupted {
+        return DeferredActionRelease::Discard("ignored_interrupted_chord");
+    }
+    let Some(pressed_at) = pressed_at else {
+        return DeferredActionRelease::Discard("ignored_release_without_press");
+    };
+
+    match state.config.activation_mode {
+        NativeActivationMode::Tap => DeferredActionRelease::Fire,
+        NativeActivationMode::DoubleTap => {
+            if double_tap_gate(state, label, now) {
+                DeferredActionRelease::Fire
+            } else {
+                DeferredActionRelease::Discard("double_tap_armed")
+            }
+        }
+        NativeActivationMode::Hold => {
+            // The arm timer cannot be used here: it fires while the keys are
+            // still down, which is before the interruption is knowable. The
+            // duration is measured at the release instead, against the same
+            // threshold.
+            if now.duration_since(pressed_at)
+                < Duration::from_millis(state.config.hold_arm_ms.max(1))
+            {
+                DeferredActionRelease::Discard("hold_released_below_arm")
+            } else {
+                DeferredActionRelease::Fire
+            }
+        }
+    }
+}
+
+/// Whether a pause binding is decided at the release edge. Same rule the capture
+/// trigger already follows (`tap_hotkey_uses_release_trigger`): a modifier-only
+/// shortcut has no press edge that can be told apart from the user holding those
+/// modifiers on the way to a longer chord.
+fn pause_uses_release_trigger(state: &NativeTriggerState) -> bool {
+    is_modifier_only_shortcut(&state.config.pause_hotkey)
+}
+
+/// The same for abort. Separate from `pause_uses_release_trigger` because the
+/// two slots hold independent values — the shipped abort default is
+/// modifier-only, the shipped pause default is not.
+fn abort_uses_release_trigger(state: &NativeTriggerState) -> bool {
+    is_modifier_only_shortcut(&state.config.abort_hotkey)
+}
+
+/// Cancels a pending pause/abort hold on release. Returns whether there was one
+/// to cancel, so the caller can log a discard instead of a plain re-arm.
+fn cancel_hold_action(state: &mut NativeTriggerState, hold_action: HoldAction) -> bool {
+    if state.pending_hold_action == Some(hold_action) {
+        state.pending_hold_action = None;
+        state.hold_action_generation += 1;
+        return true;
+    }
+    false
 }
 
 fn start_session<R: Runtime>(app: &AppHandle<R>, trigger: &str) -> Option<TriggerEffect> {
@@ -1692,11 +2113,23 @@ fn sync_trigger_state_with_session(
 ) {
     let is_capturing = matches!(stage, Some(NativeSessionStage::Capturing));
     state.toggled_on = is_capturing;
-    if !is_capturing {
-        state.hotkey_active = false;
-        state.hold_started_at = None;
-        state.last_tap_shortcut_intent = None;
+    if is_capturing {
+        return;
     }
+
+    // A provisional hold is the one case where "no session" and "no key held"
+    // are different facts. The key really is down; the session is withheld
+    // deliberately until the threshold. Clearing `hotkey_active` here would
+    // make the matching release look like a release without a press — it would
+    // be dropped, the provisional capture would never be discarded, and the
+    // next press would hit "A native audio capture is already active".
+    if state.hold_phase == HoldPhase::Provisional {
+        return;
+    }
+
+    state.hotkey_active = false;
+    state.hold_started_at = None;
+    state.last_tap_shortcut_intent = None;
 }
 
 /// Builds an OS binding from a raw shortcut value. All token knowledge,
@@ -2080,6 +2513,352 @@ mod tests {
         );
     }
 
+    fn hold_state() -> NativeTriggerState {
+        NativeTriggerState::new(NativeTriggerConfig {
+            hotkey: "Ctrl+Super".to_string(),
+            activation_mode: NativeActivationMode::Hold,
+            ..NativeTriggerConfig::default()
+        })
+    }
+
+    #[test]
+    fn a_hold_released_below_the_threshold_is_discarded_not_stopped() {
+        // The defect this replaces: `hold_min_ms` stretched a stray 1 ms tap
+        // up to 300 ms and transcribed it, which made hold to talk behave like
+        // tap to toggle. Below the threshold nothing may survive the release.
+        let mut state = hold_state();
+        let hold_session = begin_hold_press(&mut state, Instant::now());
+
+        // The arm timer has not fired, so nothing committed.
+        assert_eq!(state.hold_phase, HoldPhase::Provisional);
+        state.hold_release_seen = true;
+        assert_eq!(
+            resolve_hold_release(&mut state),
+            HoldReleaseOutcome::Discard
+        );
+        // The hold session moved on, so the timer for this press is now stale.
+        assert!(!hold_arm_is_still_valid(&state, hold_session));
+    }
+
+    #[test]
+    fn a_hold_that_reached_the_threshold_stops_on_release() {
+        let mut state = hold_state();
+        let hold_session = begin_hold_press(&mut state, Instant::now());
+
+        assert!(hold_arm_is_still_valid(&state, hold_session));
+        state.hold_phase = HoldPhase::Committed;
+
+        state.hold_release_seen = true;
+        assert_eq!(resolve_hold_release(&mut state), HoldReleaseOutcome::Stop);
+        assert!(!state.hotkey_active);
+        assert_eq!(state.hold_phase, HoldPhase::Idle);
+    }
+
+    #[test]
+    fn a_session_sync_during_a_provisional_hold_keeps_the_key_held() {
+        // The regression this pins: every incoming event runs the session sync,
+        // and a provisional hold is the one moment where "key held" and
+        // "session capturing" legitimately disagree. Clearing `hotkey_active`
+        // here dropped the matching release as a release without a press, which
+        // stranded the provisional capture with the microphone open — the next
+        // press then failed with "A native audio capture is already active".
+        let mut state = hold_state();
+        let hold_session = begin_hold_press(&mut state, Instant::now());
+
+        // No session exists yet — that is the point of the provisional phase.
+        sync_trigger_state_with_session(&mut state, None);
+
+        assert!(state.hotkey_active, "the key is still physically held");
+        assert!(state.hold_started_at.is_some());
+        assert!(hold_arm_is_still_valid(&state, hold_session));
+    }
+
+    #[test]
+    fn a_session_sync_outside_a_hold_still_clears_stale_state() {
+        // The sync must keep doing its job everywhere else, or a lost release
+        // in tap mode would leave the lane believing a key is down forever.
+        let mut state = hold_state();
+        state.hotkey_active = true;
+        state.hold_started_at = Some(Instant::now());
+        state.hold_phase = HoldPhase::Idle;
+
+        sync_trigger_state_with_session(&mut state, None);
+
+        assert!(!state.hotkey_active);
+        assert!(state.hold_started_at.is_none());
+    }
+
+    #[test]
+    fn a_release_is_handled_even_if_the_held_flag_was_lost() {
+        // Defence in depth for the same failure: whatever cleared the flag, a
+        // hold in flight means a microphone may be open, and the release is the
+        // only thing that closes it.
+        let mut state = hold_state();
+        begin_hold_press(&mut state, Instant::now());
+        state.hotkey_active = false;
+
+        assert_ne!(state.hold_phase, HoldPhase::Idle);
+        assert_eq!(
+            resolve_hold_release(&mut state),
+            HoldReleaseOutcome::Discard
+        );
+    }
+
+    #[test]
+    fn a_failed_provisional_start_leaves_no_hold_in_flight() {
+        // If the microphone never opened, the arm timer must not go on to
+        // commit a session that has no audio behind it.
+        let mut state = hold_state();
+        let hold_session = begin_hold_press(&mut state, Instant::now());
+
+        // What `cancel_hold_in_flight` does to the state it locks.
+        state.hold_phase = HoldPhase::Idle;
+        state.hotkey_active = false;
+        state.hold_started_at = None;
+        state.hold_session += 1;
+
+        assert!(!hold_arm_is_still_valid(&state, hold_session));
+    }
+
+    #[test]
+    fn an_arm_timer_that_fires_after_the_release_commits_nothing() {
+        // The race that decides whether a discarded press can still turn into
+        // a recording: the key comes up microseconds before the timer fires.
+        let mut state = hold_state();
+        let hold_session = begin_hold_press(&mut state, Instant::now());
+
+        state.hold_release_seen = true;
+        assert_eq!(
+            resolve_hold_release(&mut state),
+            HoldReleaseOutcome::Discard
+        );
+        assert!(!hold_arm_is_still_valid(&state, hold_session));
+    }
+
+    #[test]
+    fn a_second_hold_invalidates_the_first_holds_arm_timer() {
+        let mut state = hold_state();
+        let first = begin_hold_press(&mut state, Instant::now());
+        state.hold_release_seen = true;
+        resolve_hold_release(&mut state);
+
+        let second = begin_hold_press(&mut state, Instant::now());
+        assert_ne!(first, second);
+        assert!(hold_arm_is_still_valid(&state, second));
+        assert!(!hold_arm_is_still_valid(&state, first));
+    }
+
+    #[test]
+    fn only_hold_mode_gates_the_capture_lane_on_a_held_key() {
+        assert!(requires_hold_arm(&hold_state()));
+
+        for mode in [NativeActivationMode::Tap, NativeActivationMode::DoubleTap] {
+            let state = NativeTriggerState::new(NativeTriggerConfig {
+                activation_mode: mode.clone(),
+                ..NativeTriggerConfig::default()
+            });
+            assert!(
+                !requires_hold_arm(&state),
+                "{mode:?} must keep its own gesture — the threshold is hold's alone"
+            );
+        }
+    }
+
+    #[test]
+    fn pause_and_abort_holds_are_cancelled_by_a_release_below_the_threshold() {
+        let mut state = hold_state();
+
+        for action in [HoldAction::Pause, HoldAction::Abort] {
+            let effect = arm_hold_action(&mut state, action);
+            match effect {
+                TriggerEffect::DeferredHoldAction {
+                    hold_action,
+                    arm_generation,
+                } => {
+                    assert_eq!(hold_action, action);
+                    assert_eq!(arm_generation, state.hold_action_generation);
+                }
+                other => panic!("expected a deferred hold action, got {other:?}"),
+            }
+
+            assert!(cancel_hold_action(&mut state, action));
+            // Nothing is left to fire, and a second release cancels nothing.
+            assert!(!cancel_hold_action(&mut state, action));
+        }
+    }
+
+    fn mode_state(mode: NativeActivationMode) -> NativeTriggerState {
+        NativeTriggerState::new(NativeTriggerConfig {
+            activation_mode: mode,
+            ..NativeTriggerConfig::default()
+        })
+    }
+
+    #[test]
+    fn the_shipped_abort_default_is_decided_at_the_release_edge() {
+        // `Ctrl+Alt` is modifier-only, so its press edge is indistinguishable
+        // from the user being on the way to `Ctrl+Alt+T`. The shipped pause
+        // default contains a real key and keeps acting on the press.
+        for mode in [
+            NativeActivationMode::Tap,
+            NativeActivationMode::DoubleTap,
+            NativeActivationMode::Hold,
+        ] {
+            let state = mode_state(mode.clone());
+            assert!(
+                abort_uses_release_trigger(&state),
+                "{mode:?}: the modifier-only abort default must wait for the release"
+            );
+            assert!(
+                !pause_uses_release_trigger(&state),
+                "{mode:?}: `Ctrl+Space` has a real key and needs no deferral"
+            );
+        }
+    }
+
+    #[test]
+    fn an_interrupted_chord_never_pauses_or_aborts_in_any_mode() {
+        // The defect: reaching for `Ctrl+Alt+T` while dictating discarded the
+        // capture. Tap fired the instant both modifiers were down, double tap
+        // counted the chord as a tap, and hold's arm timer fired underneath it.
+        for mode in [
+            NativeActivationMode::Tap,
+            NativeActivationMode::DoubleTap,
+            NativeActivationMode::Hold,
+        ] {
+            for label in ["abort", "pause"] {
+                let mut state = mode_state(mode.clone());
+                let pressed_at = Instant::now() - Duration::from_millis(2_000);
+                assert_eq!(
+                    resolve_deferred_action_release(
+                        &mut state,
+                        label,
+                        Some(pressed_at),
+                        true,
+                        Instant::now(),
+                    ),
+                    DeferredActionRelease::Discard("ignored_interrupted_chord"),
+                    "{mode:?}/{label}: an interrupted chord must act on nothing"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_interrupted_chord_does_not_count_toward_the_double_tap() {
+        // Two `Ctrl+Alt+…` chords inside the window used to be a double tap.
+        let mut state = mode_state(NativeActivationMode::DoubleTap);
+        let now = Instant::now();
+
+        for offset in [0, 100] {
+            assert_eq!(
+                resolve_deferred_action_release(
+                    &mut state,
+                    "abort",
+                    Some(now),
+                    true,
+                    now + Duration::from_millis(offset),
+                ),
+                DeferredActionRelease::Discard("ignored_interrupted_chord")
+            );
+        }
+        assert!(
+            !state.double_tap_edges.contains_key("abort"),
+            "an interrupted chord must leave no arm behind"
+        );
+    }
+
+    #[test]
+    fn a_deliberate_gesture_still_pauses_and_aborts() {
+        // The fix must not cost the user the binding they asked for.
+        let now = Instant::now();
+
+        let mut tap = mode_state(NativeActivationMode::Tap);
+        assert_eq!(
+            resolve_deferred_action_release(&mut tap, "abort", Some(now), false, now),
+            DeferredActionRelease::Fire
+        );
+
+        let mut double_tap = mode_state(NativeActivationMode::DoubleTap);
+        assert_eq!(
+            resolve_deferred_action_release(&mut double_tap, "abort", Some(now), false, now),
+            DeferredActionRelease::Discard("double_tap_armed")
+        );
+        assert_eq!(
+            resolve_deferred_action_release(
+                &mut double_tap,
+                "abort",
+                Some(now),
+                false,
+                now + Duration::from_millis(200),
+            ),
+            DeferredActionRelease::Fire
+        );
+
+        let mut hold = mode_state(NativeActivationMode::Hold);
+        let arm = Duration::from_millis(hold.config.hold_arm_ms);
+        assert_eq!(
+            resolve_deferred_action_release(&mut hold, "abort", Some(now), false, now + arm),
+            DeferredActionRelease::Fire
+        );
+    }
+
+    #[test]
+    fn a_deferred_hold_below_the_threshold_is_discarded() {
+        // Hold measures at the release rather than on an arm timer, because the
+        // timer fires while the keys are still down — before the interruption
+        // is knowable. The threshold itself is unchanged.
+        let mut state = mode_state(NativeActivationMode::Hold);
+        let now = Instant::now();
+        let below = Duration::from_millis(state.config.hold_arm_ms - 1);
+
+        assert_eq!(
+            resolve_deferred_action_release(&mut state, "abort", Some(now), false, now + below),
+            DeferredActionRelease::Discard("hold_released_below_arm")
+        );
+    }
+
+    #[test]
+    fn a_deferred_release_without_a_press_acts_on_nothing() {
+        // A release whose press was never seen — a grab taken over mid-chord,
+        // or a suspended recorder window — must not fall through to the action.
+        let mut state = mode_state(NativeActivationMode::Tap);
+        assert_eq!(
+            resolve_deferred_action_release(&mut state, "abort", None, false, Instant::now()),
+            DeferredActionRelease::Discard("ignored_release_without_press")
+        );
+    }
+
+    #[test]
+    fn both_abort_paths_leave_the_same_capture_state_behind() {
+        let mut state = hold_state();
+        state.hotkey_active = true;
+        state.tap_hotkey_down = true;
+        state.toggled_on = true;
+        state.hold_started_at = Some(Instant::now());
+        state.hold_phase = HoldPhase::Committed;
+        let session_before = state.hold_session;
+
+        clear_capture_state_for_abort(&mut state);
+
+        assert!(!state.hotkey_active);
+        assert!(!state.tap_hotkey_down);
+        assert!(!state.toggled_on);
+        assert!(state.hold_started_at.is_none());
+        assert_eq!(state.hold_phase, HoldPhase::Idle);
+        assert_eq!(state.hold_session, session_before + 1);
+    }
+
+    #[test]
+    fn a_pause_hold_does_not_cancel_an_abort_hold() {
+        let mut state = hold_state();
+        arm_hold_action(&mut state, HoldAction::Abort);
+
+        // Releasing pause must not disarm the abort the user is still holding.
+        assert!(!cancel_hold_action(&mut state, HoldAction::Pause));
+        assert_eq!(state.pending_hold_action, Some(HoldAction::Abort));
+    }
+
     #[test]
     fn each_binding_keeps_its_own_double_tap_window() {
         // Abort and pause must not consume each other's first tap, and a tap on
@@ -2184,7 +2963,7 @@ mod tests {
     fn status_exposes_the_timing_constants_the_ui_has_to_state() {
         let state = NativeTriggerState::default();
         let status = state.status();
-        assert_eq!(status.hold_min_ms, DEFAULT_HOLD_MIN_MS);
+        assert_eq!(status.hold_arm_ms, HOLD_ARM_MS);
         assert_eq!(status.debounce_ms, DEFAULT_DEBOUNCE_MS);
         assert_eq!(status.hold_watchdog_seconds, DEFAULT_HOLD_WATCHDOG_SECONDS);
         assert!(!status.suspended);

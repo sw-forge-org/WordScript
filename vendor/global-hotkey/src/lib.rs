@@ -55,6 +55,10 @@ use once_cell::sync::{Lazy, OnceCell};
 
 mod error;
 pub mod hotkey;
+/// WordScript patch: shared state machine for observed modifier-only shortcuts,
+/// used by the Windows and macOS backends. Public so that it carries no
+/// dead-code warning on the platforms that do not consume it.
+pub mod modifier_only;
 mod platform_impl;
 
 pub use self::error::*;

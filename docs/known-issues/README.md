@@ -42,6 +42,27 @@ status change. Resolved bugs remain as references for the same failure class.
   source (including that the modifier-only capture defaults cannot register on
   macOS), and which questions need real hardware versus a VM or a CI runner
   (2026-07-25).
+- [pause-abort-interrupted-chord.md](pause-abort-interrupted-chord.md): fixed in
+  code on Linux, not yet confirmed in a native session — pause and abort acted on
+  the press edge and never read `event.interrupted`, so the shipped modifier-only
+  abort default (`Ctrl+Alt`) discarded a running capture when the user was on the
+  way to `Ctrl+Alt+<key>`. All three activation modes were affected. Both the
+  finding and the fix come from reading `core::trigger`; nothing here has been
+  observed in a running app (2026-07-29, ADR 0014).
+  The cross-platform half was reopened the same day and the record's original
+  claim about it corrected: the two non-Linux backends of the vendored crate did
+  not compile at all (three `GlobalHotKeyEvent` literals missing the
+  `interrupted` field, E0063), and modifier-only bindings never fired there —
+  neither correctly nor spuriously. Compile errors fixed, the state machine
+  extracted into a tested platform-neutral module, Windows wired to it, macOS
+  left open with written requirements because its API could not be verified on
+  this machine.
+- [rust-test-global-state-isolation.md](rust-test-global-state-isolation.md):
+  fixed — `core::runtime_log` and `core::workspace_context` tests mutated
+  process globals (the shared ring buffer, an environment variable) and failed
+  at random under parallel `cargo test`. Both now assert through a seam instead
+  of the global, so the parallel default stays the normal case; 10 consecutive
+  parallel runs and `--test-threads=1` green (2026-07-29).
 
 ## Boundaries
 

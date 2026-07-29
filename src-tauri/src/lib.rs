@@ -930,14 +930,108 @@ pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: Trigg
                 }
             }
         }
-        TriggerEffect::DeferredStop {
-            hold_session,
-            delay_ms,
+        TriggerEffect::StartCaptureProvisional { hold_session } => {
+            // Open the microphone, announce nothing. No session event, no
+            // overlay, no cue — until the hold clears the threshold this press
+            // has no user-visible consequence, so a stray brush of the key
+            // leaves nothing to explain or undo (ADR 0013). The audio is
+            // already being kept, which is why committing later loses no word.
+            match core::capture::start_native_capture(app) {
+                Ok(status) => {
+                    // The monitor watches the stream, not the session, so it
+                    // starts with the stream. A provisional capture that is
+                    // somehow never resolved would otherwise hold the
+                    // microphone open with nothing supervising it.
+                    if let Some(capture_id) = status.active_capture_id {
+                        spawn_native_capture_monitor(app.clone(), capture_id);
+                    }
+                    let delay_ms = core::trigger::hold_arm_ms(app);
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        if let Some(effect) = core::trigger::resolve_hold_arm(&app, hold_session) {
+                            apply_trigger_effect(&app, effect);
+                        }
+                    });
+                }
+                Err(error) => {
+                    // The hold is over before it began — without this the arm
+                    // timer would commit a session with no audio behind it.
+                    core::trigger::cancel_hold_in_flight(app);
+
+                    // A capture that is still active belongs to the previous
+                    // hold and is on its way out. That is a race between two
+                    // presses, not something the user did or can fix, so it is
+                    // logged rather than raised as a failed session. A
+                    // microphone that will not open for any other reason is
+                    // reported immediately, below the threshold as well —
+                    // staying silent there would turn a broken device into a
+                    // shortcut that looks dead.
+                    if error == "A native audio capture is already active." {
+                        core::runtime_log::record(format!(
+                            "[WordScript] Provisional hold start raced a capture still shutting down: {error}"
+                        ));
+                        return;
+                    }
+
+                    core::sound::play_if_enabled(core::sound::SoundCue::Error);
+                    core::sessions::fail_from_native_error(app, &error);
+                    let _ = app.emit(
+                        "wordscript-event",
+                        serde_json::json!({
+                            "event": "error",
+                            "message": error
+                        }),
+                    );
+                }
+            }
+        }
+        TriggerEffect::CommitHold { .. } => {
+            // The hold earned its session. This is the single point where it
+            // becomes real to the user, so the listen cue is anchored here and
+            // nowhere else (ADR 0012).
+            match core::sessions::start_from_native(app, "native_hold_hotkey") {
+                Ok(_) => {
+                    // The monitor is already running from the provisional
+                    // start; this step only makes the hold visible.
+                    reveal_overlay_window(app, OverlaySurface::Compact, None, None);
+                    core::sound::play_if_enabled(core::sound::SoundCue::Listen);
+                }
+                Err(error) => {
+                    // The session refused the commit — the previous one is
+                    // still running or processing. Give the microphone back and
+                    // drop the hold instead of leaving a stream open that
+                    // belongs to nothing.
+                    let _ = core::capture::abort_native_capture(app);
+                    core::trigger::cancel_hold_in_flight(app);
+                    core::runtime_log::record(format!(
+                        "[WordScript] Hold commit refused by the session state: {error}"
+                    ));
+                }
+            }
+        }
+        TriggerEffect::DiscardProvisional => {
+            // No abort cue and no error: nothing was ever announced, so there
+            // is nothing to retract. A failure to release the device is still
+            // a real failure and stays in the log.
+            if let Err(error) = core::capture::abort_native_capture(app) {
+                if error != "No native capture is active." {
+                    core::runtime_log::record(format!(
+                        "[WordScript] Discarding a provisional hold failed: {error}"
+                    ));
+                }
+            }
+        }
+        TriggerEffect::DeferredHoldAction {
+            hold_action,
+            arm_generation,
         } => {
+            let delay_ms = core::trigger::hold_arm_ms(app);
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                if let Some(effect) = core::trigger::resolve_deferred_hold_stop(&app, hold_session)
+                if let Some(effect) =
+                    core::trigger::resolve_hold_action(&app, hold_action, arm_generation)
                 {
                     apply_trigger_effect(&app, effect);
                 }
@@ -1116,6 +1210,11 @@ fn spawn_native_capture_monitor<R: Runtime + 'static>(app: AppHandle<R>, capture
                             core::runtime_log::record(format!(
                                 "[WordScript] Could not move native capture to processing during autostop: {error}"
                             ));
+                            // There is no session to carry this capture, so
+                            // returning here would leave the microphone open
+                            // with nothing left to close it.
+                            let _ = core::capture::abort_native_capture(&app);
+                            core::trigger::cancel_hold_in_flight(&app);
                             return;
                         }
                     };

@@ -31,7 +31,7 @@ Three windows:
 
 - `overlay`: transparent compact stage. Recording/processing/result/error
   states share one fixed-size pill. Each delivery mode has exactly one decision
-  surface (ADR 0011): `clipboard_only` stops on a real processing preview
+  surface (ADR 0011a): `clipboard_only` stops on a real processing preview
   (Copy / Edit / Abort) before delivery and closes after the commit;
   `auto_paste` delivers first and then shows the result surface
   (Copy / Edit / Dismiss). Which surface is shown follows from runtime state set
@@ -50,7 +50,7 @@ Rust core modules in `src-tauri/src/core/`:
 - `history.rs` -- persistent native history: raw vs transformed transcript, insert outcome, server-side filters, export, retention, retry
 - `paths.rs` -- product paths (config, scratchpad, logs)
 - `shortcut.rs` -- single owner of the shortcut contract (ADR 0006): token vocabulary, canonical form, display strings, validity rules, and the per-session capability matrix (ADR 0007)
-- `trigger.rs` -- global start/stop, pause/resume, abort hotkeys, activation modes (tap / double tap / hold), grab lifecycle and `[trigger]` observability
+- `trigger.rs` -- global start/stop, pause/resume, abort hotkeys, activation modes (tap / double tap / hold, the latter strictly momentary per ADR 0013 and gating all three capture-lane bindings), grab lifecycle and `[trigger]` observability. Every modifier-only capture-lane binding -- start/stop, pause and abort -- is decided at the release edge, where the interruption signal exists; an interrupted chord acts on nothing (ADR 0014)
 - `capture.rs` -- audio capture, level/waveform events, silence/max-duration autostop, single stream rebuild after transient error
 - `sessions.rs` -- runtime status and shared session transitions
 - `sound/` -- one synthesised G-major theme: startup signature plus listen,
@@ -207,7 +207,7 @@ runs the same native insert/history/session path (no frontend-only commit
 layer); the edit passes the corrected text as its optional `text` argument, so
 session completion, history and the insert result all describe the text that was
 actually delivered. The overlay closes after the commit -- this mode has no
-result surface (ADR 0011).
+result surface (ADR 0011a).
 
 ## Known Deviations / Open Questions
 

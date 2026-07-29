@@ -18,10 +18,17 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{hotkey::HotKey, GlobalHotKeyEvent, HotKeyState};
+use crate::{
+    hotkey::HotKey, modifier_only::ModifierOnlyObserver, GlobalHotKeyEvent, HotKeyState,
+};
 
 static HOTKEY_REGISTRY: Lazy<std::sync::Mutex<HashMap<u32, HotKey>>> =
     Lazy::new(Default::default);
+/// WordScript patch: shortcuts whose main key is itself a modifier. They are
+/// observed through the same low-level hook rather than grabbed (ADR 0009), so
+/// `Ctrl+Alt` stays available to every other application, and the release edge
+/// carries whether another key spoiled the chord.
+static OBSERVER: Lazy<std::sync::Mutex<ModifierOnlyObserver>> = Lazy::new(Default::default);
 static HOOK_STARTED: OnceCell<()> = OnceCell::new();
 
 const LLKHF_INJECTED: u32 = 0x10;
@@ -42,17 +49,38 @@ impl GlobalHotKeyManager {
     }
 
     pub fn register(&self, hotkey: HotKey) -> crate::Result<()> {
-        if key_to_vk(&hotkey.key).is_none() {
+        let Some(vk) = key_to_vk(&hotkey.key) else {
             return Err(crate::Error::FailedToRegister(format!(
                 "Unknown VKCode for {}",
                 hotkey.key
             )));
+        };
+
+        // A main key that is itself a modifier goes to the observer. The hook
+        // sees these keys anyway; what changes is that they are never consumed.
+        if vk_to_modifier(vk).is_some() {
+            let registered = OBSERVER
+                .lock()
+                .unwrap()
+                .register(hotkey.id(), vk as u32, hotkey.mods);
+            return if registered {
+                Ok(())
+            } else {
+                Err(crate::Error::AlreadyRegistered(hotkey))
+            };
         }
+
         HOTKEY_REGISTRY.lock().unwrap().insert(hotkey.id(), hotkey);
         Ok(())
     }
 
     pub fn unregister(&self, hotkey: HotKey) -> crate::Result<()> {
+        if let Some(vk) = key_to_vk(&hotkey.key) {
+            if vk_to_modifier(vk).is_some() {
+                OBSERVER.lock().unwrap().unregister(vk as u32, hotkey.mods);
+                return Ok(());
+            }
+        }
         HOTKEY_REGISTRY.lock().unwrap().remove(&hotkey.id());
         Ok(())
     }
@@ -121,6 +149,39 @@ unsafe extern "system" fn ll_keyboard_proc(
     let is_down = wparam == WM_KEYDOWN as usize || wparam == WM_SYSKEYDOWN as usize;
     let is_up = wparam == WM_KEYUP as usize || wparam == WM_SYSKEYUP as usize;
 
+    // WordScript patch: feed the observer before anything else, and for *every*
+    // key. A non-modifier press registers no shortcut of its own here, but it is
+    // exactly what spoils a held modifier-only trigger -- `Ctrl+Alt` on the way
+    // to `Ctrl+Alt+T` has to arrive at its release edge marked interrupted. This
+    // runs even when the grabbed path below consumes the key.
+    if is_down || is_up {
+        let modifier = vk_to_modifier(vk);
+        // `try_lock`, like the registry read below: the hook must never block on
+        // a registration happening on another thread. A missed observation is a
+        // dropped gesture; a blocked hook freezes the whole desktop's input.
+        let emissions = match OBSERVER.try_lock() {
+            Ok(mut observer) => {
+                if is_down {
+                    observer.on_press(vk as u32, modifier)
+                } else {
+                    observer.on_release(vk as u32, modifier)
+                }
+            }
+            Err(_) => Vec::new(),
+        };
+        for emission in emissions {
+            GlobalHotKeyEvent::send(GlobalHotKeyEvent {
+                id: emission.id,
+                state: if emission.pressed {
+                    HotKeyState::Pressed
+                } else {
+                    HotKeyState::Released
+                },
+                interrupted: emission.interrupted,
+            });
+        }
+    }
+
     if let Some(modifier) = vk_to_modifier(vk) {
         if is_down {
             MOD_STATE.with(|m| m.set(m.get() | modifier));
@@ -165,6 +226,7 @@ unsafe extern "system" fn ll_keyboard_proc(
             GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                 id,
                 state: HotKeyState::Pressed,
+                interrupted: false,
             });
             return 1;
         }

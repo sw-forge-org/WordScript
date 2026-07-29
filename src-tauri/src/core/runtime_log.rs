@@ -57,8 +57,22 @@ fn append_to_log_file(message: &str) {
     }
 }
 
+// Formatting and buffering are split out of `record` so tests can assert both
+// against a local buffer instead of the process-wide one, which every other
+// test thread shares.
+fn formatted_entry(message: &str) -> String {
+    format!("{} {message}", log_timestamp())
+}
+
+fn push_bounded(entries: &mut VecDeque<String>, message: String) {
+    entries.push_back(message);
+    while entries.len() > MAX_RUNTIME_LOG_ENTRIES {
+        entries.pop_front();
+    }
+}
+
 pub fn record(message: String) {
-    let message = format!("{} {message}", log_timestamp());
+    let message = formatted_entry(&message);
     eprintln!("{message}");
     append_to_log_file(&message);
 
@@ -66,10 +80,7 @@ pub fn record(message: String) {
         return;
     };
 
-    entries.push_back(message);
-    while entries.len() > MAX_RUNTIME_LOG_ENTRIES {
-        entries.pop_front();
-    }
+    push_bounded(&mut entries, message);
 }
 
 #[tauri::command]
@@ -101,14 +112,11 @@ mod tests {
 
     #[test]
     fn record_appends_to_in_memory_ring_buffer() {
-        let mut entries = runtime_log_store().lock().unwrap();
-        entries.clear();
-        drop(entries);
+        let mut entries = VecDeque::new();
 
-        record("wordscript-test-line-a".to_string());
-        record("wordscript-test-line-b".to_string());
+        push_bounded(&mut entries, formatted_entry("wordscript-test-line-a"));
+        push_bounded(&mut entries, formatted_entry("wordscript-test-line-b"));
 
-        let entries = runtime_log_store().lock().unwrap();
         assert!(entries
             .iter()
             .any(|entry| entry.ends_with(" wordscript-test-line-a")));
@@ -118,18 +126,35 @@ mod tests {
     }
 
     #[test]
-    fn recorded_entries_carry_an_epoch_and_monotonic_timestamp() {
-        let mut entries = runtime_log_store().lock().unwrap();
-        entries.clear();
-        drop(entries);
+    fn ring_buffer_drops_the_oldest_entry_beyond_the_cap() {
+        let mut entries = VecDeque::new();
 
-        record("wordscript-test-timestamped".to_string());
+        for index in 0..MAX_RUNTIME_LOG_ENTRIES + 2 {
+            push_bounded(&mut entries, formatted_entry(&format!("line-{index}")));
+        }
 
-        let entries = runtime_log_store().lock().unwrap();
-        let entry = entries
+        assert_eq!(entries.len(), MAX_RUNTIME_LOG_ENTRIES);
+        assert!(entries.front().unwrap().ends_with(" line-2"));
+        assert!(entries
+            .back()
+            .unwrap()
+            .ends_with(&format!(" line-{}", MAX_RUNTIME_LOG_ENTRIES + 1)));
+    }
+
+    #[test]
+    fn record_reaches_the_shared_ring_buffer() {
+        record("wordscript-test-shared-buffer".to_string());
+
+        let entries = runtime_log_entries().expect("buffer is readable");
+        assert!(entries
             .iter()
-            .find(|entry| entry.ends_with(" wordscript-test-timestamped"))
-            .expect("recorded entry is buffered");
+            .any(|entry| entry.ends_with(" wordscript-test-shared-buffer")));
+    }
+
+    #[test]
+    fn recorded_entries_carry_an_epoch_and_monotonic_timestamp() {
+        let entry = formatted_entry("wordscript-test-timestamped");
+        assert!(entry.ends_with(" wordscript-test-timestamped"));
 
         let stamp = entry
             .strip_prefix('[')

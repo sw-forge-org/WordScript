@@ -59,10 +59,64 @@ Status: Proposed | Accepted | Superseded by NNNN
   audio cues are synthesised from one G-major theme -- a startup signature the
   operational cues quote fragments of -- and play on a single persistent output
   stream instead of a device opened per cue.
-- [0011](0011-one-decision-surface-per-delivery-mode.md): each delivery mode has
+- [0011a](0011a-one-decision-surface-per-delivery-mode.md): each delivery mode has
   exactly one surface on which the user decides -- `clipboard_only` before
   delivery, `auto_paste` after it -- and the overlay derives it from runtime
   state set in one reducer commit instead of per-mode bridge predicates.
+- [0011b](0011b-the-mode-lane-sits-on-alt-not-on-ctrl.md): the mode lane -- mode
+  select plus the six per-mode jumps -- moves from `Ctrl` to `Alt`, because a
+  modifier-plus-key shortcut is still a global grab and `Ctrl+S` /
+  `Ctrl+1`-`Ctrl+6` are taken away from every other application.
 - [0012](0012-cues-are-anchored-to-the-delivery-point.md): audio cues are emitted
   by the session lifecycle next to the event that tells the UI the same thing,
   not from inside the insert helper.
+- [0013](0013-hold-to-talk-is-strictly-momentary.md): hold to talk discards a
+  press below `HOLD_ARM_MS` instead of extending it to that length, and gains no
+  latch gesture -- the two toggle modes already own latching. The microphone
+  still opens on the press edge, so committing later loses no word.
+- [0014](0014-every-modifier-only-binding-is-decided-at-the-release-edge.md):
+  pause and abort follow the rule start/stop already followed -- a modifier-only
+  binding is decided at the release edge, where the interruption signal is
+  knowable, and an interrupted chord acts on nothing. In hold mode the deferred
+  action fires on the release rather than on the arm timer; the threshold is
+  unchanged.
+
+## Resolved: the number 0011 was used twice
+
+Recorded 2026-07-29, resolved the same day. Both
+`0011-one-decision-surface-per-delivery-mode.md` and
+`0011-the-mode-lane-sits-on-alt-not-on-ctrl.md` were filed on 2026-07-27 under
+the same number; only the first was listed here until the defect was found,
+which is why the collision went unnoticed. Both are accepted and neither is
+wrong, so neither could simply be withdrawn.
+
+**Resolution: a disambiguating suffix, not a new number.** The delivery-surface
+record is now `0011a`, the mode-lane record `0011b`. Renumbering the second one
+to the next free number was the alternative and was rejected: it would have
+broken the rule above -- *never renumber an existing ADR* -- and a reader
+meeting a bare "ADR 0011" in an older commit, issue or handoff would silently
+land on the wrong record with no signal that anything had moved. The suffix
+keeps both numbers where they were filed, so an old bare reference still points
+at the right pair and merely needs one letter of disambiguation.
+
+Both files were renamed and their title headings changed from `0011` to `0011a`
+and `0011b`. That heading edit is the only change made inside either record —
+the decision text itself is untouched, because *never rewrite retroactively*
+governs the content, not the identifier the record is filed under, and a record
+whose heading contradicts its own filename is worse than either.
+
+This is a one-time exception for a filing accident. It is **not** a licence to
+file two ADRs under one number: the next decision takes 0015.
+
+Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
+earlier audit in this section was incomplete -- it claimed every "ADR 0011"
+outside the decisions meant the delivery-surface record, and two of them do not:
+
+- **0011a** (delivery surface): `ARCHITECTURE.md`, `REFERENCE.md`, `STATUS.md`
+  (two places), `spec/SPEC.md` (two places), `known-issues/overlay-ghosting.md`,
+  `CHANGELOG.md` (the overlay surface entry).
+- **0011b** (mode lane): `CHANGELOG.md` (the `Ctrl`-to-`Alt` entry) and
+  `handoffs/HANDOFF_activation-mode-gestures-and-defaults.md` (the migration
+  pattern it cites as precedent).
+
+All of them now carry the letter. Cite these two by number **with** the suffix.

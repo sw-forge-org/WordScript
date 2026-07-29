@@ -469,6 +469,9 @@ unsafe extern "C" fn media_key_event_callback(
                     true => crate::HotKeyState::Pressed,
                     false => crate::HotKeyState::Released,
                 },
+                // A media key is a real key: the intent is unambiguous, so the
+                // contract in `lib.rs` fixes this at false.
+                interrupted: false,
             });
 
             return ptr::null();
@@ -519,6 +522,7 @@ unsafe extern "C" fn key_event_callback(
                     GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                         id: *id,
                         state,
+                        interrupted: false,
                     });
                 }
             }

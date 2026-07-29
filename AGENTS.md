@@ -34,10 +34,12 @@ voice tools.
 - Mode: **Lean** -- a single consolidated spec lives at `docs/spec/SPEC.md`.
   The living overview docs (`docs/ARCHITECTURE.md`, `docs/VISION.md`,
   `docs/REFERENCE.md`, `docs/STATUS.md`) expand on it but do not replace it.
-- Current state: Spec created 2026-07-24; last drift check 2026-07-27 (delivery
-  mode rework merged: one decision surface per delivery mode with the overlay
-  surface derived from one reducer commit, ADR 0011; audio cues anchored to the
-  delivery point in the session lifecycle, ADR 0012).
+- Current state: Spec created 2026-07-24; last drift check 2026-07-29 (hold to
+  talk made strictly momentary: a press below `hold_arm_ms` is discarded instead
+  of extended, the microphone still opens on the press edge, and the threshold
+  gates all three capture-lane bindings, ADR 0013; and pause/abort moved to the
+  release edge for modifier-only bindings so an interrupted chord acts on
+  nothing, ADR 0014).
 - Decisions: see `docs/decisions/` (append-only ADRs).
 - Drift check/sync: the `spec-sync` skill (global, see dotfiles -- not
   duplicated in this repo).

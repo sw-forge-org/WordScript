@@ -368,7 +368,7 @@ export interface NativeTriggerStatus {
   last_error:               string | null;
   owner:                    string;
   bindings:                 ShortcutBindingInfo[];
-  hold_min_ms:              number;
+  hold_arm_ms:              number;
   debounce_ms:              number;
   hold_watchdog_seconds:    number;
   double_tap_window_ms:     number;

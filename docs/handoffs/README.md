@@ -8,6 +8,12 @@ Naming: `HANDOFF_<branch-or-slug>.md`
 
 ## Contents
 
+- [Per-Mode Activation Gestures and Shortcut Defaults](HANDOFF_activation-mode-gestures-and-defaults.md):
+  **open — nothing built yet**, written 2026-07-29. The only forward-looking
+  document in this folder. Why one set of shortcut defaults cannot serve three
+  activation modes, the three capability gaps that block a per-mode gesture
+  (mode-aware modifier minimum, sided modifier tokens, the observation path on
+  Windows and macOS), and the decisions still owed.
 - [Capture Shortcut Lane Rebuild](HANDOFF_shortcut-lane-rebuild.md): merged
   2026-07-25 — the shortcut contract rebuild (S0-S8), the invariants it
   established and the decisions behind them. The work it left open did not stay

@@ -1,8 +1,10 @@
 # Capture Shortcut Recording and Registration
 
-Status: **Largely resolved (2026-07-25). S0-S8 implemented. Two open items: the
-physical half of the S0 measurement, and hold to talk, which a live session shows
-still not working while double tap does.**
+Status: **Resolved for the activation modes (2026-07-29). S0-S8 implemented. D11
+is closed: hold to talk delivers and acts on both edges; the real defect was its
+threshold semantics, corrected under ADR 0013 — see [Second physical result
+(2026-07-29)](#second-physical-result-2026-07-29-hold-to-talk-acts-on-both-edges)
+below. One open item remains: the physical half of the S0 measurement.**
 
 ## Current State (2026-07-25)
 
@@ -21,7 +23,7 @@ Slices S0-S8 from the plan below were implemented on branch
 | D8 recorder vocabulary smaller than the runtime's | Fixed — the UI reads the runtime vocabulary and has no key table |
 | D9 physical key codes shown as US labels | Improved — human display strings everywhere, physical-key caveat stated |
 | D10 no test coverage for the recorder | Fixed — `HotkeyRecorder.test.tsx` covers the lifecycle rules |
-| D11 hold to talk not supported in practice | **Open again** — watchdog, release attribution and evidence-based gating are in place, but a live session with a working double tap shows hold to talk still doing nothing. Delivery is ruled out; see the first physical result below |
+| D11 hold to talk not supported in practice | **Closed (2026-07-29)** — both edges arrive and both act. The 2026-07-25 reading was wrong about the symptom: the mode was not doing nothing, it was doing the same thing for every press length, because `hold_min_ms` extended a short hold instead of discarding it. Fixed under ADR 0013; see the second physical result below |
 | D12 trigger lane has no observability | Fixed — every event, decision and registration outcome is logged |
 
 What S6 and S7 delivered:
@@ -162,6 +164,43 @@ tail -f ~/.config/WordScript/logs/wordscript-runtime.log | grep trigger
 Press and hold the trigger for ~3 s, speak, release. Record the full block of
 `event=shortcut` and `event=decision` lines here. Until then this stays an open
 symptom with a narrowed cause, not a diagnosed defect.
+
+### Second physical result (2026-07-29): hold to talk acts on both edges
+
+Reported from a live session, superseding the reading above. The 2026-07-25
+entry stays as written — this is what was learned since, not a correction of
+what was observed then.
+
+- **The press starts a capture** and **the release stops it.** A ten-second hold
+  records for ten seconds and ends when the key comes up. Neither edge is lost.
+- **The hold duration changes nothing about the outcome.** A one-millisecond
+  press produces a recording and a transcript exactly like a deliberate hold
+  does. That is what made the mode read as "not working": it behaved like tap to
+  toggle, so nothing about holding the key appeared to matter.
+
+This resolves candidate 4 from the list above and closes D11. The cause was not
+a mis-set `hold_min_ms` but the meaning of the constant. It never gated a hold —
+it *extended* one: a release below the threshold scheduled a `DeferredStop` that
+fired once the recording had reached 300 ms, so every press produced a session.
+Candidates 1-3 are ruled out by the observation that both edges act.
+
+The fix and its reasoning are ADR
+[0013](../decisions/0013-hold-to-talk-is-strictly-momentary.md).
+
+**Still to record here: the log block from a native session with the fix in
+place.** The behavior above was observed by using the app; the `[trigger]` lines
+themselves have not been captured yet, so this section carries no transcript.
+The decision tokens changed with the fix, so the run is worth taking on its own
+terms rather than reusing the old ones. A committed hold should produce
+`hold_provisional_start`, then a `hold_arm` line with `outcome=committed`, then
+`hold_stop`; a press below the threshold should produce
+`hold_provisional_start` followed by `hold_discarded_below_arm` and **no**
+`hold_arm` line at all. If a run disagrees with that, the disagreement belongs
+here and the fix is not finished.
+
+```
+tail -f ~/.config/WordScript/logs/wordscript-runtime.log | grep trigger
+```
 
 ### Smaller open points from the same lane
 
@@ -691,6 +730,20 @@ depend on the measurement from S0 and on the single normalizer from S1.
 - Whether normal-use unreliability during ordinary dictation is the same
   focus-dependent delivery problem rather than a capture or provider issue --
   S0 logging should make the two distinguishable for the first time.
+
+## Split-Off Records
+
+Two findings from this lane have their own records rather than growing this one
+further:
+
+- [pause-abort-interrupted-chord.md](pause-abort-interrupted-chord.md)
+  (2026-07-29): pause and abort act on the press edge and never read
+  `event.interrupted`, so the shipped `Ctrl+Alt` abort default fires under an
+  unrelated chord. It concerns the trigger's decision logic rather than
+  recording, normalization or registration, which is what this record is about.
+- [../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md)
+  (2026-07-29): the plan for per-mode activation gestures and defaults, and the
+  three capability gaps beneath it.
 
 ## Scope
 

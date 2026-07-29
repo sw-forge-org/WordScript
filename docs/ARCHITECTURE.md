@@ -48,7 +48,7 @@ Rust core
 Three windows in the Tauri config:
 
 - `overlay`: transparent compact stage with a pill for recording/processing
-  state. Each delivery mode has exactly one decision surface (ADR 0011):
+  state. Each delivery mode has exactly one decision surface (ADR 0011a):
   `clipboard_only` work modes hold a real processing preview
   (`copy`/`edit`/`abort`) before commit and close afterwards; `auto_paste`
   delivers first and then shows the result surface

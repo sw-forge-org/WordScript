@@ -1,4 +1,4 @@
-# 0011 -- One decision surface per delivery mode
+# 0011a -- One decision surface per delivery mode
 
 Date: 2026-07-27
 Status: accepted

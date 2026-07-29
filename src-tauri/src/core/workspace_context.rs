@@ -413,7 +413,13 @@ fn categorize_app(bundle_id: &str, app_name: &str) -> &'static str {
 // Only consumed by the macOS IDE-context path today; harmless elsewhere.
 #[allow(dead_code)]
 fn resolve_project_root() -> Option<std::path::PathBuf> {
-    if let Ok(root) = std::env::var("WORDSCRIPT_PROJECT_ROOT") {
+    resolve_configured_project_root(std::env::var("WORDSCRIPT_PROJECT_ROOT").ok().as_deref())
+}
+
+// The env lookup is split off so tests can exercise both branches without
+// mutating the process environment, which is shared by every test thread.
+fn resolve_configured_project_root(configured: Option<&str>) -> Option<std::path::PathBuf> {
+    if let Some(root) = configured {
         let path = std::path::PathBuf::from(root.trim());
         if path.is_dir() {
             return Some(path);
@@ -679,16 +685,25 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn resolve_project_root_reads_env_var() {
-        std::env::set_var("WORDSCRIPT_PROJECT_ROOT", "/tmp");
-        assert_eq!(resolve_project_root(), Some(std::path::PathBuf::from("/tmp")));
-        std::env::remove_var("WORDSCRIPT_PROJECT_ROOT");
+        assert_eq!(
+            resolve_configured_project_root(Some("/tmp")),
+            Some(std::path::PathBuf::from("/tmp"))
+        );
     }
 
     #[test]
     fn resolve_project_root_falls_back_to_cwd_for_invalid_env() {
-        std::env::set_var("WORDSCRIPT_PROJECT_ROOT", "/nonexistent/path/xyz");
-        let result = resolve_project_root();
-        std::env::remove_var("WORDSCRIPT_PROJECT_ROOT");
-        assert!(result.is_some());
+        assert_eq!(
+            resolve_configured_project_root(Some("/nonexistent/path/xyz")),
+            std::env::current_dir().ok()
+        );
+    }
+
+    #[test]
+    fn resolve_project_root_falls_back_to_cwd_without_env() {
+        assert_eq!(
+            resolve_configured_project_root(None),
+            std::env::current_dir().ok()
+        );
     }
 }

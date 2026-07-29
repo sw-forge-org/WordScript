@@ -73,7 +73,7 @@ Set per text profile as `work_mode.insert_behavior`; the settings label is
 | `auto_paste` | Copy and insert at cursor | result surface, *after* delivery | the original is already at the cursor and cannot be retracted, so confirming puts the correction on the clipboard |
 | `clipboard_only` | Copy to clipboard only | processing preview, *before* delivery | confirming delivers the corrected text through the commit |
 
-Exactly one of these surfaces is shown per session (ADR 0011). `clipboard_only`
+Exactly one of these surfaces is shown per session (ADR 0011a). `clipboard_only`
 never shows a result surface after its commit.
 
 Do not confuse the delivery mode with the delivery *outcome*: every
@@ -233,8 +233,11 @@ guaranteed on every platform — see the activation-mode section below.
 
 Because these are global grabs, they are taken away from every other
 application: `Ctrl+Space` is a widely used in-app shortcut (completion, input
-source switching), `Ctrl+Alt` fires on the leading edge of every `Ctrl+Alt+…`
-combination the desktop uses, and on the `Alt` lane `Alt+letter` is a menu
+source switching), `Ctrl+Alt` is observed on the leading edge of every
+`Ctrl+Alt+…` combination the desktop uses — WordScript sees those events and
+discards them as an interrupted chord (ADR
+[0014](decisions/0014-every-modifier-only-binding-is-decided-at-the-release-edge.md)),
+but it is still the same physical gesture — and on the `Alt` lane `Alt+letter` is a menu
 mnemonic in some applications while `Alt+1`-`Alt+9` switches tabs in Firefox on
 Linux and Windows. This is a deliberate product decision, not an oversight;
 users who need those keys back reassign them in Settings.
@@ -256,6 +259,14 @@ default capture triggers are modifier-only. The default applies to a config that
 does not record an `activation_mode`; an existing config keeps the value it has,
 and no migration rewrites the field.
 
+The release rule applies to all three capture-lane bindings, in every mode: a
+modifier-only shortcut is decided when it comes up, because that is the only
+moment the interruption signal exists — a press cannot yet know that a third key
+is about to follow (ADR
+[0014](decisions/0014-every-modifier-only-binding-is-decided-at-the-release-edge.md)).
+An interrupted release acts on nothing and counts toward nothing. A binding that
+contains a real key is unaffected and acts on the press.
+
 - **Tap to toggle**: the same shortcut starts and stops. Repeated presses of the
   same kind within `debounce_ms` (300) are debounced. A modifier-only shortcut
   acts on release rather than press.
@@ -271,11 +282,24 @@ and no migration rewrites the field.
   capture-lane triggers — start/stop, pause and abort — each with its own
   window, so one binding cannot complete another's double tap. Mode hotkeys stay
   single-press: a stray mode switch costs a mode, not a recording.
-- **Hold to talk**: recording runs while the shortcut is held. A hold shorter
-  than `hold_min_ms` (300) is extended to that length before stopping. A hold
-  whose key release never arrives is ended by the watchdog after
+- **Hold to talk**: recording runs while the shortcut is held, and only while it
+  is held. A press shorter than `hold_arm_ms` (300) is **discarded** — no
+  session, no overlay, no cue, no history entry (ADR
+  [0013](decisions/0013-hold-to-talk-is-strictly-momentary.md)). The microphone
+  still opens on the press edge and the audio is kept, so a hold that goes on to
+  commit loses no word; what waits for the threshold is the session, not the
+  stream. The mode has no latch gesture — a recording that keeps running without
+  a held key is what the two toggle modes are for. Like the double-tap window,
+  the threshold covers all three capture-lane triggers: start/stop, pause and
+  abort. For a modifier-only pause or abort the threshold is measured at the
+  release rather than on an arm timer, so the action fires when the key comes up
+  (ADR [0014](decisions/0014-every-modifier-only-binding-is-decided-at-the-release-edge.md));
+  the required duration is the same.
+  A hold whose key release never arrives is ended by the watchdog after
   `hold_watchdog_seconds` (config, default 120, `0` disables) with reason
-  `native_hold_watchdog`, logged rather than left to the silence timeout.
+  `native_hold_watchdog`, logged rather than left to the silence timeout. The
+  watchdog arms at the commit, because below the threshold there is no session
+  to strand.
   Whether the platform delivers a key release at all is not guaranteed — the
   runtime counts presses and releases per binding, and the capability matrix
   turns those counters into the state of this option. See
@@ -329,7 +353,9 @@ The trigger lane logs to the runtime log under the `[trigger]` prefix:
 `event=shortcut` for every received event (shortcut id, binding, pressed or
 released), `event=decision` for what the state machine did with it (`start`,
 `stop`, `abort`, `toggle_pause`, `mode_select`, `set_mode`, `debounced`,
-`ignored_*`, `hold_start`, `hold_stop`, `no_binding`), `event=register` and
+`ignored_*` including `ignored_interrupted_chord`, `hold_start`, `hold_stop`,
+`hold_arm_pending`, `hold_released_below_arm`, `double_tap_armed`,
+`deferred_to_release_modifier_only`, `no_binding`), `event=register` and
 `event=unregister` for registration outcomes, and `event=hold_watchdog` when a
 stranded hold is ended. This is permanent infrastructure, not a debug patch.
 

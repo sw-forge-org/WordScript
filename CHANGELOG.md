@@ -175,7 +175,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The mode lane moved from `Ctrl` to `Alt` (ADR 0011): mode select is `Alt+S`
+- Hold to talk is strictly momentary (ADR 0013). A press shorter than
+  `hold_arm_ms` (300 ms, fixed) is now **discarded** — no session, no overlay, no
+  cue, no history entry. The old `hold_min_ms` did not gate a hold, it extended
+  one: a release below the threshold scheduled a deferred stop that fired once
+  the recording had reached 300 ms, so every press produced a transcript and the
+  hold duration changed nothing. The mode behaved like tap to toggle with a
+  floor. The microphone still opens on the press edge and the audio is kept, so
+  a hold that commits loses no word; what waits for the threshold is the
+  session, not the stream. The listen cue therefore moves from the press to the
+  commit, and the watchdog arms there too. No latch gesture was added, to hold
+  or to tap: the two toggle modes already own latching, and a hybrid branch
+  would make the three options overlap. The threshold gates all three
+  capture-lane bindings — start/stop, pause and abort — the way the double-tap
+  window already does. `NativeTriggerStatus.hold_min_ms` is renamed to
+  `hold_arm_ms`; `TriggerEffect::DeferredStop` is removed and replaced by
+  `StartCaptureProvisional`, `CommitHold`, `DiscardProvisional` and
+  `DeferredHoldAction`. This also closes D11 in the known-issues record, which
+  had hold to talk down as doing nothing at all: both edges arrive and both act,
+  and the defect was in what they meant.
+
+### Fixed
+
+- The Windows and macOS builds were broken and had been for as long as the
+  vendored `global-hotkey` patch has existed. Three `GlobalHotKeyEvent` literals
+  were never updated when the patch added the `interrupted` field
+  (`windows/mod.rs:165`, `macos/mod.rs:466` and `:519`), which is E0063 — a
+  missing field in a struct literal. The patch had only ever been compiled on
+  Linux. Fixed by supplying the contract-correct `false` at each site (press
+  edge, grabbed real key, media key).
+- Modifier-only shortcuts now exist on Windows. They previously registered and
+  then never fired: the low-level hook returned early for every modifier virtual
+  key, so a shortcut whose main key is itself a modifier never reached the
+  matcher. The shared state machine behind it — held-modifier tracking, the
+  exact-match rule, and what marks a held trigger interrupted — moved into a new
+  platform-neutral `modifier_only` module with ten unit tests that compile and
+  run on Linux, so the logic is checkable even though the target is not. Windows
+  registers modifier main keys with the observer, feeds it every key event, and
+  still passes modifier keys on rather than consuming them (ADR 0009). This also
+  makes the release-edge pause/abort fix effective there, since `interrupted` is
+  now computed rather than absent. The x11 backend is untouched: it is the
+  reference implementation and the only one that has actually run.
+  **Not compiled for Windows or macOS** — there is no cross toolchain on the
+  development machine. `session_has_interruption_signal` therefore still returns
+  false for Windows, so a single bare modifier stays rejected there until
+  hardware confirms the signal. macOS remains unimplemented, with its
+  requirements written into the known-issues record instead of guessed at in
+  code, because `objc2-app-kit` could not be read to verify the API.
+- Two ADRs filed on 2026-07-27 shared the number 0011 — the delivery-surface
+  record and the mode-lane record. Both are accepted and neither could be
+  withdrawn, so they gained a disambiguating suffix instead of a new number:
+  `0011a-one-decision-surface-per-delivery-mode.md` and
+  `0011b-the-mode-lane-sits-on-alt-not-on-ctrl.md`. Renumbering the second to
+  the next free number was rejected because it breaks the "never renumber an
+  existing ADR" rule and would silently send an older bare "ADR 0011" reference
+  to the wrong record. Every citation across the docs now carries the letter;
+  the reference audit was redone in the process and had been wrong about two of
+  them. The next decision takes 0015.
+- `cargo test` is reliably green again on a clean tree. Three tests mutated
+  process-wide state and therefore raced their own siblings under the parallel
+  default: two `core::runtime_log` tests cleared the shared ring buffer before
+  recording into it, and the `core::workspace_context` pair set and removed the
+  same `WORDSCRIPT_PROJECT_ROOT` variable. Measured at 2 failures in 22
+  consecutive runs, load dependent, and always a false negative — the assertions
+  and the code under test were correct. Both sites now assert through a seam
+  rather than a lock: the ring-buffer tests compose `formatted_entry` and
+  `push_bounded` against a local `VecDeque`, and the project-root tests call
+  `resolve_configured_project_root` with the value they want instead of touching
+  the environment. Serialising the suite was explicitly not the fix; the
+  parallel default stays the normal case and `--test-threads=1` stays green.
+  Two behaviours gained coverage on the way — ring-buffer eviction at the cap,
+  and project-root resolution with no variable set — and `std::env::set_var` is
+  gone from the test module ahead of the Rust 2024 edition bump.
+- Reaching for `Ctrl+Alt+<key>` while dictating no longer discards the capture.
+  The shipped abort default `Ctrl+Alt` is modifier-only, and pause and abort
+  acted on its press edge — a moment at which the interruption signal cannot
+  exist yet, because the third key has not been pressed. All three activation
+  modes misfired: tap the instant both modifiers were down, double tap on the
+  second such chord inside the window, hold once its arm timer passed
+  `hold_arm_ms` underneath the still-held chord. Pause and abort now follow the
+  rule start/stop already followed (ADR 0014): a modifier-only binding is decided
+  at the release edge, and an interrupted chord acts on nothing and counts toward
+  nothing. In hold mode the threshold is unchanged but measured at the release,
+  because a timer that fires mid-hold fires before the interruption is knowable.
+  A binding containing a real key — the shipped `Ctrl+Space` pause — is
+  unaffected and still acts on the press. Fixing the default alone would not have
+  helped: any modifier-only value a user assigns hits the same path.
+- Holds taken in quick succession no longer strand the microphone. The
+  provisional window is the one moment where a key is held without a session,
+  and `sync_trigger_state_with_session` treated that as state to repair: it
+  cleared `hotkey_active` on the next incoming event, the matching release was
+  dropped as a release without a press, and the capture stayed open. The next
+  press then failed with "A native audio capture is already active", the leftover
+  stream produced "No speech detected", and an abort was needed to clear a
+  session that already looked finished. The hold now carries an explicit
+  `HoldPhase`, which the session sync leaves alone while it is provisional.
+  Alongside it: a release is handled whenever a hold is in flight even if the
+  held flag was lost, a failed provisional start cancels the hold so the arm
+  timer cannot commit a session with no audio behind it, the capture monitor
+  starts with the stream instead of with the session so no capture is ever
+  unsupervised, and a monitor autostop that finds no session releases the device
+  instead of returning and leaving it open.
+- A hold pressed while the previous transcript is still processing is refused at
+  the press edge (`ignored_processing`), the way tap mode already refused it,
+  instead of opening a microphone for 300 ms and then failing the commit.
+- The mode lane moved from `Ctrl` to `Alt` (ADR 0011b): mode select is `Alt+S`
   instead of `Ctrl+S`, and the six per-mode jumps are `Alt+1`-`Alt+6` instead of
   `Ctrl+1`-`Ctrl+6`. The old defaults were global grabs on **save** and on
   **browser tab switching** — the two reflexes a writing tool must not take
@@ -284,6 +388,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known issues
 
+- The pause/abort interrupted-chord fix below is unobserved: neither the defect
+  nor the fix has been seen in a running app, and on Windows and macOS the defect
+  is untouched because those backends report no interruption signal at all.
+  `docs/known-issues/pause-abort-interrupted-chord.md`.
+- `cargo test` is not reliably green on a clean tree: two `core::runtime_log`
+  tests and the `core::workspace_context` env-var pair mutate process globals
+  and fail at random under parallel execution — 2 of 22 consecutive runs when
+  measured. False negatives, not regressions;
+  `docs/known-issues/rust-test-global-state-isolation.md`.
 - Hold to talk does not work, observed live on a session where double tap on the
   same trigger does. Since double tap counts release edges that only follow a
   counted press edge, key delivery is ruled out and the fault is in the hold path
@@ -316,7 +429,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marker are gone. The overlay also emits a single surface value now, so the
   runtime is never told a different surface than the one being painted — that
   had been harmless only because every flat surface happens to be 480x60.
-  (ADR 0011)
+  (ADR 0011a)
 - The "finished" cue in "Copy and insert at cursor" sounded before the result
   overlay appeared, and could fire for a result the runtime then discarded as
   stale. `Done` and `Error` were played from inside the insert helper, which

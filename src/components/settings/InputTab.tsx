@@ -129,9 +129,9 @@ function activationModeHint(
   }
 
   const base =
-    `Hold records while the shortcut is pressed and stops on release. A hold shorter than ${
-      status?.hold_min_ms ?? 300
-    } ms is extended to that length before stopping.` +
+    `Hold records while the shortcut is pressed and stops on release. A press shorter than ${
+      status?.hold_arm_ms ?? 300
+    } ms is discarded — it starts nothing and leaves nothing behind. To start a recording that keeps running on its own, use one of the toggle modes.` +
     (status?.hold_watchdog_seconds
       ? ` A hold whose key release never arrives is ended after ${status.hold_watchdog_seconds}s with a stated reason.`
       : "");

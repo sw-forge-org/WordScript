@@ -79,7 +79,27 @@ What this needs is a decision, not a measurement:
 Confirm the failure on a real macOS session before acting on it: the expectation
 is code-level, and the surrounding OS behavior is not.
 
-### Windows: modifier-only shortcuts register and then never fire — **[code]**
+### Windows: modifier-only shortcuts register and then never fire — **[implemented 2026-07-29, not compiled]**
+
+**Update 2026-07-29.** Option 1 below was taken, and something the audit had not
+caught turned up on the way: the Windows backend did not compile at all.
+`windows/mod.rs:165` constructed a `GlobalHotKeyEvent` without the `interrupted`
+field (E0063), as did two sites in the macOS backend — the WordScript patch that
+added the field had only ever been compiled on Linux. So every Windows prediction
+on this page was untestable in a stronger sense than "no hardware": there was no
+build. Fixed, together with the finding below; see
+[pause-abort-interrupted-chord.md](pause-abort-interrupted-chord.md) for the
+full account.
+
+The modifier-only path is now implemented on Windows: a modifier main key is
+registered with an observer instead of the grab registry, the hook feeds it every
+key event, and modifier keys are still passed on with `CallNextHookEx` rather
+than consumed (ADR 0009). The state machine sits in a platform-neutral
+`modifier_only` module in the vendored crate with ten unit tests that run on
+Linux. **It has still never been compiled for Windows** — no cross toolchain on
+the development machine — so the run sheet below stands unchanged, and
+`session_has_interruption_signal` deliberately still returns false for Windows
+until hardware confirms it. The description below is the state that was fixed.
 
 Worse than the macOS case, because it is invisible. Windows `register()` only
 inserts into a software registry after checking `key_to_vk`
@@ -197,9 +217,13 @@ prerequisite.
 
 The two-modifier minimum is therefore a **session property**
 (`Policy::interruption_signal`), not a fixed rule. Linux reports interruption;
-Windows and macOS do not, because modifier-only shortcuts do not work there at all
-yet. That is the same blocker as the two findings above, and closing it closes this
-too.
+Windows and macOS do not. On macOS that is still because modifier-only shortcuts
+do not work there at all. On Windows it is now a deliberate hold: since
+2026-07-29 the backend computes the interruption signal, but the flag stays false
+because the code has never been compiled for its target, let alone run. Flipping
+it would relax a validation rule — a single bare modifier becoming a legal
+trigger — on the strength of unverified code. That flip is the last step of the
+Windows run sheet, not a prerequisite for it.
 
 Still not expressible: "right Shift only". `MODIFIER_TOKENS` is side-agnostic, so
 `Shift` covers both keys. Wispr Flow's default works precisely because right Shift

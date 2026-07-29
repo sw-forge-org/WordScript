@@ -74,7 +74,7 @@ every flat surface is 480x60.
 Fix: `RuntimeState.resultSurfaceOpen` is now set in the same reducer commit that
 flips `status` to `idle`, so the gap render does not exist and the bridge
 predicate is gone; and `renderOverlaySurface` is the single surface value that
-leaves the overlay component. See ADR 0011.
+leaves the overlay component. See ADR 0011a.
 
 This does not change the opacity finding above — it removes a cause of unmount
 gaps, it does not make WebKitGTK's layer retention safe to ignore.

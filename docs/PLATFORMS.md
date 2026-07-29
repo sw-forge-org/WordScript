@@ -155,7 +155,12 @@ Consequences a user can hit:
   backends deliver by three different mechanisms. Nothing guarantees one
   arrives. The runtime counts presses and releases per binding, states what it
   has observed in this session, and ends a stranded hold with an explicit
-  watchdog rather than letting it drift into the silence timeout.
+  watchdog rather than letting it drift into the silence timeout. The release is
+  what *ends* a hold; what *starts* one is the press plus `hold_arm_ms` of
+  actually holding it (ADR
+  [0013](decisions/0013-hold-to-talk-is-strictly-momentary.md)), so a platform
+  that delivers presses but no releases strands a session rather than producing
+  a stream of one-press recordings.
 
 `shortcut_platform` reports the detected compositor, session type, backend and
 the keys the desktop swallows; Settings -> Capture renders it above the shortcut
