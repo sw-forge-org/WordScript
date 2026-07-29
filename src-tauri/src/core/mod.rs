@@ -1,6 +1,8 @@
 pub mod agent;
 pub mod capture;
+pub mod confidence_gate;
 pub mod config;
+pub mod hallucination_detect;
 pub mod history;
 pub mod insertion;
 pub mod mode_router;

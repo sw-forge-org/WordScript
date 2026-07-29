@@ -8,9 +8,10 @@ use super::text_rules::{
     analyze_document, get_profile_health, GetProfileHealthRequest, TextRulesDocument,
     TextRulesIssueCode,
 };
+use super::hallucination_detect::{detect_advanced_hallucination, DriftCorroboration};
 use super::transcription_hints::{analyze_transcription_bias_with_mode, BiasRequestContext};
 
-const CORPUS_VERSION: u32 = 1;
+const CORPUS_VERSION: u32 = 2;
 const TEXT_RULES_SCHEMA_VERSION: u32 = 1;
 const EMBEDDED_CORPUS: &str = include_str!("../../tests/fixtures/regression_transcripts.json");
 
@@ -27,10 +28,21 @@ struct CorpusEntry {
     #[serde(default)]
     failure_mode: String,
     profile: CorpusProfile,
-    #[allow(dead_code)]
     raw_transcript: String,
     #[serde(default)]
     expected_transcription_bias: Option<ExpectedBias>,
+    #[serde(default)]
+    expected_detection: Option<ExpectedDetection>,
+    /// The profile language the detection stage compares against, and whether
+    /// it is pinned. Absent means auto-detect, which never allows a strip.
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    language_locked: bool,
+    /// Whether the confidence gate upstream rejected a segment. This is the
+    /// corroboration a language mismatch needs before anything is removed.
+    #[serde(default)]
+    low_confidence_segments: bool,
     #[allow(dead_code)]
     expected_post_correction: String,
     #[serde(default)]
@@ -38,6 +50,27 @@ struct CorpusEntry {
     expected_guardrail: Option<String>,
     #[allow(dead_code)]
     notes: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ExpectedDetection {
+    text: String,
+    /// Asserts the transcript comes back byte-identical. The guarantee that
+    /// legitimate multilingual dictation is never altered lives here.
+    #[serde(default)]
+    unchanged: bool,
+    #[serde(default)]
+    char_repetition_collapsed: bool,
+    #[serde(default)]
+    word_repetition_collapsed: bool,
+    #[serde(default)]
+    phrase_repetition_collapsed: bool,
+    #[serde(default)]
+    artifact_pattern_filtered: bool,
+    #[serde(default)]
+    language_switch_flagged: bool,
+    #[serde(default)]
+    language_drift_stripped: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -176,6 +209,85 @@ fn corpus_drives_transcription_bias_assertions() {
             );
         }
     }
+}
+
+#[test]
+fn corpus_drives_hallucination_detection_assertions() {
+    let corpus = load_corpus();
+    let mut checked = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_detection else {
+            continue;
+        };
+        checked += 1;
+
+        let (text, signals) = detect_advanced_hallucination(
+            &entry.raw_transcript,
+            entry.language.as_deref(),
+            DriftCorroboration {
+                low_confidence_segments: entry.low_confidence_segments,
+                language_locked: entry.language_locked,
+                ..DriftCorroboration::default()
+            },
+        );
+
+        assert_eq!(
+            text, expected.text,
+            "[{}] detected text mismatch (failure_mode={})",
+            entry.id, entry.failure_mode
+        );
+
+        if expected.unchanged {
+            assert_eq!(
+                text, entry.raw_transcript,
+                "[{}] legitimate dictation must survive byte-identical (failure_mode={})",
+                entry.id, entry.failure_mode
+            );
+            assert!(
+                !signals.changed_text(),
+                "[{}] no rule may alter legitimate dictation, got {:?}",
+                entry.id,
+                signals.applied_rules()
+            );
+        }
+
+        assert_eq!(
+            signals.char_repetition_collapsed, expected.char_repetition_collapsed,
+            "[{}] char_repetition_collapsed mismatch",
+            entry.id
+        );
+        assert_eq!(
+            signals.word_repetition_collapsed, expected.word_repetition_collapsed,
+            "[{}] word_repetition_collapsed mismatch",
+            entry.id
+        );
+        assert_eq!(
+            signals.phrase_repetition_collapsed, expected.phrase_repetition_collapsed,
+            "[{}] phrase_repetition_collapsed mismatch",
+            entry.id
+        );
+        assert_eq!(
+            signals.artifact_pattern_filtered, expected.artifact_pattern_filtered,
+            "[{}] artifact_pattern_filtered mismatch",
+            entry.id
+        );
+        assert_eq!(
+            signals.language_switch_flagged, expected.language_switch_flagged,
+            "[{}] language_switch_flagged mismatch",
+            entry.id
+        );
+        assert_eq!(
+            signals.language_drift_stripped, expected.language_drift_stripped,
+            "[{}] language_drift_stripped mismatch",
+            entry.id
+        );
+    }
+
+    assert!(
+        checked >= 6,
+        "the detection corpus must keep covering every mechanism, checked={checked}"
+    );
 }
 
 #[test]

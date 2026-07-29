@@ -239,6 +239,27 @@ pub struct TranscribeAudioFileRequest {
     pub max_retries: Option<u8>,
 }
 
+/// One Whisper segment as returned by `verbose_json`. The three optional
+/// metrics are the model's own confidence signals; they are what makes a
+/// hallucinated block distinguishable from speech the model simply found hard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionSegment {
+    #[serde(default)]
+    pub id: i64,
+    #[serde(default)]
+    pub start: f64,
+    #[serde(default)]
+    pub end: f64,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub avg_logprob: Option<f64>,
+    #[serde(default)]
+    pub no_speech_prob: Option<f64>,
+    #[serde(default)]
+    pub compression_ratio: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionResponse {
     pub text: String,
@@ -247,7 +268,7 @@ pub struct TranscriptionResponse {
     #[serde(default)]
     pub duration: Option<f64>,
     #[serde(default)]
-    pub segments: Option<serde_json::Value>,
+    pub segments: Option<Vec<TranscriptionSegment>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

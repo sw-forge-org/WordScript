@@ -19,6 +19,8 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
         label: "General writing",
         prompt: "",
         stt_hints: "",
+        vocabulary_hints: [],
+        schema_version: 2,
         work_mode: createDefaultTextProfileWorkMode(),
         curation: createEmptyTextProfileCuration(),
         dictionary_entries: [],

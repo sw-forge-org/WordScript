@@ -9,6 +9,7 @@ import { cn } from "../../lib/utils";
 import {
   buildProfileModesPatch,
   buildTextProfilesPatch,
+  clearTextProfileCuration,
   resolveActiveTextProfile,
   resolveProfileModesSettings,
 } from "../../lib/textProfiles";
@@ -131,7 +132,7 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
       };
       const nextProfiles = config.text_profiles.map((profile) =>
         profile.id === activeProfile.id
-          ? { ...profile, work_mode: updater(currentWorkMode) }
+          ? clearTextProfileCuration({ ...profile, work_mode: updater(currentWorkMode) })
           : profile,
       );
       onChange(buildTextProfilesPatch(config, nextProfiles, activeProfile.id));

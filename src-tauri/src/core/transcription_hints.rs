@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::config::{BiasMode, DictionaryEntry, ManualBias};
+use super::config::{BiasMode, DictionaryEntry, ManualBias, TextProfileWorkMode};
 
 const MAX_TRANSCRIPTION_PROFILE_HINTS: usize = 6;
 const MAX_TRANSCRIPTION_DICTIONARY_TERMS: usize = 8;
@@ -32,6 +32,30 @@ pub struct BiasRequestContext {
     pub manual_bias: ManualBias,
     pub local_prompt_strength: String,
     pub local_prompt_carry: bool,
+}
+
+impl BiasRequestContext {
+    /// The runtime entry point: a saved profile always has a concrete
+    /// `TextProfileWorkMode`, so the bias policy is read from it directly
+    /// rather than rebuilt from loose keys. `text_rules` keeps its own
+    /// request-shaped builder because the preview analyses unsaved UI state,
+    /// where every field is still optional.
+    pub fn from_work_mode(
+        work_mode: &TextProfileWorkMode,
+        local_prompt_strength: &str,
+        local_prompt_carry: bool,
+    ) -> Self {
+        Self {
+            bias_mode: work_mode.bias_mode.clone(),
+            manual_bias: work_mode.manual_bias.clone(),
+            local_prompt_strength: if local_prompt_strength.trim().is_empty() {
+                "profile".to_string()
+            } else {
+                local_prompt_strength.trim().to_string()
+            },
+            local_prompt_carry,
+        }
+    }
 }
 
 pub fn analyze_transcription_bias(
@@ -114,9 +138,16 @@ pub fn preferred_dictionary_terms(entries: &[DictionaryEntry]) -> Vec<String> {
     terms
 }
 
+/// Assembles the initial prompt Whisper receives.
+///
+/// Dictionary terms are deliberately absent. `apply_dictionary_entries` already
+/// replaced them deterministically after transcription, so the prompt copy was
+/// always redundant — and a longer initial prompt is itself a documented cause
+/// of repetition loops and language drift (ADR 0017). What remains is small and
+/// bounded by design.
 pub fn build_transcription_prompt(
     profile_hints: &[String],
-    dictionary_terms: &[String],
+    _dictionary_terms: &[String],
     stt_hints: &[String],
     max_chars: usize,
 ) -> Option<String> {
@@ -124,13 +155,6 @@ pub fn build_transcription_prompt(
 
     if !profile_hints.is_empty() {
         sections.push(format!("Vocabulary: {}", profile_hints.join("; ")));
-    }
-
-    if !dictionary_terms.is_empty() {
-        sections.push(format!(
-            "Preferred spellings: {}",
-            dictionary_terms.join("; ")
-        ));
     }
 
     if !stt_hints.is_empty() {
@@ -381,8 +405,11 @@ fn build_local_prompt(
     )
 }
 
-pub const CLOUD_PROMPT_PREVIEW_MAX_CHARS: usize = 896;
-pub const LOCAL_PROMPT_PREVIEW_MAX_CHARS: usize = 480;
+/// Deliberately small. The initial prompt is a hallucination amplifier, not a
+/// vocabulary channel — dictionary work moved to deterministic post-processing
+/// (ADR 0017), so what is left here has no reason to be long.
+pub const CLOUD_PROMPT_PREVIEW_MAX_CHARS: usize = 320;
+pub const LOCAL_PROMPT_PREVIEW_MAX_CHARS: usize = 200;
 
 #[cfg(test)]
 mod tests {
@@ -436,18 +463,22 @@ mod tests {
     }
 
     #[test]
-    fn build_transcription_prompt_formats_all_three_sections() {
+    fn build_transcription_prompt_keeps_only_the_two_prompt_sections() {
         let prompt = build_transcription_prompt(
             &["WordScript".to_string(), "SEV-1".to_string()],
-            &["WordScript".to_string()],
+            &["Preferred".to_string()],
             &["status update".to_string()],
             512,
         )
         .unwrap();
 
         assert!(prompt.contains("Vocabulary: WordScript; SEV-1"));
-        assert!(prompt.contains("Preferred spellings: WordScript"));
         assert!(prompt.contains("Likely phrases: status update"));
+        // Dictionary terms are applied deterministically after transcription;
+        // copying them into the initial prompt was redundant and is itself a
+        // hallucination amplifier (ADR 0017).
+        assert!(!prompt.contains("Preferred spellings"));
+        assert!(!prompt.contains("Preferred"));
     }
 
     #[test]

@@ -31,8 +31,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Curated profiles no longer lose the delivery mode you chose.** Every profile
+  except `General writing` delivered through the wrong pipeline: the overlay
+  showed the auto-paste surface while the setting read "Copy to clipboard only".
+  `refresh_unedited_curated_text_profile_metadata` reset `work_mode` from the
+  shipped template on every save, and its "edited" signal — `curation.curated =
+  false` — was only cleared by one of the three UI write paths. `General
+  writing` is the one non-curated profile, which is exactly why it was the only
+  one unaffected. The refresh now touches presentation only (audience, summary,
+  highlights) and never behaviour, and the Modes and Insert & Recovery write
+  paths detach a profile from its template like the Profiles tab already did.
+  Requiring three call sites to remember one call was the same shape of defect
+  as the transcription wiring gap below.
+
+- **Text profiles now actually affect transcription.** Per-profile bias policy
+  (`bias_mode`, `manual_bias`) and every local decode setting
+  (`local_prompt_strength`, `local_prompt_carry`, `local_beam_size`,
+  `local_best_of`, `local_profile`) were written to the config, rendered
+  correctly in the Profiles preview, and then dropped before the provider call.
+  `capture.rs` hand-built the `audio_ready` payload and `lib.rs` hand-parsed it
+  back with per-key lookups; the two schemas had drifted, so every recording ran
+  Conservative bias with preset decode defaults regardless of configuration. The
+  capture config now crosses the boundary as one flattened value and
+  `NativeCaptureConfig::resolve_transcription_request` is the only place a
+  request is derived (ADR 0015). Configured profiles will visibly change
+  transcripts for the first time — that is the fix, not a regression.
+
+### Changed
+
+- **Profile vocabulary is applied after transcription, not whispered into the
+  recognizer** (ADR 0017). Copying vocabulary into Whisper's initial prompt is
+  itself a documented cause of repetition loops and language drift, which is why
+  the old bias path had to default to "conservative" — and why profiles felt
+  like they did nothing. Dictionary terms now leave the prompt entirely
+  (`apply_dictionary_entries` already replaced them deterministically, so the
+  prompt copy was redundant risk), and the prompt caps drop from 896/480 to
+  320/200 characters.
+- The four Profiles panels become three: **Vocabulary** (context plus words &
+  names), **Replacements** (the dictionary, renamed to what it does) and
+  **Snippets**. The **Bias policy** panel is gone. `BiasMode` and its two
+  `ManualBias` flags are replaced by a single per-entry "Hint the recognizer"
+  toggle, off by default — the only question left is per word, and it is phrased
+  as what it does rather than as what it is.
+- `TextProfile.stt_hints` (a free-text blob governed by a profile-wide policy)
+  becomes `vocabulary_hints: VocabularyHintEntry[]`, separating "teach a word"
+  from "replace X with Y" the way Wispr Flow does. `TextProfile.schema_version`
+  migrates existing profiles once on load; lines the hint filter would have
+  rejected are logged rather than dropped silently, and Manual opt-ins are
+  preserved per entry. `bias_mode` / `manual_bias` stay one release as
+  migration-only remnants that nothing reads at runtime.
+
 ### Added
 
+- A speech gate before transcription (ADR 0016). Leading and trailing silence is
+  trimmed off the capture, and anything shorter than 200ms of remaining audio
+  ends as `InputLevelVerdict::TooShort` with an explicit overlay message rather
+  than a silent nothing. The threshold sits far below a real word ("Ja." runs
+  400-600ms) because a swallowed dictation is worse than a filtered
+  hallucination; `WORDSCRIPT_MIN_SPEECH_MS` overrides it for development.
+- A confidence gate on the cloud lane (ADR 0016). The runtime asks for
+  `verbose_json` again — it had been overridden to plain `json`, discarding
+  Whisper's own per-segment metrics. `core::confidence_gate` drops a segment on
+  `no_speech_prob > 0.6` combined with `avg_logprob < -1.0`, or on
+  `compression_ratio > 2.4` alone.
+- Capability-probed whisper.cpp hallucination controls on the local lane. The
+  existing `whisper-cli --help` health probe now also reports which flags the
+  installed build understands; `--max-context 0`, `--logprob-thold`,
+  `--no-speech-thold` and the `--vad*` family are passed when supported and
+  logged when skipped. VAD additionally needs a Silero model via
+  `WORDSCRIPT_LOCAL_VAD_MODEL_PATH`. An unsupported flag never fails a run.
+- A post-transcription detection stage (`core::hallucination_detect`, ADR 0016)
+  that collapses character, word and phrase repetition and filters broadcaster
+  subtitle boilerplate by pattern. The previous filter matched exact strings
+  only, so it caught `"untertitel von"` as a whole output and missed
+  `"Untertitelung des ZDF, 2020"` appended to a real sentence.
+- An optional per-profile language pin (`language_locked`, off by default).
+  It never makes a language mismatch sufficient on its own to discard text; it
+  only lowers the corroboration the drift check requires from two independent
+  signals to one. Speaking several languages inside one sentence — anglicisms in
+  German, a quoted Spanish phrase in English — is legitimate transcription and
+  is left untranslated and byte-identical either way, pinned by two corpus
+  entries.
 - Editing a transcript before it is delivered. The `clipboard_only` processing
   preview now carries an Edit action next to Copy and Abort — the one surface
   where the text has not left the app yet, so a correction there changes what

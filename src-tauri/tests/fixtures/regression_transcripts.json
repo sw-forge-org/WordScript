@@ -1,7 +1,7 @@
 {
   "$schema": "./regression_transcripts.schema.json",
-  "version": 1,
-  "description": "Real and synthesized failure-mode transcripts for the Customer Success Replies and similar profiles. Each entry models a real reproducer. Add new entries by following the schema; keep names snake_case and notes anonymized.",
+  "version": 2,
+  "description": "Real and synthesized failure-mode transcripts for the Customer Success Replies and similar profiles, plus raw-transcript hallucination cases for the post-STT detection stage. Each entry models a real reproducer. Add new entries by following the schema; keep names snake_case and notes anonymized.",
   "entries": [
     {
       "id": "cs_profile_multilingual_topic_drift",
@@ -57,6 +57,131 @@
       "expected_post_correction": "Was bedeutet dieser Fehlercode?",
       "expected_guardrail": "question_answered_guardrail_fallback",
       "notes": "Profile-driven CS tone can cause the LLM to answer a dictated question. Question-answered guardrail must fire and return the raw transcript."
+    },
+    {
+      "id": "raw_broadcaster_subtitle_artifact",
+      "failure_mode": "raw_stt_artifact_boilerplate",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Ich schicke dir die Zusammenfassung nachher. Untertitelung des ZDF, 2020",
+      "expected_detection": {
+        "text": "Ich schicke dir die Zusammenfassung nachher.",
+        "artifact_pattern_filtered": true
+      },
+      "expected_post_correction": "Ich schicke dir die Zusammenfassung nachher.",
+      "expected_guardrail": null,
+      "notes": "Whisper appends broadcaster subtitling credits over trailing silence. The exact-string filter only caught whole-output matches; the pattern gate must remove the trailing line and keep the dictation."
+    },
+    {
+      "id": "raw_stuck_decoder_phrase_loop",
+      "failure_mode": "raw_stt_repetition_loop",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Ich melde mich gleich Ich melde mich gleich Ich melde mich gleich Ich melde mich gleich",
+      "expected_detection": {
+        "text": "Ich melde mich gleich",
+        "phrase_repetition_collapsed": true
+      },
+      "expected_post_correction": "Ich melde mich gleich",
+      "expected_guardrail": null,
+      "notes": "The classic stuck-decoder loop. Whole phrases echo back to back; the collapse must reduce them to a single occurrence."
+    },
+    {
+      "id": "raw_german_with_english_terms_is_untouched",
+      "failure_mode": "raw_stt_legitimate_code_switching",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "language": "de",
+      "language_locked": true,
+      "raw_transcript": "Wir deployen das Feature heute und machen danach ein kurzes Review im Standup.",
+      "expected_detection": {
+        "text": "Wir deployen das Feature heute und machen danach ein kurzes Review im Standup.",
+        "unchanged": true
+      },
+      "expected_post_correction": "Wir deployen das Feature heute und machen danach ein kurzes Review im Standup.",
+      "expected_guardrail": null,
+      "notes": "Anglicisms inside a German sentence are legitimate transcription. Even with the language pinned and every corroborating signal set, the text must come back byte-identical and untranslated."
+    },
+    {
+      "id": "raw_quoted_spanish_inside_english_is_untouched",
+      "failure_mode": "raw_stt_legitimate_code_switching",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "language": "en",
+      "language_locked": true,
+      "raw_transcript": "She looked at me and said mi casa es su casa before walking off.",
+      "expected_detection": {
+        "text": "She looked at me and said mi casa es su casa before walking off.",
+        "unchanged": true
+      },
+      "expected_post_correction": "She looked at me and said mi casa es su casa before walking off.",
+      "expected_guardrail": null,
+      "notes": "A quoted foreign phrase inside a sentence must survive unaltered. The detection stage only ever considers whole sentences, so an inline span can never become a candidate."
+    },
+    {
+      "id": "raw_script_switch_is_flagged_not_stripped",
+      "failure_mode": "raw_stt_language_drift",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "language": "de",
+      "language_locked": false,
+      "raw_transcript": "Das Meeting ist um drei. 会議は三時です。",
+      "expected_detection": {
+        "text": "Das Meeting ist um drei. 会議は三時です。",
+        "language_switch_flagged": true,
+        "language_drift_stripped": false
+      },
+      "expected_post_correction": "Das Meeting ist um drei. 会議は三時です。",
+      "expected_guardrail": null,
+      "notes": "A script switch on its own is only ever observed. Without an independent corroborating signal the passage stays in the transcript, because a language switch is never by itself evidence of a hallucination."
+    },
+    {
+      "id": "raw_script_switch_stripped_once_corroborated",
+      "failure_mode": "raw_stt_language_drift",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "language": "de",
+      "language_locked": true,
+      "low_confidence_segments": true,
+      "raw_transcript": "Das Meeting ist um drei. 会議は三時です。",
+      "expected_detection": {
+        "text": "Das Meeting ist um drei.",
+        "language_switch_flagged": true,
+        "language_drift_stripped": true
+      },
+      "expected_post_correction": "Das Meeting ist um drei.",
+      "expected_guardrail": null,
+      "notes": "Same input as the flagged case, but the confidence gate independently rejected the covering segment. Only then may the passage be removed."
     }
   ]
 }

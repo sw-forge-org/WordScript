@@ -130,6 +130,7 @@ async fn resolves_native_session_transform_insert_chain_with_direct_paste() {
             correction_model: "llama-3.1-8b-instant".to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         },
     )
     .await;
@@ -210,6 +211,7 @@ async fn surfaces_direct_paste_failure_with_recovery_copy() {
             correction_model: "llama-3.1-8b-instant".to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         },
     )
     .await;
@@ -282,6 +284,7 @@ async fn skips_clipboard_restore_when_no_previous_clipboard_exists() {
             correction_model: "llama-3.1-8b-instant".to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         },
     )
     .await;
@@ -340,6 +343,7 @@ async fn surfaces_clipboard_write_failure_with_scratchpad_recovery() {
             correction_model: "llama-3.1-8b-instant".to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         },
     )
     .await;

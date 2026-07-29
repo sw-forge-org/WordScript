@@ -24,6 +24,7 @@ import type {
   SnippetEntry,
   TextProfile,
   TextProfileInsertBehavior,
+  VocabularyHintEntry,
 } from "../../types/ipc";
 import {
   buildTextProfilesPatch,
@@ -234,6 +235,9 @@ function makeSnippetEntry(): SnippetEntry {
 
 const RULE_TEXTAREA_CLASS =
   "w-full resize-y rounded-md border border-border bg-surface-strong px-3 py-2 text-[13px] text-foreground outline-none transition-colors placeholder:text-fg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40";
+
+const RULE_INPUT_CLASS =
+  "w-full rounded-md border border-border bg-surface-strong px-3 py-1.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-fg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40";
 
 function RuleField({
   label,
@@ -596,6 +600,46 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
     },
     [updateActiveProfile],
   );
+
+  const vocabularyHints = activeTextProfile.vocabulary_hints ?? [];
+
+  const updateVocabularyHint = useCallback(
+    (id: string, update: Partial<VocabularyHintEntry>) => {
+      updateActiveProfile((profile) => ({
+        ...profile,
+        vocabulary_hints: (profile.vocabulary_hints ?? []).map((entry) =>
+          entry.id === id ? { ...entry, ...update } : entry,
+        ),
+      }));
+    },
+    [updateActiveProfile],
+  );
+
+  const removeVocabularyHint = useCallback(
+    (id: string) => {
+      updateActiveProfile((profile) => ({
+        ...profile,
+        vocabulary_hints: (profile.vocabulary_hints ?? []).filter((entry) => entry.id !== id),
+      }));
+    },
+    [updateActiveProfile],
+  );
+
+  const addVocabularyHint = useCallback(() => {
+    updateActiveProfile((profile) => ({
+      ...profile,
+      vocabulary_hints: [
+        ...(profile.vocabulary_hints ?? []),
+        {
+          id: `${profile.id}-vocab-${Date.now()}`,
+          phrase: "",
+          // Off by default: the recognizer prompt is a hallucination amplifier,
+          // and the deterministic pass already handles the common case.
+          use_as_prompt_hint: false,
+        },
+      ],
+    }));
+  }, [updateActiveProfile]);
 
   const createProfile = () => {
     const nextProfile = createTextProfile();
@@ -1048,20 +1092,20 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
         <div
           role="tablist"
           aria-label="Text rules workspace"
-          className="grid grid-cols-4 gap-1 rounded-lg border border-border bg-surface p-1"
+          className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface p-1"
         >
           {(
             [
               {
                 id: "context",
-                label: "Context & Preview",
-                aria: "Open context and preview workspace",
-                sub: `${activePromptLineCount} context · ${activeSttHintLineCount} STT hints`,
+                label: "Vocabulary",
+                aria: "Open vocabulary workspace",
+                sub: `${activePromptLineCount} context · ${vocabularyHints.length} words & names`,
               },
               {
                 id: "dictionary",
-                label: "Dictionary",
-                aria: "Open dictionary workspace",
+                label: "Replacements",
+                aria: "Open replacements workspace",
                 sub: `${dictionaryEntries.length} literal replacements`,
               },
               {
@@ -1069,12 +1113,6 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
                 label: "Snippets",
                 aria: "Open snippets workspace",
                 sub: `${snippetEntries.length} reusable expansions`,
-              },
-              {
-                id: "bias_policy",
-                label: "Bias policy",
-                aria: "Open bias policy workspace",
-                sub: (activeTextProfile.work_mode?.bias_mode ?? "conservative").replace(/_/g, " "),
               },
             ] as const
           ).map((tab) => {
@@ -1118,19 +1156,57 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
                   onChange={(event) => updateActiveProfile({ prompt: event.target.value })}
                   placeholder={"WordScript\nGroq\nTauri\nCPAL\ncustomer names\ninternal product terms"}
                 />
-                <RuleField label="Optional STT hints">
-                  <textarea
-                    className={RULE_TEXTAREA_CLASS}
-                    value={sttHints}
-                    aria-label="Optional STT hints"
-                    rows={4}
-                    onChange={(event) => updateActiveProfile({ stt_hints: event.target.value })}
-                    placeholder={"status update\nhandoff summary\ncustomer follow up"}
-                  />
+                <RuleField label="Words & names">
+                  <div className="flex flex-col gap-2" aria-label="Words and names">
+                    {vocabularyHints.map((entry, index) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2"
+                      >
+                        <input
+                          className={RULE_INPUT_CLASS}
+                          value={entry.phrase}
+                          aria-label={`Word or name ${index + 1}`}
+                          placeholder="WordScript"
+                          onChange={(event) =>
+                            updateVocabularyHint(entry.id, { phrase: event.target.value })
+                          }
+                        />
+                        <label className="flex shrink-0 items-center gap-2 text-[12px] text-fg-muted">
+                          <input
+                            type="checkbox"
+                            checked={entry.use_as_prompt_hint}
+                            aria-label={`Hint the recognizer for word ${index + 1}`}
+                            onChange={(event) =>
+                              updateVocabularyHint(entry.id, { use_as_prompt_hint: event.target.checked })
+                            }
+                          />
+                          Hint the recognizer
+                        </label>
+                        <button
+                          type="button"
+                          className="shrink-0 text-[12px] text-fg-muted hover:text-foreground"
+                          aria-label={`Remove word ${index + 1}`}
+                          onClick={() => removeVocabularyHint(entry.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="self-start rounded-lg border border-border px-3 py-1.5 text-[12px] text-fg-dim hover:text-foreground"
+                      onClick={addVocabularyHint}
+                    >
+                      Add word or name
+                    </button>
+                  </div>
                 </RuleField>
                 <p className="text-[12px] leading-snug text-fg-muted">
-                  Use this only for a few spoken cues or alternate phrasings you explicitly want in STT bias. These lines
-                  go into the transcription request. Snippet triggers do not feed STT automatically anymore.
+                  Words and names are applied after transcription, where a correction is exact and safe. "Hint the
+                  recognizer" additionally whispers that one entry into the transcription request — leave it off unless a
+                  term is genuinely being misheard. A long recognizer prompt is itself a common cause of repeated or
+                  drifting text, which is why this is per entry and off by default.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
@@ -1480,185 +1556,6 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
           </FormCard>
         )}
 
-        {activeWorkspacePanel === "bias_policy" && (
-          <div className="flex flex-col gap-8">
-            <FormCard
-              title="Bias mode"
-              description="Choose how strict the transcription prompt-bias is. The preview below shows exactly what each provider will receive."
-              bodyClassName="py-4"
-            >
-              <div className="flex flex-col gap-4">
-                <SegmentControl
-                  aria-label="Bias mode"
-                  value={activeTextProfile.work_mode?.bias_mode ?? "conservative"}
-                  onChange={(mode) => updateActiveProfileWorkMode((wm) => ({ ...wm, bias_mode: mode as BiasMode }))}
-                  options={[
-                    { value: "conservative", label: "Conservative" },
-                    { value: "manual", label: "Manual" },
-                    { value: "off", label: "Off" },
-                  ]}
-                />
-                <p className="text-[12px] leading-snug text-fg-muted">
-                  {(activeTextProfile.work_mode?.bias_mode ?? "conservative") === "conservative" &&
-                    "Sends only explicit STT hints and dictionary terms to the provider. Safest default; no profile-context leakage."}
-                  {(activeTextProfile.work_mode?.bias_mode ?? "conservative") === "manual" &&
-                    "Lets you opt in to profile terms and override STT hints explicitly. Requires you to know what you want."}
-                  {(activeTextProfile.work_mode?.bias_mode ?? "conservative") === "off" &&
-                    "Sends an empty STT prompt. Combine with agent / prompt_enhance modes only if you know what you are doing."}
-                </p>
-              </div>
-            </FormCard>
-
-            {(activeTextProfile.work_mode?.bias_mode ?? "conservative") === "manual" && (
-              <FormCard title="Manual bias" bodyClassName="py-1">
-                <FormRow
-                  label="Include profile terms in Cloud STT"
-                  hint="Forwards profile context to Whisper / Groq."
-                  control={
-                    <Toggle
-                      aria-label="Include profile terms in Cloud STT"
-                      checked={activeTextProfile.work_mode?.manual_bias?.cloud_include_profile_terms ?? false}
-                      onCheckedChange={(checked) =>
-                        updateActiveProfileWorkMode((wm) => ({
-                          ...wm,
-                          manual_bias: {
-                            cloud_include_profile_terms: checked,
-                            local_include_profile_terms: wm.manual_bias?.local_include_profile_terms ?? false,
-                            stt_hints_override: wm.manual_bias?.stt_hints_override ?? "",
-                          },
-                        }))
-                      }
-                    />
-                  }
-                />
-                <FormRow
-                  label="Include profile terms in Local STT"
-                  hint="Forwards profile context to whisper-cli."
-                  control={
-                    <Toggle
-                      aria-label="Include profile terms in Local STT"
-                      checked={activeTextProfile.work_mode?.manual_bias?.local_include_profile_terms ?? false}
-                      onCheckedChange={(checked) =>
-                        updateActiveProfileWorkMode((wm) => ({
-                          ...wm,
-                          manual_bias: {
-                            cloud_include_profile_terms: wm.manual_bias?.cloud_include_profile_terms ?? false,
-                            local_include_profile_terms: checked,
-                            stt_hints_override: wm.manual_bias?.stt_hints_override ?? "",
-                          },
-                        }))
-                      }
-                    />
-                  }
-                />
-                <FormRow
-                  label="STT hints override"
-                  layout="stacked"
-                  divider={false}
-                  control={
-                    <textarea
-                      className={RULE_TEXTAREA_CLASS}
-                      aria-label="STT hints override"
-                      rows={4}
-                      value={activeTextProfile.work_mode?.manual_bias?.stt_hints_override ?? ""}
-                      onChange={(event) =>
-                        updateActiveProfileWorkMode((wm) => ({
-                          ...wm,
-                          manual_bias: {
-                            cloud_include_profile_terms: wm.manual_bias?.cloud_include_profile_terms ?? false,
-                            local_include_profile_terms: wm.manual_bias?.local_include_profile_terms ?? false,
-                            stt_hints_override: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder={"alpha\nbeta\ngamma"}
-                    />
-                  }
-                />
-              </FormCard>
-            )}
-
-            <FormCard
-              title="Live preview"
-              description={`Source: ${biasPreview?.effective_stt_hints_source ?? "profile"}.${
-                biasPreview?.manual_overrides_applied?.length
-                  ? ` Overrides: ${biasPreview.manual_overrides_applied.join(", ")}.`
-                  : ""
-              }`}
-              bodyClassName="py-4"
-            >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-border bg-surface px-3.5 py-3">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-fg-muted">
-                    Cloud sees (Groq / Whisper)
-                  </span>
-                  <pre className="mt-1.5 whitespace-pre-wrap break-words font-mono text-[12px] leading-snug text-foreground">
-                    {biasPreview?.cloud_prompt_preview ?? "(empty)"}
-                  </pre>
-                </div>
-                <div className="rounded-lg border border-border bg-surface px-3.5 py-3">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-fg-muted">
-                    Local sees (whisper-cli)
-                  </span>
-                  <pre className="mt-1.5 whitespace-pre-wrap break-words font-mono text-[12px] leading-snug text-foreground">
-                    {biasPreview?.local_prompt_preview ?? "(empty)"}
-                  </pre>
-                </div>
-              </div>
-            </FormCard>
-
-            <FormCard
-              title="Profile health"
-              action={
-                <StatusBadge
-                  tone={profileHealth?.level === "red" ? "error" : profileHealth?.level === "yellow" ? "warning" : "success"}
-                  dot
-                >
-                  {profileHealth?.level ?? "—"}
-                </StatusBadge>
-              }
-              bodyClassName="py-4"
-            >
-              {(profileHealth?.flags ?? []).length === 0 ? (
-                <p className="text-[12px] leading-snug text-fg-muted">No flags raised.</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {profileHealth?.flags.map((flag) => {
-                    const isAcked = acknowledgedFlags.has(flag.kind);
-                    return (
-                      <div
-                        key={flag.kind}
-                        className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5"
-                      >
-                        <div className="min-w-0">
-                          <strong className="text-[12px] font-semibold text-foreground">{flag.kind}</strong>
-                          <p className="mt-0.5 text-[12px] leading-snug text-fg-muted">{flag.hint}</p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant={isAcked ? "ghost" : "outline"}
-                          onClick={() => {
-                            if (isAcked) {
-                              setAcknowledgedFlags((prev) => {
-                                const next = new Set(prev);
-                                next.delete(flag.kind);
-                                return next;
-                              });
-                            } else {
-                              setAcknowledgedFlags((prev) => new Set([...prev, flag.kind]));
-                            }
-                          }}
-                        >
-                          {isAcked ? "Unacknowledge" : "Acknowledge"}
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </FormCard>
-          </div>
-        )}
 
       <p className="px-1 text-[12px] leading-snug text-fg-muted">
         Team-sharing stays outside V1. These rules stay personal and exportable, with ordering and preview meant for daily

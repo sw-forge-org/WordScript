@@ -80,9 +80,19 @@ Status: 2026-07-25
 - Provider & Models preflight for the local runtime lane with native runner,
   STT-model, cleanup-endpoint and cleanup-model readiness
 - bounded STT prompt bias for Groq and `local_preview` from active profile
-  context, dictionary spellings and likely phrases; the mechanism is active
-  but some non-generic profiles are still not reliable enough for everyday
-  dictation
+  context, dictionary spellings and likely phrases; **the bias policy and every
+  local decode setting reach the provider for the first time since 2026-07-29**
+  (ADR 0015) -- they had been dropped between the capture event and the
+  transcription request, so no profile could affect a real recording and the
+  preview was the only place the configuration was visible
+- a speech gate trims leading and trailing silence and rejects captures below
+  200ms of remaining audio with an explicit overlay message; a segment
+  confidence gate drops what Whisper's own metrics mark as invented on the cloud
+  lane; capability-probed whisper.cpp flags harden the local lane; a
+  repetition/artifact detection stage runs before AI cleanup (ADR 0016)
+- an optional per-profile language pin that never discards text on a language
+  mismatch alone -- inline code-switching such as anglicisms in German or a
+  quoted Spanish phrase in English is left byte-identical and untranslated
 - the automatic bias path is now more conservative: generic profile
   categories are no longer forwarded to STT and cleanup; included profiles
   start without prefilled snippet-like `stt_hints`
@@ -238,15 +248,18 @@ Additional rules:
   `cs_profile_length_explosion_via_english_boilerplate` and
   `cs_profile_question_answered_german`; more real examples are added
   manually and must each flow into the corpus and matching synthetic tests
-- Text Rules warns today about weak automatic bias; an explicit profile-bound
-  bias policy and visible profile health are now available:
-  `TextProfileWorkMode.bias_mode` (Conservative / Manual / Off) and
-  `manual_bias` are persisted in AppConfig and returned via
-  `analyze_document_with_context` as provider-specific previews; the
-  `BiasPolicyWeak` health flag warns when `Off` collides with `agent` /
-  `prompt_enhance` or globally active agent mode; Conservative stays the
-  default and protects against language-bias leakage into the Whisper initial
-  prompt
+- the profile-wide bias policy is retired as a user-facing concept (ADR 0017).
+  `TextProfileWorkMode.bias_mode` and `manual_bias` were a knob about whether
+  vocabulary gets pushed into Whisper's initial prompt -- a question that needs
+  Whisper internals to answer, and whose only safe setting (Conservative) was
+  also the one with no effect. Vocabulary is now applied deterministically after
+  transcription; a single per-entry "Hint the recognizer" toggle, off by
+  default, is the only remaining way into the prompt. Dictionary terms left the
+  prompt entirely. The Profiles tab is three panels (Vocabulary, Replacements,
+  Snippets) instead of four
+- `TextProfile.schema_version` migrates existing profiles once on load: the
+  `stt_hints` blob becomes `vocabulary_hints` entries, Manual opt-ins are
+  preserved per entry, and rejected lines are logged rather than lost
 - a *single* modifier as a trigger (double-tap Shift, push-to-talk on one key)
   works on Linux and not on Windows or macOS. It depends on the interruption
   signal that comes with the observed key edges, and only the Linux path reports
@@ -352,6 +365,17 @@ Additional rules:
   fully see what a text profile contains (work-mode defaults, capture
   settings, modes settings, speech settings, dictionary, snippets) and what
   stays global (hotkeys, overlay placement, display timeouts, sound)
+- the shipped profile catalogue needs to be rebuilt from real daily use rather
+  than from plausible job titles, and `General writing` should become a curated
+  blank profile instead of the only non-curated one -- that asymmetry is what
+  made it the only profile unaffected by the delivery-mode reset. Planned as
+  Phase 7 in [ROADMAP.md](ROADMAP.md)
+- the settings surface needs a complete visual rework. The runtime-backed
+  information architecture is sound and per-profile behaviour is verified
+  working in the native host (2026-07-29: cleanup settings, processing modes
+  and workspace context all resolve per profile); the presentation is not, and
+  the profile panels only became coherent enough to redesign against once the
+  bias policy was retired (ADR 0017). Also Phase 7
 - overlay monitor restore with identity-miss rederivation is implemented
   (manual mode rederives the target monitor from saved coordinates against
   all work areas; primary is only the last fallback)
@@ -402,9 +426,11 @@ phase:
 - in parallel an internal cross-platform build-up for Linux, macOS and
   Windows is being maintained; it is not a signal that WordScript is
   release-ready
-- the current launch blocker is mainly profile-dependent transcription
-  reliability and the still-incomplete guided local setup, not the lack of
-  further packaging mechanics
+- the launch blocker was profile-dependent transcription reliability; its
+  mechanical cause is fixed (ADR 0015/0016) but the result is not yet
+  re-measured against real dictation, and the profile UI rework is still open.
+  Together with the still-incomplete guided local setup this remains the
+  blocker, not the lack of further packaging mechanics
 - `check_app_update` honestly reports that no published releases exist;
   internal draft handoffs intentionally do not change this public truth
 - there is no active installer channel and no trusted download handoff for

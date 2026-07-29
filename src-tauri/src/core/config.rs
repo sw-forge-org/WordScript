@@ -312,12 +312,43 @@ impl TextProfileWorkMode {
     }
 }
 
+/// A word or name the user taught the profile.
+///
+/// `use_as_prompt_hint` is the whole replacement for the old `BiasMode` enum
+/// plus its `ManualBias` flags. Pushing vocabulary into Whisper's initial prompt
+/// is itself a documented hallucination source, so it is off per entry by
+/// default and there is no profile-wide mode left to reason about.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct VocabularyHintEntry {
+    pub id: String,
+    pub phrase: String,
+    pub use_as_prompt_hint: bool,
+}
+
+/// Bumped when a profile's shape changes in a way that needs a one-time
+/// migration on load. 1 = pre-vocabulary profiles carrying `stt_hints` as a
+/// free-text blob plus a profile-wide bias policy.
+pub const TEXT_PROFILE_SCHEMA_VERSION: u32 = 2;
+
+fn default_text_profile_schema_version() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TextProfile {
     pub id: String,
     pub label: String,
     pub prompt: String,
+    /// Legacy free-text hints. Migration-only from schema version 2 onwards:
+    /// read once into `vocabulary_hints`, then left alone. Removed in a later
+    /// release once no config in the wild still carries version 1.
+    #[serde(default)]
     pub stt_hints: String,
+    #[serde(default)]
+    pub vocabulary_hints: Vec<VocabularyHintEntry>,
+    #[serde(default = "default_text_profile_schema_version")]
+    pub schema_version: u32,
     #[serde(default)]
     pub work_mode: TextProfileWorkMode,
     #[serde(default)]
@@ -334,6 +365,62 @@ pub struct TextProfile {
 }
 
 impl TextProfile {
+    /// One-time move from the free-text `stt_hints` blob plus the profile-wide
+    /// bias policy to per-entry vocabulary. Returns whether anything changed.
+    ///
+    /// Lines the hint filter would have ignored anyway are dropped here too,
+    /// but logged rather than silently lost: they were never reaching Whisper,
+    /// and carrying them forward would only recreate the illusion that they did.
+    pub(crate) fn migrate_vocabulary_hints(&mut self) -> bool {
+        if self.schema_version >= TEXT_PROFILE_SCHEMA_VERSION {
+            return false;
+        }
+
+        let filtered =
+            super::transcription_hints::filter_stt_hint_lines(&self.stt_hints);
+
+        // Conservative and Off never forwarded profile terms; only Manual with
+        // the cloud flag opted in. That is the closest honest default.
+        let default_use_as_prompt_hint = matches!(self.work_mode.bias_mode, BiasMode::Manual)
+            && self.work_mode.manual_bias.cloud_include_profile_terms;
+
+        if self.vocabulary_hints.is_empty() {
+            self.vocabulary_hints = filtered
+                .accepted
+                .iter()
+                .enumerate()
+                .map(|(index, phrase)| VocabularyHintEntry {
+                    id: format!("{}-vocab-{index}", self.id),
+                    phrase: phrase.clone(),
+                    use_as_prompt_hint: default_use_as_prompt_hint,
+                })
+                .collect();
+        }
+
+        if !filtered.ignored.is_empty() {
+            super::runtime_log::record(format!(
+                "[WordScript] Profile vocabulary migration dropped unusable hint lines profile={} count={} lines={:?}",
+                self.id,
+                filtered.ignored.len(),
+                filtered.ignored,
+            ));
+        }
+
+        self.schema_version = TEXT_PROFILE_SCHEMA_VERSION;
+        true
+    }
+
+    /// The phrases that are allowed into the transcription prompt. Everything
+    /// else in the vocabulary is applied deterministically after transcription.
+    pub(crate) fn prompt_hint_phrases(&self) -> Vec<String> {
+        self.vocabulary_hints
+            .iter()
+            .filter(|entry| entry.use_as_prompt_hint)
+            .map(|entry| entry.phrase.clone())
+            .filter(|phrase| !phrase.trim().is_empty())
+            .collect()
+    }
+
     pub(crate) fn resolved_speech(&self) -> ProfileSpeechSettings {
         self.speech.clone().unwrap_or_default()
     }
@@ -381,6 +468,10 @@ pub struct ProfileSpeechSettings {
     pub provider: String,
     pub model: String,
     pub language: String,
+    /// Whether the chosen language is treated as pinned. It never makes a
+    /// language mismatch sufficient on its own to discard text; it only lowers
+    /// the corroboration the drift check requires from two signals to one.
+    pub language_locked: bool,
     pub correction_model: String,
     pub local_correction_model: String,
     pub agent_model: String,
@@ -401,6 +492,7 @@ impl Default for ProfileSpeechSettings {
             provider: default_provider_id().to_string(),
             model: "whisper-large-v3-turbo".to_string(),
             language: String::new(),
+            language_locked: false,
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             local_correction_model: DEFAULT_LOCAL_CORRECTION_MODEL.to_string(),
             agent_model: DEFAULT_AGENT_MODEL.to_string(),
@@ -929,7 +1021,7 @@ impl AppConfig {
             append_missing_curated_text_profiles(&mut self.text_profiles);
             self.curated_profiles_seeded = true;
         }
-        refresh_unedited_curated_text_profile_metadata(&mut self.text_profiles);
+        refresh_curated_text_profile_presentation(&mut self.text_profiles);
 
         for (index, profile) in self.text_profiles.iter_mut().enumerate() {
             if profile.id.trim().is_empty() {
@@ -939,6 +1031,10 @@ impl AppConfig {
                     format!("profile-{}", index + 1)
                 };
             }
+
+            // Runs after the id is settled, because migrated entries derive
+            // their ids from the profile id.
+            profile.migrate_vocabulary_hints();
 
             if profile.label.trim().is_empty() {
                 profile.label = if index == 0 {
@@ -1060,6 +1156,7 @@ impl AppConfig {
                 provider: self.provider.clone(),
                 model: self.model.clone(),
                 language: self.language.clone(),
+                language_locked: false,
                 correction_model: self.correction_model.clone(),
                 local_correction_model: self.local_correction_model.clone(),
                 agent_model: self.agent_model.clone(),
@@ -1804,6 +1901,9 @@ fn default_text_profile(
         label: default_text_profile_label().to_string(),
         prompt,
         stt_hints,
+        // A freshly built profile has nothing to migrate.
+        vocabulary_hints: Vec::new(),
+        schema_version: TEXT_PROFILE_SCHEMA_VERSION,
         work_mode: TextProfileWorkMode::default(),
         curation: TextProfileCuration::default(),
         dictionary_entries,
@@ -1840,7 +1940,23 @@ fn append_missing_curated_text_profiles(text_profiles: &mut Vec<TextProfile>) {
     }
 }
 
-fn refresh_unedited_curated_text_profile_metadata(text_profiles: &mut [TextProfile]) {
+/// Refreshes the *presentation* of a curated profile from its seed: audience,
+/// summary and highlights, so an improved template description reaches an
+/// existing install.
+///
+/// It deliberately does not touch `work_mode`. It used to, and that silently
+/// reset a user's delivery mode: the "edited" signal is `curation.curated =
+/// false`, set by the UI on edit, but only one of the three write paths
+/// actually cleared it. A curated profile switched to `clipboard_only` was
+/// therefore reset to the seed's `auto_paste` on the very next save, and the
+/// runtime delivered through the wrong pipeline while the settings draft still
+/// showed the chosen value.
+///
+/// Requiring every present and future write path to remember one call is the
+/// same shape of defect as the transcription wiring gap (ADR 0015). Behaviour
+/// a user can edit is never rewritten from a template here; only presentation
+/// is refreshed, which is what the name promises.
+fn refresh_curated_text_profile_presentation(text_profiles: &mut [TextProfile]) {
     let seeds = curated_text_profile_seeds();
     for profile in text_profiles.iter_mut() {
         if !profile.curation.curated {
@@ -1851,7 +1967,6 @@ fn refresh_unedited_curated_text_profile_metadata(text_profiles: &mut [TextProfi
             continue;
         };
 
-        profile.work_mode = seed.work_mode.clone();
         profile.curation = seed.curation.clone();
     }
 }
@@ -2414,6 +2529,7 @@ mod tests {
                     speech: None,
                     modes: None,
                     capture: None,
+                    ..TextProfile::default()
                 },
                 TextProfile {
                     id: "support".to_string(),
@@ -2441,6 +2557,7 @@ mod tests {
                     speech: None,
                     modes: None,
                     capture: None,
+                    ..TextProfile::default()
                 },
             ],
             ..AppConfig::default()
@@ -2481,6 +2598,7 @@ mod tests {
                     speech: None,
                     modes: None,
                     capture: None,
+                ..TextProfile::default()
             }],
             ..AppConfig::default()
         };
@@ -2528,6 +2646,7 @@ mod tests {
                     speech: None,
                     modes: None,
                     capture: None,
+                ..TextProfile::default()
             }],
             ..AppConfig::default()
         };
@@ -2535,9 +2654,92 @@ mod tests {
         config.normalize_for_runtime();
 
         let active_profile = config.active_text_profile();
-        assert_eq!(active_profile.work_mode.rewrite_style, "polished");
-        assert_eq!(active_profile.work_mode.insert_behavior, "auto_paste");
+        // Presentation is refreshed from the seed so an improved template
+        // description reaches an existing install.
         assert_eq!(active_profile.curation.summary, "Inbox-ready support follow-ups, escalation language and status updates for customer-facing work.");
+        // Behaviour is not. The seed says `polished` / `auto_paste`; the
+        // profile keeps what it carries, because a template must never
+        // silently rewrite a setting the user owns.
+        assert_eq!(
+            active_profile.work_mode.insert_behavior,
+            TextProfileWorkMode::default().normalized().insert_behavior
+        );
+    }
+
+    /// The reported bug: every profile except `General writing` delivered
+    /// through the wrong pipeline, so the overlay showed the auto-paste surface
+    /// while the setting read "Copy to clipboard only".
+    ///
+    /// `General writing` is the only non-curated profile, which is exactly why
+    /// it was the only one unaffected.
+    #[test]
+    fn a_curated_profile_keeps_the_delivery_mode_the_user_chose() {
+        let mut config = AppConfig {
+            curated_profiles_seeded: true,
+            active_text_profile_id: "curated-customer-success".to_string(),
+            text_profiles: vec![TextProfile {
+                id: "curated-customer-success".to_string(),
+                label: "Customer success replies".to_string(),
+                // Still flagged as curated: two of the three UI write paths
+                // never cleared it, so this is the realistic persisted state.
+                curation: TextProfileCuration {
+                    curated: true,
+                    ..TextProfileCuration::default()
+                },
+                work_mode: TextProfileWorkMode {
+                    // The seed for this profile says `auto_paste`.
+                    insert_behavior: "clipboard_only".to_string(),
+                    ..TextProfileWorkMode::default()
+                },
+                ..TextProfile::default()
+            }],
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+
+        assert_eq!(
+            config.active_text_profile().work_mode.insert_behavior,
+            "clipboard_only",
+            "a save must not reset the chosen delivery mode back to the template"
+        );
+        assert!(
+            !config.active_text_profile_auto_paste(),
+            "the runtime delivery decision must follow the chosen mode"
+        );
+    }
+
+    #[test]
+    fn saving_repeatedly_does_not_erode_a_curated_profile_delivery_mode() {
+        // The bug only showed up after a save round-trip, so one pass is not
+        // enough to prove it stays fixed.
+        let mut config = AppConfig {
+            curated_profiles_seeded: true,
+            active_text_profile_id: "curated-sales".to_string(),
+            text_profiles: vec![TextProfile {
+                id: "curated-sales".to_string(),
+                label: "Sales".to_string(),
+                curation: TextProfileCuration {
+                    curated: true,
+                    ..TextProfileCuration::default()
+                },
+                work_mode: TextProfileWorkMode {
+                    insert_behavior: "clipboard_only".to_string(),
+                    ..TextProfileWorkMode::default()
+                },
+                ..TextProfile::default()
+            }],
+            ..AppConfig::default()
+        };
+
+        for _ in 0..3 {
+            config.normalize_for_runtime();
+        }
+
+        assert_eq!(
+            config.active_text_profile().work_mode.insert_behavior,
+            "clipboard_only"
+        );
     }
 
     #[test]
@@ -2675,6 +2877,7 @@ mod tests {
                     speech: None,
                     modes: None,
                     capture: None,
+                ..TextProfile::default()
             }],
             ..AppConfig::default()
         };
@@ -2735,6 +2938,7 @@ mod tests {
                     speech: None,
                     modes: None,
                     capture: None,
+                ..TextProfile::default()
             }],
             curated_profiles_seeded: true,
             ..AppConfig::default()
@@ -2832,6 +3036,73 @@ mod tests {
 
         work_mode.processing_mode = ProcessingMode::Rewrite;
         assert_eq!(work_mode.effective_processing_mode(), ProcessingMode::Rewrite);
+    }
+
+    #[test]
+    fn vocabulary_migration_turns_free_text_hints_into_entries() {
+        let mut profile = TextProfile {
+            id: "support".to_string(),
+            stt_hints: "status update\ntriage summary".to_string(),
+            schema_version: 1,
+            ..TextProfile::default()
+        };
+
+        assert!(profile.migrate_vocabulary_hints());
+
+        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
+        assert_eq!(
+            profile
+                .vocabulary_hints
+                .iter()
+                .map(|entry| entry.phrase.as_str())
+                .collect::<Vec<_>>(),
+            vec!["status update", "triage summary"]
+        );
+        // Conservative was the old default and never forwarded terms, so no
+        // entry may silently start feeding the Whisper prompt.
+        assert!(profile
+            .vocabulary_hints
+            .iter()
+            .all(|entry| !entry.use_as_prompt_hint));
+        assert!(profile.prompt_hint_phrases().is_empty());
+    }
+
+    #[test]
+    fn vocabulary_migration_keeps_an_explicit_manual_opt_in() {
+        let mut profile = TextProfile {
+            id: "support".to_string(),
+            stt_hints: "status update".to_string(),
+            schema_version: 1,
+            work_mode: TextProfileWorkMode {
+                bias_mode: BiasMode::Manual,
+                manual_bias: ManualBias {
+                    cloud_include_profile_terms: true,
+                    ..ManualBias::default()
+                },
+                ..TextProfileWorkMode::default()
+            },
+            ..TextProfile::default()
+        };
+
+        profile.migrate_vocabulary_hints();
+
+        assert_eq!(profile.prompt_hint_phrases(), vec!["status update"]);
+    }
+
+    #[test]
+    fn vocabulary_migration_runs_once() {
+        let mut profile = TextProfile {
+            id: "support".to_string(),
+            stt_hints: "status update".to_string(),
+            schema_version: 1,
+            ..TextProfile::default()
+        };
+
+        assert!(profile.migrate_vocabulary_hints());
+        profile.vocabulary_hints[0].use_as_prompt_hint = true;
+
+        assert!(!profile.migrate_vocabulary_hints());
+        assert_eq!(profile.prompt_hint_phrases(), vec!["status update"]);
     }
 
     #[test]

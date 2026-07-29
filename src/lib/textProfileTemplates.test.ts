@@ -29,6 +29,8 @@ describe("textProfileTemplates", () => {
         label: "General writing",
         prompt: "ticket IDs\ncustom org names",
         stt_hints: "existing guided phrase",
+        vocabulary_hints: [],
+        schema_version: 2,
         curation: {
           curated: true,
           audience: "Customer success",

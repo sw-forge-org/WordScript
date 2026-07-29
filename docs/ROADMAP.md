@@ -17,6 +17,7 @@ honest, not merely broader.
 - [ ] **Phase 4 - Provider Stack Expansion**
 - [ ] **Phase 5 - Local Runtime as a Product Option**
 - [ ] **Phase 6 - Guided Setup and Packaging**
+- [ ] **Phase 7 - Profile Catalogue and Settings Surface Rework**
 
 Outside this pipeline are Notes, Search, Sync, MCP, assistant identities,
 accounts, hosted workspaces, and browser or computer use. They are V2 or later
@@ -151,9 +152,47 @@ delivery.
 **Success measure:** an installer-to-first-dictation path works without asking a
 new user to discover Diagnostics first.
 
+## Phase 7 - Profile Catalogue and Settings Surface Rework
+
+**Status:** planned
+
+**Goal:** Decide what profiles a person actually needs in daily use, then ship
+that catalogue and a settings surface that can carry it.
+
+Recorded 2026-07-29 after the reliability slice (ADR 0015/0016/0017) made
+per-profile behaviour observable for the first time. Per-profile cleanup
+settings, processing modes and workspace context were verified working in the
+native host on the same day; what is left is the *content* of the profiles and
+the surface around them, not the mechanism.
+
+**Scope:**
+
+- Rebuild the curated catalogue from scratch. Delete the local profiles and
+  reconsider the shipped set from real daily use rather than from plausible job
+  titles: which profiles does a heavy writer genuinely switch between, and what
+  vocabulary, replacements, snippets and non-profile settings does each one
+  actually need.
+- Ship `General writing` as a curated blank profile rather than as a purely
+  local one. It is currently the only non-curated profile, which made it the
+  only one unaffected by the delivery-mode reset — an asymmetry that should not
+  exist by accident. A blank curated baseline also gives every install the same
+  starting point.
+- Rework the settings surface completely. The information architecture is
+  usable but the presentation is not, and the profile panels only became
+  coherent enough to redesign against once the bias policy was retired
+  (ADR 0017).
+
+**Out of scope:** team sync and shared profile catalogues; both stay V2.
+
+**Success measure:** a new user can pick a shipped profile that matches their
+work without editing it first, and an experienced user can see at a glance what
+a profile contains and what stays global.
+
 ## Dependencies
 
-Phase 1 underpins trustworthy preview and settings work. Phase 4 establishes
+Phase 7 depends on the reliability slice, because a profile catalogue can only
+be judged once profiles measurably change output. Phase 1 underpins trustworthy
+preview and settings work. Phase 4 establishes
 the contract needed by Phase 5. Phase 6 comes last because setup cannot be
 truthful until the paths it guides are reliable. Phase 3 and Phase 4 can move
 independently as long as native provider and session contracts remain stable.

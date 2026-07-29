@@ -118,7 +118,7 @@ describe("PromptsTab", () => {
 
     render(<Harness />);
 
-    await user.click(screen.getByRole("tab", { name: /open dictionary workspace/i }));
+    await user.click(screen.getByRole("tab", { name: /open replacements workspace/i }));
     await user.click(screen.getByRole("button", { name: /add dictionary term/i }));
     fireEvent.change(screen.getByRole("textbox", { name: /heard as/i }), { target: { value: "word script" } });
     fireEvent.change(screen.getByRole("textbox", { name: /replace with/i }), { target: { value: "WordScript" } });
@@ -178,21 +178,36 @@ describe("PromptsTab", () => {
     render(<Harness />);
 
     expect(screen.getByRole("tablist", { name: /text rules workspace/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /open context and preview workspace/i })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: /open dictionary workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /open vocabulary workspace/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /open replacements workspace/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /open snippets workspace/i })).toBeInTheDocument();
   });
 
-  it("keeps explicit stt hints separate from snippets in the context workspace", async () => {
+  it("keeps a taught word out of the recognizer prompt until it is opted in per entry", async () => {
     const user = userEvent.setup();
 
     render(<Harness />);
 
-    const hintsField = screen.getByRole("textbox", { name: /optional stt hints/i });
-    await user.type(hintsField, "status update{enter}handoff summary");
+    await user.click(screen.getByRole("button", { name: /add word or name/i }));
 
-    expect(hintsField).toHaveValue("status update\nhandoff summary");
-    expect(screen.getByText(/snippet triggers do not feed stt automatically anymore/i)).toBeInTheDocument();
+    const wordField = screen.getByRole("textbox", { name: /word or name 1/i });
+    await user.type(wordField, "WordScript");
+    expect(wordField).toHaveValue("WordScript");
+
+    // Off by default: the deterministic pass handles it, and a longer
+    // recognizer prompt is itself a hallucination source.
+    const hintToggle = screen.getByRole("checkbox", { name: /hint the recognizer for word 1/i });
+    expect(hintToggle).not.toBeChecked();
+
+    await user.click(hintToggle);
+    expect(hintToggle).toBeChecked();
+  });
+
+  it("no longer exposes bias policy as a user-facing concept", () => {
+    render(<Harness />);
+
+    expect(screen.queryByRole("tab", { name: /open bias policy workspace/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
   });
 
   it("shows the effective transcription bias and ignored lines from analysis", async () => {
@@ -258,7 +273,7 @@ describe("PromptsTab", () => {
 
     render(<Harness />);
 
-    await user.click(screen.getByRole("tab", { name: /open dictionary workspace/i }));
+    await user.click(screen.getByRole("tab", { name: /open replacements workspace/i }));
     await user.click(screen.getByRole("button", { name: /add dictionary term/i }));
     await user.type(screen.getByRole("textbox", { name: /heard as/i }), "alpha term");
     await user.type(screen.getByRole("textbox", { name: /replace with/i }), "Alpha");
@@ -401,13 +416,13 @@ describe("PromptsTab", () => {
 
     expect((screen.getByRole("textbox", { name: /transcription context/i }) as HTMLTextAreaElement).value).toContain("Statuspage");
 
-    await user.click(screen.getByRole("tab", { name: /open dictionary workspace/i }));
+    await user.click(screen.getByRole("tab", { name: /open replacements workspace/i }));
     expect(screen.getByDisplayValue("SEV-1")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /open snippets workspace/i }));
     expect(screen.getByDisplayValue("Status update")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: /open context and preview workspace/i }));
+    await user.click(screen.getByRole("tab", { name: /open vocabulary workspace/i }));
     const promptField = screen.getByRole("textbox", { name: /transcription context/i }) as HTMLTextAreaElement;
 
     await user.clear(promptField);

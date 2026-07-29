@@ -666,6 +666,7 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
         },
         filter_fillers: config.active_text_profile_filter_fillers(),
         professionalize: config.active_text_profile_professionalize(),
+        ..Default::default()
     }
 }
 

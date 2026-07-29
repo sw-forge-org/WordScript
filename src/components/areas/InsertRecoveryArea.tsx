@@ -13,7 +13,7 @@ import {
 } from "@/components/shell";
 import { useNativeInsertion } from "@/hooks/useNativeInsertion";
 import { relativeTime, truncate } from "@/lib/format";
-import { buildTextProfilesPatch, resolveActiveTextProfile } from "@/lib/textProfiles";
+import { buildTextProfilesPatch, clearTextProfileCuration, resolveActiveTextProfile } from "@/lib/textProfiles";
 import { cn } from "@/lib/utils";
 import type { AppConfig, TextProfileInsertBehavior } from "@/types/ipc";
 import type {
@@ -312,7 +312,10 @@ export function InsertRecoveryArea({ config, onChange }: Props) {
                 const nextBehavior = event.target.value as TextProfileInsertBehavior;
                 const nextProfiles = config.text_profiles.map((profile) =>
                   profile.id === activeProfile.id
-                    ? { ...profile, work_mode: { ...profile.work_mode!, insert_behavior: nextBehavior } }
+                    ? clearTextProfileCuration({
+                      ...profile,
+                      work_mode: { ...profile.work_mode!, insert_behavior: nextBehavior },
+                    })
                     : profile,
                 );
                 onChange(buildTextProfilesPatch(config, nextProfiles, activeProfile.id));

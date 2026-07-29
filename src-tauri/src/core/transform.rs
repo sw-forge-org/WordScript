@@ -11,7 +11,7 @@ const MAX_PROFILE_HINT_LINES: usize = 8;
 const MAX_DICTIONARY_HINTS: usize = 12;
 const MAX_HINT_CHARS: usize = 80;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NativeTransformConfig {
     pub provider: String,
     pub profile_prompt: String,
@@ -21,6 +21,11 @@ pub struct NativeTransformConfig {
     pub correction_model: String,
     pub filter_fillers: bool,
     pub professionalize: bool,
+    pub language: String,
+    pub language_locked: bool,
+    /// Set by the confidence gate upstream. It is one of the independent
+    /// signals a language mismatch needs before anything is discarded.
+    pub low_confidence_segments: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -32,81 +37,33 @@ pub struct NativeTransformResult {
 }
 
 impl NativeTransformConfig {
-    pub fn from_payload(value: &serde_json::Value) -> Self {
-        let rewrite_style = value
-            .get("work_mode")
-            .and_then(|work_mode| work_mode.get("rewrite_style"))
-            .or_else(|| value.get("rewrite_style"))
-            .and_then(|value| value.as_str())
-            .map(normalize_payload_rewrite_style);
-        let default_filter_fillers = rewrite_style
-            .as_deref()
-            .map(filter_fillers_for_rewrite_style)
-            .unwrap_or(true);
-        let default_professionalize = rewrite_style
-            .as_deref()
-            .map(professionalize_for_rewrite_style)
-            .unwrap_or(false);
-
+    /// Built from the capture config rather than from loose JSON keys.
+    /// `filter_fillers` and `professionalize` arrive already resolved through
+    /// `TextProfileWorkMode::effective_*`, so the rewrite-style fallback this
+    /// used to re-derive from the payload would only duplicate that logic.
+    pub fn from_capture_config(config: &super::capture::NativeCaptureConfig) -> Self {
         Self {
-            provider: value
-                .get("provider")
-                .or_else(|| value.get("backend"))
-                .and_then(|value| value.as_str())
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or("groq")
-                .to_string(),
-            profile_prompt: value
-                .get("prompt")
-                .and_then(|value| value.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            dictionary_entries: value
-                .get("dictionary_entries")
-                .cloned()
-                .and_then(|value| serde_json::from_value(value).ok())
-                .unwrap_or_default(),
-            snippet_entries: value
-                .get("snippet_entries")
-                .cloned()
-                .and_then(|value| serde_json::from_value(value).ok())
-                .unwrap_or_default(),
-            post_process: value
-                .get("post_process")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(true),
-            correction_model: value
-                .get("correction_model")
-                .and_then(|value| value.as_str())
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or(DEFAULT_CORRECTION_MODEL)
-                .to_string(),
-            filter_fillers: value
-                .get("filter_fillers")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(default_filter_fillers),
-            professionalize: value
-                .get("professionalize")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(default_professionalize),
+            provider: if config.provider.trim().is_empty() {
+                "groq".to_string()
+            } else {
+                config.provider.clone()
+            },
+            profile_prompt: config.prompt.clone(),
+            dictionary_entries: config.dictionary_entries.clone(),
+            snippet_entries: config.snippet_entries.clone(),
+            post_process: config.post_process,
+            correction_model: if config.correction_model.trim().is_empty() {
+                DEFAULT_CORRECTION_MODEL.to_string()
+            } else {
+                config.correction_model.clone()
+            },
+            filter_fillers: config.filter_fillers,
+            professionalize: config.professionalize,
+            language: config.language.clone(),
+            language_locked: config.language_locked,
+            low_confidence_segments: false,
         }
     }
-}
-
-fn normalize_payload_rewrite_style(value: &str) -> String {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "verbatim" => "verbatim".to_string(),
-        "polished" | "professional" => "polished".to_string(),
-        _ => "clean".to_string(),
-    }
-}
-
-fn filter_fillers_for_rewrite_style(value: &str) -> bool {
-    !matches!(value, "verbatim")
-}
-
-fn professionalize_for_rewrite_style(value: &str) -> bool {
-    matches!(value, "polished")
 }
 
 pub async fn apply_native_transform(
@@ -123,11 +80,44 @@ pub async fn apply_native_transform(
         };
     }
 
-    if is_hallucination(trimmed) {
+    // Runs ahead of the exact-string filter on purpose: collapsing an echoed
+    // boilerplate line first turns it into a single line that filter can match.
+    let (detected, detection_signals) = super::hallucination_detect::detect_advanced_hallucination(
+        trimmed,
+        Some(config.language.as_str()).filter(|language| !language.trim().is_empty()),
+        super::hallucination_detect::DriftCorroboration {
+            low_confidence_segments: config.low_confidence_segments,
+            language_locked: config.language_locked,
+            ..Default::default()
+        },
+    );
+    let detection_rules = detection_signals.applied_rules();
+    if !detection_rules.is_empty() {
+        runtime_log::record(format!(
+            "[WordScript] Hallucination detection applied rules={}",
+            detection_rules.join(","),
+        ));
+    }
+
+    let trimmed = detected.trim();
+    if trimmed.is_empty() {
+        let mut applied_rules = detection_rules;
+        applied_rules.push("hallucination_filtered".to_string());
         return NativeTransformResult {
             text: String::new(),
             corrected: false,
-            applied_rules: vec!["hallucination_filtered".to_string()],
+            applied_rules,
+            warning: None,
+        };
+    }
+
+    if is_hallucination(trimmed) {
+        let mut applied_rules = detection_rules;
+        applied_rules.push("hallucination_filtered".to_string());
+        return NativeTransformResult {
+            text: String::new(),
+            corrected: false,
+            applied_rules,
             warning: None,
         };
     }
@@ -201,6 +191,12 @@ pub async fn apply_native_transform(
         result.text = resolved_text;
     }
     result.applied_rules.append(&mut resolved_rules);
+
+    // Prepended so the diagnostics read in pipeline order: what the detection
+    // stage did before the cleanup ever saw the text.
+    let mut applied_rules = detection_rules;
+    applied_rules.append(&mut result.applied_rules);
+    result.applied_rules = applied_rules;
     result
 }
 
@@ -760,35 +756,43 @@ fn is_hallucination(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+
 
     #[test]
-    fn transform_payload_reads_profile_prompt_and_high_accuracy_default() {
-        let config = NativeTransformConfig::from_payload(&json!({
-            "prompt": "release freeze\ncustomer follow-up"
-        }));
+    fn transform_config_reads_profile_prompt_and_correction_model_default() {
+        let capture = super::super::capture::NativeCaptureConfig {
+            prompt: "release freeze\ncustomer follow-up".to_string(),
+            correction_model: String::new(),
+            ..Default::default()
+        };
+        let config = NativeTransformConfig::from_capture_config(&capture);
 
         assert_eq!(config.profile_prompt, "release freeze\ncustomer follow-up");
         assert_eq!(config.correction_model, DEFAULT_CORRECTION_MODEL);
     }
 
     #[test]
-    fn transform_payload_maps_work_mode_rewrite_style_to_cleanup_flags() {
-        let config = NativeTransformConfig::from_payload(&json!({
-            "work_mode": {
-                "rewrite_style": "polished"
-            }
-        }));
+    fn transform_config_takes_the_already_resolved_cleanup_flags() {
+        // The rewrite-style mapping itself is owned and tested by
+        // `TextProfileWorkMode::effective_*` in config.rs; here it only has to
+        // survive the hand-off without being re-derived.
+        let polished = NativeTransformConfig::from_capture_config(
+            &super::super::capture::NativeCaptureConfig {
+                filter_fillers: true,
+                professionalize: true,
+                ..Default::default()
+            },
+        );
+        assert!(polished.filter_fillers);
+        assert!(polished.professionalize);
 
-        assert!(config.filter_fillers);
-        assert!(config.professionalize);
-
-        let verbatim = NativeTransformConfig::from_payload(&json!({
-            "work_mode": {
-                "rewrite_style": "verbatim"
-            }
-        }));
-
+        let verbatim = NativeTransformConfig::from_capture_config(
+            &super::super::capture::NativeCaptureConfig {
+                filter_fillers: false,
+                professionalize: false,
+                ..Default::default()
+            },
+        );
         assert!(!verbatim.filter_fillers);
         assert!(!verbatim.professionalize);
     }
@@ -808,6 +812,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         });
 
         assert!(prompt.contains("Sprachmix exakt beibehalten"));
@@ -830,6 +835,7 @@ mod tests {
                 correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
                 filter_fillers: true,
                 professionalize: false,
+                ..Default::default()
             },
         )
         .await;
@@ -850,6 +856,7 @@ mod tests {
                 correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
                 filter_fillers: true,
                 professionalize: false,
+                ..Default::default()
             },
         )
         .await;
@@ -881,6 +888,7 @@ mod tests {
                 correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
                 filter_fillers: true,
                 professionalize: false,
+                ..Default::default()
             },
         )
         .await;
@@ -911,6 +919,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         let result = normalize_correction(
@@ -937,6 +946,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         let result = normalize_correction(
@@ -963,6 +973,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         let result = normalize_correction(
@@ -987,6 +998,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: false,
             professionalize: false,
+            ..Default::default()
         };
 
         // No question mark in original — guardrail must not fire even if corrected has no question mark
@@ -1013,6 +1025,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         // Simulates a model response that injects multilingual boilerplate via profile bias
@@ -1037,6 +1050,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         let prompt = correction_system_prompt(&config);
@@ -1057,6 +1071,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         // Original is an imperative; model responds in first person
@@ -1087,6 +1102,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         // Model starts response with "Gerne " instead of cleaning
@@ -1117,6 +1133,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
+            ..Default::default()
         };
 
         // Filler removed from imperative — should pass
@@ -1143,6 +1160,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: true,
+            ..Default::default()
         };
 
         // In polished mode has_suspicious_start is disabled;
@@ -1174,6 +1192,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: true,
+            ..Default::default()
         };
 
         // Legitimate polished reformulation: sentence structure changed but
@@ -1199,6 +1218,7 @@ mod tests {
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: true,
+            ..Default::default()
         };
 
         let result = normalize_correction(

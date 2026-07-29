@@ -59,7 +59,9 @@ Rust core modules in `src-tauri/src/core/`:
 - `providers/mod.rs` -- shared provider contract, dispatch, typed modes/capabilities/errors
 - `providers/groq.rs` -- cloud-first production lane (BYOK, secret store, Groq HTTP errors)
 - `providers/local_preview.rs` -- local runtime lane (whisper-cli STT, Ollama cleanup, native model discovery, probe-based runner health)
-- `transform.rs` -- hallucination filter, optional AI cleanup (correction guardrail stack), dictionary, snippets
+- `confidence_gate.rs` -- drops segments Whisper's own metrics mark as invented; cloud lane only, thresholds are constants (ADR 0016)
+- `hallucination_detect.rs` -- repetition collapse, artifact-pattern filter, language-switch observation; a language mismatch alone never discards text (ADR 0016)
+- `transform.rs` -- detection stage, exact-string hallucination filter, optional AI cleanup (correction guardrail stack), dictionary, snippets
 - `agent.rs` -- hybrid intent detection (heuristic + LLM classifier), agent execution; routing layer before `transform.rs`
 - `text_rules.rs` -- text-rules analysis, preview, import/export, conflict handling, profile health
 - `mode_router.rs` -- resolves effective `ProcessingMode` per session; `resolve_auto_mode` for auto routing; exposes `resolve_current_processing_mode` command
@@ -154,12 +156,17 @@ no account. Entities:
   the text-profile collection, active mirrors for profile-bound settings,
   provider selection, seven mode shortcuts (picker plus six direct modes),
   overlay placement, `profile_health_acknowledged_flags` map.
-- **TextProfile** (local text profile): `prompt`, optional `stt_hints`,
-  `dictionary`, `snippets`, `TextProfileWorkMode` (`processing_mode`,
-  `enhance_sub_mode`, `target`, `insert_behavior`, `bias_mode`,
-  `manual_bias`) plus optional profile-bound `speech`, `modes` and `capture`
-  settings. Profiles are local and manually activated; no automatic app-based
-  activation, no team sync.
+- **TextProfile** (local text profile): `prompt`, `vocabulary_hints`
+  (`VocabularyHintEntry { id, phrase, use_as_prompt_hint }`), `dictionary`,
+  `snippets`, `schema_version`, `TextProfileWorkMode` (`processing_mode`,
+  `enhance_sub_mode`, `target`, `insert_behavior`) plus optional profile-bound
+  `speech`, `modes` and `capture` settings. Profiles are local and manually
+  activated; no automatic app-based activation, no team sync.
+  Vocabulary is applied deterministically after transcription;
+  `use_as_prompt_hint` is the only way an entry reaches Whisper's initial
+  prompt, it is per entry and off by default (ADR 0017). `stt_hints`,
+  `bias_mode` and `manual_bias` remain as migration-only remnants for one
+  release and are read by nothing at runtime.
 - **Session** (`sessions.rs`): runtime state machine
   `idle -> capturing -> processing -> completed | aborted | error`. `paused`
   is a capture sub-state within `capturing`. Async provider/transform/insert
@@ -184,10 +191,14 @@ no account. Entities:
    active `TextProfile.work_mode`; unresolved profiles use the legacy global
    `AppConfig.processing_mode`). An effective `auto` value is resolved to a
    concrete mode per transcription.
-6. `providers/mod.rs` dispatches to `groq` or `local_preview`.
-7. `transform.rs` filters and cleans (hallucination guard, optional AI
-   cleanup via correction guardrail stack, dictionary, snippets). For
-   `prompt_enhance` mode the cleaned text additionally runs the
+6. `providers/mod.rs` dispatches to `groq` or `local_preview`. The request comes
+   from `NativeCaptureConfig::resolve_transcription_request`, the single place a
+   provider request is derived from a capture (ADR 0015).
+6b. `confidence_gate.rs` drops low-confidence segments (cloud lane only).
+7. `hallucination_detect.rs` collapses repetition and filters artifact patterns,
+   then `transform.rs` filters and cleans (exact-string hallucination guard,
+   optional AI cleanup via correction guardrail stack, dictionary, snippets).
+   For `prompt_enhance` mode the cleaned text additionally runs the
    `prompt_enhance` guardrail chain.
 8. `insertion.rs` chooses and runs the insert mode; successful direct insert
    best-effort restores the previous clipboard.
@@ -211,9 +222,19 @@ result surface (ADR 0011a).
 
 ## Known Deviations / Open Questions
 
-- Transcription reliability outside `General Writing` is still not launch-ready;
-  some curated profiles introduce multilingual fragments, fantasy tokens or
-  topic drift into raw transcripts. This is the primary launch blocker.
+- Transcription reliability: the mechanical cause is fixed but the result is not
+  yet re-measured. Until 2026-07-29 no profile could affect a real recording at
+  all -- bias policy and local decode settings were dropped between the capture
+  event and the provider request (ADR 0015), so "curated profiles worsen raw
+  transcripts" described a path that was never actually taken. Silence trimming,
+  a segment-confidence gate, whisper.cpp decode flags and a repetition/artifact
+  detection stage now sit before AI cleanup (ADR 0016). Re-assessing per-profile
+  reliability against the corrected runtime is the open work; the profile UI
+  rework is a separate, still-open slice.
+- The language-drift check compares script families and therefore cannot
+  separate two Latin-script languages. This is deliberate -- it is what makes
+  German with English terms structurally untouchable -- but it also means drift
+  between, say, German and French is only ever observed, never acted on.
 - No published versioned releases; `check_app_update` honestly reports none.
   Internal draft handoffs are maintainer-internal, not a public channel.
 - No signed in-place auto-updater.

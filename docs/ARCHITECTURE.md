@@ -151,8 +151,20 @@ The active product core lives in `src-tauri/src/core/`.
   STT, local Ollama cleanup, native model discovery, probe-based runner
   health, selected-model/cleanup setup truth over the same response
   contract.
-- `transform.rs`: hallucination filter, optional AI cleanup (correction
-  guardrail stack), dictionary and snippet resolution.
+- `confidence_gate.rs`: drops transcription segments Whisper's own metrics mark
+  as invented (`no_speech_prob` combined with `avg_logprob`, or
+  `compression_ratio` alone). Cloud lane only; `whisper-cli` returns no
+  segments. Thresholds are constants, not settings (ADR 0016).
+- `hallucination_detect.rs`: post-transcription detection stage. Collapses
+  character, word and phrase repetition, filters broadcaster subtitle
+  boilerplate by pattern, and observes language switches. A language mismatch is
+  never on its own a reason to discard text -- the unit of analysis is a whole
+  sentence, so inline code-switching is structurally out of reach, and a strip
+  requires independent corroboration from the confidence gate, the artifact
+  filter or a repetition collapse (ADR 0016).
+- `transform.rs`: runs `hallucination_detect` ahead of the exact-string
+  hallucination filter, then optional AI cleanup (correction guardrail stack),
+  dictionary and snippet resolution.
 - `agent.rs`: hybrid intent detection (heuristic + LLM classifier) and agent
   execution; sits as a routing layer before `transform.rs`.
 - `text_rules.rs`: analysis, preview, import/export, conflict handling and
@@ -191,7 +203,14 @@ lane and missing helpers.
 1. Hotkey recognized in the native trigger.
 2. `capture.rs` starts recording and emits level/waveform events.
 3. Recording ends via stop hotkey, silence timeout, max duration or abort.
-4. Audio is prepared as 16 kHz mono WAV for the provider.
+4. Audio is prepared as 16 kHz mono WAV for the provider. Leading and trailing
+   silence is trimmed off first; a capture with less than `MIN_SPEECH_MS` of
+   remaining audio never reaches a provider and ends as
+   `InputLevelVerdict::TooShort` with an explicit overlay message (ADR 0016).
+4b. `NativeCaptureConfig::resolve_transcription_request` derives the provider
+   request. It is the single source: the capture config crosses the event
+   boundary flattened and typed, so bias policy and local decode settings cannot
+   be lost on the way (ADR 0015).
 5. `mode_router.rs` resolves the effective `ProcessingMode` before transform
    (manual override > active profile work-mode, with the legacy global
    `AppConfig.processing_mode` used only if the active profile cannot be
@@ -200,7 +219,10 @@ lane and missing helpers.
    mode via `resolve_current_processing_mode`.
 6. `providers/mod.rs` resolves the active provider and dispatches today to
    `providers/groq.rs` or `providers/local_preview.rs`.
-7. `transform.rs` checks and cleans the transcription output using the same
+6b. `confidence_gate.rs` drops segments the provider's own metrics mark as
+   invented, before any downstream stage sees the text (cloud lane only).
+7. `hallucination_detect.rs` collapses repetition and filters artifact patterns,
+   then `transform.rs` checks and cleans the transcription output using the same
    provider contract for AI cleanup; for `prompt_enhance` mode the cleaned
    text additionally runs the `prompt_enhance` guardrail chain.
 

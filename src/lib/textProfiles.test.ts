@@ -18,6 +18,8 @@ describe("textProfiles", () => {
           label: "General writing",
           prompt: "profile prompt",
           stt_hints: "profile hint",
+          vocabulary_hints: [],
+          schema_version: 2,
           curation: createEmptyTextProfileCuration(),
           dictionary_entries: [],
           snippet_entries: [],
@@ -43,6 +45,8 @@ describe("textProfiles", () => {
         label: "General writing",
         prompt: "owned by profile",
         stt_hints: "owned hint",
+        vocabulary_hints: [],
+        schema_version: 2,
         work_mode: {
           rewrite_style: "polished",
           insert_behavior: "clipboard_only",
@@ -61,6 +65,8 @@ describe("textProfiles", () => {
           id: "general",
           prompt: "owned by profile",
           stt_hints: "owned hint",
+          vocabulary_hints: [],
+          schema_version: 2,
           work_mode: expect.objectContaining({
             rewrite_style: "polished",
             insert_behavior: "clipboard_only",

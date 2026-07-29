@@ -30,7 +30,12 @@ export type ProcessingMode = "auto" | "cleanup" | "rewrite" | "agent" | "prompt_
 
 /** Mirrors `core::capture::InputLevelVerdict`. Diagnosis only — WordScript
  *  never writes the OS input volume, which is per device rather than per app. */
-export type InputLevelVerdict = "ok" | "too_quiet" | "silent" | "clipping";
+export type InputLevelVerdict =
+  | "ok"
+  | "too_quiet"
+  | "silent"
+  | "clipping"
+  | "too_short";
 
 /** Mirrors `core::capture::InputLevelSummary`. */
 export interface InputLevelSummary {
@@ -124,11 +129,25 @@ export interface RuntimeTranscriptionResult {
   occurred_at_ms:          number;
 }
 
+/** A word or name taught to the profile. `use_as_prompt_hint` replaces the
+ *  whole `BiasMode` + `ManualBias` combination: it is the only remaining knob,
+ *  it is per entry, and it is off by default because pushing vocabulary into
+ *  Whisper's initial prompt is itself a hallucination source. */
+export interface VocabularyHintEntry {
+  id:                      string;
+  phrase:                  string;
+  use_as_prompt_hint:      boolean;
+}
+
 export interface TextProfile {
   id:                      string;
   label:                   string;
   prompt:                  string;
+  /** @deprecated Migration-only remnant of the free-text hint blob.
+   *  Read once into `vocabulary_hints` on load; do not write. */
   stt_hints:               string;
+  vocabulary_hints:        VocabularyHintEntry[];
+  schema_version:          number;
   work_mode?:              TextProfileWorkMode;
   curation:                TextProfileCuration;
   dictionary_entries:      DictionaryEntry[];
@@ -157,6 +176,9 @@ export interface ProfileSpeechSettings {
   provider:                string;
   model:                   string;
   language:                string;
+  /** Never enough on its own to discard text — it only lowers the
+   *  corroboration the drift check needs from two signals to one. */
+  language_locked:         boolean;
   correction_model:        string;
   local_correction_model:  string;
   agent_model:             string;

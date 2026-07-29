@@ -44,6 +44,12 @@ Status: 2026-07-25
 - `ProviderStatus` carries typed modes (`fast`, `quality`, `local`, later
   `self_hosted`) and capabilities for Transcription, Chat-Cleanup, Local,
   API-Key-Required, Prompt-Bias, Language, Segments and model management.
+- The Segments capability is load-bearing, not informational: a provider that
+  declares it returns typed `TranscriptionSegment` values with `avg_logprob`,
+  `no_speech_prob` and `compression_ratio`, and the confidence gate uses them to
+  drop invented segments before AI cleanup (ADR 0016). `local_preview` declares
+  `supports_segments: false` and is defended by the silence trim and the
+  whisper.cpp decode flags instead.
 - `ProviderCommandError` carries text plus `kind`, HTTP status, Retry-After,
   `retryable` and a `user_action`; settings and runtime events must relay
   this semantics, not build their own error categories.

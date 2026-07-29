@@ -38,6 +38,15 @@ const SILENT_PEAK_THRESHOLD: f32 = 0.001;
 const CLIPPING_SAMPLE_THRESHOLD: f32 = 0.99;
 /// Sustained clipping, not the occasional transient.
 const CLIPPING_RATIO_THRESHOLD: f32 = 0.005;
+/// Window the silence trim scans in, and the pad it keeps on either side of
+/// the detected speech so a soft onset survives.
+const TRIM_WINDOW_MS: u64 = 30;
+const TRIM_PAD_MS: u64 = 150;
+/// Well below `DEFAULT_VOICE_THRESHOLD`: the trim only removes what is
+/// unambiguously quiet, the speech decision itself stays with the capture.
+const TRIM_SILENCE_THRESHOLD: f32 = 0.005;
+/// Shortest capture that still gets transcribed, measured after the trim.
+const MIN_SPEECH_MS: u64 = 200;
 
 /// What the measured input level says about the microphone setup.
 ///
@@ -55,6 +64,9 @@ pub enum InputLevelVerdict {
     Silent,
     /// Sustained full-scale samples; the recording is distorted.
     Clipping,
+    /// Loud enough, but too brief to be speech once silence was trimmed off.
+    /// A click, a cough or a breath into the microphone.
+    TooShort,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -110,7 +122,18 @@ impl InputLevelSummary {
                 "The input is clipping ({:.0}% of samples at full scale), which distorts the recording. Lower the input level for this microphone in your system sound settings.",
                 self.clipped_ratio * 100.0
             ),
+            InputLevelVerdict::TooShort => format!(
+                "No speech detected. Only {}ms of audio remained after silence was trimmed, too short to transcribe. Hold the shortcut until you have finished speaking.",
+                min_speech_ms()
+            ),
             InputLevelVerdict::Ok => "No speech detected in recording.".to_string(),
+        }
+    }
+
+    fn too_short(self) -> Self {
+        Self {
+            verdict: InputLevelVerdict::TooShort,
+            ..self
         }
     }
 }
@@ -132,6 +155,7 @@ pub struct NativeCaptureConfig {
     pub local_beam_size: u8,
     pub local_best_of: u8,
     pub language: String,
+    pub language_locked: bool,
     pub prompt: String,
     pub stt_hints: String,
     pub work_mode: TextProfileWorkMode,
@@ -158,6 +182,7 @@ impl Default for NativeCaptureConfig {
             local_beam_size: 1,
             local_best_of: 1,
             language: String::new(),
+            language_locked: false,
             prompt: String::new(),
             stt_hints: String::new(),
             work_mode: TextProfileWorkMode::default(),
@@ -209,8 +234,12 @@ impl NativeCaptureConfig {
             local_beam_size: speech.local_beam_size,
             local_best_of: speech.local_best_of,
             language: speech.language,
+            language_locked: speech.language_locked,
+            // Only the entries the user explicitly allowed into the prompt.
+            // Everything else in the vocabulary is applied deterministically
+            // after transcription (ADR 0017).
+            stt_hints: active_profile.prompt_hint_phrases().join("\n"),
             prompt: active_profile.prompt,
-            stt_hints: active_profile.stt_hints,
             work_mode,
             dictionary_entries: active_profile.dictionary_entries,
             snippet_entries: active_profile.snippet_entries,
@@ -228,6 +257,72 @@ impl NativeCaptureConfig {
             temp_audio_dir: app_config.temp_audio_dir,
         }
     }
+
+    /// The single place a transcription request is derived from a capture.
+    ///
+    /// Both the preview panel and the runtime used to build this independently
+    /// from loose JSON keys, and the runtime's copy silently omitted the bias
+    /// policy and every local decode setting, so a profile's configuration was
+    /// rendered faithfully and then discarded before the provider call. Keeping
+    /// the derivation on the struct that owns the fields is what stops the two
+    /// from drifting apart again.
+    pub fn resolve_transcription_request(
+        &self,
+        audio_path: &str,
+        timeout_ms: u64,
+    ) -> super::providers::TranscribeAudioFileRequest {
+        let is_local = self.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
+        let context = super::transcription_hints::BiasRequestContext::from_work_mode(
+            &self.work_mode,
+            &self.local_prompt_strength,
+            self.local_prompt_carry,
+        );
+        let preview = super::transcription_hints::analyze_transcription_bias_with_mode(
+            &self.prompt,
+            &self.stt_hints,
+            &self.dictionary_entries,
+            &context,
+        );
+
+        super::providers::TranscribeAudioFileRequest {
+            provider: self.provider.clone(),
+            audio_path: audio_path.to_string(),
+            model: non_empty(&self.model),
+            profile: is_local.then(|| non_empty(&self.local_profile)).flatten(),
+            language: non_empty(&self.language),
+            prompt: if is_local {
+                preview.local_prompt_preview
+            } else {
+                preview.cloud_prompt_preview
+            },
+            carry_initial_prompt: is_local.then_some(self.local_prompt_carry),
+            beam_size: is_local.then_some(self.local_beam_size),
+            best_of: is_local.then_some(self.local_best_of),
+            // verbose_json carries the per-segment confidence metrics the
+            // hallucination gate reads. The local lane has no segment output.
+            response_format: Some(if is_local { "json" } else { "verbose_json" }.to_string()),
+            timeout_ms: Some(timeout_ms),
+            max_retries: Some(1),
+        }
+    }
+}
+
+fn non_empty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// The `audio_ready` payload. `NativeCaptureConfig` is flattened in whole
+/// rather than field-picked, so a field added to it reaches the runtime
+/// without a second, hand-maintained copy of the same schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioReadyEvent {
+    pub event: String,
+    pub input_level: InputLevelSummary,
+    pub audio_path: String,
+    pub audio_duration_seconds: f64,
+    #[serde(flatten)]
+    pub config: NativeCaptureConfig,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -752,34 +847,47 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         ));
     }
 
-    let audio_path = write_capture_wav(
+    // Trimmed before the length check and before the file is written, so the
+    // gate measures the audio a provider would actually receive rather than
+    // the raw capture with its silent head and tail.
+    let transcription_samples =
+        prepare_transcription_samples(&samples, active.sample_rate, active.channels);
+
+    if samples_below_min_speech(transcription_samples.len(), TRANSCRIPTION_SAMPLE_RATE) {
+        runtime_log::record(format!(
+            "[WordScript] Capture discarded as too short trimmed_samples={} min_speech_ms={} peak_dbfs={:.1}",
+            transcription_samples.len(),
+            min_speech_ms(),
+            level.peak_dbfs,
+        ));
+        return Ok(CaptureOutcome::Empty(level.too_short()));
+    }
+
+    let audio_path = write_transcription_wav(
         &active.config,
         &active.id,
         active.sample_rate,
         active.channels,
-        &samples,
+        samples.len(),
+        &transcription_samples,
     )?;
-    let audio_duration_seconds =
-        capture_duration_seconds(samples.len(), active.sample_rate, active.channels);
+    let audio_duration_seconds = capture_duration_seconds(
+        transcription_samples.len(),
+        TRANSCRIPTION_SAMPLE_RATE,
+        TRANSCRIPTION_CHANNELS,
+    );
 
-    Ok(CaptureOutcome::Ready(serde_json::json!({
-        "event": "audio_ready",
-        "input_level": level,
-        "audio_path": audio_path.to_string_lossy(),
-        "audio_duration_seconds": audio_duration_seconds,
-        "provider": active.config.provider,
-        "model": active.config.model,
-        "language": active.config.language,
-        "prompt": active.config.prompt,
-        "stt_hints": active.config.stt_hints,
-        "work_mode": active.config.work_mode,
-        "dictionary_entries": active.config.dictionary_entries,
-        "snippet_entries": active.config.snippet_entries,
-        "post_process": active.config.post_process,
-        "correction_model": active.config.correction_model,
-        "filter_fillers": active.config.filter_fillers,
-        "professionalize": active.config.professionalize
-    })))
+    let event = AudioReadyEvent {
+        event: "audio_ready".to_string(),
+        input_level: level,
+        audio_path: audio_path.to_string_lossy().to_string(),
+        audio_duration_seconds,
+        config: active.config.clone(),
+    };
+
+    Ok(CaptureOutcome::Ready(serde_json::to_value(&event).map_err(
+        |error| format!("Could not serialize the capture result: {error}"),
+    )?))
 }
 
 
@@ -1260,16 +1368,16 @@ fn waveform_buckets(samples: &[f32]) -> [f32; WAVEFORM_BUCKET_COUNT] {
     buckets
 }
 
-fn write_capture_wav(
+fn write_transcription_wav(
     config: &NativeCaptureConfig,
     capture_id: &str,
     sample_rate: u32,
     channels: u16,
-    samples: &[i16],
+    input_sample_count: usize,
+    transcription_samples: &[i16],
 ) -> Result<PathBuf, String> {
     let directory = capture_temp_dir(config)?;
     let file_path = directory.join(format!("{capture_id}.wav"));
-    let transcription_samples = prepare_transcription_samples(samples, sample_rate, channels);
     let spec = hound::WavSpec {
         channels: TRANSCRIPTION_CHANNELS,
         sample_rate: TRANSCRIPTION_SAMPLE_RATE,
@@ -1279,7 +1387,7 @@ fn write_capture_wav(
 
     let mut writer = hound::WavWriter::create(&file_path, spec)
         .map_err(|error| format!("Could not create native capture WAV file: {error}"))?;
-    for sample in &transcription_samples {
+    for sample in transcription_samples {
         writer
             .write_sample(*sample)
             .map_err(|error| format!("Could not write native capture sample: {error}"))?;
@@ -1295,7 +1403,7 @@ fn write_capture_wav(
             channels,
             TRANSCRIPTION_SAMPLE_RATE,
             TRANSCRIPTION_CHANNELS,
-            samples.len(),
+            input_sample_count,
             transcription_samples.len(),
             metadata.len(),
         ));
@@ -1306,7 +1414,67 @@ fn write_capture_wav(
 
 fn prepare_transcription_samples(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<i16> {
     let mono = downmix_to_mono(samples, channels);
-    resample_mono_samples(&mono, sample_rate, TRANSCRIPTION_SAMPLE_RATE)
+    let resampled = resample_mono_samples(&mono, sample_rate, TRANSCRIPTION_SAMPLE_RATE);
+    trim_leading_trailing_silence(&resampled, TRANSCRIPTION_SAMPLE_RATE)
+}
+
+/// Whisper invents subtitle boilerplate when it is handed silence, so the
+/// quiet head and tail of a capture are cut off before the audio ever reaches
+/// a provider. The trim keeps a pad on both sides so a soft word onset is not
+/// clipped, and it deliberately leaves the middle untouched: a pause inside a
+/// sentence is speech, not silence to remove.
+fn trim_leading_trailing_silence(samples: &[i16], sample_rate: u32) -> Vec<i16> {
+    if samples.is_empty() || sample_rate == 0 {
+        return samples.to_vec();
+    }
+
+    let window = ((sample_rate as u64 * TRIM_WINDOW_MS) / 1000).max(1) as usize;
+    let pad = ((sample_rate as u64 * TRIM_PAD_MS) / 1000) as usize;
+    let threshold = (TRIM_SILENCE_THRESHOLD * f32::from(i16::MAX)) as i32;
+
+    let is_loud = |chunk: &[i16]| {
+        chunk
+            .iter()
+            .any(|sample| i32::from(*sample).abs() > threshold)
+    };
+
+    let first_loud = samples
+        .chunks(window)
+        .position(|chunk| is_loud(chunk))
+        .map(|index| index * window);
+    let Some(first_loud) = first_loud else {
+        return Vec::new();
+    };
+    let last_loud = samples
+        .chunks(window)
+        .rposition(|chunk| is_loud(chunk))
+        .map(|index| ((index + 1) * window).min(samples.len()))
+        .unwrap_or(samples.len());
+
+    let start = first_loud.saturating_sub(pad);
+    let end = (last_loud + pad).min(samples.len());
+
+    samples[start..end].to_vec()
+}
+
+/// Deliberately far below the length of a real word: "Ja." runs 400-600ms, so
+/// this rejects clicks, coughs and breath noise without ever swallowing a
+/// short dictation. A gate that silently eats real speech is a worse failure
+/// than a hallucination that the post-transcription filters can still catch.
+fn min_speech_ms() -> u64 {
+    std::env::var("WORDSCRIPT_MIN_SPEECH_MS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(|value| value.clamp(0, 2_000))
+        .unwrap_or(MIN_SPEECH_MS)
+}
+
+fn samples_below_min_speech(sample_count: usize, sample_rate: u32) -> bool {
+    if sample_rate == 0 {
+        return false;
+    }
+    let duration_ms = (sample_count as u64 * 1000) / u64::from(sample_rate);
+    duration_ms < min_speech_ms()
 }
 
 fn downmix_to_mono(samples: &[i16], channels: u16) -> Vec<i16> {
@@ -1432,6 +1600,208 @@ fn classify_capture_stream_error(raw: &str) -> String {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn round_trip(config: &NativeCaptureConfig) -> NativeCaptureConfig {
+        let event = AudioReadyEvent {
+            event: "audio_ready".to_string(),
+            input_level: InputLevelSummary::new(0.4, 0, 16_000),
+            audio_path: "/tmp/capture.wav".to_string(),
+            audio_duration_seconds: 3.0,
+            config: config.clone(),
+        };
+        let value = serde_json::to_value(&event).expect("event serializes");
+        serde_json::from_value::<AudioReadyEvent>(value)
+            .expect("event deserializes")
+            .config
+    }
+
+    /// The regression guard for the wiring gap: the bias policy and every
+    /// local decode setting used to be dropped between the capture event and
+    /// the provider request, so a configured profile was rendered in the
+    /// preview and then silently ignored on every real recording.
+    #[test]
+    fn audio_ready_round_trip_preserves_bias_policy_and_local_decode_settings() {
+        let config = NativeCaptureConfig {
+            provider: super::super::providers::LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            local_profile: "local-preview-large-v3".to_string(),
+            local_prompt_strength: "profile_and_terms".to_string(),
+            local_prompt_carry: true,
+            local_beam_size: 5,
+            local_best_of: 4,
+            language: "de".to_string(),
+            work_mode: TextProfileWorkMode {
+                bias_mode: super::super::config::BiasMode::Manual,
+                manual_bias: super::super::config::ManualBias {
+                    cloud_include_profile_terms: true,
+                    local_include_profile_terms: true,
+                    stt_hints_override: "WordScript".to_string(),
+                },
+                ..TextProfileWorkMode::default()
+            },
+            ..Default::default()
+        };
+
+        let restored = round_trip(&config);
+
+        assert_eq!(
+            restored.work_mode.bias_mode,
+            super::super::config::BiasMode::Manual
+        );
+        assert!(restored.work_mode.manual_bias.cloud_include_profile_terms);
+        assert!(restored.work_mode.manual_bias.local_include_profile_terms);
+        assert_eq!(restored.local_prompt_strength, "profile_and_terms");
+        assert!(restored.local_prompt_carry);
+        assert_eq!(restored.local_beam_size, 5);
+        assert_eq!(restored.local_best_of, 4);
+        assert_eq!(restored.local_profile, "local-preview-large-v3");
+
+        let request = restored.resolve_transcription_request("/tmp/capture.wav", 20_000);
+
+        assert_eq!(request.carry_initial_prompt, Some(true));
+        assert_eq!(request.beam_size, Some(5));
+        assert_eq!(request.best_of, Some(4));
+        assert_eq!(request.profile.as_deref(), Some("local-preview-large-v3"));
+        assert_eq!(request.language.as_deref(), Some("de"));
+    }
+
+    #[test]
+    fn cloud_requests_ask_for_the_segment_carrying_response_format() {
+        let config = NativeCaptureConfig::default();
+        let request = config.resolve_transcription_request("/tmp/capture.wav", 20_000);
+
+        assert_eq!(request.response_format.as_deref(), Some("verbose_json"));
+        // Local decode settings belong to the local lane only.
+        assert_eq!(request.beam_size, None);
+        assert_eq!(request.best_of, None);
+        assert_eq!(request.carry_initial_prompt, None);
+    }
+
+    #[test]
+    fn manual_bias_reaches_the_prompt_the_preview_promised() {
+        let profile_terms = "WordScript\nGroq";
+        let conservative = NativeCaptureConfig {
+            prompt: profile_terms.to_string(),
+            ..Default::default()
+        };
+        let manual = NativeCaptureConfig {
+            prompt: profile_terms.to_string(),
+            work_mode: TextProfileWorkMode {
+                bias_mode: super::super::config::BiasMode::Manual,
+                manual_bias: super::super::config::ManualBias {
+                    cloud_include_profile_terms: true,
+                    ..Default::default()
+                },
+                ..TextProfileWorkMode::default()
+            },
+            ..Default::default()
+        };
+
+        let conservative_prompt = conservative
+            .resolve_transcription_request("/tmp/capture.wav", 20_000)
+            .prompt;
+        let manual_prompt = manual
+            .resolve_transcription_request("/tmp/capture.wav", 20_000)
+            .prompt;
+
+        assert_ne!(
+            conservative_prompt, manual_prompt,
+            "opting into profile terms must change the outbound prompt"
+        );
+        assert!(manual_prompt
+            .unwrap_or_default()
+            .contains("WordScript"));
+    }
+
+    fn loud_block(sample_count: usize) -> Vec<i16> {
+        (0..sample_count)
+            .map(|index| if index % 2 == 0 { 12_000 } else { -12_000 })
+            .collect()
+    }
+
+    #[test]
+    fn trim_removes_a_silent_head_and_tail_but_keeps_a_pad() {
+        let pad_samples = (TRANSCRIPTION_SAMPLE_RATE as u64 * TRIM_PAD_MS / 1000) as usize;
+        let speech = loud_block(TRANSCRIPTION_SAMPLE_RATE as usize);
+        let mut samples = vec![0_i16; TRANSCRIPTION_SAMPLE_RATE as usize];
+        samples.extend_from_slice(&speech);
+        samples.extend(vec![0_i16; TRANSCRIPTION_SAMPLE_RATE as usize]);
+
+        let trimmed = trim_leading_trailing_silence(&samples, TRANSCRIPTION_SAMPLE_RATE);
+
+        assert!(trimmed.len() < samples.len(), "silence must be removed");
+        assert!(
+            trimmed.len() >= speech.len(),
+            "the speech itself must survive the trim"
+        );
+        // The trim is window-quantised, so it can keep up to one scan window
+        // more per side. Erring towards keeping audio is the safe direction.
+        let window_samples = (TRANSCRIPTION_SAMPLE_RATE as u64 * TRIM_WINDOW_MS / 1000) as usize;
+        assert!(
+            trimmed.len() <= speech.len() + 2 * (pad_samples + window_samples),
+            "no more than the pad plus one scan window may be kept per side, got {}",
+            trimmed.len()
+        );
+    }
+
+    #[test]
+    fn trim_returns_nothing_for_pure_silence() {
+        let samples = vec![0_i16; TRANSCRIPTION_SAMPLE_RATE as usize];
+
+        assert!(trim_leading_trailing_silence(&samples, TRANSCRIPTION_SAMPLE_RATE).is_empty());
+    }
+
+    #[test]
+    fn trim_leaves_continuous_speech_untouched() {
+        let samples = loud_block(TRANSCRIPTION_SAMPLE_RATE as usize);
+
+        assert_eq!(
+            trim_leading_trailing_silence(&samples, TRANSCRIPTION_SAMPLE_RATE).len(),
+            samples.len()
+        );
+    }
+
+    #[test]
+    fn trim_keeps_a_pause_inside_the_utterance() {
+        // A pause between two words is speech, not silence to cut away.
+        let word = loud_block(TRANSCRIPTION_SAMPLE_RATE as usize / 4);
+        let pause = vec![0_i16; TRANSCRIPTION_SAMPLE_RATE as usize / 2];
+        let mut samples = word.clone();
+        samples.extend_from_slice(&pause);
+        samples.extend_from_slice(&word);
+
+        let trimmed = trim_leading_trailing_silence(&samples, TRANSCRIPTION_SAMPLE_RATE);
+
+        assert_eq!(trimmed.len(), samples.len());
+    }
+
+    #[test]
+    fn short_utterances_stay_above_the_minimum_speech_gate() {
+        // 400ms is the low end of a real single word; it must never be gated.
+        let short_word = loud_block((TRANSCRIPTION_SAMPLE_RATE as usize * 400) / 1000);
+
+        assert!(!samples_below_min_speech(
+            short_word.len(),
+            TRANSCRIPTION_SAMPLE_RATE
+        ));
+    }
+
+    #[test]
+    fn a_click_falls_below_the_minimum_speech_gate() {
+        let click = loud_block((TRANSCRIPTION_SAMPLE_RATE as usize * 40) / 1000);
+
+        assert!(samples_below_min_speech(
+            click.len(),
+            TRANSCRIPTION_SAMPLE_RATE
+        ));
+    }
+
+    #[test]
+    fn too_short_captures_explain_themselves() {
+        let level = InputLevelSummary::new(0.4, 0, 16_000).too_short();
+
+        assert_eq!(level.verdict, InputLevelVerdict::TooShort);
+        assert!(level.message().contains("No speech detected"));
+    }
 
     #[test]
     fn level_emit_summary_reports_no_shortfall_when_every_interval_landed() {
@@ -1582,8 +1952,16 @@ mod tests {
             stereo_samples.push(right);
         }
 
-        let file_path = write_capture_wav(&config, "capture-test", 48_000, 2, &stereo_samples)
-            .expect("capture wav should be written");
+        let transcription_samples = prepare_transcription_samples(&stereo_samples, 48_000, 2);
+        let file_path = write_transcription_wav(
+            &config,
+            "capture-test",
+            48_000,
+            2,
+            stereo_samples.len(),
+            &transcription_samples,
+        )
+        .expect("capture wav should be written");
 
         let reader = hound::WavReader::open(&file_path).expect("capture wav should be readable");
         let spec = reader.spec();

@@ -87,6 +87,7 @@ export function createDefaultProfileSpeechSettings(): ProfileSpeechSettings {
     provider: "groq",
     model: "whisper-large-v3-turbo",
     language: "",
+    language_locked: false,
     correction_model: "llama-3.3-70b-versatile",
     local_correction_model: "llama3.2:latest",
     agent_model: "llama-3.3-70b-versatile",
@@ -123,6 +124,8 @@ function cloneProfileSpeechSettings(settings?: ProfileSpeechSettings | null): Pr
   if (!settings) return createDefaultProfileSpeechSettings();
   return {
     ...settings,
+    // Absent in configs written before the language lock existed.
+    language_locked: settings.language_locked ?? false,
     local_profile_prompt_settings: settings.local_profile_prompt_settings?.map((s) => ({ ...s })) ?? [],
     local_profile_decode_settings: settings.local_profile_decode_settings?.map((s) => ({ ...s })) ?? [],
   };
@@ -187,10 +190,45 @@ export function describeTextProfileWorkMode(profile: Pick<TextProfile, "work_mod
   return `${rewriteStyleLabel(workMode.rewrite_style)}, ${insertBehaviorLabel(workMode.insert_behavior)}, ${recoveryBehaviorLabel(workMode.recovery_behavior)}`;
 }
 
+export const TEXT_PROFILE_SCHEMA_VERSION = 2;
+
+/** Mirrors `TextProfile::migrate_vocabulary_hints` in `config.rs`, so unsaved
+ *  client state matches what a disk load would produce. Lines the hint filter
+ *  would reject are dropped there too; this side only has to agree on shape. */
+export function migrateLegacyBiasPolicyToVocabularyHints(profile: TextProfile): TextProfile {
+  if ((profile.schema_version ?? 1) >= TEXT_PROFILE_SCHEMA_VERSION) {
+    return profile;
+  }
+
+  // Conservative and Off never forwarded profile terms; only Manual with the
+  // cloud flag opted in.
+  const defaultUseAsPromptHint =
+    profile.work_mode?.bias_mode === "manual" &&
+    Boolean(profile.work_mode?.manual_bias?.cloud_include_profile_terms);
+
+  const vocabulary_hints =
+    profile.vocabulary_hints?.length
+      ? profile.vocabulary_hints
+      : (profile.stt_hints ?? "")
+          .split("\n")
+          .map((line) => line.split(/\s+/).filter(Boolean).join(" "))
+          .filter((phrase) => phrase.length > 0 && phrase.length <= 48 && phrase.split(" ").length <= 4)
+          .slice(0, 4)
+          .map((phrase, index) => ({
+            id: `${profile.id}-vocab-${index}`,
+            phrase,
+            use_as_prompt_hint: defaultUseAsPromptHint,
+          }));
+
+  return { ...profile, vocabulary_hints, schema_version: TEXT_PROFILE_SCHEMA_VERSION };
+}
+
 export function cloneTextProfile(profile: TextProfile, overrides: Partial<TextProfile> = {}): TextProfile {
   return {
     ...profile,
     ...overrides,
+    vocabulary_hints: (overrides.vocabulary_hints ?? profile.vocabulary_hints ?? []).map((entry) => ({ ...entry })),
+    schema_version: overrides.schema_version ?? profile.schema_version ?? 1,
     work_mode: cloneTextProfileWorkMode(overrides.work_mode ?? profile.work_mode),
     curation: cloneTextProfileCuration(overrides.curation ?? profile.curation),
     dictionary_entries: (overrides.dictionary_entries ?? profile.dictionary_entries).map((entry) => ({ ...entry })),
@@ -239,6 +277,8 @@ export function resolveActiveTextProfile(config: AppConfig): TextProfile {
     label: "General writing",
     prompt: "",
     stt_hints: "",
+    vocabulary_hints: [],
+    schema_version: TEXT_PROFILE_SCHEMA_VERSION,
     work_mode: createDefaultTextProfileWorkMode(),
     curation: createEmptyTextProfileCuration(),
     dictionary_entries: [],
@@ -255,6 +295,8 @@ export function createTextProfile(): TextProfile {
     label: "New profile",
     prompt: "",
     stt_hints: "",
+    vocabulary_hints: [],
+    schema_version: TEXT_PROFILE_SCHEMA_VERSION,
     work_mode: createDefaultTextProfileWorkMode(),
     curation: createEmptyTextProfileCuration(),
     dictionary_entries: [],

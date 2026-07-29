@@ -37,9 +37,12 @@ voice tools.
 - Current state: Spec created 2026-07-24; last drift check 2026-07-29 (hold to
   talk made strictly momentary: a press below `hold_arm_ms` is discarded instead
   of extended, the microphone still opens on the press edge, and the threshold
-  gates all three capture-lane bindings, ADR 0013; and pause/abort moved to the
+  gates all three capture-lane bindings, ADR 0013; pause/abort moved to the
   release edge for modifier-only bindings so an interrupted chord acts on
-  nothing, ADR 0014).
+  nothing, ADR 0014; the transcription request gained one resolved source, which
+  closed a wiring gap that had been discarding all per-profile bias and local
+  decode settings, ADR 0015; and a speech gate, a segment-confidence gate and a
+  repetition/artifact detection stage now sit before AI cleanup, ADR 0016).
 - Decisions: see `docs/decisions/` (append-only ADRs).
 - Drift check/sync: the `spec-sync` skill (global, see dotfiles -- not
   duplicated in this repo).

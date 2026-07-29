@@ -19,13 +19,9 @@ pub mod core;
 mod v1_slice;
 
 use crate::core::capture::{NativeCaptureConfig, NativeCaptureState};
-use crate::core::config::{AppConfig, DictionaryEntry, OverlayAnchor, OverlayPositionMode};
+use crate::core::config::{AppConfig, OverlayAnchor, OverlayPositionMode};
 use crate::core::insertion::{NativeInsertionConfig, NativeInsertionState};
-use crate::core::providers::TranscribeAudioFileRequest;
 use crate::core::sessions::NativeSessionState;
-use crate::core::transcription_hints::{
-    analyze_transcription_bias_with_mode, bias_context_from_payload,
-};
 use crate::core::trigger::{NativeTriggerConfig, NativeTriggerState, TriggerEffect};
 use crate::v1_slice::V1SliceState;
 
@@ -1258,14 +1254,19 @@ fn handle_audio_ready<R: Runtime + 'static>(
     session_id: String,
 ) {
     let pipeline_started_at = std::time::Instant::now();
-    let audio_path = match value.get("audio_path").and_then(|path| path.as_str()) {
-        Some(path) if !path.trim().is_empty() => path.trim().to_string(),
-        _ => {
-            let message = "Capture pipeline did not provide an audio path.";
+    let payload = match serde_json::from_value::<core::capture::AudioReadyEvent>(value) {
+        Ok(payload) if !payload.audio_path.trim().is_empty() => payload,
+        outcome => {
+            let message = match outcome {
+                Err(error) => {
+                    format!("Capture pipeline produced an unreadable result: {error}")
+                }
+                _ => "Capture pipeline did not provide an audio path.".to_string(),
+            };
             match core::sessions::fail_processing_session_from_native_error(
                 &app,
                 &session_id,
-                message,
+                &message,
             ) {
                 Ok(true) => {
                     let _ = app.emit(
@@ -1292,43 +1293,17 @@ fn handle_audio_ready<R: Runtime + 'static>(
         }
     };
 
-    let provider = value
-        .get("provider")
-        .and_then(|provider| provider.as_str())
-        .unwrap_or(core::providers::default_provider_id())
-        .trim()
-        .to_string();
-
-    let request = TranscribeAudioFileRequest {
-        provider: provider.clone(),
-        audio_path: audio_path.clone(),
-        model: optional_string(&value, "model"),
-        profile: optional_string(&value, "local_profile"),
-        language: optional_string(&value, "language"),
-        prompt: transcription_prompt_for_request(&provider, &value),
-        carry_initial_prompt: (provider == core::providers::LOCAL_PREVIEW_PROVIDER_ID)
-            .then(|| local_preview_prompt_carry(&value)),
-        beam_size: (provider == core::providers::LOCAL_PREVIEW_PROVIDER_ID)
-            .then(|| optional_u8(&value, "local_beam_size"))
-            .flatten(),
-        best_of: (provider == core::providers::LOCAL_PREVIEW_PROVIDER_ID)
-            .then(|| optional_u8(&value, "local_best_of"))
-            .flatten(),
-        response_format: Some("json".to_string()),
-        timeout_ms: Some(runtime_transcription_timeout_ms(
-            value
-                .get("audio_duration_seconds")
-                .and_then(|duration| duration.as_f64()),
-        )),
-        max_retries: Some(1),
-    };
-    let transcription_timeout_ms = request.timeout_ms.unwrap_or(MIN_TRANSCRIPTION_TIMEOUT_MS);
+    let audio_path = payload.audio_path.trim().to_string();
+    let audio_duration_seconds = Some(payload.audio_duration_seconds);
+    let transcription_timeout_ms = runtime_transcription_timeout_ms(audio_duration_seconds);
+    let request = payload
+        .config
+        .resolve_transcription_request(&audio_path, transcription_timeout_ms);
+    let provider = request.provider.clone();
     let requested_model = request.model.clone();
     let requested_language = request.language.clone();
-    let transform_config = core::transform::NativeTransformConfig::from_payload(&value);
-    let audio_duration_seconds = value
-        .get("audio_duration_seconds")
-        .and_then(|duration| duration.as_f64());
+    let transform_config =
+        core::transform::NativeTransformConfig::from_capture_config(&payload.config);
 
     core::runtime_log::record(format!(
         "[WordScript] Native pipeline start session_id={} audio_path={} audio_duration_seconds={:?} transcription_timeout_ms={} post_process={}",
@@ -1388,6 +1363,8 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     let _ = tokio::fs::remove_file(cleanup_path).await;
                     return;
                 }
+
+                let (response, low_confidence_segments) = apply_confidence_gate(response);
 
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transcription ready elapsed_ms={} text_len={} provider_duration={:?}",
@@ -1454,6 +1431,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     // filter_fillers, professionalize) are the user's intent for
                     // Auto/Cleanup; concrete modes override them deterministically.
                     let mut mode_transform_config = transform_config.clone();
+                    mode_transform_config.low_confidence_segments = low_confidence_segments;
                     match effective_mode {
                         core::config::ProcessingMode::Verbatim => {
                             mode_transform_config.post_process = false;
@@ -1978,93 +1956,30 @@ fn log_stale_pipeline_result<R: Runtime>(app: &AppHandle<R>, session_id: &str, c
     ));
 }
 
-fn optional_string(value: &serde_json::Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-}
+/// Drops segments the model's own confidence metrics mark as invented before
+/// anything downstream sees the transcript. Only the cloud lane returns these
+/// metrics; a provider without them passes through untouched.
+fn apply_confidence_gate(
+    mut response: core::providers::TranscriptionResponse,
+) -> (core::providers::TranscriptionResponse, bool) {
+    let outcome = core::confidence_gate::evaluate_segments(response.segments.as_deref());
 
-fn optional_u8(value: &serde_json::Value, key: &str) -> Option<u8> {
-    value
-        .get(key)
-        .and_then(|value| value.as_u64())
-        .and_then(|value| u8::try_from(value).ok())
-}
-
-fn transcription_prompt_for_request(provider: &str, value: &serde_json::Value) -> Option<String> {
-    if provider == core::providers::LOCAL_PREVIEW_PROVIDER_ID {
-        return local_preview_prompt_for_request(value);
+    if outcome.rejected.is_empty() {
+        return (response, false);
     }
 
-    cloud_transcription_prompt_for_request(value)
-}
+    for rejected in &outcome.rejected {
+        core::runtime_log::record(format!(
+            "[WordScript] Confidence gate rejected segment start={:.2} end={:.2} reason={} text={:?}",
+            rejected.start, rejected.end, rejected.reason, rejected.text,
+        ));
+    }
 
-fn cloud_transcription_prompt_for_request(value: &serde_json::Value) -> Option<String> {
-    let preview = transcription_bias_preview_from_payload(value);
-    // Conservative and Manual-without-flag both keep the language-bias protection;
-    // only Manual with cloud_include_profile_terms=true opts in. The preview builder
-    // already encodes this; we just take its precomputed cloud_prompt_preview.
-    preview.cloud_prompt_preview
-}
+    if let Some(text) = outcome.text {
+        response.text = text;
+    }
 
-fn local_preview_prompt_for_request(value: &serde_json::Value) -> Option<String> {
-    let preview = transcription_bias_preview_from_payload(value);
-    preview.local_prompt_preview
-}
-
-fn local_preview_prompt_carry(value: &serde_json::Value) -> bool {
-    value
-        .get("local_prompt_carry")
-        .and_then(|carry| carry.as_bool())
-        .unwrap_or(false)
-}
-
-fn transcription_bias_preview_from_payload(
-    value: &serde_json::Value,
-) -> crate::core::transcription_hints::TranscriptionBiasPreview {
-    let dictionary_entries = value
-        .get("dictionary_entries")
-        .and_then(|entries| entries.as_array())
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|entry| DictionaryEntry {
-                    id: entry
-                        .get("id")
-                        .and_then(|id| id.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    phrase: entry
-                        .get("phrase")
-                        .and_then(|phrase| phrase.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    replace_with: entry
-                        .get("replace_with")
-                        .and_then(|replace_with| replace_with.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                })
-                .collect::<Vec<DictionaryEntry>>()
-        })
-        .unwrap_or_default();
-
-    let context = bias_context_from_payload(value);
-    analyze_transcription_bias_with_mode(
-        value
-            .get("prompt")
-            .and_then(|prompt| prompt.as_str())
-            .unwrap_or_default(),
-        value
-            .get("stt_hints")
-            .and_then(|hints| hints.as_str())
-            .unwrap_or_default(),
-        &dictionary_entries,
-        &context,
-    )
+    (response, true)
 }
 
 fn runtime_transcription_timeout_ms(audio_duration_seconds: Option<f64>) -> u64 {
@@ -2500,7 +2415,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn runtime_transcription_timeout_stays_interactive() {
@@ -2519,42 +2433,57 @@ mod tests {
         );
     }
 
+    fn capture_config_for_prompt_tests(provider: &str) -> NativeCaptureConfig {
+        NativeCaptureConfig {
+            provider: provider.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn resolved_prompt(config: &NativeCaptureConfig) -> Option<String> {
+        config
+            .resolve_transcription_request("/tmp/capture.wav", 20_000)
+            .prompt
+    }
+
     #[test]
     fn local_preview_prompt_strength_can_disable_bias() {
-        let payload = json!({
-            "prompt": "Customer success terminology",
-            "local_prompt_strength": "off",
-        });
+        let config = NativeCaptureConfig {
+            prompt: "Customer success terminology".to_string(),
+            local_prompt_strength: "off".to_string(),
+            ..capture_config_for_prompt_tests(core::providers::LOCAL_PREVIEW_PROVIDER_ID)
+        };
 
-        assert_eq!(
-            transcription_prompt_for_request(core::providers::LOCAL_PREVIEW_PROVIDER_ID, &payload),
-            None
-        );
+        assert_eq!(resolved_prompt(&config), None);
     }
 
     #[test]
     fn local_preview_prompt_strength_profile_and_terms_uses_stt_hints_and_dictionary() {
         // profile.prompt is LLM cleanup context — must NOT reach Whisper initial_prompt.
         // Only explicit stt_hints and dictionary preferred spellings are STT signals.
-        let payload = json!({
-            "prompt": "WordScript\ncustomer escalation\nSEV-1",
-            "stt_hints": "status update\nhandoff summary",
-            "local_prompt_strength": "profile_and_terms",
-            "dictionary_entries": [
-                {
-                    "phrase": "word script",
-                    "replace_with": "WordScript"
-                }
-            ]
-        });
+        let config = NativeCaptureConfig {
+            prompt: "WordScript\ncustomer escalation\nSEV-1".to_string(),
+            stt_hints: "status update\nhandoff summary".to_string(),
+            local_prompt_strength: "profile_and_terms".to_string(),
+            dictionary_entries: vec![core::config::DictionaryEntry {
+                id: "brand".to_string(),
+                phrase: "word script".to_string(),
+                replace_with: "WordScript".to_string(),
+            }],
+            ..capture_config_for_prompt_tests(core::providers::LOCAL_PREVIEW_PROVIDER_ID)
+        };
 
-        let prompt =
-            transcription_prompt_for_request(core::providers::LOCAL_PREVIEW_PROVIDER_ID, &payload)
-                .expect("local preview prompt");
+        let prompt = resolved_prompt(&config).expect("local preview prompt");
 
-        assert!(!prompt.contains("Vocabulary:"), "profile_hints must not reach Whisper");
-        assert!(prompt.contains("Preferred spellings: WordScript"));
+        assert!(
+            !prompt.contains("Vocabulary:"),
+            "profile_hints must not reach Whisper"
+        );
         assert!(prompt.contains("Likely phrases: status update; handoff summary"));
+        assert!(
+            !prompt.contains("WordScript"),
+            "dictionary terms are applied after transcription, not whispered into the prompt"
+        );
     }
 
     #[test]
@@ -2563,47 +2492,57 @@ mod tests {
         // Sending those terms as Whisper initial_prompt biases language detection to English
         // even when the user speaks another language (e.g. German). Only dictionary_terms
         // and stt_hints are legitimate STT signals.
-        let payload = json!({
-            "prompt": "customer names\nWordScript\nticket IDs\nrefund policy\nSEV-1",
-            "stt_hints": "status update\ntriage summary",
-            "dictionary_entries": [
-                {
-                    "phrase": "word script",
-                    "replace_with": "WordScript"
+        let config = NativeCaptureConfig {
+            prompt: "customer names\nWordScript\nticket IDs\nrefund policy\nSEV-1".to_string(),
+            stt_hints: "status update\ntriage summary".to_string(),
+            dictionary_entries: vec![
+                core::config::DictionaryEntry {
+                    id: "brand".to_string(),
+                    phrase: "word script".to_string(),
+                    replace_with: "WordScript".to_string(),
                 },
-                {
-                    "phrase": "sev one",
-                    "replace_with": "SEV-1"
-                }
-            ]
-        });
+                core::config::DictionaryEntry {
+                    id: "sev".to_string(),
+                    phrase: "sev one".to_string(),
+                    replace_with: "SEV-1".to_string(),
+                },
+            ],
+            ..capture_config_for_prompt_tests("groq")
+        };
 
-        let prompt = transcription_prompt_for_request("groq", &payload).expect("cloud prompt");
+        let prompt = resolved_prompt(&config).expect("cloud prompt");
 
-        assert!(!prompt.contains("Vocabulary:"), "profile_hints must not reach Whisper");
-        assert!(prompt.contains("Preferred spellings: WordScript; SEV-1"));
+        assert!(
+            !prompt.contains("Vocabulary:"),
+            "profile_hints must not reach Whisper"
+        );
         assert!(prompt.contains("Likely phrases: status update; triage summary"));
+        assert!(
+            !prompt.contains("SEV-1"),
+            "dictionary terms are applied after transcription, not whispered into the prompt"
+        );
     }
 
     #[test]
     fn snippet_triggers_no_longer_feed_automatic_transcription_bias() {
-        let payload = json!({
-            "prompt": "Support language",
-            "stt_hints": "status update",
-            "dictionary_entries": [
-                {
-                    "phrase": "word script",
-                    "replace_with": "WordScript"
-                }
-            ],
-            "snippet_entries": [
-                {
-                    "trigger": "should not leak"
-                }
-            ]
-        });
+        let config = NativeCaptureConfig {
+            prompt: "Support language".to_string(),
+            stt_hints: "status update".to_string(),
+            dictionary_entries: vec![core::config::DictionaryEntry {
+                id: "brand".to_string(),
+                phrase: "word script".to_string(),
+                replace_with: "WordScript".to_string(),
+            }],
+            snippet_entries: vec![core::config::SnippetEntry {
+                id: "leak".to_string(),
+                label: "leak".to_string(),
+                trigger: "should not leak".to_string(),
+                expansion: "should not leak".to_string(),
+            }],
+            ..capture_config_for_prompt_tests("groq")
+        };
 
-        let prompt = transcription_prompt_for_request("groq", &payload).expect("cloud prompt");
+        let prompt = resolved_prompt(&config).expect("cloud prompt");
 
         assert!(prompt.contains("Likely phrases: status update"));
         assert!(!prompt.contains("should not leak"));
@@ -2612,17 +2551,18 @@ mod tests {
     #[test]
     fn cloud_transcription_prompt_respects_conservative_size_limit() {
         use crate::core::transcription_hints::CLOUD_PROMPT_PREVIEW_MAX_CHARS;
-        let payload = json!({
-            "prompt": "a".repeat(CLOUD_PROMPT_PREVIEW_MAX_CHARS * 2),
-            "dictionary_entries": [
-                {
-                    "phrase": "word script",
-                    "replace_with": "WordScript"
-                }
-            ]
-        });
+        // Many short accepted hint lines, so the prompt is long enough to have
+        // to be truncated at all.
+        let hints = (0..80)
+            .map(|index| format!("Term-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = NativeCaptureConfig {
+            stt_hints: hints,
+            ..capture_config_for_prompt_tests("groq")
+        };
 
-        let prompt = transcription_prompt_for_request("groq", &payload).expect("cloud prompt");
+        let prompt = resolved_prompt(&config).expect("cloud prompt");
 
         assert!(prompt.chars().count() <= CLOUD_PROMPT_PREVIEW_MAX_CHARS);
     }

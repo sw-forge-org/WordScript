@@ -915,6 +915,7 @@ fn preview_transform(document: &TextRulesDocument, sample_text: &str) -> (String
         correction_model: "llama-3.1-8b-instant".to_string(),
         filter_fillers: true,
         professionalize: false,
+        ..Default::default()
     };
     let (output, applied_rules) = super::transform::preview_text_rules_only(sample_text, &config);
     (output, applied_rules)

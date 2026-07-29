@@ -863,6 +863,22 @@ export function ApiModelsTab({ config, onChange, onOpenDiagnostics }: Props) {
             </Select>
           }
         />
+        {speech.language !== "" && (
+          <FormRow
+            label="Pin this language"
+            hint="Speaking another language inside a sentence stays untouched either way. This only makes WordScript quicker to drop a whole passage that another script wrote and that the audio does not support."
+            htmlFor="language-locked"
+            control={
+              <Toggle
+                id="language-locked"
+                checked={speech.language_locked}
+                onCheckedChange={(nextLanguageLocked) =>
+                  onChange(buildProfileSpeechPatch(config, { language_locked: nextLanguageLocked }))
+                }
+              />
+            }
+          />
+        )}
         {previewLaneSelected && providerCapabilities.supports_prompt_bias && (
           <>
             <FormRow

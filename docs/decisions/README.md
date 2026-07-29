@@ -80,6 +80,21 @@ Status: Proposed | Accepted | Superseded by NNNN
   knowable, and an interrupted chord acts on nothing. In hold mode the deferred
   action fires on the release rather than on the arm timer; the threshold is
   unchanged.
+- [0015](0015-the-runtime-transcription-request-has-one-resolved-source.md): the
+  capture config crosses the event boundary as one flattened value and exactly
+  one function derives a provider request from it. The two hand-maintained JSON
+  schemas had drifted, so per-profile bias policy and every local decode setting
+  were silently dropped on every real recording.
+- [0016](0016-a-speech-gate-and-confidence-gate-sit-before-ai-cleanup.md): a
+  silence trim, a segment-confidence gate, capability-probed whisper.cpp decode
+  flags and a repetition/artifact detection stage all run before AI cleanup.
+  Thresholds are constants, not settings, and a language mismatch is never on
+  its own a reason to discard anything.
+- [0017](0017-vocabulary-moves-out-of-the-whisper-prompt.md): profile vocabulary
+  is applied deterministically after transcription; only entries the user opts
+  into per item reach Whisper's initial prompt. The `BiasMode` enum and its
+  `ManualBias` flags are replaced by one per-entry toggle, dictionary terms
+  leave the prompt entirely, and the four Profiles panels become three.
 
 ## Resolved: the number 0011 was used twice
 
@@ -106,7 +121,7 @@ governs the content, not the identifier the record is filed under, and a record
 whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
-file two ADRs under one number: the next decision takes 0015.
+file two ADRs under one number: the next decision takes 0018.
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

@@ -63,6 +63,36 @@
               "stt_hints": {"type": "array", "items": {"type": "string"}}
             }
           },
+          "language": {
+            "type": "string",
+            "description": "Profile language the detection stage compares against. Absent means auto-detect, which never permits a language-based strip."
+          },
+          "language_locked": {
+            "type": "boolean",
+            "description": "Whether the language is pinned. It only lowers the corroboration the drift check needs from two independent signals to one, never to zero."
+          },
+          "low_confidence_segments": {
+            "type": "boolean",
+            "description": "Whether the confidence gate upstream rejected a segment. One of the signals that can corroborate a language mismatch."
+          },
+          "expected_detection": {
+            "type": "object",
+            "description": "Expected outcome of the post-STT detection stage, which runs on the raw transcript before any AI cleanup.",
+            "required": ["text"],
+            "properties": {
+              "text": {"type": "string"},
+              "unchanged": {
+                "type": "boolean",
+                "description": "Assert the transcript comes back byte-identical and no rule altered it. This is how the legitimate-multilingual-dictation guarantee is pinned."
+              },
+              "char_repetition_collapsed": {"type": "boolean"},
+              "word_repetition_collapsed": {"type": "boolean"},
+              "phrase_repetition_collapsed": {"type": "boolean"},
+              "artifact_pattern_filtered": {"type": "boolean"},
+              "language_switch_flagged": {"type": "boolean"},
+              "language_drift_stripped": {"type": "boolean"}
+            }
+          },
           "expected_post_correction": {
             "type": "string",
             "description": "What the user should see after Transform runs. Usually the raw transcript when a guardrail fires."

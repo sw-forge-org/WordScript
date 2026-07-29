@@ -39,6 +39,8 @@ function createTestConfig() {
         label: "Support reply",
         prompt: "Support tone and escalation names",
         stt_hints: "status update",
+        vocabulary_hints: [],
+        schema_version: 2,
         work_mode: {
           rewrite_style: "polished" as const,
           insert_behavior: "clipboard_only" as const,

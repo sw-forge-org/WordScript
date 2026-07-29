@@ -7,6 +7,7 @@ use serde::Deserialize;
 use tokio::process::Command;
 use tokio::time::timeout;
 
+use crate::core::confidence_gate::{MAX_NO_SPEECH_PROB, MIN_AVG_LOGPROB};
 use crate::core::runtime_log;
 
 use super::{
@@ -21,7 +22,14 @@ const LOCAL_STORAGE_LABEL: &str = "local_runtime";
 const LOCAL_WHISPER_BINARY_ENV: &str = "WORDSCRIPT_LOCAL_WHISPER_CLI";
 const LOCAL_MODEL_PATH_ENV: &str = "WORDSCRIPT_LOCAL_MODEL_PATH";
 const LOCAL_MODEL_DIR_ENV: &str = "WORDSCRIPT_LOCAL_MODEL_DIR";
+const LOCAL_VAD_MODEL_PATH_ENV: &str = "WORDSCRIPT_LOCAL_VAD_MODEL_PATH";
 const LOCAL_RUNNER_PROBE_TIMEOUT_MS: u64 = 750;
+/// Silero defaults as documented by whisper.cpp. The pad matches the capture
+/// side trim: erring towards keeping audio, never towards cutting a word.
+const VAD_THRESHOLD: f32 = 0.5;
+const VAD_MIN_SPEECH_DURATION_MS: u32 = 250;
+const VAD_MIN_SILENCE_DURATION_MS: u32 = 350;
+const VAD_SPEECH_PAD_MS: u32 = 200;
 const LOCAL_CHAT_BASE_URL_ENV: &str = "WORDSCRIPT_LOCAL_CHAT_BASE_URL";
 const LOCAL_CHAT_MODEL_ENV: &str = "WORDSCRIPT_LOCAL_CHAT_MODEL";
 const DEFAULT_LOCAL_CHAT_BASE_URL: &str = "http://127.0.0.1:11434";
@@ -226,6 +234,10 @@ pub async fn transcribe_audio_file(
     let started_at = Instant::now();
     let binary = resolve_local_whisper_binary()
         .map_err(|issue| ProviderCommandError::local_setup(issue.guidance(&requested_model)))?;
+    // A probe failure is not fatal here: the health surface already reports it,
+    // and running with the base flag set beats refusing to transcribe.
+    let capabilities = probe_local_whisper_runner(&binary).unwrap_or_default();
+    let vad_model_path = resolve_local_vad_model_path();
     let profile = selected_profile.unwrap_or_else(|| {
         LocalProfileSelection::new(
             &requested_model,
@@ -249,7 +261,20 @@ pub async fn transcribe_audio_file(
         carry_initial_prompt,
         beam_size,
         best_of,
+        &capabilities,
+        vad_model_path.as_deref(),
     );
+
+    if !capabilities.supports_vad {
+        runtime_log::record(
+            "[WordScript] Local runtime VAD skipped reason=flag_unsupported_by_whisper_cli"
+                .to_string(),
+        );
+    } else if vad_model_path.is_none() {
+        runtime_log::record(format!(
+            "[WordScript] Local runtime VAD skipped reason=no_model_configured env={LOCAL_VAD_MODEL_PATH_ENV}"
+        ));
+    }
 
     let mut command = Command::new(&binary);
     command
@@ -349,6 +374,8 @@ fn whisper_cli_args(
     carry_initial_prompt: bool,
     beam_size: u8,
     best_of: u8,
+    capabilities: &WhisperCliCapabilities,
+    vad_model_path: Option<&Path>,
 ) -> Vec<String> {
     let mut args = vec![
         "-m".to_string(),
@@ -377,7 +404,52 @@ fn whisper_cli_args(
         }
     }
 
+    if capabilities.supports_max_context {
+        // whisper.cpp carries decoded text from one window into the next as
+        // context. That is the internal amplifier behind stuck repetition
+        // loops on longer dictations, and it is separate from the user's
+        // `--carry-initial-prompt` bias setting.
+        args.push("--max-context".to_string());
+        args.push("0".to_string());
+    }
+
+    if capabilities.supports_logprob_thold {
+        args.push("--logprob-thold".to_string());
+        args.push(format!("{MIN_AVG_LOGPROB}"));
+    }
+
+    if capabilities.supports_no_speech_thold {
+        args.push("--no-speech-thold".to_string());
+        args.push(format!("{MAX_NO_SPEECH_PROB}"));
+    }
+
+    if let Some(vad_model_path) = vad_model_path.filter(|_| capabilities.supports_vad) {
+        args.push("--vad".to_string());
+        args.push("--vad-model".to_string());
+        args.push(vad_model_path.display().to_string());
+        args.push("--vad-threshold".to_string());
+        args.push(format!("{VAD_THRESHOLD}"));
+        args.push("--vad-min-speech-duration-ms".to_string());
+        args.push(VAD_MIN_SPEECH_DURATION_MS.to_string());
+        args.push("--vad-min-silence-duration-ms".to_string());
+        args.push(VAD_MIN_SILENCE_DURATION_MS.to_string());
+        args.push("--vad-speech-pad-ms".to_string());
+        args.push(VAD_SPEECH_PAD_MS.to_string());
+    }
+
     args
+}
+
+/// The Silero VAD model whisper.cpp needs for `--vad`. WordScript does not
+/// ship it, so the flag stays off until the user points at one.
+fn resolve_local_vad_model_path() -> Option<PathBuf> {
+    let raw = std::env::var(LOCAL_VAD_MODEL_PATH_ENV).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(trimmed);
+    path.is_file().then_some(path)
 }
 
 fn normalize_local_decode_value(value: Option<u8>, fallback: u8) -> u8 {
@@ -884,7 +956,33 @@ fn resolve_local_whisper_binary() -> Result<String, LocalRunnerResolutionError> 
     Err(LocalRunnerResolutionError::MissingConfiguration)
 }
 
-fn probe_local_whisper_runner(binary: &str) -> Result<(), LocalRunnerProbeError> {
+/// Which hallucination controls the installed whisper-cli understands.
+///
+/// whisper.cpp gained these flags at different times and distributions ship
+/// different builds, so every one of them is optional. A missing flag is
+/// logged and skipped, never an error: a slightly less defended local lane
+/// beats a local lane that refuses to run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WhisperCliCapabilities {
+    pub supports_max_context: bool,
+    pub supports_logprob_thold: bool,
+    pub supports_no_speech_thold: bool,
+    pub supports_vad: bool,
+}
+
+fn parse_whisper_cli_capabilities(help_text: &str) -> WhisperCliCapabilities {
+    let lower = help_text.to_ascii_lowercase();
+    WhisperCliCapabilities {
+        supports_max_context: lower.contains("--max-context"),
+        supports_logprob_thold: lower.contains("--logprob-thold"),
+        supports_no_speech_thold: lower.contains("--no-speech-thold"),
+        supports_vad: lower.contains("--vad"),
+    }
+}
+
+fn probe_local_whisper_runner(
+    binary: &str,
+) -> Result<WhisperCliCapabilities, LocalRunnerProbeError> {
     let mut child = BlockingCommand::new(binary)
         .arg("--help")
         .stdout(Stdio::piped())
@@ -910,7 +1008,7 @@ fn probe_local_whisper_runner(binary: &str) -> Result<(), LocalRunnerProbeError>
                 let looks_like_whisper = lower.contains("whisper");
 
                 if looks_like_whisper {
-                    return Ok(());
+                    return Ok(parse_whisper_cli_capabilities(&combined));
                 }
 
                 return Err(LocalRunnerProbeError::Failed {
@@ -1537,6 +1635,9 @@ mod tests {
         );
     }
 
+    const HELP_WITH_EVERY_CONTROL: &str = "usage: whisper-cli [options]\n  --max-context N\n  --logprob-thold N\n  --no-speech-thold N\n  --vad\n  --vad-model FNAME\n";
+    const HELP_WITHOUT_CONTROLS: &str = "usage: whisper-cli [options]\n  -m FNAME\n  -f FNAME\n";
+
     #[test]
     fn builds_whisper_cli_args_with_language_and_prompt_bias() {
         let args = whisper_cli_args(
@@ -1547,6 +1648,8 @@ mod tests {
             true,
             5,
             5,
+            &WhisperCliCapabilities::default(),
+            None,
         );
 
         assert_eq!(
@@ -1581,12 +1684,89 @@ mod tests {
             false,
             3,
             6,
+            &WhisperCliCapabilities::default(),
+            None,
         );
 
         assert_eq!(args[6], "-bs");
         assert_eq!(args[7], "3");
         assert_eq!(args[8], "-bo");
         assert_eq!(args[9], "6");
+    }
+
+    #[test]
+    fn capabilities_are_read_from_the_existing_help_probe() {
+        let full = parse_whisper_cli_capabilities(HELP_WITH_EVERY_CONTROL);
+        assert!(full.supports_max_context);
+        assert!(full.supports_logprob_thold);
+        assert!(full.supports_no_speech_thold);
+        assert!(full.supports_vad);
+
+        let bare = parse_whisper_cli_capabilities(HELP_WITHOUT_CONTROLS);
+        assert_eq!(bare, WhisperCliCapabilities::default());
+    }
+
+    #[test]
+    fn supported_hallucination_controls_are_passed_through() {
+        let args = whisper_cli_args(
+            "/tmp/test.wav",
+            Path::new("/models/ggml-base.bin"),
+            None,
+            None,
+            false,
+            1,
+            1,
+            &parse_whisper_cli_capabilities(HELP_WITH_EVERY_CONTROL),
+            Some(Path::new("/models/silero-vad.bin")),
+        );
+
+        let joined = args.join(" ");
+        assert!(joined.contains("--max-context 0"));
+        assert!(joined.contains("--logprob-thold -1"));
+        assert!(joined.contains("--no-speech-thold 0.6"));
+        assert!(joined.contains("--vad-model /models/silero-vad.bin"));
+        assert!(joined.contains("--vad-min-speech-duration-ms 250"));
+    }
+
+    #[test]
+    fn an_older_whisper_cli_degrades_instead_of_failing() {
+        let args = whisper_cli_args(
+            "/tmp/test.wav",
+            Path::new("/models/ggml-base.bin"),
+            None,
+            None,
+            false,
+            1,
+            1,
+            &parse_whisper_cli_capabilities(HELP_WITHOUT_CONTROLS),
+            Some(Path::new("/models/silero-vad.bin")),
+        );
+
+        let joined = args.join(" ");
+        assert!(!joined.contains("--max-context"));
+        assert!(!joined.contains("--logprob-thold"));
+        assert!(!joined.contains("--no-speech-thold"));
+        assert!(!joined.contains("--vad"));
+        // The base invocation must still be complete and runnable.
+        assert!(joined.contains("-m /models/ggml-base.bin"));
+        assert!(joined.contains("-f /tmp/test.wav"));
+    }
+
+    #[test]
+    fn vad_stays_off_without_a_model_even_when_supported() {
+        let args = whisper_cli_args(
+            "/tmp/test.wav",
+            Path::new("/models/ggml-base.bin"),
+            None,
+            None,
+            false,
+            1,
+            1,
+            &parse_whisper_cli_capabilities(HELP_WITH_EVERY_CONTROL),
+            None,
+        );
+
+        assert!(!args.join(" ").contains("--vad"));
     }
 
     #[test]

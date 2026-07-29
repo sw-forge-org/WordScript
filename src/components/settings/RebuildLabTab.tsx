@@ -237,6 +237,48 @@ function describeAppliedRule(rule: string): AppliedRuleInfo {
         label: "Hallucination filtered",
         description: "The runtime rejected the transcript because it matched a known hallucination pattern.",
       };
+    case "char_repetition_collapsed":
+      return {
+        id: rule,
+        label: "Collapsed a stuck character run",
+        description:
+          "A short character cluster repeated far past any plausible emphasis was shortened. This is the signature of a decoder that got stuck.",
+      };
+    case "word_repetition_collapsed":
+      return {
+        id: rule,
+        label: "Collapsed a repeated word",
+        description:
+          "The same word repeated four or more times in a row was reduced to one. Doubled words for emphasis are left alone.",
+      };
+    case "phrase_repetition_collapsed":
+      return {
+        id: rule,
+        label: "Collapsed an echoed phrase",
+        description:
+          "A whole phrase repeated back to back was reduced to a single occurrence, the classic Whisper repetition loop.",
+      };
+    case "artifact_pattern_filtered":
+      return {
+        id: rule,
+        label: "Removed subtitle boilerplate",
+        description:
+          "A line matched broadcaster or platform subtitle boilerplate that Whisper emits over silence, such as a ZDF subtitling credit.",
+      };
+    case "language_switch_flagged":
+      return {
+        id: rule,
+        label: "Language switch observed",
+        description:
+          "A passage was written in a different script than the profile language. Nothing was removed: a language switch is never on its own a reason to discard text.",
+      };
+    case "language_drift_stripped":
+      return {
+        id: rule,
+        label: "Removed unsupported language drift",
+        description:
+          "A passage in another script was removed because the confidence metrics, the artifact filter or a repetition collapse independently marked it as invented.",
+      };
     case "post_process_disabled":
       return {
         id: rule,
