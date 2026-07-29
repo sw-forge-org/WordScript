@@ -83,6 +83,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preserved per entry. `bias_mode` / `manual_bias` stay one release as
   migration-only remnants that nothing reads at runtime.
 
+- **The default branch is now `main`.** The repository ran on `master` while
+  `CONTRIBUTING.md`, `docs/RELEASE_RUNBOOK.md` and the `ref` inputs of both
+  GitHub workflows already named `main` as the target ref. The branch was
+  renamed rather than the documentation rewritten, which closes the mismatch in
+  the direction of the wider convention. GitHub redirects the old name, so
+  existing clones keep fetching; realign one with `git fetch --prune`,
+  `git branch -m master main` and `git branch -u origin/main main`. Historical
+  records in `docs/handoffs/` that name `master` stay unedited under the
+  append-only documentation rule.
+
 ### Added
 
 - A speech gate before transcription (ADR 0016). Leading and trailing silence is
