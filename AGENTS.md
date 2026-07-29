@@ -41,8 +41,11 @@ voice tools.
   release edge for modifier-only bindings so an interrupted chord acts on
   nothing, ADR 0014; the transcription request gained one resolved source, which
   closed a wiring gap that had been discarding all per-profile bias and local
-  decode settings, ADR 0015; and a speech gate, a segment-confidence gate and a
-  repetition/artifact detection stage now sit before AI cleanup, ADR 0016).
+  decode settings, ADR 0015; a speech gate, a segment-confidence gate and a
+  repetition/artifact detection stage now sit before AI cleanup, ADR 0016; and
+  the session end became a single reducer commit against the event ordering as
+  well, because the native completion mirror was still ending the session one
+  commit early and leaving the overlay pill unowned, ADR 0018).
 - Decisions: see `docs/decisions/` (append-only ADRs).
 - Drift check/sync: the `spec-sync` skill (global, see dotfiles -- not
   duplicated in this repo).
@@ -125,6 +128,13 @@ harness, see `.agents/README.md` for the duplication-free pattern.
 - Async runtime results (provider, transform, insert) must be guarded to the
   active `processing` session id; late results after abort or a new capture
   are discarded and only noted in the runtime log.
+- A session ends in exactly one reducer commit, together with the surface that
+  reports it (ADR 0018). The `wordscript-native-event` channel mirrors session
+  status but must never set `status`, `pendingResult`, `previewStaged` or
+  `resultSurfaceOpen` — it arrives one commit before the authoritative
+  `wordscript-event` transcription, and ending the session there leaves a render
+  in which nothing owns the overlay pill. The atomic-swap guarantee holds
+  against the event ordering, not only against the effect ordering.
 - Never commit or hardcode secrets; use the OS secret store or env vars. The
   Groq API key lives in the OS secret store; the JSON config is scrubbed on
   save.
@@ -134,7 +144,7 @@ harness, see `.agents/README.md` for the duplication-free pattern.
 - Husky pre-commit hooks are active; never bypass with `--no-verify`.
 - Linux hotkeys can be intercepted by the desktop environment; enter Win/Super
   manually if needed.
-- Linux overlay: fixed window sizes (440x60 flat / 460x164 edit),
+- Linux overlay: fixed window sizes (480x60 flat / 460x164 edit),
   `set_background_color` on every reveal, `park_overlay_window` with
   `hide()`, XWayland default (`GDK_BACKEND=x11`) with
   `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in.
@@ -183,7 +193,7 @@ harness, see `.agents/README.md` for the duplication-free pattern.
   opaque); `pointer-events: auto` on `.ov-scope` is required (`none` on
   overlay-roots makes the pill deaf on WebKitGTK); `will-change: opacity` was
   removed (it bloats the layer cache and causes state overlays); fixed sizes
-  440x60 flat / 460x164 edit must stay consistent between
+  480x60 flat / 460x164 edit must stay consistent between
   `OverlaySurface::dimensions()` and both invoke paths (base surface sync +
   `useLayoutEffect`); no dynamic pill-based resize (ResizeObserver +
   offsetWidth measuring is unreliable on GTK and was removed).

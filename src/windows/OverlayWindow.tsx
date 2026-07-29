@@ -295,6 +295,15 @@ export default function OverlayWindow() {
   // keep painting. Without the hold the pill would fall to `pillState=null`,
   // and an unmount orphans the outgoing subtree's compositor layers on
   // WebKitGTK — the ghosting mechanism in docs/known-issues/overlay-ghosting.md.
+  //
+  // The `!== "compact"` clause deliberately gives a compact surface no hold:
+  // there is nothing worth replaying for an abort or an empty capture, and a
+  // held processing pill would keep painting a live spinner over them. It is
+  // NOT a defence for the compact→result_actions transition — that used to fall
+  // through this hole when the native completion sync ended the session one
+  // commit early. The session now ends in exactly one commit, together with the
+  // surface that reports it (ADR 0018), so no render arrives here without a
+  // surface in the first place.
   const holdPreviewDuringClose = !showAnyPreview
     && !showError
     && status === "idle"

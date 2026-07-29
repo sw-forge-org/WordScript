@@ -206,7 +206,13 @@ no account. Entities:
    effective mode, insert outcome and errors.
 10. `sessions.rs` finalizes exactly once (`completed`/`aborted`/`error`),
     accepting async results only for the active `processing` session id.
-11. UI receives status, last transcript, effective mode, history, recovery.
+11. UI receives status, last transcript, effective mode, history, recovery. The
+    session end is announced twice — the `wordscript-native-event` mirror first,
+    the authoritative `wordscript-event` `transcription` second. Only the
+    authoritative one ends the session in the UI reducer; the mirror carries the
+    transcript text and nothing else, so `status` and the surface that reports
+    it flip in one commit (ADR 0018). A bounded fallback ends the session if the
+    authoritative event never arrives.
 
 ### Clipboard-only commit
 

@@ -7,8 +7,13 @@ status change. Resolved bugs remain as references for the same failure class.
 ## Entries
 
 - [overlay-ghosting.md](overlay-ghosting.md): resolved WebKitGTK transition
-  state bleeding (2026-07-08); the separate accepted mode-cycling residual is
-  recorded in the
+  state bleeding (2026-07-08). The `auto_paste` unmount gap reopened on the
+  event axis and was closed again on 2026-07-29 (ADR 0018): the native
+  completion event no longer ends a session. One axis stays open — the same
+  failure was reported as absent in `Auto` and present in the other five
+  processing modes; the mode is most likely a visibility modifier, and it is to
+  be measured with the `[ov-*]` diagnostics before anything is changed. The
+  separate accepted mode-cycling residual is recorded in the
   [accepted-state hand-off](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md).
 - [overlay-placement-persist.md](overlay-placement-persist.md): resolved
   remembered overlay drag-position failure (2026-07-08).

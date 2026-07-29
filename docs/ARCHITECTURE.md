@@ -98,7 +98,7 @@ overlay and settings; native visibility and positioning for the overlay
 `park_overlay_window`); monitor- and anchor-based overlay placement plus
 persistence of the last manual drag position (host repositions for
 reveal/hide/surface changes must not overwrite the remembered position as
-new user intent); Linux overlay specifics (fixed sizes 440x60 flat /
+new user intent); Linux overlay specifics (fixed sizes 480x60 flat /
 460x164 edit, `set_background_color` on every reveal, XWayland default with
 native-Wayland opt-in); KDE Plasma 6 always-on-top via KWin script
 (`packaging/kwin-wordscript-overlay/`); tray menu and window opening;
@@ -259,6 +259,16 @@ capture end, but may only change runtime state while their session id still
 matches the active `processing` session. Late results after abort, a new
 capture or an already-finalized session are marked stale in the runtime log
 and no longer reach overlay or settings.
+
+The completion is announced on two channels: `wordscript-native-event` mirrors
+the session stage, `wordscript-event` carries the authoritative result. They are
+two IPC messages, so they land in two UI commits. Only the authoritative one
+ends the session in the reducer — `status`, `pendingResult`, `previewStaged` and
+`resultSurfaceOpen` change there and only there, together with the surface that
+reports the result. The mirror updates the transcript text and nothing else, so
+no render passes in which the session is over and no overlay surface owns the
+pill (ADR 0018). A bounded fallback ends the session if the authoritative event
+never arrives, so a dropped emit cannot leave the UI showing `processing`.
 
 ## Transform order
 

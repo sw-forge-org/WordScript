@@ -954,6 +954,48 @@ describe("OverlayWindow", () => {
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
+  // The native completion sync arrives one commit BEFORE the authoritative
+  // transcription and only mirrors the transcript text (ADR 0018). That
+  // intermediate commit — transcript already known, session still running — is
+  // what the auto_paste path used to render as `status: "idle"` with no
+  // surface, unmounting the pill for a frame. Here the compact processing
+  // surface must still own the pill, so the swap into result-actions is a
+  // single, gap-free step.
+  it("keeps the processing surface while the native sync has only mirrored the transcript", async () => {
+    let runtimeValue = buildIdleResultState({
+      status: "processing",
+      lastResult: null,
+      lastTranscription: null,
+      resultSurfaceOpen: false,
+    });
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    const { rerender, container } = render(<OverlayWindow />);
+
+    await waitFor(() => expect(container.querySelector(".ov-pill-shell")).not.toBeNull());
+
+    // The native sync commit: text is in, the session is not over.
+    runtimeValue = buildIdleResultState({
+      status: "processing",
+      lastResult: null,
+      lastTranscription: "Wir shippen das morgen.",
+      resultSurfaceOpen: false,
+    });
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    rerender(<OverlayWindow />);
+
+    expect(container.querySelector(".ov-pill-shell")).not.toBeNull();
+    expect(screen.getByLabelText("Working")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+
+    // The authoritative commit: idle + result surface together.
+    runtimeValue = buildIdleResultState();
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    rerender(<OverlayWindow />);
+
+    expect(container.querySelector(".ov-pill-shell")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+  });
+
   // A clipboard_only commit already had its decision surface (the processing
   // preview), so no result surface follows it — structurally, via
   // `resultSurfaceOpen`, not via a suppression flag.

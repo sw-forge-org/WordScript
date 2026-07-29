@@ -200,14 +200,15 @@ describe("useRuntime", () => {
       });
     });
 
-    // The native-event transcription is a pure status sync: it clears
-    // pendingResult and flips status to idle, but does NOT set lastResult —
-    // that is owned by the authoritative wordscript-event transcription which
-    // arrives on the same commit. Setting lastResult here would fire the
-    // OverlayWindow lastResult-Effect a second time and defeat the commit
-    // suppression (the "eckiger 06b-State" regression).
-    expect(result.current.state.status).toBe("idle");
-    expect(result.current.state.pendingResult).toBeNull();
+    // The native-event transcription is a pure status sync: it mirrors the
+    // transcript text and NOTHING else. It does not set lastResult (that is
+    // owned by the authoritative wordscript-event transcription, and setting it
+    // here would fire the OverlayWindow lastResult-Effect a second time — the
+    // "eckiger 06b-State" regression), and it does not end the session: this is
+    // its own React commit, and ending the session in it leaves a render where
+    // no surface owns the pill (ADR 0018).
+    expect(result.current.state.status).toBe("processing");
+    expect(result.current.state.pendingResult).not.toBeNull();
     expect(result.current.state.lastResult).toBeNull();
     expect(result.current.state.lastTranscription).toBe("Wir shippen das morgen.");
 
@@ -279,6 +280,147 @@ describe("useRuntime", () => {
     expect(result.current.state.status).toBe("idle");
     expect(result.current.state.previewStaged).toBe(false);
     expect(result.current.state.resultSurfaceOpen).toBe(true);
+  });
+
+  // The REAL auto_paste ordering: Rust emits the native completion sync first
+  // and the authoritative wordscript-event transcription second, as two IPC
+  // messages and therefore two React commits. If the sync ends the session, the
+  // commit between them has `status: "idle"` with no lastResult and no
+  // resultSurfaceOpen — the render in which no surface owns the pill, which
+  // unmounts <OverlayPill> and orphans the processing pill's compositor layers
+  // on WebKitGTK (docs/known-issues/overlay-ghosting.md). ADR 0018.
+  it("keeps the session alive across the native sync so auto_paste never renders a surface-less frame", async () => {
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.config?.active_text_profile_id).toBe("support"));
+
+    await act(async () => {
+      emit("wordscript-event", { event: "processing" });
+    });
+
+    expect(result.current.state.status).toBe("processing");
+
+    await act(async () => {
+      emit("wordscript-native-event", {
+        event: "transcription_corrected",
+        status: { last_transcript: "Wir shippen das morgen.", last_error: null },
+      });
+    });
+
+    // The gap render: the session must still be running here, so the compact
+    // processing surface keeps owning the pill.
+    expect(result.current.state.status).toBe("processing");
+    expect(result.current.state.resultSurfaceOpen).toBe(false);
+    expect(result.current.state.lastResult).toBeNull();
+    expect(result.current.state.lastTranscription).toBe("Wir shippen das morgen.");
+
+    await act(async () => {
+      emit("wordscript-event", {
+        event: "transcription",
+        text: "Wir shippen das morgen.",
+        corrected: true,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "ähm wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "auto_paste",
+          recovery_behavior: "standard",
+        },
+        transform: { applied_rules: [], warning: null },
+        delivery: "inserted",
+      });
+    });
+
+    // Session end and result surface in one commit — processing hands the pill
+    // straight to result-actions, with no frame in between.
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.state.previewStaged).toBe(false);
+    expect(result.current.state.resultSurfaceOpen).toBe(true);
+    expect(result.current.state.lastResult?.final_text).toBe("Wir shippen das morgen.");
+  });
+
+  // The fallback exists so a lost authoritative event cannot strand the overlay
+  // in "processing" forever. It is the explicit way out, not the default path.
+  it("ends the session itself when the authoritative event never follows the native sync", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRuntime());
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.state.config?.active_text_profile_id).toBe("support");
+
+      await act(async () => {
+        emit("wordscript-event", { event: "processing" });
+        emit("wordscript-native-event", {
+          event: "transcription",
+          status: { last_transcript: "Wir shippen das morgen.", last_error: null },
+        });
+      });
+
+      expect(result.current.state.status).toBe("processing");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(result.current.state.status).toBe("idle");
+      expect(result.current.state.pendingResult).toBeNull();
+      expect(result.current.state.lastTranscription).toBe("Wir shippen das morgen.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not end the session late when the authoritative event already arrived", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRuntime());
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      await act(async () => {
+        emit("wordscript-event", { event: "processing" });
+        emit("wordscript-native-event", {
+          event: "transcription",
+          status: { last_transcript: "Wir shippen das morgen.", last_error: null },
+        });
+      });
+
+      await act(async () => {
+        emit("wordscript-event", {
+          event: "transcription",
+          text: "Wir shippen das morgen.",
+          corrected: false,
+          provider: "groq",
+          active_profile: "Support reply",
+          raw_text: "wir shippen das morgen",
+          work_mode: {
+            rewrite_style: "polished",
+            insert_behavior: "auto_paste",
+            recovery_behavior: "standard",
+          },
+          transform: { applied_rules: [], warning: null },
+          delivery: "inserted",
+        });
+        emit("wordscript-event", { event: "recording_started" });
+      });
+
+      expect(result.current.state.status).toBe("recording");
+
+      // The cancelled fallback must not fire into the NEXT session.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(result.current.state.status).toBe("recording");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens the result surface when an auto_paste run falls back to the clipboard", async () => {

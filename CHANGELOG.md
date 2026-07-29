@@ -33,6 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The result overlay no longer stacks on a processing overlay that never went
+  away.** A finished dictation is announced twice — first the native session
+  mirror, then the authoritative transcription — as two IPC messages and
+  therefore two React commits. The first one already flipped the session to
+  idle, so for one render the session was over and no surface owned the pill:
+  it unmounted, and on WebKitGTK that orphans the processing pill's compositor
+  layers for the result surface to mount on top of. The native channel now only
+  mirrors the transcript text; the session ends in exactly one commit, together
+  with the surface that reports it, with a bounded 1.5 s fallback in case the
+  authoritative event never arrives. Structurally exclusive to "Copy and insert
+  at cursor" — "Copy to clipboard only" stops on the processing preview, which
+  the leave hold already covered. ADR 0018,
+  `docs/known-issues/overlay-ghosting.md`. The reported mode dependence (clean
+  in `Auto`, visible in the other five processing modes) is a separate, still
+  open axis; it is to be measured with the existing `[ov-*]` diagnostics.
+
 - **Curated profiles no longer lose the delivery mode you chose.** Every profile
   except `General writing` delivered through the wrong pipeline: the overlay
   showed the auto-paste surface while the setting read "Copy to clipboard only".

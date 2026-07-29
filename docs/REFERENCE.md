@@ -14,7 +14,7 @@ Status: 2026-07-25
 
 ## Overlay constants (Linux)
 
-- Fixed window sizes: 440x60 (flat) / 460x164 (edit)
+- Fixed window sizes: 480x60 (flat) / 460x164 (edit)
 - `resizable: true` in `tauri.conf.json` (GTK ignored `set_size` with
   `resizable: false`)
 - XWayland default: `GDK_BACKEND=x11`, native-Wayland opt-in:

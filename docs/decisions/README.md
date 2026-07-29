@@ -95,6 +95,12 @@ Status: Proposed | Accepted | Superseded by NNNN
   into per item reach Whisper's initial prompt. The `BiasMode` enum and its
   `ManualBias` flags are replaced by one per-entry toggle, dictionary terms
   leave the prompt entirely, and the four Profiles panels become three.
+- [0018](0018-the-end-of-a-session-belongs-to-exactly-one-event.md): the native
+  event channel mirrors session status but does not end a session. `status`,
+  `pendingResult`, `previewStaged` and `resultSurfaceOpen` change only in the
+  authoritative `wordscript-event` transcription commit, so the atomic swap of
+  ADR 0011a holds against the event ordering too; a bounded fallback covers an
+  authoritative event that never arrives.
 
 ## Resolved: the number 0011 was used twice
 

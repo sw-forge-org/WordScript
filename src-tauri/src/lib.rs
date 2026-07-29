@@ -40,7 +40,7 @@ const TRANSCRIPTION_TIMEOUT_PER_AUDIO_SECOND_MS: u64 = 800;
 const PIPELINE_HARD_DEADLINE_SECS: u64 = 120;
 const PIPELINE_HARD_DEADLINE: Duration = Duration::from_secs(PIPELINE_HARD_DEADLINE_SECS);
 
-// Flat overlay surfaces all share one window size (440×60). On WebKitGTK/XWayland
+// Flat overlay surfaces all share one window size (480×60). On WebKitGTK/XWayland
 // with GPU compositing, a `set_size` to the SAME size the window already has is a
 // no-op: the backing store is not reallocated, so retained compositor layers of
 // the previous surface (animated bars/spinner + the scaled `.ov-pill-shell`

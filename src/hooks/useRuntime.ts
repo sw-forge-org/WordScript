@@ -12,6 +12,14 @@ import type {
 const RUNTIME_EVENT_CHANNEL = "wordscript-event";
 const NATIVE_RUNTIME_EVENT_CHANNEL = "wordscript-native-event";
 
+// How long the native completion sync waits for the authoritative
+// wordscript-event transcription before ending the session itself. The two are
+// emitted back to back by the same Rust call site, so in practice this never
+// fires; it exists so a lost authoritative event cannot strand the overlay in
+// "processing". Same order of magnitude as the `finishSafely` safeties in
+// OverlayWindow.tsx.
+const NATIVE_SYNC_FALLBACK_MS = 1500;
+
 type Action =
   | { type: "READY"; config: AppConfig }
   | { type: "RECORDING_STARTED" }
@@ -19,7 +27,8 @@ type Action =
   | { type: "PROCESSING" }
   | { type: "PREVIEW_READY"; result: RuntimeTranscriptionResult }
   | { type: "TRANSCRIPTION"; result: RuntimeTranscriptionResult; preserveExisting?: boolean }
-  | { type: "NATIVE_TRANSCRIPTION_SYNC"; finalText: string; corrected: boolean }
+  | { type: "NATIVE_TRANSCRIPTION_SYNC"; finalText: string }
+  | { type: "NATIVE_SYNC_TIMEOUT" }
   | { type: "EMPTY" }
   | { type: "MUTED"; muted: boolean }
   | { type: "PAUSED"; paused: boolean }
@@ -134,10 +143,11 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
           // auto_paste pipeline, a history retry — never had a decision surface
           // and gets the result one.
           //
-          // `previewStaged` rather than `pendingResult`: the native-channel sync
-          // clears `pendingResult` and can arrive BEFORE this authoritative
-          // event, which would read as "no preview" and flash a result surface
-          // on a clipboard_only commit (the "eckiger 06b-State" regression).
+          // `previewStaged` rather than `pendingResult`: `pendingResult` is
+          // cleared by the NATIVE_SYNC_TIMEOUT fallback (and, before ADR 0018,
+          // by the native sync itself), which would read as "no preview" and
+          // flash a result surface on a clipboard_only commit (the "eckiger
+          // 06b-State" regression). `previewStaged` is sticky for the session.
           //
           // Deliberately NOT keyed on `delivery`: an auto_paste run whose paste
           // fell back to the clipboard also reports `delivery: "clipboard"`, and
@@ -150,24 +160,51 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
       {
         // The native-event channel fires transcription/transcription_corrected
         // as a pure status sync (no payload beyond last_transcript). It arrives
-        // shortly before (or after) the authoritative wordscript-event
-        // transcription. Treating it as a separate TRANSCRIPTION dispatch would
-        // set lastResult with a fresh occurred_at_ms and fire the OverlayWindow
-        // lastResult-Effect a second time for the same commit, and it would
-        // open a result surface on a clipboard_only commit (the "eckiger
-        // 06b-State" regression). Instead, only update status +
-        // lastTranscription and clear pendingResult here; the authoritative
-        // wordscript-event transcription owns lastResult, `resultSurfaceOpen`
-        // and therefore the surface decision. Clearing pendingResult is safe:
-        // the native-event arrives only after the session has completed, so the
-        // preview is no longer valid — and `previewStaged` deliberately stays,
-        // because it is what tells the authoritative event that this session
-        // already had its decision surface.
+        // shortly before the authoritative wordscript-event transcription, as
+        // two separate IPC messages — i.e. in a separate React commit.
+        //
+        // It must therefore not end the session. Setting `status: "idle"` here
+        // produced exactly one render in which the session was over but no
+        // surface owned the pill: `resultSurfaceOpen` and `lastResult` still
+        // belong to the authoritative event, `showProcessingPreview` was
+        // already false, and `holdPreviewDuringClose` refuses to hold a
+        // "compact" surface — so `pillState` fell to null and <OverlayPill>
+        // unmounted for a frame. On WebKitGTK that orphans the processing
+        // pill's animated children's compositor layers and the result surface
+        // mounts on top of the stale raster (docs/known-issues/
+        // overlay-ghosting.md). Structurally exclusive to auto_paste:
+        // clipboard_only leaves "processing_preview" as the last live surface,
+        // which the hold does cover.
+        //
+        // The end of a session belongs to exactly one event (ADR 0018): the
+        // authoritative wordscript-event transcription flips `status`,
+        // `lastResult` and `resultSurfaceOpen` in a single commit. This sync
+        // only mirrors the transcript text. If the authoritative event never
+        // arrives, NATIVE_SYNC_TIMEOUT below is the explicit way out.
+        return {
+          ...state,
+          lastTranscription: action.finalText,
+        };
+      }
+    case "NATIVE_SYNC_TIMEOUT":
+      {
+        // Safety net for a native completion whose authoritative
+        // wordscript-event never followed (a dropped emit, a caller that only
+        // goes through `complete_native_session`). Without it the overlay would
+        // sit in "processing" until the 120s pipeline watchdog fires. This does
+        // what NATIVE_TRANSCRIPTION_SYNC used to do immediately — but as a
+        // bounded fallback, not as the default path, so the normal run keeps
+        // the atomic swap. `previewStaged` deliberately stays: it is what tells
+        // a late authoritative event that this session already had its decision
+        // surface.
+        if (state.status !== "processing") {
+          return state;
+        }
+
         return {
           ...state,
           status: "idle",
           paused: false,
-          lastTranscription: action.finalText,
           pendingResult: null,
         };
       }
@@ -204,6 +241,7 @@ export function useRuntime() {
   const [state, dispatch] = useReducer(reducer, initial);
   const configRef = useRef<AppConfig | null>(initial.config);
   const lastResultRef = useRef<RuntimeTranscriptionResult | null>(initial.lastResult);
+  const nativeSyncFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     configRef.current = state.config;
@@ -233,6 +271,24 @@ export function useRuntime() {
   }, [configureNativeCapture]);
 
   useEffect(() => {
+    // The native completion sync no longer ends the session (see
+    // NATIVE_TRANSCRIPTION_SYNC). These two keep that safe: every event that
+    // legitimately ends or restarts a session cancels the pending fallback, and
+    // the fallback only fires when the authoritative event never came.
+    const cancelNativeSyncFallback = () => {
+      if (nativeSyncFallbackRef.current !== null) {
+        clearTimeout(nativeSyncFallbackRef.current);
+        nativeSyncFallbackRef.current = null;
+      }
+    };
+    const armNativeSyncFallback = () => {
+      cancelNativeSyncFallback();
+      nativeSyncFallbackRef.current = setTimeout(() => {
+        nativeSyncFallbackRef.current = null;
+        dispatch({ type: "NATIVE_SYNC_TIMEOUT" });
+      }, NATIVE_SYNC_FALLBACK_MS);
+    };
+
     const unlisten = listen<BackendEvent>(RUNTIME_EVENT_CHANNEL, ({ payload }) => {
       if (payload.event === "audio_level") return;
 
@@ -242,18 +298,21 @@ export function useRuntime() {
           syncNativeRuntime(payload.config);
           break;
         case "recording_started":
+          cancelNativeSyncFallback();
           dispatch({ type: "RECORDING_STARTED" });
           break;
         case "recording_stopped":
           dispatch({ type: "RECORDING_STOPPED" });
           break;
         case "processing":
+          cancelNativeSyncFallback();
           dispatch({ type: "PROCESSING" });
           break;
         case "preview_ready":
           dispatch({ type: "PREVIEW_READY", result: buildRuntimeTranscriptionResult(payload, configRef.current) });
           break;
         case "transcription":
+          cancelNativeSyncFallback();
           dispatch({ type: "TRANSCRIPTION", result: buildRuntimeTranscriptionResult(payload, configRef.current) });
           break;
         case "empty":
@@ -261,6 +320,7 @@ export function useRuntime() {
           // input level that never cleared the speech threshold, a muted or
           // wrong device — must reach the user. Silently returning to idle is
           // what made a misconfigured microphone look like a broken app.
+          cancelNativeSyncFallback();
           if (payload.input_level && payload.input_level.verdict !== "ok" && payload.message) {
             dispatch({ type: "ERROR", message: payload.message });
           } else {
@@ -274,6 +334,7 @@ export function useRuntime() {
           dispatch({ type: "PAUSED", paused: payload.paused });
           break;
         case "error":
+          cancelNativeSyncFallback();
           dispatch({ type: "ERROR", message: payload.message });
           break;
       }
@@ -291,12 +352,14 @@ export function useRuntime() {
       ({ payload }) => {
         switch (payload.event) {
           case "recording_started":
+            cancelNativeSyncFallback();
             dispatch({ type: "RECORDING_STARTED" });
             break;
           case "recording_stopped":
             dispatch({ type: "RECORDING_STOPPED" });
             break;
           case "processing":
+            cancelNativeSyncFallback();
             dispatch({ type: "PROCESSING" });
             break;
           case "transcription":
@@ -304,20 +367,27 @@ export function useRuntime() {
             {
               // Pure status sync — do NOT dispatch TRANSCRIPTION (which would
               // set lastResult and fire the OverlayWindow surface decision a
-              // second time for the same commit). The authoritative
-              // wordscript-event transcription owns lastResult.
+              // second time for the same commit), and do NOT end the session
+              // here: this arrives in its own React commit, one before the
+              // authoritative wordscript-event transcription, and ending the
+              // session in it leaves a render with no surface on the pill
+              // (ADR 0018). The authoritative event owns lastResult, `status`
+              // and `resultSurfaceOpen`; the fallback below only covers the
+              // case where it never arrives.
               dispatch({
                 type: "NATIVE_TRANSCRIPTION_SYNC",
                 finalText: payload.status?.last_transcript ?? "",
-                corrected: payload.event === "transcription_corrected",
               });
+              armNativeSyncFallback();
             }
             break;
           case "empty":
           case "aborted":
+            cancelNativeSyncFallback();
             dispatch({ type: "EMPTY" });
             break;
           case "error":
+            cancelNativeSyncFallback();
             dispatch({ type: "ERROR", message: payload.status?.last_error ?? "Native runtime error" });
             break;
         }
@@ -325,6 +395,7 @@ export function useRuntime() {
     );
 
     return () => {
+      cancelNativeSyncFallback();
       unlisten.then((fn) => fn());
       nativeUnlisten.then((fn) => fn());
     };

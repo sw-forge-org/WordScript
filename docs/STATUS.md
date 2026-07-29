@@ -122,16 +122,27 @@ Status: 2026-07-25
   insert and dismiss after delivery; plus remembered manual placement or preset
   display anchor, movement-threshold dragging, native offscreen parking in idle,
   and state-specific right-side spacing
-- Linux overlay with fixed window sizes (440x60 flat / 460x164 edit),
+- Linux overlay with fixed window sizes (480x60 flat / 460x164 edit),
   `set_background_color` on every reveal, `park_overlay_window` with
   `hide()`, XWayland default with native-Wayland opt-in, KWin script for
   always-on-top on KDE Plasma 6
 - atomic overlay state swap on new triggers (recording starts in the same
-  render that the previous epoch disappears)
+  render that the previous epoch disappears) and on session end: the native
+  completion event only mirrors the transcript text, so `status`, `lastResult`
+  and the result surface flip in one commit and no render passes without a
+  surface owning the pill (ADR 0018)
 - Linux/XWayland transition state bleeding is resolved through opaque pill
   surfaces and compositor guards. A separate mode-cycling artifact is in an
   accepted residual state: a small black flash or faint horizontal line can
   still appear during rapid mode changes.
+- the `auto_paste` unmount gap that let the result surface stack on a
+  processing surface is closed on both axes: the effect ordering (ADR 0011a)
+  and the event ordering (ADR 0018). Still open is why the same failure was
+  reported as absent in `Auto` and present in the other five processing modes;
+  no code path links `ProcessingMode` to the surface decision, so the mode is
+  most likely a visibility modifier and is to be measured with the `[ov-*]`
+  diagnostics before anything is changed
+  ([known-issues/overlay-ghosting.md](known-issues/overlay-ghosting.md))
 - persistent native transcription history with retry, delete/clear,
   server-side filters, JSON export and a separate diagnostics view from
   transient runtime logs

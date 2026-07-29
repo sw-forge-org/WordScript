@@ -71,7 +71,7 @@ completion itself.
   insufficient on Linux.
 - Use faux glass: solid or semi-transparent designed surfaces with a hairline
   highlight, never `backdrop-filter` or blur.
-- The Linux host uses fixed surfaces: 440x60 for flat states and 460x164 for
+- The Linux host uses fixed surfaces: 480x60 for flat states and 460x164 for
   edit states. Keep Rust dimensions and UI invoke paths aligned.
 - A real user drag, not a programmatic host move, is the only source of
   remembered placement. All overlay surfaces share the same remembered top-left
