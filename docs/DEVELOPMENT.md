@@ -141,9 +141,11 @@ Use the native host for Tauri, shell, window, hotkey, overlay, and diagnostics
 work. Browser preview cannot validate `invoke()` bridges, permissions, window
 decorations, compositor behavior, or insertion.
 
-For detailed Linux overlay, placement, and WebKitGTK constraints, use the
-current [AGENTS.md](../AGENTS.md) gotchas and [PLATFORMS.md](PLATFORMS.md).
-They are intentionally not duplicated here. In particular, fixed overlay sizes,
+For detailed Linux overlay, placement, and WebKitGTK constraints, use
+[REFERENCE.md](REFERENCE.md) (overlay constants and CSS invariants),
+[overlay-placement-persist.md](known-issues/overlay-placement-persist.md)
+(placement and drag persistence) and [PLATFORMS.md](PLATFORMS.md) (runtime and
+compositor behavior). They are intentionally not duplicated here. In particular, fixed overlay sizes,
 native parking, background repainting, drag persistence, and compositor-safe
 CSS are runtime constraints rather than styling preferences.
 

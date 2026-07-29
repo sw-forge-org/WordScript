@@ -23,6 +23,12 @@ Status: 2026-07-25
 - CSS variables: `--ov-shadow: none`, `--ov-shadow-recording: none` in
   `overlay-pill.css`
 - `pointer-events: auto` on `.ov-scope` (not `none` on overlay-roots)
+- No `will-change: opacity`; it bloats the layer cache and causes state
+  overlays
+- No dynamic pill-based resize; ResizeObserver with `offsetWidth` measuring is
+  unreliable on GTK and was removed
+- The fixed sizes must stay consistent between `OverlaySurface::dimensions()`
+  and both invoke paths (base surface sync and `useLayoutEffect`)
 
 ## Project context
 

@@ -31,6 +31,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The agent instruction is a working file again instead of a growing
+  archive.** `AGENTS.md` had reached 236 lines; a file loaded into context on
+  every request costs tokens on every request, and the measured convention puts
+  the useful ceiling at 100–150 lines, beyond which the hard rules get buried
+  in the volume. It is now 132 lines. Three kinds of weight came out: a spec
+  changelog that grew with every ADR (the same anti-pattern the project
+  forbids for `ARCHITECTURE.md`), 51 lines of gotchas that were already
+  documented in `docs/`, and two rules that had drifted into the file twice.
+  No fact was dropped without its owning document being checked first — the
+  overlay size and layer-cache invariants moved to `docs/REFERENCE.md`, the
+  Windows `vendor/global-hotkey` patch rule to `docs/PLATFORMS.md`,
+  `resolve_overlay_monitor` to
+  `docs/known-issues/overlay-placement-persist.md`, and the spec drift date to
+  `docs/spec/SPEC.md`, which now carries its own `Status:` line like every
+  other document. The cpal 0.17 `SampleRate` note was retired outright: it
+  described a migration that had already been completed in `capture.rs`.
+- **The reference map says when to read a document, not only that it exists.**
+  Shortening the file first went one step too far: the rule that the spec
+  outranks the living overview docs on conflict was dropped because
+  `docs/spec/SPEC.md` states it in its own header. That is the one place it
+  cannot help — an agent that opens `ARCHITECTURE.md` first never learns it is
+  outranked. Routing rules have to fire before a document is picked, so
+  precedence and the append-only ADR rule are back in `AGENTS.md`, and the
+  reference map gained a "before touching" column that names the code areas
+  which should trigger each read. The separate gotchas list is gone: once the
+  map carries triggers, it was a second routing table pointing at the same
+  documents.
+
 ### Fixed
 
 - **The result overlay no longer stacks on a processing overlay that never went

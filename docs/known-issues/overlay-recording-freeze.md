@@ -189,7 +189,7 @@ rotates at 8 MB.
 
 ## References
 
-- [AGENTS.md](../../AGENTS.md): Linux overlay constraints
+- [REFERENCE.md](../REFERENCE.md): Linux overlay constants and CSS invariants
 - [PLATFORMS.md](../PLATFORMS.md): Linux runtime behavior
 - [DESIGN_SYSTEM.md](../DESIGN_SYSTEM.md): `WORDSCRIPT_DISABLE_WEBKIT_COMPOSITING`
   hardware opt-out

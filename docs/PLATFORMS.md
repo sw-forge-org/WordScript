@@ -53,6 +53,8 @@ honest limits.
 - elevated target apps can block synthetic paste from a non-elevated
   WordScript process.
 - scratchpad and last-transcript restore stay the official recovery path.
+- the `vendor/global-hotkey` patch for Windows (windows-sys 0.59 pointer
+  parameters) must survive vendor updates.
 
 ### Linux Wayland -- deliberate default choice
 

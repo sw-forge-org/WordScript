@@ -157,6 +157,6 @@ cosmetically.
 
 - [ADR 0018](../decisions/0018-the-end-of-a-session-belongs-to-exactly-one-event.md): the event-ordering fix
 - [ADR 0011a](../decisions/0011a-one-decision-surface-per-delivery-mode.md): the effect-ordering fix
-- [AGENTS.md](../../AGENTS.md): Linux overlay constraints
+- [REFERENCE.md](../REFERENCE.md): Linux overlay constants and CSS invariants
 - [PLATFORMS.md](../PLATFORMS.md): Linux runtime behavior
 - [OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md](../handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md): related compositor history

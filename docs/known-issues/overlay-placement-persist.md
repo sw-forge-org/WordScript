@@ -47,11 +47,13 @@ native host after changes to overlay visibility or placement behavior.
 - Compact, processing, preview, and result surfaces share one remembered
   top-left position.
 - Resolve a missing monitor identity from the saved logical drag reference and
-  available work areas; do not default a manual position to the primary display.
+  available work areas via `resolve_overlay_monitor`; do not default a manual
+  position to the primary display. Only preset mode without an identity match
+  falls back to primary.
 - Suppress button activation until the actual drag ends.
 
 ## References
 
-- [AGENTS.md](../../AGENTS.md): overlay placement constraints
+- [REFERENCE.md](../REFERENCE.md): overlay constants the placement must respect
 - [overlay-ghosting.md](overlay-ghosting.md): independent visual compositor issue
 - [OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md](../handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md): related native host behavior

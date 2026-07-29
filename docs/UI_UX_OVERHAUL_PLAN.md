@@ -64,7 +64,10 @@ the UI must not simulate it before that runtime path exists.
 
 On Linux, fixed host sizes, native parking, opacity, and compositor-safe CSS
 are reliability requirements. Overlay placement is user intent only when it
-comes from a real drag. See [AGENTS.md](../AGENTS.md) for active constraints.
+comes from a real drag. See [REFERENCE.md](REFERENCE.md) for the overlay
+constants and
+[overlay-placement-persist.md](known-issues/overlay-placement-persist.md) for
+the active placement constraints.
 
 ## Design Language
 
