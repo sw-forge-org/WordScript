@@ -1,9 +1,10 @@
 # Bug: the delivery mode switches itself back to clipboard-only
 
-Status: **One mechanism found and fixed (2026-07-29, ADR 0019): a normalized
-`work_mode` was never persisted. An earlier, separate mechanism was fixed in
-`92ce7f5` (2026-07-03). Whether anything else still reverts the setting is
-open — the P1 diagnostic is the instrument.**
+Status: **Open. Three roots found and fixed (C1 form clobbering; C2 unlocked
+resave, `92ce7f5`; F3 unpersisted normalization, ADR 0019) and the symptom is
+still reported on a build containing all three, 2026-07-30. The blocker is that
+`save_config` records nothing, so every root so far was found by reading rather
+than measuring — see "Why this bug keeps coming back".**
 
 Affected area: `core/config.rs` persistence, `work_mode.insert_behavior`
 
@@ -96,12 +97,59 @@ canonical tokens. The P1 diagnostic is now a usable instrument for this: it
 should fire once per legacy value and then never again. A repeat after
 ADR 0019 is evidence of a writer.
 
-Check with:
+Check with (filter test noise first — `cargo test` writes into this file, see
+[rust-test-global-state-isolation.md](rust-test-global-state-isolation.md)):
 
 ```
 grep -c "Config normalize rewrote insert_behavior" \
   ~/.config/WordScript/logs/wordscript-runtime.log
 ```
+
+**The symptom is still reported after ADR 0019.** Observed 2026-07-30 on a build
+that already contained the fix, running since ~12:57: `config.json` was written
+at 13:18:25, and the dictation at 13:19:15 still ran `delivery=clipboard_only`
+with all six profiles on `clipboard_only`. That write cannot be attributed from
+the artifacts, which is the actual problem below.
+
+### Why this bug keeps coming back: there is no measurement
+
+Three roots have been found and fixed, each a different mechanism:
+
+| | Root | Fixed |
+| --- | --- | --- |
+| C1 | A late `ready` from `save_config` clobbered an in-flight form edit, reverting it A→B→A→B | in-flight save counting, `SettingsWindow.tsx` |
+| C2 | `resolve_current_processing_mode` re-saved a stale snapshot without the config lock | `92ce7f5` |
+| F3 | A normalized `work_mode` was never persisted, so a legacy token re-applied on every load | ADR 0019 |
+
+All three were found by **reading code**, not by measuring — because there is
+nothing to measure. `save_config` (`core/config.rs:1302`) records no log line at
+all: not that a save happened, not what it contained, not which command called
+it. The P1 diagnostic only fires when *normalization* rewrites a value, so a save
+that writes `clipboard_only` because the incoming form said so is invisible. A
+bug fixed three times by inspection and reported a fourth time is a measurement
+problem before it is a logic problem.
+
+### Task: a diagnostic at the save boundary
+
+Record every `insert_behavior` transition per profile with its before value,
+after value and originating command — `save_config`,
+`switch_active_text_profile`, `set_active_profile_processing_mode` and the mode
+router are the write paths. Then one reproduction pins the writer instead of
+another reading session.
+
+Sequence it **after** the `runtime_log` test-path override, otherwise the new
+lines drown in `cargo test` output in the same file — the failure mode that
+already produced one wrong analysis in this investigation.
+
+### Fourth candidate, from reading and not yet a finding
+
+`switch_active_text_profile` (`core/config.rs:1329`) does a full
+read-modify-write of the config and emits `ready`. The in-flight-save counter in
+`SettingsWindow.tsx` suppresses the external form sync only for `save_config`
+round trips, so a profile switch made after an unsaved delivery-mode change
+would resync the form from disk and drop the edit. Same shape as C1, at a
+different boundary. Unverified — the save-boundary diagnostic above is what would
+settle it.
 
 ## Related
 
