@@ -1,6 +1,8 @@
 # Rust Tests Mutate Process Globals and Fail Under Parallel Execution
 
-Status: **Fixed (2026-07-29)** — no test mutates process state any more
+Status: **Ring buffer and env var fixed (2026-07-29). One case still open: a test
+run appends to the user's real `wordscript-runtime.log`, which makes that log
+unusable as field evidence — see the 2026-07-30 addendum.**
 
 First recorded: 2026-07-29, from repeated full `cargo test` runs while working on
 the trigger lane
@@ -91,6 +93,66 @@ Measured on 2026-07-29 on the same machine as the original 22-run measurement:
 - `cargo test -- --test-threads=1` green, 413 tests.
 - `cargo check --all-targets` clean; no new warnings, and neither touched file
   appears in the remaining pre-existing ones.
+
+## Addendum 2026-07-30: the tests still write to the user's real runtime log
+
+The status above ("no test mutates process state any more") holds for the ring
+buffer and the environment variable. It does not hold for the log **file**.
+
+`runtime_log::record` composes its path from `user_data_dir()`, which resolves
+`XDG_CONFIG_HOME` or `$HOME/.config`. Under `cargo test` that is the developer's
+own config directory, so a test run appends to
+`~/.config/WordScript/logs/wordscript-runtime.log` — the same file a real session
+writes to, and the file a maintainer reads as field evidence.
+
+What that costs, measured on this machine: the log contained 116 lines reading
+`Native insert paste driver=xdotool blocked by portal ... Authorization denied:
+org.kde.kwin.RemoteDesktop.SelectDevices`, spanning three days and ending minutes
+before the analysis. Read at face value that is a ~30% XTEST failure rate and a
+strong case for a second paste mechanism. Every one of them was a test fixture.
+The real sessions have **zero** portal denials and 37 successful `xdotool` pastes
+over the same period, which `history.json` independently confirms (19
+`direct_paste` entries, all `pasted: true`, no `fallback_reason`).
+
+The discriminator is the elapsed offset in the line prefix: the whole suite runs
+in under a second, so anything at `+0.0xx` is a test. Real dictations sit seconds
+to minutes into a process. Two further tells: `is_wayland=false`,
+`chain=[Arboard]` and `strategy=enigo` cannot occur together in a real session on
+this platform.
+
+Until the path is redirected, any analysis of this log must filter by elapsed
+offset first:
+
+```
+python3 - <<'EOF'
+import re
+pat = re.compile(r'^\[(\d+) \+(\d+\.\d+)\]')
+for line in open('logs/wordscript-runtime.log', errors='ignore'):
+    m = pat.match(line)
+    if m and float(m.group(2)) >= 5.0:
+        print(line, end='')
+EOF
+```
+
+Not yet fixed, and the repo already contains the fix for a sibling file.
+`core/history.rs` routes every access through `resolved_history_file_path()`,
+which consults a `#[cfg(test)]` `history_path_override()` before falling back to
+`history_file_path()`. `runtime_log::runtime_log_file_path()` has no equivalent —
+it composes `paths::user_data_dir()` directly. Mirroring that override is the
+whole change.
+
+Scope, checked rather than assumed: `config.json`, `history.json` and
+`scratchpad.json` resolve through the same `user_data_dir()`, but no test module
+reaches them. The two `AppConfig::load_from_disk()` calls in `core/history.rs`
+(lines 377, 721) and the one in `v1_slice/runtime.rs` (line 302) are production
+code — `history.rs`'s `mod tests` only starts at line 873. So the runtime log is
+the one file a test run actually writes into.
+
+Worth noting for whoever picks this up: since `load_from_disk` now persists a
+normalized `work_mode` (ADR 0019), any future test that does call it would rewrite
+the developer's real `config.json` into canonical form. Harmless in content —
+`save_to_disk` serializes `without_secrets()` — but it is one more reason the
+override should exist before such a test is written.
 
 ## References
 

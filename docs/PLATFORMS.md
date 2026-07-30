@@ -59,11 +59,31 @@ honest limits.
 ### Linux Wayland -- deliberate default choice
 
 On pure Wayland sessions (no `DISPLAY`, only `WAYLAND_DISPLAY`) the paste
-driver chain is empty. Reason: any attempt to launch `wtype`, `ydotool` or
-`enigo` for input simulation triggers the KDE Plasma portal dialog "Remote
-Control -- Control input devices". This deliberate default avoids the portal
-dialog but limits auto-paste convenience to pure Wayland. Hybrid sessions
-(X11+Wayland with xdotool) are not affected.
+driver chain is empty, for two different reasons that are easy to conflate:
+
+- `wtype` and `ydotool` are **deliberately skipped**. Launching either for input
+  simulation triggers the KDE Plasma portal dialog "Remote Control -- Control
+  input devices", and a dictation tool that raises a privilege prompt per paste
+  is worse than one that asks the user to press Ctrl+V.
+- `enigo` is **not applicable**, not skipped. It is pulled with default features
+  (`enigo = "0.6"`, default `["x11rb"]`; the `libei` and `wayland` backends are
+  opt-in and not enabled), and that backend drives input through
+  `xtest_fake_input` -- the X11 XTEST extension. Without a `DISPLAY` there is
+  nothing for it to talk to, which is why `paste_driver_execution_chain` only
+  pushes it when `has_x11_display` is true.
+
+The consequence for hybrid sessions (X11+Wayland with `xdotool`) is not that
+they are unaffected, but that they have **exactly one** paste mechanism: XTEST.
+`enigo` is not a second attempt behind `xdotool` -- it is the same XTEST request
+through a different binding, and `paste_with_enigo` refuses outright whenever
+`xdotool` is in `PATH` (`core/insertion.rs`). That guard also makes the pure-X11
+chain `[Xdotool, Enigo]` effectively `[Xdotool]`. On Linux `enigo` is reachable
+only when `xdotool` is absent: an alternative, never a fallback.
+
+So if a compositor refuses the XTEST grant, there is no independent second
+mechanism to fall back to, and the run delivers to the clipboard instead. The
+only genuinely independent path would be libei (enigo's `libei_tokio` feature),
+which is not compiled in -- see [ROADMAP.md](ROADMAP.md).
 
 Overlay on Linux: XWayland default (`GDK_BACKEND=x11`) with
 `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in for native Wayland. Always-on-top on

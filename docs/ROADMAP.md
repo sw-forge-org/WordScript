@@ -24,6 +24,9 @@ accounts, hosted workspaces, and browser or computer use. They are V2 or later
 work and must not dilute V1. Visible Chat, Upload, Notes and Account settings
 layouts are previews only and do not change this phase boundary.
 
+Unscheduled work with an open decision gate is filed below the phases, not
+inside them — currently one item, a second paste mechanism on Wayland.
+
 ## Phase 1 - Transcription Bias, Profile Health, Corpus
 
 **Status:** completed
@@ -187,6 +190,70 @@ the surface around them, not the mechanism.
 **Success measure:** a new user can pick a shipped profile that matches their
 work without editing it first, and an experienced user can see at a glance what
 a profile contains and what stays global.
+
+## Candidate - A second paste mechanism on Wayland (libei)
+
+**Status:** candidate, not scheduled. Needs the decision gate below before it
+becomes scope.
+
+**The honest motivation.** Not "auto-paste is unreliable on the maintainer's
+machine". That was measured on 2026-07-30 and does not hold: 37 real `xdotool`
+pastes between 2026-07-27 and 2026-07-30, zero portal denials, which
+`history.json` confirms independently (19 `direct_paste` entries, all
+`pasted: true`, no `fallback_reason`). The 116 denial lines in the runtime log
+were `cargo test` fixtures writing into the developer's real log file — see
+[known-issues/rust-test-global-state-isolation.md](known-issues/rust-test-global-state-isolation.md).
+The perceived unreliability of "Copy and insert at cursor" is far better explained
+by the config revert fixed in ADR 0019, which forced profiles back to
+clipboard-only on every load.
+
+The real gaps are structural, and they hold regardless of any one machine:
+
+- **Pure Wayland has no auto-paste at all.** The paste chain is empty by design.
+- **Hybrid XWayland has exactly one mechanism.** XTEST via `xdotool`. `enigo` is
+  the same XTEST request through another binding and refuses while `xdotool` is in
+  `PATH`, so there is nothing independent behind it. See
+  [PLATFORMS.md](PLATFORMS.md).
+
+**What is already there, and why it cannot carry input.**
+`core/portal.rs` requests a RemoteDesktop session (`CreateSession`,
+`SelectDevices`, `Start`) and persists the restore token under
+`$XDG_RUNTIME_DIR/wordscript/remote-desktop.token`, so the "Control input
+devices" dialog should appear only once per user. But every call shells out to
+`busctl --user call`, which opens a fresh D-Bus connection per invocation, and a
+portal session is bound to the connection that created it. Sequential `busctl`
+calls therefore cannot hold a session open, and `execute_insert_request_with_io`
+never reads `self.portal_session` at all — the handle only ever feeds the
+diagnostics display. This needs verifying against a live session before it is
+treated as settled, but if it holds, no amount of wiring on top of the current
+transport produces a usable input path.
+
+**Scope, if it goes ahead:**
+
+- A persistent D-Bus connection. This is the actual cost, and both input APIs
+  need it: `NotifyKeyboardKeycode` on the RemoteDesktop interface (older, no
+  libei) and `ConnectToEIS` + libei (newer). `zbus`, or `ashpd` which wraps it.
+- Since `ashpd` is required either way, enigo's `libei_tokio` feature is the
+  reasonable form: it brings the input layer too instead of hand-rolling keycode
+  mapping. New transitive dependencies: `reis`, `ashpd`, `futures`, `nom`. All
+  pinned to exact versions, as with every other dependency here.
+- The driver joins `paste_driver_execution_chain` as a genuinely independent
+  entry — for pure Wayland as the only entry, for hybrid behind `Xdotool`.
+- `docs/PLATFORMS.md` compositor matrix updated with what actually works.
+
+**Decision gate — measure before writing code:** confirm on KDE Plasma 6 that a
+restored RemoteDesktop session injects input **without a prompt per paste**.
+Prompt-per-paste is precisely why `wtype` and `ydotool` were rejected, and libei
+inherits that risk if the restore token does not do its job. If the prompt
+returns on every paste, this candidate dies and clipboard-only stays the honest
+default.
+
+**Out of scope:** replacing `xdotool` on hybrid sessions, where it is measurably
+reliable; and any per-paste privilege prompt, under any mechanism.
+
+**Success measure:** a pure Wayland session on Plasma 6 completes
+"Copy and insert at cursor" with at most one authorization dialog for the
+lifetime of the restore token.
 
 ## Dependencies
 

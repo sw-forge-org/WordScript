@@ -105,10 +105,14 @@ grep -c "Config normalize rewrote insert_behavior" \
 
 ## Related
 
-- Hybrid XWayland (KDE Plasma 6) runs the paste chain as `[Xdotool]` with no
-  `Enigo` fallback (`core/insertion.rs`), so a refused XTEST injection has
-  exactly one attempt before the run falls back to the clipboard. That is a real
-  fragility of the insert lane, separate from this bug — see
-  [PLATFORMS.md](../PLATFORMS.md).
+- Hybrid XWayland (KDE Plasma 6) runs the paste chain as `[Xdotool]`, so a
+  refused XTEST injection has exactly one attempt before the run delivers to the
+  clipboard instead. Calling the absent `Enigo` step the gap would be wrong:
+  `enigo` is pulled with its default `x11rb` backend, which drives input through
+  the same XTEST extension `xdotool` uses, and `paste_with_enigo` refuses
+  outright while `xdotool` is in `PATH`. Adding it back would re-run the identical
+  request and buy a second privilege prompt. The real fragility is that XTEST is
+  the *only* mechanism there — see [PLATFORMS.md](../PLATFORMS.md) and the libei
+  candidate in [ROADMAP.md](../ROADMAP.md). Separate from this bug either way.
 - [ADR 0019](../decisions/0019-every-path-that-ends-a-session-owes-the-surface-that-reports-it.md)
 - [REFERENCE.md](../REFERENCE.md): delivery mode semantics

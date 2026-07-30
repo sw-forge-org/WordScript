@@ -61,6 +61,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   map carries triggers, it was a second routing table pointing at the same
   documents.
 
+### Documentation
+
+- **The Linux paste lane is documented by mechanism instead of by symptom.**
+  `PLATFORMS.md` grouped `wtype`, `ydotool` and `enigo` under one reason — the
+  KDE portal prompt. That is right for the first two and wrong for `enigo`, which
+  is pulled with its default `x11rb` backend and drives input through the X11
+  XTEST extension: on pure Wayland it is not skipped but inapplicable, and on
+  hybrid XWayland it is the *same* request `xdotool` already made, which is why
+  `paste_with_enigo` refuses while `xdotool` is in `PATH`. Stated plainly now:
+  hybrid sessions have exactly one paste mechanism and pure Wayland has none, so
+  a refused XTEST grant has nothing independent behind it. A second mechanism
+  (libei) is filed in `ROADMAP.md` as a candidate with an open decision gate —
+  deliberately not as scheduled work, because the reliability problem that
+  motivated it measured clean (37 real pastes, zero portal denials) and is far
+  better explained by the config revert above.
+- **`cargo test` writes into the developer's real runtime log**, which cost one
+  wrong analysis: 116 lines reading `xdotool blocked by portal ... Authorization
+  denied` looked like a 30% XTEST failure rate and were all test fixtures. Real
+  sessions have zero. Recorded with the discriminator (the elapsed offset in the
+  line prefix) and the fix the repo already uses for `history.json` — a
+  `#[cfg(test)]` path override — in
+  `known-issues/rust-test-global-state-isolation.md`, whose status is corrected
+  from "fixed" to one case still open.
+
 ### Fixed
 
 - **The 1.5 s completion fallback no longer ends a session without a surface.**

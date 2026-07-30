@@ -260,6 +260,13 @@ Additional rules:
 - overlay placement also follows the native host contract: drag stores the
   last manual position, settings can switch to preset display anchors, both
   stay part of the same `AppConfig`
+- on Linux the paste lane has exactly one mechanism where it has any: XTEST via
+  `xdotool` on hybrid XWayland, and nothing at all on pure Wayland. `enigo` is
+  the same XTEST request through another binding, not an independent fallback.
+  Measured 2026-07-30 on Plasma 6 XWayland: 37 real pastes, zero portal denials
+  — the mechanism is reliable where it exists, the gap is that it does not exist
+  everywhere. A second, genuinely independent mechanism (libei) is a candidate
+  with an open decision gate in [ROADMAP.md](ROADMAP.md), not scheduled work
 
 ## Known open product gaps
 
