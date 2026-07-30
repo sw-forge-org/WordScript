@@ -136,23 +136,66 @@ function audioPayloadToLevel(payload: AudioLevelEvent): number {
 // DEV-only diagnostic log (plan 1784433288646, Phase 1.2). Writes to both the
 // browser console and the Rust-side /tmp/kilo/overlay-diag.log via
 // `append_diag_log`. The Settings-Window Diagnose-Panel polls that file for
-// live display. Fire-and-forget — never blocks the render or reveal path.
-// In production (import.meta.env.DEV === false) this is a no-op.
+// live display. Never blocks the render or reveal path. In production
+// (import.meta.env.DEV === false) this is a no-op.
+//
+// Every line carries a monotonic sequence number. The log is read to decide
+// whether an effect ran at all — a missing `[ov-repaint]` next to its
+// `[ov-sched]` is the difference between "the effect was skipped" and "the
+// write was lost". Without the counter those two are indistinguishable, and the
+// previous fire-and-forget `invoke` per line made losing or reordering one
+// entirely possible: concurrent Tauri commands are not ordered against each
+// other. A gap in `#n` now makes a lost line visible instead of silent.
+//
+// Lines are buffered and flushed per synchronous run in one command. That
+// collapses the per-line IPC round trip that made per-render tracing expensive
+// enough to distort what it measures (see RENDER_TRACE_ENABLED below).
+//
+// The flush is a MICROTASK, not `requestAnimationFrame`, for the same reason
+// `scheduleReveal` is: WebKitGTK can pause rAF when it classifies the
+// decorationless transparent overlay as not-visible, and one window this log has
+// to be trusted in is exactly the leave, where that classification is likely.
+// A paused rAF would hold lines in the buffer until the next wake — the log
+// would go quiet precisely where it is being read. Microtasks always run.
+//
+// The cost is that a commit's layout-effect lines and its passive-effect lines
+// land in two batches, and separate Tauri commands are not ordered against each
+// other. `#n` is what makes that recoverable: emit order is in the line, so
+// analysis sorts by it and a gap still means a lost write.
 //
 // `console.debug` rather than `console.warn`: at the overlay's ~24 Hz render
 // rate a warn-level line per render is expensive once an inspector is attached,
 // and this is trace output, not a warning.
+let diagSeq = 0;
+let diagPending: string[] = [];
+let diagFlushScheduled = false;
+
+function flushDiagLog() {
+  diagFlushScheduled = false;
+  if (diagPending.length === 0) return;
+  const lines = diagPending;
+  diagPending = [];
+  void invoke("append_diag_log", { lines }).catch(() => {});
+}
+
 function diagLog(line: string) {
   if (!import.meta.env.DEV) return;
-  console.debug(line);
-  void invoke("append_diag_log", { line }).catch(() => {});
+  const stamped = `#${++diagSeq} ${line}`;
+  console.debug(stamped);
+  diagPending.push(stamped);
+  if (diagFlushScheduled) return;
+  diagFlushScheduled = true;
+  queueMicrotask(flushDiagLog);
 }
 
 // Per-render tracing is opt-in even in dev builds (see
 // docs/known-issues/overlay-recording-freeze.md). It fires on every commit,
-// which during a capture means one extra IPC round trip per audio_level event
-// — enough load that it can plausibly cause the very main-thread stall it is
-// meant to observe. Enable with `WORDSCRIPT_OVERLAY_RENDER_TRACE=1` in the
+// which during a capture used to mean one extra IPC round trip per audio_level
+// event — enough load that it could plausibly cause the very main-thread stall
+// it is meant to observe. The per-frame batching above removes most of that
+// cost, but the flag stays opt-in: the freeze it was blamed for is still open,
+// and turning it on by default would fold a diagnostic into the very path under
+// investigation. Enable with `WORDSCRIPT_OVERLAY_RENDER_TRACE=1` in the
 // environment `npm run tauri dev` inherits.
 const RENDER_TRACE_ENABLED =
   import.meta.env.DEV && import.meta.env.VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE === "1";
@@ -198,6 +241,9 @@ export default function OverlayWindow() {
   // hold during `overlayMotion==="leaving"` so the surface stays painted
   // (without spinner / pending) until the clean idle unmount. (plan P2, Opt A)
   const lastProcessingPreviewSnapshotRef = useRef<{ text: string; clipboardOnly: boolean } | null>(null);
+  // Frozen frame for the edit-surface leave hold, so clearing the live
+  // `editText` cannot pull the surface out mid-fade (see `renderEditHold`).
+  const lastEditTextSnapshotRef = useRef<string | null>(null);
   // `errorHidden` only owns the 4.2 s auto-dismiss of an error pill; it never
   // owns visibility. Error visibility is derived (see `showError` below) so a
   // new trigger atomically hides a previous epoch's error instead of the old
@@ -321,9 +367,23 @@ export default function OverlayWindow() {
   // closes must keep painting the edit surface — replaying result-actions here
   // (as it did while edit_mode shared the result hold) flashes a surface this
   // session never showed, for the full 240 ms of the leave.
+  //
+  // The text comes from the snapshot once the live `editText` is gone, the same
+  // way the processing hold reads `lastProcessingPreviewSnapshotRef`. Keying the
+  // hold on the live state made it collapse one commit into the fade: a
+  // confirmed edit ends the session, the new `lastResult` fires the
+  // interaction-reset effect, that clears `editText`, and the hold's own
+  // condition went false while the overlay was still visibly fading — measured
+  // in 4 of 5 edit closes as `surface=edit_mode` at the `motion=open` commit and
+  // `surface=compact` at the `motion=leaving` commit right after. Unmounting a
+  // surface mid-fade is the orphaned-layer mechanism in
+  // docs/known-issues/overlay-ghosting.md.
+  const editHoldText = editText.trim().length > 0
+    ? editText
+    : (lastEditTextSnapshotRef.current ?? "");
   const renderEditHold = holdPreviewDuringClose
     && lastVisibleSurfaceRef.current === "edit_mode"
-    && editText.trim().length > 0;
+    && editHoldText.trim().length > 0;
   const renderOverlaySurface: OverlaySurface = showEditSurface || renderEditHold
     ? "edit_mode"
     : renderResultPreview
@@ -356,6 +416,12 @@ export default function OverlayWindow() {
       text: finalPreviewText,
       clipboardOnly: previewClipboardOnly,
     };
+  }
+
+  // Same for the edit surface. Only while it is genuinely live, so the last
+  // value survives the commit that clears `editText`.
+  if (showEditSurface) {
+    lastEditTextSnapshotRef.current = editText;
   }
 
   // ONE surface value for everything that leaves this component: drag position
@@ -660,6 +726,7 @@ export default function OverlayWindow() {
       setEditText("");
       setActionPending(null);
       lastProcessingPreviewSnapshotRef.current = null;
+      lastEditTextSnapshotRef.current = null;
       if (autoCloseResultTimerRef.current) {
         window.clearTimeout(autoCloseResultTimerRef.current);
         autoCloseResultTimerRef.current = null;
@@ -871,15 +938,25 @@ export default function OverlayWindow() {
   // [ov-beat]: main-thread heartbeat for the overlay-recording-freeze
   // investigation (docs/known-issues/overlay-recording-freeze.md).
   //
-  // Runs only while a session is active, and logs only when an interval lands
-  // late — a quiet log means a healthy main thread, so the diagnostic costs
-  // nothing in the normal case. A reported gap is the discriminator the
-  // existing telemetry lacks: if the render rate drops without a gap here, the
-  // overlay was idle because the input was silent, not frozen.
+  // Logs only when an interval lands late — a quiet log means a healthy main
+  // thread, so the diagnostic costs nothing in the normal case. A reported gap
+  // is the discriminator the existing telemetry lacks: if the render rate drops
+  // without a gap here, the overlay was idle because the input was silent, not
+  // frozen.
+  //
+  // It also covers `overlayMotion !== "idle"`, not just an active session,
+  // because the leave window is where the measured anomaly sits: the
+  // `leaving -> idle` transition was observed never to run on its own 240 ms
+  // timer, arriving instead with the NEXT activation (1.2 s, 61.6 s, 258.0 s in
+  // three consecutive closes). If the main thread is suspended there, the
+  // interval cannot fire either and reports the whole gap as one delta on wake
+  // — which is what distinguishes a throttled webview from a timer that was
+  // cleared or guarded away. `motion` is in the line for the same reason: the
+  // phase is what identifies the window.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const isSessionActive = status === "recording" || status === "processing";
-    if (!isSessionActive) return;
+    if (!isSessionActive && overlayMotion === "idle") return;
 
     let previous = performance.now();
     const interval = window.setInterval(() => {
@@ -887,12 +964,14 @@ export default function OverlayWindow() {
       const delta = now - previous;
       previous = now;
       if (delta >= HEARTBEAT_REPORT_THRESHOLD_MS) {
-        diagLog(`[ov-beat] stalled_ms=${Math.round(delta)} expected_ms=${HEARTBEAT_INTERVAL_MS} status=${status}`);
+        diagLog(
+          `[ov-beat] stalled_ms=${Math.round(delta)} expected_ms=${HEARTBEAT_INTERVAL_MS} status=${status} motion=${overlayMotion}`,
+        );
       }
     }, HEARTBEAT_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
-  }, [status]);
+  }, [status, overlayMotion]);
 
   // Session lifecycle events (aborted, empty, error, recording_started) arrive
   // on the native-event channel, not the wordscript-event channel. Dismiss the
@@ -1307,7 +1386,7 @@ export default function OverlayWindow() {
     if (showEditSurface || renderEditHold) {
       return {
         kind: "edit-mode",
-        text: editText,
+        text: showEditSurface ? editText : editHoldText,
         confirmLabel: editFromPreviewRef.current
           ? (previewClipboardOnly ? "Copy corrected text" : "Insert corrected text")
           : "Copy corrected text",
@@ -1406,7 +1485,20 @@ export default function OverlayWindow() {
   // renders as a brief "another overlay state pops up" flash on top of the
   // current result-actions surface. The opaque --ov-surface already blocks
   // ghosting, so the spinner swap does not need a native repaint.
-  const pillVisualEpoch = `${pillState?.kind ?? ""}|${pillMode}|${muted ? "m" : ""}|${paused ? "p" : ""}|${showEditSurface ? "e" : ""}|${Boolean(previewClipboardOnly && renderResultPreview)}`;
+  //
+  // `previewClipboardOnly` counts on BOTH decision surfaces, not just on
+  // result-actions. On the processing preview the same flag swaps the primary
+  // button between Copy (`Clipboard`) and Insert (`CornerDownLeft`) and toggles
+  // the `pill--clipboard` class (OverlayPill.tsx, `PreviewActions`) — a visual
+  // identity change of exactly the kind this epoch exists to catch. Scoping it
+  // to `renderResultPreview` left the preview surface able to change appearance
+  // with no native repaint behind it, which on WebKitGTK is the condition that
+  // keeps the previous raster. It goes live when the delivery mode changes
+  // between two closely spaced sessions.
+  const previewClipboardEpoch = Boolean(
+    previewClipboardOnly && (renderResultPreview || renderProcessingPreview),
+  );
+  const pillVisualEpoch = `${pillState?.kind ?? ""}|${pillMode}|${muted ? "m" : ""}|${paused ? "p" : ""}|${showEditSurface ? "e" : ""}|${previewClipboardEpoch}`;
 
   // Force a native repaint whenever the pill VISUAL IDENTITY changes — even
   // when the surface AND kind stay the same (mode-cycle within "recording",

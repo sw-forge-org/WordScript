@@ -27,7 +27,7 @@ type Action =
   | { type: "PROCESSING" }
   | { type: "PREVIEW_READY"; result: RuntimeTranscriptionResult }
   | { type: "TRANSCRIPTION"; result: RuntimeTranscriptionResult; preserveExisting?: boolean }
-  | { type: "NATIVE_TRANSCRIPTION_SYNC"; finalText: string }
+  | { type: "NATIVE_TRANSCRIPTION_SYNC"; finalText: string; corrected: boolean }
   | { type: "NATIVE_SYNC_TIMEOUT" }
   | { type: "EMPTY" }
   | { type: "MUTED"; muted: boolean }
@@ -46,7 +46,30 @@ const initial: RuntimeState = {
   recordingStartMs: null,
   previewStaged: false,
   resultSurfaceOpen: false,
+  nativeSyncMirror: null,
 };
+
+/// The result a NATIVE_SYNC_TIMEOUT has to work with: the transcript the native
+/// channel mirrored, and nothing else. Every field the authoritative event owns
+/// stays null rather than being guessed — the overlay shows what the runtime
+/// actually reported, and "delivered by an unknown path" is the truth here.
+function buildFallbackTranscriptionResult(
+  mirror: { finalText: string; corrected: boolean },
+): RuntimeTranscriptionResult {
+  return {
+    provider: null,
+    active_profile: null,
+    work_mode: null,
+    raw_text: mirror.finalText,
+    final_text: mirror.finalText,
+    corrected: mirror.corrected,
+    transform: null,
+    delivery: null,
+    insertion: null,
+    history: null,
+    occurred_at_ms: Date.now(),
+  };
+}
 
 function buildRuntimeTranscriptionResult(
   payload: Extract<BackendEvent, { event: "preview_ready" | "transcription" }>,
@@ -90,6 +113,7 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         recordingStartMs: Date.now(),
         previewStaged: false,
         resultSurfaceOpen: false,
+        nativeSyncMirror: null,
       };
     case "RECORDING_STOPPED":
       return { ...state, paused: false, recordingStartMs: null };
@@ -101,6 +125,7 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         pendingResult: null,
         previewStaged: false,
         resultSurfaceOpen: false,
+        nativeSyncMirror: null,
       };
     case "PREVIEW_READY":
       return {
@@ -115,17 +140,28 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
     case "TRANSCRIPTION":
       {
         const existingResult = state.lastResult ?? state.pendingResult;
-        const mergedResult = action.preserveExisting && existingResult
-          ? {
-              ...existingResult,
-              final_text: action.result.final_text,
-              corrected: action.result.corrected,
-              occurred_at_ms: action.result.occurred_at_ms,
-            }
-          : action.result;
+        // A late authoritative event: NATIVE_SYNC_TIMEOUT already ended this
+        // session and already put a surface on the pill. Re-deciding
+        // `resultSurfaceOpen` here would flip it false→true a second commit
+        // later — the two-commit gap ADR 0018 removed, re-entered through the
+        // fallback ADR 0018 added. The richer payload is still worth taking;
+        // only the surface decision and the occurrence stamp stay put, so the
+        // open surface is updated in place rather than mounted again.
+        const settledByFallback = state.nativeSyncMirror !== null && state.status === "idle";
+        const mergedResult = settledByFallback && existingResult
+          ? { ...action.result, occurred_at_ms: existingResult.occurred_at_ms }
+          : action.preserveExisting && existingResult
+            ? {
+                ...existingResult,
+                final_text: action.result.final_text,
+                corrected: action.result.corrected,
+                occurred_at_ms: action.result.occurred_at_ms,
+              }
+            : action.result;
 
         return {
           ...state,
+          nativeSyncMirror: null,
           status: "idle",
           paused: false,
           lastTranscription: mergedResult.final_text,
@@ -153,7 +189,9 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
           // fell back to the clipboard also reports `delivery: "clipboard"`, and
           // that is exactly the case where the user needs the result surface to
           // retry the insert.
-          resultSurfaceOpen: !state.previewStaged,
+          resultSurfaceOpen: settledByFallback
+            ? state.resultSurfaceOpen
+            : !state.previewStaged,
         };
       }
     case "NATIVE_TRANSCRIPTION_SYNC":
@@ -180,10 +218,14 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         // authoritative wordscript-event transcription flips `status`,
         // `lastResult` and `resultSurfaceOpen` in a single commit. This sync
         // only mirrors the transcript text. If the authoritative event never
-        // arrives, NATIVE_SYNC_TIMEOUT below is the explicit way out.
+        // arrives, NATIVE_SYNC_TIMEOUT below is the explicit way out — which is
+        // why the mirrored transcript is kept as state and not only folded into
+        // `lastTranscription`: the fallback needs the `corrected` flag too, and
+        // its presence marks the session as one the fallback may have to close.
         return {
           ...state,
           lastTranscription: action.finalText,
+          nativeSyncMirror: { finalText: action.finalText, corrected: action.corrected },
         };
       }
     case "NATIVE_SYNC_TIMEOUT":
@@ -191,21 +233,38 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         // Safety net for a native completion whose authoritative
         // wordscript-event never followed (a dropped emit, a caller that only
         // goes through `complete_native_session`). Without it the overlay would
-        // sit in "processing" until the 120s pipeline watchdog fires. This does
-        // what NATIVE_TRANSCRIPTION_SYNC used to do immediately — but as a
-        // bounded fallback, not as the default path, so the normal run keeps
-        // the atomic swap. `previewStaged` deliberately stays: it is what tells
-        // a late authoritative event that this session already had its decision
-        // surface.
+        // sit in "processing" until the 120s pipeline watchdog fires. It is a
+        // bounded fallback, not the default path, so the normal run keeps the
+        // atomic swap.
+        //
+        // It must end the session the same way TRANSCRIPTION does: WITH the
+        // surface that reports it, in one commit. Ending it without one left
+        // `resultSurfaceOpen` false, and a late authoritative event then flipped
+        // it true a commit later — the exact two-commit gap ADR 0018 removed,
+        // re-entered through the fallback ADR 0018 introduced. On auto_paste the
+        // last visible surface is "compact", which `holdPreviewDuringClose`
+        // refuses to hold, so that gap unmounts <OverlayPill> and orphans its
+        // compositor layers on WebKitGTK (docs/known-issues/overlay-ghosting.md).
+        //
+        // `previewStaged` deliberately stays: a clipboard_only session already
+        // had its decision surface on the preview and closes without a second
+        // one, exactly as in the authoritative commit.
         if (state.status !== "processing") {
           return state;
         }
+
+        const mirror = state.nativeSyncMirror;
+        const fallbackResult = !state.previewStaged && mirror && mirror.finalText.trim().length > 0
+          ? buildFallbackTranscriptionResult(mirror)
+          : null;
 
         return {
           ...state,
           status: "idle",
           paused: false,
           pendingResult: null,
+          lastResult: fallbackResult ?? state.lastResult,
+          resultSurfaceOpen: fallbackResult !== null,
         };
       }
     case "EMPTY":
@@ -217,6 +276,7 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         lastResult: null,
         previewStaged: false,
         resultSurfaceOpen: false,
+        nativeSyncMirror: null,
       };
     case "MUTED":
       return { ...state, muted: action.muted };
@@ -231,6 +291,7 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         error: action.message,
         previewStaged: false,
         resultSurfaceOpen: false,
+        nativeSyncMirror: null,
       };
     default:
       return state;
@@ -377,6 +438,7 @@ export function useRuntime() {
               dispatch({
                 type: "NATIVE_TRANSCRIPTION_SYNC",
                 finalText: payload.status?.last_transcript ?? "",
+                corrected: payload.event === "transcription_corrected",
               });
               armNativeSyncFallback();
             }

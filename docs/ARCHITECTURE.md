@@ -268,7 +268,10 @@ ends the session in the reducer — `status`, `pendingResult`, `previewStaged` a
 reports the result. The mirror updates the transcript text and nothing else, so
 no render passes in which the session is over and no overlay surface owns the
 pill (ADR 0018). A bounded fallback ends the session if the authoritative event
-never arrives, so a dropped emit cannot leave the UI showing `processing`.
+never arrives, so a dropped emit cannot leave the UI showing `processing`; it
+commits the surface with it and builds its result from the mirrored transcript,
+because every path that ends a session owes the surface that reports it, and a
+session that has already ended never has its surface re-decided (ADR 0019).
 
 ## Transform order
 

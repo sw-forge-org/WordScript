@@ -111,6 +111,12 @@ const OVERLAY_DIAG_LOG_READ_TAIL_BYTES: u64 = 64 * 1024;
 // Hard ceiling for the file itself. Without it a long session grows it without
 // bound; the log is a live diagnostic, not an archive.
 const OVERLAY_DIAG_LOG_MAX_BYTES: u64 = 8 * 1024 * 1024;
+// Per-call batch cap. The ceiling above is checked once per `append_diag_log`
+// call, which bounded a one-line-per-call command to a one-line overshoot. The
+// batch signature would otherwise make a single call unbounded, and the command
+// is registered in release builds too even though only DEV code calls it. A
+// commit's worth of trace lines is well under this.
+const OVERLAY_DIAG_LOG_MAX_BATCH_LINES: usize = 512;
 // One process-wide append handle. Re-opening per line cost three syscalls per
 // write at the overlay's ~24 Hz render rate.
 static OVERLAY_DIAG_LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
@@ -2102,13 +2108,24 @@ async fn overlay_open_devtools(app: AppHandle) -> Result<(), String> {
     }
 }
 
-/// Append a diagnostic line to /tmp/kilo/overlay-diag.log, prefixed with the
-/// same epoch-millisecond stamp the runtime log uses so the two can be lined up
-/// against each other and against `journalctl`. The first call per process run
-/// truncates the file (via `Once`) so each dev session starts fresh. Called from
-/// the frontend under `import.meta.env.DEV` only.
+/// Append a batch of diagnostic lines to /tmp/kilo/overlay-diag.log, each
+/// prefixed with the same epoch-millisecond stamp the runtime log uses so the
+/// two can be lined up against each other and against `journalctl`. The first
+/// call per process run truncates the file (via `Once`) so each dev session
+/// starts fresh. Called from the frontend under `import.meta.env.DEV` only.
+///
+/// A BATCH rather than a single line, because the frontend used to fire one
+/// `invoke` per line without awaiting it. Concurrent commands are not ordered
+/// against each other, so the log could reorder lines or lose one entirely —
+/// and a missing line is indistinguishable from an effect that never ran, which
+/// is precisely the distinction this log exists to make. One command per flush
+/// writes the batch in order under a single lock.
 #[tauri::command]
-async fn append_diag_log(line: String) -> Result<(), String> {
+async fn append_diag_log(lines: Vec<String>) -> Result<(), String> {
+    if lines.is_empty() {
+        return Ok(());
+    }
+
     let epoch_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis())
@@ -2150,7 +2167,17 @@ async fn append_diag_log(line: String) -> Result<(), String> {
     }
 
     let file = handle.as_mut().expect("diag log handle was just opened");
-    writeln!(file, "[{epoch_ms}] {line}").map_err(|error| error.to_string())?;
+    for line in lines.iter().take(OVERLAY_DIAG_LOG_MAX_BATCH_LINES) {
+        writeln!(file, "[{epoch_ms}] {line}").map_err(|error| error.to_string())?;
+    }
+    if lines.len() > OVERLAY_DIAG_LOG_MAX_BATCH_LINES {
+        writeln!(
+            file,
+            "[{epoch_ms}] [ov-diag] dropped {} lines over the {OVERLAY_DIAG_LOG_MAX_BATCH_LINES}-line batch cap",
+            lines.len() - OVERLAY_DIAG_LOG_MAX_BATCH_LINES,
+        )
+        .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 

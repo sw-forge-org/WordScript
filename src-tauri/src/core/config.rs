@@ -898,8 +898,11 @@ impl AppConfig {
         }
     }
 
-    fn normalize_for_runtime(&mut self) {
-        self.normalize_text_profiles();
+    /// Returns whether normalization rewrote a profile's `work_mode`, so
+    /// `load_from_disk_impl` can persist the canonical form instead of
+    /// recomputing it on every load. See `normalize_text_profiles`.
+    fn normalize_for_runtime(&mut self) -> bool {
+        let work_mode_rewritten = self.normalize_text_profiles();
         self.provider = normalize_provider_value(&self.provider);
         self.local_model = normalize_local_model_value(&self.local_model);
         self.local_profile = normalize_local_profile_id(&self.local_profile, &self.local_model);
@@ -1005,9 +1008,12 @@ impl AppConfig {
         self.overlay_monitor = normalize_overlay_monitor_value(&self.overlay_monitor);
         self.history_limit = self.history_limit.clamp(25, 1000);
         self.history_retention_days = self.history_retention_days.min(3650);
+        work_mode_rewritten
     }
 
-    fn normalize_text_profiles(&mut self) {
+    /// Returns whether any profile's `work_mode` was rewritten into its
+    /// canonical form.
+    fn normalize_text_profiles(&mut self) -> bool {
         if self.text_profiles.is_empty() {
             self.text_profiles.push(default_text_profile(
                 String::new(),
@@ -1022,6 +1028,8 @@ impl AppConfig {
             self.curated_profiles_seeded = true;
         }
         refresh_curated_text_profile_presentation(&mut self.text_profiles);
+
+        let mut work_mode_rewritten = false;
 
         for (index, profile) in self.text_profiles.iter_mut().enumerate() {
             if profile.id.trim().is_empty() {
@@ -1044,7 +1052,7 @@ impl AppConfig {
                 };
             }
 
-            let prev_insert_behavior = profile.work_mode.insert_behavior.clone();
+            let prev_work_mode = profile.work_mode.clone();
             profile.work_mode = normalize_text_profile_work_mode(&profile.work_mode);
             // Diagnostic for the insert_behavior-revert investigation (plan P1):
             // logs ONLY when normalization actually rewrites the value (a
@@ -1052,12 +1060,21 @@ impl AppConfig {
             // an unknown value → the auto_paste default). On a steady canonical
             // config this never fires, so it is effectively zero-noise — but it
             // pinpoints any path that is silently rewriting insert_behavior.
-            if profile.work_mode.insert_behavior != prev_insert_behavior {
+            if profile.work_mode.insert_behavior != prev_work_mode.insert_behavior {
                 runtime_log::record(format!(
                     "[WordScript] Config normalize rewrote insert_behavior profile={} from='{}' to='{}'",
-                    profile.id, prev_insert_behavior, profile.work_mode.insert_behavior,
+                    profile.id, prev_work_mode.insert_behavior, profile.work_mode.insert_behavior,
                 ));
             }
+            // Reported so the caller can PERSIST the canonical form. Without
+            // that, a non-canonical token survives on disk indefinitely and is
+            // re-applied on every single load: `"clipboard"` normalizes to
+            // `"clipboard_only"`, so a profile carrying it was forced back to
+            // clipboard-only after every restart no matter what the user
+            // selected — the observed "the delivery mode switches itself back".
+            // The diagnostic above logged that 183 times across two runtime logs
+            // precisely because the correction was never written down.
+            work_mode_rewritten |= profile.work_mode != prev_work_mode;
         }
 
         let active_index = self
@@ -1067,6 +1084,7 @@ impl AppConfig {
             .unwrap_or(0);
 
         self.active_text_profile_id = self.text_profiles[active_index].id.clone();
+        work_mode_rewritten
     }
 
     /// Loads, migrates and normalizes the config, persisting it back to disk if
@@ -1112,7 +1130,11 @@ impl AppConfig {
 
         should_save |= config.migrate_global_settings_to_active_profile();
 
-        config.normalize_for_runtime();
+        // A `work_mode` rewrite counts towards `should_save`. It did not before,
+        // which is why a non-canonical `insert_behavior` could be corrected in
+        // memory on every load and never written back — see
+        // `normalize_text_profiles`.
+        should_save |= config.normalize_for_runtime();
         should_save |= original_provider != config.provider;
 
         should_save |= original_hotkeys
@@ -2784,6 +2806,59 @@ mod tests {
         assert_eq!(
             active.work_mode.insert_behavior, "auto_paste",
             "auto_paste profile must NOT be migrated to clipboard_only on a frontend save roundtrip"
+        );
+    }
+
+    #[test]
+    fn normalize_reports_a_rewritten_work_mode_so_the_canonical_form_gets_persisted() {
+        // The legacy token `"clipboard"` normalizes to `"clipboard_only"`. If
+        // that correction is not reported, `load_from_disk_impl` never sets
+        // `should_save`, the raw token survives on disk, and EVERY later load
+        // forces the profile back to clipboard-only regardless of what the user
+        // selected — observed live as 183 repetitions of the
+        // "Config normalize rewrote insert_behavior" diagnostic across two
+        // runtime logs, i.e. the correction was recomputed forever and never
+        // written down.
+        let raw = serde_json::json!({
+            "active_text_profile_id": "support",
+            "text_profiles": [{
+                "id": "support",
+                "label": "Support reply",
+                "prompt": "",
+                "stt_hints": "",
+                "work_mode": {
+                    "rewrite_style": "polished",
+                    "insert_behavior": "clipboard",
+                    "recovery_behavior": "standard",
+                    "processing_mode": "auto",
+                },
+                "curation": { "curated": false, "audience": "", "summary": "", "highlights": [] },
+                "dictionary_entries": [],
+                "snippet_entries": [],
+                "speech": null,
+                "modes": null,
+                "capture": null,
+            }],
+            "result_actions_timeout_s": 9,
+            "mode_select_timeout_s": 6,
+        });
+
+        let mut config: AppConfig = serde_json::from_value(raw).unwrap();
+        assert!(
+            config.normalize_for_runtime(),
+            "a rewritten work_mode must be reported so should_save persists it"
+        );
+        assert_eq!(
+            config.active_text_profile().work_mode.insert_behavior,
+            "clipboard_only"
+        );
+
+        // Second pass on the now-canonical config: nothing left to rewrite, so
+        // nothing to save. Without this the fix would trade a silent revert for
+        // a config rewritten on every single load.
+        assert!(
+            !config.normalize_for_runtime(),
+            "a canonical work_mode must not report a rewrite"
         );
     }
 

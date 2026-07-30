@@ -996,6 +996,63 @@ describe("OverlayWindow", () => {
     expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
   });
 
+  // `previewClipboardOnly` swaps the preview's primary button between Copy and
+  // Insert and toggles `pill--clipboard` — a visual identity change with the
+  // surface and the pill kind unchanged. On WebKitGTK a React DOM update alone
+  // does not invalidate the cached raster, so this has to reach
+  // `pillVisualEpoch` and force a native repaint. It used to be scoped to the
+  // result surface only, which left the preview able to change appearance with
+  // nothing behind it (docs/known-issues/overlay-ghosting.md).
+  it("forces a native repaint when the preview flips to clipboard-only", async () => {
+    const buildPreviewState = (insertBehavior: string) =>
+      buildIdleResultState({
+        status: "processing",
+        lastResult: null,
+        lastTranscription: null,
+        resultSurfaceOpen: false,
+        previewStaged: true,
+        pendingResult: {
+          provider: "groq",
+          active_profile: "Support reply",
+          work_mode: {
+            rewrite_style: "polished",
+            insert_behavior: insertBehavior,
+            recovery_behavior: "standard",
+          },
+          raw_text: "ähm wir shippen das morgen",
+          final_text: "Wir shippen das morgen.",
+          corrected: true,
+          transform: { applied_rules: [], warning: null },
+          history: null,
+          delivery: null,
+          insertion: null,
+          occurred_at_ms: 1716500000000,
+        },
+      });
+
+    let runtimeValue = buildPreviewState("auto_paste");
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    const { rerender } = render(<OverlayWindow />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Insert" })).toBeInTheDocument());
+
+    const revealsBefore = invokeMock.mock.calls.filter(
+      ([command]) => command === "sync_overlay_window_visibility",
+    ).length;
+
+    // Same surface, same pill kind — only the delivery-dependent chrome moves.
+    runtimeValue = buildPreviewState("clipboard_only");
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    rerender(<OverlayWindow />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "sync_overlay_window_visibility").length,
+      ).toBeGreaterThan(revealsBefore),
+    );
+  });
+
   // A clipboard_only commit already had its decision surface (the processing
   // preview), so no result surface follows it — structurally, via
   // `resultSurfaceOpen`, not via a suppression flag.
@@ -1058,6 +1115,47 @@ describe("OverlayWindow", () => {
 
     expect(screen.getByLabelText("Audio level")).toBeInTheDocument();
     expect(screen.queryByLabelText("Edit transcription text")).not.toBeInTheDocument();
+  });
+
+  // Measured in the instrumented run: on 4 of 5 edit closes the rendered surface
+  // was `edit_mode` at the commit where `isActive` went false and `compact` at
+  // the very next commit, the one where `motion` becomes "leaving" — i.e. the
+  // edit surface was pulled out from under its own leave hold at the instant the
+  // fade started. The cause is that a confirmed edit ends the session, the new
+  // `lastResult` fires the interaction-reset effect, and that clears `editText`,
+  // which the hold used to be keyed on. Unmounting a surface while the overlay
+  // is still visibly fading is the orphaned-layer mechanism in
+  // docs/known-issues/overlay-ghosting.md.
+  it("keeps painting the edit surface through the fade after the text is cleared", async () => {
+    let runtimeValue = buildIdleResultState();
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    const { rerender, container } = render(<OverlayWindow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText("Edit transcription text")).toBeInTheDocument();
+
+    // The session ends with a NEW lastResult — the commit that both closes the
+    // decision surface and triggers the effect that clears `editText`.
+    runtimeValue = buildIdleResultState({
+      resultSurfaceOpen: false,
+      previewStaged: true,
+      lastResult: {
+        ...(buildIdleResultState().state.lastResult as Record<string, unknown>),
+        occurred_at_ms: 1716500009000,
+      },
+    });
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    rerender(<OverlayWindow />);
+
+    // The pill must still be there, still painting the edit surface, with the
+    // text it was showing — read from the snapshot, not from the cleared state.
+    await waitFor(() => {
+      expect(container.querySelector(".ov-pill-shell")).not.toBeNull();
+      expect(screen.getByLabelText("Edit transcription text")).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("Edit transcription text")).toHaveValue(
+      "Wir shippen das morgen.",
+    );
   });
 
   it("re-enters the recording surface without the dismissed result resurfacing", async () => {

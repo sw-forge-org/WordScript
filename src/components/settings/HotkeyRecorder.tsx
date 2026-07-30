@@ -168,10 +168,11 @@ export function HotkeyRecorder({
         modifierTokenForCode(vocabulary, event.code) ??
         (isKnownKeyCode(vocabulary, event.code) ? event.code : "unmapped");
       void invoke("append_diag_log", {
-        line:
+        lines: [
           `[keyprobe] phase=${phase} code=${event.code} key=${event.key} mapped=${mapped} ` +
           `ctrl=${event.ctrlKey} alt=${event.altKey} shift=${event.shiftKey} meta=${event.metaKey} ` +
           `repeat=${event.repeat}`,
+        ],
       }).catch(() => undefined);
     };
 

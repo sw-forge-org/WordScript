@@ -59,10 +59,11 @@ test/lint/build command an agent has no success signal and cannot iterate.
   `processing` session id. Discard late results after abort or a new capture
   and note them in the runtime log only.
 - A session ends in exactly one reducer commit, together with the surface that
-  reports it. The `wordscript-native-event` channel mirrors session status but
-  must never set `status`, `pendingResult`, `previewStaged` or
-  `resultSurfaceOpen` -- it arrives one commit before the authoritative
-  `wordscript-event` transcription. See ADR 0018 for the derivation.
+  reports it -- on EVERY path, the timeout fallback included, and once ended its
+  surface is never re-decided. The `wordscript-native-event` channel mirrors
+  session status but must never set `status`, `pendingResult`, `previewStaged`
+  or `resultSurfaceOpen` -- it arrives one commit before the authoritative
+  `wordscript-event` transcription. See ADR 0018 and ADR 0019.
 - Never commit or hardcode secrets; use the OS secret store or env vars. The
   Groq API key lives in the OS secret store and the JSON config is scrubbed on
   save.

@@ -214,7 +214,8 @@ no account. Entities:
     authoritative one ends the session in the UI reducer; the mirror carries the
     transcript text and nothing else, so `status` and the surface that reports
     it flip in one commit (ADR 0018). A bounded fallback ends the session if the
-    authoritative event never arrives.
+    authoritative event never arrives — with its surface, and without letting a
+    late authoritative event re-decide it (ADR 0019).
 
 ### Clipboard-only commit
 

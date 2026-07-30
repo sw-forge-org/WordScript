@@ -1,9 +1,13 @@
 # Bug: Overlay Ghosting and State Bleeding
 
 Status: **Compositor cause resolved (2026-07-08); the `auto_paste` unmount gap
-reopened and was closed again (2026-07-29). One axis still open: the same
-failure is reported as absent in `Auto` and present in the other five
-processing modes -- see the 2026-07-29 addendum.**
+reopened and was closed again (2026-07-29, ADR 0018). Reported again on a build
+that already contained that fix. Three further re-entry points into the same gap
+class have been closed (ADR 0019), the third one — the edit surface leaving its
+own hold mid-fade — found by measurement on 2026-07-30. The instrumented run also
+DISPROVED a stalled-leave hypothesis and showed the trace itself had been the
+unreliable part. The screenshot's exact stacking is still not reproduced, and the
+mode axis is still open.**
 
 First reported: Phase 2 follow-up after extended real-world use
 Affected area: Linux WebKitGTK overlay surface transitions
@@ -111,6 +115,118 @@ sync, and no test covered the `auto_paste` ordering at all.
 Fix: the native channel no longer ends a session. See
 [ADR 0018](../decisions/0018-the-end-of-a-session-belongs-to-exactly-one-event.md).
 
+## Addendum 2026-07-29 (second): reproduced on a build that already had the fix
+
+The failure was reported again from a running dev instance started at 21:12:05,
+after the ADR 0018 commit at 21:04:20, on a clean tree. The fix is in the build.
+There is a further cause.
+
+What that instance actually did, from its own records:
+
+- One dictation, 21:13:04 to 21:13:06. Processing mode `cleanup`, delivery
+  `clipboard_only`. It is the only session in the process, so the screenshot
+  belongs to it.
+- `/tmp/kilo/overlay-diag.log` shows one transition: `compact`
+  (`pillW=281`, `modeW=77`) to `processing_preview` (`pillW=444`). A 163px width
+  jump inside the fixed 480x60 window. No `result_actions` surface ever existed.
+
+So the overlap sits on `compact -> processing_preview`, on the `clipboard_only`
+path -- not on the `compact -> result_actions` transition that ADR 0011a and
+ADR 0018 addressed, and not on `auto_paste`, which both addenda above called
+structurally exclusive.
+
+Two re-entry points into the same gap class were found by reading and closed
+(ADR 0019). Neither is proven to be *this* report's cause; both were reachable:
+
+1. **`NATIVE_SYNC_TIMEOUT` ended a session without a surface.** The fallback
+   ADR 0018 added set `status: "idle"` and cleared `pendingResult`, but not
+   `resultSurfaceOpen`. A late authoritative event then flipped that false to
+   true one commit later -- the ADR 0018 two-commit gap, re-entered through the
+   ADR 0018 fallback. It now ends the session with its surface, and a session
+   that has already ended never has its surface re-decided.
+2. **`pillVisualEpoch` did not cover the preview surface's clipboard chrome.**
+   `previewClipboardOnly` entered the epoch only as
+   `previewClipboardOnly && renderResultPreview`. On the processing preview the
+   same flag swaps Copy for Insert and toggles `pill--clipboard`, so that
+   surface could change its visual identity with no native repaint behind it --
+   which on WebKitGTK is the condition under which the previous raster stays.
+
+### The measurement, and what it overturned
+
+Ran on 2026-07-30 with `VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1`: 2085 trace
+lines, nine sessions, `#1`..`#2085` contiguous (no lost writes).
+
+**A stalled leave was hypothesized and disproved.** A first instrumented run
+appeared to show the `leaving -> idle` transition never running on its own
+240 ms timer, arriving instead with the next activation — 1.2 s, 61.6 s and
+258.0 s in three consecutive closes. That reading was an artifact of the
+instrumentation: the trace flushed its buffer on `requestAnimationFrame`, and
+WebKitGTK pauses rAF for the not-visible overlay, so lines emitted during the
+leave sat in the buffer until the next wake. The `[epoch-ms]` prefix is the
+FLUSH time, so the backlog read as a stall. With a microtask flush the same
+transition measures 241-246 ms in 9 of 9 closes, and the heartbeat — extended to
+cover `overlayMotion !== "idle"` for exactly this question — reports zero stalls
+across the whole run. There is no throttled timer and no un-parked window.
+
+Two lessons worth keeping: a diagnostic that batches on the frame clock cannot
+be trusted in a window where the frame clock is the suspect, and a flush-time
+prefix must never be read as an emit time.
+
+**The defect the run did find: the edit surface leaves its own hold mid-fade.**
+In 4 of 5 edit closes the rendered surface was `edit_mode` at the commit where
+`isActive` went false and `compact` at the very next commit — the one where
+`motion` becomes `leaving`, i.e. the instant the fade starts:
+
+```
+#1379 live=edit_mode surface=edit_mode motion=open    active=true
+#1380 live=compact   surface=edit_mode motion=open    active=false   hold engaged
+#1381 live=compact   surface=compact   motion=leaving active=false   hold gone
+```
+
+`renderEditHold` required `editText.trim().length > 0`. A confirmed edit ends the
+session, the new `lastResult` fires the interaction-reset effect, that clears
+`editText`, and the hold's own condition went false while the overlay was still
+visibly fading. Unmounting a surface mid-fade is the orphaned-layer mechanism at
+the top of this document, reached from a fourth direction.
+
+Fixed by giving the edit hold a frozen frame (`lastEditTextSnapshotRef`), the
+same pattern the processing hold already used. Pinned by
+`OverlayWindow.test.tsx` "keeps painting the edit surface through the fade after
+the text is cleared" — without the fix the pill shell is `null`.
+
+**Also measured, and by existing design:** a result surface closed by an
+abort/empty has no hold at all (`renderResultPreview` needs `previewResult`,
+which `EMPTY` nulls), so its fade runs with no surface. ADR 0018 calls that
+exclusion correct — an abort has nothing worth replaying — so it stands, but it
+is the remaining place where a visible fade has no painted surface.
+
+**Still not reproduced:** the exact stacking in the 2026-07-29 screenshot. Nine
+sessions produced no frame with two surfaces. The edit-hold defect is in the same
+failure class and on a surface the user does use, but it is not proof of that
+screenshot.
+
+### The diagnostics were not trustworthy enough to measure with
+
+The `[ov-*]` trace is read to decide whether an effect ran. `diagLog` fired one
+fire-and-forget `invoke` per line, and concurrent Tauri commands are not ordered
+against each other, so a line could be reordered or lost. The 21:13 log has an
+`[ov-sched]` from the epoch effect on the `processing_preview` commit with no
+`[ov-repaint]` in front of it -- which could mean the effect was skipped by one
+of its three guards, or that the write was lost. The log could not tell those
+apart.
+
+Lines now carry a monotonic `#n` and are flushed on a **microtask**, so a gap in
+the numbering is visible and the flush does not depend on the frame clock. The
+first attempt batched on `requestAnimationFrame` and produced the false stall
+described above — see that section before changing this again. Also note that the
+21:13 run had no `[ov-render]` lines at all: `RENDER_TRACE_ENABLED` needs
+`VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1`, and the instance was started without
+it. It was not an instrumented run.
+
+The `[ov-beat]` heartbeat now also covers `overlayMotion !== "idle"`, not just an
+active session, so a suspended main thread in the leave window is observable
+instead of inferred.
+
 ### Still open: the mode axis
 
 The same report says the failure is absent in `Auto` and present in the other
@@ -130,12 +246,27 @@ Measure before acting, with the diagnostics that already exist
 VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1 npm run tauri dev
 ```
 
-One dictation in `Auto` and one in `Cleanup`, same profile
-(`insert_behavior: auto_paste`), same text length; then diff the `[ov-render]` /
-`[ov-sched]` / `[ov-repaint]` / `[ov-reveal]` lines. `[ov-repaint]` already logs
-`pillW` and `modeW`. Identical sequences with a ~27px `pillW` difference means
-the gap fix above was the only cause and the mode was a visibility modifier;
-diverging sequences mean a separate cause.
+Since the second addendum the delivery mode has to be varied as well -- the live
+report is now on `clipboard_only`, which the earlier analysis had treated as the
+safe path. Four dictations, same profile, same text length, log cleared between
+runs:
+
+| # | Processing mode | Delivery |
+| --- | --- | --- |
+| 1 | `auto` | `clipboard_only` |
+| 2 | `cleanup` | `clipboard_only` |
+| 3 | `auto` | `auto_paste` |
+| 4 | `cleanup` | `auto_paste` |
+
+Then diff the `[ov-render]` / `[ov-sched]` / `[ov-repaint]` / `[ov-reveal]`
+lines. `[ov-repaint]` already logs `pillW` and `modeW`; `[ov-render]` shows
+whether any commit rendered without a surface. Three questions the diff answers:
+does a `[ov-repaint]` accompany the `compact -> processing_preview` commit at
+all; do the sequences differ between modes beyond the ~27px `pillW`; and is the
+`#n` numbering contiguous (a gap means a lost line, not a skipped effect).
+
+Identical sequences with a ~27px `pillW` difference means the mode was a
+visibility modifier; diverging sequences mean a separate cause.
 
 A geometry change is out of scope by product decision. If a residual remains
 after the gap fix, it is measured and recorded here, not bought back
@@ -151,10 +282,15 @@ cosmetically.
 - The native completion sync does not end the session on its own: the compact
   processing surface keeps the pill until the authoritative transcription
   arrives, then hands it to result-actions in one commit.
+- The 1500 ms fallback ends the session WITH its surface, and an authoritative
+  event arriving after it updates that surface in place instead of mounting a
+  second one.
+- A delivery-mode change on the processing preview forces a native repaint.
 - Validate in the native Linux host as well as with `npm run build` and tests.
 
 ## References
 
+- [ADR 0019](../decisions/0019-every-path-that-ends-a-session-owes-the-surface-that-reports-it.md): the fallback and epoch re-entry points
 - [ADR 0018](../decisions/0018-the-end-of-a-session-belongs-to-exactly-one-event.md): the event-ordering fix
 - [ADR 0011a](../decisions/0011a-one-decision-surface-per-delivery-mode.md): the effect-ordering fix
 - [REFERENCE.md](../REFERENCE.md): Linux overlay constants and CSS invariants

@@ -127,7 +127,8 @@ governs the content, not the identifier the record is filed under, and a record
 whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
-file two ADRs under one number: the next decision takes 0018.
+file two ADRs under one number: 0018 and 0019 are filed, the next decision takes
+0020.
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

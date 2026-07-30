@@ -63,6 +63,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The 1.5 s completion fallback no longer ends a session without a surface.**
+  The fallback introduced with ADR 0018 set the session to idle but left
+  `resultSurfaceOpen` untouched, so an authoritative transcription arriving
+  after it flipped the result surface on one commit later — the exact
+  two-commit gap ADR 0018 had removed, reachable again through the mechanism
+  ADR 0018 added. The fallback now ends the session together with the surface
+  that reports it, built from the transcript the native channel actually
+  mirrored and with every field the authoritative event owns left null rather
+  than guessed. A session that has already ended never has its surface
+  re-decided: a late authoritative event updates the open surface in place
+  instead of mounting a second one. ADR 0019.
+- **A delivery-mode change on the processing preview forces a native repaint.**
+  `previewClipboardOnly` swaps the preview's primary button between Copy and
+  Insert and toggles `pill--clipboard`, but it only entered `pillVisualEpoch`
+  for the result surface. The preview could therefore change its visual identity
+  with no native repaint behind it, which on WebKitGTK is the condition under
+  which the previous raster stays. ADR 0019.
+- **A normalized `work_mode` is written back to disk instead of being
+  recomputed forever.** `should_save` did not count a profile normalization, so
+  the legacy `insert_behavior` token `"clipboard"` survived on disk and forced
+  that profile to clipboard-only on every single load, regardless of what the
+  user had selected — the reported "the delivery mode switches itself back".
+  The P1 diagnostic recorded that correction 183 times across two runtime logs,
+  which is the same statement as "never persisted". A canonical config still
+  reports no rewrite, so this does not trade a silent revert for a config
+  written on every load. ADR 0019,
+  `docs/known-issues/insert-behavior-reverts.md`.
+- **The edit surface keeps painting through its own fade.** The leave hold
+  required the live `editText` to be non-empty, but a confirmed edit ends the
+  session, the new result fires the interaction-reset effect, and that clears
+  `editText` — so the surface was pulled out from under its own hold at the
+  instant the fade started, measured in 4 of 5 edit closes. The hold now paints
+  from a frozen frame captured while the surface was live, the same pattern the
+  processing hold already used. ADR 0019.
+- **The overlay diagnostics no longer lose lines silently, and no longer go
+  quiet where they are being read.** `[ov-*]` output was one fire-and-forget
+  `invoke` per line, and concurrent Tauri commands are not ordered against each
+  other — so a missing `[ov-repaint]` next to its `[ov-sched]` was
+  indistinguishable from an effect that never ran, which is the one distinction
+  that log exists to make. Lines now carry a monotonic `#n` and are flushed on a
+  microtask. Not `requestAnimationFrame`: WebKitGTK pauses that for the
+  not-visible overlay, which buffered every line emitted during the leave until
+  the next wake and made a healthy 243 ms transition read as a 258-second stall.
+  The `[ov-beat]` heartbeat now also covers the leave window, so a suspended
+  main thread there is observable instead of inferred.
 - **The result overlay no longer stacks on a processing overlay that never went
   away.** A finished dictation is announced twice — first the native session
   mirror, then the authoritative transcription — as two IPC messages and

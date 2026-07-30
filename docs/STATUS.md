@@ -137,12 +137,31 @@ Status: 2026-07-25
   still appear during rapid mode changes.
 - the `auto_paste` unmount gap that let the result surface stack on a
   processing surface is closed on both axes: the effect ordering (ADR 0011a)
-  and the event ordering (ADR 0018). Still open is why the same failure was
-  reported as absent in `Auto` and present in the other five processing modes;
-  no code path links `ProcessingMode` to the surface decision, so the mode is
-  most likely a visibility modifier and is to be measured with the `[ov-*]`
-  diagnostics before anything is changed
+  and the event ordering (ADR 0018). Two further re-entry points into the same
+  gap class are closed as well (ADR 0019): the 1.5 s completion fallback now
+  ends a session together with its surface and a late authoritative event
+  updates that surface in place, and the delivery-dependent chrome of the
+  processing preview now forces a native repaint.
+  A third re-entry point was found by measurement on 2026-07-30 and closed: the
+  edit surface left its own leave hold at the instant the fade started, in 4 of 5
+  edit closes, because the hold was keyed on the live `editText` that the
+  interaction-reset effect clears. It now paints from a frozen frame.
+  **Not resolved:** the exact stacking reported on 2026-07-29 is still not
+  reproduced — nine instrumented sessions produced no frame with two surfaces.
+  A stalled-leave hypothesis was measured and disproved; the transition runs at
+  241-246 ms in 9 of 9 closes, and the apparent stall was the trace's own
+  rAF-based flush, since corrected to a microtask. The mode axis also stays open
+  (absent in `Auto`, present in the other five processing modes — no code path
+  links `ProcessingMode` to the surface decision, and the preview surface has no
+  ModeChip geometry at all, so the mode is most likely a visibility modifier)
   ([known-issues/overlay-ghosting.md](known-issues/overlay-ghosting.md))
+- the delivery mode reverting itself to clipboard-only has a second mechanism
+  found and fixed (ADR 0019): a normalized `work_mode` was corrected in memory
+  on every config load and never written back, so a legacy `insert_behavior`
+  token on disk forced that profile to clipboard-only on every start. Open is
+  whether a writer of the non-canonical token exists; the P1 diagnostic is the
+  instrument
+  ([known-issues/insert-behavior-reverts.md](known-issues/insert-behavior-reverts.md))
 - persistent native transcription history with retry, delete/clear,
   server-side filters, JSON export and a separate diagnostics view from
   transient runtime logs

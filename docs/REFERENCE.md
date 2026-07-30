@@ -77,8 +77,11 @@ Status: 2026-07-25
 ### Transcript delivery modes (delivery contract)
 
 Set per text profile as `work_mode.insert_behavior`; the settings label is
-"Transcript delivery" under *Insert & Recovery*. Unknown values normalize to
-`auto_paste`.
+"Transcript delivery" under *Insert & Recovery*. The legacy tokens `"clipboard"`
+and `"manual"` normalize to `clipboard_only`, unknown values to `auto_paste`,
+and the normalized form is persisted rather than recomputed on every load — if
+it is not, a legacy token pins the profile to clipboard-only forever (ADR 0019,
+[known-issues/insert-behavior-reverts.md](known-issues/insert-behavior-reverts.md)).
 
 | Value | UI label | Decision surface | Edit means |
 |---|---|---|---|

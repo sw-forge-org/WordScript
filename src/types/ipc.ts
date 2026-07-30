@@ -437,4 +437,12 @@ export interface RuntimeState {
    *  "idle", so the overlay never renders a frame where the session has ended
    *  but no surface has taken over. */
   resultSurfaceOpen: boolean;
+  /** What the `wordscript-native-event` channel mirrored for the current
+   *  session, or null. Set by the completion sync, which by itself never ends
+   *  the session (ADR 0018). Two readers: the NATIVE_SYNC_TIMEOUT fallback
+   *  builds its result from it when the authoritative event never arrives, and
+   *  its presence on an already-idle session identifies a late authoritative
+   *  event — one that must merge into the open surface rather than open a
+   *  second one. Cleared at every session boundary. */
+  nativeSyncMirror: { finalText: string; corrected: boolean } | null;
 }

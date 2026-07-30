@@ -9,12 +9,26 @@ status change. Resolved bugs remain as references for the same failure class.
 - [overlay-ghosting.md](overlay-ghosting.md): resolved WebKitGTK transition
   state bleeding (2026-07-08). The `auto_paste` unmount gap reopened on the
   event axis and was closed again on 2026-07-29 (ADR 0018): the native
-  completion event no longer ends a session. One axis stays open — the same
-  failure was reported as absent in `Auto` and present in the other five
-  processing modes; the mode is most likely a visibility modifier, and it is to
-  be measured with the `[ov-*]` diagnostics before anything is changed. The
-  separate accepted mode-cycling residual is recorded in the
+  completion event no longer ends a session. Then reported again from a build
+  that already contained that fix, this time on the `clipboard_only`
+  `compact -> processing_preview` transition. Three further re-entry points into
+  the same gap class were closed (ADR 0019), the third — the edit surface leaving
+  its own hold mid-fade — found by measurement on 2026-07-30. That run also
+  disproved a stalled-leave hypothesis and showed the `[ov-*]` trace itself had
+  been the unreliable part (rAF flush in a window where rAF is paused; now a
+  microtask). The screenshot's exact stacking is still not reproduced. The mode
+  axis stays open — the same failure was reported as absent in `Auto` and present in the
+  other five processing modes; the mode is most likely a visibility modifier,
+  and it is to be measured before anything is changed. The separate accepted
+  mode-cycling residual is recorded in the
   [accepted-state hand-off](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md).
+- [insert-behavior-reverts.md](insert-behavior-reverts.md): the delivery mode
+  switching itself back to clipboard-only. Two mechanisms found and fixed
+  (`92ce7f5` 2026-07-03, ADR 0019 2026-07-29); the second was a normalized
+  `work_mode` that was corrected in memory on every load and never persisted,
+  recorded 183 times by the P1 diagnostic. Open: whether a writer of the
+  non-canonical token exists. Also documents how to tell a config revert from a
+  runtime insert fallback.
 - [overlay-placement-persist.md](overlay-placement-persist.md): resolved
   remembered overlay drag-position failure (2026-07-08).
 - [overlay-drag-session-never-ends.md](overlay-drag-session-never-ends.md):

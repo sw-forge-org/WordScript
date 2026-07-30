@@ -374,6 +374,214 @@ describe("useRuntime", () => {
     }
   });
 
+  // The fallback ends a session, so it owes the same atomic swap the
+  // authoritative commit gives: idle AND the surface that reports it, together.
+  // Ending it without a surface left `resultSurfaceOpen` false, and a late
+  // authoritative event flipped it true one commit later — the ADR 0018 gap,
+  // re-entered through the fallback ADR 0018 introduced. On auto_paste the last
+  // visible surface is "compact", which the leave hold refuses, so that gap
+  // unmounts the pill and orphans its compositor layers on WebKitGTK.
+  it("ends an auto_paste session with a result surface when the fallback fires", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRuntime());
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      await act(async () => {
+        emit("wordscript-event", { event: "processing" });
+        emit("wordscript-native-event", {
+          event: "transcription_corrected",
+          status: { last_transcript: "Wir shippen das morgen.", last_error: null },
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(result.current.state.status).toBe("idle");
+      expect(result.current.state.resultSurfaceOpen).toBe(true);
+      expect(result.current.state.lastResult?.final_text).toBe("Wir shippen das morgen.");
+      // The native channel distinguishes transcription from
+      // transcription_corrected, so this one is known, not guessed.
+      expect(result.current.state.lastResult?.corrected).toBe(true);
+      // Everything the authoritative event owns stays unknown rather than
+      // being invented — the overlay must not show a delivery that was never
+      // reported.
+      expect(result.current.state.lastResult?.delivery).toBeNull();
+      expect(result.current.state.lastResult?.provider).toBeNull();
+      expect(result.current.state.lastResult?.work_mode).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a late authoritative event update the open surface instead of re-opening it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRuntime());
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      await act(async () => {
+        emit("wordscript-event", { event: "processing" });
+        emit("wordscript-native-event", {
+          event: "transcription",
+          status: { last_transcript: "Wir shippen das morgen.", last_error: null },
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(result.current.state.resultSurfaceOpen).toBe(true);
+      const openedAt = result.current.state.lastResult?.occurred_at_ms;
+
+      // Move the clock so a re-stamped `occurred_at_ms` would be visible. The
+      // stamp drives the overlay's result effect, which resets the interaction
+      // flags and restarts the auto-close timer — the surface has been on screen
+      // since the fallback and must not be treated as freshly arrived.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+
+      await act(async () => {
+        emit("wordscript-event", {
+          event: "transcription",
+          text: "Wir shippen das morgen.",
+          corrected: true,
+          provider: "groq",
+          active_profile: "Support reply",
+          raw_text: "ähm wir shippen das morgen",
+          work_mode: {
+            rewrite_style: "polished",
+            insert_behavior: "auto_paste",
+            recovery_behavior: "standard",
+          },
+          transform: { applied_rules: [], warning: null },
+          delivery: "inserted",
+        });
+      });
+
+      // The richer payload lands, but the surface stays the one that is already
+      // on screen: no false→true flip, and the occurrence stamp does not move,
+      // so the surface is updated in place rather than mounted a second time.
+      expect(result.current.state.resultSurfaceOpen).toBe(true);
+      expect(result.current.state.lastResult?.delivery).toBe("inserted");
+      expect(result.current.state.lastResult?.provider).toBe("groq");
+      expect(result.current.state.lastResult?.occurred_at_ms).toBe(openedAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The degenerate fallback: the native status carried no transcript, so the
+  // fallback ended the session with nothing to show and the overlay tore down.
+  // A late authoritative event must not mount a result surface into that — the
+  // session is over and its pill is gone, which is exactly the unmount-then-
+  // mount sequence that orphans compositor layers on WebKitGTK. It still takes
+  // the payload, so history and the transcript stay correct.
+  it("does not open a surface for a session the fallback already closed empty-handed", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRuntime());
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      await act(async () => {
+        emit("wordscript-event", { event: "processing" });
+        emit("wordscript-native-event", {
+          event: "transcription",
+          status: { last_transcript: "", last_error: null },
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(result.current.state.status).toBe("idle");
+      expect(result.current.state.resultSurfaceOpen).toBe(false);
+
+      await act(async () => {
+        emit("wordscript-event", {
+          event: "transcription",
+          text: "Wir shippen das morgen.",
+          corrected: true,
+          provider: "groq",
+          active_profile: "Support reply",
+          raw_text: "ähm wir shippen das morgen",
+          work_mode: {
+            rewrite_style: "polished",
+            insert_behavior: "auto_paste",
+            recovery_behavior: "standard",
+          },
+          transform: { applied_rules: [], warning: null },
+          delivery: "inserted",
+        });
+      });
+
+      expect(result.current.state.resultSurfaceOpen).toBe(false);
+      expect(result.current.state.lastTranscription).toBe("Wir shippen das morgen.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // One decision surface per delivery mode holds in the fallback too: a
+  // clipboard_only run already decided on the processing preview.
+  it("opens no result surface when the fallback fires on a clipboard_only run", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRuntime());
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      await act(async () => {
+        emit("wordscript-event", { event: "processing" });
+        emit("wordscript-event", {
+          event: "preview_ready",
+          text: "Wir shippen das morgen.",
+          corrected: true,
+          provider: "groq",
+          active_profile: "Support reply",
+          raw_text: "ähm wir shippen das morgen",
+          work_mode: {
+            rewrite_style: "polished",
+            insert_behavior: "clipboard_only",
+            recovery_behavior: "standard",
+          },
+          transform: { applied_rules: [], warning: null },
+        });
+        emit("wordscript-native-event", {
+          event: "transcription",
+          status: { last_transcript: "Wir shippen das morgen.", last_error: null },
+        });
+      });
+
+      expect(result.current.state.previewStaged).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(result.current.state.status).toBe("idle");
+      expect(result.current.state.resultSurfaceOpen).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not end the session late when the authoritative event already arrived", async () => {
     vi.useFakeTimers();
     try {
