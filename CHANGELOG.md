@@ -31,6 +31,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Profile context now reaches every mode at the same width.** The same field,
+  `TextProfile.prompt`, arrived in three different shapes: Cleanup and Rewrite
+  pushed it through the *transcription* hint filter (a line survived only at ≤4
+  words and with a capital, digit or punctuation in it), while Agent and Prompt
+  Enhance took it raw, untruncated and uncapped. On the curated
+  `Product and engineering` profile that meant 2 of 8 lines for Cleanup and all 8
+  for Agent. The split was never decided — `git log -L` shows the filter arriving
+  in `transform.rs` as a side effect of a commit about STT bias, two months
+  before ADR 0017 documented the reasoning for the recognizer path it was
+  actually built for. `core::profile_context` is now the single producer for all
+  modes: normalized, deduplicated, 80 chars per line, and the block bounded by a
+  600-character budget. The mode decides the framing — corrective for Cleanup and
+  Rewrite, generative for Agent — never the width. The recognizer filter is
+  untouched and stays recognizer-only (ADR 0021).
+
+  Verified by replaying 96 real history transcripts twice through the production
+  correction path (192 provider calls): widening Cleanup from 2 lines to 8 left
+  74% of outputs identical, produced **zero** occurrences of the six previously
+  dropped context lines, and did not increase divergence from the transcript.
+  The change is safe and simplifying, not an improvement — recorded that way on
+  purpose.
+
+- **Agent's prompt is bounded.** Its dictionary, snippet and `stt_hints` blocks
+  grew with the profile and had no cap; they now use the same limits as the
+  correction prompt.
+
+- **The context field is now called "Profile context", not "Transcription
+  context".** The old name described the minority consumer: the field goes to
+  every mode's transform prompt in full, and only a filtered subset reaches the
+  recognizer. The card now shows how much of the 600-character budget the profile
+  spends and names any line that exceeds it, because a bound the user cannot see
+  is indistinguishable from a bug.
+
+- **Two UI strings stopped overclaiming.** The Text Rules warning and the
+  Profiles panel said broad context lines "are not forwarded automatically".
+  That is true only of the recognizer, so both now say so and add that the lines
+  still reach the transform prompt.
+
+### Fixed
+
+- **The recognizer preview showed an initial prompt the provider never
+  received.** ADR 0017 made `use_as_prompt_hint` the single per-entry control
+  over what reaches Whisper, and the capture path honours it
+  (`prompt_hint_phrases`). The Settings panel did not: it sent the legacy
+  `stt_hints` free-text field — which migration copies from but never clears —
+  into `analyze_text_rules`. With every vocabulary toggle off, the panel
+  displayed `Likely phrases: triage summary; release note; qa handoff; incident
+  update` while the request carried no initial prompt at all, and flipping a
+  toggle changed nothing on screen. `AnalyzeTextRulesRequest` now carries
+  `vocabulary_hints` and the analysis derives the phrases the way the capture
+  path does. Imported documents, which predate the per-entry opt-in, still fall
+  back to the legacy field.
+
+- **The Profiles tab stopped using three names for the same place.** The tab
+  said "Vocabulary", its panel header said "Context & Preview", and the
+  replacements card said "Personal dictionary" under a tab labelled
+  "Replacements". Panel titles now match their tabs. "Step 1 of 4" is gone — the
+  three lists are independent, not a sequence, and the fourth step it counted
+  (Bias policy) stopped existing with ADR 0017. "Words & names" moved out of the
+  "Profile context" card into its own, which is why the difference between a
+  free-text topic list and a per-term recognizer opt-in was hard to see. A
+  three-column note grid, a four-line paragraph on prompt length and a trailing
+  note about team sharing were removed.
+
 ### Removed
 
 - **The three "Cleanup settings" toggles, because none of them reached the

@@ -69,11 +69,24 @@ export interface TextRulesBiasPreview {
   effective_stt_hints_source: string;
 }
 
+/**
+ * What the runtime does with the profile context field. Mirrors
+ * `core::profile_context::ProfileContextBudget`; the UI renders it rather than
+ * recomputing the budget, so the boundary shown is the one actually applied.
+ */
+export interface ProfileContextBudget {
+  accepted: string[];
+  dropped: string[];
+  used_chars: number;
+  max_chars: number;
+}
+
 export interface TextRulesAnalysis {
   blocking: boolean;
   issues: TextRulesIssue[];
   preview: TextRulesPreview;
   transcription_bias: TextRulesBiasPreview;
+  profile_context: ProfileContextBudget;
   dictionary_count: number;
   snippet_count: number;
 }

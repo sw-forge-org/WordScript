@@ -99,6 +99,27 @@ status change. Resolved bugs remain as references for the same failure class.
   cleanup still materially changed 54% of those (German verb order, discourse
   particles, capitalization, internal commas). Records what new evidence would
   reopen it, so the idea is not re-argued from intuition (ADR 0020).
+- [stt-hints-bypass-the-vocabulary-opt-in.md](stt-hints-bypass-the-vocabulary-opt-in.md):
+  fixed (2026-07-30) — the Settings recognizer preview read the legacy
+  `stt_hints` field while the capture path read only opted-in
+  `vocabulary_hints`, so the panel rendered an initial prompt the provider never
+  received and the per-entry toggle changed nothing on screen. The analysis now
+  derives its phrases the way the capture path does. **The record's first
+  version blamed the runtime; that was wrong** — the correction is kept in the
+  file, because the direction of a UI/runtime disagreement is the whole finding.
+- [profile-context-is-written-as-categories.md](profile-context-is-written-as-categories.md):
+  open (2026-07-30) — the curated profiles fill the context field with category
+  labels (`feature names`, `service names`) instead of the terms those
+  categories contain, which helps neither the recognizer nor the corrector much.
+  Explains why ADR 0021's null result is at least as much a statement about the
+  field's content as about the filter that gated it. Owned by Phase 7.
+- [cleanup-invents-tokens-on-broken-input.md](cleanup-invents-tokens-on-broken-input.md):
+  open (2026-07-30) — where the transcript is already damaged (spelled-out
+  letters, an aborted word), the correction prefers a plausible-looking token
+  over leaving the damage visible: `c a u d e code` → `CAUDE-Code`, `politi…
+  äh…` → `politisch`. Found beside ADR 0021 and independent of it. Also records
+  which look-alikes are legitimate German morphology, so a future metric does
+  not count them.
 
 ## Boundaries
 

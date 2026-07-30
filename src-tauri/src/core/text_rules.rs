@@ -6,7 +6,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    config::{BiasMode, DictionaryEntry, ManualBias, SnippetEntry},
+    config::{BiasMode, DictionaryEntry, ManualBias, SnippetEntry, VocabularyHintEntry},
+    profile_context::{profile_context_budget, ProfileContextBudget},
     transcription_hints::{
         analyze_transcription_bias_with_mode, BiasRequestContext, TranscriptionBiasPreview,
     },
@@ -81,6 +82,10 @@ pub struct TextRulesAnalysis {
     pub issues: Vec<TextRulesIssue>,
     pub preview: TextRulesPreview,
     pub transcription_bias: TranscriptionBiasPreview,
+    /// What the transform prompts do with the context field, including the
+    /// lines that exceed the budget. The UI shows this instead of recomputing
+    /// the rule, so the boundary it draws is the one the runtime applies.
+    pub profile_context: ProfileContextBudget,
     pub dictionary_count: usize,
     pub snippet_count: usize,
 }
@@ -88,8 +93,13 @@ pub struct TextRulesAnalysis {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnalyzeTextRulesRequest {
     pub prompt: String,
+    /// Legacy free-text hints. Only consulted when `vocabulary_hints` is empty
+    /// — see `recognizer_phrases`.
     #[serde(default)]
     pub stt_hints: String,
+    /// The per-entry recognizer opt-in that replaced the free-text field.
+    #[serde(default)]
+    pub vocabulary_hints: Vec<VocabularyHintEntry>,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
     pub sample_text: Option<String>,
@@ -459,10 +469,17 @@ pub fn get_profile_health(request: GetProfileHealthRequest) -> Result<ProfileHea
 #[tauri::command]
 pub fn analyze_text_rules(request: AnalyzeTextRulesRequest) -> Result<TextRulesAnalysis, String> {
     let bias_context = bias_context_from_request(&request);
+    let recognizer_phrases = recognizer_phrases(&request);
     let document = TextRulesDocument {
         schema_version: TEXT_RULES_SCHEMA_VERSION,
         prompt: request.prompt,
-        stt_hints: request.stt_hints,
+        // The recognizer sees only the entries the user opted in, so the preview
+        // has to derive its phrases the way the capture path does
+        // (`NativeCaptureConfig::from_app_config`). Reading the legacy
+        // `stt_hints` field here is what made the panel promise an initial
+        // prompt the provider never received — the field survives migration but
+        // no longer feeds the recognizer.
+        stt_hints: recognizer_phrases,
         dictionary_entries: request.dictionary_entries,
         snippet_entries: request.snippet_entries,
     };
@@ -471,6 +488,27 @@ pub fn analyze_text_rules(request: AnalyzeTextRulesRequest) -> Result<TextRulesA
         request.sample_text.as_deref(),
         &bias_context,
     ))
+}
+
+/// The phrases the recognizer would actually receive for this request.
+///
+/// `vocabulary_hints` is the authority (ADR 0017). The legacy `stt_hints` string
+/// is only honoured when the caller sent no vocabulary block at all, which is
+/// the import path — an imported document predates the per-entry opt-in and has
+/// nowhere else to carry its phrases.
+fn recognizer_phrases(request: &AnalyzeTextRulesRequest) -> String {
+    if request.vocabulary_hints.is_empty() {
+        return request.stt_hints.clone();
+    }
+
+    request
+        .vocabulary_hints
+        .iter()
+        .filter(|entry| entry.use_as_prompt_hint)
+        .map(|entry| entry.phrase.trim())
+        .filter(|phrase| !phrase.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn bias_context_from_request(
@@ -686,6 +724,7 @@ pub fn analyze_document_with_context(
             applied_rules,
         },
         transcription_bias,
+        profile_context: profile_context_budget(&document.prompt),
         dictionary_count: document.dictionary_entries.len(),
         snippet_count: document.snippet_entries.len(),
     }
@@ -753,7 +792,7 @@ fn bias_warning_issues(
             TextRulesIssueSeverity::Warning,
             TextRulesIssueCode::BroadProfileContextIgnored,
             format!(
-                "{} context line(s) are too broad for the automatic STT bias path and will be ignored. Keep automatic context lexical and concrete.",
+                "{} context line(s) are too broad for the automatic STT bias path and will not reach the recognizer. They still reach the transform prompt. Keep recognizer context lexical and concrete.",
                 bias.ignored_profile_lines.len()
             ),
             Vec::new(),
@@ -994,6 +1033,76 @@ fn import_path(path: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn vocabulary_request(
+        stt_hints: &str,
+        hints: Vec<(&str, bool)>,
+    ) -> AnalyzeTextRulesRequest {
+        AnalyzeTextRulesRequest {
+            prompt: String::new(),
+            stt_hints: stt_hints.to_string(),
+            vocabulary_hints: hints
+                .into_iter()
+                .enumerate()
+                .map(|(index, (phrase, opted_in))| VocabularyHintEntry {
+                    id: format!("vocab-{index}"),
+                    phrase: phrase.to_string(),
+                    use_as_prompt_hint: opted_in,
+                })
+                .collect(),
+            dictionary_entries: Vec::new(),
+            snippet_entries: Vec::new(),
+            sample_text: None,
+            bias_mode: Some("conservative".to_string()),
+            local_prompt_strength: None,
+            local_prompt_carry: None,
+            manual_bias: None,
+        }
+    }
+
+    /// The regression: the panel showed the legacy `stt_hints` lines as the
+    /// recognizer prompt while the capture path sent only opted-in vocabulary,
+    /// so toggling an entry changed nothing on screen.
+    #[test]
+    fn recognizer_preview_follows_the_per_entry_opt_in_not_the_legacy_field() {
+        let analysis = analyze_text_rules(vocabulary_request(
+            "triage summary\nrelease note",
+            vec![("Kubernetes", false), ("Grafana", false)],
+        ))
+        .expect("analysis");
+
+        assert!(
+            analysis.transcription_bias.stt_hints.is_empty(),
+            "no entry is opted in, so the recognizer gets nothing: {:?}",
+            analysis.transcription_bias.stt_hints
+        );
+        let cloud = analysis.transcription_bias.cloud_prompt_preview.unwrap_or_default();
+        assert!(!cloud.contains("triage summary"), "legacy field must not leak: {cloud}");
+    }
+
+    #[test]
+    fn opting_an_entry_in_puts_it_in_the_recognizer_preview() {
+        let analysis = analyze_text_rules(vocabulary_request(
+            "triage summary",
+            vec![("Kubernetes", true), ("Grafana", false)],
+        ))
+        .expect("analysis");
+
+        assert_eq!(analysis.transcription_bias.stt_hints, vec!["Kubernetes"]);
+        let cloud = analysis.transcription_bias.cloud_prompt_preview.unwrap_or_default();
+        assert!(cloud.contains("Likely phrases: Kubernetes"), "{cloud}");
+        assert!(!cloud.contains("Grafana"));
+    }
+
+    /// An imported document predates the per-entry opt-in and carries its
+    /// phrases nowhere else, so the legacy field still applies there.
+    #[test]
+    fn an_import_without_vocabulary_entries_still_uses_the_legacy_field() {
+        let analysis = analyze_text_rules(vocabulary_request("imported phrase", Vec::new()))
+            .expect("analysis");
+
+        assert_eq!(analysis.transcription_bias.stt_hints, vec!["imported phrase"]);
+    }
 
     #[test]
     fn flags_empty_entries_and_duplicates() {

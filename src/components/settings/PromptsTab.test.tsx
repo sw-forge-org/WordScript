@@ -9,6 +9,15 @@ const invokeMock = vi.fn();
 const openMock = vi.fn();
 const saveMock = vi.fn();
 
+/// The runtime owns the context budget; tests set what it would report.
+/// Mirrors `core::profile_context::ProfileContextBudget`.
+let profileContextResponse = {
+  accepted: [] as string[],
+  dropped: [] as string[],
+  used_chars: 0,
+  max_chars: 600,
+};
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
@@ -41,6 +50,7 @@ describe("PromptsTab", () => {
 
     openMock.mockResolvedValue(null);
     saveMock.mockResolvedValue(null);
+    profileContextResponse = { accepted: [], dropped: [], used_chars: 0, max_chars: 600 };
     invokeMock.mockImplementation(async (command: string, payload?: { request?: { sample_text?: string } }) => {
       if (command === "analyze_text_rules") {
         const sampleText = payload?.request?.sample_text?.trim() || "word script follow up note";
@@ -59,6 +69,7 @@ describe("PromptsTab", () => {
             ignored_profile_lines: [],
             ignored_stt_hint_lines: [],
           },
+          profile_context: profileContextResponse,
           dictionary_count: 0,
           snippet_count: 0,
         };
@@ -163,6 +174,41 @@ describe("PromptsTab", () => {
     expect(screen.getByText("import preview: custom merge preview")).toBeInTheDocument();
     expect(screen.getByText("Imported snippet expansion is empty.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /apply import/i })).toBeDisabled();
+  });
+
+  it("shows how much of the context budget the profile spends", async () => {
+    profileContextResponse = {
+      accepted: ["release scope", "bug IDs"],
+      dropped: [],
+      used_chars: 120,
+      max_chars: 600,
+    };
+
+    render(<Harness />);
+
+    expect(
+      await screen.findByText(/120 of 600 characters sent to the transform prompt/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/over budget/i)).not.toBeInTheDocument();
+  });
+
+  it("names every context line that exceeds the budget instead of dropping it silently", async () => {
+    // The defect this guards: the first implementation capped at 8 lines, which
+    // was exactly the length of every shipped curated profile, and said nothing
+    // when line 9 disappeared.
+    profileContextResponse = {
+      accepted: ["release scope"],
+      dropped: ["migration steps", "infra constraints"],
+      used_chars: 600,
+      max_chars: 600,
+    };
+
+    render(<Harness />);
+
+    expect(await screen.findByText(/2 line\(s\) over budget/i)).toBeInTheDocument();
+    expect(screen.getByText("migration steps")).toBeInTheDocument();
+    expect(screen.getByText("infra constraints")).toBeInTheDocument();
+    expect(screen.getByText("not sent")).toBeInTheDocument();
   });
 
   it("explains literal matching and preview scope clearly", () => {
@@ -388,7 +434,7 @@ describe("PromptsTab", () => {
 
     await user.clear(profileLabelInput);
     await user.type(profileLabelInput, "Support reply");
-    await user.type(screen.getByRole("textbox", { name: /transcription context/i }), "Escalation contacts");
+    await user.type(screen.getByRole("textbox", { name: /profile context/i }), "Escalation contacts");
 
     await user.click(screen.getByRole("button", { name: /duplicate profile/i }));
 
@@ -397,11 +443,11 @@ describe("PromptsTab", () => {
 
     await user.selectOptions(activeProfileSelect, "general");
     expect(screen.getByRole("textbox", { name: /profile label/i })).toHaveValue("General writing");
-    expect(screen.getByRole("textbox", { name: /transcription context/i })).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: /profile context/i })).toHaveValue("");
 
     await user.selectOptions(activeProfileSelect, duplicatedOption);
     expect(screen.getByRole("textbox", { name: /profile label/i })).toHaveValue("Support reply copy");
-    expect(screen.getByRole("textbox", { name: /transcription context/i })).toHaveValue("Escalation contacts");
+    expect(screen.getByRole("textbox", { name: /profile context/i })).toHaveValue("Escalation contacts");
   });
 
   it("shows included profiles as normal selectable, editable and deletable profiles", async () => {
@@ -414,7 +460,7 @@ describe("PromptsTab", () => {
 
     expect(screen.getByRole("textbox", { name: /profile label/i })).toHaveValue("Customer success replies");
 
-    expect((screen.getByRole("textbox", { name: /transcription context/i }) as HTMLTextAreaElement).value).toContain("Statuspage");
+    expect((screen.getByRole("textbox", { name: /profile context/i }) as HTMLTextAreaElement).value).toContain("Statuspage");
 
     await user.click(screen.getByRole("tab", { name: /open replacements workspace/i }));
     expect(screen.getByDisplayValue("SEV-1")).toBeInTheDocument();
@@ -423,7 +469,7 @@ describe("PromptsTab", () => {
     expect(screen.getByDisplayValue("Status update")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /open vocabulary workspace/i }));
-    const promptField = screen.getByRole("textbox", { name: /transcription context/i }) as HTMLTextAreaElement;
+    const promptField = screen.getByRole("textbox", { name: /profile context/i }) as HTMLTextAreaElement;
 
     await user.clear(promptField);
     await user.type(promptField, "custom org names");

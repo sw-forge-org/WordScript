@@ -477,6 +477,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
     : [resolveActiveTextProfile(config)];
   const activeTextProfile = textProfiles.find((profile) => profile.id === config.active_text_profile_id) ?? textProfiles[0];
   const sttHints = activeTextProfile.stt_hints ?? "";
+  const vocabularyHints = activeTextProfile.vocabulary_hints ?? [];
   const dictionaryEntries = activeTextProfile.dictionary_entries ?? [];
   const snippetEntries = activeTextProfile.snippet_entries ?? [];
   const [sampleText, setSampleText] = useState(DEFAULT_SAMPLE_TEXT);
@@ -525,6 +526,10 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
           request: {
             prompt: activeTextProfile.prompt,
             stt_hints: sttHints,
+            // The recognizer honours the per-entry opt-in, so the preview has to
+            // be given the same list. Sending only the legacy field made the
+            // panel show an initial prompt the provider never received.
+            vocabulary_hints: vocabularyHints,
             dictionary_entries: dictionaryEntries,
             snippet_entries: snippetEntries,
             sample_text: sampleText,
@@ -561,7 +566,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [acknowledgedFlags, activeTextProfile.id, activeTextProfile.prompt, activeTextProfile.work_mode?.bias_mode, activeTextProfile.work_mode?.manual_bias?.cloud_include_profile_terms, activeTextProfile.work_mode?.manual_bias?.local_include_profile_terms, activeTextProfile.work_mode?.manual_bias?.stt_hints_override, activeTextProfile.work_mode?.processing_mode, config.local_prompt_carry, config.local_prompt_strength, dictionaryEntries, onHealthChange, onValidationChange, sampleText, snippetEntries, sttHints]);
+  }, [acknowledgedFlags, activeTextProfile.id, activeTextProfile.prompt, activeTextProfile.work_mode?.bias_mode, activeTextProfile.work_mode?.manual_bias?.cloud_include_profile_terms, activeTextProfile.work_mode?.manual_bias?.local_include_profile_terms, activeTextProfile.work_mode?.manual_bias?.stt_hints_override, activeTextProfile.work_mode?.processing_mode, config.local_prompt_carry, config.local_prompt_strength, dictionaryEntries, onHealthChange, onValidationChange, sampleText, snippetEntries, sttHints, vocabularyHints]);
 
   const applyProfiles = useCallback((nextProfiles: TextProfile[], nextActiveProfileId = activeTextProfileIdRef.current) => {
     onChange(buildTextProfilesPatch(configRef.current, nextProfiles, nextActiveProfileId));
@@ -600,8 +605,6 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
     },
     [updateActiveProfile],
   );
-
-  const vocabularyHints = activeTextProfile.vocabulary_hints ?? [];
 
   const updateVocabularyHint = useCallback(
     (id: string, update: Partial<VocabularyHintEntry>) => {
@@ -832,41 +835,30 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
   const biasSttHints = biasPreview?.stt_hints ?? [];
   const ignoredProfileLines = biasPreview?.ignored_profile_lines ?? [];
   const ignoredSttHintLines = biasPreview?.ignored_stt_hint_lines ?? [];
+  const profileContextBudget = previewSource?.profile_context;
+  const droppedContextLines = profileContextBudget?.dropped ?? [];
   const hasImportedOnlyIssues = Boolean(pendingImport && issueList.some((entry) => entry.rule_ids.some((ruleId) => !currentRuleLookup.has(ruleId))));
   const activePromptLineCount = countPromptLines(activeTextProfile.prompt);
   const activeSttHintLineCount = countPromptLines(activeTextProfile.stt_hints);
   const totalRuleCount = dictionaryEntries.length + snippetEntries.length;
-  const activeWorkspaceCopy = activeWorkspacePanel === "context"
+  // One line per panel. The panel title matches its tab exactly — two names for
+  // one place was the whole confusion. The "Step N of 4" framing is gone: these
+  // are three independent lists, not a sequence, and the fourth step it counted
+  // (Bias policy) stopped existing with ADR 0017.
+  const activeWorkspaceCopy = activeWorkspacePanel === "dictionary"
     ? {
-      step: "Step 1 of 4",
-      title: "Context & Preview",
-      summary: "Teach the recognizer your names, jargon and a few explicit spoken cues, then verify the literal rule pass on a likely transcript.",
-      status: `${activePromptLineCount} context lines · ${activeSttHintLineCount} STT hints`,
-      note: "Start here. Keep the context concrete, and only add a handful of explicit STT hints you really want forwarded into the transcription request.",
+      title: "Replacements",
+      summary: "Fix recurring mishears: what the recognizer writes, and what it should say instead.",
     }
-    : activeWorkspacePanel === "dictionary"
+    : activeWorkspacePanel === "snippets"
       ? {
-        step: "Step 2 of 4",
-        title: "Dictionary",
-        summary: "Add literal replacements for product names, people, acronyms and recurring mishears.",
-        status: `${dictionaryEntries.length} dictionary rules`,
-        note: "Author one rule per likely transcript variant. If the recognizer says the same thing in three ways, model those three ways explicitly.",
+        title: "Snippets",
+        summary: "Say a short trigger phrase, get a longer block of text.",
       }
-      : activeWorkspacePanel === "snippets"
-        ? {
-          step: "Step 3 of 4",
-          title: "Snippets",
-          summary: "Create deliberate spoken macros for reusable expansions such as follow-ups, handoffs and recap blocks.",
-          status: `${snippetEntries.length} snippets`,
-          note: "Only use snippet triggers you are comfortable saying almost verbatim. They are literal phrase matches, not semantic intents.",
-        }
-        : {
-          step: "Step 4 of 4",
-          title: "Bias policy",
-          summary: "Choose how strict the transcription prompt-bias is and confirm exactly what each provider receives.",
-          status: (activeTextProfile.work_mode?.bias_mode ?? "conservative").replace(/_/g, " "),
-          note: "Conservative is the safe default. Switch to manual only when you want profile terms forwarded to the STT provider.",
-        };
+      : {
+        title: "Vocabulary",
+        summary: "What this profile is about, and the individual words it should get right.",
+      };
 
   const registerRuleCardRef = useCallback((ruleId: string, element: HTMLElement | null) => {
     ruleCardRefs.current[ruleId] = element;
@@ -897,8 +889,8 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
   return (
     <div className="flex flex-col gap-8">
       <FormCard
-        title="Portable personal text rules"
-        description="These rules run after speech-to-text. Import/export stays local via JSON, and preview uses the same native text-rule pass that runs before insertion."
+        title="Profiles"
+        description="Each profile carries its own vocabulary, replacements and snippets. Import and export stay local as JSON."
         bodyClassName="py-4"
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -919,14 +911,13 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
             {
               label: "Active profile",
               value: activeTextProfile.label,
-              hint: `${activePromptLineCount} context lines, ${activeSttHintLineCount} STT hints and ${totalRuleCount} authored rules${isCuratedTextProfile(activeTextProfile) ? ". Included by WordScript, editable like any other profile." : "."}`,
+              hint: `${activePromptLineCount} context lines and ${totalRuleCount} rules${isCuratedTextProfile(activeTextProfile) ? ". Included by WordScript, editable like any other." : "."}`,
             },
             {
               label: "Rule order",
-              value: "Dictionary → Snippets",
-              hint: "Literal, case-insensitive matches in authored order. Preview and runtime follow the same pass.",
+              value: "Replacements → Snippets",
+              hint: "Literal, case-insensitive matches, in the order you author them.",
             },
-            { label: "Current step", value: activeWorkspaceCopy.title, hint: activeWorkspaceCopy.note },
           ]}
         />
       </FormCard>
@@ -1085,7 +1076,6 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
 
       <div className="flex flex-col gap-3">
         <div className="px-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.04em] text-fg-muted">{activeWorkspaceCopy.step}</div>
           <strong className="text-[15px] font-semibold text-foreground">{activeWorkspaceCopy.title}</strong>
           <p className="mt-0.5 text-[12px] leading-snug text-fg-muted">{activeWorkspaceCopy.summary}</p>
         </div>
@@ -1143,19 +1133,69 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
         {activeWorkspacePanel === "context" && (
           <div className="flex flex-col gap-8">
             <FormCard
-              title="Transcription context"
-              description="Add names, acronyms and domain terms the recognizer should bias toward. This text is forwarded as one plain prompt string, so short line-based lists work better than prose."
+              title="Profile context"
+              description="What this profile is about — topics, not spellings. One item per line. Every mode gets this as background."
               bodyClassName="py-4"
             >
               <div className="flex flex-col gap-4">
                 <textarea
                   className={RULE_TEXTAREA_CLASS}
                   value={activeTextProfile.prompt}
-                  aria-label="Transcription context"
+                  aria-label="Profile context"
                   rows={10}
                   onChange={(event) => updateActiveProfile({ prompt: event.target.value })}
                   placeholder={"WordScript\nGroq\nTauri\nCPAL\ncustomer names\ninternal product terms"}
                 />
+                {profileContextBudget && (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-baseline justify-between text-[12px]">
+                      <span className="text-fg-muted">
+                        {profileContextBudget.used_chars} of {profileContextBudget.max_chars} characters sent to the
+                        transform prompt
+                      </span>
+                      {droppedContextLines.length > 0 && (
+                        <span className="font-semibold text-destructive">
+                          {droppedContextLines.length} line(s) over budget
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-surface-strong">
+                      <div
+                        className={`h-full rounded-full ${droppedContextLines.length > 0 ? "bg-destructive" : "bg-primary"}`}
+                        style={{
+                          width: `${Math.min(100, Math.round((profileContextBudget.used_chars / Math.max(1, profileContextBudget.max_chars)) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                    {droppedContextLines.length > 0 && (
+                      <div className="rounded-lg border border-border bg-surface px-3 py-2">
+                        <p className="text-[12px] leading-snug text-fg-muted">
+                          These lines exceed the budget and are <strong className="text-foreground">not sent</strong> to
+                          any mode. Shorten the list or the lines above them.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {droppedContextLines.map((line) => (
+                            <span
+                              key={`dropped-context-${line}`}
+                              className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] text-fg-dim"
+                            >
+                              {line}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </FormCard>
+
+            <FormCard
+              title="Words & names"
+              description="Individual terms this profile should spell right. Applied after transcription, where a correction is exact."
+              bodyClassName="py-4"
+            >
+              <div className="flex flex-col gap-4">
                 <RuleField label="Words & names">
                   <div className="flex flex-col gap-2" aria-label="Words and names">
                     {vocabularyHints.map((entry, index) => (
@@ -1203,32 +1243,10 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
                   </div>
                 </RuleField>
                 <p className="text-[12px] leading-snug text-fg-muted">
-                  Words and names are applied after transcription, where a correction is exact and safe. "Hint the
-                  recognizer" additionally whispers that one entry into the transcription request — leave it off unless a
-                  term is genuinely being misheard. A long recognizer prompt is itself a common cause of repeated or
-                  drifting text, which is why this is per entry and off by default.
+                  <strong className="font-semibold text-foreground">Hint the recognizer</strong> also sends that one term
+                  into speech recognition. Turn it on only for a term that is actually being misheard — a long
+                  recognizer prompt is itself a common cause of drifting text.
                 </p>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {[
-                    {
-                      title: "What belongs here",
-                      body: "Company names, products, acronyms, people, ticket prefixes and phrases the model should recognize reliably.",
-                    },
-                    {
-                      title: "Good starting size",
-                      body: "Start with 5 to 10 high-value terms. Add more only when preview still misses obvious vocabulary.",
-                    },
-                    {
-                      title: "What not to put here",
-                      body: "Do not mirror whole snippets or long macros. If you want expansion behavior, keep that in Snippets; STT hints should stay short and intentional.",
-                    },
-                  ].map((note) => (
-                    <div key={note.title} className="rounded-lg border border-border bg-surface px-3 py-2.5">
-                      <strong className="text-[12px] font-semibold text-foreground">{note.title}</strong>
-                      <p className="mt-1 text-[12px] leading-snug text-fg-muted">{note.body}</p>
-                    </div>
-                  ))}
-                </div>
               </div>
             </FormCard>
 
@@ -1277,10 +1295,11 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
                   ))}
                   {(ignoredProfileLines.length > 0 || ignoredSttHintLines.length > 0) && (
                     <div className="rounded-lg border border-border bg-surface px-3 py-2.5 sm:col-span-3">
-                      <strong className="text-[12px] font-semibold text-foreground">Ignored from automatic bias</strong>
+                      <strong className="text-[12px] font-semibold text-foreground">Not sent to the recognizer</strong>
                       <p className="mt-1 text-[12px] leading-snug text-fg-muted">
-                        These lines stay in the profile, but are not forwarded automatically because they are too broad or
-                        too long for the conservative bias path.
+                        These lines are too broad or too long for the conservative recognizer bias path, so they are not
+                        forwarded to speech recognition. They still reach the transform prompt, where the processing mode
+                        decides how much weight they carry.
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {ignoredProfileLines.map((line) => (
@@ -1478,8 +1497,8 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
 
         {activeWorkspacePanel === "dictionary" && (
           <FormCard
-            title="Personal dictionary"
-            description="Literal replacements for names, brands and recurring mishears that should always resolve the same way."
+            title="Replacements"
+            description="Heard as → written as. Exact, case-insensitive, applied in every mode."
             bodyClassName="py-4"
             action={
               <Button
@@ -1519,7 +1538,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
         {activeWorkspacePanel === "snippets" && (
           <FormCard
             title="Snippets"
-            description="Deliberate spoken macros for repeatable blocks like follow-ups, handoffs, recaps and status notes."
+            description="Say the trigger phrase, get the expansion. Exact phrase match, applied in every mode."
             bodyClassName="py-4"
             action={
               <Button
@@ -1557,10 +1576,6 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
         )}
 
 
-      <p className="px-1 text-[12px] leading-snug text-fg-muted">
-        Team-sharing stays outside V1. These rules stay personal and exportable, with ordering and preview meant for daily
-        solo dictation instead of a shared automation system.
-      </p>
     </div>
   );
 }
