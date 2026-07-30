@@ -1,0 +1,63 @@
+{
+  "updated": "2026-07",
+  "note": "Seed material for the Friend and Quick message style levels, not a catalogue. The register presets are forbidden from supplying slang on their own (ADR 0023), so this file plus the user's own writing sample are the only sources. Youth language turns over fast -- the Jugendwort winners alone read lost (2020), cringe (2021), smash (2022), goofy (2023), Aura (2024), das crazy (2025) -- so this list is dated, loaded only on request, and written into the user's own fields where they can edit or delete it. Treat a stale entry as expected, not as a bug.",
+  "languages": [
+    {
+      "code": "de",
+      "label": "Deutsch",
+      "entries": [
+        { "term": "digga", "meaning": "Anrede unter Freunden", "usage": "norddeutsch-urban, nicht ueberall neutral" },
+        { "term": "brudi", "meaning": "Anrede unter Freunden, vertraulich", "usage": "breit verstanden" },
+        { "term": "safe", "meaning": "klar, sicher, auf jeden Fall", "usage": "als Zustimmung am Satzanfang" },
+        { "term": "laeuft", "meaning": "passt, geht klar", "usage": "kurze Bestaetigung" },
+        { "term": "wild", "meaning": "heftig, ueberraschend", "usage": "wertend, meist ohne Verb" },
+        { "term": "cringe", "meaning": "peinlich, fremdschaemig", "usage": "Adjektiv und Substantiv" },
+        { "term": "lost", "meaning": "ahnungslos, orientierungslos", "usage": "ueber Personen" },
+        { "term": "Aura", "meaning": "Ausstrahlung, Status", "usage": "oft mit Punkte-Metaphorik" },
+        { "term": "Peak", "meaning": "Hoehepunkt, besonders gelungen", "usage": "wertend" },
+        { "term": "Ragebait", "meaning": "Inhalt, der bewusst provoziert", "usage": "meist ueber Social-Media-Inhalte" }
+      ]
+    },
+    {
+      "code": "en",
+      "label": "English",
+      "entries": [
+        { "term": "no cap", "meaning": "no exaggeration, for real", "usage": "sentence-final or -initial" },
+        { "term": "bet", "meaning": "agreed, will do", "usage": "standalone reply" },
+        { "term": "lowkey / highkey", "meaning": "slightly / very", "usage": "hedges a following clause" },
+        { "term": "rizz", "meaning": "charm, ability to attract", "usage": "noun" },
+        { "term": "ate", "meaning": "did it exceptionally well", "usage": "past tense, about a performance" },
+        { "term": "delulu", "meaning": "deluded, unrealistic", "usage": "self-deprecating as often as not" },
+        { "term": "finna", "meaning": "about to, going to", "usage": "AAVE-derived, informal only" },
+        { "term": "wyd", "meaning": "what are you doing", "usage": "message opener" },
+        { "term": "aura", "meaning": "presence, standing", "usage": "often scored in points" }
+      ]
+    },
+    {
+      "code": "es",
+      "label": "Espanol",
+      "entries": [
+        { "term": "ntp", "meaning": "no te preocupes - don't worry", "usage": "abbreviation, messaging only" },
+        { "term": "chungo", "meaning": "difficult, dodgy, bad", "usage": "Spain rather than Latin America" },
+        { "term": "estar de chill", "meaning": "to be taking it easy", "usage": "Anglicism, widely understood" },
+        { "term": "crush", "meaning": "person one is attracted to", "usage": "Anglicism, both regions" },
+        { "term": "re", "meaning": "very, really", "usage": "Rio de la Plata; prefixed to an adjective" },
+        { "term": "piola", "meaning": "cool, sound", "usage": "Argentina and Uruguay" },
+        { "term": "F", "meaning": "sympathy, condolences", "usage": "standalone reply" }
+      ]
+    },
+    {
+      "code": "fr",
+      "label": "Francais",
+      "entries": [
+        { "term": "pote", "meaning": "friend, mate", "usage": "gender-neutral" },
+        { "term": "frerot", "meaning": "bro", "usage": "between male friends" },
+        { "term": "ouf", "meaning": "crazy, amazing", "usage": "verlan of fou" },
+        { "term": "cheum", "meaning": "ugly, off-putting", "usage": "verlan of moche" },
+        { "term": "sah", "meaning": "seriously, for real", "usage": "from Arabic sahha; also as a question" },
+        { "term": "bg", "meaning": "good looking", "usage": "abbreviation of beau gosse" },
+        { "term": "go", "meaning": "let's go, alright", "usage": "Anglicism, message opener" }
+      ]
+    }
+  ]
+}

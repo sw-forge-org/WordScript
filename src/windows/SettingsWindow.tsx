@@ -402,7 +402,12 @@ export default function SettingsWindow() {
             </div>
           }
           footer={
-            <ProfileSwitcher config={form} onChange={patch} onEdit={() => navigate("profiles")} />
+            <ProfileSwitcher
+              config={form}
+              onChange={patch}
+              onEdit={() => navigate("profiles")}
+              sessionActive={state.status === "recording" || state.status === "processing"}
+            />
           }
         />
 

@@ -31,7 +31,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A communication style per profile**, in Settings -> Modes, read by Agent and
+  Rewrite. A register — Authority, Client, Colleague, Friend, Quick message —
+  plus a length, your own rules, and a sample of your own writing. The register
+  is named after who you are writing to rather than by a formality adjective,
+  because four adjectives from one semantic field cannot be told apart in a
+  select.
+
+  **The register sets form, never wording.** Formality and youth language are
+  different dimensions, and a model's own slang is measurably misaligned with how
+  people actually use it — wrong slang reads as parody, where none merely reads
+  as plain. So Friend and Quick message carry an explicit ban on the agent
+  supplying slang from its own memory or translating it from another language;
+  the only sources are your rules and your writing sample. A dated starter
+  lexicon (German, English, Spanish, French) can be loaded into your rules, where
+  you can read and edit it — never into a hidden layer.
+
+  Precedence is fixed and written into the prompt: preset, then your rules, then
+  your sample, with the sample subordinate for form and authoritative for
+  wording. Default is off, at which every prompt is byte-identical to before.
+  See ADR 0023.
+
+### Changed
+
+- **Every prompt is now written in English**, whatever language you dictate in.
+  English instructions are followed more reliably. Each prompt states explicitly
+  that the *output* language is the dictated one, so this does not change what
+  comes back — the agent prompt forbids answering in the language of its own
+  instructions, and the German `um`-is-a-preposition guard is unchanged because
+  it is about the dictated language, not the prompt's.
+
 ### Fixed
+
+- **Switching the active profile during a recording is refused instead of
+  half-applied.** The profile decides the recognizer settings, and those are
+  committed the moment recording starts — but the pipeline resolved the profile
+  again once the audio was ready. A mid-recording switch therefore produced a
+  transform built from two profiles at once (label and terms from the new one,
+  context and dictionary from the old) on top of a transcription that had
+  already run under the old one. The runtime now refuses the switch, in both the
+  explicit command and a settings save that would change it, and the switcher
+  says why before you try.
+
+  Alongside it, the agent name and the communication style moved into the
+  capture snapshot, where the profile text and vocabulary already lived. One
+  rule holds now: **during a recording only the processing mode still changes
+  anything; everything else applies from the next recording.** Previously the
+  agent name and style applied mid-recording while the profile text did not.
+  See ADR 0025.
+
+- **The processing mode in Settings and the mode on the overlay no longer drift
+  apart.** Reported as: change the mode while recording and the overlay keeps
+  showing the old one — sometimes. The "sometimes" was the clue. Two causes:
+
+  A process-global runtime override was set by every mode-change path (overlay
+  tap, mode hotkeys) and cleared by none — `clear_processing_mode_override` had
+  no caller, because its only consumer was a hook nothing imported. It outranked
+  the profile, so the first tap after a start pinned the mode for the rest of
+  the process and every later change in Settings was resolved away. With no tap
+  since launch it worked; after one tap it never did again. This was not only
+  cosmetic: the pipeline reads the same resolver, so it also kept *processing*
+  under the stale value.
+
+  The override is gone. Every path that changes the mode already persists it to
+  the profile, and the pipeline loads its config after the recording ends — so
+  a mode changed mid-recording is on disk before it is read. The profile is now
+  the only source.
+
+  Second: saving in Settings emitted no mode signal at all, and the overlay's
+  150 ms fetch guard *discarded* calls inside its window instead of deferring
+  them, so a save landing in that window was lost with no retry. Every writer
+  now emits `wordscript-mode-event`, and the guard coalesces to the last
+  request. See ADR 0024.
+
+- **Agent mode no longer writes profile context into what it generates.**
+  Reported as: dictate "write an email to X, content Y" and the email comes back
+  carrying material from the profile that was never dictated. Three causes in one
+  prompt — only one of six context blocks carried any restriction, the system
+  prompt actively said to "take the context into account" with nothing on the
+  other side, and the whole block sat in the *user* turn one line above the
+  instruction, where it was formally indistinguishable from it.
+
+  The context stays, because it is what lets the agent spell your terms and names
+  correctly. What changed is its job: it is a reading aid for the instruction, it
+  moved into the system prompt behind an explicit prohibition on deriving content
+  from it, and the user turn now carries the transcript and nothing else. Snippets
+  contribute their trigger without their expansion — an expansion is finished text,
+  and it was already applied deterministically at the end of the pipeline, so
+  listing it was a second, generative path for the same data. See ADR 0023.
+
+- **The agent name is visible in every mode.** It used to render only while Agent
+  was the selected mode — but the name is also the first thing Auto routes on,
+  and Auto is the default, so in the default configuration the field deciding
+  whether Auto ever reaches Agent was not on screen. The name itself always
+  worked; only the surface was missing. Its placeholder now shows the global
+  fallback rather than a hardcoded "WordScript".
 
 - **The overlay is no longer placed where no monitor is.** Reported as "the
   overlay becomes completely invisible mid-recording although the recording

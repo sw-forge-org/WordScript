@@ -13,7 +13,7 @@
 //! cargo test measure_profile_context_width -- --ignored --nocapture
 //! ```
 //!
-//! Both arms share one system prompt except for the single `Kontextbegriffe:`
+//! Both arms share one system prompt except for the single `Context terms:`
 //! line, so the diff between them is exactly the variable under test. The
 //! prompt itself comes from the production builder rather than a copy.
 //!
@@ -22,6 +22,7 @@
 //! came from — so the comparison stays runnable if the question is reopened.
 
 use super::*;
+use super::super::communication_style::CommunicationStyle;
 use super::super::config::ProcessingMode;
 use super::super::transcription_hints::filter_profile_hint_lines;
 
@@ -29,7 +30,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 const PROFILE_ID: &str = "curated-product-engineering";
-const CONTEXT_LINE_PREFIX: &str = "Kontextbegriffe: ";
+const CONTEXT_LINE_PREFIX: &str = "Context terms: ";
 const PACING: Duration = Duration::from_millis(700);
 
 fn wordscript_config_dir() -> PathBuf {
@@ -171,6 +172,10 @@ async fn measure_profile_context_width() {
         language_locked: false,
         low_confidence_segments: false,
         workspace_hint: None,
+        profile_label: String::new(),
+        stt_hints: String::new(),
+        agent_name: String::new(),
+        style: CommunicationStyle::default(),
     };
 
     // Production builds the widened arm since ADR 0021; the narrow arm is the

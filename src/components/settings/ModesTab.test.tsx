@@ -186,27 +186,61 @@ describe("ModesTab", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("shows agent controls when agent mode is selected", () => {
-    const config = createAppConfig();
-    config.text_profiles = config.text_profiles.map((p) =>
-      p.id === "general"
-        ? { ...p, work_mode: { ...p.work_mode!, processing_mode: "agent" } }
-        : p,
-    );
-    render(<ModesTab config={config} onChange={onChange} />);
+  // Superseded a pair of tests that pinned the agent name to the Agent mode
+  // being selected. That was the defect, not the contract: the name is also the
+  // first criterion Auto routes on, and Auto is the default — so in the default
+  // configuration the control that decides whether Auto ever reaches Agent was
+  // not on screen. See ADR 0023.
+  it.each(["auto", "cleanup", "rewrite", "agent", "verbatim"] as const)(
+    "shows the agent name in %s mode, because Auto routes on it too",
+    (processing_mode) => {
+      const config = createAppConfig();
+      config.text_profiles = config.text_profiles.map((p) =>
+        p.id === "general" ? { ...p, work_mode: { ...p.work_mode!, processing_mode } } : p,
+      );
+      render(<ModesTab config={config} onChange={onChange} />);
 
-    expect(screen.getByText("Agent name")).toBeInTheDocument();
+      expect(screen.getByText("Agent name")).toBeInTheDocument();
+    },
+  );
+
+  it("keeps the style fields hidden until a register is picked", () => {
+    render(<ModesTab config={createAppConfig()} onChange={onChange} />);
+
+    expect(screen.getByText("Communication style")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Style rules")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Writing sample")).not.toBeInTheDocument();
   });
 
-  it("does not show agent controls when cleanup is selected", () => {
+  it("writes the register into the active profile", () => {
+    render(<ModesTab config={createAppConfig()} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText("Communication register"), {
+      target: { value: "quick" },
+    });
+
+    const calls = onChange.mock.calls;
+    const patch = calls[calls.length - 1][0] as Partial<AppConfig>;
+    const profile = patch.text_profiles!.find((p) => p.id === "general")!;
+    expect(profile.modes!.communication_register).toBe("quick");
+  });
+
+  // The lexicon lands in a field the user can read and edit. A hidden runtime
+  // word list would be a behaviour whose cause is nowhere on screen.
+  it("loads a starter lexicon into the user's own rules", () => {
     const config = createAppConfig();
     config.text_profiles = config.text_profiles.map((p) =>
       p.id === "general"
-        ? { ...p, work_mode: { ...p.work_mode!, processing_mode: "cleanup" } }
+        ? { ...p, modes: { ...p.modes!, communication_register: "quick" } }
         : p,
     );
     render(<ModesTab config={config} onChange={onChange} />);
 
-    expect(screen.queryByText("Agent name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Deutsch" }));
+
+    const calls = onChange.mock.calls;
+    const patch = calls[calls.length - 1][0] as Partial<AppConfig>;
+    const profile = patch.text_profiles!.find((p) => p.id === "general")!;
+    expect(profile.modes!.style_instructions).toContain("digga");
   });
 });

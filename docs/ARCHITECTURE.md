@@ -73,7 +73,6 @@ Key frontend building blocks:
 - `src/hooks/useProvider.ts`
 - `src/hooks/useNativeInsertion.ts`
 - `src/hooks/useRuntimeLogs.ts`
-- `src/hooks/useProcessingMode.ts`
 - `src/components/settings/*`
 
 The UI is responsible for: displaying runtime status, waveform and errors;
@@ -173,7 +172,7 @@ The active product core lives in `src-tauri/src/core/`.
 ### Mode routing and workspace
 
 - `mode_router.rs`: resolves the effective `ProcessingMode` per session from
-  manual override and active profile work-mode; when the effective mode is
+  the active profile work-mode, its only source; when the effective mode is
   `auto`, `resolve_auto_mode` picks a concrete mode per transcription
   (agent/prompt_enhance/cleanup) from transcript text, agent name and
   optional workspace context; exposes the `resolve_current_processing_mode`
@@ -212,9 +211,11 @@ lane and missing helpers.
    boundary flattened and typed, so bias policy and local decode settings cannot
    be lost on the way (ADR 0015).
 5. `mode_router.rs` resolves the effective `ProcessingMode` before transform
-   (manual override > active profile work-mode, with the legacy global
+   from the active profile work-mode, with the legacy global
    `AppConfig.processing_mode` used only if the active profile cannot be
-   resolved). An effective `auto` value becomes a concrete mode per
+   resolved. There is no override layer: every writer persists the profile, and
+   the pipeline config is loaded after the recording ends (ADR 0024). An
+   effective `auto` value becomes a concrete mode per
    transcription via `resolve_auto_mode`. The renderer can query the effective
    mode via `resolve_current_processing_mode`.
 6. `providers/mod.rs` resolves the active provider and dispatches today to
@@ -310,7 +311,10 @@ score 0.20 - 0.74        ->  uncertain zone -> one LLM classifier call decides
 Heuristic signals (O(n), no API call): agent name in words 1-4 (+0.55),
 words 5-10 (+0.35), later (+0.15); imperative verb as first word (+0.45),
 words 2-10 (+0.25); text length > 60 words (-0.15). The agent name comes from the
-active profile, falling back to the global one.
+active profile, falling back to the global one. Because it decides Auto's first
+rule and Auto is the default mode, the field is shown in Settings -> Modes
+regardless of which mode is selected; it used to render only while Agent was
+selected, which hid it in exactly the configuration that depends on it (ADR 0023).
 
 LLM classifier (only in the uncertain zone): decides "yes" or "no", nothing
 else; "yes" only when the user directly addresses the agent **and** assigns
@@ -368,6 +372,16 @@ Rules of this stack:
   found that reuse was never decided and measured it as unnecessary there; the
   transform prompts now take profile context through `core::profile_context`,
   identically in every mode.
+- what a mode may *do* with that context is not identical. Cleanup and Rewrite
+  use it to stay near their input; Agent may only use it to read the instruction
+  — spellings, proper nouns, domain — and is explicitly forbidden from deriving
+  content from it. The Agent block therefore lives in the system prompt, the user
+  turn carries the transcript alone, and snippets contribute trigger without
+  expansion (ADR 0023).
+- the per-profile communication style (`core::communication_style`) is read by
+  Agent and Rewrite only. Its register sets form, never wording: slang and youth
+  language come from the user's rules and writing sample, never from the model.
+  Default `off` leaves every prompt byte-identical.
 - STT bias composition is profile-bound via `TextProfileWorkMode.bias_mode`
   (`Conservative` default, `Manual` user-decided, `Off`); the `bias_policy_migrated`
   migration initializes existing profiles to Conservative without data loss.

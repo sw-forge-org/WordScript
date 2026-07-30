@@ -107,6 +107,10 @@ export function createDefaultProfileModesSettings(): ProfileModesSettings {
   return {
     collect_workspace_context: true,
     agent_name: "WordScript",
+    communication_register: "off",
+    communication_length: "normal",
+    style_instructions: "",
+    style_sample: "",
   };
 }
 
@@ -141,6 +145,13 @@ function cloneProfileModesSettings(settings?: ProfileModesSettings | null): Prof
     ...settings,
     collect_workspace_context:
       settings.collect_workspace_context ?? legacy ?? defaults.collect_workspace_context,
+    // Absent in every config written before the communication style existed.
+    // Spreading `settings` over the defaults would put `undefined` back on top
+    // of them, and a Select bound to `undefined` renders as uncontrolled.
+    communication_register: settings.communication_register ?? defaults.communication_register,
+    communication_length: settings.communication_length ?? defaults.communication_length,
+    style_instructions: settings.style_instructions ?? defaults.style_instructions,
+    style_sample: settings.style_sample ?? defaults.style_sample,
   };
 }
 

@@ -1247,7 +1247,7 @@ pub(crate) fn apply_trigger_effect<R: Runtime>(app: &AppHandle<R>, effect: Trigg
             );
         }
         TriggerEffect::SetModeDirect(mode) => {
-            if let Err(error) = core::mode_router::set_mode_override_and_emit(app, mode) {
+            if let Err(error) = core::mode_router::set_mode_and_emit(app, mode) {
                 core::runtime_log::record(format!(
                     "[WordScript] Per-mode hotkey failed: {error}"
                 ));
@@ -1596,19 +1596,23 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         .find(|p| p.id == app_config.active_text_profile_id);
 
                     // Resolve the effective processing mode. The active
-                    // profile's work_mode is the primary control surface (the
-                    // Modes tab writes into it). The global config.processing_mode
-                    // is a serde fallback for pre-migration configs. A manual
-                    // override (overlay cycle or per-mode hotkey) wins over both.
+                    // profile's work_mode is the only source (the Modes tab and
+                    // every hotkey write into it). The global
+                    // config.processing_mode is a serde fallback for
+                    // pre-migration configs. `pipeline_app_config` is loaded
+                    // after the recording ends, so a mode changed mid-recording
+                    // is already on disk here.
                     let profile_mode = active_profile
                         .map(|p| p.work_mode.effective_processing_mode())
                         .unwrap_or_else(|| app_config.processing_mode.clone());
-                    let override_mode = core::mode_router::current_mode_override();
-                    let resolved = core::mode_router::resolve_processing_mode(
-                        profile_mode,
-                        override_mode,
-                    );
-                    let agent_name = app_config.active_text_profile_agent_name();
+                    let resolved = core::mode_router::resolve_processing_mode(profile_mode);
+                    // From the capture snapshot, not from disk. Both are
+                    // per-profile controls the user can edit mid-recording, and
+                    // the session belongs to the profile as it was when the
+                    // recording started — the same rule the profile text,
+                    // dictionary and snippets already followed (ADR 0025).
+                    let agent_name = transform_config.agent_name.clone();
+                    let communication_style = transform_config.style.clone();
 
                     // Workspace context is detected at most once per session and
                     // then reused by every branch. It used to be detected twice on
@@ -1679,10 +1683,9 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     }
 
                     core::runtime_log::record(format!(
-                        "[WordScript] Processing mode resolved effective={} auto_detected={} is_override={} signal={} workspace_context={}",
+                        "[WordScript] Processing mode resolved effective={} auto_detected={} signal={} workspace_context={}",
                         effective_mode.as_str(),
                         resolved.auto_detected,
-                        resolved.is_override,
                         auto_signal,
                         workspace_context
                             .as_ref()
@@ -1697,6 +1700,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     mode_transform_config.low_confidence_segments = low_confidence_segments;
                     mode_transform_config.apply_preset(effective_mode.transform_preset());
                     mode_transform_config.workspace_hint = workspace_context.clone();
+                    mode_transform_config.style = communication_style.clone();
 
                     let raw_transform = match effective_mode {
                         core::config::ProcessingMode::Agent => {
@@ -1711,16 +1715,13 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 provider: mode_transform_config.provider.clone(),
                                 agent_name: agent_name.clone(),
                                 agent_model,
-                                profile_label: active_profile
-                                    .map(|p| p.label.clone())
-                                    .unwrap_or_default(),
+                                profile_label: mode_transform_config.profile_label.clone(),
                                 profile_prompt: mode_transform_config.profile_prompt.clone(),
-                                stt_hints: active_profile
-                                    .map(|p| p.stt_hints.clone())
-                                    .unwrap_or_default(),
+                                stt_hints: mode_transform_config.stt_hints.clone(),
                                 dictionary_entries: mode_transform_config.dictionary_entries.clone(),
                                 snippet_entries: mode_transform_config.snippet_entries.clone(),
                                 workspace_context: workspace_context.clone(),
+                                style: communication_style.clone(),
                             };
                             // No second classification. Reaching this arm already
                             // means the mode is Agent: either the user selected it,
@@ -2658,8 +2659,6 @@ pub fn run() {
             core::shortcut::shortcut_platform,
             core::trigger::shortcut_capabilities,
             core::workspace_context::get_workspace_context,
-            core::mode_router::set_processing_mode_override,
-            core::mode_router::clear_processing_mode_override,
             core::mode_router::resolve_current_processing_mode,
             core::mode_router::set_active_profile_processing_mode,
             core::prompt_enhance::preview_prompt_enhance,

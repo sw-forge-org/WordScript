@@ -145,10 +145,23 @@ describes the correction step only.
 
 The effective mode is resolved per session by
 `mode_router::resolve_processing_mode`:
-1. manual override (mode picker / mode cycle / per-mode hotkey)
-2. active `TextProfile.work_mode.processing_mode`
-3. legacy global `AppConfig.processing_mode` only when the active profile
+1. active `TextProfile.work_mode.processing_mode`
+2. legacy global `AppConfig.processing_mode` only when the active profile
    cannot be resolved; its default is `auto`
+
+The mode picker, the mode cycle and the per-mode hotkeys all write and persist
+the profile, so there is no separate override layer for them to sit in. Every
+one of those writers, plus `save_config` and `switch_active_text_profile`,
+emits `wordscript-mode-event` so the overlay and the Settings form re-resolve
+(ADR 0024).
+
+**What may change while a recording runs:** the processing mode, and nothing
+else. The active profile is locked for the duration of a session -- switching it
+is refused by the runtime, because it sets the recognizer and that is committed
+at capture start. Every other profile-derived value is snapshotted into
+`NativeCaptureConfig` then too, so edits to the profile text, vocabulary,
+dictionary, snippets, agent name or communication style apply from the next
+recording (ADR 0025).
 
 When the effective mode is `auto`, `mode_router::resolve_auto_mode` resolves one
 concrete mode per transcription once the transcript text is available. It stays
@@ -174,14 +187,65 @@ normalized, deduplicated case-insensitively, each line truncated at 80
 characters, and the whole block bounded by a 600-character budget. Lines that do
 not fit are reported, never silently dropped — `TextRulesAnalysis.profile_context`
 carries the spend and the rejected lines to the Profiles panel, which shows both.
-**The mode decides the framing, never the width** (ADR 0021). Cleanup and Rewrite wrap the lines in "nutze sie nur, wenn sie zum
-Input passen; nie halluzinieren", because a correction must stay near its input;
-Agent frames the same lines as the domain its generated output lives in; Prompt
-Enhance keeps a weak "berücksichtige falls relevant" next to its sub-mode
+**The mode decides the framing, never the width** (ADR 0021). Cleanup and
+Rewrite wrap the lines in "use them only where they fit the input; never
+hallucinate", because a correction must stay near its input; Prompt Enhance
+keeps a weak "take into account where relevant" next to its sub-mode
 instruction. There is no word-shape filter on this path — the recognizer's
 filter (`transcription_hints::filter_profile_hint_lines`, ADR 0017) asks whether
 Whisper could mis-hear a line and stays on the recognizer path only. A line
 rejected there still reaches the transform prompt.
+
+**In Agent mode the block is a reading aid, never material** (ADR 0023). It sits
+in the *system* prompt behind an explicit restriction — "it exists solely to help
+you read the instruction correctly … never carry any of it into the result. All
+content comes from the user's instruction alone" — and the user turn carries the
+transcript and nothing else. Snippets contribute label and trigger without their
+expansion, because the expansion is finished text and
+`transform::finalize_with_text_rules` applies it deterministically anyway. It was
+previously framed as "the domain the output lives in", sat in the user turn one
+line above the instruction, and carried a restriction on only one of its six
+blocks; instructions came back containing profile lines the user never dictated.
+
+Every prompt WordScript sends is written in English, whatever the dictation
+language. English instructions are followed more reliably, and each prompt states
+explicitly that the *output* language is the dictated one — the agent prompt
+("never answer in the language of these instructions"), the correction prompt
+("these instructions are in English — the output never is unless the user
+dictated in English") and the style block ("never switch the language or the
+language mix"). The German `um`-is-a-preposition guard is about the dictated
+language and survives verbatim.
+
+### Communication style
+
+Per profile, in `ProfileModesSettings`, read by **Agent and Rewrite only**
+(ADR 0023). One producer for both: `core::communication_style`.
+
+- `communication_register`: `off` (default) | `authority` | `client` |
+  `colleague` | `friend` | `quick`. Named after the addressee, or the medium for
+  the lowest step; a ladder of formality adjectives is four near-synonyms in a
+  select. Each active level emits three blocks — form rules (only properties
+  countable in the output), a forbidden zone (what the level does *not* mean,
+  against style-prompt overshoot) and a lexis source.
+- `communication_length`: `terse` | `normal` (default, emits nothing) | `full`.
+- `style_instructions`: the user's rules, budgeted as a list (400 chars, per line,
+  deduplicated). They **outrank the register** where they touch it.
+- `style_sample`: the user's own writing, budgeted as prose (400 chars, structure
+  intact, cut tail reported). **Subordinate to the register for form,
+  authoritative for wording.**
+
+**A register sets form, never lexis.** Formality and youth language are different
+dimensions — diaphasic and diastratic — and a model's own slang is measurably
+misaligned with human use, so `friend` and `quick` carry an explicit ban on
+supplying any from memory or translating it from another language. The only
+sources are the two user fields. `src/data/styleLexicons.json` seeds them per
+language; it is opt-in, dated, and loaded into the user's own rules where they
+can read and edit it, never into a hidden runtime layer.
+
+With `register = off` every prompt is byte-identical to before. Cleanup, Verbatim
+and Prompt Enhance never carry a style block. On Rewrite the "preserve the tone"
+clause is *replaced* rather than extended, since both would order opposite things
+about the same property; meaning, language mix and terminology stay untouchable.
 
 The workspace context is only a probability signal, not a deterministic
 mapping (`workspace_app_map` was removed). It is collected once per session when

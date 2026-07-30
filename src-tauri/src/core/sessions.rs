@@ -736,6 +736,36 @@ pub fn is_processing_session_current<R: Runtime>(app: &AppHandle<R>, session_id:
         .unwrap_or(false)
 }
 
+/// Whether a capture or its pipeline is running right now.
+///
+/// The guard for settings that a running session has already snapshotted. The
+/// only one that matters is the active profile: the capture config is taken at
+/// capture start, while the pipeline resolves the profile again once the audio
+/// is ready — so switching profiles mid-session mixed the two, and no later
+/// step could undo the transcription that had already run under the first one.
+///
+/// `Completed`, `Aborted` and `Error` are terminal stages of a finished
+/// session, not a running one, so they are deliberately not included.
+pub fn session_is_active<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let Some(state) = app.try_state::<Mutex<NativeSessionState>>() else {
+        return false;
+    };
+    state
+        .lock()
+        .map(|state| {
+            matches!(
+                state.status().stage,
+                NativeSessionStage::Capturing | NativeSessionStage::Processing
+            )
+        })
+        .unwrap_or(false)
+}
+
+/// The message every blocked write shares, so the reason reads the same
+/// wherever the user meets it.
+pub const PROFILE_LOCKED_DURING_SESSION: &str =
+    "The active profile cannot be changed while a recording is running. It decides the recognizer settings, which are fixed the moment recording starts. Finish or abort the recording first — the processing mode can still be changed at any time.";
+
 pub fn emit_session_event<R: Runtime>(
     app: &AppHandle<R>,
     event: &str,

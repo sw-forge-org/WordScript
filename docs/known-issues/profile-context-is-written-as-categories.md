@@ -52,8 +52,18 @@ context earns its place at all, which the category-label version cannot answer.
 Until then, do not read ADR 0021 as "profile context does not matter". It says
 "these eight labels do not differ measurably from two of them".
 
+## Still open after ADR 0023
+
+ADR 0023 changed what the context block is *allowed to do* in Agent mode -- it
+is a reading aid for the instruction and may not contribute content -- and moved
+it into the system prompt behind an explicit prohibition. That fixes a leak; it
+does not make a category label a better reading aid. `feature names` still tells
+the agent nothing it can use to spell a real feature name correctly. The question
+this file records is unchanged.
+
 ## Related
 
+- ADR 0023 -- the context is a reading aid, never material.
 - ADR 0021 -- one shape for profile context in every mode, and the measurement.
 - ADR 0017 -- why the recognizer path filters this field at all.
 - `docs/ROADMAP.md` Phase 7 -- profile catalogue and settings surface rework,

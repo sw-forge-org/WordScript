@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use super::communication_style::CommunicationStyle;
 use super::config::{DictionaryEntry, SnippetEntry};
 use super::profile_context::{profile_context_line, truncate_line};
 use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
@@ -65,6 +66,9 @@ pub struct AgentConfig {
     /// The foreground app, when the active profile allows collecting it. A weak
     /// situational signal in the profile-context block, never an instruction.
     pub workspace_context: Option<WorkspaceContext>,
+    /// How this profile's agent writes. Defaults to off, which reproduces the
+    /// prompt the mode had before the style existed.
+    pub style: CommunicationStyle,
 }
 
 #[derive(Debug, Clone)]
@@ -186,16 +190,17 @@ pub async fn detect_agent_intent(text: &str, config: &AgentConfig) -> bool {
     let snippet: String = text.chars().take(CLASSIFIER_INPUT_MAX_CHARS).collect();
     let agent_name = &config.agent_name;
     let system_prompt = format!(
-        "Du bist ein Intent-Klassifikator für eine Diktat-App.\n\
-Der Nutzer diktiert entweder normalen Text (Diktat) oder richtet eine direkte Anweisung an den KI-Assistenten \"{agent_name}\".\n\
+        "You are an intent classifier for a dictation app.\n\
+The user is either dictating ordinary text or addressing a direct instruction to the AI assistant \"{agent_name}\". \
+The transcript may be in any language; classify it regardless of language.\n\
 \n\
-Entscheide nach diesen Regeln:\n\
-- \"yes\" nur wenn der Nutzer {agent_name} direkt adressiert UND eine Aufgabe beauftragt (z.B. \"Hey {agent_name}, schreib…\" oder \"{agent_name}, erstell mir…\").\n\
-- \"no\" wenn {agent_name} nur im Fließtext erwähnt wird, ohne direkten Auftrag.\n\
-- \"no\" wenn es ein Imperativ ohne {agent_name}-Adressierung ist — das ist Diktat, kein Befehl an {agent_name}.\n\
-- Bei Unsicherheit: \"no\".\n\
+Decide by these rules:\n\
+- \"yes\" only if the user addresses {agent_name} directly AND assigns a task (e.g. \"Hey {agent_name}, write…\" or \"{agent_name}, draft me…\").\n\
+- \"no\" if {agent_name} is merely mentioned in running text, with no task.\n\
+- \"no\" if it is an imperative that does not address {agent_name} — that is dictation, not a command to {agent_name}.\n\
+- When in doubt: \"no\".\n\
 \n\
-Antworte ausschließlich mit \"yes\" oder \"no\". Kein weiterer Text."
+Reply with \"yes\" or \"no\" only. No other text."
     );
 
     let request = ChatCompletionRequest {
@@ -239,26 +244,32 @@ Antworte ausschließlich mit \"yes\" oder \"no\". Kein weiterer Text."
     }
 }
 
-/// Assembles the full profile context string from all profile fields.
+/// Assembles the profile context block from all profile fields.
 ///
-/// Only non-empty sections are included. The resulting string is passed to the
-/// agent LLM as "profile context" so it can tailor its output to the domain.
+/// Only non-empty sections are included. The profile's free-text fields run
+/// through `profile_context` like every other mode's do — same bound, same
+/// shape (ADR 0021).
 ///
-/// The profile's free-text fields run through `profile_context` like every other
-/// mode's do — same bound, same shape. What differs here is the framing: an
-/// agent *produces* text rather than correcting it, so the context is the
-/// domain the output lives in, not a list of terms to leave alone (ADR 0021).
+/// **What this block is for changed in ADR 0023.** It used to be framed as
+/// "the domain the output lives in", sit in the *user* turn immediately before
+/// the instruction, and carry no restriction except on its weakest line. A
+/// generative model read that as material: instructions like "write an email
+/// about X" came back carrying profile lines the user never dictated.
+///
+/// It is now a reading aid for the *instruction* — spellings, proper nouns,
+/// domain — and nothing else. The caller puts it in the system prompt, behind
+/// the header below, and the user turn carries only the transcript.
 pub(crate) fn build_profile_context(config: &AgentConfig) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     if !config.profile_label.trim().is_empty() {
-        parts.push(format!("Profil: {}", config.profile_label.trim()));
+        parts.push(format!("Profile: {}", config.profile_label.trim()));
     }
     if let Some(context) = profile_context_line(&config.profile_prompt) {
-        parts.push(format!("Kontext: {context}"));
+        parts.push(format!("Domain: {context}"));
     }
     if let Some(terms) = profile_context_line(&config.stt_hints) {
-        parts.push(format!("Fachbegriffe: {terms}"));
+        parts.push(format!("Terms: {terms}"));
     }
     if !config.dictionary_entries.is_empty() {
         let lines: Vec<String> = config
@@ -275,19 +286,32 @@ pub(crate) fn build_profile_context(config: &AgentConfig) -> String {
             .take(MAX_DICTIONARY_ENTRIES)
             .collect();
         if !lines.is_empty() {
-            parts.push(format!("Bekannte Entitäten:\n{}", lines.join("\n")));
+            parts.push(format!("Known spellings:\n{}", lines.join("\n")));
         }
     }
+    // Label and trigger only, never the expansion. The expansion is finished
+    // text, and offering finished text to a generative model is the one thing
+    // this block must not do. It is also redundant: `finalize_with_text_rules`
+    // expands the trigger deterministically at the end of every mode's
+    // pipeline (ADR 0020), so listing it here was a second, generative path for
+    // the same data. What remains is the reading aid — this trigger in the
+    // dictation refers to a snippet.
     if !config.snippet_entries.is_empty() {
         let lines: Vec<String> = config
             .snippet_entries
             .iter()
             .filter(|e| !e.expansion.trim().is_empty())
-            .map(|e| format!("  {} (\"{}\"): {}", e.label.trim(), e.trigger.trim(), e.expansion.trim()))
+            .map(|e| {
+                format!(
+                    "  {} (\"{}\")",
+                    truncate_line(e.label.trim()),
+                    truncate_line(e.trigger.trim())
+                )
+            })
             .take(MAX_SNIPPET_ENTRIES)
             .collect();
         if !lines.is_empty() {
-            parts.push(format!("Inhalts-Bausteine:\n{}", lines.join("\n")));
+            parts.push(format!("Snippet triggers:\n{}", lines.join("\n")));
         }
     }
     // Last and weakest: where the user is writing, not what they want written.
@@ -304,50 +328,91 @@ pub(crate) fn build_profile_context(config: &AgentConfig) -> String {
             format!("{app} ({category})")
         };
         parts.push(format!(
-            "Zielanwendung: {target}. Nur ein schwaches Situationssignal — niemals Inhalt daraus ableiten."
+            "Target application: {target}. A weak situational signal only — never derive content from it."
         ));
     }
 
     parts.join("\n\n")
 }
 
-/// Execute the agent instruction and return the composed result text.
-pub async fn apply_agent_transform(text: &str, config: &AgentConfig) -> AgentResult {
+/// The sentence that turns the profile block from an offer into a reading aid.
+///
+/// Modelled on the one line that already carried a restriction — the target
+/// application's "niemals Inhalt daraus ableiten" — and applied to the whole
+/// block rather than to its weakest member.
+pub(crate) const PROFILE_CONTEXT_HEADING: &str = "PROFILE CONTEXT. It exists solely to help you read the instruction correctly — spellings, proper nouns, technical terms, domain. Never derive content from it, never supplement the result with it, never carry any of it into the result. All content comes from the user's instruction alone:";
+
+/// The agent's system prompt, without the transcript.
+///
+/// Split out from [`apply_agent_transform`] so the regression corpus can assert
+/// the prompt the product actually sends. It previously built only
+/// `build_profile_context`, which meant every framing sentence around the
+/// context — the part ADR 0023 is about — sat outside the parity check.
+pub(crate) fn build_agent_system_prompt(config: &AgentConfig) -> String {
     let agent_name = &config.agent_name;
-    let system_prompt = format!(
-        "Du bist \"{agent_name}\", ein KI-Assistent, der direkt in eine Sprache-zu-Text-Diktat-App integriert ist. \
-Der Nutzer hat dich mit einer Sprachanweisung angesprochen. \
-Führe die Anweisung präzise und vollständig aus.\n\
-- Antworte nur mit dem fertigen Ergebnis-Text (keine Einleitung, keine Erklärung, kein \"Hier ist...\").\n\
-- Falls ein Kontext angegeben ist (Zielpublikum, Profil), berücksichtige ihn.\n\
-- Sprachstil: Passe Sprache und Ton an die Anweisung an."
-    );
+    // The instruction is in English while the result is not. That split needs
+    // to be stated: an English system prompt otherwise pulls the answer into
+    // English, and this product's whole premise is that it hands back what the
+    // user said, in the language they said it in.
+    let mut sections = vec![format!(
+        "You are \"{agent_name}\", an AI assistant built into a speech-to-text dictation app. \
+The user has addressed you with a spoken instruction. Carry it out precisely and completely.\n\
+- Reply with the finished result text only — no preamble, no explanation, no \"Here is...\".\n\
+- Write the result in the language the user dictated in, and keep any mix of languages they used. Never translate, and never answer in the language of these instructions.\n\
+- All content comes from the instruction. Do not invent facts, names, dates or numbers the user did not dictate; if something is missing, leave it out."
+    )];
 
+    // Deliberately before the style block: what may be said outranks how it is
+    // said, and the style block ends with the user's own free text.
     let profile_context = build_profile_context(config);
-    let user_content = if profile_context.is_empty() {
-        text.to_string()
-    } else {
-        format!("{}\n\nAnweisung: {}", profile_context, text)
-    };
+    if !profile_context.is_empty() {
+        sections.push(format!("{PROFILE_CONTEXT_HEADING}\n{profile_context}"));
+    }
 
-    let request = ChatCompletionRequest {
+    match config.style.prompt_block() {
+        Some(block) => sections.push(block),
+        // Without a configured style the guidance is the one the mode always
+        // had: take the tone from the instruction.
+        None => sections.push("Tone: match it to the instruction.".to_string()),
+    }
+
+    sections.join("\n\n")
+}
+
+/// The request the agent sends, without sending it.
+///
+/// Extracted so the split between the two turns is assertable. "The user turn
+/// carries only the transcript" is the whole of ADR 0023's structural fix, and
+/// it cannot be checked from outside a function that immediately awaits a
+/// provider call.
+pub(crate) fn build_agent_request(text: &str, config: &AgentConfig) -> ChatCompletionRequest {
+    ChatCompletionRequest {
         provider: config.provider.clone(),
         model: config.agent_model.clone(),
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: system_prompt,
+                content: build_agent_system_prompt(config),
             },
+            // Nothing but the transcript. Profile material used to sit in this
+            // turn one line above the instruction, where it was formally
+            // indistinguishable from the instruction itself; every other mode
+            // has always put it in the system prompt.
             ChatMessage {
                 role: "user".to_string(),
-                content: user_content,
+                content: text.to_string(),
             },
         ],
         temperature: 0.3,
         max_tokens: 2048,
         timeout_ms: Some(30_000),
         max_retries: Some(1),
-    };
+    }
+}
+
+/// Execute the agent instruction and return the composed result text.
+pub async fn apply_agent_transform(text: &str, config: &AgentConfig) -> AgentResult {
+    let request = build_agent_request(text, config);
 
     let started = Instant::now();
     match create_chat_completion(request).await {
@@ -380,6 +445,7 @@ Führe die Anweisung präzise und vollständig aus.\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::communication_style::CommunicationRegister;
 
     // ── Certain AGENT path ────────────────────────────────────────────────────
 
@@ -494,5 +560,164 @@ mod tests {
             "WordScript",
         );
         assert!(early > later_definite, "early={early} later={later_definite}");
+    }
+
+    // ── Prompt shape (ADR 0023) ──────────────────────────────────────────────
+
+    fn leaky_profile() -> AgentConfig {
+        AgentConfig {
+            provider: "groq".to_string(),
+            agent_name: "WordScript".to_string(),
+            agent_model: "test".to_string(),
+            profile_label: "Product and engineering".to_string(),
+            profile_prompt: "feature names\nrelease scope".to_string(),
+            stt_hints: "Kubernetes".to_string(),
+            dictionary_entries: vec![DictionaryEntry {
+                id: "d1".to_string(),
+                phrase: "Peter Muell".to_string(),
+                replace_with: "Peter Müller".to_string(),
+                ..Default::default()
+            }],
+            snippet_entries: vec![SnippetEntry {
+                id: "s1".to_string(),
+                label: "Signature".to_string(),
+                trigger: "sig".to_string(),
+                expansion: "Best regards, Felix — SW labs, Hamburg".to_string(),
+                ..Default::default()
+            }],
+            workspace_context: None,
+            style: CommunicationStyle::default(),
+        }
+    }
+
+    /// The user turn is the transcript, byte for byte. Everything the profile
+    /// contributes belongs to the system turn, where it is formally separated
+    /// from the thing the user asked for.
+    #[test]
+    fn user_turn_carries_only_the_transcript() {
+        let request = build_agent_request(
+            "Schreib eine Mail an Peter, Inhalt: Termin verschiebt sich auf Montag.",
+            &leaky_profile(),
+        );
+
+        let user = request
+            .messages
+            .iter()
+            .find(|message| message.role == "user")
+            .expect("agent request needs a user turn");
+
+        assert_eq!(
+            user.content,
+            "Schreib eine Mail an Peter, Inhalt: Termin verschiebt sich auf Montag."
+        );
+        assert!(!user.content.contains("PROFILE CONTEXT"));
+        assert!(!user.content.contains("feature names"));
+        assert!(!user.content.contains("Instruction:"));
+    }
+
+    #[test]
+    fn profile_context_sits_in_the_system_turn_behind_the_reading_aid_clause() {
+        let request = build_agent_request("Schreib eine Mail", &leaky_profile());
+        let system = request
+            .messages
+            .iter()
+            .find(|message| message.role == "system")
+            .expect("agent request needs a system turn");
+
+        assert!(system.content.contains(PROFILE_CONTEXT_HEADING));
+        assert!(system.content.contains("feature names"));
+        assert!(system
+            .content
+            .contains("never carry any of it into the result"));
+        assert!(system
+            .content
+            .contains("All content comes from the user's instruction alone"));
+    }
+
+    /// The line that invited the leak. It told the model to "take the context
+    /// into account" with nothing on the other side of the scale.
+    #[test]
+    fn system_prompt_no_longer_invites_the_model_to_use_the_context() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+        assert!(!prompt.contains("take it into account"));
+        assert!(prompt.contains("Do not invent facts, names, dates or numbers"));
+    }
+
+    /// A snippet expansion is finished text. Offering it to a generative model
+    /// is exactly the leak, and it is redundant besides: the trigger is expanded
+    /// deterministically at the end of the pipeline either way.
+    #[test]
+    fn snippet_expansions_never_reach_the_agent_prompt() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+
+        assert!(!prompt.contains("Best regards, Felix"));
+        assert!(!prompt.contains("Best regards"));
+        assert!(prompt.contains("Snippet triggers"));
+        assert!(prompt.contains("Signature (\"sig\")"));
+    }
+
+    /// The dictionary stays: knowing that "Peter Muell" is heard for
+    /// "Peter Müller" is what makes the block a reading aid rather than dead
+    /// weight. Removing it would trade one bug for a mode that cannot spell.
+    #[test]
+    fn dictionary_and_terms_stay_available_for_reading_the_instruction() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+        assert!(prompt.contains("Peter Müller"));
+        assert!(prompt.contains("Kubernetes"));
+    }
+
+    #[test]
+    fn an_empty_profile_produces_no_context_block() {
+        let prompt = build_agent_system_prompt(&AgentConfig {
+            agent_name: "WordScript".to_string(),
+            ..Default::default()
+        });
+
+        assert!(!prompt.contains(PROFILE_CONTEXT_HEADING));
+        assert!(prompt.contains("You are \"WordScript\""));
+    }
+
+    #[test]
+    fn style_block_reaches_the_agent_and_replaces_the_default_language_line() {
+        let styled = AgentConfig {
+            style: CommunicationStyle {
+                register: CommunicationRegister::Quick,
+                ..CommunicationStyle::default()
+            },
+            ..leaky_profile()
+        };
+
+        let prompt = build_agent_system_prompt(&styled);
+        assert!(prompt.contains("WRITING STYLE."));
+        assert!(prompt.contains("Form: Short message."));
+        assert!(!prompt.contains("Tone: match it to the instruction."));
+    }
+
+    /// With the style off the mode keeps the guidance it always had, so a
+    /// profile that never touches the setting sees no change.
+    #[test]
+    fn style_off_keeps_the_original_language_line() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+        assert!(prompt.contains("Tone: match it to the instruction."));
+        assert!(!prompt.contains("WRITING STYLE."));
+    }
+
+    /// Content first, style second. The style block ends in the user's own free
+    /// text, and free text must not sit between the model and the rule about
+    /// what it may say.
+    #[test]
+    fn profile_context_precedes_the_style_block() {
+        let styled = AgentConfig {
+            style: CommunicationStyle {
+                register: CommunicationRegister::Friend,
+                ..CommunicationStyle::default()
+            },
+            ..leaky_profile()
+        };
+
+        let prompt = build_agent_system_prompt(&styled);
+        let context = prompt.find(PROFILE_CONTEXT_HEADING).unwrap();
+        let style = prompt.find("WRITING STYLE.").unwrap();
+        assert!(context < style);
     }
 }

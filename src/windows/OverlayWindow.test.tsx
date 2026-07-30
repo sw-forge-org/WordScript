@@ -676,7 +676,7 @@ describe("OverlayWindow", () => {
         return Promise.resolve();
       }
       if (command === "resolve_current_processing_mode") {
-        return Promise.resolve({ mode: backendMode, is_override: false, auto_detected: false, detected_from: null });
+        return Promise.resolve({ mode: backendMode, auto_detected: false, detected_from: null });
       }
       return Promise.resolve();
     });
@@ -1314,7 +1314,7 @@ describe("OverlayWindow", () => {
     // microtask tick.
     invokeMock.mockImplementation((command: string) => {
       if (command === "resolve_current_processing_mode") {
-        return Promise.resolve({ mode: "auto", is_override: false, auto_detected: false, detected_from: null });
+        return Promise.resolve({ mode: "auto", auto_detected: false, detected_from: null });
       }
       if (command === "sync_overlay_window_visibility") return Promise.resolve();
       if (command === "set_active_profile_processing_mode") return Promise.resolve();
@@ -1361,7 +1361,7 @@ describe("OverlayWindow", () => {
     let resolveSetActiveProfile: ((value: unknown) => void) | null = null;
     invokeMock.mockImplementation((command: string) => {
       if (command === "resolve_current_processing_mode") {
-        return Promise.resolve({ mode: "auto", is_override: false, auto_detected: false, detected_from: null });
+        return Promise.resolve({ mode: "auto", auto_detected: false, detected_from: null });
       }
       if (command === "sync_overlay_window_visibility") return Promise.resolve();
       if (command === "set_active_profile_processing_mode") {
@@ -1409,7 +1409,7 @@ describe("OverlayWindow", () => {
         resolveCallCount += 1;
         if (resolveCallCount <= 1) {
           // Initial mount: resolve with "auto".
-          return Promise.resolve({ mode: "auto", is_override: false, auto_detected: false, detected_from: null });
+          return Promise.resolve({ mode: "auto", auto_detected: false, detected_from: null });
         }
         // Subsequent calls (after a mode-event): stay pending until the test
         // resolves it, proving the chip does NOT update eagerly.
@@ -1447,9 +1447,41 @@ describe("OverlayWindow", () => {
     // Now resolve the backend with "rewrite" — the chip updates AFTER the
     // resolve, proving the async-only path.
     await act(async () => {
-      resolveResolveMode?.({ mode: "rewrite", is_override: true, auto_detected: false, detected_from: null });
+      resolveResolveMode?.({ mode: "rewrite", auto_detected: false, detected_from: null });
     });
     await waitFor(() => expect(screen.getByLabelText("Mode Rewrite, tap to cycle")).toBeInTheDocument());
+  });
+
+  it("serves a mode event that lands inside the debounce window instead of dropping it", async () => {
+    // The reported symptom: change the processing mode in Settings while
+    // recording and the overlay keeps showing the old one. The debounce
+    // `return`ed inside its window, so an event arriving within 150ms of any
+    // other fetch was discarded and never retried — nothing refetched again
+    // until the next unrelated trigger. It must coalesce to the LAST request,
+    // not swallow it.
+    let backendMode = "auto";
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "sync_overlay_window_visibility") return Promise.resolve();
+      if (command === "resolve_current_processing_mode") {
+        return Promise.resolve({ mode: backendMode, auto_detected: false, detected_from: null });
+      }
+      return Promise.resolve();
+    });
+    useRuntimeMock.mockReturnValue(buildRecordingState());
+
+    render(<OverlayWindow />);
+    await waitFor(() => expect(modeEventHandlers.length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByLabelText("Mode Auto, tap to cycle")).toBeInTheDocument());
+
+    // Immediately after the mount fetch — squarely inside the debounce window.
+    backendMode = "agent";
+    modeEventHandlers.forEach((fn) => fn({ payload: { event: "mode-changed" } }));
+
+    // The trailing fetch fires at the end of the window and picks up the change.
+    await act(async () => { await new Promise((r) => setTimeout(r, 260)); });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Mode Agent, tap to cycle")).toBeInTheDocument(),
+    );
   });
 
   it("park (visible:false) is not coalesced with reveal", async () => {

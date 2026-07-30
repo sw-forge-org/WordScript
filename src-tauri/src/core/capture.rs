@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use super::{
+    communication_style::CommunicationStyle,
     config::{
         AppConfig, DictionaryEntry, SnippetEntry, TextProfileWorkMode, DEFAULT_CORRECTION_MODEL,
     },
@@ -23,6 +24,10 @@ use super::{
     providers::default_provider_id,
     runtime_log,
 };
+
+fn default_agent_name() -> String {
+    super::config::DEFAULT_AGENT_NAME.to_string()
+}
 
 const DEFAULT_MAX_RECORDING_SECONDS: u64 = 720;
 const DEFAULT_SILENCE_TIMEOUT_SECONDS: u64 = 30;
@@ -169,6 +174,20 @@ pub struct NativeCaptureConfig {
     // actually running in. `work_mode` carries the stored mode; the pipeline
     // supplies the preset explicitly.
     pub correction_model: String,
+    // Snapshotted with everything else the session runs on, so "only the
+    // processing mode can still change mid-recording" is literally true. These
+    // used to be re-read from disk at pipeline time, which meant editing the
+    // agent name or the style during a recording applied to it while editing
+    // the profile text did not — one rule with two answers.
+    // `default` so a payload written before these existed still loads. They
+    // ride in the same event as everything else, so a missing key would fail
+    // the whole capture rather than one setting (ADR 0015).
+    #[serde(default)]
+    pub profile_label: String,
+    #[serde(default = "default_agent_name")]
+    pub agent_name: String,
+    #[serde(default)]
+    pub communication_style: CommunicationStyle,
     pub audio_device: String,
     pub max_recording_seconds: u64,
     pub silence_timeout_seconds: u64,
@@ -189,6 +208,9 @@ impl Default for NativeCaptureConfig {
             language_locked: false,
             prompt: String::new(),
             stt_hints: String::new(),
+            profile_label: String::new(),
+            agent_name: super::config::DEFAULT_AGENT_NAME.to_string(),
+            communication_style: CommunicationStyle::default(),
             work_mode: TextProfileWorkMode::default(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -211,6 +233,9 @@ impl NativeCaptureConfig {
         // longer carries anything the capture needs.
         let speech = active_profile.resolved_speech();
         let capture = active_profile.resolved_capture();
+        let profile_label = active_profile.label.clone();
+        let agent_name = app_config.active_text_profile_agent_name();
+        let communication_style = app_config.active_text_profile_communication_style();
 
         let provider = speech.provider.clone();
         let local_provider_selected = provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
@@ -247,6 +272,9 @@ impl NativeCaptureConfig {
             } else {
                 speech.correction_model
             },
+            profile_label: profile_label.clone(),
+            agent_name,
+            communication_style,
             audio_device: app_config.audio_device,
             max_recording_seconds: capture.max_recording_seconds,
             silence_timeout_seconds: capture.silence_timeout_seconds,
@@ -1658,6 +1686,74 @@ mod tests {
         assert_eq!(request.best_of, Some(4));
         assert_eq!(request.profile.as_deref(), Some("local-preview-large-v3"));
         assert_eq!(request.language.as_deref(), Some("de"));
+    }
+
+    /// The session belongs to the profile it started in. Agent name, label and
+    /// communication style used to be re-read from disk once the audio was
+    /// ready, so editing them mid-recording applied to that recording while
+    /// editing the profile text did not — one rule with two answers (ADR 0025).
+    #[test]
+    fn audio_ready_round_trip_preserves_the_profile_identity_and_style() {
+        use super::super::communication_style::{
+            CommunicationLength, CommunicationRegister, CommunicationStyle,
+        };
+
+        let config = NativeCaptureConfig {
+            profile_label: "Product and engineering".to_string(),
+            agent_name: "Scribe".to_string(),
+            stt_hints: "Kubernetes".to_string(),
+            communication_style: CommunicationStyle {
+                register: CommunicationRegister::Quick,
+                length: CommunicationLength::Terse,
+                instructions: "no emoji".to_string(),
+                sample: "morning, moving the call".to_string(),
+            },
+            ..Default::default()
+        };
+
+        let restored = round_trip(&config);
+
+        assert_eq!(restored.profile_label, "Product and engineering");
+        assert_eq!(restored.agent_name, "Scribe");
+        assert_eq!(restored.stt_hints, "Kubernetes");
+        assert_eq!(
+            restored.communication_style.register,
+            CommunicationRegister::Quick
+        );
+        assert_eq!(
+            restored.communication_style.length,
+            CommunicationLength::Terse
+        );
+        assert_eq!(restored.communication_style.instructions, "no emoji");
+        assert_eq!(restored.communication_style.sample, "morning, moving the call");
+
+        // And they reach the transform the pipeline builds, rather than being
+        // re-resolved there.
+        let transform = super::super::transform::NativeTransformConfig::from_capture_config(
+            &restored,
+            super::super::config::ProcessingMode::Agent.transform_preset(),
+        );
+        assert_eq!(transform.agent_name, "Scribe");
+        assert_eq!(transform.profile_label, "Product and engineering");
+        assert_eq!(transform.style.register, CommunicationRegister::Quick);
+    }
+
+    /// A config written before the fields existed must still load. They travel
+    /// in the same event payload as everything else, so a missing key would
+    /// otherwise fail the whole capture rather than one setting.
+    #[test]
+    fn a_payload_without_the_new_fields_still_deserializes() {
+        let mut value = serde_json::to_value(NativeCaptureConfig::default()).expect("serializes");
+        let object = value.as_object_mut().expect("object");
+        object.remove("profile_label");
+        object.remove("agent_name");
+        object.remove("communication_style");
+
+        let restored: NativeCaptureConfig =
+            serde_json::from_value(value).expect("legacy payload deserializes");
+        assert_eq!(restored.profile_label, "");
+        assert_eq!(restored.agent_name, super::super::config::DEFAULT_AGENT_NAME);
+        assert!(!restored.communication_style.is_active());
     }
 
     #[test]

@@ -112,7 +112,6 @@ function resolveOverlayProcessingMode(config: AppConfig): ProcessingMode {
 
 interface ResolvedProcessingContext {
   mode: ProcessingMode;
-  is_override: boolean;
   auto_detected: boolean;
   detected_from: string | null;
 }
@@ -285,10 +284,9 @@ export default function OverlayWindow() {
   // Collapsing all fetches within a 150ms window into a SINGLE setEffectiveMode
   // commit eliminates the multi-render cascade → one geometry → no ghost.
   const lastModeFetchRef = useRef(0);
-  const fetchEffectiveMode = useCallback(async () => {
-    const now = Date.now();
-    if (now - lastModeFetchRef.current < 150) return; // skip redundant refetch within debounce window
-    lastModeFetchRef.current = now;
+  const trailingModeFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runModeFetch = useCallback(async () => {
+    lastModeFetchRef.current = Date.now();
     try {
       const ctx = await invoke<ResolvedProcessingContext>("resolve_current_processing_mode");
       setEffectiveMode(ctx.mode);
@@ -296,6 +294,30 @@ export default function OverlayWindow() {
       setEffectiveMode(null);
     }
   }, []);
+  // Coalescing, not dropping. This used to `return` inside the window, which
+  // discarded the call outright — so a settings save landing within 150ms of
+  // any other fetch was lost, and the overlay kept showing the previous mode
+  // until something else happened to refetch. The window still collapses a
+  // burst into one commit (the ghosting fix it exists for); it now guarantees
+  // the *last* request is served rather than the first.
+  const fetchEffectiveMode = useCallback(async () => {
+    const elapsed = Date.now() - lastModeFetchRef.current;
+    if (elapsed < 150) {
+      if (trailingModeFetchRef.current) clearTimeout(trailingModeFetchRef.current);
+      trailingModeFetchRef.current = setTimeout(() => {
+        trailingModeFetchRef.current = null;
+        void runModeFetch();
+      }, 150 - elapsed);
+      return;
+    }
+    await runModeFetch();
+  }, [runModeFetch]);
+  useEffect(
+    () => () => {
+      if (trailingModeFetchRef.current) clearTimeout(trailingModeFetchRef.current);
+    },
+    [],
+  );
   // Derived error visibility. Atomic against a new trigger: RECORDING_STARTED
   // clears `error` AND flips `status` to "recording" in a single reducer
   // commit (useRuntime.ts), so this evaluates to false in the SAME render that

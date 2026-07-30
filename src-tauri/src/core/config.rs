@@ -4,6 +4,9 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
+use super::communication_style::{
+    CommunicationLength, CommunicationRegister, CommunicationStyle,
+};
 use super::paths::config_file_path;
 use super::providers::{
     default_provider_id, migrate_legacy_provider_api_key, normalize_provider_value,
@@ -572,6 +575,16 @@ pub struct ProfileModesSettings {
     #[serde(alias = "auto_detect_mode")]
     pub collect_workspace_context: bool,
     pub agent_name: String,
+    /// How this profile's agent writes. Defaults to `Off`, so a config written
+    /// before the style existed produces a byte-identical prompt.
+    pub communication_register: CommunicationRegister,
+    pub communication_length: CommunicationLength,
+    /// The user's own rules ("immer duzen", "keine Emojis"). They outrank the
+    /// register where they touch it.
+    pub style_instructions: String,
+    /// A piece of the user's own writing. Subordinate to the register for form,
+    /// authoritative for wording — see `core::communication_style`.
+    pub style_sample: String,
 }
 
 impl Default for ProfileModesSettings {
@@ -579,6 +592,10 @@ impl Default for ProfileModesSettings {
         Self {
             collect_workspace_context: true,
             agent_name: DEFAULT_AGENT_NAME.to_string(),
+            communication_register: CommunicationRegister::Off,
+            communication_length: CommunicationLength::Normal,
+            style_instructions: String::new(),
+            style_sample: String::new(),
         }
     }
 }
@@ -876,6 +893,31 @@ impl AppConfig {
             self.agent_name.clone()
         } else {
             trimmed.to_string()
+        }
+    }
+
+    /// The communication style for the active profile.
+    ///
+    /// Purely per-profile: there is no global fallback, because the point of
+    /// the setting is that two profiles write differently. A profile whose
+    /// `modes` block predates the style resolves to `Off`, which produces no
+    /// style block at all and therefore the prompt it had before.
+    ///
+    /// Read on every path that builds a generative or reformulating prompt. A
+    /// control the runtime does not read is indistinguishable from one that
+    /// agrees with the default — that was ADR 0020's failure and it is the
+    /// reason this resolver exists rather than each call site reaching into
+    /// `profile.modes` itself.
+    pub(crate) fn active_text_profile_communication_style(&self) -> CommunicationStyle {
+        let Some(modes) = self.active_text_profile().modes else {
+            return CommunicationStyle::default();
+        };
+
+        CommunicationStyle {
+            register: modes.communication_register,
+            length: modes.communication_length,
+            instructions: modes.style_instructions.trim().to_string(),
+            sample: modes.style_sample.trim().to_string(),
         }
     }
 
@@ -1278,11 +1320,14 @@ impl AppConfig {
 
         // Migrate modes settings if not already present. The three cleanup flags
         // are deliberately not carried over: the mode owns that behavior now, so
-        // copying them would recreate values nothing reads.
+        // copying them would recreate values nothing reads. The communication
+        // style has no global predecessor to migrate from and stays at its
+        // default, which emits no style block.
         if profile.modes.is_none() {
             profile.modes = Some(ProfileModesSettings {
                 collect_workspace_context: self.auto_detect_mode,
                 agent_name: self.agent_name.clone(),
+                ..ProfileModesSettings::default()
             });
             migrated = true;
         }
@@ -1392,6 +1437,23 @@ pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<A
     // clipboard only". `reconcile_legacy_secret_before_save` does its own
     // load -> maybe-save for the legacy provider key; it is now inside the
     // same locked section so that write can't race this one either.
+    // A settings save carries the whole config, so it is a second way to change
+    // the active profile — by picking another one, or by deleting the active
+    // one and letting normalization fall back to the first. Both land in the
+    // same mixed state as an explicit switch.
+    if super::sessions::session_is_active(&app) {
+        let live_id = AppConfig::load_from_disk().active_text_profile_id;
+        let incoming_id = config
+            .text_profiles
+            .iter()
+            .find(|profile| profile.id == live_id)
+            .map(|profile| profile.id.clone())
+            .unwrap_or_else(|| config.active_text_profile_id.clone());
+        if config.active_text_profile_id != live_id || incoming_id != live_id {
+            return Err(super::sessions::PROFILE_LOCKED_DURING_SESSION.to_string());
+        }
+    }
+
     let sanitized = with_config_file_lock(|| {
         AppConfig::reconcile_legacy_secret_before_save()?;
         let mut sanitized = config.without_secrets();
@@ -1402,6 +1464,7 @@ pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<A
     })??;
     super::sound::apply_config(&sanitized);
     emit_ready_event(&app, &sanitized);
+    emit_effective_mode_event(&app, &sanitized);
     Ok(sanitized)
 }
 
@@ -1410,6 +1473,12 @@ pub fn switch_active_text_profile<R: Runtime>(
     app: AppHandle<R>,
     profile_id: String,
 ) -> Result<AppConfig, String> {
+    // The runtime owns this rule, not the UI. Disabling the switcher covers the
+    // button; it does not cover the tray, a hotkey, or any path added later.
+    if super::sessions::session_is_active(&app) {
+        return Err(super::sessions::PROFILE_LOCKED_DURING_SESSION.to_string());
+    }
+
     // read-modify-write under the lock: prevents clobbering a concurrent save.
     let config = with_config_file_lock(|| {
         let mut config = AppConfig::load_from_disk_within_lock();
@@ -1420,6 +1489,9 @@ pub fn switch_active_text_profile<R: Runtime>(
     })??;
     super::sound::apply_config(&config);
     emit_ready_event(&app, &config);
+    // Switching profile changes the effective mode as surely as setting it
+    // does, because the mode lives on the profile.
+    emit_effective_mode_event(&app, &config);
     Ok(config.without_secrets())
 }
 
@@ -1466,6 +1538,27 @@ pub fn unacknowledge_profile_health_flag(
         config.save_to_disk()?;
         Ok::<AppConfig, String>(config.without_secrets())
     })?
+}
+
+/// Tells every mode listener that the effective mode may have changed.
+///
+/// Every path that writes the mode owes this alongside `ready`. The overlay
+/// listens on `wordscript-mode-event`; before this existed, only the hotkey
+/// paths emitted it, and a settings save reached the overlay solely through a
+/// `state.config` identity change — a side effect, not a signal, and one the
+/// overlay's fetch debounce could drop.
+pub fn emit_effective_mode_event<R: Runtime>(app: &AppHandle<R>, config: &AppConfig) {
+    let profile_mode = config
+        .text_profiles
+        .iter()
+        .find(|profile| profile.id == config.active_text_profile_id)
+        .map(|profile| profile.work_mode.effective_processing_mode())
+        .unwrap_or_else(|| config.processing_mode.clone());
+
+    super::mode_router::emit_mode_event(
+        app,
+        &super::mode_router::resolve_processing_mode(profile_mode),
+    );
 }
 
 pub fn emit_ready_event<R: Runtime>(app: &AppHandle<R>, config: &AppConfig) {
@@ -3393,6 +3486,7 @@ mod tests {
         config.text_profiles[0].modes = Some(ProfileModesSettings {
             collect_workspace_context: false,
             agent_name: "ProfileName".to_string(),
+            ..ProfileModesSettings::default()
         });
 
         assert_eq!(config.active_text_profile_agent_name(), "ProfileName");
@@ -3402,6 +3496,7 @@ mod tests {
         config.text_profiles[0].modes = Some(ProfileModesSettings {
             collect_workspace_context: true,
             agent_name: "   ".to_string(),
+            ..ProfileModesSettings::default()
         });
         assert_eq!(config.active_text_profile_agent_name(), "GlobalName");
         assert!(config.active_text_profile_collect_workspace_context());

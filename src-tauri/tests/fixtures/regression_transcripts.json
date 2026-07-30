@@ -207,7 +207,7 @@
       "expected_correction_prompt": {
         "mode": "cleanup",
         "contains": [
-          "Präposition"
+          "German \"um\" is a preposition"
         ],
         "not_contains": []
       },
@@ -265,8 +265,8 @@
         "workspace_app": "Slack",
         "workspace_category": "chat",
         "contains": [
-          "Zielanwendung: Slack (chat)",
-          "niemals Inhalt daraus ableiten"
+          "Target application: Slack (chat)",
+          "never derive or add content from it"
         ],
         "not_contains": []
       },

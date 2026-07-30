@@ -66,6 +66,53 @@ describe("ProfileSwitcher", () => {
     );
   });
 
+  // The profile decides the recognizer settings, and those are fixed the moment
+  // recording starts — a switch mid-session left the pipeline reading half of
+  // one profile and half of the other. The runtime rejects it; this surface
+  // says so before the attempt instead of failing silently (ADR 0025).
+  it("locks the switcher while a session is running and explains why", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(
+      <ProfileSwitcher
+        config={createAppConfig()}
+        onChange={onChange}
+        onEdit={vi.fn()}
+        sessionActive
+      />,
+    );
+
+    const combobox = screen.getByRole("combobox", { name: /switch active profile/i });
+    expect(combobox).toBeDisabled();
+    expect(screen.getByText(/locked while recording/i)).toBeInTheDocument();
+    expect(screen.getByText(/processing mode can still be changed/i)).toBeInTheDocument();
+
+    await user.click(combobox);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("waits for the runtime before applying the switch locally", async () => {
+    // The optimistic order showed a profile the runtime had refused.
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("session running"));
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(
+      <ProfileSwitcher config={createAppConfig()} onChange={onChange} onEdit={vi.fn()} />,
+    );
+
+    const combobox = screen.getByRole("combobox", { name: /switch active profile/i });
+    const other = Array.from(combobox.querySelectorAll("option"))
+      .map((option) => option.value)
+      .find((value) => value !== (combobox as HTMLSelectElement).value);
+    await user.selectOptions(combobox, other!);
+
+    expect(invoke).toHaveBeenCalledWith("switch_active_text_profile", { profileId: other });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("invokes the edit callback", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();

@@ -104,10 +104,13 @@ Tauri event channels and their payload discriminators are separate contracts:
   `lastTranscription`; they do not replace the authoritative
   `wordscript-event` result.
 - `wordscript-mode-event` carries `ProcessingModeEvent` (`mode`,
-  `is_override`, `auto_detected`) after the native hotkey path persists a mode
-  change, prompting listeners to re-fetch or update the effective mode. Other
-  settings and overlay writes synchronize through the `wordscript-event`
-  `ready` payload, the command result and local eager state.
+  `auto_detected`) and is emitted by **every** path that writes the effective
+  mode -- the mode hotkeys, the overlay cycler, `save_config` and
+  `switch_active_text_profile` -- prompting listeners to re-fetch. It is owed
+  alongside the `wordscript-event` `ready` payload, not instead of it: `ready`
+  carries the whole config for the Settings form, the mode event is the named
+  signal the overlay listens on. Settings saves used to emit only `ready` and
+  reached the overlay through a config-identity side effect (ADR 0024).
 - `wordscript-native-insert` carries `NativeInsertResult`, including insertion
   and recovery truth.
 
@@ -140,10 +143,26 @@ Insert modes: `direct_paste` -> `clipboard_only` -> `clipboard_fallback` ->
 `rewrite` / `agent` / `prompt_enhance` / `verbatim`.
 
 Effective mode resolution (per session) via `mode_router::resolve_processing_mode`:
-1. manual override (mode picker / cycle / per-mode hotkey)
-2. active `TextProfile.work_mode.processing_mode`
-3. legacy global `AppConfig.processing_mode` only when the active profile
+1. active `TextProfile.work_mode.processing_mode`
+2. legacy global `AppConfig.processing_mode` only when the active profile
    cannot be resolved; its default is `auto`
+
+There is no runtime override layer. The mode picker, the mode cycle and the
+per-mode hotkeys all write the profile and persist it, so the profile is the
+single source. The process-global override that used to outrank it was never
+cleared and made every later settings change invisible (ADR 0024).
+
+**The active profile is fixed for the duration of a session** (`Capturing` or
+`Processing`). `switch_active_text_profile` and any `save_config` that would
+change `active_text_profile_id` are refused with
+`sessions::PROFILE_LOCKED_DURING_SESSION`, because the profile decides the
+recognizer settings and those are committed when recording starts. Everything
+derived from the profile -- text, vocabulary, dictionary, snippets, label,
+agent name, communication style -- is snapshotted into `NativeCaptureConfig` at
+capture start. The processing mode is the single exception: it is resolved at
+pipeline time and therefore still applies to the recording in progress. One
+rule: during a recording only the processing mode changes anything; everything
+else applies from the next recording (ADR 0025).
 
 The mode is the ONLY input to transform behavior.
 `ProcessingMode::transform_preset()` is the single producer of `post_process` /
@@ -168,6 +187,25 @@ Workspace context is collected once per session when the active profile allows i
 `auto_detect_mode`), and reaches every mode: Auto routing as a category signal,
 and the cleanup, rewrite and agent prompts as exactly one bounded hint line that
 forbids deriving content from it.
+
+The profile context reaches every mode at one width (ADR 0021), but what a mode
+may do with it differs. In `agent` it is a reading aid for the instruction and
+nothing else: it sits in the system prompt behind an explicit prohibition on
+deriving content from it, the user turn carries the transcript alone, and
+snippets contribute trigger without expansion. See ADR 0023.
+
+The per-profile communication style (`ProfileModesSettings.communication_register`
+/ `communication_length` / `style_instructions` / `style_sample`) is read by
+`agent` and `rewrite` only, through one producer, `core::communication_style`.
+The register sets form, never wording — slang and youth language may come only
+from the user's rules and writing sample, never from the model's own memory.
+Precedence is fixed and stated in the prompt: preset, then rules, then sample,
+with the sample subordinate for form and authoritative for wording. Default is
+`off`, at which every prompt is byte-identical to the pre-style build.
+
+Every prompt WordScript sends is written in English regardless of dictation
+language, and each states explicitly that the output language is the dictated
+one.
 
 ## Data Model
 
@@ -209,10 +247,11 @@ no account. Entities:
 2. `capture.rs` starts recording, emits level/waveform events.
 3. Recording ends via stop hotkey, silence timeout, max duration or abort.
 4. Audio normalized to 16 kHz mono WAV for the provider.
-5. `mode_router.rs` resolves effective `ProcessingMode` (manual override >
-   active `TextProfile.work_mode`; unresolved profiles use the legacy global
-   `AppConfig.processing_mode`). An effective `auto` value is resolved to a
-   concrete mode per transcription.
+5. `mode_router.rs` resolves effective `ProcessingMode` from the active
+   `TextProfile.work_mode`; unresolved profiles use the legacy global
+   `AppConfig.processing_mode`. The config is loaded after the recording ends,
+   so a mode changed mid-recording is already on disk here. An effective `auto`
+   value is resolved to a concrete mode per transcription.
 6. `providers/mod.rs` dispatches to `groq` or `local_preview`. The request comes
    from `NativeCaptureConfig::resolve_transcription_request`, the single place a
    provider request is derived from a capture (ADR 0015).

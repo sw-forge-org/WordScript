@@ -13,7 +13,15 @@ import {
   resolveActiveTextProfile,
   resolveProfileModesSettings,
 } from "../../lib/textProfiles";
-import type { AppConfig, NativeTriggerStatus, ProcessingMode, EnhanceSubMode, PromptTarget, TextProfile, TextProfileWorkMode } from "../../types/ipc";
+import styleLexiconsData from "../../data/styleLexicons.json";
+import type { AppConfig, CommunicationLength, CommunicationRegister, NativeTriggerStatus, ProcessingMode, EnhanceSubMode, ProfileModesSettings, PromptTarget, TextProfile, TextProfileWorkMode } from "../../types/ipc";
+
+interface StyleLexicons {
+  updated: string;
+  languages: { code: string; label: string; entries: { term: string }[] }[];
+}
+
+const STYLE_LEXICONS = styleLexiconsData as StyleLexicons;
 
 interface Props {
   config: AppConfig;
@@ -22,7 +30,6 @@ interface Props {
 
 interface ResolvedProcessingContext {
   mode: ProcessingMode;
-  is_override: boolean;
   auto_detected: boolean;
   detected_from: string | null;
 }
@@ -60,6 +67,39 @@ const TARGET_OPTIONS: { value: PromptTarget; label: string }[] = [
   { value: "chatgpt", label: "ChatGPT" },
   { value: "copilot", label: "Copilot" },
 ];
+
+// Mirrors `MAX_STYLE_RULE_CHARS` / `MAX_STYLE_SAMPLE_CHARS` in
+// `core::communication_style`. A budget the user cannot see is indistinguishable
+// from a bug, so the meter shows it rather than letting them discover it.
+const MAX_STYLE_RULE_CHARS = 400;
+const MAX_STYLE_SAMPLE_CHARS = 400;
+
+const STYLE_TEXTAREA_CLASS =
+  "w-full resize-y rounded-md border border-border bg-surface-strong px-3 py-2 text-[13px] text-foreground outline-none transition-colors placeholder:text-fg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40";
+
+// Named after the addressee, or — for the lowest step — the medium. A ladder of
+// formality adjectives ("formal", "formulaic", "casual", "chat") reads as four
+// near-synonyms in a select; "who am I writing to" is something the user
+// already knows when they dictate. See ADR 0023.
+const REGISTER_OPTIONS: { value: CommunicationRegister; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "authority", label: "Authority" },
+  { value: "client", label: "Client" },
+  { value: "colleague", label: "Colleague" },
+  { value: "friend", label: "Friend" },
+  { value: "quick", label: "Quick message" },
+];
+
+// Each level is defined by properties you can count in the output, never by an
+// adjective — an adjective is neither verifiable nor enforceable.
+const REGISTER_DESCRIPTIONS: Record<CommunicationRegister, string> = {
+  off: "No style instruction. The agent takes its tone from the dictation, exactly as before.",
+  authority: "Authorities, contracts, legal text. Fixed formulas, formal address, no contractions, full salutation and sign-off.",
+  client: "Applications, external customer mail, leadership. Complete sentences, formal address, full salutation and sign-off.",
+  colleague: "Internal mail to the team. Complete sentences, address form follows your dictation, short salutation.",
+  friend: "Private mail, team chat, friends. Familiar address, contractions, short sentences, salutation optional.",
+  quick: "Short messages and group chat. No salutation, fragments, minimal punctuation, lowercase starts allowed.",
+};
 
 // Maps each processing mode to its dedicated per-mode hotkey config field.
 const MODE_HOTKEY_FIELDS = {
@@ -189,12 +229,15 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
     [config],
   );
 
+  // Two states, not three. The third read "Runtime override: X (wins over
+  // profile default)" and described a process-global value that nothing ever
+  // cleared, so it announced that an invisible state was beating the setting
+  // right above it — with no way to clear it. The profile is the only source
+  // now (ADR 0024).
   const precedenceLine = resolved
-    ? resolved.is_override
-      ? `Runtime override: ${processingModeLabel(resolved.mode)} (wins over profile default)`
-      : resolved.auto_detected
-        ? `Auto mode: ${processingModeLabel(resolved.mode)} (LLM will decide per transcription)`
-        : `Profile default: ${processingModeLabel(resolved.mode)}`
+    ? resolved.auto_detected
+      ? `Auto mode: ${processingModeLabel(resolved.mode)} (LLM will decide per transcription)`
+      : `Profile default: ${processingModeLabel(resolved.mode)}`
     : "Resolving effective mode…";
 
   return (
@@ -209,7 +252,7 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
           align="start"
           divider={false}
           control={
-            <StatusBadge tone={resolved?.is_override ? "accent" : resolved?.auto_detected ? "info" : "neutral"} dot>
+            <StatusBadge tone={resolved?.auto_detected ? "info" : "neutral"} dot>
               {resolved ? processingModeLabel(resolved.mode) : "—"}
             </StatusBadge>
           }
@@ -285,16 +328,18 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
                     />
                   </div>
                 )}
-                {checked && mode === "agent" && (
-                  <div className="pb-4 pl-7">
-                    <AgentControls config={config} onChange={onChange} />
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       </FormCard>
+
+      {/* Outside the mode list on purpose. These controls used to render only
+          while Agent was the selected mode, but the agent name is also the
+          first criterion Auto routes on ("agent name addressed with a task"),
+          and Auto is the default — so the field that decides whether Auto ever
+          reaches Agent was invisible in the default configuration. */}
+      <AgentControls config={config} onChange={onChange} />
 
       {/* There is deliberately no "Cleanup settings" card. The three toggles
           that used to sit here (AI cleanup / Remove fillers / Rewrite phrasing)
@@ -392,28 +437,208 @@ function AgentControls({
 }) {
   const activeProfile = resolveActiveTextProfile(config);
   const modes = resolveProfileModesSettings(activeProfile);
-  
+  const register = modes.communication_register;
+  const styleActive = register !== "off";
+  const showsLexicon = register === "friend" || register === "quick";
+
+  const patch = useCallback(
+    (next: Partial<ProfileModesSettings>) => onChange(buildProfileModesPatch(config, next)),
+    [config, onChange],
+  );
+
+  const loadLexicon = useCallback(
+    (code: string) => {
+      const language = STYLE_LEXICONS.languages.find((entry) => entry.code === code);
+      if (!language) return;
+      // Written into the user's own rules, never into a hidden runtime layer.
+      // They then see verbatim what goes into the prompt and can delete what
+      // does not fit — a lexicon they cannot see would be the ADR 0020 defect
+      // class in a new place.
+      const header = `Use these expressions where they fit (${language.label}, as of ${STYLE_LEXICONS.updated}):`;
+      const line = `${header} ${language.entries.map((entry) => entry.term).join(", ")}`;
+      const existing = modes.style_instructions.trim();
+      patch({ style_instructions: existing ? `${existing}\n${line}` : line });
+    },
+    [modes.style_instructions, patch],
+  );
+
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-border bg-surface px-3 py-3">
-      <FormRow
-        label="Agent name"
-        hint="The name you use when addressing the agent in speech."
-        htmlFor="inline-agent-name-input"
-        divider={false}
-        control={
-          <Input
-            id="inline-agent-name-input"
-            type="text"
-            className="w-[200px]"
-            value={modes.agent_name}
-            placeholder="WordScript"
-            onChange={(e) => onChange(buildProfileModesPatch(config, { agent_name: e.target.value }))}
-          />
-        }
-      />
-      <p className="text-[12px] leading-snug text-fg-muted">
-        The agent model is configured in Speech &amp; AI.
-      </p>
+    <>
+      <FormCard
+        title="Agent"
+        description="Who the agent is when you address it by name. The name also decides whether Auto routes a dictation into Agent mode, so it applies no matter which mode is selected."
+      >
+        <FormRow
+          label="Agent name"
+          hint="The name you use when addressing the agent in speech. Leave empty to fall back to the global name."
+          htmlFor="inline-agent-name-input"
+          divider={false}
+          control={
+            <Input
+              id="inline-agent-name-input"
+              type="text"
+              className="w-[200px]"
+              value={modes.agent_name}
+              placeholder={config.agent_name || "WordScript"}
+              onChange={(e) => patch({ agent_name: e.target.value })}
+            />
+          }
+        />
+        <p className="text-[12px] leading-snug text-fg-muted">
+          The agent model is configured in Speech &amp; AI.
+        </p>
+      </FormCard>
+
+      <FormCard
+        title="Communication style"
+        description="How this profile writes. Applies to Agent and to Rewrite; Cleanup, Verbatim and Prompt Enhance stay untouched. The level sets the form only — it never changes the language you dictated in."
+      >
+        <FormRow
+          label="Writes to"
+          hint={REGISTER_DESCRIPTIONS[register]}
+          htmlFor="communication-register-select"
+          control={
+            <Select
+              id="communication-register-select"
+              aria-label="Communication register"
+              className="w-[200px]"
+              value={register}
+              onChange={(e) => patch({ communication_register: e.target.value as CommunicationRegister })}
+            >
+              {REGISTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          }
+        />
+
+        {styleActive && (
+          <>
+            <FormRow
+              label="Length"
+              hint="Independent of the level above: formal and terse is as valid as informal and expansive."
+              htmlFor="communication-length-select"
+              control={
+                <Select
+                  id="communication-length-select"
+                  aria-label="Communication length"
+                  className="w-[200px]"
+                  value={modes.communication_length}
+                  onChange={(e) => patch({ communication_length: e.target.value as CommunicationLength })}
+                >
+                  <option value="terse">Terse</option>
+                  <option value="normal">Normal</option>
+                  <option value="full">Expansive</option>
+                </Select>
+              }
+            />
+
+            <div className="flex flex-col gap-2 py-3">
+              <label
+                className="text-[13px] font-medium text-foreground"
+                htmlFor="style-instructions-textarea"
+              >
+                Your rules
+              </label>
+              <p className="text-[12px] leading-snug text-fg-muted">
+                One rule per line, e.g. &quot;always use the informal address form&quot;, &quot;no emoji&quot;,
+                &quot;never open with a pleasantry&quot;. <strong className="text-foreground">Rules take precedence
+                over the level above.</strong> They describe how to write, never what to write.
+              </p>
+              <textarea
+                id="style-instructions-textarea"
+                className={STYLE_TEXTAREA_CLASS}
+                aria-label="Style rules"
+                rows={4}
+                value={modes.style_instructions}
+                placeholder={"no emoji\nkeep it under five sentences"}
+                onChange={(e) => patch({ style_instructions: e.target.value })}
+              />
+              <BudgetLine used={modes.style_instructions.trim().length} max={MAX_STYLE_RULE_CHARS} />
+            </div>
+
+            <div className="flex flex-col gap-2 py-3">
+              <label
+                className="text-[13px] font-medium text-foreground"
+                htmlFor="style-sample-textarea"
+              >
+                Writing sample
+              </label>
+              <p className="text-[12px] leading-snug text-fg-muted">
+                A few lines you actually wrote. The agent takes tone, sentence shape and the expressions
+                you use from it — never its content. For wording it outranks the level above; for form the
+                level and your rules win.
+              </p>
+              <textarea
+                id="style-sample-textarea"
+                className={STYLE_TEXTAREA_CLASS}
+                aria-label="Writing sample"
+                rows={4}
+                value={modes.style_sample}
+                placeholder={"morning, pushing the call to monday, hope that works"}
+                onChange={(e) => patch({ style_sample: e.target.value })}
+              />
+              <BudgetLine used={modes.style_sample.trim().length} max={MAX_STYLE_SAMPLE_CHARS} />
+            </div>
+
+            {showsLexicon && (
+              <div className="flex flex-col gap-2 rounded-md border border-border bg-surface px-3 py-3">
+                <p className="text-[12px] leading-snug text-fg-muted">
+                  <strong className="text-foreground">Slang comes from you, not from the level.</strong> The
+                  agent is forbidden from inventing slang or youth language on its own — models get it
+                  wrong more often than right, and wrong slang reads worse than none. It uses only what your
+                  rules and writing sample contain. Load a starter set to edit down:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {STYLE_LEXICONS.languages.map((language) => (
+                    <Button
+                      key={language.code}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => loadLexicon(language.code)}
+                    >
+                      {language.label}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-[11px] leading-snug text-fg-dim">
+                  Starter sets are dated {STYLE_LEXICONS.updated} and go into your rules, where you can edit
+                  them. Youth language turns over fast — treat a stale entry as expected.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </FormCard>
+    </>
+  );
+}
+
+function BudgetLine({ used, max }: { used: number; max: number }) {
+  const over = used > max;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between text-[12px]">
+        <span className="text-fg-muted">
+          {used} of {max} characters sent to the prompt
+        </span>
+        {over && <span className="font-semibold text-destructive">over budget</span>}
+      </div>
+      <div className="h-1 w-full overflow-hidden rounded-full bg-surface-strong">
+        <div
+          className={`h-full rounded-full ${over ? "bg-destructive" : "bg-primary"}`}
+          style={{ width: `${Math.min(100, Math.round((used / Math.max(1, max)) * 100))}%` }}
+        />
+      </div>
+      {over && (
+        <p className="text-[12px] leading-snug text-fg-muted">
+          Everything past the budget is <strong className="text-foreground">not sent</strong>. Shorten this
+          field.
+        </p>
+      )}
     </div>
   );
 }

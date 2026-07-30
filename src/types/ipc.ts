@@ -79,7 +79,6 @@ export interface WorkspaceContext {
 
 export interface ProcessingModeEvent {
   mode:           ProcessingMode;
-  is_override:    boolean;
   auto_detected:  boolean;
 }
 
@@ -196,11 +195,35 @@ export interface ProfileSpeechSettings {
 // Mirrors the Rust `ProfileModesSettings`. The cleanup switches that used to
 // live here are gone: the processing mode is the only input to transform
 // behavior (ADR 0020).
+// The addressee a profile writes to, or — for the lowest step — the medium.
+// Deliberately not a ladder of formality adjectives: those all sit in one
+// semantic field and stop being distinguishable past three steps. Mirrors the
+// Rust `CommunicationRegister` (ADR 0023).
+export type CommunicationRegister =
+  | "off"
+  | "authority"
+  | "client"
+  | "colleague"
+  | "friend"
+  | "quick";
+
+export type CommunicationLength = "terse" | "normal" | "full";
+
 export interface ProfileModesSettings {
   /// Applies to every mode, not only Auto. Persisted under the legacy key
   /// `auto_detect_mode` in configs written by older builds; Rust accepts both.
   collect_workspace_context: boolean;
   agent_name:              string;
+  /// Sets the form of generated text, never its wording. Defaults to "off",
+  /// which emits no style block and leaves every prompt as it was.
+  communication_register:  CommunicationRegister;
+  communication_length:    CommunicationLength;
+  /// The user's own rules. They outrank the register where they touch it.
+  style_instructions:      string;
+  /// A piece of the user's own writing. Subordinate to the register for form,
+  /// authoritative for wording — the register is forbidden from supplying slang
+  /// on its own, so this is where any comes from.
+  style_sample:            string;
 }
 
 export interface ProfileCaptureSettings {

@@ -110,6 +110,37 @@ Status: Proposed | Accepted | Superseded by NNNN
   exactly one entry of the flat mode list at one commit point, and neither
   Verbatim nor Rewrite is reachable from Auto. Carries the measurement that
   rejected Auto->Verbatim.
+- [0021](0021-profile-context-has-one-shape-in-every-mode.md): the profile
+  context reaches every mode at one width and in one shape, produced by
+  `core::profile_context`; the mode decides the framing, never the width. The
+  recognizer's word-shape filter stays on the recognizer path. Carries the
+  96-transcript replay that licensed widening Cleanup.
+- [0022](0022-a-window-on-no-monitor-is-never-a-position-the-user-chose.md): a
+  stored window position that lands on no monitor is discarded rather than
+  restored, because it cannot be a position the user chose.
+- [0023](0023-profile-context-is-a-reading-aid-and-a-register-sets-form-not-lexis.md):
+  the profile context is a reading aid for the instruction, never a source of
+  content -- it moves into the Agent system prompt behind an explicit
+  restriction, the user turn carries only the transcript, and snippets
+  contribute trigger without expansion. Adds a per-profile communication style
+  whose register sets form only: slang and youth language come from the user's
+  rules and writing sample, never from the model's memory. Every prompt is now
+  written in English.
+
+- [0024](0024-the-processing-mode-has-one-source-and-every-writer-announces-it.md):
+  the active profile's work mode is the only source of the effective processing
+  mode. The process-global `MODE_OVERRIDE` is removed -- it was set by every
+  mode-change path, cleared by none, and therefore made each later settings
+  change invisible to both the overlay and the pipeline. Every writer now emits
+  `wordscript-mode-event` alongside `ready`, and the overlay's fetch debounce
+  coalesces to the last request instead of dropping it.
+
+- [0025](0025-a-session-belongs-to-the-profile-it-started-in.md): the active
+  profile is fixed for the duration of a session and everything derived from it
+  is snapshotted at capture start; the processing mode is the single exception.
+  Switching profiles mid-session is refused by the runtime, because it produced
+  a transform assembled from two profiles on top of a transcription that had
+  already run under the first.
 
 ## Resolved: the number 0011 was used twice
 

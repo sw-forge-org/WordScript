@@ -6,7 +6,8 @@ use serde::Deserialize;
 use super::config::{
     BiasMode, DictionaryEntry, ManualBias, ProcessingMode, TextProfile, TextProfileWorkMode,
 };
-use super::agent::{build_profile_context, AgentConfig};
+use super::agent::{build_agent_system_prompt, AgentConfig};
+use super::communication_style::CommunicationStyle;
 use super::prompt_enhance::{build_enhance_system_prompt, PromptEnhanceConfig};
 use super::transform::{correction_system_prompt, NativeTransformConfig};
 use super::workspace_context::WorkspaceContext;
@@ -376,7 +377,11 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
                 ..NativeTransformConfig::default()
             })
         }
-        "agent" => build_profile_context(&AgentConfig {
+        // The full system prompt, not just the context block. Building only
+        // `build_profile_context` here left every framing sentence around the
+        // context outside the check — including the one that decides whether
+        // the block is a reading aid or an offer of material (ADR 0023).
+        "agent" => build_agent_system_prompt(&AgentConfig {
             provider: "groq".to_string(),
             agent_name: "WordScript".to_string(),
             agent_model: String::new(),
@@ -386,6 +391,7 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
             dictionary_entries: entry.profile.dictionary_entries.clone(),
             snippet_entries: Vec::new(),
             workspace_context: None,
+            style: CommunicationStyle::default(),
         }),
         "prompt_enhance" => build_enhance_system_prompt(&PromptEnhanceConfig {
             provider: "groq".to_string(),

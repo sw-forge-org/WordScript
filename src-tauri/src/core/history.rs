@@ -679,6 +679,11 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
         },
         filter_fillers: preset.filter_fillers,
         professionalize: preset.professionalize,
+        // Through the same resolver the live session uses. Reaching into
+        // `profile.modes` here instead would let a re-transform run under a
+        // style the session never had — the mixing defect this function's
+        // comment above already records for the correction switches.
+        style: config.active_text_profile_communication_style(),
         ..Default::default()
     }
 }

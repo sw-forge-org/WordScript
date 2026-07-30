@@ -202,6 +202,17 @@ Status: 2026-07-25
 - a dedicated Modes tab in settings exposing the active mode, sub-mode,
   prompt target, the workspace-context switch and seven mode shortcuts
   (one picker/cycler plus six direct modes) with platform-specific defaults
+- the agent name, shown in every mode rather than only while Agent is selected,
+  because it is also the first criterion Auto routes on (ADR 0023)
+- a per-profile communication style read by Agent and Rewrite: register, length,
+  the user's own rules and a writing sample. The register sets form only —
+  slang and youth language come from the two user fields, never from the model,
+  with an opt-in dated starter lexicon in four languages. Default is off, at
+  which every prompt is unchanged. **Verified by shape, not by output**: the
+  prompt assertions and the parity test are green, but the provider-backed
+  replay that ADR 0021 established for correction-prompt changes has not been
+  run, and two changes here touch that path — the English translation and the
+  styled-Rewrite arm
 
 ### Not active today
 

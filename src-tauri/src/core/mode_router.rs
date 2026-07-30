@@ -1,11 +1,7 @@
-use std::sync::Mutex;
-
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
 use super::config::ProcessingMode;
-
-static MODE_OVERRIDE: Mutex<Option<ProcessingMode>> = Mutex::new(None);
 
 /// Cycle order mirrors Settings → Modes and the in-overlay tap cycler
 /// (`MODE_CYCLE` in OverlayWindow.tsx / OverlayGallery.tsx):
@@ -38,7 +34,6 @@ pub fn emit_mode_event<R: Runtime>(app: &AppHandle<R>, context: &ProcessingConte
         "wordscript-mode-event",
         serde_json::json!({
             "mode": context.mode.as_str(),
-            "is_override": context.is_override,
             "auto_detected": context.auto_detected,
         }),
     );
@@ -47,42 +42,42 @@ pub fn emit_mode_event<R: Runtime>(app: &AppHandle<R>, context: &ProcessingConte
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcessingContext {
     pub mode: ProcessingMode,
-    pub is_override: bool,
     pub auto_detected: bool,
     pub detected_from: Option<String>,
 }
 
 /// Resolves the effective processing mode for a session.
 ///
-/// Priority:
-/// 1. Manual override (set via the overlay cycle or a per-mode hotkey)
-/// 2. Profile default (or global fallback)
+/// **The active profile's `work_mode.processing_mode` is the only source.**
 ///
-/// `Auto` is returned as-is when no override is set and the profile default is
-/// `Auto`. The pipeline is responsible for resolving `Auto` into a concrete
-/// mode once the transcript is available — see [`resolve_auto_mode`].
+/// There used to be a second one: a process-global `MODE_OVERRIDE` that the
+/// overlay tap cycler and the per-mode hotkeys set, and that outranked the
+/// profile. It was set and never cleared — `clear_processing_mode_override`
+/// had no caller, because its only consumer, `useProcessingMode.ts`, was
+/// imported by nothing but its own test. So the first tap or mode hotkey after
+/// a start pinned the mode for the rest of the process: every later change in
+/// Settings was written to the profile, resolved away here, and the overlay
+/// kept showing the old mode. It was not only cosmetic — the pipeline reads
+/// this same resolver, so it also kept *processing* under the stale value.
+///
+/// Removing it loses nothing, because every path that set it also persisted
+/// the mode first (`set_active_profile_processing_mode` writes to disk before
+/// it returns), and the pipeline loads the config fresh once the recording has
+/// ended. A mode changed mid-recording is therefore already on disk by the time
+/// the mode is resolved. The override was a second, invisible copy of a value
+/// that was already correct, and the copy outranked the original.
+///
+/// `Auto` is returned as-is; the pipeline resolves it into a concrete mode once
+/// the transcript is available — see [`resolve_auto_mode`].
 ///
 /// The previous workspace-app-mapping layer was removed because browser and
 /// IDE detection proved too unreliable to drive deterministic mode selection.
 /// Workspace context is still collected and fed into the auto-mode intent
 /// detection as a probability signal.
-pub fn resolve_processing_mode(
-    profile_mode: ProcessingMode,
-    manual_override: Option<ProcessingMode>,
-) -> ProcessingContext {
-    if let Some(override_mode) = manual_override {
-        return ProcessingContext {
-            mode: override_mode,
-            is_override: true,
-            auto_detected: false,
-            detected_from: None,
-        };
-    }
-
+pub fn resolve_processing_mode(profile_mode: ProcessingMode) -> ProcessingContext {
     ProcessingContext {
-        mode: profile_mode.clone(),
-        is_override: false,
         auto_detected: profile_mode.is_auto(),
+        mode: profile_mode,
         detected_from: None,
     }
 }
@@ -149,37 +144,13 @@ pub fn resolve_auto_mode(
     }
 }
 
-#[tauri::command]
-pub fn set_processing_mode_override(mode: String) -> Result<(), String> {
-    let parsed = ProcessingMode::from_str(&mode);
-    // `from_str` falls back to Cleanup for unknown values. Detect that fallback
-    // and reject so the frontend gets a clear error for typos.
-    if parsed == ProcessingMode::Cleanup && !is_known_processing_mode(&mode) {
-        return Err(format!("Unknown processing mode: {}", mode));
-    }
-    let mut override_lock = MODE_OVERRIDE.lock().map_err(|e| e.to_string())?;
-    *override_lock = Some(parsed);
-    Ok(())
-}
-
-#[tauri::command]
-pub fn clear_processing_mode_override() -> Result<(), String> {
-    let mut override_lock = MODE_OVERRIDE.lock().map_err(|e| e.to_string())?;
-    *override_lock = None;
-    Ok(())
-}
-
-pub fn current_mode_override() -> Option<ProcessingMode> {
-    MODE_OVERRIDE.lock().ok().and_then(|guard| guard.clone())
-}
-
 /// Persists the processing mode into the active profile's work_mode and saves
 /// to disk. Used by the overlay cycle so that a mode change sticks across
-/// sessions instead of being a transient runtime override.
+/// sessions.
 ///
-/// Also sets a runtime override so the change takes effect immediately for an
-/// in-flight session without waiting for the next config load, and emits a
-/// `ready` event so the Settings window picks up the change.
+/// Emits `ready` so the Settings window picks up the change, and a
+/// `wordscript-mode-event` so the overlay does — the write is the only thing
+/// that makes the change effective, so every writer owes both signals.
 #[tauri::command]
 pub fn set_active_profile_processing_mode<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -215,25 +186,22 @@ pub fn set_active_profile_processing_mode<R: tauri::Runtime>(
         Ok::<super::config::AppConfig, String>(config)
     })??;
 
-    // Set a runtime override so the change is immediate for an in-flight
-    // session (the next transcription picks it up without a config reload).
-    let mut override_lock = MODE_OVERRIDE.lock().map_err(|e| e.to_string())?;
-    *override_lock = Some(parsed);
-
-    // Emit a ready event so the Settings window syncs its form.
+    // Both signals, from the one place that changed the mode. `ready` carries
+    // the whole config for the Settings form; the mode event is what the
+    // overlay listens on. Emitting only the first left the overlay depending on
+    // a config-identity side effect, which is how it fell out of sync.
     super::config::emit_ready_event(&app, &config);
+    emit_mode_event(&app, &resolve_processing_mode(parsed));
 
     Ok(config.without_secrets())
 }
 
-/// Joins the active profile's mode and any manual override into a single
-/// resolved `ProcessingContext`. This is the seam the frontend uses to know
-/// which mode a dictation will actually run in.
+/// The active profile's mode as a resolved `ProcessingContext`. This is the seam
+/// the frontend uses to know which mode a dictation will actually run in.
 ///
 /// Priority:
-/// 1. Manual override (set via the overlay cycle or a per-mode hotkey)
-/// 2. Active profile work-mode (`work_mode.processing_mode`)
-/// 3. Global `config.processing_mode` (serde fallback for pre-migration configs)
+/// 1. Active profile work-mode (`work_mode.processing_mode`)
+/// 2. Global `config.processing_mode` (serde fallback for pre-migration configs)
 ///
 /// The Modes tab writes the mode into the active profile's work_mode, so the
 /// profile is the primary control surface. The global field is only a
@@ -253,9 +221,7 @@ pub async fn resolve_current_processing_mode() -> Result<ProcessingContext, Stri
         .map(|profile| profile.work_mode.effective_processing_mode())
         .unwrap_or_else(|| config.processing_mode.clone());
 
-    let manual_override = current_mode_override();
-
-    Ok(resolve_processing_mode(profile_mode, manual_override))
+    Ok(resolve_processing_mode(profile_mode))
 }
 
 fn is_known_processing_mode(value: &str) -> bool {
@@ -278,86 +244,49 @@ pub fn resolve_current_processing_mode_sync() -> ProcessingContext {
         .map(|profile| profile.work_mode.effective_processing_mode())
         .unwrap_or_else(|| config.processing_mode.clone());
 
-    let manual_override = current_mode_override();
-
-    resolve_processing_mode(profile_mode, manual_override)
+    resolve_processing_mode(profile_mode)
 }
 
 /// Persists the processing mode into the active profile's work_mode, saves to
-/// disk, sets a runtime override for in-flight sessions, and emits a
-/// `wordscript-mode-event` so the overlay / settings sync immediately. Used by
-/// the global mode-select and per-mode hotkeys — persistent, identical to the
-/// overlay tap cycler so every mode-change path survives a restart.
-pub fn set_mode_override_and_emit<R: Runtime>(
+/// disk and emits both sync signals. Used by the global mode-select and
+/// per-mode hotkeys — persistent, identical to the overlay tap cycler so every
+/// mode-change path survives a restart.
+pub fn set_mode_and_emit<R: Runtime>(
     app: &AppHandle<R>,
     mode: ProcessingMode,
 ) -> Result<ProcessingContext, String> {
     set_active_profile_processing_mode(app.clone(), mode.as_str().to_string())?;
-
-    let context = resolve_current_processing_mode_sync();
-    emit_mode_event(app, &context);
-    Ok(context)
+    Ok(resolve_current_processing_mode_sync())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Superseded `manual_override_wins_over_profile_default` and the four
+    /// override lifecycle tests. They asserted a second source of truth that
+    /// nothing ever cleared — the mechanism that made a settings change
+    /// invisible in the overlay for the rest of the process.
     #[test]
-    fn manual_override_wins_over_profile_default() {
-        let result = resolve_processing_mode(
-            ProcessingMode::Rewrite,
-            Some(ProcessingMode::Verbatim),
-        );
-        assert_eq!(result.mode, ProcessingMode::Verbatim);
-        assert!(result.is_override);
-        assert!(!result.auto_detected);
+    fn the_profile_mode_is_the_resolved_mode() {
+        for mode in MODE_CYCLE_ORDER {
+            let result = resolve_processing_mode(mode);
+            assert_eq!(result.mode, mode);
+        }
     }
 
     #[test]
     fn auto_profile_default_reports_auto_detected() {
-        let result = resolve_processing_mode(ProcessingMode::Auto, None);
+        let result = resolve_processing_mode(ProcessingMode::Auto);
         assert_eq!(result.mode, ProcessingMode::Auto);
-        assert!(!result.is_override);
         assert!(result.auto_detected);
     }
 
     #[test]
     fn concrete_profile_default_not_auto_detected() {
-        let result = resolve_processing_mode(ProcessingMode::Cleanup, None);
+        let result = resolve_processing_mode(ProcessingMode::Cleanup);
         assert_eq!(result.mode, ProcessingMode::Cleanup);
-        assert!(!result.is_override);
         assert!(!result.auto_detected);
-    }
-
-    #[test]
-    fn override_cleared_after_clear() {
-        let _ = set_processing_mode_override("agent".to_string());
-        assert_eq!(current_mode_override(), Some(ProcessingMode::Agent));
-        let _ = clear_processing_mode_override();
-        assert_eq!(current_mode_override(), None);
-    }
-
-    #[test]
-    fn set_processing_mode_override_rejects_unknown_mode() {
-        let result = set_processing_mode_override("invalid_mode".to_string());
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn set_processing_mode_override_accepts_auto() {
-        let result = set_processing_mode_override("auto".to_string());
-        assert!(result.is_ok());
-        assert_eq!(current_mode_override(), Some(ProcessingMode::Auto));
-        let _ = clear_processing_mode_override();
-    }
-
-    #[test]
-    fn set_processing_mode_override_accepts_aliases() {
-        let result = set_processing_mode_override("polished".to_string());
-        assert!(result.is_ok());
-        assert_eq!(current_mode_override(), Some(ProcessingMode::Rewrite));
-        let _ = clear_processing_mode_override();
     }
 
     // Helper: the concrete mode an Auto resolution commits to, treating the
@@ -429,18 +358,14 @@ mod tests {
             ProcessingMode::Agent,
             ProcessingMode::PromptEnhance,
         ] {
-            let via_override = resolve_processing_mode(ProcessingMode::Auto, Some(mode));
-            assert_eq!(via_override.mode, mode);
+            let resolved = resolve_processing_mode(mode);
+            assert_eq!(resolved.mode, mode);
             assert!(
-                !via_override.mode.is_auto(),
+                !resolved.mode.is_auto(),
                 "{} would fall into the Auto branch",
                 mode.as_str()
             );
-
-            let via_profile = resolve_processing_mode(mode, None);
-            assert_eq!(via_profile.mode, mode);
-            assert!(!via_profile.mode.is_auto());
-            assert!(!via_profile.auto_detected);
+            assert!(!resolved.auto_detected);
         }
     }
 
