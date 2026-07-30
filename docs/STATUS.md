@@ -348,12 +348,23 @@ Additional rules:
 - the recording overlay is reported to freeze mid-capture at irregular
   intervals — pill, seconds timer and all input at once — while capture and
   pipeline continue and the transcription completes normally. Observed only
-  under `npm run tauri dev` so far, never checked against a release build, and
-  the telemetry available at the time could not separate a real freeze from the
-  overlay legitimately not re-rendering during silence. Timestamped logs, level-
-  emit accounting per capture and an `[ov-beat]` main-thread heartbeat are now
-  in place to decide it; the measurement order is in
+  under `npm run tauri dev` so far and never checked against a release build.
+  The 2026-07-30 measurement did **not** reproduce it: zero `[ov-beat]` lines
+  across every capture of that day in a confirmed dev build whose other overlay
+  diagnostics logged normally, with level-emit shortfall at its 4% baseline and
+  no failed emits. The sightings that prompted the re-report were placement, not
+  a stall (see the next entry). What stays open is the original signature only —
+  pill visible, input dead — and the release-versus-dev comparison it always
+  needed:
   [known-issues/overlay-recording-freeze.md](known-issues/overlay-recording-freeze.md)
+- the overlay could be placed where no monitor is, and was: reveals only ever
+  positioned the window on the hidden→visible transition, so a monitor topology
+  change during a session left stale coordinates, and the union bounding box of
+  a staggered layout has corners no monitor covers (measured: 18.3% of a
+  4320x1568 box). Fixed in code — a rectangle intersecting no work area is
+  corrected on every reveal and on a 2 s cadence during a capture (ADR 0022) —
+  but not yet confirmed through a live monitor change:
+  [known-issues/overlay-stranded-off-screen.md](known-issues/overlay-stranded-off-screen.md)
 - `react-router-dom` 6.30.4 carries an open advisory with no patch in the 6.x
   line; the app has no `<Link>` or `useNavigate` call site the advisory could
   act on, but the move to v7 is still owed. Two further transitive advisories
@@ -428,6 +439,11 @@ Additional rules:
 - overlay monitor restore with identity-miss rederivation is implemented
   (manual mode rederives the target monitor from saved coordinates against
   all work areas; primary is only the last fallback)
+- an overlay that ends up on no monitor at all recovers on its own: the
+  reposition gate is no longer limited to hidden→visible, and the existing
+  capture monitor loop rechecks every 2 s so a topology change mid-recording is
+  answered without waiting for the session to end (ADR 0022). The drag-snap
+  protection is unchanged for any position that is actually visible
 - remembered overlay placement is implemented; the three roots (persist
   debounce ending the drag session too early, reveal-grace suppression
   discarding fast drags, `set_position` before `show()` dropped by GTK) are

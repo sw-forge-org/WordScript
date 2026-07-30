@@ -1066,6 +1066,62 @@ describe("OverlayWindow", () => {
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
   });
 
+  // The leave hold replays the last processing-preview frame from a snapshot.
+  // Its buttons used to be wired unconditionally to handlers that early-return
+  // on `!pendingResult`, so for the 240ms of the hold "Copy" rendered fully
+  // enabled and did nothing. In clipboard_only that surface is the only route
+  // to the transcript, so a dead Copy reads as a frozen overlay.
+  it("disables the preview actions during the leave hold instead of leaving them dead", async () => {
+    const pendingResult = {
+      provider: "groq",
+      active_profile: "Support reply",
+      work_mode: {
+        rewrite_style: "polished",
+        insert_behavior: "clipboard_only",
+        recovery_behavior: "standard",
+      },
+      raw_text: "ähm wir shippen das morgen",
+      final_text: "Wir shippen das morgen.",
+      corrected: true,
+      transform: { applied_rules: [], warning: null },
+      history: null,
+      delivery: null,
+      insertion: null,
+      occurred_at_ms: 1716500000000,
+    };
+
+    let runtimeValue = buildIdleResultState({
+      status: "processing",
+      lastResult: null,
+      lastTranscription: null,
+      resultSurfaceOpen: false,
+      previewStaged: true,
+      pendingResult,
+    });
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    const { rerender } = render(<OverlayWindow />);
+
+    // Live surface: the decision is still the user's to make.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+
+    // The authoritative transcription ends the session in one commit: status
+    // goes idle and pendingResult is nulled, while previewStaged keeps the
+    // result surface closed. The pill is now painted from the snapshot.
+    runtimeValue = buildIdleResultState({
+      status: "idle",
+      resultSurfaceOpen: false,
+      previewStaged: true,
+      pendingResult: null,
+    });
+    useRuntimeMock.mockImplementation(() => runtimeValue);
+    rerender(<OverlayWindow />);
+
+    const heldCopy = await screen.findByRole("button", { name: "Copy" });
+    expect(heldCopy).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Abort" })).toBeDisabled();
+  });
+
   it("clears a visible result-actions surface in the same render a new recording starts", async () => {
     let runtimeValue = buildIdleResultState();
     useRuntimeMock.mockImplementation(() => runtimeValue);

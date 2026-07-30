@@ -31,6 +31,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The overlay is no longer placed where no monitor is.** Reported as "the
+  overlay becomes completely invisible mid-recording although the recording
+  keeps running, and the stop hotkey brings it back". It was never a freeze:
+  reveals only ever positioned the window on the hidden→visible transition, so a
+  monitor topology change during a session left stale coordinates behind — and
+  the union bounding box of a staggered multi-monitor layout has corners no
+  monitor covers. Measured on the reporting machine: 18.3% of a 4320x1568 box is
+  dark, and the overlay sat at (3840,1508), on nothing. Stop "fixed" it only
+  because ending a session parks and hides the window, so the next reveal
+  recomputed placement.
+
+  A rectangle intersecting no monitor work area is now treated as a position the
+  user cannot have chosen, and is corrected — on every reveal, and on a 2 s
+  cadence inside the existing capture monitor loop, because a long recording
+  produces no reveals at all. The drag-snap protection is unchanged for every
+  position that is actually visible: the check uses intersection, so a pill
+  hanging over an edge is left alone, and it reports nothing when no monitors
+  can be enumerated (ADR 0022).
+
+- **The end of a clipboard-only session no longer shows buttons that do
+  nothing.** For 240 ms after a session ended, the leave hold replayed the
+  preview surface from a snapshot with Copy, Edit and Abort wired to handlers
+  that had already bailed on the nulled `pendingResult`. The buttons rendered
+  fully enabled and correctly labelled, and did nothing — in `clipboard_only`,
+  where that surface is the only route to the transcript, that reads as the app
+  eating the dictation. The hold is now inert the way the edit-mode branch
+  beside it already was, `handleEditOpen` got the guard it never had, and an
+  absent handler renders the button disabled.
+
+- **The overlay layer is visible in the runtime log.** Across 755 captures it
+  previously carried zero lines about placement, park, monitor choice or work
+  area, which is why a misplacement left nothing to read afterwards. Placement
+  decisions, stranded-overlay rescues and parks (including the
+  requested-vs-applied position, since X11/KWin clamps an off-screen park back
+  onto the screen edge) are now recorded in every build.
+
+- **The KWin overlay pin survives a screen change.** It was applied on
+  `windowAdded` only, i.e. once per window lifetime, so an output
+  reconfiguration silently dropped always-on-top for the rest of the session.
+
+- **`cargo test` no longer writes into the developer's live data.**
+  `core::paths::user_data_dir()` had no test seam and always resolved to the
+  real `~/.config/WordScript`, so the suite appended its own lines to the real
+  runtime log and wrote synthetic entries into the real history — corrupting
+  exactly the evidence the runtime log exists to provide. Test builds are now
+  diverted to a per-process temp directory, and a `WORDSCRIPT_DATA_DIR` override
+  works in every build.
+
 ### Changed
 
 - **Profile context now reaches every mode at the same width.** The same field,

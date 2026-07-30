@@ -396,6 +396,12 @@ function PreviewActions({
 }) {
   const committing = pending?.action === "commit";
   const aborting = pending?.action === "abort";
+  // A missing handler means this surface is a replay, not a live decision (the
+  // leave hold paints the last frame from a snapshot). Rendering the buttons as
+  // enabled there produced a Copy button that looked completely normal and did
+  // nothing — in clipboard-only runs that reads as "the overlay froze and ate
+  // my transcript". Absent handler == not interactive, no extra prop needed.
+  const held = !onCommit && !onEdit && !onAbort;
   return (
     <div className="pill__action-group" role="group" aria-label="Preview actions">
       <IconAction
@@ -405,7 +411,7 @@ function PreviewActions({
         label={clipboardOnly ? "Copy" : "Insert"}
         busy={committing}
         primary
-        disabled={Boolean(pending)}
+        disabled={Boolean(pending) || held}
         onClick={onCommit}
       />
       {/* This is the surface where the text has NOT been delivered yet, so it
@@ -414,14 +420,14 @@ function PreviewActions({
       <IconAction
         icon={<Pencil size={16} strokeWidth={2.25} />}
         label="Edit"
-        disabled={Boolean(pending)}
+        disabled={Boolean(pending) || held}
         onClick={onEdit}
       />
       <IconAction
         icon={<Square size={16} strokeWidth={2.25} />}
         label="Abort"
         busy={aborting}
-        disabled={Boolean(pending)}
+        disabled={Boolean(pending) || held}
         onClick={onAbort}
       />
     </div>

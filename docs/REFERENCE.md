@@ -19,7 +19,17 @@ Status: 2026-07-25
   `resizable: false`)
 - XWayland default: `GDK_BACKEND=x11`, native-Wayland opt-in:
   `WORDSCRIPT_NATIVE_WAYLAND=1`
-- KDE Plasma 6 always-on-top: `packaging/kwin-wordscript-overlay/`
+- KDE Plasma 6 always-on-top: `packaging/kwin-wordscript-overlay/`. The pin is
+  re-applied on output changes, not only on `windowAdded` — a screen change
+  otherwise drops it for the rest of the session
+- Placement is recomputed on hidden→visible **and** whenever the window
+  intersects no monitor work area; during a capture the existing 200 ms monitor
+  loop rechecks every `OVERLAY_STRANDED_CHECK_INTERVAL_TICKS` (10 ticks = 2 s).
+  Intersection, not containment, so a pill hanging over an edge keeps its
+  dragged position (ADR 0022)
+- The park move is best-effort: X11/KWin clamps an off-screen position back onto
+  the screen edge, so parking is carried by `hide()`. Requested and applied
+  positions are logged
 - CSS variables: `--ov-shadow: none`, `--ov-shadow-recording: none` in
   `overlay-pill.css`
 - `pointer-events: auto` on `.ov-scope` (not `none` on overlay-roots)

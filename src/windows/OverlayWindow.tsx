@@ -1270,12 +1270,22 @@ export default function OverlayWindow() {
   };
 
   const handleEditOpen = () => {
+    // Where the edit is opened decides which source has to be live — the same
+    // split `editFromPreviewRef` records below. The other two preview actions
+    // have always guarded on their source; this one did not, so during the
+    // leave hold it could open an edit surface against a preview the runtime
+    // had already consumed. Confirming then ran
+    // `commit_pending_transcription_preview` against an empty
+    // `take_pending_preview()` and failed in the runtime instead of here.
+    const fromPreview = renderProcessingPreview;
+    if (fromPreview ? !pendingPreviewResult : !previewResult) return;
+
     setEditText(finalPreviewText);
     // Where the edit was opened decides what confirming can do, and the two are
     // genuinely different actions — see `editFromPreview` below. Captured at
     // open time so a surface change mid-edit cannot silently switch the action
     // under the user.
-    editFromPreviewRef.current = renderProcessingPreview;
+    editFromPreviewRef.current = fromPreview;
     setShowEditMode(true);
   };
 
@@ -1404,10 +1414,21 @@ export default function OverlayWindow() {
         elapsedSec: elapsed,
         preview: { text: finalPreviewText, clipboardOnly: previewClipboardOnly },
         pending: previewPending,
-        onCommit: () => void handleCommitPreview(),
-        onEdit: handleEditOpen,
-        onAbort: () => void handleAbortPreview(),
-        onCycleMode: handleCycleMode,
+        // The leave hold is a frozen frame, not an interactive surface — the
+        // same rule the edit-mode branch above already follows.
+        //
+        // `clipboard_only` is the mode this matters in: it never opens a result
+        // surface, so `processing_preview` is the only surface it ever has, and
+        // its source (`pendingResult`) is exactly what the authoritative
+        // transcription nulls. During the hold that follows, the handlers below
+        // all early-return on `!pendingPreviewResult` — so wiring them
+        // unconditionally rendered a fully enabled "Copy" button that silently
+        // did nothing, which is indistinguishable from a frozen overlay for the
+        // one delivery mode where the pill is the only route to the transcript.
+        onCommit: showProcessingPreview ? () => void handleCommitPreview() : undefined,
+        onEdit: showProcessingPreview ? handleEditOpen : undefined,
+        onAbort: showProcessingPreview ? () => void handleAbortPreview() : undefined,
+        onCycleMode: showProcessingPreview ? handleCycleMode : undefined,
       };
     }
     if (isRecording) {

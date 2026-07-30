@@ -28,9 +28,40 @@ function pin(client) {
     client.keepAbove = true;
 }
 
+function pinAll() {
+    for (const client of workspace.windows) {
+        pin(client);
+    }
+}
+
 workspace.windowAdded.connect(pin);
 
-// Re-apply to already-existing windows (script reload / KWin reconfigure).
-for (const client of workspace.windows) {
-    pin(client);
+// Re-apply after an output reconfiguration.
+//
+// The pin used to be applied on windowAdded only, i.e. exactly once per window
+// lifetime. A monitor change (hotplug, resolution or DPI switch, dock, wake)
+// makes KWin re-evaluate window placement and stacking, and nothing restored
+// the OverlayLayer afterwards — so the overlay silently lost always-on-top for
+// the rest of the session. Screen changes are also the trigger of the
+// stranded-overlay failure the Rust side now recovers from
+// (docs/known-issues/overlay-stranded-off-screen.md); handling both on the same
+// event keeps the two halves of that recovery together.
+//
+// Signal names differ across Plasma 6 point releases, so every known spelling
+// is connected defensively; a missing one is not an error worth failing on.
+const screenSignals = [
+    workspace.screensChanged,
+    workspace.virtualScreenSizeChanged,
+    workspace.virtualScreenGeometryChanged,
+    workspace.outputAdded,
+    workspace.outputRemoved,
+];
+
+for (const signal of screenSignals) {
+    if (signal && typeof signal.connect === "function") {
+        signal.connect(pinAll);
+    }
 }
+
+// Re-apply to already-existing windows (script reload / KWin reconfigure).
+pinAll();

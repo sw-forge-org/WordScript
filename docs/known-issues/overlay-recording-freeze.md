@@ -1,6 +1,40 @@
 # Bug: Recording Overlay Freezes Mid-Capture
 
-Status: **Open — not yet proven to exist in the product path**
+Status: **Open — and narrower than when it was filed. The 2026-07-30
+measurement did not reproduce it, and the sightings from that day belonged to
+[overlay-stranded-off-screen.md](overlay-stranded-off-screen.md). What remains
+open is the original signature only: pill visible, input dead.**
+
+## Addendum 2026-07-30: measured, not reproduced
+
+A fresh report of "the overlay freezes mid-recording" was measured with the
+instrumentation this document asked for. It was not a freeze.
+
+- `/tmp/kilo/overlay-diag.log` contains **no `[ov-beat]` line at all** across
+  every capture that day. The heartbeat was running: `ps` confirmed
+  `target/debug/wordscript` under `npm run tauri dev`, and `[ov-dom]`,
+  `[ov-sched]`, `[ov-repaint]` and `[ov-reveal]` reach the same log through the
+  same `import.meta.env.DEV` gate. So the main thread never stalled >=400 ms.
+- Level-emit accounting over the last 20 captures: `shortfall_ratio` 0.037-0.049
+  — the baseline, not a shortfall — with `failed=0` and `slowest_emit_ms=0..1`.
+
+By the decision table below that is the third row: **silence, not a freeze**.
+
+The actual cause of those sightings was placement: the overlay was measured at
+(3840,1508) on a two-monitor layout whose union bounding box is 18.3% dead zone,
+i.e. painted nowhere. See
+[overlay-stranded-off-screen.md](overlay-stranded-off-screen.md) and ADR 0022.
+
+This does **not** close the entry. The 2026-07-27 report describes a different
+signature — the pill *visible* while hover, click and drag all die — which
+placement cannot explain and which today's data neither reproduces nor refutes.
+The remaining order below stands, starting with the release-versus-dev
+comparison. Re-measure after the placement fix has been in use for a while: if
+`[ov-beat]` stays empty across a long dictation session, this entry closes as
+not reproducible.
+
+Historical status when filed: **Open — not yet proven to exist in the product
+path**
 
 First reported: 2026-07-27, extended real-world dictation use
 Affected area: Linux WebKitGTK overlay window during an active capture

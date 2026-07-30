@@ -34,6 +34,9 @@ const OVERLAY_TOP_INSET: f64 = 34.0;
 const OVERLAY_SIDE_INSET: f64 = 28.0;
 const OVERLAY_BOTTOM_INSET: f64 = 94.0;
 const OVERLAY_PARK_MARGIN: f64 = 72.0;
+/// Ticks of the 200 ms capture monitor loop between two stranded-overlay
+/// checks, i.e. one check every two seconds.
+const OVERLAY_STRANDED_CHECK_INTERVAL_TICKS: u32 = 10;
 const MIN_TRANSCRIPTION_TIMEOUT_MS: u64 = 18_000;
 const MAX_TRANSCRIPTION_TIMEOUT_MS: u64 = 35_000;
 const TRANSCRIPTION_TIMEOUT_PER_AUDIO_SECOND_MS: u64 = 800;
@@ -206,6 +209,46 @@ fn logical_point_in_work_area(
         && point_x <= work_x + work_width
         && point_y >= work_y
         && point_y <= work_y + work_height
+}
+
+fn logical_rect_intersects_work_area(
+    rect: (f64, f64, f64, f64),
+    work_x: f64,
+    work_y: f64,
+    work_width: f64,
+    work_height: f64,
+) -> bool {
+    let (x, y, width, height) = rect;
+
+    x < work_x + work_width && x + width > work_x && y < work_y + work_height && y + height > work_y
+}
+
+/// Whether the overlay rectangle lies on no monitor at all.
+///
+/// The union bounding box of a staggered multi-monitor layout contains regions
+/// that no monitor covers (measured on the reporting machine: two monitors
+/// offset vertically leave 18.3% of the box dark). A window parked at stale
+/// coordinates inside such a region is not occluded — it is painted nowhere,
+/// which is what "the overlay disappears mid-recording" turned out to be.
+///
+/// Intersection rather than a corner test, so a pill hanging slightly over an
+/// edge still counts as on-screen and is left alone.
+fn overlay_rect_is_off_all_work_areas<I>(rect: (f64, f64, f64, f64), work_areas: I) -> bool
+where
+    I: IntoIterator<Item = (f64, f64, f64, f64)>,
+{
+    let mut saw_work_area = false;
+
+    for (work_x, work_y, work_width, work_height) in work_areas {
+        saw_work_area = true;
+        if logical_rect_intersects_work_area(rect, work_x, work_y, work_width, work_height) {
+            return false;
+        }
+    }
+
+    // With nothing enumerated there is no evidence either way. Reporting
+    // "stranded" would make the overlay fight a topology it cannot see.
+    saw_work_area
 }
 
 fn logical_point_distance_to_work_area(
@@ -428,6 +471,47 @@ where
     }
 
     bounds
+}
+
+fn overlay_current_logical_rect<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Option<(f64, f64, f64, f64)> {
+    let scale = window.scale_factor().unwrap_or(1.0).max(1.0);
+    let position = window.outer_position().ok()?;
+    let size = window.outer_size().ok()?;
+
+    Some((
+        position.x as f64 / scale,
+        position.y as f64 / scale,
+        size.width as f64 / scale,
+        size.height as f64 / scale,
+    ))
+}
+
+/// The overlay's rectangle when it currently sits on no monitor, `None` when it
+/// is placed normally or cannot be judged.
+///
+/// This is the recovery trigger for a monitor topology that changed while the
+/// overlay was already shown — the one case `reveal_overlay_window_impl` used to
+/// have no answer for, because it only ever positioned on hidden→visible.
+fn overlay_stranded_rect<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Option<(f64, f64, f64, f64)> {
+    let rect = overlay_current_logical_rect(window)?;
+
+    // A zero-area rectangle intersects nothing and would therefore read as
+    // stranded, but it carries no information: GTK reports 0x0 for a window
+    // that is not realized yet, which happens once at startup. Treating that as
+    // evidence produced a spurious reposition before the window even existed.
+    let (_, _, width, height) = rect;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+
+    let monitors = window.available_monitors().ok()?;
+
+    overlay_rect_is_off_all_work_areas(rect, monitors.iter().map(overlay_monitor_work_area))
+        .then_some(rect)
 }
 
 fn clamp_overlay_position(
@@ -666,9 +750,34 @@ fn reveal_overlay_window_impl<R: Runtime>(
             let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
         }
 
-        // Only position + show on the hidden→visible transition. An in-place
-        // resize keeps the current (possibly dragged) position untouched.
-        if !was_visible {
+        // Position on the hidden→visible transition, and additionally whenever
+        // the window is shown but currently lies on no monitor at all.
+        //
+        // The bare `!was_visible` gate exists to protect a dragged position from
+        // being snapped back by an in-place resize. It also meant that a
+        // monitor topology change during an active session was never answered:
+        // the window kept stale coordinates for the rest of the session, and in
+        // a staggered layout those coordinates can fall into the dark part of
+        // the union bounding box. The overlay was then painted nowhere while
+        // the capture kept running, and only the park→reveal cycle at session
+        // end recomputed a valid position — which is why pressing stop appeared
+        // to "bring it back".
+        //
+        // Rescuing a stranded window cannot conflict with the drag protection:
+        // a position that intersects no work area is not a position the user
+        // chose. See ADR 0022.
+        let stranded_rect = if was_visible {
+            overlay_stranded_rect(&window)
+        } else {
+            None
+        };
+        if let Some((x, y, width, height)) = stranded_rect {
+            core::runtime_log::record(format!(
+                "[WordScript] Overlay stranded off every work area surface={surface:?} rect=({x:.0},{y:.0},{width:.0}x{height:.0}) — repositioning"
+            ));
+        }
+
+        if !was_visible || stranded_rect.is_some() {
             // Claim the hidden→visible transition IMMEDIATELY so a concurrent
             // `reveal_overlay_window` call (the Rust trigger via
             // `apply_trigger_effect` and the frontend
@@ -678,7 +787,25 @@ fn reveal_overlay_window_impl<R: Runtime>(
             // overlapping set_position calls and inconsistent final placement.
             OVERLAY_WINDOW_SHOWN.store(true, Ordering::Relaxed);
 
-            if let Some(position) = overlay_target_position(&window, &config, surface, height_override, width_override) {
+            let target = overlay_target_position(&window, &config, surface, height_override, width_override);
+            // One line per placement decision, not per reveal: the size and
+            // repaint reveals that dominate a session carry no placement and
+            // would drown the signal. Without this the runtime log had no
+            // notion of the overlay layer at all — 755 captures, zero lines —
+            // so a misplacement could not be seen after the fact.
+            core::runtime_log::record(format!(
+                "[WordScript] Overlay placement surface={surface:?} was_visible={was_visible} reason={} monitor={} work_area={:?} target={}",
+                if stranded_rect.is_some() { "stranded" } else { "reveal" },
+                resolve_overlay_monitor(&window, &config.overlay_monitor, &config)
+                    .map(|monitor| overlay_monitor_id(&monitor))
+                    .unwrap_or_else(|| "none".to_string()),
+                overlay_work_area_for_config(&window, &config),
+                target
+                    .map(|position| format!("({:.0},{:.0})", position.x, position.y))
+                    .unwrap_or_else(|| "none".to_string()),
+            ));
+
+            if let Some(position) = target {
                 let _ = window.set_position(position);
                 let _ = window.show();
                 // Re-apply position AFTER show() on ALL platforms. On Windows,
@@ -757,15 +884,43 @@ fn park_overlay_window<R: Runtime>(app: &AppHandle<R>) {
         let (window_width, window_height) = OverlaySurface::Compact.dimensions();
         let _ = window.set_size(LogicalSize::new(window_width, window_height));
         let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-        if let Some(position) = overlay_offscreen_position(&window) {
+        // The park position is a request, not a guarantee. X11/KWin refuses to
+        // place a window fully outside the screen and clamps it back to the
+        // edge of the union bounding box: measured on the reporting machine,
+        // (4392,1640) was requested and (3840,1508) applied. Parking is
+        // therefore carried by `hide()` below, not by the move — the move only
+        // helps on compositors that honour it. Both are kept because `hide()`
+        // alone has been unreliable enough on XWayland to warrant the belt.
+        //
+        // The consequence is recorded so it stays visible rather than being
+        // rediscovered: on a layout whose bottom-right corner lies on a
+        // monitor, a parked-but-not-hidden pill is visible there.
+        let requested = overlay_offscreen_position(&window);
+        if let Some(position) = requested {
             let _ = window.set_position(position);
         }
+        // Read back before hiding: GTK does not move a hidden window, so a
+        // position sampled after `hide()` reports the pre-park coordinates and
+        // would make the log claim something it did not measure.
+        let applied = overlay_current_logical_rect(&window).map(|(x, y, _, _)| (x, y));
+
         // Hide so the next reveal() runs the hidden→visible branch (which sets
         // the position). Without this the window stays visible-but-offscreen
         // after parking, and reveal's "only set_position on hidden→visible"
         // guard (drag-snap protection) skips re-positioning — the overlay then
         // vanishes from the 2nd transcription onward.
         let _ = window.hide();
+
+        core::runtime_log::record(format!(
+            "[WordScript] Overlay parked requested={} applied={}",
+            requested
+                .map(|position| format!("({:.0},{:.0})", position.x, position.y))
+                .unwrap_or_else(|| "none".to_string()),
+            applied
+                .map(|(x, y)| format!("({x:.0},{y:.0})"))
+                .unwrap_or_else(|| "unknown".to_string()),
+        ));
+
         // Clear authoritative visibility so the next reveal repositions + shows.
         OVERLAY_WINDOW_SHOWN.store(false, Ordering::Relaxed);
     }
@@ -798,6 +953,44 @@ fn overlay_offscreen_position<R: Runtime>(
         (max_x + OVERLAY_PARK_MARGIN).round(),
         (max_y + OVERLAY_PARK_MARGIN).round(),
     ))
+}
+
+/// Put the overlay back on a monitor if it is currently on none.
+///
+/// A reveal answers this for every surface change, but a long recording has no
+/// surface changes at all — the pill just sits there for a minute. That is
+/// exactly the window in which a monitor reconfiguration strands it, and
+/// nothing would notice until the session ended. Driven from the existing
+/// capture monitor loop rather than a new timer.
+///
+/// Deliberately cheap in the common case: the monitor query runs on a slow
+/// cadence (see `OVERLAY_STRANDED_CHECK_INTERVAL_TICKS`) and the config is only
+/// read from disk once a rescue is actually needed.
+fn ensure_overlay_on_screen<R: Runtime>(app: &AppHandle<R>) {
+    if !OVERLAY_WINDOW_SHOWN.load(Ordering::Relaxed) {
+        return;
+    }
+
+    let Some(window) = app.get_webview_window("overlay") else {
+        return;
+    };
+    let Some((x, y, width, height)) = overlay_stranded_rect(&window) else {
+        return;
+    };
+
+    core::runtime_log::record(format!(
+        "[WordScript] Overlay stranded mid-session rect=({x:.0},{y:.0},{width:.0}x{height:.0}) — repositioning"
+    ));
+
+    // Compact is the surface a capture is showing, and it is the right one to
+    // ask for regardless: `manual_overlay_surface_position` ignores the surface,
+    // and every flat surface shares one size.
+    let config = AppConfig::load_from_disk();
+    if let Some(position) =
+        overlay_target_position(&window, &config, OverlaySurface::Compact, None, None)
+    {
+        let _ = window.set_position(position);
+    }
 }
 
 #[tauri::command]
@@ -1183,8 +1376,19 @@ fn stop_native_capture_after_stream_error<R: Runtime + 'static>(
 
 fn spawn_native_capture_monitor<R: Runtime + 'static>(app: AppHandle<R>, capture_id: String) {
     tauri::async_runtime::spawn(async move {
+        let mut tick: u32 = 0;
         loop {
             tokio::time::sleep(Duration::from_millis(200)).await;
+
+            // Monitor enumeration is an X11/compositor round trip, and this
+            // loop is the hot path of an active recording — the one place where
+            // added main-thread work is least welcome. A stranded overlay is
+            // rare and a two-second detection latency for it is unnoticeable,
+            // so the check runs on its own slow cadence.
+            tick = tick.wrapping_add(1);
+            if tick % OVERLAY_STRANDED_CHECK_INTERVAL_TICKS == 0 {
+                ensure_overlay_on_screen(&app);
+            }
 
             match core::capture::monitor_native_capture(&app, &capture_id) {
                 Ok(core::capture::NativeCaptureMonitorState::Continue) => continue,
@@ -2792,6 +2996,79 @@ mod tests {
             overlay_workspace_bounds([(-1080.0, 0.0, 1080.0, 1880.0), (0.0, 0.0, 1920.0, 1040.0)]);
 
         assert_eq!(bounds, Some((-1080.0, 0.0, 1920.0, 1880.0)));
+    }
+
+    // The reporting machine's layout: two monitors offset vertically, so the
+    // union bounding box (4320x1568) has corners that no monitor covers. The
+    // overlay was measured parked at (3840,1508) — inside the box, on nothing.
+    const STAGGERED_LAYOUT: [(f64, f64, f64, f64); 2] =
+        [(0.0, 218.0, 2400.0, 1350.0), (2400.0, 0.0, 1920.0, 1200.0)];
+
+    #[test]
+    fn an_overlay_in_the_dark_part_of_the_union_box_counts_as_stranded() {
+        assert!(overlay_rect_is_off_all_work_areas(
+            (3840.0, 1508.0, 480.0, 60.0),
+            STAGGERED_LAYOUT,
+        ));
+    }
+
+    #[test]
+    fn an_overlay_on_a_monitor_is_never_stranded() {
+        // Inside the manual reference the config actually carries.
+        assert!(!overlay_rect_is_off_all_work_areas(
+            (1326.0, 921.0, 480.0, 60.0),
+            STAGGERED_LAYOUT,
+        ));
+        // And on the second monitor.
+        assert!(!overlay_rect_is_off_all_work_areas(
+            (2600.0, 400.0, 480.0, 60.0),
+            STAGGERED_LAYOUT,
+        ));
+    }
+
+    #[test]
+    fn an_overlay_hanging_over_an_edge_stays_on_screen() {
+        // Partly outside is still visible, so the drag position is left alone
+        // rather than snapped back.
+        assert!(!overlay_rect_is_off_all_work_areas(
+            (-100.0, 300.0, 480.0, 60.0),
+            STAGGERED_LAYOUT,
+        ));
+        assert!(!overlay_rect_is_off_all_work_areas(
+            (2380.0, 1150.0, 480.0, 60.0),
+            STAGGERED_LAYOUT,
+        ));
+    }
+
+    #[test]
+    fn an_overlay_touching_an_edge_only_does_not_count_as_on_screen() {
+        // Exactly abutting the right edge of the second monitor shares no
+        // pixel with it.
+        assert!(overlay_rect_is_off_all_work_areas(
+            (4320.0, 400.0, 480.0, 60.0),
+            STAGGERED_LAYOUT,
+        ));
+    }
+
+    #[test]
+    fn a_zero_area_rect_intersects_nothing_but_is_not_evidence() {
+        // GTK reports 0x0 for a window that is not realized yet. The predicate
+        // itself has to say "off screen" — it shares no pixel with anything —
+        // so the caller is what must refuse to act on it.
+        assert!(overlay_rect_is_off_all_work_areas(
+            (0.0, 0.0, 0.0, 0.0),
+            STAGGERED_LAYOUT,
+        ));
+    }
+
+    #[test]
+    fn without_enumerable_monitors_nothing_is_reported_as_stranded() {
+        // No evidence must never trigger a reposition against a topology the
+        // runtime cannot see.
+        assert!(!overlay_rect_is_off_all_work_areas(
+            (3840.0, 1508.0, 480.0, 60.0),
+            [],
+        ));
     }
 
     // D5 (plan 1784412908352): verify that the coalescing state machine

@@ -52,11 +52,29 @@ status change. Resolved bugs remain as references for the same failure class.
   D1-D12 closed; D11 (hold to talk) turned out to be a threshold-semantics
   defect rather than a delivery one and was corrected under ADR 0013
   (2026-07-29). One open item: the physical half of the S0 measurement.
-- [overlay-recording-freeze.md](overlay-recording-freeze.md): open — the
-  recording overlay freezes mid-capture, timer and input included, while capture
-  and pipeline continue. Observed only under `tauri dev` so far; the existing
-  telemetry cannot yet separate a real freeze from legitimate silence
-  (2026-07-27).
+- [overlay-recording-freeze.md](overlay-recording-freeze.md): open, and narrower
+  than when filed — the recording overlay freezes mid-capture, timer and input
+  included, while capture and pipeline continue. The 2026-07-30 measurement did
+  not reproduce it: zero `[ov-beat]` lines in a confirmed dev build whose other
+  diagnostics logged normally, and level-emit shortfall at its 4% baseline. The
+  sightings from that day were placement, not a stall. What stays open is the
+  original signature only — pill visible, input dead — and the
+  release-versus-dev comparison it always needed (2026-07-27, re-measured
+  2026-07-30).
+- [overlay-stranded-off-screen.md](overlay-stranded-off-screen.md): fixed in
+  code, not yet confirmed through a live monitor change — the overlay was placed
+  where no monitor is. Reveals only ever positioned on hidden→visible, so a
+  monitor topology change during a session left stale coordinates, and in a
+  staggered layout those fall into the dark part of the union bounding box
+  (measured: 18.3% of it). Reported as "the overlay becomes completely invisible
+  mid-recording"; the stop hotkey appeared to fix it because the park→reveal
+  cycle recomputed placement (2026-07-30, ADR 0022).
+- [overlay-leave-hold-dead-actions.md](overlay-leave-hold-dead-actions.md):
+  fixed — the 240 ms leave hold replayed the `clipboard_only` preview from a
+  snapshot with its buttons wired unconditionally to handlers that had already
+  gone dead, so Copy rendered fully enabled and did nothing. The `edit-mode`
+  branch beside it already had the rule the `processing` branch was missing
+  (2026-07-30).
 - [diag-log-write-surface.md](diag-log-write-surface.md): open — hardening
   finding, no observed failure. The overlay diagnostic log uses a predictable
   path in the world-writable `/tmp`, and its three commands are registered in

@@ -1,6 +1,49 @@
 use std::{env, path::PathBuf};
 
+/// Per-process scratch directory used instead of the real user data directory
+/// while the test suite runs.
+///
+/// Without this every consumer of `user_data_dir` writes into the developer's
+/// live `~/.config/WordScript`: `cargo test` appended its own lines to the real
+/// `wordscript-runtime.log` and wrote synthetic entries into the real
+/// `history.json`. That corrupts exactly the evidence the runtime log exists to
+/// provide, so the diversion belongs at the root rather than in each consumer's
+/// own opt-in override.
+#[cfg(test)]
+fn test_data_dir() -> PathBuf {
+    use std::sync::OnceLock;
+
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = env::temp_dir().join(format!("wordscript-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    })
+    .clone()
+}
+
 pub fn user_data_dir() -> PathBuf {
+    // Explicit override, honoured in every build. Lets a second instance run
+    // against isolated data without touching the primary installation.
+    if let Some(override_dir) = env::var_os("WORDSCRIPT_DATA_DIR") {
+        let dir = PathBuf::from(override_dir);
+        let _ = std::fs::create_dir_all(&dir);
+        return dir;
+    }
+
+    #[cfg(test)]
+    {
+        return test_data_dir();
+    }
+
+    #[cfg(not(test))]
+    {
+        platform_user_data_dir()
+    }
+}
+
+#[cfg(not(test))]
+fn platform_user_data_dir() -> PathBuf {
     let base = if cfg!(target_os = "windows") {
         env::var_os("APPDATA")
             .map(PathBuf::from)
@@ -37,8 +80,39 @@ pub fn history_file_path() -> PathBuf {
     user_data_dir().join("history.json")
 }
 
+#[cfg(not(test))]
 fn home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The suite must never reach the developer's live data directory. Asserted
+    // through the resolved path rather than by writing and looking, so the test
+    // stays honest even if a consumer changes what it writes.
+    #[test]
+    fn user_data_dir_is_diverted_away_from_the_real_config_dir_under_test() {
+        let dir = user_data_dir();
+
+        // The real installation directory always ends in `WordScript`; the
+        // diverted one never may, whichever seam resolved it.
+        assert!(!dir.ends_with("WordScript"), "resolved to {dir:?}");
+
+        if env::var_os("WORDSCRIPT_DATA_DIR").is_none() {
+            assert!(dir.starts_with(env::temp_dir()), "resolved to {dir:?}");
+        }
+    }
+
+    #[test]
+    fn every_data_file_lives_inside_the_diverted_directory() {
+        let dir = user_data_dir();
+
+        for path in [config_file_path(), scratchpad_file_path(), history_file_path()] {
+            assert!(path.starts_with(&dir), "{path:?} escaped {dir:?}");
+        }
+    }
 }
