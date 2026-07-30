@@ -361,9 +361,13 @@ Rules of this stack:
   builds a bounded bias prompt from it for Groq and (depending on
   `local_prompt_strength`) for `local_preview`, with profile context,
   explicit `stt_hints` and dictionary spellings.
-- the bias prompt is now conservatively filtered: generic profile categories
-  or broad topic lists are no longer forwarded to STT and cleanup; only
-  concrete lexical hints, explicit `stt_hints` and preferred spellings remain.
+- the bias prompt is conservatively filtered: generic profile categories or
+  broad topic lists are not forwarded to the recognizer; only concrete lexical
+  hints, explicit `stt_hints` and preferred spellings remain. This filter is
+  **recognizer-only**. It also gated the cleanup prompt until ADR 0021, which
+  found that reuse was never decided and measured it as unnecessary there; the
+  transform prompts now take profile context through `core::profile_context`,
+  identically in every mode.
 - STT bias composition is profile-bound via `TextProfileWorkMode.bias_mode`
   (`Conservative` default, `Manual` user-decided, `Off`); the `bias_policy_migrated`
   migration initializes existing profiles to Conservative without data loss.

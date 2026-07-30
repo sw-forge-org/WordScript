@@ -6,6 +6,8 @@ use serde::Deserialize;
 use super::config::{
     BiasMode, DictionaryEntry, ManualBias, ProcessingMode, TextProfile, TextProfileWorkMode,
 };
+use super::agent::{build_profile_context, AgentConfig};
+use super::prompt_enhance::{build_enhance_system_prompt, PromptEnhanceConfig};
 use super::transform::{correction_system_prompt, NativeTransformConfig};
 use super::workspace_context::WorkspaceContext;
 use super::text_rules::{
@@ -53,6 +55,12 @@ struct CorpusEntry {
     /// protect.
     #[serde(default)]
     expected_correction_prompt: Option<ExpectedCorrectionPrompt>,
+    /// Invariants the profile context must satisfy in *every* listed mode's
+    /// prompt. The correction prompt has its own block above; this one exists
+    /// because the defect ADR 0021 fixed was a difference *between* modes, and
+    /// a per-mode assertion cannot catch that class of drift.
+    #[serde(default)]
+    expected_profile_context: Option<ExpectedProfileContext>,
     #[allow(dead_code)]
     expected_post_correction: String,
     #[serde(default)]
@@ -92,6 +100,16 @@ struct ExpectedCorrectionPrompt {
     workspace_app: Option<String>,
     #[serde(default)]
     workspace_category: Option<String>,
+    #[serde(default)]
+    contains: Vec<String>,
+    #[serde(default)]
+    not_contains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ExpectedProfileContext {
+    /// Every mode whose prompt must satisfy the assertions below.
+    modes: Vec<String>,
     #[serde(default)]
     contains: Vec<String>,
     #[serde(default)]
@@ -289,6 +307,96 @@ fn corpus_drives_correction_prompt_assertions() {
         checked > 0,
         "corpus must cover at least one correction-prompt case"
     );
+}
+
+/// Builds the prompt each mode actually sends and asserts the profile context
+/// arrives the same way in all of them.
+///
+/// The defect this guards was invisible to per-mode tests: every mode's prompt
+/// was individually defensible, and only the comparison showed that the same
+/// profile field reached them in three different widths (ADR 0021).
+#[test]
+fn corpus_drives_profile_context_parity_across_modes() {
+    let corpus = load_corpus();
+    let mut checked = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_profile_context else {
+            continue;
+        };
+        assert!(
+            !expected.modes.is_empty(),
+            "[{}] expected_profile_context needs at least one mode",
+            entry.id
+        );
+
+        for mode in &expected.modes {
+            checked += 1;
+            let prompt = mode_prompt_for(mode, entry);
+
+            for needle in &expected.contains {
+                assert!(
+                    prompt.contains(needle),
+                    "[{}] {mode} prompt missing {:?}\n--- prompt ---\n{prompt}",
+                    entry.id,
+                    needle
+                );
+            }
+            for needle in &expected.not_contains {
+                assert!(
+                    !prompt.contains(needle),
+                    "[{}] {mode} prompt unexpectedly contains {:?}\n--- prompt ---\n{prompt}",
+                    entry.id,
+                    needle
+                );
+            }
+        }
+    }
+
+    assert!(
+        checked > 0,
+        "corpus must cover at least one profile-context parity case"
+    );
+}
+
+/// The prompt a mode assembles from a corpus profile. Each arm calls the
+/// production builder for that mode — a copy here would assert a prompt the
+/// product does not send.
+fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
+    match mode {
+        "cleanup" | "rewrite" | "verbatim" => {
+            let preset = ProcessingMode::from_str(mode).transform_preset();
+            correction_system_prompt(&NativeTransformConfig {
+                provider: "groq".to_string(),
+                profile_prompt: entry.profile.prompt.clone(),
+                dictionary_entries: entry.profile.dictionary_entries.clone(),
+                post_process: preset.post_process,
+                filter_fillers: preset.filter_fillers,
+                professionalize: preset.professionalize,
+                ..NativeTransformConfig::default()
+            })
+        }
+        "agent" => build_profile_context(&AgentConfig {
+            provider: "groq".to_string(),
+            agent_name: "WordScript".to_string(),
+            agent_model: String::new(),
+            profile_label: entry.profile.id.clone(),
+            profile_prompt: entry.profile.prompt.clone(),
+            stt_hints: entry.profile.stt_hints.clone(),
+            dictionary_entries: entry.profile.dictionary_entries.clone(),
+            snippet_entries: Vec::new(),
+            workspace_context: None,
+        }),
+        "prompt_enhance" => build_enhance_system_prompt(&PromptEnhanceConfig {
+            provider: "groq".to_string(),
+            model: String::new(),
+            sub_mode: "enhance".to_string(),
+            target: "general".to_string(),
+            profile_prompt: entry.profile.prompt.clone(),
+            workspace_context: None,
+        }),
+        other => panic!("[{}] unknown mode in expected_profile_context: {other}", entry.id),
+    }
 }
 
 #[test]

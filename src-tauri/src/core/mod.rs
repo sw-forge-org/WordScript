@@ -8,6 +8,7 @@ pub mod insertion;
 pub mod mode_router;
 pub mod paths;
 pub mod portal;
+pub mod profile_context;
 pub mod prompt_enhance;
 pub mod providers;
 pub mod runtime_log;

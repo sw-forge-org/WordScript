@@ -158,6 +158,21 @@ that commits to a mode. Order, first match wins:
 looking like a free win, see
 [known-issues/auto-mode-verbatim-routing.md](known-issues/auto-mode-verbatim-routing.md).
 
+The profile's context (`TextProfile.prompt`) reaches every mode at the same
+width and in the same shape, produced by `core::profile_context`: whitespace
+normalized, deduplicated case-insensitively, each line truncated at 80
+characters, and the whole block bounded by a 600-character budget. Lines that do
+not fit are reported, never silently dropped — `TextRulesAnalysis.profile_context`
+carries the spend and the rejected lines to the Profiles panel, which shows both.
+**The mode decides the framing, never the width** (ADR 0021). Cleanup and Rewrite wrap the lines in "nutze sie nur, wenn sie zum
+Input passen; nie halluzinieren", because a correction must stay near its input;
+Agent frames the same lines as the domain its generated output lives in; Prompt
+Enhance keeps a weak "berücksichtige falls relevant" next to its sub-mode
+instruction. There is no word-shape filter on this path — the recognizer's
+filter (`transcription_hints::filter_profile_hint_lines`, ADR 0017) asks whether
+Whisper could mis-hear a line and stays on the recognizer path only. A line
+rejected there still reaches the transform prompt.
+
 The workspace context is only a probability signal, not a deterministic
 mapping (`workspace_app_map` was removed). It is collected once per session when
 the active profile allows it and then reaches every mode: as a category signal in

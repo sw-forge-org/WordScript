@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use super::profile_context::profile_context_line;
 use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
 use super::runtime_log;
 use super::workspace_context::WorkspaceContext;
@@ -91,10 +92,12 @@ Maximal 2-3 Sätze Kontext ergänzen."
         ));
     }
 
-    if !config.profile_prompt.trim().is_empty() {
+    // Bounded and shaped like every other mode's profile context (ADR 0021).
+    // The framing stays weak on purpose: the output of this mode is a prompt
+    // that travels to another tool, where WordScript has no guardrails left.
+    if let Some(context) = profile_context_line(&config.profile_prompt) {
         sections.push(format!(
-            "Profil-Kontext (berücksichtige falls relevant): {}",
-            config.profile_prompt.trim()
+            "Profil-Kontext (berücksichtige falls relevant): {context}"
         ));
     }
 

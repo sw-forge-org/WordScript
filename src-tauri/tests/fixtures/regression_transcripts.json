@@ -216,6 +216,40 @@
       "notes": "German 'um' is a preposition, but it is also listed among the English filler interjections the cleanup prompt strips. It appeared 4 times as a preposition in a 75-entry live history sample. The deterministic detection stage must pass the sentence through untouched, and the cleanup instruction must state that a filler is only stripped when it stands alone as an interjection."
     },
     {
+      "id": "profile_context_reaches_every_mode_at_the_same_width",
+      "failure_mode": "profile_context_width_differs_per_mode",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "feature names\nbug IDs\nrelease scope\nAPI names\nplatform constraints\nservice names\nmigration steps\ninfra constraints",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "der release scope für die migration steps ist noch nicht klar",
+      "expected_profile_context": {
+        "modes": [
+          "cleanup",
+          "rewrite",
+          "agent",
+          "prompt_enhance"
+        ],
+        "contains": [
+          "feature names",
+          "release scope",
+          "platform constraints",
+          "service names",
+          "migration steps",
+          "infra constraints",
+          "bug IDs",
+          "API names"
+        ],
+        "not_contains": []
+      },
+      "expected_post_correction": "Der Release Scope für die Migration Steps ist noch nicht klar.",
+      "expected_guardrail": null,
+      "notes": "The real curated Product-and-engineering profile. Before ADR 0021 the same eight lines reached Cleanup as two (the transcription hint filter dropped every multi-word lowercase line), Agent as all eight raw and unbounded, and Prompt Enhance as all eight raw. Measured against 96 real transcripts from this profile: widening Cleanup from two lines to eight changed 26% of outputs, introduced no content from the six previously dropped lines, and did not raise the number of entries with invented words (12 narrow vs 11 widened). The invariant is parity, not a specific width -- a mode that quietly narrows or widens its share of the profile context is the regression."
+    },
+    {
       "id": "workspace_context_enters_prompt_as_weak_last_signal",
       "failure_mode": "workspace_context_overweighted_in_cleanup",
       "profile": {

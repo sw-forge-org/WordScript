@@ -1,9 +1,15 @@
 use std::time::Instant;
 
 use super::config::{DictionaryEntry, SnippetEntry};
+use super::profile_context::{profile_context_line, truncate_line};
 use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
 use super::runtime_log;
 use super::workspace_context::WorkspaceContext;
+
+/// Same bound the correction prompt puts on its dictionary block. A prompt that
+/// grows with the profile is a prompt nobody has measured.
+const MAX_DICTIONARY_ENTRIES: usize = 12;
+const MAX_SNIPPET_ENTRIES: usize = 12;
 
 // Common imperative verb stems in English and German that signal an agent instruction.
 const IMPERATIVE_VERB_STEMS: &[&str] = &[
@@ -237,24 +243,36 @@ Antworte ausschließlich mit \"yes\" oder \"no\". Kein weiterer Text."
 ///
 /// Only non-empty sections are included. The resulting string is passed to the
 /// agent LLM as "profile context" so it can tailor its output to the domain.
-fn build_profile_context(config: &AgentConfig) -> String {
+///
+/// The profile's free-text fields run through `profile_context` like every other
+/// mode's do — same bound, same shape. What differs here is the framing: an
+/// agent *produces* text rather than correcting it, so the context is the
+/// domain the output lives in, not a list of terms to leave alone (ADR 0021).
+pub(crate) fn build_profile_context(config: &AgentConfig) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     if !config.profile_label.trim().is_empty() {
         parts.push(format!("Profil: {}", config.profile_label.trim()));
     }
-    if !config.profile_prompt.trim().is_empty() {
-        parts.push(format!("Kontext: {}", config.profile_prompt.trim()));
+    if let Some(context) = profile_context_line(&config.profile_prompt) {
+        parts.push(format!("Kontext: {context}"));
     }
-    if !config.stt_hints.trim().is_empty() {
-        parts.push(format!("Fachbegriffe: {}", config.stt_hints.trim()));
+    if let Some(terms) = profile_context_line(&config.stt_hints) {
+        parts.push(format!("Fachbegriffe: {terms}"));
     }
     if !config.dictionary_entries.is_empty() {
         let lines: Vec<String> = config
             .dictionary_entries
             .iter()
             .filter(|e| !e.phrase.trim().is_empty())
-            .map(|e| format!("  {} → {}", e.phrase.trim(), e.replace_with.trim()))
+            .map(|e| {
+                format!(
+                    "  {} → {}",
+                    truncate_line(e.phrase.trim()),
+                    truncate_line(e.replace_with.trim())
+                )
+            })
+            .take(MAX_DICTIONARY_ENTRIES)
             .collect();
         if !lines.is_empty() {
             parts.push(format!("Bekannte Entitäten:\n{}", lines.join("\n")));
@@ -266,6 +284,7 @@ fn build_profile_context(config: &AgentConfig) -> String {
             .iter()
             .filter(|e| !e.expansion.trim().is_empty())
             .map(|e| format!("  {} (\"{}\"): {}", e.label.trim(), e.trigger.trim(), e.expansion.trim()))
+            .take(MAX_SNIPPET_ENTRIES)
             .collect();
         if !lines.is_empty() {
             parts.push(format!("Inhalts-Bausteine:\n{}", lines.join("\n")));

@@ -3,14 +3,12 @@ use std::time::Instant;
 use regex::{Captures, NoExpand, Regex, RegexBuilder};
 
 use super::config::{DictionaryEntry, SnippetEntry, TransformPreset, DEFAULT_CORRECTION_MODEL};
+use super::profile_context::{profile_context_line, truncate_line};
 use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
 use super::runtime_log;
-use super::transcription_hints::filter_profile_hint_lines;
 use super::workspace_context::WorkspaceContext;
 
-const MAX_PROFILE_HINT_LINES: usize = 8;
 const MAX_DICTIONARY_HINTS: usize = 12;
-const MAX_HINT_CHARS: usize = 80;
 
 #[derive(Debug, Clone, Default)]
 pub struct NativeTransformConfig {
@@ -523,14 +521,14 @@ pub(crate) fn correction_system_prompt(config: &NativeTransformConfig) -> String
 }
 
 fn correction_context_hint(config: &NativeTransformConfig) -> Option<String> {
-    let profile_hints = prompt_context_hints(&config.profile_prompt);
+    let profile_hints = profile_context_line(&config.profile_prompt);
     let dictionary_hints = dictionary_context_hints(&config.dictionary_entries);
     let workspace_hint = config
         .workspace_hint
         .as_ref()
         .and_then(workspace_context_hint);
 
-    if profile_hints.is_empty() && dictionary_hints.is_empty() && workspace_hint.is_none() {
+    if profile_hints.is_none() && dictionary_hints.is_empty() && workspace_hint.is_none() {
         return None;
     }
 
@@ -538,8 +536,8 @@ fn correction_context_hint(config: &NativeTransformConfig) -> Option<String> {
         "Aktive Hinweise aus dem Profil. Nutze sie nur, wenn sie zum Input passen; nie halluzinieren:".to_string(),
     ];
 
-    if !profile_hints.is_empty() {
-        lines.push(format!("Kontextbegriffe: {}", profile_hints.join(" | ")));
+    if let Some(hints) = profile_hints {
+        lines.push(format!("Kontextbegriffe: {hints}"));
     }
 
     if !dictionary_hints.is_empty() {
@@ -568,7 +566,7 @@ fn workspace_context_hint(context: &WorkspaceContext) -> Option<String> {
         return None;
     }
 
-    let app = truncate_prompt_hint(app);
+    let app = truncate_line(app);
     let category = context.category.trim();
     let where_ = if category.is_empty() {
         app
@@ -579,15 +577,6 @@ fn workspace_context_hint(context: &WorkspaceContext) -> Option<String> {
     Some(format!(
         "Zielanwendung: {where_}. Nur ein schwaches Stilsignal — niemals Inhalt daraus ableiten oder ergänzen."
     ))
-}
-
-fn prompt_context_hints(prompt: &str) -> Vec<String> {
-    filter_profile_hint_lines(prompt)
-        .accepted
-        .into_iter()
-        .take(MAX_PROFILE_HINT_LINES)
-        .map(|hint| truncate_prompt_hint(&hint))
-        .collect()
 }
 
 fn dictionary_context_hints(entries: &[DictionaryEntry]) -> Vec<String> {
@@ -602,22 +591,12 @@ fn dictionary_context_hints(entries: &[DictionaryEntry]) -> Vec<String> {
 
             Some(format!(
                 "{} -> {}",
-                truncate_prompt_hint(phrase),
-                truncate_prompt_hint(replace_with)
+                truncate_line(phrase),
+                truncate_line(replace_with)
             ))
         })
         .take(MAX_DICTIONARY_HINTS)
         .collect()
-}
-
-fn truncate_prompt_hint(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.chars().count() <= MAX_HINT_CHARS {
-        return trimmed.to_string();
-    }
-
-    let shortened: String = trimmed.chars().take(MAX_HINT_CHARS).collect();
-    format!("{shortened}...")
 }
 
 fn word_overlap_ok(original: &str, corrected: &str, threshold: f32) -> bool {
@@ -833,6 +812,12 @@ fn is_hallucination(text: &str) -> bool {
         .any(|value| normalized == *value || normalized == format!("[{value}]"))
 }
 
+/// Measurement scaffolding, not product code. A child module so it can reach
+/// this module's private guardrails without widening their visibility.
+#[cfg(test)]
+#[path = "transform_context_measurement.rs"]
+mod context_measurement;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -950,8 +935,13 @@ mod tests {
         }
     }
 
+    /// Superseded `correction_prompt_keeps_only_concrete_profile_terms`, which
+    /// pinned the transcription filter's word-shape rule on the correction
+    /// prompt. That rule asked whether Whisper could mis-hear a line, which the
+    /// correction prompt never needed; ADR 0021 replaced it with a bound and a
+    /// framing after measuring that the dropped lines never reached an output.
     #[test]
-    fn correction_prompt_keeps_only_concrete_profile_terms() {
+    fn correction_prompt_carries_every_profile_line_bounded() {
         let prompt = correction_system_prompt(&NativeTransformConfig {
             provider: "groq".to_string(),
             profile_prompt: "customer names\ncustomer follow-up\nWordScript\nrefund policy".to_string(),
@@ -970,9 +960,13 @@ mod tests {
 
         assert!(prompt.contains("Sprachmix exakt beibehalten"));
         assert!(prompt.contains("gemischtsprachige Wörter erhalten"));
-        assert!(!prompt.contains("customer names"));
-        assert!(prompt.contains("customer follow-up"));
+        assert!(prompt.contains(
+            "Kontextbegriffe: customer names | customer follow-up | WordScript | refund policy"
+        ));
         assert!(prompt.contains("word script -> WordScript"));
+        // The framing is what keeps the wider context safe, so it is asserted
+        // next to the context rather than left to a separate test.
+        assert!(prompt.contains("nie halluzinieren"));
     }
 
     #[tokio::test]
