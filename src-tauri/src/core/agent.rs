@@ -342,6 +342,26 @@ pub(crate) fn build_profile_context(config: &AgentConfig) -> String {
 /// block rather than to its weakest member.
 pub(crate) const PROFILE_CONTEXT_HEADING: &str = "PROFILE CONTEXT. It exists solely to help you read the instruction correctly — spellings, proper nouns, technical terms, domain. Never derive content from it, never supplement the result with it, never carry any of it into the result. All content comes from the user's instruction alone:";
 
+/// What the mode owes the user: an artifact, never an answer.
+///
+/// Every other rule in this prompt is negative — no preamble, no invented
+/// facts, no profile content — and negative rules bound a result they never
+/// define. Nothing said what the output *is*, so the model was free to satisfy
+/// all of them with a reply: "Schreib eine Mail an Jürgen, er soll X machen"
+/// came back as "Ja, das sollte Jürgen auf jeden Fall machen".
+///
+/// The pull it works against is structural. The user turn is a bare transcript
+/// (ADR 0023), which in a chat completion is formally a message to the
+/// assistant, and a message to the assistant has one default prior: answer it.
+/// The counterweight belongs in the system turn rather than in a prefix on the
+/// transcript — the transcript is the one thing in this request that is the
+/// user's own words, and it stays that way. See ADR 0026.
+pub(crate) const AGENT_OUTPUT_CONTRACT: &str = "\
+- The user turn is a transcript of dictated speech, not a message addressed to you. Never answer it, never comment on it, never confirm, agree with or evaluate it, and never write to the user.
+- Produce the artifact the instruction asks for — an email, a message, a list, a summary, a text. Your output is that artifact alone, from its first word to its last.
+- When the instruction names an addressee, the result is written to that addressee. The user is never the addressee.
+- When the instruction cannot be carried out as dictated, output its content as plain text and nothing else. Never ask a question back, never explain why.";
+
 /// The agent's system prompt, without the transcript.
 ///
 /// Split out from [`apply_agent_transform`] so the regression corpus can assert
@@ -357,7 +377,8 @@ pub(crate) fn build_agent_system_prompt(config: &AgentConfig) -> String {
     let mut sections = vec![format!(
         "You are \"{agent_name}\", an AI assistant built into a speech-to-text dictation app. \
 The user has addressed you with a spoken instruction. Carry it out precisely and completely.\n\
-- Reply with the finished result text only — no preamble, no explanation, no \"Here is...\".\n\
+{AGENT_OUTPUT_CONTRACT}\n\
+- Output the finished result text only — no preamble, no explanation, no \"Here is...\".\n\
 - Write the result in the language the user dictated in, and keep any mix of languages they used. Never translate, and never answer in the language of these instructions.\n\
 - All content comes from the instruction. Do not invent facts, names, dates or numbers the user did not dictate; if something is missing, leave it out."
     )];
@@ -675,6 +696,62 @@ mod tests {
 
         assert!(!prompt.contains(PROFILE_CONTEXT_HEADING));
         assert!(prompt.contains("You are \"WordScript\""));
+    }
+
+    // ── The output contract (ADR 0026) ───────────────────────────────────────
+
+    /// The contract is what the mode is for, so it does not depend on a profile
+    /// having been filled in or a style having been switched on. The reported
+    /// case was neither.
+    #[test]
+    fn the_output_contract_holds_for_every_configuration() {
+        let empty = AgentConfig {
+            agent_name: "WordScript".to_string(),
+            ..Default::default()
+        };
+        let styled = AgentConfig {
+            style: CommunicationStyle {
+                register: CommunicationRegister::Colleague,
+                ..CommunicationStyle::default()
+            },
+            ..leaky_profile()
+        };
+
+        for config in [&empty, &leaky_profile(), &styled] {
+            let prompt = build_agent_system_prompt(config);
+            assert!(prompt.contains(AGENT_OUTPUT_CONTRACT));
+            assert!(prompt.contains("never write to the user"));
+            assert!(prompt.contains("The user is never the addressee"));
+        }
+    }
+
+    /// "Reply" was the mode's own word for what it does. It is the thing the
+    /// output must not be.
+    #[test]
+    fn the_system_prompt_never_asks_the_model_to_reply() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+        assert!(!prompt.contains("Reply with"));
+        assert!(prompt.contains("Output the finished result text only"));
+    }
+
+    /// What the output *is* comes before what may go into it, and both come
+    /// before how it is written.
+    #[test]
+    fn the_contract_precedes_the_context_and_the_style_block() {
+        let styled = AgentConfig {
+            style: CommunicationStyle {
+                register: CommunicationRegister::Friend,
+                ..CommunicationStyle::default()
+            },
+            ..leaky_profile()
+        };
+
+        let prompt = build_agent_system_prompt(&styled);
+        let contract = prompt.find(AGENT_OUTPUT_CONTRACT).unwrap();
+        let context = prompt.find(PROFILE_CONTEXT_HEADING).unwrap();
+        let style = prompt.find("WRITING STYLE.").unwrap();
+        assert!(contract < context);
+        assert!(context < style);
     }
 
     #[test]

@@ -194,6 +194,12 @@ nothing else: it sits in the system prompt behind an explicit prohibition on
 deriving content from it, the user turn carries the transcript alone, and
 snippets contribute trigger without expansion. See ADR 0023.
 
+`agent` output is the artifact the instruction asks for and never a reply to the
+user: the prompt opens with `AGENT_OUTPUT_CONTRACT`, ahead of profile context
+and style block, fixing the addressee to the person the instruction names and
+returning the dictated content as plain text when the instruction cannot be
+carried out. It holds at every register, `off` included. See ADR 0026.
+
 The per-profile communication style (`ProfileModesSettings.communication_register`
 / `communication_length` / `style_instructions` / `style_sample`) is read by
 `agent` and `rewrite` only, through one producer, `core::communication_style`.

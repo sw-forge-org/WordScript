@@ -65,6 +65,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent mode writes the thing you asked for instead of answering you.**
+  Reported from live use: "Hey WordScript, schreib eine E-Mail an Jürgen, er
+  soll das und jenes machen" came back as "Ja, das sollte Jürgen auf jeden Fall
+  machen … bis heute Abend um 8 Uhr" — a reply to the dictation, with a deadline
+  nobody dictated.
+
+  Every rule in the agent prompt was a negative one — no preamble, no invented
+  facts, no profile content — and a conversational reply satisfies all of them.
+  Nothing said what the output *is*, and nothing fixed the addressee, so with a
+  transcript that is formally a message to an assistant the nearest addressee
+  was the user. The prompt now opens with what it owes: the transcript is
+  dictated speech and never a message to answer, the output is the artifact
+  alone, the addressee is the person the instruction names, and an instruction
+  that cannot be carried out comes back as plain text rather than a question.
+
+  The Expansive length was the accelerant, not the cause: "spell out context and
+  reasoning" is an invitation to narrate the task, and it now describes the
+  result instead — develop the instruction's background and framing inside the
+  result, never your own reasoning, never facts the instruction does not
+  contain. That wording is shared with Rewrite, where it is the same defect
+  under another name. See ADR 0026.
+
 - **Switching the active profile during a recording is refused instead of
   half-applied.** The profile decides the recognizer settings, and those are
   committed the moment recording starts — but the pipeline resolved the profile

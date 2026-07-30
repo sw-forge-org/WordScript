@@ -135,8 +135,9 @@ describes the correction step only.
   Preset `(true, true, true)`.
 - `agent`: dictation is executed as an instruction to the agent. Reaching this
   mode is itself the decision — there is no second intent check that can fall
-  back to a cleanup. Preset `(true, false, false)`, used only by the history
-  re-transform.
+  back to a cleanup. The output is the artifact the instruction asks for, never
+  a reply to the user (`agent::AGENT_OUTPUT_CONTRACT`, ADR 0026).
+  Preset `(true, false, false)`, used only by the history re-transform.
 - `prompt_enhance`: dictation is understood as a prompt, structured or
   expanded via `prompt_enhance` and given to the provider with a `PromptTarget`.
   Preset as for `agent`.
@@ -207,6 +208,18 @@ previously framed as "the domain the output lives in", sat in the user turn one
 line above the instruction, and carried a restriction on only one of its six
 blocks; instructions came back containing profile lines the user never dictated.
 
+**The agent prompt opens with what its output is** (ADR 0026). Every other rule
+it carries is negative, and a conversational reply satisfies all of them, so
+`AGENT_OUTPUT_CONTRACT` sits first — before the profile context and before the
+style block: the user turn is a transcript and never a message to answer, the
+output is the artifact alone, the addressee is the person the instruction names
+and never the user, and an instruction that cannot be carried out returns its
+content as plain text rather than a question back. It exists at every register,
+`off` included. Without it Agent mode returned "Ja, das sollte Jürgen auf jeden
+Fall machen" for an instruction to write Jürgen an email — with an invented
+deadline attached, because a model that has decided it is in a conversation
+supplies conversational filler.
+
 Every prompt WordScript sends is written in English, whatever the dictation
 language. English instructions are followed more reliably, and each prompt states
 explicitly that the *output* language is the dictated one — the agent prompt
@@ -228,6 +241,11 @@ Per profile, in `ProfileModesSettings`, read by **Agent and Rewrite only**
   countable in the output), a forbidden zone (what the level does *not* mean,
   against style-prompt overshoot) and a lexis source.
 - `communication_length`: `terse` | `normal` (default, emits nothing) | `full`.
+  `full` describes the result, not the task — develop the instruction's
+  background and framing *inside* the result, never explain your own reasoning,
+  never add facts the instruction does not contain. It previously read "spell
+  out context and reasoning", which is an invitation to narrate the task
+  (ADR 0026).
 - `style_instructions`: the user's rules, budgeted as a list (400 chars, per line,
   deduplicated). They **outrank the register** where they touch it.
 - `style_sample`: the user's own writing, budgeted as prose (400 chars, structure

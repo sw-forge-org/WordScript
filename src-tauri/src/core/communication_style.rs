@@ -175,6 +175,14 @@ impl CommunicationLength {
 
     /// `Normal` deliberately emits nothing: it is the absence of a length
     /// instruction, not an instruction to be average.
+    ///
+    /// `Full` used to read "spell out context and reasoning, with full
+    /// framing", which is an invitation to narrate the task rather than to
+    /// write it out: whose reasoning was never said, and the nearest available
+    /// answer is the model's own. Length is a property of the result, so the
+    /// line now says where the words go — inside the result — and rules out the
+    /// two ways a longer text grows without the instruction growing with it
+    /// (ADR 0026).
     fn instruction(&self) -> Option<&'static str> {
         match self {
             CommunicationLength::Normal => None,
@@ -182,7 +190,7 @@ impl CommunicationLength {
                 "Length: only what is needed. No framing, no repetition, no explanation that was not asked for.",
             ),
             CommunicationLength::Full => Some(
-                "Length: expansive. Spell out context and reasoning, with full framing.",
+                "Length: expansive. Develop what the instruction gives — its background, its framing, what follows from it — inside the result itself, in full sentences. Never explain your own reasoning and never add facts the instruction does not contain.",
             ),
         }
     }
@@ -537,6 +545,24 @@ mod tests {
             };
             assert!(styled.prompt_block().unwrap().contains("Length:"));
         }
+    }
+
+    /// A longer result is a longer *result*. The `Full` line may not license
+    /// the model to narrate the task, which is the shape the agent mode's
+    /// chat-reply defect took (ADR 0026).
+    #[test]
+    fn expansive_lengthens_the_result_and_not_the_commentary() {
+        let styled = CommunicationStyle {
+            register: CommunicationRegister::Colleague,
+            length: CommunicationLength::Full,
+            ..CommunicationStyle::default()
+        };
+
+        let block = styled.prompt_block().unwrap();
+        assert!(block.contains("inside the result itself"));
+        assert!(block.contains("Never explain your own reasoning"));
+        assert!(block.contains("never add facts the instruction does not contain"));
+        assert!(!block.contains("context and reasoning"));
     }
 
     #[test]
