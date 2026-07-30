@@ -82,19 +82,33 @@ describe("ModesTab", () => {
     expect(screen.queryByText("Prompt target")).not.toBeInTheDocument();
   });
 
-  it("shows cleanup settings card always visible", () => {
+  it("does not render a cleanup settings card", () => {
+    // The three toggles it held (AI cleanup / Remove fillers / Rewrite phrasing)
+    // had no runtime effect and two of them restated the mode axis. The mode is
+    // the setting now — ADR 0020.
     render(<ModesTab config={createAppConfig()} onChange={onChange} />);
 
-    expect(screen.getByText("Cleanup settings")).toBeInTheDocument();
-    expect(screen.getByLabelText(/ai cleanup/i)).toBeInTheDocument();
+    expect(screen.queryByText("Cleanup settings")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/ai cleanup/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/remove fillers/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/rewrite phrasing/i)).not.toBeInTheDocument();
   });
 
-  it("toggles auto-detect checkbox", () => {
+  it("states in each mode description what that preset does", () => {
+    render(<ModesTab config={createAppConfig()} onChange={onChange} />);
+
+    // With no sub-settings left, the descriptions are the only place the
+    // behavior is stated, so they have to carry it.
+    expect(screen.getByText(/Removes filler sounds and fixes typos/i)).toBeInTheDocument();
+    expect(screen.getByText(/Manual only — never auto-selected/i)).toBeInTheDocument();
+    expect(screen.getByText(/Never picks Verbatim or Rewrite/i)).toBeInTheDocument();
+  });
+
+  it("toggles workspace context on the active profile", () => {
     const config = createAppConfig();
-    // Set auto_detect_mode to false in the active profile's modes settings
     config.text_profiles = config.text_profiles.map((p) =>
       p.id === "general"
-        ? { ...p, modes: { ...p.modes!, auto_detect_mode: false } }
+        ? { ...p, modes: { ...p.modes!, collect_workspace_context: false } }
         : p,
     );
     render(<ModesTab config={config} onChange={onChange} />);
@@ -108,7 +122,21 @@ describe("ModesTab", () => {
     const profiles = patch.text_profiles!;
     const activeProfile = profiles.find((p) => p.id === "general");
     expect(activeProfile).toBeDefined();
-    expect(activeProfile!.modes?.auto_detect_mode).toBe(true);
+    expect(activeProfile!.modes?.collect_workspace_context).toBe(true);
+  });
+
+  it("reads the legacy auto_detect_mode key so an older config renders the real state", () => {
+    // Rust accepts the old key as a serde alias; the UI has to agree, otherwise a
+    // profile from an older config shows the toggle off while the runtime has it on.
+    const config = createAppConfig();
+    config.text_profiles = config.text_profiles.map((p) =>
+      p.id === "general"
+        ? { ...p, modes: { agent_name: "WordScript", auto_detect_mode: false } as never }
+        : p,
+    );
+    render(<ModesTab config={config} onChange={onChange} />);
+
+    expect(screen.getByLabelText(/collect workspace context/i)).not.toBeChecked();
   });
 
   it("renders workspace context section", () => {

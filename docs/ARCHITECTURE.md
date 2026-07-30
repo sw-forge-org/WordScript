@@ -278,34 +278,48 @@ session that has already ended never has its surface re-decided (ADR 0019).
 Text processing is intentionally not a black box. The order is fixed:
 
 1. Reject or flag hallucination patterns.
-2. If agent mode is active: intent detection; on a confirmed instruction call
-   `apply_agent_transform` and skip correction.
-3. Optional AI cleanup (correction guardrail stack).
+2. If the effective mode is Agent: call `apply_agent_transform` and skip
+   correction. The mode was already decided; nothing here re-decides it.
+   Prompt Enhance likewise runs its own transform instead of the correction step.
+3. AI cleanup, unless the mode's preset disables it (Verbatim).
 4. Apply dictionary.
 5. Apply snippets.
 
-### Agent mode
+Steps 4 and 5 are `transform::finalize_with_text_rules` and are **mode-independent**:
+they sit at the single pipeline exit, after the mode branch, so every mode passes
+through them. The mode decides how the text is produced; the profile's vocabulary
+decides how the user's own terms are spelled. This is why the stage lives outside
+`apply_native_transform` — Agent and Prompt Enhance never call that function, and
+while the call sat inside it they skipped the user's dictionary and snippets
+entirely (ADR 0020).
 
-Agent mode sits as a routing layer before correction and decides whether a
-transcript is treated as user dictation or as a direct instruction to the
-configured agent. The decision path is hybrid:
+### Intent detection
+
+Intent detection is part of resolving `Auto`, not a layer in front of correction.
+It runs once, while Auto picks one concrete mode, and its result *is* the mode.
+A concrete mode — Agent included — never passes through it, so a user who selects
+Agent by hotkey gets the agent (ADR 0020).
 
 ```text
-heuristic score >= 0.75  ->  safe AGENT path, no LLM call needed
-heuristic score < 0.20   ->  safe DICTATION path, straight to correction
-score 0.20 - 0.74        ->  uncertain zone -> LLM classifier decides
+heuristic score >= 0.75  ->  Auto commits to Agent, no LLM call needed
+heuristic score < 0.20   ->  Auto continues with its remaining rules
+score 0.20 - 0.74        ->  uncertain zone -> one LLM classifier call decides
+                             between Agent and Cleanup
 ```
 
 Heuristic signals (O(n), no API call): agent name in words 1-4 (+0.55),
 words 5-10 (+0.35), later (+0.15); imperative verb as first word (+0.45),
-words 2-10 (+0.25); text length > 60 words (-0.15).
+words 2-10 (+0.25); text length > 60 words (-0.15). The agent name comes from the
+active profile, falling back to the global one.
 
 LLM classifier (only in the uncertain zone): decides "yes" or "no", nothing
 else; "yes" only when the user directly addresses the agent **and** assigns
-a task; fallback on error is always "no" (safe dictation path).
+a task; fallback on error is always "no" (safe dictation path, i.e. Cleanup).
 
-If agent mode is off or the classifier returns "no", the text runs through
-`apply_native_transform` with the full correction guardrail stack.
+This used to run twice. Auto resolved to Agent using the heuristic, and the Agent
+branch then classified again and fell back to `apply_native_transform` on "no" —
+which silently overrode a manually selected Agent mode and used flags derived from
+the profile's stored mode. The second call is gone.
 
 ### Correction guardrail stack
 

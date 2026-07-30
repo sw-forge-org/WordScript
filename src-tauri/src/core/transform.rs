@@ -2,10 +2,11 @@ use std::time::Instant;
 
 use regex::{Captures, NoExpand, Regex, RegexBuilder};
 
-use super::config::{DictionaryEntry, SnippetEntry, DEFAULT_CORRECTION_MODEL};
+use super::config::{DictionaryEntry, SnippetEntry, TransformPreset, DEFAULT_CORRECTION_MODEL};
 use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
 use super::runtime_log;
 use super::transcription_hints::filter_profile_hint_lines;
+use super::workspace_context::WorkspaceContext;
 
 const MAX_PROFILE_HINT_LINES: usize = 8;
 const MAX_DICTIONARY_HINTS: usize = 12;
@@ -26,6 +27,10 @@ pub struct NativeTransformConfig {
     /// Set by the confidence gate upstream. It is one of the independent
     /// signals a language mismatch needs before anything is discarded.
     pub low_confidence_segments: bool,
+    /// The detected foreground app, when the active profile allows collecting it.
+    /// Enters the prompt as a single bounded line among the other profile hints —
+    /// a weak signal, never a weight that can outrank the transcript.
+    pub workspace_hint: Option<WorkspaceContext>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,10 +43,16 @@ pub struct NativeTransformResult {
 
 impl NativeTransformConfig {
     /// Built from the capture config rather than from loose JSON keys.
-    /// `filter_fillers` and `professionalize` arrive already resolved through
-    /// `TextProfileWorkMode::effective_*`, so the rewrite-style fallback this
-    /// used to re-derive from the payload would only duplicate that logic.
-    pub fn from_capture_config(config: &super::capture::NativeCaptureConfig) -> Self {
+    ///
+    /// The preset is passed in rather than read off the capture config, because
+    /// only the caller knows the *effective* processing mode: an override or an
+    /// Auto resolution can differ from the mode stored on the profile, and the
+    /// capture config is loaded before either has run. Making it an argument is
+    /// what stops a session from silently correcting under the wrong preset.
+    pub fn from_capture_config(
+        config: &super::capture::NativeCaptureConfig,
+        preset: TransformPreset,
+    ) -> Self {
         Self {
             provider: if config.provider.trim().is_empty() {
                 "groq".to_string()
@@ -51,18 +62,27 @@ impl NativeTransformConfig {
             profile_prompt: config.prompt.clone(),
             dictionary_entries: config.dictionary_entries.clone(),
             snippet_entries: config.snippet_entries.clone(),
-            post_process: config.post_process,
+            post_process: preset.post_process,
             correction_model: if config.correction_model.trim().is_empty() {
                 DEFAULT_CORRECTION_MODEL.to_string()
             } else {
                 config.correction_model.clone()
             },
-            filter_fillers: config.filter_fillers,
-            professionalize: config.professionalize,
+            filter_fillers: preset.filter_fillers,
+            professionalize: preset.professionalize,
             language: config.language.clone(),
             language_locked: config.language_locked,
             low_confidence_segments: false,
+            workspace_hint: None,
         }
+    }
+
+    /// Re-points this config at a different mode's preset. Used once per session,
+    /// after the effective mode is known.
+    pub fn apply_preset(&mut self, preset: TransformPreset) {
+        self.post_process = preset.post_process;
+        self.filter_fillers = preset.filter_fillers;
+        self.professionalize = preset.professionalize;
     }
 }
 
@@ -185,18 +205,43 @@ pub async fn apply_native_transform(
         }
     };
 
-    let (resolved_text, mut resolved_rules) = apply_text_rules(&result.text, &config);
-    if resolved_text != result.text {
-        result.corrected = true;
-        result.text = resolved_text;
-    }
-    result.applied_rules.append(&mut resolved_rules);
+    // Text rules are NOT applied here. They are the pipeline's final stage and
+    // run for every mode, including the ones that never reach this function —
+    // see `finalize_with_text_rules`.
 
     // Prepended so the diagnostics read in pipeline order: what the detection
     // stage did before the cleanup ever saw the text.
     let mut applied_rules = detection_rules;
     applied_rules.append(&mut result.applied_rules);
     result.applied_rules = applied_rules;
+    result
+}
+
+/// Applies the profile's deterministic text rules — dictionary replacements and
+/// snippet expansions — to a finished transform result.
+///
+/// This is the pipeline's last stage and it is mode-independent by design. The
+/// mode decides how the text is produced; the profile's vocabulary decides how
+/// its own terms are spelled, and that holds whether the text came from the
+/// correction step, from the agent, from prompt enhancement, or straight from the
+/// transcript in Verbatim.
+///
+/// It lives outside `apply_native_transform` because Agent and Prompt Enhance
+/// never call that function. While the call sat inside it, those two modes
+/// silently skipped the user's dictionary and snippets entirely.
+///
+/// Idempotent in practice: a replacement rewrites `phrase` to `replace_with`, so
+/// text that already carries the target spelling no longer matches the pattern.
+pub fn finalize_with_text_rules(
+    mut result: NativeTransformResult,
+    config: &NativeTransformConfig,
+) -> NativeTransformResult {
+    let (resolved_text, mut resolved_rules) = apply_text_rules(&result.text, config);
+    if resolved_text != result.text {
+        result.corrected = true;
+        result.text = resolved_text;
+    }
+    result.applied_rules.append(&mut resolved_rules);
     result
 }
 
@@ -446,20 +491,22 @@ fn rule_label(id: &str, fallback: &str) -> String {
     }
 }
 
-fn correction_system_prompt(config: &NativeTransformConfig) -> String {
-    let mode_instruction = match (config.filter_fillers, config.professionalize) {
-        (true, true) => {
-            "Aufgaben: Entferne nur isolierte Füllwörter und Sprechlaute wie äh, ähm, hm, uh oder um. Korrigiere offensichtliche Tipp-, Grammatik- und Zeichensetzungsfehler. Formuliere nur dann klarer und professioneller, wenn Bedeutung, Sprachmix, Ton und Fachwörter vollständig erhalten bleiben. Keine neuen Informationen hinzufügen."
-        }
-        (false, true) => {
-            "Aufgaben: Korrigiere offensichtliche Tipp-, Grammatik- und Zeichensetzungsfehler. Formuliere nur dann klarer und professioneller, wenn Bedeutung, Sprachmix, Ton und Fachwörter vollständig erhalten bleiben. Keine neuen Informationen hinzufügen."
-        }
-        (true, false) => {
-            "Aufgaben: Entferne nur isolierte Füllwörter und Sprechlaute wie äh, ähm, hm, uh oder um. Korrigiere offensichtliche Tipp-, Grammatik- und Zeichensetzungsfehler. Sonst nichts umformulieren. Bedeutung, Stil, Sprachmix und umgangssprachliche Wortwahl beibehalten."
-        }
-        (false, false) => {
-            "Aufgaben: Korrigiere nur offensichtliche Tipp-, Grammatik- und Zeichensetzungsfehler. Niemals Wörter entfernen, übersetzen, kürzen oder umformulieren. Bei 1-5 Wörtern nur minimale sichere Korrekturen; bei Unsicherheit den Originaltext exakt zurückgeben."
-        }
+pub(crate) fn correction_system_prompt(config: &NativeTransformConfig) -> String {
+    // Only three of the four flag combinations are reachable, because the preset
+    // comes from the mode: Rewrite is the only mode setting `professionalize`,
+    // and it always sets `filter_fillers` with it. `(false, true)` therefore has
+    // no producer and is folded into the professionalizing arm rather than kept
+    // as dead code.
+    //
+    // "Füllwörter": the isolated interjections only. `um` is listed for English
+    // dictation but is a preposition in German ("Um die zwei Sachen …"), so the
+    // instruction names position explicitly — see the regression corpus case.
+    let mode_instruction = if config.professionalize {
+        "Aufgaben: Entferne nur isolierte Füllwörter und Sprechlaute wie äh, ähm, hm, uh oder um, und nur dort, wo sie als Sprechlaut allein stehen — niemals ein Wort, das im Satz eine Bedeutung tragen kann (deutsches \"um\" ist eine Präposition). Korrigiere offensichtliche Tipp-, Grammatik- und Zeichensetzungsfehler. Formuliere nur dann klarer und professioneller, wenn Bedeutung, Sprachmix, Ton und Fachwörter vollständig erhalten bleiben. Keine neuen Informationen hinzufügen."
+    } else if config.filter_fillers {
+        "Aufgaben: Entferne nur isolierte Füllwörter und Sprechlaute wie äh, ähm, hm, uh oder um, und nur dort, wo sie als Sprechlaut allein stehen — niemals ein Wort, das im Satz eine Bedeutung tragen kann (deutsches \"um\" ist eine Präposition). Korrigiere offensichtliche Tipp-, Grammatik- und Zeichensetzungsfehler. Sonst nichts umformulieren. Bedeutung, Stil, Sprachmix und umgangssprachliche Wortwahl beibehalten."
+    } else {
+        "Aufgaben: Korrigiere nur offensichtliche Tipp-, Grammatik- und Zeichensetzungsfehler. Niemals Wörter entfernen, übersetzen, kürzen oder umformulieren. Bei 1-5 Wörtern nur minimale sichere Korrekturen; bei Unsicherheit den Originaltext exakt zurückgeben."
     };
 
     let mut sections = vec![
@@ -478,8 +525,12 @@ fn correction_system_prompt(config: &NativeTransformConfig) -> String {
 fn correction_context_hint(config: &NativeTransformConfig) -> Option<String> {
     let profile_hints = prompt_context_hints(&config.profile_prompt);
     let dictionary_hints = dictionary_context_hints(&config.dictionary_entries);
+    let workspace_hint = config
+        .workspace_hint
+        .as_ref()
+        .and_then(workspace_context_hint);
 
-    if profile_hints.is_empty() && dictionary_hints.is_empty() {
+    if profile_hints.is_empty() && dictionary_hints.is_empty() && workspace_hint.is_none() {
         return None;
     }
 
@@ -498,7 +549,36 @@ fn correction_context_hint(config: &NativeTransformConfig) -> Option<String> {
         ));
     }
 
+    if let Some(hint) = workspace_hint {
+        lines.push(hint);
+    }
+
     Some(lines.join("\n"))
+}
+
+/// The foreground app as a single hint line, or `None` when detection produced
+/// nothing usable.
+///
+/// Deliberately one line and deliberately last: it is the weakest of the three
+/// hint sources. It says where the text is being written, never what the text
+/// should say, and the surrounding block already forbids inventing from hints.
+fn workspace_context_hint(context: &WorkspaceContext) -> Option<String> {
+    let app = context.app_name.trim();
+    if app.is_empty() {
+        return None;
+    }
+
+    let app = truncate_prompt_hint(app);
+    let category = context.category.trim();
+    let where_ = if category.is_empty() {
+        app
+    } else {
+        format!("{app} ({category})")
+    };
+
+    Some(format!(
+        "Zielanwendung: {where_}. Nur ein schwaches Stilsignal — niemals Inhalt daraus ableiten oder ergänzen."
+    ))
 }
 
 fn prompt_context_hints(prompt: &str) -> Vec<String> {
@@ -756,7 +836,7 @@ fn is_hallucination(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use super::super::config::ProcessingMode;
 
     #[test]
     fn transform_config_reads_profile_prompt_and_correction_model_default() {
@@ -765,36 +845,109 @@ mod tests {
             correction_model: String::new(),
             ..Default::default()
         };
-        let config = NativeTransformConfig::from_capture_config(&capture);
+        let config = NativeTransformConfig::from_capture_config(
+            &capture,
+            ProcessingMode::Cleanup.transform_preset(),
+        );
 
         assert_eq!(config.profile_prompt, "release freeze\ncustomer follow-up");
         assert_eq!(config.correction_model, DEFAULT_CORRECTION_MODEL);
     }
 
     #[test]
-    fn transform_config_takes_the_already_resolved_cleanup_flags() {
-        // The rewrite-style mapping itself is owned and tested by
-        // `TextProfileWorkMode::effective_*` in config.rs; here it only has to
-        // survive the hand-off without being re-derived.
+    fn transform_config_takes_the_cleanup_flags_from_the_supplied_preset() {
+        // The capture config no longer carries these flags at all — the preset
+        // argument is the only source, which is what lets the pipeline hand over
+        // the *effective* mode rather than the profile's stored one.
+        let capture = super::super::capture::NativeCaptureConfig::default();
+
         let polished = NativeTransformConfig::from_capture_config(
-            &super::super::capture::NativeCaptureConfig {
-                filter_fillers: true,
-                professionalize: true,
-                ..Default::default()
-            },
+            &capture,
+            ProcessingMode::Rewrite.transform_preset(),
         );
+        assert!(polished.post_process);
         assert!(polished.filter_fillers);
         assert!(polished.professionalize);
 
         let verbatim = NativeTransformConfig::from_capture_config(
-            &super::super::capture::NativeCaptureConfig {
-                filter_fillers: false,
-                professionalize: false,
-                ..Default::default()
-            },
+            &capture,
+            ProcessingMode::Verbatim.transform_preset(),
         );
+        assert!(!verbatim.post_process);
         assert!(!verbatim.filter_fillers);
         assert!(!verbatim.professionalize);
+    }
+
+    #[test]
+    fn apply_preset_repoints_the_config_at_another_mode() {
+        // The stale-flag gap: a session seeded from the stored mode must be able
+        // to switch to the effective one in a single call.
+        let mut config = NativeTransformConfig::from_capture_config(
+            &super::super::capture::NativeCaptureConfig::default(),
+            ProcessingMode::Verbatim.transform_preset(),
+        );
+        assert!(!config.post_process);
+
+        config.apply_preset(ProcessingMode::Rewrite.transform_preset());
+        assert!(config.post_process);
+        assert!(config.filter_fillers);
+        assert!(config.professionalize);
+    }
+
+    #[test]
+    fn correction_prompt_carries_the_workspace_hint_as_a_weak_last_signal() {
+        let prompt = correction_system_prompt(&NativeTransformConfig {
+            provider: "groq".to_string(),
+            post_process: true,
+            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            filter_fillers: true,
+            workspace_hint: Some(WorkspaceContext {
+                app_name: "Slack".to_string(),
+                category: "chat".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        assert!(prompt.contains("Zielanwendung: Slack (chat)"));
+        assert!(prompt.contains("niemals Inhalt daraus ableiten"));
+        // One line only, so it cannot outweigh the transcript.
+        assert_eq!(prompt.matches("Zielanwendung:").count(), 1);
+    }
+
+    #[test]
+    fn correction_prompt_omits_the_workspace_hint_when_detection_found_nothing() {
+        let prompt = correction_system_prompt(&NativeTransformConfig {
+            provider: "groq".to_string(),
+            post_process: true,
+            filter_fillers: true,
+            workspace_hint: Some(WorkspaceContext::default()),
+            ..Default::default()
+        });
+
+        assert!(!prompt.contains("Zielanwendung"));
+    }
+
+    #[test]
+    fn filler_instruction_protects_german_um() {
+        // `um` is an English filler and a German preposition. It occurs as a
+        // preposition in real transcripts, so the instruction must say so.
+        for preset in [
+            ProcessingMode::Cleanup.transform_preset(),
+            ProcessingMode::Rewrite.transform_preset(),
+        ] {
+            let prompt = correction_system_prompt(&NativeTransformConfig {
+                provider: "groq".to_string(),
+                post_process: preset.post_process,
+                filter_fillers: preset.filter_fillers,
+                professionalize: preset.professionalize,
+                ..Default::default()
+            });
+            assert!(
+                prompt.contains("Präposition"),
+                "preset {preset:?} lost the German `um` guard"
+            );
+        }
     }
 
     #[test]
@@ -865,33 +1018,38 @@ mod tests {
         assert!(!result.corrected);
     }
 
+    fn text_rules_config() -> NativeTransformConfig {
+        NativeTransformConfig {
+            provider: "groq".to_string(),
+            profile_prompt: String::new(),
+            dictionary_entries: vec![DictionaryEntry {
+                id: "brand".to_string(),
+                phrase: "word script".to_string(),
+                replace_with: "WordScript".to_string(),
+            }],
+            snippet_entries: vec![SnippetEntry {
+                id: "followup".to_string(),
+                label: "follow up note".to_string(),
+                trigger: "follow up note".to_string(),
+                expansion: "Danke fuer das Update. Wir melden uns mit dem naechsten Stand."
+                    .to_string(),
+            }],
+            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            ..Default::default()
+        }
+    }
+
     #[tokio::test]
     async fn applies_dictionary_and_snippet_rules_in_native_slice() {
-        let result = apply_native_transform(
-            "word script follow up note",
-            NativeTransformConfig {
-                provider: "groq".to_string(),
-                profile_prompt: String::new(),
-                dictionary_entries: vec![DictionaryEntry {
-                    id: "brand".to_string(),
-                    phrase: "word script".to_string(),
-                    replace_with: "WordScript".to_string(),
-                }],
-                snippet_entries: vec![SnippetEntry {
-                    id: "followup".to_string(),
-                    label: "follow up note".to_string(),
-                    trigger: "follow up note".to_string(),
-                    expansion: "Danke fuer das Update. Wir melden uns mit dem naechsten Stand."
-                        .to_string(),
-                }],
-                post_process: false,
-                correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
-                filter_fillers: true,
-                professionalize: false,
-                ..Default::default()
-            },
-        )
-        .await;
+        let config = NativeTransformConfig {
+            post_process: false,
+            filter_fillers: true,
+            ..text_rules_config()
+        };
+        let result = finalize_with_text_rules(
+            apply_native_transform("word script follow up note", config.clone()).await,
+            &config,
+        );
 
         assert_eq!(
             result.text,
@@ -904,6 +1062,66 @@ mod tests {
         assert!(result
             .applied_rules
             .contains(&"snippet:followup".to_string()));
+    }
+
+    #[test]
+    fn text_rules_apply_to_a_result_no_correction_step_ever_touched() {
+        // Agent and Prompt Enhance build their result themselves and never call
+        // `apply_native_transform`. While the text-rule call lived inside that
+        // function, both modes silently skipped the user's dictionary and
+        // snippets. This asserts the final stage works on any result, whatever
+        // produced it.
+        let config = text_rules_config();
+        let agent_result = NativeTransformResult {
+            text: "word script follow up note".to_string(),
+            corrected: true,
+            applied_rules: vec!["agent_mode".to_string()],
+            warning: None,
+        };
+
+        let finalized = finalize_with_text_rules(agent_result, &config);
+
+        assert_eq!(
+            finalized.text,
+            "WordScript Danke fuer das Update. Wir melden uns mit dem naechsten Stand."
+        );
+        assert!(finalized.applied_rules.contains(&"agent_mode".to_string()));
+        assert!(finalized
+            .applied_rules
+            .contains(&"dictionary:brand".to_string()));
+        assert!(finalized
+            .applied_rules
+            .contains(&"snippet:followup".to_string()));
+    }
+
+    #[test]
+    fn finalizing_twice_does_not_duplicate_a_replacement() {
+        // The pipeline finalizes once, but the guarantee should not depend on
+        // that: a replacement rewrites `phrase` to `replace_with`, so text that
+        // already carries the target spelling no longer matches.
+        let config = text_rules_config();
+        let once = finalize_with_text_rules(
+            NativeTransformResult {
+                text: "word script ships".to_string(),
+                corrected: false,
+                applied_rules: Vec::new(),
+                warning: None,
+            },
+            &config,
+        );
+        assert_eq!(once.text, "WordScript ships");
+
+        let twice = finalize_with_text_rules(once.clone(), &config);
+        assert_eq!(twice.text, once.text);
+        assert_eq!(
+            twice
+                .applied_rules
+                .iter()
+                .filter(|rule| *rule == "dictionary:brand")
+                .count(),
+            1,
+            "a second pass must not re-report the replacement"
+        );
     }
 
     // --- Regression corpus: AI-Cleanup question-answering bug ---

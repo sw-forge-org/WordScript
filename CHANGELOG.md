@@ -31,6 +31,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **The three "Cleanup settings" toggles, because none of them reached the
+  runtime.** AI cleanup, Remove fillers and Rewrite phrasing sat in Settings ->
+  Modes under a caption promising they applied to Cleanup and Rewrite.
+  `effective_filter_fillers` and `effective_professionalize` took the stored value
+  as an argument and opened with `let _ = fallback;`, deriving the result purely
+  from the mode; the per-profile fields the UI wrote were dereferenced nowhere in
+  the runtime. `post_process` was read and then overwritten per mode. Across 1586
+  live correction calls only the three mode-derived flag combinations ever
+  occurred — never one produced by a toggle. Two of the three were also redundant
+  with the mode axis even had they worked: Cleanup with AI cleanup off is
+  Verbatim, Cleanup with Rewrite phrasing on is Rewrite. The processing mode is
+  now the only transform axis and each of the six modes is a fixed preset
+  (ADR 0020).
+
+### Fixed
+
+- **The workspace-context toggle had no effect.** Settings wrote
+  `ProfileModesSettings.auto_detect_mode` on the active profile while the runtime
+  read the global `AppConfig.auto_detect_mode` at both of its call sites. Nothing
+  connected them, so turning the switch off changed nothing. The runtime now reads
+  the per-profile value, with the global as fallback for profiles predating the
+  block. The key is renamed to `collect_workspace_context` because the context no
+  longer applies only to Auto; the old key is accepted as an alias on both sides.
+- **A manually chosen Agent mode could be overridden by the runtime.** After the
+  mode resolved to Agent, the Agent branch ran the intent classifier a *second*
+  time and, on "no", silently fell through to a cleanup — with flags derived from
+  the profile's stored mode rather than the mode the session was running in. Intent
+  is now classified only while resolving Auto, at one commit point; reaching the
+  Agent branch is itself the decision.
+- **The history re-transform mixed flag sources.** It took `post_process` from the
+  global field and the other two from the profile, a combination no live session
+  could produce. All three now come from one preset.
+- **A profile could display a rewrite style it was not running.** `rewrite_style`
+  was stored independently of `processing_mode`, and the live config held
+  `"polished"` on a profile running `"auto"`. It is now derived from the mode.
+- **The per-profile agent name was editable but never read** — the runtime always
+  used the global one, so the name shown in Settings and the name the detection
+  heuristic matched against could differ. The runtime now reads the profile value
+  with the global as fallback.
+- **Agent and Prompt Enhance ignored the profile's dictionary and snippets.** The
+  text-rule stage sat inside `apply_native_transform`, and neither of those modes
+  calls it — so a dictionary replacement the user configured simply did not happen
+  there. Agent half hid it by listing dictionary and snippet entries in its prompt,
+  which asks the model to honor them instead of applying them; Prompt Enhance did
+  neither. Text rules are now a separate final stage
+  (`transform::finalize_with_text_rules`) at the single pipeline exit, so every mode
+  passes through them. Verbatim was never affected — that call already sat outside
+  the `post_process` branch.
+- **German `um` was exposed to filler stripping.** It is an English interjection
+  and a German preposition, and appears as a preposition in real transcripts. The
+  cleanup instruction now states that a filler is stripped only where it stands
+  alone as an interjection, and names German `um` explicitly. Guarded by a
+  regression-corpus case.
+
+### Added
+
+- **Workspace context reaches every mode**, not just Prompt Enhance: as a category
+  signal in Auto routing and as exactly one bounded hint line in the cleanup,
+  rewrite and agent prompts, carrying its own instruction never to derive content
+  from it. It is detected once per session instead of twice on two paths. This is a
+  new input into the correction prompt and therefore a new hallucination surface —
+  bounded and corpus-guarded, but the first thing to check if cleanup output starts
+  drifting toward the app it was dictated in.
+- **An `expected_correction_prompt` block in the regression corpus** with a driver
+  test. Prompt shape is the only lever the product has over the cleanup LLM, so the
+  guards belong next to the transcripts they protect.
+- **Auto routing invariants are enforced by test** rather than stated in prose:
+  neither `verbatim` nor `rewrite` can be reached from Auto, and no mode can produce
+  the `(filter_fillers=false, professionalize=true)` prompt arm.
+
 ### Changed
 
 - **The agent instruction is a working file again instead of a growing

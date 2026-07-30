@@ -114,6 +114,75 @@ impl ProcessingMode {
     pub fn is_cleanup_family(&self) -> bool {
         matches!(self, ProcessingMode::Cleanup | ProcessingMode::Rewrite)
     }
+
+    /// The transform behavior this mode implies. The mode is the ONLY input —
+    /// there is deliberately no per-profile override, because the three toggles
+    /// that used to look like overrides never were one: `effective_filter_fillers`
+    /// and `effective_professionalize` took the stored value as an argument and
+    /// discarded it (`let _ = fallback;`), so Settings showed three controls the
+    /// pipeline could not observe. Across 1586 live correction calls only the
+    /// three mode-derived combinations below ever occurred. See ADR 0020.
+    pub fn transform_preset(&self) -> TransformPreset {
+        match self {
+            // Raw text: the correction step is skipped entirely.
+            ProcessingMode::Verbatim => TransformPreset {
+                post_process: false,
+                filter_fillers: false,
+                professionalize: false,
+            },
+            ProcessingMode::Cleanup => TransformPreset {
+                post_process: true,
+                filter_fillers: true,
+                professionalize: false,
+            },
+            ProcessingMode::Rewrite => TransformPreset {
+                post_process: true,
+                filter_fillers: true,
+                professionalize: true,
+            },
+            // Agent and Prompt Enhance own their own prompts and do not run the
+            // correction transform in the live pipeline. The preset still matters
+            // for the history re-transform, where the conservative arm applies:
+            // fix obvious typos, never remove or reformulate.
+            ProcessingMode::Agent | ProcessingMode::PromptEnhance => TransformPreset {
+                post_process: true,
+                filter_fillers: false,
+                professionalize: false,
+            },
+            // Auto is resolved into a concrete mode before the transform runs, so
+            // this arm is only reached by callers that ask about an unresolved
+            // mode. Answer with the same safe default Auto resolves to.
+            ProcessingMode::Auto => TransformPreset {
+                post_process: true,
+                filter_fillers: true,
+                professionalize: false,
+            },
+        }
+    }
+
+    /// The display style token (`verbatim` / `clean` / `polished`) implied by
+    /// this mode. Derived rather than stored so a profile cannot present
+    /// "polished" while running `cleanup` — the live config had exactly that
+    /// contradiction on `curated-customer-success`.
+    pub fn rewrite_style_token(&self) -> &'static str {
+        match self {
+            ProcessingMode::Verbatim => "verbatim",
+            ProcessingMode::Rewrite => "polished",
+            ProcessingMode::Auto
+            | ProcessingMode::Cleanup
+            | ProcessingMode::Agent
+            | ProcessingMode::PromptEnhance => "clean",
+        }
+    }
+}
+
+/// The three correction-pipeline switches, resolved from the effective
+/// processing mode. Built only by [`ProcessingMode::transform_preset`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransformPreset {
+    pub post_process: bool,
+    pub filter_fillers: bool,
+    pub professionalize: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -252,45 +321,22 @@ impl TextProfileWorkMode {
         normalize_text_profile_work_mode(self)
     }
 
-    pub(crate) fn effective_rewrite_style(
-        &self,
-        fallback_filter_fillers: bool,
-        fallback_professionalize: bool,
-    ) -> String {
-        let normalized = self.normalized();
-        match normalized.rewrite_style.as_str() {
-            "verbatim" | "polished" => normalized.rewrite_style,
-            _ if fallback_professionalize => "polished".to_string(),
-            _ if fallback_filter_fillers => "clean".to_string(),
-            _ => "verbatim".to_string(),
-        }
+    /// The display style token for this work mode, derived from its processing
+    /// mode. Takes no fallback arguments: the stored `rewrite_style` is a legacy
+    /// field kept for serde compatibility and the v1 slice, not a second axis.
+    pub(crate) fn effective_rewrite_style(&self) -> String {
+        self.normalized()
+            .processing_mode
+            .rewrite_style_token()
+            .to_string()
     }
 
     pub(crate) fn effective_processing_mode(&self) -> ProcessingMode {
         self.normalized().processing_mode.clone()
     }
 
-    pub(crate) fn effective_filter_fillers(&self, fallback: bool) -> bool {
-        let _ = fallback;
-        match self.normalized().processing_mode {
-            ProcessingMode::Cleanup | ProcessingMode::Rewrite => true,
-            ProcessingMode::Auto
-            | ProcessingMode::Verbatim
-            | ProcessingMode::Agent
-            | ProcessingMode::PromptEnhance => false,
-        }
-    }
-
-    pub(crate) fn effective_professionalize(&self, fallback: bool) -> bool {
-        let _ = fallback;
-        match self.normalized().processing_mode {
-            ProcessingMode::Rewrite => true,
-            ProcessingMode::Auto
-            | ProcessingMode::Cleanup
-            | ProcessingMode::Verbatim
-            | ProcessingMode::Agent
-            | ProcessingMode::PromptEnhance => false,
-        }
+    pub(crate) fn transform_preset(&self) -> TransformPreset {
+        self.normalized().processing_mode.transform_preset()
     }
 
     pub(crate) fn effective_insert_behavior(&self) -> String {
@@ -425,9 +471,9 @@ impl TextProfile {
         self.speech.clone().unwrap_or_default()
     }
 
-    pub(crate) fn resolved_modes(&self) -> ProfileModesSettings {
-        self.modes.clone().unwrap_or_default()
-    }
+    // No `resolved_modes()` counterpart: both remaining fields need to know
+    // whether the block is absent, because an absent block falls back to the
+    // global value rather than to the struct default.
 
     pub(crate) fn resolved_capture(&self) -> ProfileCaptureSettings {
         self.capture.clone().unwrap_or_default()
@@ -509,23 +555,29 @@ impl Default for ProfileSpeechSettings {
     }
 }
 
+/// Per-profile settings shown on the Modes tab.
+///
+/// `post_process`, `filter_fillers` and `professionalize` used to live here and
+/// were removed: the mode alone decides transform behavior
+/// (`ProcessingMode::transform_preset`). Configs written before that still carry
+/// the keys — they are ignored on load (no `deny_unknown_fields`) and dropped on
+/// the next save.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProfileModesSettings {
-    pub post_process: bool,
-    pub filter_fillers: bool,
-    pub professionalize: bool,
-    pub auto_detect_mode: bool,
+    /// Whether workspace context is collected for this profile. Read through
+    /// `AppConfig::active_text_profile_collect_workspace_context`; the legacy
+    /// name is kept as a serde alias because the toggle predates the context
+    /// reaching modes other than Auto.
+    #[serde(alias = "auto_detect_mode")]
+    pub collect_workspace_context: bool,
     pub agent_name: String,
 }
 
 impl Default for ProfileModesSettings {
     fn default() -> Self {
         Self {
-            post_process: true,
-            filter_fillers: true,
-            professionalize: false,
-            auto_detect_mode: true,
+            collect_workspace_context: true,
             agent_name: DEFAULT_AGENT_NAME.to_string(),
         }
     }
@@ -784,8 +836,7 @@ impl AppConfig {
     pub(crate) fn resolved_active_text_profile_work_mode(&self) -> TextProfileWorkMode {
         let work_mode = self.active_text_profile_work_mode();
         TextProfileWorkMode {
-            rewrite_style: work_mode
-                .effective_rewrite_style(self.filter_fillers, self.professionalize),
+            rewrite_style: work_mode.effective_rewrite_style(),
             insert_behavior: work_mode.effective_insert_behavior(),
             recovery_behavior: work_mode.effective_recovery_behavior(),
             processing_mode: work_mode.effective_processing_mode(),
@@ -796,19 +847,49 @@ impl AppConfig {
         }
     }
 
-    pub(crate) fn active_text_profile_filter_fillers(&self) -> bool {
-        self.active_text_profile_work_mode()
-            .effective_filter_fillers(self.filter_fillers)
-    }
-
-    pub(crate) fn active_text_profile_professionalize(&self) -> bool {
-        self.active_text_profile_work_mode()
-            .effective_professionalize(self.professionalize)
+    /// The transform preset implied by the active profile's stored mode.
+    ///
+    /// Callers running the live pipeline must prefer the *effective* mode
+    /// (override and Auto resolution applied) over this, because the stored mode
+    /// can differ from the one the session actually runs in.
+    pub(crate) fn active_text_profile_transform_preset(&self) -> TransformPreset {
+        self.active_text_profile_work_mode().transform_preset()
     }
 
     pub(crate) fn active_text_profile_auto_paste(&self) -> bool {
         self.active_text_profile_work_mode()
             .effective_auto_paste()
+    }
+
+    /// The agent name for the active profile, falling back to the global value
+    /// when the profile leaves it blank. Previously the per-profile field was
+    /// editable but never read, so the name shown in Settings and the name the
+    /// detection heuristic matched against could differ.
+    pub(crate) fn active_text_profile_agent_name(&self) -> String {
+        let profile_name = self
+            .active_text_profile()
+            .modes
+            .map(|modes| modes.agent_name)
+            .unwrap_or_default();
+        let trimmed = profile_name.trim();
+        if trimmed.is_empty() {
+            self.agent_name.clone()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
+    /// Whether workspace context may be collected for the active profile.
+    ///
+    /// The runtime used to read the global `auto_detect_mode` here while the UI
+    /// wrote the per-profile value, so the toggle in Settings had no effect. The
+    /// global field remains the fallback for configs whose profiles predate the
+    /// per-profile block.
+    pub(crate) fn active_text_profile_collect_workspace_context(&self) -> bool {
+        self.active_text_profile()
+            .modes
+            .map(|modes| modes.collect_workspace_context)
+            .unwrap_or(self.auto_detect_mode)
     }
 
     pub fn active_text_profile_label(&self) -> Option<String> {
@@ -1195,13 +1276,12 @@ impl AppConfig {
             migrated = true;
         }
 
-        // Migrate modes settings if not already present
+        // Migrate modes settings if not already present. The three cleanup flags
+        // are deliberately not carried over: the mode owns that behavior now, so
+        // copying them would recreate values nothing reads.
         if profile.modes.is_none() {
             profile.modes = Some(ProfileModesSettings {
-                post_process: self.post_process,
-                filter_fillers: self.filter_fillers,
-                professionalize: self.professionalize,
-                auto_detect_mode: self.auto_detect_mode,
+                collect_workspace_context: self.auto_detect_mode,
                 agent_name: self.agent_name.clone(),
             });
             migrated = true;
@@ -3181,49 +3261,164 @@ mod tests {
     }
 
     #[test]
-    fn text_profile_work_mode_effective_filter_fillers_by_mode() {
-        let mut work_mode = TextProfileWorkMode::default();
+    fn transform_preset_is_fixed_per_mode() {
+        // The full table. Only three distinct presets exist across six modes,
+        // which is why the three per-profile toggles had nothing left to decide.
+        let cases = [
+            (ProcessingMode::Verbatim, (false, false, false)),
+            (ProcessingMode::Cleanup, (true, true, false)),
+            (ProcessingMode::Rewrite, (true, true, true)),
+            (ProcessingMode::Agent, (true, false, false)),
+            (ProcessingMode::PromptEnhance, (true, false, false)),
+            // Auto answers with the mode it resolves to by default.
+            (ProcessingMode::Auto, (true, true, false)),
+        ];
 
-        work_mode.processing_mode = ProcessingMode::Auto;
-        assert!(!work_mode.effective_filter_fillers(false));
-
-        work_mode.processing_mode = ProcessingMode::Cleanup;
-        assert!(work_mode.effective_filter_fillers(false));
-
-        work_mode.processing_mode = ProcessingMode::Rewrite;
-        assert!(work_mode.effective_filter_fillers(false));
-
-        work_mode.processing_mode = ProcessingMode::Verbatim;
-        assert!(!work_mode.effective_filter_fillers(false));
-
-        work_mode.processing_mode = ProcessingMode::Agent;
-        assert!(!work_mode.effective_filter_fillers(false));
-
-        work_mode.processing_mode = ProcessingMode::PromptEnhance;
-        assert!(!work_mode.effective_filter_fillers(false));
+        for (mode, (post_process, filter_fillers, professionalize)) in cases {
+            let preset = mode.transform_preset();
+            assert_eq!(
+                (
+                    preset.post_process,
+                    preset.filter_fillers,
+                    preset.professionalize
+                ),
+                (post_process, filter_fillers, professionalize),
+                "mode={}",
+                mode.as_str()
+            );
+        }
     }
 
     #[test]
-    fn text_profile_work_mode_effective_professionalize_by_mode() {
-        let mut work_mode = TextProfileWorkMode::default();
+    fn transform_preset_never_professionalizes_without_filtering_fillers() {
+        // Guards the assumption that lets `correction_system_prompt` drop its
+        // fourth arm: no mode produces `(filter_fillers=false, professionalize=true)`.
+        for mode in [
+            ProcessingMode::Auto,
+            ProcessingMode::Cleanup,
+            ProcessingMode::Rewrite,
+            ProcessingMode::Agent,
+            ProcessingMode::PromptEnhance,
+            ProcessingMode::Verbatim,
+        ] {
+            let preset = mode.transform_preset();
+            assert!(
+                !(preset.professionalize && !preset.filter_fillers),
+                "mode={} produced the unreachable combination",
+                mode.as_str()
+            );
+        }
+    }
 
-        work_mode.processing_mode = ProcessingMode::Auto;
-        assert!(!work_mode.effective_professionalize(false));
+    #[test]
+    fn stored_cleanup_flags_cannot_influence_the_preset() {
+        // The regression this whole change exists for. A config written by an
+        // older build still carries `post_process` / `filter_fillers` /
+        // `professionalize` inside the profile's `modes` block. They must be
+        // ignored: Cleanup filters fillers no matter what the file says.
+        let raw = serde_json::json!({
+            "id": "legacy",
+            "label": "Legacy",
+            "prompt": "",
+            "stt_hints": "",
+            "vocabulary_hints": [],
+            "dictionary_entries": [],
+            "snippet_entries": [],
+            "work_mode": { "processing_mode": "cleanup" },
+            "modes": {
+                "post_process": false,
+                "filter_fillers": false,
+                "professionalize": true,
+                "auto_detect_mode": true,
+                "agent_name": "WordScript"
+            }
+        });
 
-        work_mode.processing_mode = ProcessingMode::Rewrite;
-        assert!(work_mode.effective_professionalize(false));
+        let profile: TextProfile = serde_json::from_value(raw).expect("profile parses");
+        // The removed keys are ignored rather than rejected, so an older config
+        // still loads.
+        assert!(profile.modes.is_some());
+        let preset = profile.work_mode.transform_preset();
 
-        work_mode.processing_mode = ProcessingMode::Cleanup;
-        assert!(!work_mode.effective_professionalize(false));
+        assert!(preset.post_process, "post_process follows the mode");
+        assert!(preset.filter_fillers, "filter_fillers follows the mode");
+        assert!(
+            !preset.professionalize,
+            "professionalize follows the mode, not the stored flag"
+        );
+    }
 
-        work_mode.processing_mode = ProcessingMode::Verbatim;
-        assert!(!work_mode.effective_professionalize(false));
+    #[test]
+    fn rewrite_style_is_derived_from_the_mode_not_from_storage() {
+        // The live config held `rewrite_style: "polished"` on a profile running
+        // `processing_mode: "auto"`, so the profile summary contradicted the
+        // selected mode. The stored value must not survive resolution.
+        let raw = serde_json::json!({
+            "rewrite_style": "polished",
+            "insert_behavior": "auto_paste",
+            "recovery_behavior": "standard",
+            "processing_mode": "cleanup"
+        });
 
-        work_mode.processing_mode = ProcessingMode::Agent;
-        assert!(!work_mode.effective_professionalize(false));
+        let work_mode: TextProfileWorkMode = serde_json::from_value(raw).expect("work mode parses");
+        assert_eq!(work_mode.effective_rewrite_style(), "clean");
 
-        work_mode.processing_mode = ProcessingMode::PromptEnhance;
-        assert!(!work_mode.effective_professionalize(false));
+        for (mode, expected) in [
+            (ProcessingMode::Verbatim, "verbatim"),
+            (ProcessingMode::Cleanup, "clean"),
+            (ProcessingMode::Rewrite, "polished"),
+            (ProcessingMode::Agent, "clean"),
+            (ProcessingMode::PromptEnhance, "clean"),
+            (ProcessingMode::Auto, "clean"),
+        ] {
+            assert_eq!(mode.rewrite_style_token(), expected, "mode={}", mode.as_str());
+        }
+    }
+
+    #[test]
+    fn workspace_context_toggle_and_agent_name_resolve_per_profile() {
+        // Both were editable per profile and read globally, so neither control
+        // could be observed by the runtime.
+        let mut config = AppConfig::default();
+        config.agent_name = "GlobalName".to_string();
+        config.auto_detect_mode = true;
+        config.active_text_profile_id = "p1".to_string();
+        config.text_profiles = vec![default_text_profile(
+            String::new(),
+            String::new(),
+            Vec::new(),
+            Vec::new(),
+        )];
+        config.text_profiles[0].id = "p1".to_string();
+        config.text_profiles[0].modes = Some(ProfileModesSettings {
+            collect_workspace_context: false,
+            agent_name: "ProfileName".to_string(),
+        });
+
+        assert_eq!(config.active_text_profile_agent_name(), "ProfileName");
+        assert!(!config.active_text_profile_collect_workspace_context());
+
+        // A blank per-profile name falls back to the global one.
+        config.text_profiles[0].modes = Some(ProfileModesSettings {
+            collect_workspace_context: true,
+            agent_name: "   ".to_string(),
+        });
+        assert_eq!(config.active_text_profile_agent_name(), "GlobalName");
+        assert!(config.active_text_profile_collect_workspace_context());
+
+        // A profile predating the block falls back to the global toggle.
+        config.text_profiles[0].modes = None;
+        config.auto_detect_mode = false;
+        assert!(!config.active_text_profile_collect_workspace_context());
+    }
+
+    #[test]
+    fn legacy_auto_detect_mode_key_still_deserializes() {
+        // The key was renamed when the context stopped being Auto-only.
+        let modes: ProfileModesSettings =
+            serde_json::from_value(serde_json::json!({ "auto_detect_mode": false }))
+                .expect("legacy key parses");
+        assert!(!modes.collect_workspace_context);
     }
 
     #[test]

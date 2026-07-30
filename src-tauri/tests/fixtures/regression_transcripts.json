@@ -32,7 +32,11 @@
         "prompt": "customer follow-up\nrefund\nWordScript\nstatus update\ntriage summary",
         "stt_hints": "",
         "dictionary_entries": [
-          {"id": "brand", "phrase": "word script", "replace_with": "WordScript"}
+          {
+            "id": "brand",
+            "phrase": "word script",
+            "replace_with": "WordScript"
+          }
         ],
         "snippet_entries": []
       },
@@ -182,6 +186,59 @@
       "expected_post_correction": "Das Meeting ist um drei.",
       "expected_guardrail": null,
       "notes": "Same input as the flagged case, but the confidence gate independently rejected the covering segment. Only then may the passage be removed."
+    },
+    {
+      "id": "german_um_preposition_is_not_a_filler",
+      "failure_mode": "filler_strip_removes_meaningful_word",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "language": "de",
+      "language_locked": true,
+      "raw_transcript": "Um die zwei anderen Sachen kümmern wir uns später.",
+      "expected_detection": {
+        "text": "Um die zwei anderen Sachen kümmern wir uns später.",
+        "unchanged": true
+      },
+      "expected_correction_prompt": {
+        "mode": "cleanup",
+        "contains": [
+          "Präposition"
+        ],
+        "not_contains": []
+      },
+      "expected_post_correction": "Um die zwei anderen Sachen kümmern wir uns später.",
+      "expected_guardrail": null,
+      "notes": "German 'um' is a preposition, but it is also listed among the English filler interjections the cleanup prompt strips. It appeared 4 times as a preposition in a 75-entry live history sample. The deterministic detection stage must pass the sentence through untouched, and the cleanup instruction must state that a filler is only stripped when it stands alone as an interjection."
+    },
+    {
+      "id": "workspace_context_enters_prompt_as_weak_last_signal",
+      "failure_mode": "workspace_context_overweighted_in_cleanup",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "release freeze\nincident review",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "wir müssen den incident review noch vor dem release freeze machen",
+      "expected_correction_prompt": {
+        "mode": "cleanup",
+        "workspace_app": "Slack",
+        "workspace_category": "chat",
+        "contains": [
+          "Zielanwendung: Slack (chat)",
+          "niemals Inhalt daraus ableiten"
+        ],
+        "not_contains": []
+      },
+      "expected_post_correction": "Wir müssen den Incident Review noch vor dem Release Freeze machen.",
+      "expected_guardrail": null,
+      "notes": "Workspace context reaches every mode now, not just prompt enhance. It is a new input into the cleanup prompt and therefore a new hallucination surface, so it must arrive as exactly one bounded line that forbids deriving content from it."
     }
   ]
 }

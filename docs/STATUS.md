@@ -195,10 +195,12 @@ Status: 2026-07-25
   the primary `ProcessingMode` contract via `migrate_legacy_processing_mode`
 - profile-owned personal dictionary
 - profile-owned snippet list
-- global switches for AI cleanup, filler filter and rewrite phrasing only as
-  a fallback for profiles without an explicit work mode
+- no switches for AI cleanup, filler filter or rewrite phrasing: the processing
+  mode is the only transform axis and each mode is a fixed preset (ADR 0020).
+  The legacy globals remain only as migration input for configs predating
+  per-profile modes
 - a dedicated Modes tab in settings exposing the active mode, sub-mode,
-  prompt target, the `auto_detect_mode` switch and seven mode shortcuts
+  prompt target, the workspace-context switch and seven mode shortcuts
   (one picker/cycler plus six direct modes) with platform-specific defaults
 
 ### Not active today
@@ -408,11 +410,21 @@ Additional rules:
   made it the only profile unaffected by the delivery-mode reset. Planned as
   Phase 7 in [ROADMAP.md](ROADMAP.md)
 - the settings surface needs a complete visual rework. The runtime-backed
-  information architecture is sound and per-profile behaviour is verified
-  working in the native host (2026-07-29: cleanup settings, processing modes
-  and workspace context all resolve per profile); the presentation is not, and
-  the profile panels only became coherent enough to redesign against once the
-  bias policy was retired (ADR 0017). Also Phase 7
+  information architecture is sound; the presentation is not, and the profile
+  panels only became coherent enough to redesign against once the bias policy
+  was retired (ADR 0017). Also Phase 7.
+  **Correction (2026-07-30):** this entry previously claimed that "cleanup
+  settings, processing modes and workspace context all resolve per profile",
+  verified in the native host on 2026-07-29. Only the processing mode did.
+  The three cleanup toggles were never read -- `effective_filter_fillers` and
+  `effective_professionalize` took the stored value and discarded it, and the
+  per-profile fields were dereferenced nowhere in the runtime -- and the
+  workspace-context toggle wrote a per-profile value the runtime never read,
+  because it took the global field instead. Both are fixed and the dead toggles
+  are removed (ADR 0020). What the 2026-07-29 check actually established was
+  that the *mode* resolves per profile; it could not have distinguished the rest,
+  since a toggle that is ignored looks identical to one that agrees with the
+  mode-derived default
 - overlay monitor restore with identity-miss rederivation is implemented
   (manual mode rederives the target monitor from saved coordinates against
   all work areas; primary is only the last fallback)

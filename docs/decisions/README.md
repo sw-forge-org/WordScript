@@ -101,6 +101,15 @@ Status: Proposed | Accepted | Superseded by NNNN
   authoritative `wordscript-event` transcription commit, so the atomic swap of
   ADR 0011a holds against the event ordering too; a bounded fallback covers an
   authoritative event that never arrives.
+- [0019](0019-every-path-that-ends-a-session-owes-the-surface-that-reports-it.md):
+  every path that ends a session also commits the surface that reports it,
+  including the timeout fallback, and once ended a surface is never re-decided.
+- [0020](0020-the-processing-mode-is-the-only-transform-axis.md): the processing
+  mode is the only input to transform behavior. Modes are fixed presets, the three
+  cleanup toggles are removed because the runtime discarded them, Auto resolves to
+  exactly one entry of the flat mode list at one commit point, and neither
+  Verbatim nor Rewrite is reachable from Auto. Carries the measurement that
+  rejected Auto->Verbatim.
 
 ## Resolved: the number 0011 was used twice
 
@@ -127,8 +136,8 @@ governs the content, not the identifier the record is filed under, and a record
 whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
-file two ADRs under one number: 0018 and 0019 are filed, the next decision takes
-0020.
+file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
+takes 0021.
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

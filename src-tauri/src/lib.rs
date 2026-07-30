@@ -1308,16 +1308,22 @@ fn handle_audio_ready<R: Runtime + 'static>(
     let provider = request.provider.clone();
     let requested_model = request.model.clone();
     let requested_language = request.language.clone();
-    let transform_config =
-        core::transform::NativeTransformConfig::from_capture_config(&payload.config);
+    // Seeded from the profile's stored mode. The effective mode is not known
+    // until the transcript exists (an override or Auto resolution can differ),
+    // so the pipeline re-applies the preset before transforming — see
+    // `apply_preset` below.
+    let transform_config = core::transform::NativeTransformConfig::from_capture_config(
+        &payload.config,
+        payload.config.work_mode.processing_mode.transform_preset(),
+    );
 
     core::runtime_log::record(format!(
-        "[WordScript] Native pipeline start session_id={} audio_path={} audio_duration_seconds={:?} transcription_timeout_ms={} post_process={}",
+        "[WordScript] Native pipeline start session_id={} audio_path={} audio_duration_seconds={:?} transcription_timeout_ms={} stored_mode={}",
         session_id,
         audio_path,
         audio_duration_seconds,
         transcription_timeout_ms,
-        transform_config.post_process,
+        payload.config.work_mode.processing_mode.as_str(),
     ));
 
     tauri::async_runtime::spawn(async move {
@@ -1398,64 +1404,97 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         profile_mode,
                         override_mode,
                     );
-                    let mut effective_mode = resolved.mode;
+                    let agent_name = app_config.active_text_profile_agent_name();
 
-                    // When Auto is active, resolve into a concrete mode using
-                    // the transcript text and (optionally) the workspace
-                    // context as signals.
-                    if effective_mode.is_auto() {
-                        let workspace_category = if app_config.auto_detect_mode {
-                            tauri::async_runtime::spawn_blocking(|| {
-                                core::workspace_context::detect_active_app().category
-                            })
+                    // Workspace context is detected at most once per session and
+                    // then reused by every branch. It used to be detected twice on
+                    // two different paths, and gated on the global toggle while
+                    // the UI wrote a per-profile one.
+                    let workspace_context =
+                        if app_config.active_text_profile_collect_workspace_context() {
+                            tauri::async_runtime::spawn_blocking(
+                                core::workspace_context::detect_active_app,
+                            )
                             .await
-                            .unwrap_or_default()
+                            .ok()
                         } else {
-                            String::new()
+                            None
                         };
-                        effective_mode = core::mode_router::resolve_auto_mode(
-                            effective_mode,
+
+                    // Auto resolves to exactly one concrete mode, here and nowhere
+                    // else. The classifier is consulted only when the deterministic
+                    // pass cannot decide, and only once — a concrete mode is never
+                    // re-decided further down. See ADR 0020.
+                    let mut auto_signal = "concrete";
+                    let mut effective_mode = resolved.mode;
+                    if effective_mode.is_auto() {
+                        let workspace_category = workspace_context
+                            .as_ref()
+                            .map(|context| context.category.as_str())
+                            .filter(|category| !category.is_empty());
+
+                        match core::mode_router::resolve_auto_mode(
                             &response.text,
-                            if workspace_category.is_empty() {
-                                None
-                            } else {
-                                Some(&workspace_category)
-                            },
-                            &app_config.agent_name,
-                        );
+                            workspace_category,
+                            &agent_name,
+                        ) {
+                            core::mode_router::AutoRoute::Decided { mode, signal } => {
+                                effective_mode = mode;
+                                auto_signal = signal;
+                            }
+                            core::mode_router::AutoRoute::NeedsClassifier => {
+                                let classifier_config = core::agent::AgentConfig {
+                                    provider: transform_config.provider.clone(),
+                                    agent_name: agent_name.clone(),
+                                    agent_model: if transform_config.provider
+                                        == core::providers::LOCAL_PREVIEW_PROVIDER_ID
+                                    {
+                                        app_config.local_agent_model.clone()
+                                    } else {
+                                        app_config.agent_model.clone()
+                                    },
+                                    ..Default::default()
+                                };
+                                let is_instruction = core::agent::detect_agent_intent(
+                                    &response.text,
+                                    &classifier_config,
+                                )
+                                .await;
+                                effective_mode = if is_instruction {
+                                    core::config::ProcessingMode::Agent
+                                } else {
+                                    core::config::ProcessingMode::Cleanup
+                                };
+                                auto_signal = if is_instruction {
+                                    "classifier_agent"
+                                } else {
+                                    "classifier_dictation"
+                                };
+                            }
+                        }
                     }
 
                     core::runtime_log::record(format!(
-                        "[WordScript] Processing mode resolved effective={} auto_detected={} is_override={}",
+                        "[WordScript] Processing mode resolved effective={} auto_detected={} is_override={} signal={} workspace_context={}",
                         effective_mode.as_str(),
                         resolved.auto_detected,
                         resolved.is_override,
+                        auto_signal,
+                        workspace_context
+                            .as_ref()
+                            .map(|context| context.category.as_str())
+                            .unwrap_or("off"),
                     ));
 
-                    // Adjust the transform config so the cleanup pipeline honours
-                    // the effective mode. The global toggles (post_process,
-                    // filter_fillers, professionalize) are the user's intent for
-                    // Auto/Cleanup; concrete modes override them deterministically.
+                    // One assignment, derived from the effective mode. Every mode
+                    // gets a defined preset instead of inheriting whatever the
+                    // capture config was loaded with.
                     let mut mode_transform_config = transform_config.clone();
                     mode_transform_config.low_confidence_segments = low_confidence_segments;
-                    match effective_mode {
-                        core::config::ProcessingMode::Verbatim => {
-                            mode_transform_config.post_process = false;
-                        }
-                        core::config::ProcessingMode::Cleanup => {
-                            mode_transform_config.post_process = true;
-                            mode_transform_config.filter_fillers = true;
-                            // professionalize stays as configured (off by default)
-                        }
-                        core::config::ProcessingMode::Rewrite => {
-                            mode_transform_config.post_process = true;
-                            mode_transform_config.filter_fillers = true;
-                            mode_transform_config.professionalize = true;
-                        }
-                        _ => {}
-                    }
+                    mode_transform_config.apply_preset(effective_mode.transform_preset());
+                    mode_transform_config.workspace_hint = workspace_context.clone();
 
-                    match effective_mode {
+                    let raw_transform = match effective_mode {
                         core::config::ProcessingMode::Agent => {
                             let agent_model = if transform_config.provider
                                 == core::providers::LOCAL_PREVIEW_PROVIDER_ID
@@ -1466,7 +1505,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             };
                             let agent_config = core::agent::AgentConfig {
                                 provider: mode_transform_config.provider.clone(),
-                                agent_name: app_config.agent_name.clone(),
+                                agent_name: agent_name.clone(),
                                 agent_model,
                                 profile_label: active_profile
                                     .map(|p| p.label.clone())
@@ -1477,30 +1516,21 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                     .unwrap_or_default(),
                                 dictionary_entries: mode_transform_config.dictionary_entries.clone(),
                                 snippet_entries: mode_transform_config.snippet_entries.clone(),
+                                workspace_context: workspace_context.clone(),
                             };
-                            let is_instruction = core::agent::detect_agent_intent(
-                                &response.text,
-                                &agent_config,
-                            )
-                            .await;
-                            if is_instruction {
-                                let result = core::agent::apply_agent_transform(
-                                    &response.text,
-                                    &agent_config,
-                                )
-                                .await;
-                                core::transform::NativeTransformResult {
-                                    text: result.text,
-                                    corrected: result.was_agent,
-                                    applied_rules: vec!["agent_mode".to_string()],
-                                    warning: result.warning,
-                                }
-                            } else {
-                                core::transform::apply_native_transform(
-                                    &response.text,
-                                    mode_transform_config,
-                                )
-                                .await
+                            // No second classification. Reaching this arm already
+                            // means the mode is Agent: either the user selected it,
+                            // or Auto committed to it above. Re-deciding here
+                            // overrode a manual choice and fell back to a cleanup
+                            // with flags from the profile's stored mode.
+                            let result =
+                                core::agent::apply_agent_transform(&response.text, &agent_config)
+                                    .await;
+                            core::transform::NativeTransformResult {
+                                text: result.text,
+                                corrected: result.was_agent,
+                                applied_rules: vec!["agent_mode".to_string()],
+                                warning: result.warning,
                             }
                         }
                         core::config::ProcessingMode::PromptEnhance => {
@@ -1519,25 +1549,15 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 .and_then(|p| p.work_mode.target.clone())
                                 .or(Some(app_config.enhance_target.clone()))
                                 .unwrap_or_default();
-                            let workspace_ctx =
-                                if app_config.auto_detect_mode {
-                                    Some(
-                                        tauri::async_runtime::spawn_blocking(|| {
-                                            core::workspace_context::detect_active_app()
-                                        })
-                                        .await
-                                        .unwrap_or_default(),
-                                    )
-                                } else {
-                                    None
-                                };
                             let enhance_config = core::prompt_enhance::PromptEnhanceConfig {
                                 provider: mode_transform_config.provider.clone(),
                                 model: enhance_model,
                                 sub_mode: enhance_sub_mode.as_str().to_string(),
                                 target: enhance_target.as_str().to_string(),
                                 profile_prompt: mode_transform_config.profile_prompt.clone(),
-                                workspace_context: workspace_ctx,
+                                // Reuses the single per-session detection above
+                                // instead of detecting a second time.
+                                workspace_context: workspace_context.clone(),
                             };
                             let result = core::prompt_enhance::apply_prompt_enhance(
                                 &response.text,
@@ -1554,11 +1574,20 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         _ => {
                             core::transform::apply_native_transform(
                                 &response.text,
-                                mode_transform_config,
+                                mode_transform_config.clone(),
                             )
                             .await
                         }
-                    }
+                    };
+
+                    // The single exit. Every mode's result passes through the
+                    // profile's dictionary and snippets here, so no branch can
+                    // bypass them — Agent and Prompt Enhance did exactly that
+                    // while this call lived inside `apply_native_transform`.
+                    core::transform::finalize_with_text_rules(
+                        raw_transform,
+                        &mode_transform_config,
+                    )
                 };
                 let app_config = pipeline_app_config.clone();
                 if let Some(warning) = &transformed.warning {

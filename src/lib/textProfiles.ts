@@ -105,10 +105,7 @@ export function createDefaultProfileSpeechSettings(): ProfileSpeechSettings {
 
 export function createDefaultProfileModesSettings(): ProfileModesSettings {
   return {
-    post_process: true,
-    filter_fillers: true,
-    professionalize: false,
-    auto_detect_mode: true,
+    collect_workspace_context: true,
     agent_name: "WordScript",
   };
 }
@@ -132,8 +129,19 @@ function cloneProfileSpeechSettings(settings?: ProfileSpeechSettings | null): Pr
 }
 
 function cloneProfileModesSettings(settings?: ProfileModesSettings | null): ProfileModesSettings {
-  if (!settings) return createDefaultProfileModesSettings();
-  return { ...settings };
+  const defaults = createDefaultProfileModesSettings();
+  if (!settings) return defaults;
+  // Configs written before the rename carry `auto_detect_mode`. Rust accepts it
+  // as a serde alias; the UI has to accept the same shape so a profile loaded
+  // from such a config does not read the toggle as undefined and render it off.
+  const legacy = (settings as ProfileModesSettings & { auto_detect_mode?: boolean })
+    .auto_detect_mode;
+  return {
+    ...defaults,
+    ...settings,
+    collect_workspace_context:
+      settings.collect_workspace_context ?? legacy ?? defaults.collect_workspace_context,
+  };
 }
 
 function cloneProfileCaptureSettings(settings?: ProfileCaptureSettings | null): ProfileCaptureSettings {
@@ -155,6 +163,26 @@ export function resolveProfileCaptureSettings(profile: Pick<TextProfile, "captur
 
 export function resolveTextProfileWorkMode(profile: Pick<TextProfile, "work_mode">): TextProfileWorkMode {
   return cloneTextProfileWorkMode(profile.work_mode);
+}
+
+// Derived from the processing mode, mirroring `ProcessingMode::rewrite_style_token`
+// in config.rs. The stored `rewrite_style` is only a fallback for work modes that
+// predate `processing_mode`: a profile could hold "polished" while running
+// "cleanup", and the summary then described a mode the runtime was not in.
+function rewriteStyleFromMode(workMode: TextProfileWorkMode): TextProfileRewriteStyle {
+  switch (workMode.processing_mode) {
+    case "verbatim":
+      return "verbatim";
+    case "rewrite":
+      return "polished";
+    case "auto":
+    case "cleanup":
+    case "agent":
+    case "prompt_enhance":
+      return "clean";
+    default:
+      return workMode.rewrite_style;
+  }
 }
 
 function rewriteStyleLabel(value: TextProfileRewriteStyle): string {
@@ -187,7 +215,7 @@ function recoveryBehaviorLabel(value: TextProfileRecoveryBehavior): string {
 
 export function describeTextProfileWorkMode(profile: Pick<TextProfile, "work_mode">): string {
   const workMode = resolveTextProfileWorkMode(profile);
-  return `${rewriteStyleLabel(workMode.rewrite_style)}, ${insertBehaviorLabel(workMode.insert_behavior)}, ${recoveryBehaviorLabel(workMode.recovery_behavior)}`;
+  return `${rewriteStyleLabel(rewriteStyleFromMode(workMode))}, ${insertBehaviorLabel(workMode.insert_behavior)}, ${recoveryBehaviorLabel(workMode.recovery_behavior)}`;
 }
 
 export const TEXT_PROFILE_SCHEMA_VERSION = 2;

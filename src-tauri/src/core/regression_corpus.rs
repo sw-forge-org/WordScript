@@ -3,7 +3,11 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
-use super::config::{BiasMode, DictionaryEntry, ManualBias, TextProfile, TextProfileWorkMode};
+use super::config::{
+    BiasMode, DictionaryEntry, ManualBias, ProcessingMode, TextProfile, TextProfileWorkMode,
+};
+use super::transform::{correction_system_prompt, NativeTransformConfig};
+use super::workspace_context::WorkspaceContext;
 use super::text_rules::{
     analyze_document, get_profile_health, GetProfileHealthRequest, TextRulesDocument,
     TextRulesIssueCode,
@@ -43,6 +47,12 @@ struct CorpusEntry {
     /// corroboration a language mismatch needs before anything is removed.
     #[serde(default)]
     low_confidence_segments: bool,
+    /// Invariants the assembled correction system prompt must satisfy. Prompt
+    /// shape is the only lever the product has over the cleanup LLM, so the
+    /// guards against it belong in the corpus next to the transcripts they
+    /// protect.
+    #[serde(default)]
+    expected_correction_prompt: Option<ExpectedCorrectionPrompt>,
     #[allow(dead_code)]
     expected_post_correction: String,
     #[serde(default)]
@@ -71,6 +81,21 @@ struct ExpectedDetection {
     language_switch_flagged: bool,
     #[serde(default)]
     language_drift_stripped: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ExpectedCorrectionPrompt {
+    /// The processing mode whose preset the prompt is built from.
+    mode: String,
+    /// Foreground app fed in as workspace context, when the case covers it.
+    #[serde(default)]
+    workspace_app: Option<String>,
+    #[serde(default)]
+    workspace_category: Option<String>,
+    #[serde(default)]
+    contains: Vec<String>,
+    #[serde(default)]
+    not_contains: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -209,6 +234,61 @@ fn corpus_drives_transcription_bias_assertions() {
             );
         }
     }
+}
+
+#[test]
+fn corpus_drives_correction_prompt_assertions() {
+    let corpus = load_corpus();
+    let mut checked = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_correction_prompt else {
+            continue;
+        };
+        checked += 1;
+
+        let preset = ProcessingMode::from_str(&expected.mode).transform_preset();
+        let workspace_hint = expected.workspace_app.as_ref().map(|app| WorkspaceContext {
+            app_name: app.clone(),
+            category: expected.workspace_category.clone().unwrap_or_default(),
+            ..WorkspaceContext::default()
+        });
+
+        let prompt = correction_system_prompt(&NativeTransformConfig {
+            provider: "groq".to_string(),
+            profile_prompt: entry.profile.prompt.clone(),
+            dictionary_entries: entry.profile.dictionary_entries.clone(),
+            post_process: preset.post_process,
+            filter_fillers: preset.filter_fillers,
+            professionalize: preset.professionalize,
+            workspace_hint,
+            ..NativeTransformConfig::default()
+        });
+
+        for needle in &expected.contains {
+            assert!(
+                prompt.contains(needle),
+                "[{}] correction prompt missing {:?} (failure_mode={})",
+                entry.id,
+                needle,
+                entry.failure_mode
+            );
+        }
+        for needle in &expected.not_contains {
+            assert!(
+                !prompt.contains(needle),
+                "[{}] correction prompt unexpectedly contains {:?} (failure_mode={})",
+                entry.id,
+                needle,
+                entry.failure_mode
+            );
+        }
+    }
+
+    assert!(
+        checked > 0,
+        "corpus must cover at least one correction-prompt case"
+    );
 }
 
 #[test]

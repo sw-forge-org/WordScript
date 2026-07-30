@@ -1,6 +1,6 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-07-29
+Status: created 2026-07-24, last drift check 2026-07-30
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -145,9 +145,29 @@ Effective mode resolution (per session) via `mode_router::resolve_processing_mod
 3. legacy global `AppConfig.processing_mode` only when the active profile
    cannot be resolved; its default is `auto`
 
-When effective mode is `auto`, `resolve_auto_mode` picks per transcription:
-agent-name + imperative -> `agent`; imperative + IDE context -> `prompt_enhance`;
-else -> `cleanup`.
+The mode is the ONLY input to transform behavior.
+`ProcessingMode::transform_preset()` is the single producer of `post_process` /
+`filter_fillers` / `professionalize`; no per-profile or global field can change
+it. `rewrite_style` is derived from the mode, not stored as a second axis. See
+ADR 0020.
+
+When effective mode is `auto`, `resolve_auto_mode` picks per transcription, first
+match wins: agent-name + task (heuristic >= certain threshold) -> `agent`;
+imperative + IDE context -> `prompt_enhance`; heuristic in the uncertain zone ->
+one LLM classifier call, then `agent` or `cleanup`; else -> `cleanup`. That is the
+only place intent is classified and the only commit point -- a concrete mode is
+never re-decided downstream.
+
+`verbatim` and `rewrite` are manual-only: `resolve_auto_mode` cannot return
+either, enforced by test, not by convention. Rewrite is a deliberate stylistic
+choice; Verbatim was measured as an Auto candidate and rejected (see
+`known-issues/auto-mode-verbatim-routing.md`).
+
+Workspace context is collected once per session when the active profile allows it
+(`ProfileModesSettings.collect_workspace_context`, legacy key
+`auto_detect_mode`), and reaches every mode: Auto routing as a category signal,
+and the cleanup, rewrite and agent prompts as exactly one bounded hint line that
+forbids deriving content from it.
 
 ## Data Model
 
@@ -198,10 +218,15 @@ no account. Entities:
    provider request is derived from a capture (ADR 0015).
 6b. `confidence_gate.rs` drops low-confidence segments (cloud lane only).
 7. `hallucination_detect.rs` collapses repetition and filters artifact patterns,
-   then `transform.rs` filters and cleans (exact-string hallucination guard,
-   optional AI cleanup via correction guardrail stack, dictionary, snippets).
-   For `prompt_enhance` mode the cleaned text additionally runs the
-   `prompt_enhance` guardrail chain.
+   then `transform.rs` filters and cleans (exact-string hallucination guard, then
+   AI cleanup via the correction guardrail stack unless the mode's preset
+   disables it). `agent` and `prompt_enhance` run their own transform instead of
+   the correction step, each with its own guardrail chain.
+7b. `transform::finalize_with_text_rules` applies the profile's dictionary and
+   snippets. This is the pipeline's final stage and is **mode-independent**: it
+   sits at the single exit after the mode branch, so no mode can bypass it. The
+   mode decides how the text is produced, the profile's vocabulary decides how the
+   user's own terms are spelled (ADR 0020).
 8. `insertion.rs` chooses and runs the insert mode; successful direct insert
    best-effort restores the previous clipboard.
 9. `history.rs` writes raw vs transformed transcript, active profile,

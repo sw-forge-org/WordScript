@@ -193,11 +193,13 @@ export interface ProfileSpeechSettings {
   local_profile_decode_settings: LocalProfileDecodeSettings[];
 }
 
+// Mirrors the Rust `ProfileModesSettings`. The cleanup switches that used to
+// live here are gone: the processing mode is the only input to transform
+// behavior (ADR 0020).
 export interface ProfileModesSettings {
-  post_process:            boolean;
-  filter_fillers:          boolean;
-  professionalize:         boolean;
-  auto_detect_mode:        boolean;
+  /// Applies to every mode, not only Auto. Persisted under the legacy key
+  /// `auto_detect_mode` in configs written by older builds; Rust accepts both.
+  collect_workspace_context: boolean;
   agent_name:              string;
 }
 
@@ -223,6 +225,9 @@ export interface AppConfig {
   active_text_profile_id:  string;
   text_profiles:           TextProfile[];
   curated_profiles_seeded: boolean;
+  /// Legacy globals. The runtime no longer reads them for behavior — they exist
+  /// so configs predating per-profile modes can still be migrated. Do not write
+  /// to them from the UI.
   post_process:            boolean;
   correction_model:        string;
   local_correction_model:  string;
@@ -268,6 +273,8 @@ export interface AppConfig {
   processing_mode?:         ProcessingMode;
   enhance_sub_mode?:        EnhanceSubMode | null;
   enhance_target?:          PromptTarget;
+  /// Global fallback for profiles that predate the per-profile modes block. The
+  /// real control is `ProfileModesSettings.collect_workspace_context`.
   auto_detect_mode?:        boolean;
   mode_picker_hotkey?:      string;
   mode_auto_hotkey?:        string;

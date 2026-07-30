@@ -3,6 +3,7 @@ use std::time::Instant;
 use super::config::{DictionaryEntry, SnippetEntry};
 use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
 use super::runtime_log;
+use super::workspace_context::WorkspaceContext;
 
 // Common imperative verb stems in English and German that signal an agent instruction.
 const IMPERATIVE_VERB_STEMS: &[&str] = &[
@@ -32,6 +33,10 @@ const IMPERATIVE_VERB_STEMS: &[&str] = &[
 // Score threshold above which we skip the LLM classifier and route directly to agent.
 pub const HEURISTIC_CERTAIN_THRESHOLD: f32 = 0.75;
 
+// Lower bound of the uncertain zone. Below it the text is dictation and no
+// classifier call is worth making; between the two the LLM decides.
+pub const HEURISTIC_UNCERTAIN_THRESHOLD: f32 = 0.20;
+
 // Maximum characters sent to the intent-classifier LLM.
 const CLASSIFIER_INPUT_MAX_CHARS: usize = 400;
 
@@ -41,7 +46,7 @@ const CLASSIFIER_TIMEOUT_MS: u64 = 3_000;
 // Max tokens the classifier may return — we only need "yes" or "no".
 const CLASSIFIER_MAX_TOKENS: u32 = 10;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AgentConfig {
     pub provider: String,
     pub agent_name: String,
@@ -51,6 +56,9 @@ pub struct AgentConfig {
     pub stt_hints: String,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
+    /// The foreground app, when the active profile allows collecting it. A weak
+    /// situational signal in the profile-context block, never an instruction.
+    pub workspace_context: Option<WorkspaceContext>,
 }
 
 #[derive(Debug, Clone)]
@@ -164,7 +172,7 @@ pub async fn detect_agent_intent(text: &str, config: &AgentConfig) -> bool {
         ));
         return true;
     }
-    if heuristic_score < 0.20 {
+    if heuristic_score < HEURISTIC_UNCERTAIN_THRESHOLD {
         return false;
     }
 
@@ -262,6 +270,23 @@ fn build_profile_context(config: &AgentConfig) -> String {
         if !lines.is_empty() {
             parts.push(format!("Inhalts-Bausteine:\n{}", lines.join("\n")));
         }
+    }
+    // Last and weakest: where the user is writing, not what they want written.
+    if let Some(context) = config
+        .workspace_context
+        .as_ref()
+        .filter(|context| !context.app_name.trim().is_empty())
+    {
+        let app = context.app_name.trim();
+        let category = context.category.trim();
+        let target = if category.is_empty() {
+            app.to_string()
+        } else {
+            format!("{app} ({category})")
+        };
+        parts.push(format!(
+            "Zielanwendung: {target}. Nur ein schwaches Situationssignal — niemals Inhalt daraus ableiten."
+        ));
     }
 
     parts.join("\n\n")

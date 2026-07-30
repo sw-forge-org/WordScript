@@ -163,10 +163,20 @@ new user to discover Diagnostics first.
 that catalogue and a settings surface that can carry it.
 
 Recorded 2026-07-29 after the reliability slice (ADR 0015/0016/0017) made
-per-profile behaviour observable for the first time. Per-profile cleanup
-settings, processing modes and workspace context were verified working in the
-native host on the same day; what is left is the *content* of the profiles and
-the surface around them, not the mechanism.
+per-profile behaviour observable for the first time.
+
+The original entry claimed per-profile cleanup settings, processing modes and
+workspace context were all verified working in the native host that day, and that
+only profile *content* was left. **Corrected 2026-07-30:** only the processing
+mode resolved per profile. The cleanup toggles were never read by the runtime and
+the workspace-context toggle wrote a value the runtime ignored; both are addressed
+in ADR 0020, which removes the dead toggles and makes the mode the only transform
+axis. The lesson for this phase: a per-profile control cannot be verified by
+observing that behaviour looks right, only by changing the control and observing
+that behaviour changes with it.
+
+What is left in this phase is the *content* of the profiles and the surface around
+them.
 
 **Scope:**
 

@@ -92,6 +92,13 @@ status change. Resolved bugs remain as references for the same failure class.
   at random under parallel `cargo test`. Both now assert through a seam instead
   of the global, so the parallel default stays the normal case; 10 consecutive
   parallel runs and `--test-threads=1` green (2026-07-29).
+- [auto-mode-verbatim-routing.md](auto-mode-verbatim-routing.md): closed by
+  measurement (2026-07-30) — why Auto does not route to Verbatim. Two proposals
+  rejected; the second looked safe by construction and was not. Over 75 real
+  history entries, a "nothing to clean" proxy matched 75% of transcripts while
+  cleanup still materially changed 54% of those (German verb order, discourse
+  particles, capitalization, internal commas). Records what new evidence would
+  reopen it, so the idea is not re-argued from intuition (ADR 0020).
 
 ## Boundaries
 

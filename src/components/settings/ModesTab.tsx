@@ -36,13 +36,16 @@ const MODE_LABELS: Record<ProcessingMode, string> = {
   prompt_enhance: "Prompt Enhance",
 };
 
+// Each mode is a fixed preset. There are no sub-settings for cleanup behavior
+// because the mode *is* the setting — so these descriptions are the only place
+// the behavior is stated, and they have to state it precisely.
 const MODE_DESCRIPTIONS: Record<ProcessingMode, string> = {
-  auto: "LLM decides per transcription which concrete mode to run. Enable workspace context below to improve routing accuracy.",
-  verbatim: "No LLM processing. Only text rules (dictionary, snippets) are applied.",
-  cleanup: "Remove fillers, light grammar correction. Meaning preserved.",
-  rewrite: "Cleanup plus professional rephrasing for better language. Manual only — not auto-detected.",
-  agent: "WordScript executes instructions addressed to it by name (e.g. \"Hey WordScript, write an email…\").",
-  prompt_enhance: "Structure raw dictation into a well-formed AI prompt for external tools (Claude Code, Cursor, …).",
+  auto: "Picks Cleanup, Agent or Prompt Enhance per dictation, from the transcript and the workspace context. Never picks Verbatim or Rewrite — those stay your call.",
+  verbatim: "No AI processing at all. Only your text rules (dictionary, snippets) are applied. Manual only.",
+  cleanup: "Removes filler sounds and fixes typos, grammar and punctuation. Stays close to your phrasing.",
+  rewrite: "Cleanup plus rephrasing for clearer, more professional language. Manual only — never auto-selected.",
+  agent: "WordScript executes what you dictate as an instruction to it (e.g. \"Hey WordScript, write an email…\").",
+  prompt_enhance: "Structures raw dictation into a well-formed AI prompt for external tools (Claude Code, Cursor, …).",
 };
 
 const SUB_MODE_LABELS: Record<EnhanceSubMode, string> = {
@@ -72,23 +75,6 @@ function processingModeLabel(mode: ProcessingMode): string {
   return MODE_LABELS[mode] ?? mode;
 }
 
-function cleanupSummary(modes: { post_process: boolean; filter_fillers: boolean; professionalize: boolean }) {
-  if (!modes.post_process) {
-    return "Off. WordScript keeps the raw speech-to-text result and only applies your text rules.";
-  }
-  if (modes.professionalize && modes.filter_fillers) {
-    return "On. Fixes errors, removes fillers, and allows broader rewrites.";
-  }
-  if (modes.professionalize) {
-    return "On. Fixes errors and allows broader rewrites.";
-  }
-  if (modes.filter_fillers) {
-    return "On. Fixes errors and removes fillers while staying close to the original phrasing.";
-  }
-
-  return "On. Fixes punctuation, typos, and grammar without broader rewrites.";
-}
-
 export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
   const activeProfile = resolveActiveTextProfile(config);
   const activeWorkMode = activeProfile.work_mode;
@@ -96,9 +82,8 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
   const selectedMode: ProcessingMode = activeWorkMode?.processing_mode ?? "auto";
   const selectedSubMode: EnhanceSubMode = activeWorkMode?.enhance_sub_mode ?? "enhance";
   const selectedTarget: PromptTarget = activeWorkMode?.target ?? "general";
-  const autoDetectEnabled = modes.auto_detect_mode;
+  const collectWorkspaceContext = modes.collect_workspace_context;
   const modePickerHotkey = config.mode_picker_hotkey ?? "";
-  const cleanupEnabled = modes.post_process;
 
   const [resolved, setResolved] = useState<ResolvedProcessingContext | null>(null);
 
@@ -113,7 +98,7 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
 
   useEffect(() => {
     void fetchResolved();
-  }, [fetchResolved, selectedMode, config.active_text_profile_id, autoDetectEnabled]);
+  }, [fetchResolved, selectedMode, config.active_text_profile_id, collectWorkspaceContext]);
 
   // Write the processing mode into the active profile's work_mode, not the
   // global config field. This is the same pattern the Prompts tab uses for
@@ -152,8 +137,8 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
     updateActiveProfileWorkMode((wm) => ({ ...wm, target: next }));
   }, [updateActiveProfileWorkMode]);
 
-  const handleToggleAutoDetect = useCallback((next: boolean) => {
-    onChange(buildProfileModesPatch(config, { auto_detect_mode: next }));
+  const handleToggleWorkspaceContext = useCallback((next: boolean) => {
+    onChange(buildProfileModesPatch(config, { collect_workspace_context: next }));
   }, [config, onChange]);
 
   const handleModePickerHotkey = useCallback((value: string) => {
@@ -311,70 +296,27 @@ export const ModesTab = memo(function ModesTab({ config, onChange }: Props) {
         </div>
       </FormCard>
 
-      <FormCard
-        title="Cleanup settings"
-        description="Global parameters for the cleanup and rewrite transform pipeline. These apply whenever the effective mode is Cleanup or Rewrite (including when Auto resolves to one of them)."
-        bodyClassName="py-4"
-      >
-        <FormRow
-          label="AI cleanup"
-          hint="Tidy punctuation, grammar and phrasing after transcription."
-          htmlFor="ai-cleanup-toggle"
-          control={
-            <Toggle
-              id="ai-cleanup-toggle"
-              checked={cleanupEnabled}
-              onCheckedChange={(checked) => onChange(buildProfileModesPatch(config, { post_process: checked }))}
-            />
-          }
-        />
-        {cleanupEnabled && (
-          <>
-            <FormRow
-              label="Remove fillers"
-              hint="Strip ums, uhs and false starts."
-              htmlFor="filter-fillers-toggle"
-              control={
-                <Toggle
-                  id="filter-fillers-toggle"
-                  checked={modes.filter_fillers}
-                  disabled={!modes.post_process}
-                  onCheckedChange={(checked) => onChange(buildProfileModesPatch(config, { filter_fillers: checked }))}
-                />
-              }
-            />
-            <FormRow
-              label="Rewrite phrasing"
-              hint="Allow broader rewrites beyond simple fixes. Rewrite mode enables this implicitly."
-              htmlFor="professionalize-toggle"
-              divider={false}
-              control={
-                <Toggle
-                  id="professionalize-toggle"
-                  checked={modes.professionalize}
-                  disabled={!modes.post_process}
-                  onCheckedChange={(checked) => onChange(buildProfileModesPatch(config, { professionalize: checked }))}
-                />
-              }
-            />
-          </>
-        )}
-        <p className="border-t border-border py-3 text-[12px] leading-snug text-fg-muted">
-          {cleanupSummary(modes)} Choose the cleanup model in Speech &amp; AI.
-        </p>
-      </FormCard>
+      {/* There is deliberately no "Cleanup settings" card. The three toggles
+          that used to sit here (AI cleanup / Remove fillers / Rewrite phrasing)
+          were never observable by the runtime, and two of them only restated the
+          mode axis: cleanup with AI cleanup off is Verbatim, cleanup with rewrite
+          phrasing on is Rewrite. The mode is the setting — see ADR 0020. */}
 
       <FormCard
         title="Workspace context"
-        description="When enabled, WordScript detects the active app (IDE, browser, chat, …) and uses it as a probability signal for Auto mode routing. Enabled by default. Turn off to route based purely on transcript text."
+        description="When enabled, WordScript detects the active app (IDE, browser, chat, …) and passes it to every mode as a weak hint: it steers Auto's routing and gives the cleanup, rewrite and agent prompts a sense of where you are writing. It never contributes content. Turn it off to work from the transcript alone."
       >
         <FormRow
-          label="Collect workspace context for Auto mode"
-          hint="Detects the active app category and feeds it into Auto mode routing. Off by choice only."
-          htmlFor="auto-detect-toggle"
+          label="Collect workspace context"
+          hint="Detects the active app for this profile. Applies to every mode, not just Auto."
+          htmlFor="workspace-context-toggle"
           divider={false}
           control={
-            <Toggle id="auto-detect-toggle" checked={autoDetectEnabled} onCheckedChange={handleToggleAutoDetect} />
+            <Toggle
+              id="workspace-context-toggle"
+              checked={collectWorkspaceContext}
+              onCheckedChange={handleToggleWorkspaceContext}
+            />
           }
         />
       </FormCard>

@@ -87,55 +87,66 @@ pub fn resolve_processing_mode(
     }
 }
 
-/// Resolves `Auto` into a concrete processing mode using the transcript text
-/// and optional workspace context as signals.
+/// The outcome of the deterministic Auto pass.
 ///
-/// When the effective mode is already concrete, it is returned unchanged.
+/// `NeedsClassifier` exists so this function can stay synchronous and pure —
+/// its unit tests are the routing contract — while the one LLM call the
+/// uncertain zone needs is made by the caller, at the single point that commits
+/// to a mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AutoRoute {
+    Decided {
+        mode: ProcessingMode,
+        /// Which rule fired, for the runtime log.
+        signal: &'static str,
+    },
+    NeedsClassifier,
+}
+
+/// Resolves `Auto` into one concrete processing mode.
 ///
-/// Detection signals (in priority order):
-/// 1. Agent-name + imperative verb → Agent
-/// 2. Imperative + IDE workspace context → Prompt Enhance
-/// 3. Otherwise → Cleanup (the safe default)
+/// Resolution order, first match wins:
+/// 1. agent name addressed with a task (heuristic ≥ certain threshold) → Agent
+/// 2. imperative + IDE workspace context → Prompt Enhance
+/// 3. heuristic in the uncertain zone → `NeedsClassifier`
+/// 4. otherwise → Cleanup
 ///
-/// This is a deterministic first pass. The agent intent detection in
-/// `agent.rs` runs a second, LLM-backed classifier in the uncertain zone
-/// before the agent transform actually executes.
+/// `Verbatim` and `Rewrite` are deliberately not reachable. Rewrite is a
+/// deliberate stylistic choice that must not be guessed. Verbatim was measured
+/// as a candidate and rejected: a "nothing to clean" proxy over 75 real
+/// transcripts matched 75% of them, yet cleanup still materially changed 54% of
+/// those — German verb order, discourse particles, capitalization and internal
+/// commas are not detectable without the model, so auto-selecting Verbatim would
+/// silently discard real corrections. Both invariants are enforced by tests.
 pub fn resolve_auto_mode(
-    effective_mode: ProcessingMode,
     transcript: &str,
     workspace_category: Option<&str>,
     agent_name: &str,
-) -> ProcessingMode {
-    if !effective_mode.is_auto() {
-        return effective_mode;
-    }
-
+) -> AutoRoute {
     let agent_score = super::agent::detect_agent_intent_heuristic(transcript, agent_name);
     if agent_score >= super::agent::HEURISTIC_CERTAIN_THRESHOLD {
-        return ProcessingMode::Agent;
+        return AutoRoute::Decided {
+            mode: ProcessingMode::Agent,
+            signal: "agent_name_heuristic",
+        };
     }
 
     let is_ide = workspace_category.map(|c| c == "ide").unwrap_or(false);
-    let has_imperative = super::agent::text_starts_with_imperative(transcript);
-
-    if has_imperative && is_ide {
-        return ProcessingMode::PromptEnhance;
+    if is_ide && super::agent::text_starts_with_imperative(transcript) {
+        return AutoRoute::Decided {
+            mode: ProcessingMode::PromptEnhance,
+            signal: "imperative_in_ide",
+        };
     }
 
-    // Default safe fallback for Auto mode.
-    ProcessingMode::Cleanup
-}
+    if agent_score >= super::agent::HEURISTIC_UNCERTAIN_THRESHOLD {
+        return AutoRoute::NeedsClassifier;
+    }
 
-// Validation helper for the mode-conflict UI; exercised by unit tests.
-#[allow(dead_code)]
-pub fn is_invalid_mode_combination(mode_a: &ProcessingMode, mode_b: &ProcessingMode) -> bool {
-    matches!(
-        (mode_a, mode_b),
-        (ProcessingMode::Verbatim, ProcessingMode::Agent)
-            | (ProcessingMode::Verbatim, ProcessingMode::PromptEnhance)
-            | (ProcessingMode::Agent, ProcessingMode::Verbatim)
-            | (ProcessingMode::PromptEnhance, ProcessingMode::Verbatim)
-    )
+    AutoRoute::Decided {
+        mode: ProcessingMode::Cleanup,
+        signal: "default_cleanup",
+    }
 }
 
 #[tauri::command]
@@ -320,46 +331,6 @@ mod tests {
     }
 
     #[test]
-    fn invalid_combination_verbatim_and_agent_is_detected() {
-        assert!(is_invalid_mode_combination(
-            &ProcessingMode::Verbatim,
-            &ProcessingMode::Agent
-        ));
-        assert!(is_invalid_mode_combination(
-            &ProcessingMode::Agent,
-            &ProcessingMode::Verbatim
-        ));
-    }
-
-    #[test]
-    fn invalid_combination_verbatim_and_prompt_enhance_is_detected() {
-        assert!(is_invalid_mode_combination(
-            &ProcessingMode::Verbatim,
-            &ProcessingMode::PromptEnhance
-        ));
-        assert!(is_invalid_mode_combination(
-            &ProcessingMode::PromptEnhance,
-            &ProcessingMode::Verbatim
-        ));
-    }
-
-    #[test]
-    fn valid_combinations_are_not_flagged_invalid() {
-        assert!(!is_invalid_mode_combination(
-            &ProcessingMode::Agent,
-            &ProcessingMode::PromptEnhance
-        ));
-        assert!(!is_invalid_mode_combination(
-            &ProcessingMode::Rewrite,
-            &ProcessingMode::Agent
-        ));
-        assert!(!is_invalid_mode_combination(
-            &ProcessingMode::Rewrite,
-            &ProcessingMode::Rewrite
-        ));
-    }
-
-    #[test]
     fn override_cleared_after_clear() {
         let _ = set_processing_mode_override("agent".to_string());
         assert_eq!(current_mode_override(), Some(ProcessingMode::Agent));
@@ -389,60 +360,121 @@ mod tests {
         let _ = clear_processing_mode_override();
     }
 
-    #[test]
-    fn resolve_auto_mode_passes_through_concrete_mode() {
-        assert_eq!(
-            resolve_auto_mode(ProcessingMode::Verbatim, "hello", None, "WordScript"),
-            ProcessingMode::Verbatim
-        );
-        assert_eq!(
-            resolve_auto_mode(ProcessingMode::Cleanup, "hello", None, "WordScript"),
-            ProcessingMode::Cleanup
-        );
+    // Helper: the concrete mode an Auto resolution commits to, treating the
+    // uncertain zone as the classifier's job (it is exercised separately).
+    fn decided(transcript: &str, category: Option<&str>) -> AutoRoute {
+        resolve_auto_mode(transcript, category, "WordScript")
     }
 
     #[test]
     fn resolve_auto_mode_detects_agent_when_name_at_start() {
-        let mode = resolve_auto_mode(
-            ProcessingMode::Auto,
-            "WordScript schreib eine E-Mail an Joe",
-            None,
-            "WordScript",
+        assert_eq!(
+            decided("WordScript schreib eine E-Mail an Joe", None),
+            AutoRoute::Decided {
+                mode: ProcessingMode::Agent,
+                signal: "agent_name_heuristic"
+            }
         );
-        assert_eq!(mode, ProcessingMode::Agent);
     }
 
     #[test]
     fn resolve_auto_mode_detects_prompt_enhance_in_ide() {
-        let mode = resolve_auto_mode(
-            ProcessingMode::Auto,
-            "Schreib mir eine Schleife und vereinfache sie",
-            Some("ide"),
-            "WordScript",
+        assert_eq!(
+            decided("Schreib mir eine Schleife und vereinfache sie", Some("ide")),
+            AutoRoute::Decided {
+                mode: ProcessingMode::PromptEnhance,
+                signal: "imperative_in_ide"
+            }
         );
-        assert_eq!(mode, ProcessingMode::PromptEnhance);
     }
 
     #[test]
     fn resolve_auto_mode_falls_back_to_cleanup() {
-        let mode = resolve_auto_mode(
-            ProcessingMode::Auto,
-            "Ich wollte mal fragen ob wir uns morgen treffen",
-            None,
-            "WordScript",
+        assert_eq!(
+            decided("Ich wollte mal fragen ob wir uns morgen treffen", None),
+            AutoRoute::Decided {
+                mode: ProcessingMode::Cleanup,
+                signal: "default_cleanup"
+            }
         );
-        assert_eq!(mode, ProcessingMode::Cleanup);
     }
 
     #[test]
     fn resolve_auto_mode_does_not_route_to_prompt_enhance_without_ide() {
-        let mode = resolve_auto_mode(
-            ProcessingMode::Auto,
-            "Schreib mir eine Schleife",
-            Some("browser"),
-            "WordScript",
+        // An imperative outside an IDE is dictation, not a prompt. It scores in
+        // the uncertain zone, so the classifier decides rather than the heuristic.
+        assert_eq!(
+            decided("Schreib mir eine Schleife", Some("browser")),
+            AutoRoute::NeedsClassifier
         );
-        assert_eq!(mode, ProcessingMode::Cleanup);
+    }
+
+    #[test]
+    fn resolve_auto_mode_defers_to_the_classifier_in_the_uncertain_zone() {
+        let route = decided("Kannst du mir das nochmal zusammenfassen", None);
+        assert_eq!(route, AutoRoute::NeedsClassifier);
+    }
+
+    #[test]
+    fn a_concrete_mode_never_enters_the_auto_resolution() {
+        // The structural half of "one decision, one commit point": only `Auto`
+        // reaches `resolve_auto_mode`, so a mode the user picked — Agent included
+        // — cannot be re-decided by the classifier. The Agent branch used to run
+        // `detect_agent_intent` a second time and silently degrade a manually
+        // selected Agent dictation into a cleanup.
+        for mode in [
+            ProcessingMode::Verbatim,
+            ProcessingMode::Cleanup,
+            ProcessingMode::Rewrite,
+            ProcessingMode::Agent,
+            ProcessingMode::PromptEnhance,
+        ] {
+            let via_override = resolve_processing_mode(ProcessingMode::Auto, Some(mode));
+            assert_eq!(via_override.mode, mode);
+            assert!(
+                !via_override.mode.is_auto(),
+                "{} would fall into the Auto branch",
+                mode.as_str()
+            );
+
+            let via_profile = resolve_processing_mode(mode, None);
+            assert_eq!(via_profile.mode, mode);
+            assert!(!via_profile.mode.is_auto());
+            assert!(!via_profile.auto_detected);
+        }
+    }
+
+    #[test]
+    fn auto_never_resolves_to_verbatim_or_rewrite() {
+        // The invariant, enforced rather than merely documented. Verbatim was
+        // measured as a candidate and rejected (54% of "clean-looking"
+        // transcripts are still materially corrected); Rewrite is a deliberate
+        // stylistic choice. Neither may be guessed.
+        let transcripts = [
+            "",
+            "ja",
+            "Danke.",
+            "Kurz und knapp.",
+            "WordScript schreib eine E-Mail an Joe",
+            "Schreib mir eine Schleife und vereinfache sie",
+            "Ich wollte mal fragen ob wir uns morgen treffen",
+            "äh also ähm ich glaube das passt so",
+            "okay das finde ich sehr interessant das sollten wir dokumentieren",
+            "Bitte korrigier das und mach es professioneller.",
+        ];
+        let categories = [None, Some("ide"), Some("browser"), Some("chat"), Some("terminal")];
+
+        for transcript in transcripts {
+            for category in categories {
+                if let AutoRoute::Decided { mode, .. } = decided(transcript, category) {
+                    assert!(
+                        mode != ProcessingMode::Verbatim && mode != ProcessingMode::Rewrite,
+                        "Auto resolved to {} for transcript={transcript:?} category={category:?}",
+                        mode.as_str()
+                    );
+                }
+            }
+        }
     }
 
     #[test]

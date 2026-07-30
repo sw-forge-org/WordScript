@@ -102,19 +102,36 @@ where the Insert retry affordance matters most.
 These modes are **orthogonal** to the provider modes above and describe what
 happens to the dictated text:
 
-- `auto`: meta-mode; per transcription an LLM-based routing picks among
-  cleanup, prompt enhance and agent (from transcript text, agent name and
-  optional workspace context).
-- `cleanup`: standard correction over the active provider; the default for
-  most dictations.
-- `rewrite`: polishing style with stronger reformulation; corresponds to the
-  legacy option `polished`; only manually selectable (not auto-detected).
-- `agent`: dictation is interpreted as a command to the agent; intent
-  classification confirms before execution.
+Each mode is a **fixed preset**. The mode alone decides what the transform does;
+there are no per-mode or per-profile cleanup switches, and
+`ProcessingMode::transform_preset()` is the single producer of `post_process`,
+`filter_fillers` and `professionalize` (ADR 0020).
+
+What a mode does **not** decide: the profile's dictionary replacements and snippet
+expansions. Those run in every mode, including `verbatim`, as the pipeline's final
+stage (`transform::finalize_with_text_rules`) after the mode branch. Modes sit on
+top of the profile's vocabulary, not around it. The preset column below therefore
+describes the correction step only.
+
+- `auto`: meta-mode; per transcription a deterministic pass picks among cleanup,
+  prompt enhance and agent (from transcript text, agent name and optional
+  workspace context), consulting one LLM classifier call only in the uncertain
+  zone. Never picks `verbatim` or `rewrite`.
+- `cleanup`: filler removal plus typo, grammar and punctuation correction,
+  staying close to the original phrasing; the default for most dictations.
+  Preset `(post_process, filter_fillers, professionalize) = (true, true, false)`.
+- `rewrite`: cleanup plus stronger reformulation; corresponds to the legacy
+  option `polished`; only manually selectable, never auto-detected.
+  Preset `(true, true, true)`.
+- `agent`: dictation is executed as an instruction to the agent. Reaching this
+  mode is itself the decision — there is no second intent check that can fall
+  back to a cleanup. Preset `(true, false, false)`, used only by the history
+  re-transform.
 - `prompt_enhance`: dictation is understood as a prompt, structured or
   expanded via `prompt_enhance` and given to the provider with a `PromptTarget`.
+  Preset as for `agent`.
 - `verbatim`: raw text without cleanup, with a `clipboard_only` preview
-  before commit.
+  before commit; only manually selectable. Preset `(false, false, false)`.
 
 The effective mode is resolved per session by
 `mode_router::resolve_processing_mode`:
@@ -123,13 +140,33 @@ The effective mode is resolved per session by
 3. legacy global `AppConfig.processing_mode` only when the active profile
    cannot be resolved; its default is `auto`
 
-When the effective mode is `auto`, `mode_router::resolve_auto_mode` resolves
-a concrete mode per transcription once the transcript text is available.
-Signals: agent name + imperative verb -> `agent`; imperative + IDE workspace
-context -> `prompt_enhance`; otherwise -> `cleanup`.
+When the effective mode is `auto`, `mode_router::resolve_auto_mode` resolves one
+concrete mode per transcription once the transcript text is available. It stays
+synchronous and pure and returns either a decision or `NeedsClassifier`, so the
+single LLM call the uncertain zone needs is made by the caller at the one point
+that commits to a mode. Order, first match wins:
+
+1. agent name addressed with a task (heuristic >= `HEURISTIC_CERTAIN_THRESHOLD`)
+   -> `agent`
+2. imperative + IDE workspace context -> `prompt_enhance`
+3. heuristic in `[HEURISTIC_UNCERTAIN_THRESHOLD, HEURISTIC_CERTAIN_THRESHOLD)`
+   -> one classifier call -> `agent` or `cleanup`
+4. otherwise -> `cleanup`
+
+`verbatim` and `rewrite` are unreachable from Auto by construction, enforced by
+`auto_never_resolves_to_verbatim_or_rewrite`. For why Verbatim is excluded despite
+looking like a free win, see
+[known-issues/auto-mode-verbatim-routing.md](known-issues/auto-mode-verbatim-routing.md).
 
 The workspace context is only a probability signal, not a deterministic
-mapping (`workspace_app_map` was removed).
+mapping (`workspace_app_map` was removed). It is collected once per session when
+the active profile allows it and then reaches every mode: as a category signal in
+Auto routing, and as exactly one bounded hint line in the cleanup, rewrite and
+agent prompts, carrying its own instruction never to derive content from it. The
+toggle lives per profile
+(`ProfileModesSettings.collect_workspace_context`; older configs store it as
+`auto_detect_mode`, accepted as a serde alias), with the global
+`AppConfig.auto_detect_mode` as fallback for profiles predating the block.
 
 ### Local runtime prerequisites
 

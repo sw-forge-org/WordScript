@@ -130,7 +130,15 @@ rules override layered utility classes and can silently break layout spacing.
 - Use `StatusDot` and status badges for compact runtime truth. Green means a
   real validated state, not a merely saved credential.
 - Controls expose the native contract. A setting that does not affect runtime
-  belongs in neither the UI nor the design system.
+  belongs in neither the UI nor the design system. This rule removed the Modes
+  tab's "Cleanup settings" card: three toggles the runtime discarded on read
+  (ADR 0020). Enforcing it means checking that the runtime *reads* the field a
+  control writes -- a control whose value happens to match the runtime default is
+  indistinguishable from one that works.
+- A control must not restate an axis the UI already has. Two of those three
+  toggles duplicated the mode selector: cleanup with AI cleanup off is Verbatim,
+  cleanup with rewrite phrasing on is Rewrite. When one state is reachable two
+  ways, no arrangement of the controls reads correctly.
 - Labels and action names must use the same terms as native history, recovery,
   and provider status.
 

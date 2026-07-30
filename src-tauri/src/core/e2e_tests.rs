@@ -5,9 +5,23 @@ use super::{
         NativeInsertRequest, NativeInsertionConfig,
     },
     sessions::{NativeSessionStage, NativeSessionState},
-    transform::{apply_native_transform, NativeTransformConfig},
+    transform::{
+        apply_native_transform, finalize_with_text_rules, NativeTransformConfig,
+        NativeTransformResult,
+    },
 };
 use crate::core::config::{DictionaryEntry, SnippetEntry};
+
+/// Mirrors what the pipeline does: the correction step, then the profile's text
+/// rules as a separate final stage that every mode passes through. These tests
+/// assert an end-to-end chain, so they have to run both stages — calling
+/// `apply_native_transform` alone would assert a path the product does not have.
+async fn transform_like_pipeline(
+    text: &str,
+    config: NativeTransformConfig,
+) -> NativeTransformResult {
+    finalize_with_text_rules(apply_native_transform(text, config.clone()).await, &config)
+}
 
 struct FakeInsertIo {
     clipboard_ok: bool,
@@ -109,7 +123,7 @@ async fn resolves_native_session_transform_insert_chain_with_direct_paste() {
     let processing = session.stop_for_processing().unwrap();
     assert_eq!(processing.stage, NativeSessionStage::Processing);
 
-    let transformed = apply_native_transform(
+    let transformed = transform_like_pipeline(
         "word script follow up note",
         NativeTransformConfig {
             provider: "groq".to_string(),
@@ -196,7 +210,7 @@ async fn surfaces_direct_paste_failure_with_recovery_copy() {
     session.start_capture("native_tap_hotkey").unwrap();
     session.stop_for_processing().unwrap();
 
-    let transformed = apply_native_transform(
+    let transformed = transform_like_pipeline(
         "word script",
         NativeTransformConfig {
             provider: "groq".to_string(),
@@ -269,7 +283,7 @@ async fn surfaces_direct_paste_failure_with_recovery_copy() {
 
 #[tokio::test]
 async fn skips_clipboard_restore_when_no_previous_clipboard_exists() {
-    let transformed = apply_native_transform(
+    let transformed = transform_like_pipeline(
         "word script",
         NativeTransformConfig {
             provider: "groq".to_string(),
@@ -328,7 +342,7 @@ async fn skips_clipboard_restore_when_no_previous_clipboard_exists() {
 
 #[tokio::test]
 async fn surfaces_clipboard_write_failure_with_scratchpad_recovery() {
-    let transformed = apply_native_transform(
+    let transformed = transform_like_pipeline(
         "word script",
         NativeTransformConfig {
             provider: "groq".to_string(),

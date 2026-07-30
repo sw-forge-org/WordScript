@@ -13,7 +13,9 @@ use super::insertion::{
 use super::paths::history_file_path;
 use super::runtime_log;
 use super::sessions::now_ms;
-use super::transform::{apply_native_transform, NativeTransformConfig, NativeTransformResult};
+use super::transform::{
+    apply_native_transform, finalize_with_text_rules, NativeTransformConfig, NativeTransformResult,
+};
 
 const DEFAULT_HISTORY_LIMIT: usize = 200;
 const MS_PER_DAY: u64 = 86_400_000;
@@ -383,7 +385,13 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
         existing.id, transform_config.provider, transform_config.post_process,
     ));
 
-    let transformed = apply_native_transform(&raw_transcript, transform_config.clone()).await;
+    // Text rules are the pipeline's final stage and no longer run inside
+    // `apply_native_transform`, so the retry has to finalize too — otherwise a
+    // retried entry would come back without the profile's dictionary applied.
+    let transformed = finalize_with_text_rules(
+        apply_native_transform(&raw_transcript, transform_config.clone()).await,
+        &transform_config,
+    );
     let transformed_text = transformed.text.trim().to_string();
 
     let retried_entry = if transformed_text.is_empty() {
@@ -652,20 +660,25 @@ pub fn record_empty_result(
 
 fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig {
     let active_profile = config.active_text_profile();
+    // All three correction switches come from the active profile's mode. This
+    // path used to take `post_process` from the global field while taking the
+    // other two from the profile, so a re-transform could run under a mix of the
+    // two that no live session would ever produce.
+    let preset = config.active_text_profile_transform_preset();
 
     NativeTransformConfig {
         provider: config.provider.clone(),
         profile_prompt: active_profile.prompt,
         dictionary_entries: active_profile.dictionary_entries,
         snippet_entries: active_profile.snippet_entries,
-        post_process: config.post_process,
+        post_process: preset.post_process,
         correction_model: if config.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
             config.local_correction_model.clone()
         } else {
             config.correction_model.clone()
         },
-        filter_fillers: config.active_text_profile_filter_fillers(),
-        professionalize: config.active_text_profile_professionalize(),
+        filter_fillers: preset.filter_fillers,
+        professionalize: preset.professionalize,
         ..Default::default()
     }
 }

@@ -161,10 +161,14 @@ pub struct NativeCaptureConfig {
     pub work_mode: TextProfileWorkMode,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
-    pub post_process: bool,
+    // The correction switches (post_process / filter_fillers / professionalize)
+    // are deliberately absent. They follow from the EFFECTIVE processing mode,
+    // which is only known once the override and Auto resolution have run — long
+    // after this struct is loaded. Resolving them here is what let a session run
+    // with flags derived from the profile's stored mode instead of the one it was
+    // actually running in. `work_mode` carries the stored mode; the pipeline
+    // supplies the preset explicitly.
     pub correction_model: String,
-    pub filter_fillers: bool,
-    pub professionalize: bool,
     pub audio_device: String,
     pub max_recording_seconds: u64,
     pub silence_timeout_seconds: u64,
@@ -188,10 +192,7 @@ impl Default for NativeCaptureConfig {
             work_mode: TextProfileWorkMode::default(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
-            post_process: true,
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
-            filter_fillers: true,
-            professionalize: false,
             audio_device: String::new(),
             max_recording_seconds: DEFAULT_MAX_RECORDING_SECONDS,
             silence_timeout_seconds: DEFAULT_SILENCE_TIMEOUT_SECONDS,
@@ -206,13 +207,11 @@ impl NativeCaptureConfig {
         let active_profile = app_config.active_text_profile();
         let work_mode = app_config.resolved_active_text_profile_work_mode();
 
-        // Read per-profile settings
+        // Read per-profile settings. The modes block is not read here: it no
+        // longer carries anything the capture needs.
         let speech = active_profile.resolved_speech();
-        let modes = active_profile.resolved_modes();
         let capture = active_profile.resolved_capture();
 
-        let filter_fillers = app_config.active_text_profile_filter_fillers();
-        let professionalize = app_config.active_text_profile_professionalize();
         let provider = speech.provider.clone();
         let local_provider_selected = provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
         let model = if provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
@@ -243,14 +242,11 @@ impl NativeCaptureConfig {
             work_mode,
             dictionary_entries: active_profile.dictionary_entries,
             snippet_entries: active_profile.snippet_entries,
-            post_process: modes.post_process,
             correction_model: if local_provider_selected {
                 speech.local_correction_model
             } else {
                 speech.correction_model
             },
-            filter_fillers,
-            professionalize,
             audio_device: app_config.audio_device,
             max_recording_seconds: capture.max_recording_seconds,
             silence_timeout_seconds: capture.silence_timeout_seconds,
