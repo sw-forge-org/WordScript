@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::runtime_log;
 
-const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/SW-Bench/WordScript/releases/latest";
+const LATEST_RELEASE_URL: &str =
+    "https://api.github.com/repos/sw-forge-org/WordScript/releases/latest";
 const RELEASE_CHECK_TIMEOUT_SECS: u64 = 8;
 
 #[derive(Debug, Clone, Serialize)]

@@ -229,6 +229,16 @@ Status: Proposed | Accepted | Superseded by NNNN
   on a measurement fixed in advance (12 of 197 shipped pairs, 6.1 %), not on a
   choice between plausible options — which is how the last two prompt rules got
   their wrong justification.
+- [0037](0037-a-stored-secret-is-not-filed-under-the-brand.md): a stored secret
+  is not filed under the brand — the June rebrand stopped at the UI because the
+  keyring service name was defined as the bundle identifier, so renaming the
+  brand would have orphaned the user's Groq key and reported it as *no key
+  configured*. The two constants are separated, retired service names are
+  migrated on read and purged on every write (without the purge, clearing a key
+  lets the next read migrate it back), and the store sits behind a trait so the
+  migration is tested without touching the developer's real secret store. The
+  update endpoint stops depending on GitHub's org-rename redirect, which any
+  stranger can break by claiming the freed name.
 
 ## Resolved: the number 0011 was used twice
 
@@ -256,8 +266,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-02 the filed range runs through 0036; the next
-decision takes 0037.)
+takes 0021. (As of 2026-08-03 the filed range runs through 0037; the next
+decision takes 0038.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

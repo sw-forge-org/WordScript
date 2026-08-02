@@ -18,8 +18,8 @@ use super::{
 };
 
 const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
-const WORDSCRIPT_APP_IDENTIFIER: &str = "io.github.swbench.wordscript";
-const GROQ_KEY_SERVICE: &str = WORDSCRIPT_APP_IDENTIFIER;
+const GROQ_KEY_SERVICE: &str = "io.github.sw-forge-org.wordscript";
+const LEGACY_GROQ_KEY_SERVICES: &[&str] = &["io.github.swbench.wordscript"];
 const GROQ_KEY_USER: &str = "groq_api_key";
 const DEFAULT_TIMEOUT_MS: u64 = 55_000;
 const DEFAULT_MAX_RETRIES: u8 = 2;
@@ -88,25 +88,15 @@ pub fn provider_status() -> Result<GroqProviderStatus, ProviderCommandError> {
 
 pub fn save_api_key(api_key: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     let api_key = normalize_api_key(api_key)?;
-    groq_key_entry()
-        .map_err(secret_store_error)?
-        .set_password(&api_key)
-        .map_err(secret_store_error)?;
+    write_api_key_to(&OsSecretStore, &api_key).map_err(secret_store_error)?;
     cache_groq_api_key(Some(api_key));
     credential_status().map_err(ProviderCommandError::from)
 }
 
 pub fn clear_api_key() -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    match groq_key_entry()
-        .map_err(secret_store_error)?
-        .delete_credential()
-    {
-        Ok(()) | Err(KeyringError::NoEntry) => {
-            cache_groq_api_key(None);
-            credential_status().map_err(ProviderCommandError::from)
-        }
-        Err(error) => Err(ProviderCommandError::from(secret_store_error(error))),
-    }
+    clear_api_key_in(&OsSecretStore).map_err(secret_store_error)?;
+    cache_groq_api_key(None);
+    credential_status().map_err(ProviderCommandError::from)
 }
 
 pub async fn validate_api_key(
@@ -536,8 +526,8 @@ fn provider_capabilities() -> ProviderCapabilities {
 }
 
 fn credential_status() -> Result<ProviderCredentialStatus, GroqProviderError> {
-    match groq_key_entry().map_err(secret_store_error)?.get_password() {
-        Ok(api_key) => {
+    match read_api_key_from(&OsSecretStore).map_err(secret_store_error)? {
+        Some(api_key) => {
             cache_groq_api_key(Some(api_key.clone()));
             Ok(ProviderCredentialStatus {
                 provider: "groq".to_string(),
@@ -546,13 +536,12 @@ fn credential_status() -> Result<ProviderCredentialStatus, GroqProviderError> {
                 key_preview: Some(mask_api_key(&api_key)),
             })
         }
-        Err(KeyringError::NoEntry) => Ok(ProviderCredentialStatus {
+        None => Ok(ProviderCredentialStatus {
             provider: "groq".to_string(),
             configured: false,
             storage: "os_secret_store".to_string(),
             key_preview: None,
         }),
-        Err(error) => Err(secret_store_error(error)),
     }
 }
 
@@ -561,19 +550,18 @@ fn load_groq_api_key() -> Result<String, ProviderCommandError> {
         return Ok(api_key);
     }
 
-    match groq_key_entry().map_err(secret_store_error)?.get_password() {
-        Ok(api_key) => {
+    match read_api_key_from(&OsSecretStore).map_err(secret_store_error)? {
+        Some(api_key) => {
             let normalized = normalize_api_key(&api_key).map_err(ProviderCommandError::from)?;
             cache_groq_api_key(Some(normalized.clone()));
             Ok(normalized)
         }
-        Err(KeyringError::NoEntry) => Err(ProviderCommandError::from(GroqProviderError {
+        None => Err(ProviderCommandError::from(GroqProviderError {
             kind: ProviderErrorKind::MissingApiKey,
             message: "No Groq API key is stored for WordScript.".to_string(),
             status: None,
             retry_after_seconds: None,
         })),
-        Err(error) => Err(ProviderCommandError::from(secret_store_error(error))),
     }
 }
 
@@ -600,8 +588,83 @@ fn normalize_api_key(api_key: &str) -> Result<String, GroqProviderError> {
     Ok(trimmed.to_string())
 }
 
-fn groq_key_entry() -> Result<Entry, KeyringError> {
-    Entry::new(GROQ_KEY_SERVICE, GROQ_KEY_USER)
+/// The secret-store surface used for the Groq key.
+///
+/// The keyring is process-global OS state, so the legacy-service migration
+/// below sits behind this trait: the tests exercise it against an in-memory
+/// store instead of writing into the developer's real secret store.
+trait SecretStore {
+    fn read(&self, service: &str) -> Result<Option<String>, KeyringError>;
+    fn write(&self, service: &str, secret: &str) -> Result<(), KeyringError>;
+    fn delete(&self, service: &str) -> Result<(), KeyringError>;
+}
+
+struct OsSecretStore;
+
+impl SecretStore for OsSecretStore {
+    fn read(&self, service: &str) -> Result<Option<String>, KeyringError> {
+        match Entry::new(service, GROQ_KEY_USER)?.get_password() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn write(&self, service: &str, secret: &str) -> Result<(), KeyringError> {
+        Entry::new(service, GROQ_KEY_USER)?.set_password(secret)
+    }
+
+    fn delete(&self, service: &str) -> Result<(), KeyringError> {
+        match Entry::new(service, GROQ_KEY_USER)?.delete_credential() {
+            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// Reads the stored key and, when only a retired service name still holds it,
+/// moves it onto the current one. `Ok(None)` means no known service name holds
+/// a key -- which is a legitimate state, not a store failure.
+fn read_api_key_from(store: &impl SecretStore) -> Result<Option<String>, KeyringError> {
+    if let Some(api_key) = store.read(GROQ_KEY_SERVICE)? {
+        return Ok(Some(api_key));
+    }
+
+    for legacy_service in LEGACY_GROQ_KEY_SERVICES {
+        let Some(api_key) = store.read(legacy_service)? else {
+            continue;
+        };
+
+        store.write(GROQ_KEY_SERVICE, &api_key)?;
+        store.delete(legacy_service)?;
+        runtime_log::record(format!(
+            "groq secret store: moved the stored API key from the retired service name '{legacy_service}' to '{GROQ_KEY_SERVICE}'"
+        ));
+        return Ok(Some(api_key));
+    }
+
+    Ok(None)
+}
+
+/// Retired service names are dropped on every write so no copy of the secret
+/// outlives the rename, and so a cleared key cannot be resurrected from an old
+/// entry by the next read.
+fn write_api_key_to(store: &impl SecretStore, api_key: &str) -> Result<(), KeyringError> {
+    store.write(GROQ_KEY_SERVICE, api_key)?;
+    clear_legacy_api_keys_in(store)
+}
+
+fn clear_api_key_in(store: &impl SecretStore) -> Result<(), KeyringError> {
+    store.delete(GROQ_KEY_SERVICE)?;
+    clear_legacy_api_keys_in(store)
+}
+
+fn clear_legacy_api_keys_in(store: &impl SecretStore) -> Result<(), KeyringError> {
+    for legacy_service in LEGACY_GROQ_KEY_SERVICES {
+        store.delete(legacy_service)?;
+    }
+
+    Ok(())
 }
 
 fn secret_store_error(error: KeyringError) -> GroqProviderError {
@@ -741,7 +804,48 @@ fn cache_groq_api_key(value: Option<String>) {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, collections::HashMap};
+
     use super::*;
+
+    #[derive(Default)]
+    struct FakeSecretStore {
+        entries: RefCell<HashMap<String, String>>,
+    }
+
+    impl FakeSecretStore {
+        fn with_entry(service: &str, secret: &str) -> Self {
+            let store = Self::default();
+            store.set(service, secret);
+            store
+        }
+
+        fn set(&self, service: &str, secret: &str) {
+            self.entries
+                .borrow_mut()
+                .insert(service.to_string(), secret.to_string());
+        }
+
+        fn get(&self, service: &str) -> Option<String> {
+            self.entries.borrow().get(service).cloned()
+        }
+    }
+
+    impl SecretStore for FakeSecretStore {
+        fn read(&self, service: &str) -> Result<Option<String>, KeyringError> {
+            Ok(self.get(service))
+        }
+
+        fn write(&self, service: &str, secret: &str) -> Result<(), KeyringError> {
+            self.set(service, secret);
+            Ok(())
+        }
+
+        fn delete(&self, service: &str) -> Result<(), KeyringError> {
+            self.entries.borrow_mut().remove(service);
+            Ok(())
+        }
+    }
 
     #[test]
     fn rejects_empty_api_key() {
@@ -757,7 +861,65 @@ mod tests {
 
     #[test]
     fn uses_single_neutral_product_namespace_for_key_service() {
-        assert_eq!(GROQ_KEY_SERVICE, "io.github.swbench.wordscript");
+        assert_eq!(GROQ_KEY_SERVICE, "io.github.sw-forge-org.wordscript");
+        assert!(LEGACY_GROQ_KEY_SERVICES.contains(&"io.github.swbench.wordscript"));
+        assert!(!LEGACY_GROQ_KEY_SERVICES.contains(&GROQ_KEY_SERVICE));
+    }
+
+    #[test]
+    fn moves_a_key_stored_under_a_retired_service_name() {
+        let store = FakeSecretStore::with_entry("io.github.swbench.wordscript", "gsk_legacy_key");
+
+        let api_key = read_api_key_from(&store).expect("read must succeed");
+
+        assert_eq!(api_key.as_deref(), Some("gsk_legacy_key"));
+        assert_eq!(
+            store.get(GROQ_KEY_SERVICE).as_deref(),
+            Some("gsk_legacy_key")
+        );
+        assert_eq!(store.get("io.github.swbench.wordscript"), None);
+    }
+
+    #[test]
+    fn prefers_the_current_service_over_a_retired_one() {
+        let store = FakeSecretStore::with_entry(GROQ_KEY_SERVICE, "gsk_current_key");
+        store.set("io.github.swbench.wordscript", "gsk_legacy_key");
+
+        let api_key = read_api_key_from(&store).expect("read must succeed");
+
+        assert_eq!(api_key.as_deref(), Some("gsk_current_key"));
+    }
+
+    #[test]
+    fn reports_no_stored_key_instead_of_a_store_failure() {
+        let store = FakeSecretStore::default();
+
+        assert_eq!(read_api_key_from(&store).expect("read must succeed"), None);
+    }
+
+    #[test]
+    fn clearing_removes_the_retired_entry_so_the_key_cannot_return() {
+        let store = FakeSecretStore::with_entry(GROQ_KEY_SERVICE, "gsk_current_key");
+        store.set("io.github.swbench.wordscript", "gsk_legacy_key");
+
+        clear_api_key_in(&store).expect("clear must succeed");
+
+        assert_eq!(store.get(GROQ_KEY_SERVICE), None);
+        assert_eq!(store.get("io.github.swbench.wordscript"), None);
+        assert_eq!(read_api_key_from(&store).expect("read must succeed"), None);
+    }
+
+    #[test]
+    fn saving_leaves_no_copy_under_a_retired_service_name() {
+        let store = FakeSecretStore::with_entry("io.github.swbench.wordscript", "gsk_legacy_key");
+
+        write_api_key_to(&store, "gsk_current_key").expect("write must succeed");
+
+        assert_eq!(
+            store.get(GROQ_KEY_SERVICE).as_deref(),
+            Some("gsk_current_key")
+        );
+        assert_eq!(store.get("io.github.swbench.wordscript"), None);
     }
 
     #[test]

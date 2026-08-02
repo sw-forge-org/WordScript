@@ -1,6 +1,6 @@
 # WordScript Release Runbook
 
-Status: 2026-07-25
+Status: 2026-08-03
 
 ## Purpose
 
@@ -23,6 +23,24 @@ working in-place updater.
 
 Public release readiness remains blocked by transcription reliability outside
 `General Writing` and incomplete guided local setup.
+
+## Bundle Identifier Change (ADR 0037)
+
+The bundle identifier moved from `io.github.swbench.wordscript` to
+`io.github.sw-forge-org.wordscript`. Every build from this point on is a
+different application to the operating system than any earlier local install:
+
+- macOS re-asks for microphone and accessibility permission, because TCC keys
+  its grants to the identifier.
+- The Windows installer's upgrade code derives from the identifier, so an older
+  local install is not upgraded in place but sits alongside and must be removed
+  by hand.
+- The stored Groq API key migrates itself on first read; no manual step and no
+  release note is required for it.
+
+Release notes for the first release after this change must carry the macOS and
+Windows points. User data is unaffected — `core::paths::user_data_dir` derives
+`~/.config/WordScript` from the product name, not from the identifier.
 
 ## Pre-Build Gates
 

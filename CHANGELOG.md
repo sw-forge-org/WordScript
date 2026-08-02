@@ -87,6 +87,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **WordScript now identifies itself as SW forge everywhere, including to your
+  operating system.** The rename from `SW-Bench` to `sw-forge-org` had only
+  reached the interface. Underneath, the app still registered itself under the
+  old name — and so did the entry your Groq API key is stored in, and the
+  address the update check asks for a new release.
+
+  Your saved API key moves with the rename. The first time WordScript starts
+  after this update it finds the key under the old name, files it under the new
+  one, removes the old copy and notes the move in the runtime log. You do not
+  have to enter it again, and nothing about how it is stored changes: it stays
+  in the operating system's secret store, never in a configuration file.
+
+  **On macOS you have to grant microphone and accessibility permission once
+  more.** macOS ties those grants to the application's identifier, so with a new
+  identifier WordScript is a new application as far as the system is concerned.
+  There is no way around it. Your settings, history and log are untouched — they
+  were never tied to that identifier.
+
+  On Windows, a build from before this change is not replaced by an in-place
+  update but installed alongside; remove the old one by hand. This is exactly
+  why the change happens now, while there is no public installer, rather than
+  after one exists. See ADR 0037.
+
 - **Which words go to speech recognition is no longer yours to pick, and that is
   the point.** The switch existed, and using it the obvious way did the wrong
   thing: you would switch on your most important words — the long product names
