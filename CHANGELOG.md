@@ -87,6 +87,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contain. That wording is shared with Rewrite, where it is the same defect
   under another name. See ADR 0026.
 
+- **Three direction decisions are recorded; none of them is implemented.**
+  Documentation only — no runtime behaviour changes with this entry, and the
+  features below do not exist yet.
+
+  **The mode formerly called `agent` carries out an instruction; it does not
+  act** (ADR 0029). Text in, text out, one call, and no tool-calling surface —
+  stated as a contract rather than left as a current limit, because "agent" now
+  generally means something this mode deliberately is not. Side-effecting tools
+  stay out of the dictation path: a tool loop has no single session end (ADR
+  0018/0019), the delivery architecture presupposes a text result (ADR 0011a),
+  and speech is a low-confidence channel that must not drive actions (ADR 0016).
+  MCP splits into three questions — WordScript as a server is in scope, as a
+  client in the dictation path is rejected, and as a vocabulary source is
+  rejected as a distinct feature because it is the profile context with a remote
+  origin. The mode will be **renamed to `draft`**, which says what comes out of
+  it, and the name `Agents` goes to the settings area for coding agents; a
+  config written by an older version keeps working. `docs/ROADMAP.md` and
+  `docs/VISION.md` are corrected accordingly: they fenced MCP wholesale, which
+  is now wrong in one direction.
+
+  **Working with coding agents by voice is planned** (ADR 0030, ROADMAP Phase
+  8): an agent asks you out loud when it needs a decision, and you start work by
+  speaking instead of opening a repository. One configured orchestrator is the
+  only party WordScript talks to — it drives the coding agents, answers what it
+  can, and reaches you only for what it cannot. That is the whole point: an
+  agent cannot judge what is worth interrupting a person for, and a voice channel
+  without that filter would be worse than the terminal, because terminal output
+  can be skimmed and speech cannot. The channel is built so a monologue cannot
+  travel through it — one short spoken field, everything else silent in the
+  thread. It shares capture and transcription and then returns the transcript to
+  the caller rather than inserting it, so it is not a processing mode; the mode
+  axis stays the transform axis (ADR 0020).
+
+  That record was **revised on 2026-08-01**, before any of it was built, after
+  every external claim in it was checked against primary sources. Two arguments
+  turned out to rest on things that were not true — a client timeout that is
+  documented nowhere and a specification change that never happened — and both
+  were replaced; where a claim is only plausible, the word now appears. The
+  revision also settles what the first version left open: the orchestrator may
+  compose a question but returns your answer **verbatim**, because you can hear a
+  wrongly put question and cannot see a wrongly relayed answer. Asking and waiting
+  are split into two calls, so nothing ever blocks on a person. Everything
+  configurable — model, permissions, profile — hangs on the target you set up
+  once, so speech carries intent only and never configuration. Starting a run with
+  write permissions is confirmed on screen with a key, never by voice. Questions
+  are spoken one at a time, closed questions can be answered with one word, and a
+  misheard answer is never forwarded to the agent as a guess. Voices are picked by
+  how fast they start speaking rather than by price, and the measured value is
+  shown to you. Bridge answers stay out of the transcript history and are not run
+  through your text rules, which exist for text that lands in a document.
+
+  **A voice nudge is planned as one shot on known text** (ADR 0031, ROADMAP
+  Phase 9): revise what was just produced without dictating it again. The
+  assumption going in was that conversational state was missing; no competitor
+  ships multi-turn editing and one publicly retreated from it, so it is not
+  built. Entry is explicit and never inferred, because inferring it is where
+  shipped products break.
+
 - **Switching the active profile during a recording is refused instead of
   half-applied.** The profile decides the recognizer settings, and those are
   committed the moment recording starts — but the pipeline resolved the profile

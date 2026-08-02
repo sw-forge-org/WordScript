@@ -18,11 +18,25 @@ honest, not merely broader.
 - [ ] **Phase 5 - Local Runtime as a Product Option**
 - [ ] **Phase 6 - Guided Setup and Packaging**
 - [ ] **Phase 7 - Profile Catalogue and Settings Surface Rework**
+- [ ] **Phase 8 - Agents (voice for coding agents, both directions)**
+- [ ] **Phase 9 - Voice Nudge**
 
-Outside this pipeline are Notes, Search, Sync, MCP, assistant identities,
-accounts, hosted workspaces, and browser or computer use. They are V2 or later
-work and must not dilute V1. Visible Chat, Upload, Notes and Account settings
-layouts are previews only and do not change this phase boundary.
+Outside this pipeline are Notes, Search, Sync, assistant identities, accounts,
+hosted workspaces, and browser or computer use. They are V2 or later work and
+must not dilute V1. Visible Chat, Upload, Notes and Account settings layouts are
+previews only and do not change this phase boundary.
+
+**MCP is no longer a single fence** (ADR 0029). WordScript **as an MCP server**
+is planned work and appears as Phase 8 below. WordScript **as an MCP client in
+the dictation path** stays out, permanently rather than provisionally: latency,
+the one-commit session model (ADR 0018/0019), the insert contract and the low
+confidence of a speech channel each rule it out. MCP as a vocabulary source was
+considered and rejected as a distinct feature -- it is the profile context with
+a remote origin, and that surface already has a producer and a width (ADR 0021).
+Phase 8 does start processes from dictated text, which is not the same thing: the
+command and its permission profile are configured once on the target and never
+spoken, only the prompt argument is dictated, and a visible keyed confirmation
+precedes the start (ADR 0030).
 
 Unscheduled work with an open decision gate is filed below the phases, not
 inside them — currently one item, a second paste mechanism on Wayland.
@@ -216,6 +230,114 @@ were `cargo test` fixtures writing into the developer's real log file — see
 The perceived unreliability of "Copy and insert at cursor" is far better explained
 by the config revert fixed in ADR 0019, which forced profiles back to
 clipboard-only on every load.
+## Phase 8 - Agents (voice for coding agents, both directions)
+
+**Status:** planned. Decided in ADR 0030; nothing is implemented.
+
+**Goal:** Work with coding agents by voice instead of by reading terminals. One
+configured orchestrator asks the user out loud when it genuinely needs a
+decision, and the user starts work by speaking without opening a repository.
+
+**Scope:**
+
+- **One orchestrator is WordScript's only client.** Coding agents get no MCP
+  entry, no snippet and no per-repository setup -- the orchestrator starts and
+  drives them, and for them it is the human. It answers what it can and reaches
+  the user only for what it cannot. It may compose the question; it returns the
+  answer verbatim.
+- Transport is MCP, in the Tauri process (no daemon), bound to `127.0.0.1`,
+  bearer token plus `Origin` rejection, port written to a port file. No public
+  endpoint -- a remote agent cannot reach a local microphone either. A CLI and
+  hook-based delivery stay a later addition.
+- **Two tools.** `ask` returns immediately and waits for nobody; `await` blocks
+  on an event stream, bounded by a budget stored per harness preset. That split
+  is what keeps "no client ever waits on a human" literally true.
+- The channel cannot carry a monologue: one short spoken field with a length
+  limit, an optional small option list, and a context field that is shown and
+  never spoken. Exactly one model-generated spoken path exists -- completion and
+  error cues are WordScript's own text. Rate limit and per-target mute as the
+  hard backstop, visible in the thread and reported to the caller, never silent.
+- Spoken questions are serial: one open spoken question at a time, so an answer
+  belongs to it by construction rather than by inference. Every question has a
+  deadline.
+- The microphone belongs to the user: a request during a dictation gets the busy
+  answer, and the dictation hotkey ends a bridge session rather than being
+  refused. An output guard keeps it from speaking into a call.
+- Starting work is one primitive: a **target** -- label, directory, profile,
+  default model, and roles (`inspect` read-only, `work` writing, `resume`), each
+  with its own command template and permission profile. Configuration hangs on
+  the target, never on the utterance. Runs are headless; a discussion is a
+  sequence of runs with resume, not an open connection.
+- A target is a thread; WordScript owns the thread and supplies it compacted on
+  each run, using harness resume where it exists without depending on it.
+- Immediate local acknowledgement on start (cue plus thread entry); the start
+  confirmation is visible and by key, never by voice.
+- Two answer forms: option questions matched purely lexically with an undo
+  window, open questions confirmed before they leave with `edit` retained.
+- Text-to-speech chosen by time-to-first-byte, not by price: Cartesia Sonic-3 as
+  the default preset with the measured TTFB shown, local Kokoro-82M as an
+  honestly labelled privacy mode.
+- Cascaded barge-in implemented natively in Rust -- Silero VAD plus Smart Turn
+  v3, cancelling playback and generation on detected speech, recording with
+  pre-roll. The answer window after a question is the default and needs no mode;
+  continuous listening stays an option and requires a visible microphone-active
+  indicator.
+- The surface is a pill with two wings: targets and their state on the left, the
+  thread on the right. Compact and New Session are controls there. Tray state and
+  OS notifications carry the background case.
+- Its own settings area, named `Agents`.
+
+**Out of scope:** modelling agents. WordScript starts and supervises **one**
+configured orchestrator and knows nothing about what it spawns -- no agent
+lifecycle, no per-repository session state, no scheduling. Delegation is the
+orchestrator's job and is configured in its instruction file, not in this
+product. Also out: rebuilding the CLI's controls in the overlay, and mobile or
+remote operation.
+
+**Known limits to state rather than discover:** nothing reaches a running agent
+through MCP unprompted -- the 2026-07-28 revision abolished server-initiated
+requests, so delivery happens at boundaries. Harness-specific channels beside MCP
+can do more but are not portable and are not part of this design. A headless run
+that ends after eight minutes with an open decision has spent eight minutes; that
+is the price of having no back channel. And aider neither supports MCP nor calls
+tools autonomously, so "works with every agent CLI" is false as written and must
+not be claimed.
+
+**Open before implementation:** the rate-limit thresholds, the answer-window
+lengths and the silence threshold (all measurement questions), whether target runs
+ever get a mid-run channel, and whether Codex starts MCP servers inside or outside
+its sandbox -- undocumented and to be tested.
+
+**Success measure:** a task can be started, clarified and finished by voice
+without opening the repository -- and the share of agent questions the
+orchestrator answers by itself is measured, because that number is what decides
+whether this design was right.
+
+## Phase 9 - Voice Nudge
+
+**Status:** planned. Decided in ADR 0031; nothing is implemented.
+
+**Goal:** Revise the text just produced without dictating the whole passage
+again.
+
+**Scope:**
+
+- One spoken instruction produces one revised text. No conversational state.
+- Scope is WordScript's own last output from the scratchpad, not the operating
+  system's text selection.
+- Entered explicitly, never inferred from the transcript.
+- Committed through the existing `clipboard_only` preview surface.
+- Guarded against drift by a length and similarity check, on the pattern
+  `prompt_enhance` already uses.
+
+**Out of scope:** multi-turn refinement, and reading the OS selection. The first
+is unvalidated -- no competitor ships it and one publicly retreated from it. The
+second moves the feature onto the Wayland portal layer for a scope the product
+can already serve without it.
+
+**Success measure:** a nearly-right dictation can be corrected by one spoken
+instruction, and a rewrite unrelated to its input is refused rather than shown.
+
 
 The real gaps are structural, and they hold regardless of any one machine:
 

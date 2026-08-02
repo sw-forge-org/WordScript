@@ -83,6 +83,22 @@ visible control.
 This direction is real, but it is **not** the current V1 core and must not
 blur the active dictation, recovery and support focus.
 
+**Two items in that list have since been separated** (ADR 0029, ADR 0030).
+"API and MCP" moved closer, and further than first recorded: WordScript exposes
+itself as an MCP server so a coding agent can ask its user a question by voice
+and receive the spoken answer -- and the same channel runs the other way, so work
+can be started by speaking instead of by opening a repository. One configured
+orchestrator is the only party WordScript talks to; it drives the coding agents
+and reaches the user only for decisions it cannot make. This is scheduled work
+(ROADMAP Phase 8). "A later voice assistant that executes tools" did not move,
+and is not merely unscheduled -- side-effecting tools are
+ruled out of the dictation path permanently, because a low-confidence speech
+channel must not drive actions and because a session that ends in exactly one
+commit has nowhere to put a tool loop. If such a surface is ever built it is an
+explicitly invoked asynchronous one, beside the dictation path rather than
+inside it. Browser use and computer use stay where they are: far, and
+unscheduled.
+
 The current settings shell exposes Chat, Upload, Notes and Account only as
 clearly labeled layout previews. Their sample or component-local state is not
 evidence that the later platform behavior exists.

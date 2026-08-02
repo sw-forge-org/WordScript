@@ -142,6 +142,39 @@ Status: Proposed | Accepted | Superseded by NNNN
   a transform assembled from two profiles on top of a transcription that had
   already run under the first.
 
+- [0029](0029-the-agent-mode-carries-out-an-instruction-it-does-not-act.md): the
+  mode is text in, text out, one call, and gains no tool-calling surface.
+  Side-effecting tools stay out of the dictation path -- latency, the
+  one-commit session model, the insert contract and the low confidence of a
+  speech channel each rule them out. MCP is split into three questions: server
+  in scope, client in the dictation path rejected, client for vocabulary
+  rejected as a distinct feature. The mode is renamed to `draft`, because ADR
+  0030 gives the product a settings area named `Agents`.
+
+- [0030](0030-one-orchestrator-speaks-for-every-agent.md): one orchestrator is
+  WordScript's only client, and coding agents are configured for nothing -- for
+  them the orchestrator is the human. It answers what it can and reaches the user
+  only for what it cannot, which replaces a judgement no coding agent can make
+  ("is this worth interrupting a person") with two it can. It may compose the
+  question; it returns the answer verbatim. The channel cannot carry a monologue:
+  one spoken field, length limited, and exactly one model-generated spoken path.
+  Two tools -- `ask` returns immediately, `await` blocks on an event stream --
+  which is what keeps "no client ever waits on a human" literally true. Server-
+  initiated requests were abolished on 2026-07-28, so nothing reaches a running
+  agent through MCP unprompted; harness channels beside MCP can, and are named
+  rather than denied. Starting work is the same primitive: a target with roles,
+  carrying all configuration so the utterance carries only intent, launched
+  headless with a visible keyed confirmation. Revised 2026-08-01 before it was
+  first committed, after every external claim was checked against primary
+  sources; the revision withdrew an invented timeout and an invented
+  specification change, and closed seven of nine open questions (authentication,
+  port and lifecycle, TTS, VAD, history, profile, text rules).
+
+- [0031](0031-a-voice-nudge-is-one-shot-on-known-text-and-entered-explicitly.md):
+  a voice nudge is one shot on WordScript's own last output, entered explicitly
+  and never inferred, committed through the existing preview surface and guarded
+  against drift. Conversational state was the assumption going in; no competitor
+  has shipped it and one retreated from it, so it is not built.
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
