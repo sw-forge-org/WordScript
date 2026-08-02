@@ -162,7 +162,13 @@ pub struct NativeCaptureConfig {
     pub language: String,
     pub language_locked: bool,
     pub prompt: String,
+    /// The opted-in subset, for the recognizer's initial prompt only.
     pub stt_hints: String,
+    /// Every vocabulary term, regardless of the recognizer opt-in. Granular
+    /// profile context for the transform stages, and the input to deterministic
+    /// repair (ADR 0033).
+    #[serde(default)]
+    pub vocabulary: Vec<String>,
     pub work_mode: TextProfileWorkMode,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
@@ -207,6 +213,7 @@ impl Default for NativeCaptureConfig {
             language: String::new(),
             language_locked: false,
             prompt: String::new(),
+            vocabulary: Vec::new(),
             stt_hints: String::new(),
             profile_label: String::new(),
             agent_name: super::config::DEFAULT_AGENT_NAME.to_string(),
@@ -259,10 +266,13 @@ impl NativeCaptureConfig {
             local_best_of: speech.local_best_of,
             language: speech.language,
             language_locked: speech.language_locked,
-            // Only the entries the user explicitly allowed into the prompt.
-            // Everything else in the vocabulary is applied deterministically
-            // after transcription (ADR 0017).
-            stt_hints: active_profile.prompt_hint_phrases().join("\n"),
+            // The slots the runtime allocated, not a per-entry opt-in. The
+            // switch was there, and its intuitive use spent every slot on the
+            // long terms that repair already recovers (ADR 0035). Everything in
+            // the vocabulary still reaches the transform stages and the
+            // deterministic repair either way.
+            stt_hints: active_profile.recognizer_slot_phrases().join("\n"),
+            vocabulary: active_profile.vocabulary_phrases(),
             prompt: active_profile.prompt,
             work_mode,
             dictionary_entries: active_profile.dictionary_entries,
@@ -302,7 +312,6 @@ impl NativeCaptureConfig {
             self.local_prompt_carry,
         );
         let preview = super::transcription_hints::analyze_transcription_bias_with_mode(
-            &self.prompt,
             &self.stt_hints,
             &self.dictionary_entries,
             &context,
@@ -1768,8 +1777,12 @@ mod tests {
         assert_eq!(request.carry_initial_prompt, None);
     }
 
+    /// The context field never reaches the recognizer, in any bias mode and
+    /// under any legacy manual flag (ADR 0032). It carries topics, and an
+    /// initial prompt can only be conditioned on literal tokens. The profile's
+    /// lexical channel is `vocabulary_hints`, which arrives as `stt_hints`.
     #[test]
-    fn manual_bias_reaches_the_prompt_the_preview_promised() {
+    fn the_profile_context_field_never_reaches_the_recognizer() {
         let profile_terms = "WordScript\nGroq";
         let conservative = NativeCaptureConfig {
             prompt: profile_terms.to_string(),
@@ -1788,20 +1801,62 @@ mod tests {
             ..Default::default()
         };
 
-        let conservative_prompt = conservative
-            .resolve_transcription_request("/tmp/capture.wav", 20_000)
-            .prompt;
-        let manual_prompt = manual
-            .resolve_transcription_request("/tmp/capture.wav", 20_000)
-            .prompt;
+        for config in [conservative, manual] {
+            let prompt = config
+                .resolve_transcription_request("/tmp/capture.wav", 20_000)
+                .prompt
+                .unwrap_or_default();
 
-        assert_ne!(
-            conservative_prompt, manual_prompt,
-            "opting into profile terms must change the outbound prompt"
-        );
-        assert!(manual_prompt
-            .unwrap_or_default()
-            .contains("WordScript"));
+            assert!(
+                !prompt.contains("WordScript") && !prompt.contains("Groq"),
+                "context terms must not reach the recognizer, got: {prompt}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_opted_in_vocabulary_is_what_the_recognizer_receives() {
+        let config = NativeCaptureConfig {
+            prompt: "platform constraints".to_string(),
+            stt_hints: "WordScript\nTauri".to_string(),
+            ..Default::default()
+        };
+
+        let prompt = config
+            .resolve_transcription_request("/tmp/capture.wav", 20_000)
+            .prompt
+            .expect("vocabulary produces an initial prompt");
+
+        assert!(prompt.contains("Likely phrases: WordScript; Tauri"));
+        assert!(!prompt.contains("platform constraints"));
+    }
+
+    /// The state most users are in. It used to send the provider no initial
+    /// prompt at all, which is not a neutral request but an invitation for the
+    /// decoder to fall back on its subtitle training (ADR 0036). Asserted on
+    /// the request the runtime actually builds, because the defect this repeats
+    /// is a floor that shows up in the preview and never in the call
+    /// (`stt-hints-bypass-the-vocabulary-opt-in.md`).
+    #[test]
+    fn an_unconfigured_profile_still_sends_the_recognizer_the_blank_state_floor() {
+        let cloud = NativeCaptureConfig::default();
+        let local = NativeCaptureConfig {
+            provider: super::super::providers::LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            ..Default::default()
+        };
+
+        for config in [cloud, local] {
+            let provider = config.provider.clone();
+            let prompt = config
+                .resolve_transcription_request("/tmp/capture.wav", 20_000)
+                .prompt;
+
+            assert_eq!(
+                prompt.as_deref(),
+                Some(super::super::transcription_hints::BLANK_STATE_RECOGNIZER_PROMPT),
+                "provider {provider} got no floor"
+            );
+        }
     }
 
     fn loud_block(sample_count: usize) -> Vec<i16> {

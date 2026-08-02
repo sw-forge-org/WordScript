@@ -286,7 +286,10 @@ Additional rules:
 - transcription reliability outside `General Writing` or no profile is still
   not robust enough; individual curated profiles like `Customer Success
   Replies` can still visibly worsen raw transcripts with multilingual
-  fragments, fantasy tokens and topic drift
+  fragments, fantasy tokens and topic drift. This gap gains a second site once
+  Phase 8 exists: a bridge session takes its profile from the target rather than
+  from the focused application (ADR 0030), so profile quality then decides how
+  well a spoken answer to an agent is transcribed as well
 - the AI cleanup step no longer answers dictated questions; an explicit
   guardrail in `normalize_correction` catches cases where the model removes a
   question mark from the output; regression tests for this path exist
@@ -303,13 +306,51 @@ Additional rules:
   vocabulary gets pushed into Whisper's initial prompt -- a question that needs
   Whisper internals to answer, and whose only safe setting (Conservative) was
   also the one with no effect. Vocabulary is now applied deterministically after
-  transcription; a single per-entry "Hint the recognizer" toggle, off by
-  default, is the only remaining way into the prompt. Dictionary terms left the
-  prompt entirely. The Profiles tab is three panels (Vocabulary, Replacements,
-  Snippets) instead of four
-- `TextProfile.schema_version` migrates existing profiles once on load: the
-  `stt_hints` blob becomes `vocabulary_hints` entries, Manual opt-ins are
-  preserved per entry, and rejected lines are logged rather than lost
+  transcription, and which terms additionally reach the prompt is decided by the
+  runtime (ADR 0035) rather than by the per-entry toggle this originally
+  shipped with. Dictionary terms left the prompt entirely. The Profiles tab is
+  three panels (Vocabulary, Replacements, Snippets) instead of four
+- the vocabulary list fills itself (ADR 0035). `core::vocabulary_learning` reads
+  the correction stage's own output -- raw transcript against delivered text --
+  and records a term when a replacement looks like a misrecognized name rather
+  than a rewording. Two sightings in two deliveries promote it into the profile;
+  a hand correction in the overlay promotes on sight. Candidates live in
+  `vocabulary-candidates.json` beside the history file, promotion writes through
+  the config file lock, and a tab slides out of the overlay pill's left edge for
+  1.9s naming the term. That tab animates `width` rather than `transform` or
+  `opacity` (both composited, both the ghosting path), never calls `set_size`,
+  and falls back to a marker dot where the term does not fit rather than
+  truncating it. Failures are logged and swallowed -- learning runs after the
+  insert and never fails a delivery
+- the recognizer's few slots are allocated by the runtime, shortest term first
+  and then by observation count, because the intuitive allocation is
+  systematically backwards: it spends every slot on the long terms deterministic
+  repair already recovers. `use_as_prompt_hint` is a migration remnant read by
+  nothing. Words & names is a display -- origin, repair count and whether the
+  recognizer carries it, all resolved from the runtime's analysis rather than
+  recomputed in React (ADR 0034 rule, ADR 0035 content). Manual add and remove
+  stay
+- correctness holds without a configured profile (ADR 0036). Two mechanisms
+  aimed at correctness -- the replacement dictionary and the vocabulary -- are
+  opt-in personalization, and between them there was no floor. The recognizer
+  now always receives `BLANK_STATE_RECOGNIZER_PROMPT`, a constant register line
+  with no profile content in it, instead of no initial prompt at all; it applies
+  to both lanes, passes the same budget and truncation as any other prompt, is
+  shown in the recognizer preview, and never overrules `bias_mode=off` or
+  `local_prompt_strength=off`. Whether it reduces recognizer hallucination is
+  not measured -- it is the documented mitigation for a documented failure mode
+- `spelled_letter_merge_reverted` is the fifth guardrail in
+  `normalize_correction` and the only one that repairs instead of discarding:
+  where the original holds a run of at least three isolated single letters, a
+  correction may not fuse them into a token the original does not contain. Gated
+  on a measurement fixed in advance -- `classify_invented_tokens` over 197
+  shipped raw/output pairs, 12 verified real (6.1 %). Two of the three observed
+  categories stay open and no rule that only sees the transcript reaches them;
+  see `docs/known-issues/cleanup-invents-tokens-on-broken-input.md`
+- `TextProfile.schema_version` is 4 and migrates existing profiles once on load:
+  the `stt_hints` blob becomes `vocabulary_hints` entries, rejected lines are
+  logged rather than lost, and the version-4 step rewrites no entry, so a
+  learned term is never relabelled as hand-typed
 - a *single* modifier as a trigger (double-tap Shift, push-to-talk on one key)
   works on Linux and not on Windows or macOS. It depends on the interruption
   signal that comes with the observed key edges, and only the Linux path reports
@@ -469,9 +510,11 @@ Additional rules:
   not implemented
 
 Explicitly not the next work site of this product phase are `openwhispr`
-topics like notes, search, sync, MCP or assistant scope. These stay
-downstream until WordScript has become a more personal and trustworthy daily
-dictation product.
+topics like notes, search, sync or assistant scope. These stay downstream until
+WordScript has become a more personal and trustworthy daily dictation product.
+MCP is no longer part of that block: as a server it is scheduled work (ROADMAP
+Phase 8, ADR 0029/0030), while as a client inside the dictation path it is
+rejected permanently rather than deferred.
 
 ## Phase status (V1 consolidation)
 

@@ -41,6 +41,11 @@
               "id": {"type": "string"},
               "prompt": {"type": "string"},
               "stt_hints": {"type": "string"},
+              "vocabulary": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Individual terms. Granular profile context for every LLM stage, and the input to deterministic repair. No spoken form -- a term has no reliable left-hand side (ADR 0033)."
+              },
               "dictionary_entries": {"type": "array"},
               "snippet_entries": {"type": "array"}
             }
@@ -51,14 +56,12 @@
           },
           "biased_correction": {
             "type": "string",
-            "description": "Optional: the LLM's biased/incorrect correction attempt, used to assert guardrail rejection. If null, the test asserts a clean pass-through of the raw transcript."
+            "description": "The reply the correction model returned. Present only where a guardrail is under test: corpus_drives_correction_guardrail_assertions runs it through normalize_correction and asserts expected_post_correction. With expected_guardrail null the reply must survive byte-identical, which is how a guardrail is kept from growing teeth it was never meant to have."
           },
           "expected_transcription_bias": {
             "type": "object",
-            "description": "Expected outcome of the bias analysis path before correction",
+            "description": "Expected outcome of the bias analysis path before correction. The profile context field is not part of it: it holds topics and never reaches the recognizer (ADR 0032).",
             "properties": {
-              "profile_hints_accepted": {"type": "array", "items": {"type": "string"}},
-              "ignored_profile_lines_count": {"type": "integer"},
               "dictionary_terms": {"type": "array", "items": {"type": "string"}},
               "stt_hints": {"type": "array", "items": {"type": "string"}}
             }
@@ -92,6 +95,24 @@
               "language_switch_flagged": {"type": "boolean"},
               "language_drift_stripped": {"type": "boolean"}
             }
+          },
+          "expected_vocabulary_repair": {
+            "type": "object",
+            "description": "What deterministic repair must do to raw_transcript. Negative cases carry the same shape with text equal to the input, and they are the ones that matter: a missed repair is readable text, a wrong one is a word the user never said (ADR 0033).",
+            "required": ["text"],
+            "properties": {
+              "text": {"type": "string"},
+              "applied": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Terms whose repair must be reported. Empty asserts nothing was applied."
+              }
+            }
+          },
+          "expected_vocabulary_candidates": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Terms vocabulary_learning must read out of the raw_transcript / expected_post_correction pair, in order. An empty array is an assertion, not an omission: rewording, filler removal, sentence restructuring and capitalization must all yield nothing, and a term the profile already carries is a hit rather than a find (ADR 0035)."
           },
           "expected_post_correction": {
             "type": "string",

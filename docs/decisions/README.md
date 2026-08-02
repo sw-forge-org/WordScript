@@ -142,6 +142,13 @@ Status: Proposed | Accepted | Superseded by NNNN
   a transform assembled from two profiles on top of a transcription that had
   already run under the first.
 
+- [0026](0026-the-agent-produces-an-artifact-not-an-answer.md): the agent prompt
+  opens by naming what its output is and who it is addressed to, ahead of the
+  profile context and the style block. Every rule it carried before was
+  negative, and a conversational reply satisfied all of them -- the mode
+  answered the user where it had been told to write to a third party, and
+  supplied invented detail along the way.
+
 - [0029](0029-the-agent-mode-carries-out-an-instruction-it-does-not-act.md): the
   mode is text in, text out, one call, and gains no tool-calling surface.
   Side-effecting tools stay out of the dictation path -- latency, the
@@ -175,6 +182,54 @@ Status: Proposed | Accepted | Superseded by NNNN
   and never inferred, committed through the existing preview surface and guarded
   against drift. Conversational state was the assumption going in; no competitor
   has shipped it and one retreated from it, so it is not built.
+- [0032](0032-the-profile-context-is-topics-and-the-recognizer-never-reads-it.md):
+  the profile context holds topics and reaches the LLM stages only;
+  `vocabulary_hints` is the sole profile path to the recognizer. The recognizer
+  had kept reading the context field after ADR 0017 built its replacement, so
+  correctly written topics were filtered there and reported as rejected — on a
+  path no reachable configuration still used. Also: a measurement names the data
+  it ran against. ADR 0021's report described a shipped seed and measured a local
+  copy two months out of date.
+- [0033](0033-a-term-has-no-left-hand-side.md): a term carries no spoken form,
+  because a recognizer mangles a name differently every time. Words & names holds
+  the term alone and reaches every LLM stage; Replacements keeps its left column
+  but is scoped to shorthand the user says on purpose. Repair is layered with the
+  deterministic pass as the floor, since it is the only one that runs in Verbatim,
+  and it declines wherever it cannot decide. A term switched on past the
+  recognizer's slot budget is reported instead of dropped.
+- [0034](0034-a-limit-belongs-to-the-control-that-spends-it.md): a limit is
+  stated where it is spent. Reporting the over-limit terms in a card of their own
+  left the switch that caused the loss showing no change at all, so each row now
+  states its own fate and the two distant cards are gone. Per-row status is
+  resolved from the runtime's analysis, never recomputed — hence
+  `VocabularyRepairCoverage`, which lets the panel name the repair floor without
+  restating it. Words & names gets reordering, because there order decides which
+  terms travel at all. Also: the preview now runs the repair pass the transform
+  runs, and the copy that still taught the pre-0033 habit is corrected.
+- [0035](0035-a-vocabulary-is-filled-by-observation-not-by-a-form.md): a
+  vocabulary is filled by observation, not by a form — the knowledge of which
+  word the recognizer gets wrong only exists in the second the text comes out
+  wrong, which is a second nobody spends in Settings. The correction LLM is the
+  teacher and its output is the training signal; promotion needs two sightings,
+  a hand correction counts as two. The recognizer's slots are allocated by the
+  system because the intuitive allocation is systematically wrong: it spends
+  every slot on the long terms deterministic repair already recovers. Words &
+  names becomes a display. Also: Prompt Enhance never received the profile's
+  terms at all, and ADR 0033's claim that learning was blocked on new storage
+  was wrong.
+- [0036](0036-correctness-holds-without-a-configured-profile.md): correctness
+  holds at zero configuration — the dictionary and the vocabulary are
+  personalization, and a fix that presupposes a maintained profile only helps
+  someone who has already been bitten. The recognizer therefore gets a constant
+  register floor instead of no initial prompt at all, in both lanes and visible
+  in the preview, while a channel the user switched off stays off. Where a
+  deterministic rule can hold the line it does: a correction may not fuse a run
+  of spelled-out single letters into a token the original never had, and that
+  guardrail repairs the token rather than discarding the whole correction. Gated
+  on a measurement fixed in advance (12 of 197 shipped pairs, 6.1 %), not on a
+  choice between plausible options — which is how the last two prompt rules got
+  their wrong justification.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
@@ -201,7 +256,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021.
+takes 0021. (As of 2026-08-02 the filed range runs through 0036; the next
+decision takes 0037.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

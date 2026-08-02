@@ -361,17 +361,25 @@ Rules of this stack:
 
 ### STT bias
 
-- `prompt` stays primarily transcription context for the STT request; `lib.rs`
-  builds a bounded bias prompt from it for Groq and (depending on
-  `local_prompt_strength`) for `local_preview`, with profile context,
-  explicit `stt_hints` and dictionary spellings.
-- the bias prompt is conservatively filtered: generic profile categories or
-  broad topic lists are not forwarded to the recognizer; only concrete lexical
-  hints, explicit `stt_hints` and preferred spellings remain. This filter is
-  **recognizer-only**. It also gated the cleanup prompt until ADR 0021, which
-  found that reuse was never decided and measured it as unnecessary there; the
-  transform prompts now take profile context through `core::profile_context`,
-  identically in every mode.
+- **`prompt` does not reach the recognizer at all** (ADR 0032). It holds topics,
+  and an initial prompt conditions the decoder on literal tokens, so a topic
+  cannot bias it — `platform constraints` raises the odds of those two words,
+  never of the service names the topic stands for. It goes to the LLM stages
+  only, through `core::profile_context`, identically in every mode (ADR 0021).
+- what the recognizer receives is assembled by
+  `capture::NativeCaptureConfig::resolve_transcription_request` from
+  `transcription_hints::analyze_transcription_bias_with_mode`, and it is one
+  line: `Likely phrases: …`, from `vocabulary_hints` and nothing else. Dictionary
+  spellings left the prompt entirely (ADR 0017) — they are applied
+  deterministically after transcription, so the prompt copy was always redundant,
+  and a longer initial prompt is itself a documented cause of repetition loops
+  and language drift.
+- the lexical filter that once judged this input is gone. It rejected topic
+  lines, which is correct for a recognizer and was applied to a field that never
+  travelled there; it also gated the cleanup prompt until ADR 0021 found that
+  reuse was never decided and measured it as unnecessary. What remains is a
+  word-shape predicate (`is_stt_hint_candidate`) over the term list, not over the
+  context field.
 - what a mode may *do* with that context is not identical. Cleanup and Rewrite
   use it to stay near their input; Agent may only use it to read the instruction
   — spellings, proper nouns, domain — and is explicitly forbidden from deriving
@@ -382,20 +390,42 @@ Rules of this stack:
   Agent and Rewrite only. Its register sets form, never wording: slang and youth
   language come from the user's rules and writing sample, never from the model.
   Default `off` leaves every prompt byte-identical.
-- STT bias composition is profile-bound via `TextProfileWorkMode.bias_mode`
-  (`Conservative` default, `Manual` user-decided, `Off`); the `bias_policy_migrated`
-  migration initializes existing profiles to Conservative without data loss.
-- `text_rules::analyze_document_with_context` propagates the active bias
-  policy into `transcription_bias.cloud_prompt_preview` and
-  `local_prompt_preview`; the UI renders both preview strings so it is
-  visible what each provider actually gets.
-- if profile context, `stt_hints` or dictionary spellings still produce worse
-  raw transcripts than `General Writing`, that is a contract break of this
-  path; multilingual fragments, fantasy tokens or topic drift are then a
-  core problem of the dictation lane, not "just profile noise".
+- which vocabulary terms reach the initial prompt is decided by
+  `config::select_recognizer_slots`, not by a per-entry switch (ADR 0035). Terms
+  below `vocabulary_repair::min_repairable_chars()` lead, then the most often
+  mangled, filtered by the recognizer's own form rules and capped at
+  `MAX_TRANSCRIPTION_STT_HINTS`. `use_as_prompt_hint` survives as a migration
+  remnant read by nothing. The selection is an addition to the vocabulary, never
+  a filter on it: every term still reaches repair and every LLM stage.
+- `core::vocabulary_learning` is the only writer of learned terms. It sits after
+  the insert in both delivery paths, diffs the raw transcript against the
+  delivered text, and promotes a candidate into the profile on its second
+  sighting. It owns `vocabulary-candidates.json` and reuses
+  `vocabulary_repair`'s normalizer, tokenizer and distance so a term it proposes
+  is one that layer can act on.
+- `TextProfileWorkMode.bias_mode` and `manual_bias` are still consulted by
+  `BiasRequestContext::from_work_mode` on the capture path, but no reachable
+  configuration sets anything other than the `Conservative` default: ADR 0017
+  removed the bias-policy panel and nothing replaced it. Treat them as a
+  migration remnant with a live read, not as a control — a surface that offers
+  them again would be reintroducing the knob ADR 0017 retired.
+- `text_rules::analyze_document_with_context` builds the same preview the
+  capture path sends, through the same
+  `analyze_transcription_bias_with_mode`, into
+  `transcription_bias.cloud_prompt_preview` and `local_prompt_preview`. The
+  settings panel renders both, and it asks `config::select_recognizer_slots`
+  for the term selection rather than reproducing the rule — a preview that
+  recomputes the rule is a preview that eventually promises an initial prompt
+  the provider never received.
+- if the recognizer's term line still produces worse raw transcripts than
+  `General Writing`, that is a contract break of this path; multilingual
+  fragments, fantasy tokens or topic drift are then a core problem of the
+  dictation lane, not "just profile noise".
 - dictionary and snippet matches are literal and case-insensitive.
-- snippet triggers are not part of STT bias automatically; short spoken cues
-  or alternative phrases must be maintained explicitly via `stt_hints`.
+- snippet triggers never enter the recognizer's prompt. A short spoken cue that
+  the recognizer keeps mangling belongs in Words & names, which is also where
+  the runtime puts one it has learned; `stt_hints` is a migration remnant and
+  editing it changes nothing.
 - local text profiles encapsulate `prompt`, optional `stt_hints`, dictionary,
   snippets and work-mode defaults; the primary work-mode contract is
   `processing_mode` (`cleanup`/`rewrite`/`agent`/`prompt_enhance`/`verbatim`)

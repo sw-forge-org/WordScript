@@ -1,20 +1,24 @@
 //! The profile's context lines in the one shape every mode uses.
 //!
-//! `TextProfile.prompt` is free text a user maintains. Every mode that talks to
-//! an LLM puts it into its prompt, and before ADR 0021 each did so differently:
-//! Cleanup and Rewrite pushed it through the *transcription* hint filter, Agent
-//! and Prompt Enhance took it raw and unbounded. That split was never decided —
-//! it arrived when `filter_profile_hint_lines` was reused for the correction
-//! prompt in a commit about STT bias.
+//! `TextProfile.prompt` is free text a user maintains, holding the topics they
+//! dictate about. Every mode that talks to an LLM puts it into its prompt, and
+//! before ADR 0021 each did so differently: Cleanup and Rewrite pushed it
+//! through the *transcription* hint filter, Agent and Prompt Enhance took it raw
+//! and unbounded. That split was never decided — it arrived when the recognizer's
+//! hint filter was reused for the correction prompt in a commit about STT bias.
+//!
+//! That filter is gone entirely (ADR 0032): the recognizer does not read this
+//! field at all, because an initial prompt can only be conditioned on literal
+//! tokens and this field holds topics.
 //!
 //! What stays here is the shape: normalized, deduplicated, truncated per line
 //! and capped. What does *not* live here is how strongly a mode may lean on the
 //! context — that is the instruction each caller wraps around these lines, and
 //! it belongs with the mode, not with the profile.
 //!
-//! Deliberately no word-shape predicate. `is_profile_hint_candidate` asks "could
-//! Whisper mis-hear this token", which is the right question for an initial
-//! prompt (ADR 0017) and the wrong one for a chat prompt.
+//! Deliberately no word-shape predicate. "Could Whisper mis-hear this token" is
+//! the right question for an initial prompt (ADR 0017) and the wrong one for a
+//! chat prompt — and this field never reaches an initial prompt anyway.
 
 /// The context block is bounded in characters, not in lines.
 ///
@@ -126,10 +130,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keeps_multi_word_lowercase_lines_that_the_stt_filter_drops() {
-        // The six lines the transcription filter rejects on the curated
-        // Product-and-engineering profile. Measured against 96 real
-        // transcripts: none of them ever reached a cleanup output (ADR 0021).
+    fn keeps_multi_word_lowercase_lines_a_lexical_filter_would_drop() {
+        // Topic lines are what this field is for (ADR 0032), and they are
+        // exactly the shape a recognizer-oriented filter rejects. Nothing may
+        // reintroduce that predicate here.
         let lines = profile_context_lines(
             "feature names\nbug IDs\nrelease scope\nAPI names\nplatform constraints\nservice names\nmigration steps\ninfra constraints",
         );
@@ -151,9 +155,10 @@ mod tests {
 
     #[test]
     fn every_curated_profile_fits_with_room_to_grow() {
-        // The shipped profiles are the case the old line cap sat exactly on.
-        // They must not merely fit; there has to be headroom, or the first
-        // line a user adds disappears.
+        // An eight-line profile is the case the old line cap sat exactly on,
+        // and it is the shape every curated seed ships. They must not merely
+        // fit; there has to be headroom, or the first line a user adds
+        // disappears.
         let curated = "feature names\nbug IDs\nrelease scope\nAPI names\nplatform constraints\nservice names\nmigration steps\ninfra constraints";
         let budget = profile_context_budget(curated);
 

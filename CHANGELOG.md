@@ -33,6 +33,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Words & names fills itself.** You never had a chance of filling it by hand.
+  To do that you would have to know in advance which words speech recognition
+  will get wrong, and you only find that out in the second the text comes out
+  wrong — a second you spend inside whatever you were doing, not inside
+  Settings. So the list stayed empty and everything built on it was worth
+  nothing.
+
+  It learns from the correction that already happens. When the AI cleanup turns
+  "cuber netties" into "Kubernetes", that is proof of three things at once:
+  the recognizer cannot spell the word, the word is yours, and the sentence was
+  enough to identify it. After the same word has been fixed twice, it is added
+  to the profile. Correct a word yourself in the overlay before sending it and
+  it is added straight away — you saw the wrong text and wrote the right one,
+  and there is nothing left to confirm.
+
+  Twice, not once, because the cleanup rephrases too and one near-miss can be a
+  coincidence. Rewording, removed fillers, shortened sentences and capitalized
+  first words are all ignored on purpose.
+
+  This is not a detour through the AI to reach a result the AI already gave you.
+  A learned word is repaired instantly and for free, with no model call, and it
+  works in Verbatim where no AI runs at all. It also makes speech recognition
+  get the word right in the first place, which no amount of fixing afterwards
+  can do.
+
+- **The overlay shows you the word it just learned.** A small tab slides out of
+  the pill's left edge, names the word, and withdraws — under two seconds, once,
+  with nothing to click and nothing to answer. On a wide pill, where there is no
+  room for the word, you get the marker alone rather than a name cut in half.
+  The full list lives in Settings -> Vocabulary. See ADR 0035.
+
 - **A communication style per profile**, in Settings -> Modes, read by Agent and
   Rewrite. A register — Authority, Client, Colleague, Friend, Quick message —
   plus a length, your own rules, and a sample of your own writing. The register
@@ -56,36 +87,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Every prompt is now written in English**, whatever language you dictate in.
-  English instructions are followed more reliably. Each prompt states explicitly
-  that the *output* language is the dictated one, so this does not change what
-  comes back — the agent prompt forbids answering in the language of its own
-  instructions, and the German `um`-is-a-preposition guard is unchanged because
-  it is about the dictated language, not the prompt's.
+- **Which words go to speech recognition is no longer yours to pick, and that is
+  the point.** The switch existed, and using it the obvious way did the wrong
+  thing: you would switch on your most important words — the long product names
+  — and those are exactly the ones that get repaired reliably afterwards anyway.
+  The words that actually need the slot are the short ones. "Tauri" is five
+  characters; once it has come back as "Tori" there is nothing left to work
+  with, because no rule can tell those two apart without putting a word in your
+  mouth. Operating the switch sensibly spent every slot on the words that needed
+  it least.
 
-### Fixed
+  So the runtime allocates the few slots itself, shortest first, then by how
+  often a word has actually been mangled. Each row says whether the recognizer
+  is carrying it. The switch, the capacity counter and the reordering buttons
+  are gone — there is no longer a decision behind them. Adding and removing a
+  word by hand stays: a name you are about to start using has no dictation
+  behind it to learn from.
 
-- **Agent mode writes the thing you asked for instead of answering you.**
-  Reported from live use: "Hey WordScript, schreib eine E-Mail an Jürgen, er
-  soll das und jenes machen" came back as "Ja, das sollte Jürgen auf jeden Fall
-  machen … bis heute Abend um 8 Uhr" — a reply to the dictation, with a deadline
-  nobody dictated.
-
-  Every rule in the agent prompt was a negative one — no preamble, no invented
-  facts, no profile content — and a conversational reply satisfies all of them.
-  Nothing said what the output *is*, and nothing fixed the addressee, so with a
-  transcript that is formally a message to an assistant the nearest addressee
-  was the user. The prompt now opens with what it owes: the transcript is
-  dictated speech and never a message to answer, the output is the artifact
-  alone, the addressee is the person the instruction names, and an instruction
-  that cannot be carried out comes back as plain text rather than a question.
-
-  The Expansive length was the accelerant, not the cause: "spell out context and
-  reasoning" is an invitation to narrate the task, and it now describes the
-  result instead — develop the instruction's background and framing inside the
-  result, never your own reasoning, never facts the instruction does not
-  contain. That wording is shared with Rewrite, where it is the same defect
-  under another name. See ADR 0026.
+  Everything in the list still reaches every AI mode and still gets repaired,
+  exactly as before. See ADR 0035.
 
 - **Three direction decisions are recorded; none of them is implemented.**
   Documentation only — no runtime behaviour changes with this entry, and the
@@ -144,6 +164,158 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ships multi-turn editing and one publicly retreated from it, so it is not
   built. Entry is explicit and never inferred, because inferring it is where
   shipped products break.
+
+- **Every prompt is now written in English**, whatever language you dictate in.
+  English instructions are followed more reliably. Each prompt states explicitly
+  that the *output* language is the dictated one, so this does not change what
+  comes back — the agent prompt forbids answering in the language of its own
+  instructions, and the German `um`-is-a-preposition guard is unchanged because
+  it is about the dictated language, not the prompt's.
+
+### Fixed
+
+- **Speech recognition was being sent nothing at all when your profile was
+  empty, which is not the same as being sent nothing harmful.** With no words &
+  names configured — the state almost everyone is in — the provider received no
+  opening line whatsoever. That is not a neutral request: with nothing in front
+  of it the decoder falls back on what it was trained on, and on quiet or
+  garbled audio the nearest thing in that training is subtitles. It is where
+  "Thank you for watching!" and "Untertitel im Auftrag des ZDF" come from in a
+  recording that contains neither.
+
+  It now always gets one short constant line that says nothing except what
+  register this is: dictated notes, ordinary sentences, ordinary punctuation. No
+  topic, no vocabulary, nothing that could come from your profile. The
+  recognizer preview in Settings shows it, so the panel cannot keep claiming
+  nothing is sent. If you switched the recognizer channel off, it stays off.
+  See ADR 0036.
+
+- **The AI cleanup no longer glues spelled-out letters into a fake product
+  name.** Dictate a name the recognizer does not know and it sometimes writes it
+  out letter by letter, getting the letters wrong: `c a u d e code` for
+  "Claude Code". Cleanup then fused those letters into `CAUDE-Code` — capitalized
+  and hyphenated, the exact shape of a real product name.
+
+  The wrong letters were never the problem; the transcript was already broken.
+  The problem is that you can see `c a u d e code` and fix it in a second,
+  whereas `CAUDE-Code` looks deliberate and ships. The letters now go back in
+  exactly as the recognizer left them.
+
+  It repairs that one word rather than throwing away the correction, unlike the
+  other guardrails: they discard the whole thing, which is right when the model
+  answered your question instead of cleaning it, and wrong when a five-minute
+  dictation is otherwise fine. That trade was decided by counting rather than by
+  arguing — 12 of 197 real dictations, 6.1 %. Two related failures were measured
+  and are **not** fixed: a garbled word being turned into a plausible different
+  one, and a foreign word being translated. No rule that only sees the
+  transcript can tell those apart from a correct repair. See ADR 0036 and
+  `docs/known-issues/cleanup-invents-tokens-on-broken-input.md`.
+
+- **Prompt Enhance never received your words & names.** Every other AI mode got
+  them; this one had no channel for them at all, which made it the only mode
+  that could respell your own product names — and the one whose output you paste
+  straight into another tool. It gets them now, through the same bounded block
+  the profile context uses.
+
+- **Settings stopped teaching the habit it just removed, and stopped counting a
+  field it no longer has.** The empty Replacements panel — the first thing you
+  see there — still read "add the phrases Groq hears wrong", three lines under a
+  description saying the opposite, and the note below advised one entry per way
+  a word might be misheard. Both now point at Words & names, which is the list
+  that needs no spoken form. "Profile details" also showed "STT hints: 0" next
+  to a profile with terms in it: it was counting an old field the panel has not
+  edited in a long time. It counts your words & names now.
+
+- **The rule preview now runs the same passes your dictation does.** It built
+  its pipeline without the vocabulary list, so the automatic repair never ran
+  there — the panel that exists to show you what the rules do was showing a
+  pipeline the app does not have. A repair also gets its own entry in the
+  applied rules now ("Repaired: Kubernetes") instead of an unnamed one, which
+  matters most for the one change you did not write down yourself.
+
+- **Words & names now works, and misheard names no longer need you to guess.**
+  Every term in the list reaches all AI modes as context — before, a term with
+  its switch off reached nothing at all, anywhere, and even switched on it never
+  reached Cleanup or Rewrite.
+
+  Terms of seven characters or more are also repaired automatically. If you say
+  "Kubernetes" and it comes back as "cuber netties", it gets fixed — without you
+  writing that down first. This is the part Replacements structurally could not
+  do: it needs to know the left-hand side, and the recognizer mangles a name
+  differently every time, so there is nothing stable to write. Repair runs in
+  every mode, including Verbatim where no AI touches your text, and every fix it
+  makes is listed in the applied rules.
+
+  It declines more than it could, on purpose. Short terms are left alone —
+  "Tauri" and "Tori" are one character apart and no threshold tells them apart,
+  so guessing would put a word in your mouth that you never said. Those rely on
+  the AI stages, which can read the sentence.
+
+  Replacements keeps its two columns but is now scoped to what it is actually
+  good at: shorthand you say deliberately, like "KA" for "Kundenanfrage". The
+  fields are named "What you say" and "What gets written" accordingly. See
+  ADR 0033.
+
+- **Each word says what it does, on its own row.** Speech recognition takes a
+  small, fixed number of words, and everything beyond that used to be dropped
+  without a trace. Now every row states whether the recognizer carries it and
+  whether it is long enough to be repaired automatically, resolved from what the
+  runtime actually did rather than from a rule the settings panel restates. See
+  ADR 0034.
+
+  *(The capacity counter and the reordering this entry originally described are
+  gone again, unreleased, in the same cycle. Which words the recognizer carries
+  is no longer yours to decide — see the learning entry above.)*
+
+- **Profile context stops being judged by a filter it was never meant to
+  reach.** The context field asks for topics — its own description says "topics,
+  not spellings" — but the settings panel reported those topics as "not sent to
+  the recognizer" and two warnings asked you to replace them with acronyms and
+  product names. That advice was backwards. The recognizer conditions Whisper on
+  literal words, so a topic cannot bias it; the field exists for the AI stages,
+  where naming your domain is exactly what helps it pick `SLO` over `slow`.
+  Individual terms have their own place in Words & names.
+
+  The warning was not even true: the path it described had already been switched
+  off, so nothing from this field was reaching the recognizer at all. It now
+  reaches only the AI stages, and no surface reports a rejection that cannot
+  happen. The recognizer preview shows what it actually sends — the words you
+  switched on — next to what Replacements corrects afterwards.
+
+  The included profiles are back to topics. They had been rewritten to spellings
+  in May to satisfy that same filter, which is how `Product and engineering`
+  came to read `API / SDK / SQL` instead of `platform constraints / release
+  scope`. Every acronym in those lists was already a Replacement, so nothing is
+  lost. If you edited the field yourself, it stays exactly as you left it — the
+  migration only replaces the untouched original, character for character.
+
+  Two documents described a profile that had not shipped since 25 May, because
+  both read a developer's local config rather than the shipped one. The
+  measurement behind ADR 0021 read the same file. Its safety conclusion stands;
+  what it cannot support is any claim about profile context in general. See
+  ADR 0032.
+
+- **Agent mode writes the thing you asked for instead of answering you.**
+  Reported from live use: "Hey WordScript, schreib eine E-Mail an Jürgen, er
+  soll das und jenes machen" came back as "Ja, das sollte Jürgen auf jeden Fall
+  machen … bis heute Abend um 8 Uhr" — a reply to the dictation, with a deadline
+  nobody dictated.
+
+  Every rule in the agent prompt was a negative one — no preamble, no invented
+  facts, no profile content — and a conversational reply satisfies all of them.
+  Nothing said what the output *is*, and nothing fixed the addressee, so with a
+  transcript that is formally a message to an assistant the nearest addressee
+  was the user. The prompt now opens with what it owes: the transcript is
+  dictated speech and never a message to answer, the output is the artifact
+  alone, the addressee is the person the instruction names, and an instruction
+  that cannot be carried out comes back as plain text rather than a question.
+
+  The Expansive length was the accelerant, not the cause: "spell out context and
+  reasoning" is an invitation to narrate the task, and it now describes the
+  result instead — develop the instruction's background and framing inside the
+  result, never your own reasoning, never facts the instruction does not
+  contain. That wording is shared with Rewrite, where it is the same defect
+  under another name. See ADR 0026.
 
 - **Switching the active profile during a recording is refused instead of
   half-applied.** The profile decides the recognizer settings, and those are

@@ -115,10 +115,25 @@ native insert or recovery path.
 **Scope:**
 
 - Add a second production provider through the shared Rust provider contract.
+- **Split the provider axis per role.** A profile currently holds one
+  `provider` field and several models, one per role. The obvious second chat
+  provider -- Anthropic or OpenAI -- performs no speech recognition at all, so a
+  single provider per profile cannot express "recognize with Groq or locally,
+  transform with something stronger." `ProviderCapabilities` already models the
+  distinction (`transcription` versus `chat_completion`); only the config
+  conflates them.
 - Reserve `self_hosted` for user-operated remote or LAN services; it is not
   another name for on-device `local`.
 - Drive UI capability, setup, and error copy from `ProviderStatus` and
   `ProviderCommandError`.
+
+The motivation for a stronger chat lane is **instruction following, not cost**.
+Real usage sits below a cent, so caching and price are not the argument. The
+argument is ADR 0023's rule that a register sets form and never lexis, together
+with the writing sample -- subtle instruction following that
+`llama-3.3-70b-versatile` is the current limit on. A frontier model is not
+required, only a better one. On the local lane the same need is met by a
+stronger local model rather than by a new provider.
 
 **Out of scope:** runtime provider switching without save, account binding, or
 a WordScript proxy.
@@ -215,21 +230,6 @@ them.
 work without editing it first, and an experienced user can see at a glance what
 a profile contains and what stays global.
 
-## Candidate - A second paste mechanism on Wayland (libei)
-
-**Status:** candidate, not scheduled. Needs the decision gate below before it
-becomes scope.
-
-**The honest motivation.** Not "auto-paste is unreliable on the maintainer's
-machine". That was measured on 2026-07-30 and does not hold: 37 real `xdotool`
-pastes between 2026-07-27 and 2026-07-30, zero portal denials, which
-`history.json` confirms independently (19 `direct_paste` entries, all
-`pasted: true`, no `fallback_reason`). The 116 denial lines in the runtime log
-were `cargo test` fixtures writing into the developer's real log file — see
-[known-issues/rust-test-global-state-isolation.md](known-issues/rust-test-global-state-isolation.md).
-The perceived unreliability of "Copy and insert at cursor" is far better explained
-by the config revert fixed in ADR 0019, which forced profiles back to
-clipboard-only on every load.
 ## Phase 8 - Agents (voice for coding agents, both directions)
 
 **Status:** planned. Decided in ADR 0030; nothing is implemented.
@@ -338,6 +338,21 @@ can already serve without it.
 **Success measure:** a nearly-right dictation can be corrected by one spoken
 instruction, and a rewrite unrelated to its input is refused rather than shown.
 
+## Candidate - A second paste mechanism on Wayland (libei)
+
+**Status:** candidate, not scheduled. Needs the decision gate below before it
+becomes scope.
+
+**The honest motivation.** Not "auto-paste is unreliable on the maintainer's
+machine". That was measured on 2026-07-30 and does not hold: 37 real `xdotool`
+pastes between 2026-07-27 and 2026-07-30, zero portal denials, which
+`history.json` confirms independently (19 `direct_paste` entries, all
+`pasted: true`, no `fallback_reason`). The 116 denial lines in the runtime log
+were `cargo test` fixtures writing into the developer's real log file — see
+[known-issues/rust-test-global-state-isolation.md](known-issues/rust-test-global-state-isolation.md).
+The perceived unreliability of "Copy and insert at cursor" is far better explained
+by the config revert fixed in ADR 0019, which forced profiles back to
+clipboard-only on every load.
 
 The real gaps are structural, and they hold regardless of any one machine:
 

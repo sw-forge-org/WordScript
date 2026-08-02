@@ -1,4 +1,4 @@
-import { type MouseEvent, type PointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent, type PointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 // requestAnimationFrame is provided by the browser (WebKitGTK). In tests where
 // rAF is not installed, fall back to setTimeout(0). The dispatcher below also
 // re-checks `document.visibilityState` per the plan's R1 mitigation: in
@@ -94,6 +94,43 @@ function setOverlayDocumentState(idle: boolean) {
     node.classList.toggle("overlay-idle", idle);
   });
 }
+
+// How long the "learned a word" tab is on screen, slide-out and slide-back
+// included. Long enough to read one word after a delivery, short enough that it
+// never becomes something to dismiss. The CSS keyframe reads this through
+// `--ov-learned-duration`, so the timing lives in one place; the unmount waits
+// a beat longer so the retraction is never cut off mid-frame.
+const LEARNED_NUDGE_DURATION_MS = 1_900;
+const LEARNED_NUDGE_VISIBLE_MS = LEARNED_NUDGE_DURATION_MS + 120;
+
+// Clearance between the tab and the pill, matching the CSS `right` offset.
+const LEARNED_NUDGE_GAP_PX = 6;
+
+// The tab's internal gap between its marker dot and its label, matching the CSS
+// `gap`. Subtracting it is how the marker-only width is derived from the full
+// one without a second measuring pass.
+const LEARNED_NUDGE_LABEL_GAP_PX = 5;
+
+/**
+ * How much of the tab the transparent strip beside the pill can hold.
+ *
+ * `width` is in the shell's own layout pixels, because that is the space a CSS
+ * `width` on a child of the zoomed shell is written in.
+ */
+type LearnedNudgeVariant = {
+  kind: "full" | "marker" | "hidden";
+  width: number;
+};
+
+// A floor under the measured width. The window is a fixed 480px and the pill is
+// centred, so the transparent strip on either side is
+// `(480 - pillWidth) / 2`; when the tab does not fit in it, it would be clipped
+// by the window rather than shown, and a signal that silently appears half-cut
+// is worse than none. Widening the window is not an option: a `set_size` per
+// reveal is what the 1px height oscillation exists to work around, and a second
+// resize path reintroduces the WebKitGTK ghosting this codebase already fought
+// (docs/known-issues/overlay-ghosting.md).
+const LEARNED_NUDGE_MIN_PX = 34;
 
 // Derives the processing mode from runtime config as a fallback for the
 // initial render before the first `resolve_current_processing_mode` call
@@ -943,6 +980,10 @@ export default function OverlayWindow() {
     };
   }, []);
 
+  // Words the runtime just learned, or null. Presentation only — it never
+  // enters the session reducer.
+  const [learnedNudge, setLearnedNudge] = useState<string[] | null>(null);
+
   // Reactive waveform level driven by native capture sample buckets. OverlayPill
   // turns the single level into bar heights.
   const [audioLevel, setAudioLevel] = useState(0);
@@ -1012,6 +1053,35 @@ export default function OverlayWindow() {
       }
     });
     return () => { unlisten.then(fn => fn()); };
+  }, []);
+
+  // The runtime learned a word or name and says so, quietly.
+  //
+  // Its own channel, deliberately. Per ADR 0018/0019 a session ends in exactly
+  // one reducer commit and the native event channel must never touch `status`,
+  // `pendingResult`, `previewStaged` or `resultSurfaceOpen`. This is
+  // presentation and nothing else, so it stays out of both session channels
+  // rather than adding a case nobody would expect there (ADR 0035).
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unlisten = listen<{ event?: string; terms?: string[] }>(
+      "wordscript-learning-event",
+      ({ payload }) => {
+        if (payload.event !== "vocabulary_learned") return;
+        const terms = (payload.terms ?? []).filter(Boolean);
+        if (!terms.length) return;
+
+        setLearnedNudge(terms);
+        if (timer) clearTimeout(timer);
+        // Disappears on its own. Nothing to dismiss, nothing to answer — the
+        // list in Settings is where the detail lives.
+        timer = setTimeout(() => setLearnedNudge(null), LEARNED_NUDGE_VISIBLE_MS);
+      },
+    );
+    return () => {
+      if (timer) clearTimeout(timer);
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   // Listen for processing-mode events from the Rust runtime so the pill stays
@@ -1570,6 +1640,75 @@ export default function OverlayWindow() {
     scheduleReveal({ surface: overlaySurfaceRef.current });
   }, [pillVisualEpoch, isActive, scheduleReveal]);
 
+  // How far the tab may open, and whether it may open at all.
+  //
+  // Both measured, never assumed. The tab sizes to its own text, and the pill's
+  // width is `max-content` and swings by well over a hundred pixels between the
+  // compact surface and a processing-preview carrying a transcript. The element
+  // is mounted at width 0 first — the shutter paints nothing there — so the
+  // measurement happens on the real thing rather than on an estimate, and a tab
+  // that turns out not to fit was never visible.
+  //
+  // Two coordinate spaces, deliberately kept apart. `offsetWidth` is layout px
+  // inside the shell's own `zoom: 0.87` space, which is what a CSS `width` on a
+  // child has to be written in. `getBoundingClientRect()` is painted px, which
+  // is what "does this fit in the window" has to be asked in. Reading the wrong
+  // one costs 13%: measured as `offsetWidth`, the widest 480px surface looks
+  // like it has 27px of room when it really has 54.
+  const learnedTabRef = useRef<HTMLSpanElement | null>(null);
+  const [learnedNudgeVariant, setLearnedNudgeVariant] = useState<LearnedNudgeVariant>({
+    kind: "hidden",
+    width: 0,
+  });
+  useLayoutEffect(() => {
+    if (!learnedNudge) {
+      setLearnedNudgeVariant({ kind: "hidden", width: 0 });
+      return;
+    }
+    const inner = learnedTabRef.current?.querySelector<HTMLElement>(".ov-learned-tab__inner");
+    const label = learnedTabRef.current?.querySelector<HTMLElement>(".ov-learned-tab__label");
+    const shell = shellRef.current?.querySelector<HTMLElement>(".ov-pill-shell");
+    if (!inner || !label) return;
+
+    const sideStrip = (window.innerWidth - (shell?.getBoundingClientRect().width ?? 0)) / 2;
+    const fullLayout = inner.offsetWidth;
+    const fullPainted = inner.getBoundingClientRect().width;
+    // The zoom, derived rather than restated. Hard-coding 0.87 here would be a
+    // second copy of a number `.ov-pill-shell` owns.
+    const zoom = fullLayout > 0 ? fullPainted / fullLayout : 1;
+    const markerLayout = fullLayout - label.offsetWidth - LEARNED_NUDGE_LABEL_GAP_PX;
+    const markerPainted = markerLayout * zoom;
+
+    // Full term when there is room for it, the marker alone when there is not.
+    // The middle option — truncating the term to fit — was the wrong trade: a
+    // name cut to "Kuber…" is less informative than a marker and reads as a
+    // rendering fault rather than as a deliberate short form.
+    //
+    // Every branch requires a positive measurement. Without that guard a layout
+    // that has not happened yet measures 0, a zero-width tab trivially "fits",
+    // and the result is a `role="status"` announcing a tab that paints nothing
+    // — the audible version of a fake state.
+    if (fullPainted > 0 && sideStrip >= fullPainted + LEARNED_NUDGE_GAP_PX) {
+      setLearnedNudgeVariant({ kind: "full", width: fullLayout });
+    } else if (
+      markerPainted > 0 &&
+      sideStrip >= Math.max(LEARNED_NUDGE_MIN_PX, markerPainted + LEARNED_NUDGE_GAP_PX)
+    ) {
+      setLearnedNudgeVariant({ kind: "marker", width: markerLayout });
+    } else {
+      setLearnedNudgeVariant({ kind: "hidden", width: 0 });
+    }
+  }, [learnedNudge, pillVisualEpoch]);
+
+  const learnedNudgeTerm = learnedNudge?.length
+    ? learnedNudge.length > 1
+      ? `${learnedNudge[0]} +${learnedNudge.length - 1}`
+      : learnedNudge[0]
+    : "";
+  const learnedNudgeLabel = learnedNudge?.length
+    ? `Learned: ${learnedNudge.join(", ")}`
+    : "";
+
   return (
     <div
       ref={shellRef}
@@ -1600,6 +1739,38 @@ export default function OverlayWindow() {
         // pending → idle) that read as a brief "flash" after the result pill.
         // (plan 1782750354086, §5 follow-up)
         <div className="ov-pill-shell">
+          {/* Absolutely positioned, deliberately outside the pill's flex flow.
+              In the flow it would widen the pill, and a pill wider than the
+              window has its rounded ends clipped — the "eckige Kanten" defect
+              the uniform 480px width exists to prevent (lib.rs:151-171). Also a
+              sibling of the keyed <OverlayPill>, so a surface change does not
+              remount it mid-nudge. */}
+          {learnedNudge && (
+            <span
+              ref={learnedTabRef}
+              className="ov-learned-tab"
+              data-variant={learnedNudgeVariant.kind}
+              // Mounted before it is measured, and mounted even when it turns
+              // out not to fit: at width 0 the shutter paints nothing, so this
+              // is how the measurement happens on the real element without ever
+              // flashing a half-cut tab. A tab that stays shut is also not
+              // announced — a screen reader saying it is there while nothing is
+              // painted is the audible version of the same lie.
+              role={learnedNudgeVariant.kind === "hidden" ? undefined : "status"}
+              aria-hidden={learnedNudgeVariant.kind === "hidden" ? true : undefined}
+              title={learnedNudgeVariant.kind === "hidden" ? undefined : learnedNudgeLabel}
+              aria-label={learnedNudgeVariant.kind === "hidden" ? undefined : learnedNudgeLabel}
+              style={{
+                "--ov-learned-width": `${learnedNudgeVariant.width}px`,
+                "--ov-learned-duration": `${LEARNED_NUDGE_DURATION_MS}ms`,
+              } as CSSProperties}
+            >
+              <span className="ov-learned-tab__inner">
+                <span className="ov-learned-tab__dot" />
+                <span className="ov-learned-tab__label">{learnedNudgeTerm}</span>
+              </span>
+            </span>
+          )}
           <OverlayPill key={pillState.kind} state={pillState} />
         </div>
       )}

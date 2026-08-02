@@ -3,7 +3,21 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppConfig } from "../../test/factories";
+import type { VocabularyHintEntry } from "../../types/ipc";
 import { PromptsTab } from "./PromptsTab";
+
+/// A vocabulary row at its defaults, so a test states only the field it is
+/// about. `use_as_prompt_hint` is a migration remnant nothing reads (ADR 0035).
+function vocabularyEntry(overrides: Partial<VocabularyHintEntry> & { id: string; phrase: string }): VocabularyHintEntry {
+  return {
+    use_as_prompt_hint: false,
+    origin: "user",
+    learned_at_ms: null,
+    hit_count: 0,
+    observation_count: 0,
+    ...overrides,
+  };
+}
 
 const invokeMock = vi.fn();
 const openMock = vi.fn();
@@ -63,13 +77,13 @@ describe("PromptsTab", () => {
             applied_rules: [],
           },
           transcription_bias: {
-            profile_hints: [],
             dictionary_terms: [],
             stt_hints: [],
-            ignored_profile_lines: [],
             ignored_stt_hint_lines: [],
+            over_limit_stt_hint_lines: [],
           },
           profile_context: profileContextResponse,
+          vocabulary_repair: { repairable: [], too_short: [], min_chars: 7 },
           dictionary_count: 0,
           snippet_count: 0,
         };
@@ -101,11 +115,10 @@ describe("PromptsTab", () => {
               applied_rules: ["snippet:follow-up"],
             },
             transcription_bias: {
-              profile_hints: ["ImportedTerm"],
               dictionary_terms: [],
               stt_hints: [],
-              ignored_profile_lines: [],
-              ignored_stt_hint_lines: [],
+                ignored_stt_hint_lines: [],
+                over_limit_stt_hint_lines: [],
             },
             dictionary_count: 0,
             snippet_count: 1,
@@ -130,12 +143,12 @@ describe("PromptsTab", () => {
     render(<Harness />);
 
     await user.click(screen.getByRole("tab", { name: /open replacements workspace/i }));
-    await user.click(screen.getByRole("button", { name: /add dictionary term/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: /heard as/i }), { target: { value: "word script" } });
-    fireEvent.change(screen.getByRole("textbox", { name: /replace with/i }), { target: { value: "WordScript" } });
+    await user.click(screen.getByRole("button", { name: /add replacement/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: /what you say/i }), { target: { value: "word script" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /what gets written/i }), { target: { value: "WordScript" } });
 
-    expect(screen.getByRole("textbox", { name: /heard as/i })).toHaveValue("word script");
-    expect(screen.getByRole("textbox", { name: /replace with/i })).toHaveValue("WordScript");
+    expect(screen.getByRole("textbox", { name: /what you say/i })).toHaveValue("word script");
+    expect(screen.getByRole("textbox", { name: /what gets written/i })).toHaveValue("WordScript");
 
     await user.click(screen.getByRole("tab", { name: /open snippets workspace/i }));
     await user.click(screen.getByRole("button", { name: /add snippet/i }));
@@ -215,9 +228,11 @@ describe("PromptsTab", () => {
     render(<Harness />);
 
     expect(screen.getByText(/not raw audio and not semantic intent/i)).toBeInTheDocument();
-    expect(screen.getByText(/dictionary runs first, snippets second/i)).toBeInTheDocument();
-    expect(screen.getByText(/validation checks for empty fields, duplicates and collisions/i)).toBeInTheDocument();
-    expect(screen.getByText(/preview runs the literal dictionary-plus-snippet pass/i)).toBeInTheDocument();
+    expect(screen.getByText(/words & names run first and match by closeness/i)).toBeInTheDocument();
+    // The old copy told the user to add one entry per mishearing, which is the
+    // habit ADR 0033 exists to end.
+    expect(screen.getByText(/one entry each, rather than one per way the recognizer might mishear it/i)).toBeInTheDocument();
+    expect(screen.getByText(/where each list lands before and after transcription/i)).toBeInTheDocument();
   });
 
   it("organizes the editor into explicit workspace stages", () => {
@@ -229,7 +244,9 @@ describe("PromptsTab", () => {
     expect(screen.getByRole("tab", { name: /open snippets workspace/i })).toBeInTheDocument();
   });
 
-  it("keeps a taught word out of the recognizer prompt until it is opted in per entry", async () => {
+  it("still lets a term be added by hand, for a name no dictation has produced yet", async () => {
+    // The list fills itself now, but a name you are about to start using has no
+    // dictation behind it to learn from, so manual entry stays (ADR 0035).
     const user = userEvent.setup();
 
     render(<Harness />);
@@ -240,13 +257,8 @@ describe("PromptsTab", () => {
     await user.type(wordField, "WordScript");
     expect(wordField).toHaveValue("WordScript");
 
-    // Off by default: the deterministic pass handles it, and a longer
-    // recognizer prompt is itself a hallucination source.
-    const hintToggle = screen.getByRole("checkbox", { name: /hint the recognizer for word 1/i });
-    expect(hintToggle).not.toBeChecked();
-
-    await user.click(hintToggle);
-    expect(hintToggle).toBeChecked();
+    const rows = within(screen.getByLabelText("Words and names"));
+    expect(rows.getByText("Added by you")).toBeInTheDocument();
   });
 
   it("no longer exposes bias policy as a user-facing concept", () => {
@@ -264,12 +276,6 @@ describe("PromptsTab", () => {
           issues: [
             {
               severity: "warning",
-              code: "broad_profile_context_ignored",
-              message: "1 context line is too broad for the automatic STT bias path and will be ignored. Keep automatic context lexical and concrete.",
-              rule_ids: [],
-            },
-            {
-              severity: "warning",
               code: "ignored_stt_hint",
               message: "1 STT hint line is too long for the conservative bias path and will be ignored. Keep STT hints short and phrase-like.",
               rule_ids: [],
@@ -281,12 +287,13 @@ describe("PromptsTab", () => {
             applied_rules: [],
           },
           transcription_bias: {
-            profile_hints: ["WordScript", "ticket IDs"],
             dictionary_terms: ["SEV-1"],
             stt_hints: ["status update"],
-            ignored_profile_lines: ["customer names"],
             ignored_stt_hint_lines: ["this hint is too long to stay in the automatic bias path"],
+            over_limit_stt_hint_lines: [],
           },
+          profile_context: profileContextResponse,
+          vocabulary_repair: { repairable: [], too_short: [], min_chars: 7 },
           dictionary_count: 1,
           snippet_count: 0,
         };
@@ -304,14 +311,162 @@ describe("PromptsTab", () => {
 
     render(<Harness />);
 
-    expect(await screen.findByText("Automatic STT vocabulary")).toBeInTheDocument();
-    expect(await screen.findByText("ticket IDs")).toBeInTheDocument();
+    expect(await screen.findByText("Sent to the recognizer")).toBeInTheDocument();
+    expect(await screen.findByText("status update")).toBeInTheDocument();
+    expect(screen.getByText("Corrected after transcription")).toBeInTheDocument();
     expect(screen.getByText("SEV-1")).toBeInTheDocument();
-    expect(screen.getByText("status update")).toBeInTheDocument();
-    expect(screen.getByText("Context ignored: customer names")).toBeInTheDocument();
-    expect(screen.getByText("STT ignored: this hint is too long to stay in the automatic bias path")).toBeInTheDocument();
-    expect(screen.getByText(/too broad for the automatic stt bias path/i)).toBeInTheDocument();
     expect(screen.getByText(/stt hint line is too long for the conservative bias path/i)).toBeInTheDocument();
+  });
+
+  it("says the recognizer gets the blank-state floor rather than nothing", async () => {
+    // The empty state used to read "the recognizer gets nothing", which stopped
+    // being true when the floor landed (ADR 0036). The panel answers "what does
+    // the provider get", so it has to show the line the runtime reported — not
+    // a second copy of that sentence written here.
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "analyze_text_rules") {
+        return {
+          blocking: false,
+          issues: [],
+          preview: { input: "sample", output: "sample", applied_rules: [] },
+          transcription_bias: {
+            dictionary_terms: [],
+            stt_hints: [],
+            ignored_stt_hint_lines: [],
+            over_limit_stt_hint_lines: [],
+            cloud_prompt_preview: "Dictated notes. Normale Sätze mit Satzzeichen.",
+          },
+          profile_context: profileContextResponse,
+          vocabulary_repair: { repairable: [], too_short: [], min_chars: 7 },
+          dictionary_count: 0,
+          snippet_count: 0,
+        };
+      }
+
+      if (command === "get_profile_health") {
+        return { level: "green", flags: [] };
+      }
+
+      throw new Error(`Unexpected invoke command: ${command}`);
+    });
+
+    render(<Harness />);
+
+    expect(await screen.findByText("Sent to the recognizer")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Dictated notes\. Normale Sätze mit Satzzeichen\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/the recognizer gets nothing/i)).not.toBeInTheDocument();
+  });
+
+  it("still says nothing is sent when the profile turned the recognizer channel off", async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "analyze_text_rules") {
+        return {
+          blocking: false,
+          issues: [],
+          preview: { input: "sample", output: "sample", applied_rules: [] },
+          transcription_bias: {
+            dictionary_terms: [],
+            stt_hints: [],
+            ignored_stt_hint_lines: [],
+            over_limit_stt_hint_lines: [],
+            cloud_prompt_preview: null,
+          },
+          profile_context: profileContextResponse,
+          vocabulary_repair: { repairable: [], too_short: [], min_chars: 7 },
+          dictionary_count: 0,
+          snippet_count: 0,
+        };
+      }
+
+      if (command === "get_profile_health") {
+        return { level: "green", flags: [] };
+      }
+
+      throw new Error(`Unexpected invoke command: ${command}`);
+    });
+
+    render(<Harness />);
+
+    expect(await screen.findByText(/sends the recognizer nothing at all/i)).toBeInTheDocument();
+  });
+
+  it("never reports the profile context field as rejected by the recognizer", async () => {
+    // The panel used to run the context field through the recognizer's hint
+    // filter and list the rejected lines. The field holds topics and never
+    // travels that path (ADR 0032), so lines from it must not appear as
+    // something the recognizer turned down.
+    const initialConfig = createAppConfig();
+    initialConfig.text_profiles[0].prompt = "platform constraints\nincident response";
+
+    render(<Harness initialConfig={initialConfig} />);
+
+    expect(await screen.findByText("Sent to the recognizer")).toBeInTheDocument();
+    expect(screen.getByText(/profile context is not here by design/i)).toBeInTheDocument();
+    expect(screen.queryByText("platform constraints")).not.toBeInTheDocument();
+    expect(screen.queryByText("incident response")).not.toBeInTheDocument();
+  });
+
+  it("states what each term does and offers nothing to decide about it", async () => {
+    // The panel used to carry a per-row recognizer switch, a capacity badge and
+    // move buttons. All three operated one decision, and the intuitive way to
+    // make it was wrong: people switch on their long product names, which are
+    // exactly the terms repair restores afterwards. The runtime allocates the
+    // slots now, so every fact here is reported and none of it is a control
+    // (ADR 0035).
+    const initialConfig = createAppConfig();
+    initialConfig.text_profiles[0].vocabulary_hints = [
+      vocabularyEntry({ id: "v-1", phrase: "Kubernetes", origin: "learned", learned_at_ms: 1_764_547_200_000, hit_count: 3 }),
+      vocabularyEntry({ id: "v-2", phrase: "Tauri" }),
+    ];
+
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "analyze_text_rules") {
+        return {
+          blocking: false,
+          issues: [],
+          preview: { input: "sample", output: "sample", applied_rules: [] },
+          transcription_bias: {
+            dictionary_terms: [],
+            stt_hints: ["Tauri"],
+            ignored_stt_hint_lines: [],
+            over_limit_stt_hint_lines: [],
+          },
+          profile_context: profileContextResponse,
+          vocabulary_repair: {
+            repairable: ["Kubernetes"],
+            too_short: ["Tauri"],
+            min_chars: 7,
+          },
+          dictionary_count: 0,
+          snippet_count: 0,
+        };
+      }
+      if (command === "get_profile_health") return { level: "green", flags: [] };
+      throw new Error(`Unexpected invoke command: ${command}`);
+    });
+
+    render(<Harness initialConfig={initialConfig} />);
+
+    // The recognizer fact is stated, and it lands on the short term — the one
+    // that cannot be recovered once the transcript exists. Awaited because it
+    // comes from the runtime's analysis, never from a rule restated here.
+    expect(await screen.findByText("In speech recognition")).toBeInTheDocument();
+
+    const rows = within(screen.getByLabelText("Words and names"));
+    expect(rows.getByText(/under 7 characters/i)).toBeInTheDocument();
+
+    // Nothing to operate: the switch, the reordering and the capacity counter
+    // are gone because none of them decides anything any more.
+    expect(rows.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(rows.queryByRole("button", { name: /^move word/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/switched on/i)).not.toBeInTheDocument();
+
+    // Where the row came from, and whether it has earned its place.
+    expect(rows.getByText(/learned .* · fixed 3 times/i)).toBeInTheDocument();
+    expect(rows.getByText(/added by you/i)).toBeInTheDocument();
+    expect(screen.getByText("1 learned")).toBeInTheDocument();
   });
 
   it("reorders dictionary entries so the current sequence matches the authored priority", async () => {
@@ -320,25 +475,25 @@ describe("PromptsTab", () => {
     render(<Harness />);
 
     await user.click(screen.getByRole("tab", { name: /open replacements workspace/i }));
-    await user.click(screen.getByRole("button", { name: /add dictionary term/i }));
-    await user.type(screen.getByRole("textbox", { name: /heard as/i }), "alpha term");
-    await user.type(screen.getByRole("textbox", { name: /replace with/i }), "Alpha");
+    await user.click(screen.getByRole("button", { name: /add replacement/i }));
+    await user.type(screen.getByRole("textbox", { name: /what you say/i }), "alpha term");
+    await user.type(screen.getByRole("textbox", { name: /what gets written/i }), "Alpha");
 
-    await user.click(screen.getByRole("button", { name: /add dictionary term/i }));
+    await user.click(screen.getByRole("button", { name: /add replacement/i }));
 
-    const heardInputsBeforeMove = screen.getAllByRole("textbox", { name: /heard as/i });
-    const replaceInputsBeforeMove = screen.getAllByRole("textbox", { name: /replace with/i });
+    const heardInputsBeforeMove = screen.getAllByRole("textbox", { name: /what you say/i });
+    const replaceInputsBeforeMove = screen.getAllByRole("textbox", { name: /what gets written/i });
 
     await user.type(heardInputsBeforeMove[1], "beta term");
     await user.type(replaceInputsBeforeMove[1], "Beta");
 
-    const secondDictionaryCard = screen.getByText("Dictionary term 2").closest("article");
+    const secondDictionaryCard = screen.getByText("Replacement 2").closest("article");
     expect(secondDictionaryCard).not.toBeNull();
 
     await user.click(within(secondDictionaryCard as HTMLElement).getByRole("button", { name: /move up/i }));
 
     const orderedHeardValues = screen
-      .getAllByRole("textbox", { name: /heard as/i })
+      .getAllByRole("textbox", { name: /what you say/i })
       .map((input) => (input as HTMLInputElement).value);
 
     expect(orderedHeardValues).toEqual(["beta term", "alpha term"]);
@@ -381,11 +536,10 @@ describe("PromptsTab", () => {
             applied_rules: ["dictionary:dict-1", "snippet:snippet-1"],
           },
           transcription_bias: {
-            profile_hints: ["WordScript"],
             dictionary_terms: ["WordScript"],
             stt_hints: [],
-            ignored_profile_lines: [],
             ignored_stt_hint_lines: [],
+            over_limit_stt_hint_lines: [],
           },
           dictionary_count: 1,
           snippet_count: 1,
@@ -409,14 +563,14 @@ describe("PromptsTab", () => {
     const dictionaryRuleLink = await screen.findByRole("button", { name: "Dictionary: word script" });
     await user.click(dictionaryRuleLink);
 
-    const dictionaryCard = await screen.findByText("Dictionary term 1");
+    const dictionaryCard = await screen.findByText("Replacement 1");
     const dictionaryCardArticle = dictionaryCard.closest("article");
     expect(dictionaryCardArticle).not.toBeNull();
 
     expect(within(dictionaryCardArticle as HTMLElement).getByText("Dictionary phrase collides with another rule.")).toBeInTheDocument();
 
     expect(dictionaryCardArticle).toHaveAttribute("data-active");
-    expect(screen.getByRole("textbox", { name: /heard as/i })).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: /what you say/i })).toHaveFocus();
   });
 
   it("creates, duplicates and switches local text profiles", async () => {
@@ -460,7 +614,7 @@ describe("PromptsTab", () => {
 
     expect(screen.getByRole("textbox", { name: /profile label/i })).toHaveValue("Customer success replies");
 
-    expect((screen.getByRole("textbox", { name: /profile context/i }) as HTMLTextAreaElement).value).toContain("Statuspage");
+    expect((screen.getByRole("textbox", { name: /profile context/i }) as HTMLTextAreaElement).value).toContain("incident severity");
 
     await user.click(screen.getByRole("tab", { name: /open replacements workspace/i }));
     expect(screen.getByDisplayValue("SEV-1")).toBeInTheDocument();

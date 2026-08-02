@@ -42,8 +42,10 @@ import type {
   ImportTextRulesResponse,
   ProfileHealthStatus,
   TextRulesAnalysis,
+  TextRulesBiasPreview,
   TextRulesConflictResolution,
   TextRulesIssue,
+  VocabularyRepairCoverage,
 } from "../../types/textRules";
 
 const DEFAULT_SAMPLE_TEXT = "word script follow up note";
@@ -149,6 +151,21 @@ function buildPreviewRuleChip(rule: string, lookup: Map<string, RuleSummary>): P
     };
   }
 
+  // A fuzzy rewrite has more reason to be named than an exact one: no rule card
+  // spells out what it matched, so the chip is the only place it is visible
+  // (ADR 0033). Falling through to the generic branch made the one changed word
+  // nobody authored the one change nobody could explain.
+  if (kind === "vocabulary") {
+    // Not `ruleId`: a term may contain a colon, and the split above keeps only
+    // the first segment.
+    const term = rule.slice("vocabulary:".length) || humanizeFallbackRule(rule);
+    return {
+      key: rule,
+      label: `Repaired: ${term}`,
+      title: `The recognizer's spelling was close enough to "${term}" to rewrite it. No spoken form was needed.`,
+    };
+  }
+
   if (kind === "dictionary") {
     return {
       key: rule,
@@ -205,15 +222,126 @@ function countPromptLines(value: string) {
     .length;
 }
 
+/**
+ * What one vocabulary row actually does, per effect.
+ *
+ * Both axes are reported, never chosen. The recognizer's few slots are
+ * allocated by the runtime, because the allocation intuition produces is
+ * systematically wrong (ADR 0035), and the repair floor was never a setting.
+ */
+type VocabularyRowState = {
+  recognizer: "carried" | "not_carried" | "pending";
+  repair: "repaired" | "context_only" | "pending";
+};
+
+function containsPhrase(list: string[], phrase: string) {
+  const needle = phrase.trim().toLowerCase();
+  if (!needle) return false;
+  return list.some((entry) => entry.trim().toLowerCase() === needle);
+}
+
+/**
+ * Resolves each row against the analysis the runtime returned.
+ *
+ * Deliberately does not recompute the slot allocation, the length ceiling or
+ * the repair floor: those are runtime rules (ADR 0032, ADR 0033, ADR 0035), and
+ * a second copy in React is a copy that drifts. Until the analysis arrives, rows
+ * report `pending` rather than guessing.
+ */
+function buildVocabularyRowStates(
+  entries: VocabularyHintEntry[],
+  bias: TextRulesBiasPreview | undefined,
+  repair: VocabularyRepairCoverage | undefined,
+): Map<string, VocabularyRowState> {
+  const states = new Map<string, VocabularyRowState>();
+
+  for (const entry of entries) {
+    const phrase = entry.phrase.trim();
+
+    const recognizer: VocabularyRowState["recognizer"] = !phrase || !bias
+      ? "pending"
+      : containsPhrase(bias.stt_hints, phrase)
+        ? "carried"
+        : "not_carried";
+
+    const repairState: VocabularyRowState["repair"] = !phrase
+      ? "pending"
+      : !repair
+        ? "pending"
+        : containsPhrase(repair.repairable, phrase)
+          ? "repaired"
+          : "context_only";
+
+    states.set(entry.id, { recognizer, repair: repairState });
+  }
+
+  return states;
+}
+
+/**
+ * The one line a row says about itself.
+ *
+ * Silent when the row does the ordinary thing — every term reaches the AI modes
+ * and gets repaired, so saying so on every line would bury the cases that
+ * differ. Nothing here is a warning any more: there is no longer a decision the
+ * user could have got wrong.
+ */
+function describeVocabularyRow(
+  state: VocabularyRowState | undefined,
+  minRepairChars: number | undefined,
+): string | null {
+  if (!state) return null;
+
+  if (state.repair === "context_only" && state.recognizer === "carried") {
+    return `Under ${minRepairChars ?? 7} characters, so a close match is not evidence and it is never rewritten after the fact. Speech recognition carries it instead, which is where it still helps.`;
+  }
+
+  if (state.repair === "context_only") {
+    return `Under ${minRepairChars ?? 7} characters, so a close match is not evidence and it is never rewritten after the fact. It still reaches every AI mode.`;
+  }
+
+  if (state.recognizer === "carried") {
+    return "Repaired automatically when it comes back mangled, and carried into speech recognition.";
+  }
+
+  return null;
+}
+
+function formatLearnedDate(learnedAtMs: number | null | undefined) {
+  if (!learnedAtMs) return null;
+  const date = new Date(learnedAtMs);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/**
+ * Where a row came from and whether it has earned its place.
+ *
+ * The second half matters more than it looks: a term list nobody can judge is a
+ * term list nobody prunes, and a learned list grows on its own.
+ */
+function describeVocabularyProvenance(entry: VocabularyHintEntry) {
+  const learnedOn = formatLearnedDate(entry.learned_at_ms);
+  const origin = entry.origin === "learned"
+    ? learnedOn ? `Learned ${learnedOn}` : "Learned while dictating"
+    : "Added by you";
+
+  if (!entry.hit_count) return origin;
+  return `${origin} · fixed ${entry.hit_count} ${entry.hit_count === 1 ? "time" : "times"}`;
+}
+
 function profileLibrarySummary(profile: TextProfile) {
   if (isCuratedTextProfile(profile) && profile.curation.summary.trim()) {
     return profile.curation.summary;
   }
 
+  // Counts what the panel edits. The legacy `stt_hints` string used to be
+  // counted here and always read zero after migration moved its content into
+  // `vocabulary_hints`, so the summary understated every profile it described.
   const contextLines = countPromptLines(profile.prompt);
-  const sttHintLines = countPromptLines(profile.stt_hints ?? "");
+  const termCount = (profile.vocabulary_hints ?? []).filter((entry) => entry.phrase.trim()).length;
   const ruleCount = (profile.dictionary_entries ?? []).length + (profile.snippet_entries ?? []).length;
-  return `${contextLines} context lines, ${sttHintLines} STT hints and ${ruleCount} rules in this profile.`;
+  return `${contextLines} context lines, ${termCount} words & names and ${ruleCount} rules in this profile.`;
 }
 
 function makeDictionaryEntry(): DictionaryEntry {
@@ -326,7 +454,7 @@ const DictionaryRuleCard = memo(function DictionaryRuleCard({
     >
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <strong className="text-[13px] font-semibold text-foreground">Dictionary term {index + 1}</strong>
+          <strong className="text-[13px] font-semibold text-foreground">Replacement {index + 1}</strong>
           <p className="mt-0.5 text-[12px] leading-snug text-fg-muted">
             Runs in order. Later rules see the output of earlier ones.
           </p>
@@ -347,17 +475,17 @@ const DictionaryRuleCard = memo(function DictionaryRuleCard({
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <RuleField label="Heard as">
+        <RuleField label="What you say">
           <Input
-            aria-label="Heard as"
+            aria-label="What you say"
             value={entry.phrase}
             onChange={(event) => onChange(entry.id, "phrase", event.target.value)}
-            placeholder="e.g. word script"
+            placeholder="e.g. k a"
           />
         </RuleField>
-        <RuleField label="Replace with">
+        <RuleField label="What gets written">
           <Input
-            aria-label="Replace with"
+            aria-label="What gets written"
             value={entry.replace_with}
             onChange={(event) => onChange(entry.id, "replace_with", event.target.value)}
             placeholder="e.g. WordScript"
@@ -618,6 +746,9 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
     [updateActiveProfile],
   );
 
+  // No reordering. Order used to decide which terms won the recognizer's slots;
+  // the runtime decides that now, and a move button that changes nothing is
+  // worse than no button (ADR 0035).
   const removeVocabularyHint = useCallback(
     (id: string) => {
       updateActiveProfile((profile) => ({
@@ -628,6 +759,9 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
     [updateActiveProfile],
   );
 
+  // Manual add stays. The list fills itself now, but knowing a term the system
+  // has not seen yet is legitimate — a name you are about to start using has no
+  // dictation behind it to learn from.
   const addVocabularyHint = useCallback(() => {
     updateActiveProfile((profile) => ({
       ...profile,
@@ -636,9 +770,11 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
         {
           id: `${profile.id}-vocab-${Date.now()}`,
           phrase: "",
-          // Off by default: the recognizer prompt is a hallucination amplifier,
-          // and the deterministic pass already handles the common case.
           use_as_prompt_hint: false,
+          origin: "user",
+          learned_at_ms: null,
+          hit_count: 0,
+          observation_count: 0,
         },
       ],
     }));
@@ -830,16 +966,30 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
     [previewRuleLookup, previewSource?.preview.applied_rules],
   );
   const biasPreview = previewSource?.transcription_bias;
-  const biasProfileHints = biasPreview?.profile_hints ?? [];
   const biasDictionaryTerms = biasPreview?.dictionary_terms ?? [];
   const biasSttHints = biasPreview?.stt_hints ?? [];
-  const ignoredProfileLines = biasPreview?.ignored_profile_lines ?? [];
-  const ignoredSttHintLines = biasPreview?.ignored_stt_hint_lines ?? [];
+  // With no terms the recognizer no longer gets an empty prompt — it gets the
+  // blank-state register floor (ADR 0036). Read back from the runtime rather
+  // than restated here: a second copy of that sentence is exactly how the
+  // preview and the provider drifted apart before
+  // (`stt-hints-bypass-the-vocabulary-opt-in.md`).
+  const blankStateFloor = biasSttHints.length === 0 ? biasPreview?.cloud_prompt_preview : null;
   const profileContextBudget = previewSource?.profile_context;
   const droppedContextLines = profileContextBudget?.dropped ?? [];
+  const repairCoverage = previewSource?.vocabulary_repair;
+  // Every row's fate, resolved from what the runtime reported rather than from
+  // the limits restated here. The status belongs beside the switch that causes
+  // it; a warning further down the page is a footnote, not a control.
+  const vocabularyRowStates = useMemo(
+    () => buildVocabularyRowStates(vocabularyHints, biasPreview, repairCoverage),
+    [biasPreview, repairCoverage, vocabularyHints],
+  );
+  const namedTermCount = vocabularyHints.filter((entry) => entry.phrase.trim()).length;
+  const learnedTermCount = vocabularyHints.filter(
+    (entry) => entry.origin === "learned" && entry.phrase.trim(),
+  ).length;
   const hasImportedOnlyIssues = Boolean(pendingImport && issueList.some((entry) => entry.rule_ids.some((ruleId) => !currentRuleLookup.has(ruleId))));
   const activePromptLineCount = countPromptLines(activeTextProfile.prompt);
-  const activeSttHintLineCount = countPromptLines(activeTextProfile.stt_hints);
   const totalRuleCount = dictionaryEntries.length + snippetEntries.length;
   // One line per panel. The panel title matches its tab exactly — two names for
   // one place was the whole confusion. The "Step N of 4" framing is gone: these
@@ -848,7 +998,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
   const activeWorkspaceCopy = activeWorkspacePanel === "dictionary"
     ? {
       title: "Replacements",
-      summary: "Fix recurring mishears: what the recognizer writes, and what it should say instead.",
+      summary: "For what you say on purpose: an abbreviation, and what it should be written out as.",
     }
     : activeWorkspacePanel === "snippets"
       ? {
@@ -915,8 +1065,8 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
             },
             {
               label: "Rule order",
-              value: "Replacements → Snippets",
-              hint: "Literal, case-insensitive matches, in the order you author them.",
+              value: "Repair → Replacements → Snippets",
+              hint: "Words & names are repaired first, so a replacement written against the real spelling still matches. The rest is literal and case-insensitive, in the order you author it.",
             },
           ]}
         />
@@ -940,7 +1090,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
           title="Pending import preview"
           description={
             pendingImport.resolution === "replace_current"
-              ? "Replace mode overwrites the current prompt, STT hints, dictionary and snippets with the imported file."
+              ? "Replace mode overwrites the current context, words \u0026 names, replacements and snippets with the imported file."
               : "Merge mode preserves the current prompt and STT hints unless they are empty and lets imported phrase/trigger matches replace existing rules."
           }
           action={<StatusBadge tone="info">{pendingImport.path.split(/[\\/]/).pop() ?? pendingImport.path}</StatusBadge>}
@@ -1025,7 +1175,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
             </Button>
           </div>
           <p className="py-3 text-[12px] leading-snug text-fg-muted">
-            Each profile carries its own context, optional STT hints, dictionary, snippets and processing mode.
+            Each profile carries its own context, words \u0026 names, replacements, snippets and processing mode.
             Included profiles ship inside this app config on first run, and the first real edit turns them into
             regular user-owned profiles. Switch profiles here or from the sidebar footer.
           </p>
@@ -1059,11 +1209,11 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
               <span className="font-medium text-foreground">{activePromptLineCount}</span>
             </div>
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-fg-muted">STT hints</span>
-              <span className="font-medium text-foreground">{activeSttHintLineCount}</span>
+              <span className="text-fg-muted">Words &amp; names</span>
+              <span className="font-medium text-foreground">{namedTermCount}</span>
             </div>
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-fg-muted">Dictionary terms</span>
+              <span className="text-fg-muted">Replacements</span>
               <span className="font-medium text-foreground">{dictionaryEntries.length}</span>
             </div>
             <div className="flex items-center justify-between text-[12px]">
@@ -1134,7 +1284,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
           <div className="flex flex-col gap-8">
             <FormCard
               title="Profile context"
-              description="What this profile is about — topics, not spellings. One item per line. Every mode gets this as background."
+              description="The topics you talk about — not spellings. One per line. This tells the AI what field it is reading, so it picks the right word where dictation is ambiguous. For individual terms, use Words & names below."
               bodyClassName="py-4"
             >
               <div className="flex flex-col gap-4">
@@ -1144,7 +1294,7 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
                   aria-label="Profile context"
                   rows={10}
                   onChange={(event) => updateActiveProfile({ prompt: event.target.value })}
-                  placeholder={"WordScript\nGroq\nTauri\nCPAL\ncustomer names\ninternal product terms"}
+                  placeholder={"platform constraints\nrelease scope\nincident response\nmigration steps"}
                 />
                 {profileContextBudget && (
                   <div className="flex flex-col gap-1.5">
@@ -1192,47 +1342,61 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
 
             <FormCard
               title="Words & names"
-              description="Individual terms this profile should spell right. Applied after transcription, where a correction is exact."
+              description="The words this profile has learned to spell, plus anything you added yourself. Every term reaches all AI modes and is repaired automatically when speech recognition mangles it. Speech recognition itself takes only a few, and which ones is decided for you."
               bodyClassName="py-4"
+              action={
+                learnedTermCount > 0 ? (
+                  <StatusBadge tone="accent" dot>
+                    {`${learnedTermCount} learned`}
+                  </StatusBadge>
+                ) : undefined
+              }
             >
               <div className="flex flex-col gap-4">
                 <RuleField label="Words & names">
                   <div className="flex flex-col gap-2" aria-label="Words and names">
-                    {vocabularyHints.map((entry, index) => (
-                      <div
-                        key={entry.id}
-                        className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2"
-                      >
-                        <input
-                          className={RULE_INPUT_CLASS}
-                          value={entry.phrase}
-                          aria-label={`Word or name ${index + 1}`}
-                          placeholder="WordScript"
-                          onChange={(event) =>
-                            updateVocabularyHint(entry.id, { phrase: event.target.value })
-                          }
-                        />
-                        <label className="flex shrink-0 items-center gap-2 text-[12px] text-fg-muted">
-                          <input
-                            type="checkbox"
-                            checked={entry.use_as_prompt_hint}
-                            aria-label={`Hint the recognizer for word ${index + 1}`}
-                            onChange={(event) =>
-                              updateVocabularyHint(entry.id, { use_as_prompt_hint: event.target.checked })
-                            }
-                          />
-                          Hint the recognizer
-                        </label>
-                        <button
-                          type="button"
-                          className="shrink-0 text-[12px] text-fg-muted hover:text-foreground"
-                          aria-label={`Remove word ${index + 1}`}
-                          onClick={() => removeVocabularyHint(entry.id)}
+                    {vocabularyHints.map((entry, index) => {
+                      const state = vocabularyRowStates.get(entry.id);
+                      const note = describeVocabularyRow(state, repairCoverage?.min_chars);
+                      const provenance = entry.phrase.trim()
+                        ? describeVocabularyProvenance(entry)
+                        : null;
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface px-3 py-2"
                         >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-3">
+                            <input
+                              className={RULE_INPUT_CLASS}
+                              value={entry.phrase}
+                              aria-label={`Word or name ${index + 1}`}
+                              placeholder="WordScript"
+                              onChange={(event) =>
+                                updateVocabularyHint(entry.id, { phrase: event.target.value })
+                              }
+                            />
+                            {state?.recognizer === "carried" && (
+                              <StatusBadge tone="info">In speech recognition</StatusBadge>
+                            )}
+                            <button
+                              type="button"
+                              className="shrink-0 text-[12px] text-fg-muted hover:text-foreground"
+                              aria-label={`Remove word ${index + 1}`}
+                              onClick={() => removeVocabularyHint(entry.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          {provenance && (
+                            <p className="text-[11px] leading-snug text-fg-dim">{provenance}</p>
+                          )}
+                          {note && (
+                            <p className="text-[11px] leading-snug text-fg-muted">{note}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                     <button
                       type="button"
                       className="self-start rounded-lg border border-border px-3 py-1.5 text-[12px] text-fg-dim hover:text-foreground"
@@ -1243,38 +1407,34 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
                   </div>
                 </RuleField>
                 <p className="text-[12px] leading-snug text-fg-muted">
-                  <strong className="font-semibold text-foreground">Hint the recognizer</strong> also sends that one term
-                  into speech recognition. Turn it on only for a term that is actually being misheard — a long
-                  recognizer prompt is itself a common cause of drifting text.
+                  A term lands here on its own once the AI cleanup has fixed the same word twice — that is the moment it
+                  is provable, and the moment you were busy dictating. Add one yourself for a name you are about to start
+                  using. Remove any row that is wrong; there is nothing else to adjust.
                 </p>
               </div>
             </FormCard>
 
             <FormCard
-              title="Rule check and preview"
-              description="Validation checks for empty fields, duplicates and collisions. Preview runs the literal dictionary-plus-snippet pass on the sample text below, with no microphone capture or semantic guessing."
+              title="What travels, and what it does"
+              description="Where each list lands before and after transcription, then the rules run against a sample. No microphone capture and no semantic guessing — the AI stages are not part of this preview."
               bodyClassName="py-4"
             >
               <div className="flex flex-col gap-4">
-                <div className="grid gap-3 sm:grid-cols-3" aria-label="Effective transcription bias preview">
+                <div className="grid gap-3 sm:grid-cols-2" aria-label="Effective transcription bias preview">
                   {[
                     {
-                      title: "Automatic STT vocabulary",
-                      body: "Only these concrete profile lines are forwarded automatically into speech-to-text.",
-                      chips: biasProfileHints,
-                      empty: "No concrete context lines are forwarded automatically right now.",
-                    },
-                    {
-                      title: "Preferred spellings",
-                      body: "Dictionary replacements contribute these target spellings as preserve hints.",
-                      chips: biasDictionaryTerms,
-                      empty: "No dictionary spellings are being forwarded yet.",
-                    },
-                    {
-                      title: "Explicit STT hints",
-                      body: "These short cues are forwarded exactly as explicit bias hints.",
+                      title: "Sent to the recognizer",
+                      body: "The few words & names the runtime picked, shortest first — those are the ones that cannot be repaired afterwards. Profile context is not here by design: it holds topics, and the recognizer can only be biased toward literal words.",
                       chips: biasSttHints,
-                      empty: "No explicit STT hints are currently forwarded.",
+                      empty: blankStateFloor
+                        ? `No words & names yet. The recognizer still gets one generic dictation line, so an empty prompt cannot pull it toward subtitle text: “${blankStateFloor}”`
+                        : "No words & names yet, and this profile sends the recognizer nothing at all.",
+                    },
+                    {
+                      title: "Corrected after transcription",
+                      body: "Replacements rewrite these deterministically once the text comes back. Words & names are repaired just before them, without needing a spoken form.",
+                      chips: biasDictionaryTerms,
+                      empty: "No replacements are defined yet.",
                     },
                   ].map((note) => (
                     <div key={note.title} className="rounded-lg border border-border bg-surface px-3 py-2.5">
@@ -1293,28 +1453,6 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
                       )}
                     </div>
                   ))}
-                  {(ignoredProfileLines.length > 0 || ignoredSttHintLines.length > 0) && (
-                    <div className="rounded-lg border border-border bg-surface px-3 py-2.5 sm:col-span-3">
-                      <strong className="text-[12px] font-semibold text-foreground">Not sent to the recognizer</strong>
-                      <p className="mt-1 text-[12px] leading-snug text-fg-muted">
-                        These lines are too broad or too long for the conservative recognizer bias path, so they are not
-                        forwarded to speech recognition. They still reach the transform prompt, where the processing mode
-                        decides how much weight they carry.
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {ignoredProfileLines.map((line) => (
-                          <span key={`ignored-profile-${line}`} className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] text-fg-dim">
-                            Context ignored: {line}
-                          </span>
-                        ))}
-                        {ignoredSttHintLines.map((line) => (
-                          <span key={`ignored-stt-${line}`} className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] text-fg-dim">
-                            STT ignored: {line}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
                 <RuleField label="Preview sample transcription">
                   <textarea
@@ -1424,11 +1562,11 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
             </FormCard>
 
             <div className="rounded-lg border border-border bg-surface px-4 py-3">
-              <strong className="text-[13px] font-semibold text-foreground">Literal rule model</strong>
+              <strong className="text-[13px] font-semibold text-foreground">How matching works</strong>
               <p className="mt-1 text-[12px] leading-snug text-fg-muted">
-                Text Rules match transcript phrases, not raw audio and not semantic intent. Dictionary runs first, snippets
-                second. For everyday reliability, add separate rules for common transcript variants instead of expecting
-                fuzzy matching.
+                All of this matches the transcript, not raw audio and not semantic intent. Words &amp; names run first
+                and match by closeness, which is why they need no spoken form. Replacements and snippets run after
+                them and match literally — one entry each, rather than one per way the recognizer might mishear it.
               </p>
             </div>
 
@@ -1498,22 +1636,23 @@ export function PromptsTab({ config, onChange, onValidationChange, onHealthChang
         {activeWorkspacePanel === "dictionary" && (
           <FormCard
             title="Replacements"
-            description="Heard as → written as. Exact, case-insensitive, applied in every mode."
+            description="Spoken form → written form. For shorthand you say deliberately, like &quot;KA&quot; for &quot;Kundenanfrage&quot;. Exact and case-insensitive, applied in every mode. Misheard names do not belong here — the recognizer mangles them differently every time, so there is no left side to write down. Put those in Words & names."
             bodyClassName="py-4"
             action={
               <Button
                 size="sm"
                 onClick={() => updateActiveProfile({ dictionary_entries: [...dictionaryEntries, makeDictionaryEntry()] })}
               >
-                <Plus /> Add dictionary term
+                <Plus /> Add replacement
               </Button>
             }
           >
             <div className="flex flex-col gap-3">
               {dictionaryEntries.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-[12px] leading-snug text-fg-muted">
-                  No dictionary entries yet. Add the phrases Groq hears wrong and the exact output WordScript should insert
-                  instead.
+                  No replacements yet. Add a shorthand you say on purpose and what it should be written out as. For a
+                  name the recognizer keeps mangling, use Words &amp; names instead — there is no fixed left side to
+                  write down.
                 </div>
               ) : (
                 dictionaryEntries.map((entry, index) => (

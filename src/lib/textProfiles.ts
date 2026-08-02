@@ -229,6 +229,13 @@ export function describeTextProfileWorkMode(profile: Pick<TextProfile, "work_mod
   return `${rewriteStyleLabel(rewriteStyleFromMode(workMode))}, ${insertBehaviorLabel(workMode.insert_behavior)}, ${recoveryBehaviorLabel(workMode.recovery_behavior)}`;
 }
 
+/** The version this mirror can honestly produce, which is deliberately not the
+ *  runtime's current one (`config.rs` is at 4).
+ *
+ *  This file mirrors one migration: the free-text hint blob to per-entry
+ *  vocabulary. The later steps — restoring a curated context field to topics,
+ *  and the origin field — belong to the runtime and are not reproduced here.
+ *  Claiming a higher number would tell the runtime those steps had run. */
 export const TEXT_PROFILE_SCHEMA_VERSION = 2;
 
 /** Mirrors `TextProfile::migrate_vocabulary_hints` in `config.rs`, so unsaved
@@ -257,6 +264,12 @@ export function migrateLegacyBiasPolicyToVocabularyHints(profile: TextProfile): 
             id: `${profile.id}-vocab-${index}`,
             phrase,
             use_as_prompt_hint: defaultUseAsPromptHint,
+            // Nothing was learning terms before this migration existed, so a
+            // row it produces is the user's by definition.
+            origin: "user" as const,
+            learned_at_ms: null,
+            hit_count: 0,
+            observation_count: 0,
           }));
 
   return { ...profile, vocabulary_hints, schema_version: TEXT_PROFILE_SCHEMA_VERSION };

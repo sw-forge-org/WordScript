@@ -106,6 +106,109 @@
 .ov-scope .ov-pill-shell {
   display: inline-flex;
   zoom: 0.87;
+  /* Anchors the learned-word tab below. Adding a containing block costs
+     nothing here: the shell has no offset children in the normal flow. */
+  position: relative;
+}
+
+/* ── Learned a word ────────────────────────────────────────────────────────
+   A small tab that slides out of the pill's left edge, names what was just
+   learned, and retracts back into it (ADR 0035). One shot, nothing to click.
+
+   Two elements, and the split is the whole trick:
+
+   `.ov-learned-tab` is a **shutter**, not a surface. It paints nothing — no
+   background, no border — and only its `width` animates, from 0 to the content
+   width and back. Anchored by `right`, so growing extends it leftward: the tab
+   appears to emerge from behind the pill and to withdraw into it.
+
+   `.ov-learned-tab__inner` is the visible tab, pinned to the shutter's right
+   edge at a fixed content width. Pinning it right is what makes the reveal read
+   as *emerging* rather than as a box growing in place: the content never moves,
+   it is uncovered.
+
+   Three constraints this shape satisfies, all load-bearing:
+
+   - `position: absolute` keeps it out of the pill's flex flow. In the flow it
+     would widen the pill, and a pill wider than the 480px window has its
+     rounded ends clipped — the "eckige Kanten" defect the uniform window width
+     exists to prevent. Out of flow it changes no measured geometry, so no
+     `set_size` is triggered and the reveal path stays untouched.
+   - **`width`, not `transform` or `opacity`.** Both of those are composited,
+     and a compositor layer on an element that outlives a surface swap is
+     exactly what WebKitGTK fails to invalidate — the ghosting mechanism this
+     file documents at length. A width animation drives layout, which forces a
+     repaint per frame instead of caching a raster. It is the more expensive
+     property and the safe one here, for under two seconds, once.
+   - The shutter's square clip against the inner's rounded left end is
+     deliberate. It reads as the tab sliding past a straight edge, and it keeps
+     the rounding on the element that owns it. */
+.ov-scope .ov-learned-tab {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 6px);
+  height: 22px;
+  margin-top: -11px;
+  width: 0;
+  overflow: hidden;
+  pointer-events: none;
+  animation: overlay-learned-sweep var(--ov-learned-duration, 1900ms)
+    cubic-bezier(0.22, 0.85, 0.28, 1) both;
+}
+
+.ov-scope .ov-learned-tab__inner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: max-content;
+  max-width: 168px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border-radius: var(--ov-radius-compact);
+  background: var(--ov-surface);
+  border: 1px solid var(--ov-accent-border);
+  box-shadow: var(--ov-highlight);
+  font-family: var(--ov-font);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ov-text);
+}
+
+.ov-scope .ov-learned-tab__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ov-radius-compact);
+  background: var(--ov-accent);
+}
+
+.ov-scope .ov-learned-tab__label {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* The fallback for a pill so wide that the term has nowhere to go: the dot
+   alone, which always fits. Deliberately not a truncated term — a name cut to
+   "Kuber…" carries less than the marker and reads as a rendering fault rather
+   than as a deliberate short form. `display: none` rather than a width of 0, so
+   the flex gap collapses with it. */
+.ov-scope .ov-learned-tab[data-variant="marker"] .ov-learned-tab__label {
+  display: none;
+}
+
+/* Out and back in one declaration, so React only has to mount and unmount.
+   The hold is the long middle; both edges are short enough to read as a slide
+   rather than as a resize. */
+@keyframes overlay-learned-sweep {
+  0% { width: 0; }
+  14% { width: var(--ov-learned-width, 0px); }
+  88% { width: var(--ov-learned-width, 0px); }
+  100% { width: 0; }
 }
 
 .ov-scope .pill {
@@ -577,6 +680,14 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* Not collapsed to 0.01ms like the rest: that would end with the shutter at
+     width 0, which is the tab never appearing at all. It stays open for its
+     whole life instead and disappears when React unmounts it. */
+  .ov-scope .ov-learned-tab {
+    animation: none !important;
+    width: var(--ov-learned-width, 0px);
   }
 }
 

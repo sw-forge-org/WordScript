@@ -53,7 +53,7 @@ describe("textProfileTemplates", () => {
     expect(merged.work_mode!.insert_behavior).toBe(supportTemplate!.work_mode!.insert_behavior);
     expect(merged.work_mode!.recovery_behavior).toBe(supportTemplate!.work_mode!.recovery_behavior);
     expect(merged.prompt).toContain("custom org names");
-    expect(merged.prompt).toContain("WordScript");
+    expect(merged.prompt).toContain("customer names");
     expect(merged.stt_hints).toContain("existing guided phrase");
     expect(merged.prompt.split("\n").filter((line) => line === "ticket IDs")).toHaveLength(1);
     expect(merged.dictionary_entries.find((entry) => entry.phrase === "sev one")?.replace_with).toBe("SEV 1 custom");

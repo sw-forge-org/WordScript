@@ -13,7 +13,6 @@ use super::transform::{correction_system_prompt, NativeTransformConfig};
 use super::workspace_context::WorkspaceContext;
 use super::text_rules::{
     analyze_document, get_profile_health, GetProfileHealthRequest, TextRulesDocument,
-    TextRulesIssueCode,
 };
 use super::hallucination_detect::{detect_advanced_hallucination, DriftCorroboration};
 use super::transcription_hints::{analyze_transcription_bias_with_mode, BiasRequestContext};
@@ -62,10 +61,30 @@ struct CorpusEntry {
     /// a per-mode assertion cannot catch that class of drift.
     #[serde(default)]
     expected_profile_context: Option<ExpectedProfileContext>,
-    #[allow(dead_code)]
-    expected_post_correction: String,
+    /// What deterministic vocabulary repair must do to `raw_transcript`.
+    /// Negative cases carry the same shape with `text` equal to the input, and
+    /// they are the ones that matter: a missed repair is readable text, a wrong
+    /// one is a word the user never said (ADR 0033).
     #[serde(default)]
-    #[allow(dead_code)]
+    expected_vocabulary_repair: Option<ExpectedVocabularyRepair>,
+    /// Which terms `vocabulary_learning` must read out of the `raw_transcript`
+    /// / `expected_post_correction` pair. An empty list is an assertion, not an
+    /// omission: everything the correction does that is not a term repair has
+    /// to come back empty, and those entries are what stop the detector from
+    /// turning ordinary rewording into vocabulary (ADR 0035).
+    #[serde(default)]
+    expected_vocabulary_candidates: Option<Vec<String>>,
+    /// What the correction model returned. Present only on entries that pin a
+    /// guardrail: without a model reply there is nothing for the guardrail to
+    /// act on, and asserting the shipped text alone would test nothing.
+    #[serde(default)]
+    biased_correction: Option<String>,
+    expected_post_correction: String,
+    /// The `applied_rules` entry `normalize_correction` must produce for
+    /// `biased_correction`. Null asserts the reply passes through untouched,
+    /// which is the half of the corpus that keeps a guardrail from growing
+    /// teeth it was never meant to have.
+    #[serde(default)]
     expected_guardrail: Option<String>,
     #[allow(dead_code)]
     notes: String,
@@ -118,10 +137,24 @@ struct ExpectedProfileContext {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+struct ExpectedVocabularyRepair {
+    /// The transcript after repair. Equal to `raw_transcript` for a case that
+    /// must not fire.
+    text: String,
+    /// Terms whose repair must be reported. Empty asserts nothing was applied.
+    #[serde(default)]
+    applied: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct CorpusProfile {
     id: String,
     prompt: String,
     stt_hints: String,
+    /// Every vocabulary term. Drives deterministic repair and reaches every LLM
+    /// stage as granular context (ADR 0033).
+    #[serde(default)]
+    vocabulary: Vec<String>,
     #[serde(default)]
     dictionary_entries: Vec<DictionaryEntry>,
     #[serde(default)]
@@ -131,10 +164,6 @@ struct CorpusProfile {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ExpectedBias {
-    #[serde(default)]
-    profile_hints_accepted: Vec<String>,
-    #[serde(default)]
-    ignored_profile_lines_count: Option<usize>,
     #[serde(default)]
     dictionary_terms: Vec<String>,
     #[serde(default)]
@@ -222,17 +251,11 @@ fn corpus_drives_transcription_bias_assertions() {
             continue;
         };
         let bias = analyze_transcription_bias_with_mode(
-            &entry.profile.prompt,
             &entry.profile.stt_hints,
             &entry.profile.dictionary_entries,
             &conservative_context(),
         );
 
-        assert_eq!(
-            bias.profile_hints, expected.profile_hints_accepted,
-            "[{}] profile_hints mismatch (failure_mode={})",
-            entry.id, entry.failure_mode
-        );
         assert_eq!(
             bias.dictionary_terms, expected.dictionary_terms,
             "[{}] dictionary_terms mismatch (failure_mode={})",
@@ -243,16 +266,74 @@ fn corpus_drives_transcription_bias_assertions() {
             "[{}] stt_hints mismatch (failure_mode={})",
             entry.id, entry.failure_mode
         );
-        if let Some(expected_ignored) = expected.ignored_profile_lines_count {
-            assert_eq!(
-                bias.ignored_profile_lines.len(),
-                expected_ignored,
-                "[{}] ignored_profile_lines count mismatch (failure_mode={})",
-                entry.id,
-                entry.failure_mode
-            );
+    }
+}
+
+/// Runs the model reply the corpus recorded through the real guardrails.
+///
+/// The prompt assertions below only prove a sentence is in the prompt, not that
+/// the model obeyed it — that gap is exactly why the fifth guardrail is a
+/// deterministic rule rather than a sixth prompt line (ADR 0036). This test
+/// closes it for the cases where a reply was captured: the guardrail either
+/// fires and produces the expected text, or the reply survives untouched.
+#[test]
+fn corpus_drives_correction_guardrail_assertions() {
+    let corpus = load_corpus();
+    let mut fired = 0;
+    let mut passed_through = 0;
+
+    for entry in &corpus.entries {
+        let Some(biased) = &entry.biased_correction else {
+            continue;
+        };
+
+        let preset = ProcessingMode::Cleanup.transform_preset();
+        let result = super::transform::normalize_correction_for_tests(
+            &entry.raw_transcript,
+            biased,
+            &NativeTransformConfig {
+                provider: "groq".to_string(),
+                profile_prompt: entry.profile.prompt.clone(),
+                dictionary_entries: entry.profile.dictionary_entries.clone(),
+                post_process: preset.post_process,
+                filter_fillers: preset.filter_fillers,
+                professionalize: preset.professionalize,
+                ..NativeTransformConfig::default()
+            },
+        );
+
+        assert_eq!(
+            result.text, entry.expected_post_correction,
+            "[{}] post-correction text mismatch (failure_mode={})",
+            entry.id, entry.failure_mode
+        );
+
+        match &entry.expected_guardrail {
+            Some(rule) => {
+                assert!(
+                    result.applied_rules.contains(rule),
+                    "[{}] expected guardrail {rule:?}, got {:?} (failure_mode={})",
+                    entry.id,
+                    result.applied_rules,
+                    entry.failure_mode
+                );
+                fired += 1;
+            }
+            None => {
+                assert_eq!(
+                    result.text, *biased,
+                    "[{}] reply was altered although no guardrail was expected (failure_mode={})",
+                    entry.id, entry.failure_mode
+                );
+                passed_through += 1;
+            }
         }
     }
+
+    assert!(
+        fired >= 1 && passed_through >= 1,
+        "the guardrail corpus needs both directions, fired={fired} passed_through={passed_through}"
+    );
 }
 
 #[test]
@@ -370,6 +451,7 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
             correction_system_prompt(&NativeTransformConfig {
                 provider: "groq".to_string(),
                 profile_prompt: entry.profile.prompt.clone(),
+                vocabulary: entry.profile.vocabulary.clone(),
                 dictionary_entries: entry.profile.dictionary_entries.clone(),
                 post_process: preset.post_process,
                 filter_fillers: preset.filter_fillers,
@@ -387,7 +469,7 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
             agent_model: String::new(),
             profile_label: entry.profile.id.clone(),
             profile_prompt: entry.profile.prompt.clone(),
-            stt_hints: entry.profile.stt_hints.clone(),
+            vocabulary: entry.profile.vocabulary.clone(),
             dictionary_entries: entry.profile.dictionary_entries.clone(),
             snippet_entries: Vec::new(),
             workspace_context: None,
@@ -399,6 +481,7 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
             sub_mode: "enhance".to_string(),
             target: "general".to_string(),
             profile_prompt: entry.profile.prompt.clone(),
+            vocabulary: entry.profile.vocabulary.clone(),
             workspace_context: None,
         }),
         other => panic!("[{}] unknown mode in expected_profile_context: {other}", entry.id),
@@ -484,6 +567,100 @@ fn corpus_drives_hallucination_detection_assertions() {
     );
 }
 
+/// Repair is the one stage that rewrites words on similarity rather than on an
+/// exact rule, so its false-positive rate has to be measured and not asserted.
+/// Negative entries carry as much weight here as positive ones.
+#[test]
+fn corpus_drives_vocabulary_repair_assertions() {
+    let corpus = load_corpus();
+    let mut fired = 0;
+    let mut declined = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_vocabulary_repair else {
+            continue;
+        };
+
+        let outcome = super::vocabulary_repair::repair_vocabulary(
+            &entry.raw_transcript,
+            &entry.profile.vocabulary,
+        );
+
+        assert_eq!(
+            outcome.text, expected.text,
+            "[{}] repaired text mismatch (failure_mode={})",
+            entry.id, entry.failure_mode
+        );
+
+        let applied: Vec<String> = expected
+            .applied
+            .iter()
+            .map(|term| format!("vocabulary:{term}"))
+            .collect();
+        assert_eq!(
+            outcome.applied_rules, applied,
+            "[{}] applied rules mismatch (failure_mode={})",
+            entry.id, entry.failure_mode
+        );
+
+        if expected.applied.is_empty() {
+            declined += 1;
+        } else {
+            fired += 1;
+        }
+    }
+
+    assert!(
+        fired >= 2 && declined >= 2,
+        "repair needs cases in both directions, fired={fired} declined={declined}"
+    );
+}
+
+/// Learning reads a raw/final pair the same way repair reads a transcript, and
+/// it has the same failure shape: the interesting cases are the ones it must
+/// walk away from. A detector that turns every reworded verb into vocabulary
+/// fills the list with noise and then spends the recognizer's slots on it, so
+/// the negative entries carry more weight here than the positive ones.
+#[test]
+fn corpus_drives_vocabulary_learning_assertions() {
+    let corpus = load_corpus();
+    let mut found = 0;
+    let mut declined = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_vocabulary_candidates else {
+            continue;
+        };
+
+        let candidates: Vec<String> = super::vocabulary_learning::detect_candidates(
+            &entry.raw_transcript,
+            &entry.expected_post_correction,
+            &entry.profile.vocabulary,
+            super::vocabulary_learning::LearningSource::Correction,
+        )
+        .into_iter()
+        .map(|candidate| candidate.term)
+        .collect();
+
+        assert_eq!(
+            &candidates, expected,
+            "[{}] vocabulary candidates mismatch (failure_mode={})",
+            entry.id, entry.failure_mode
+        );
+
+        if expected.is_empty() {
+            declined += 1;
+        } else {
+            found += 1;
+        }
+    }
+
+    assert!(
+        found >= 2 && declined >= 3,
+        "learning needs cases in both directions, found={found} declined={declined}"
+    );
+}
+
 #[test]
 fn corpus_drives_text_rules_analysis_assertions() {
     let corpus = load_corpus();
@@ -497,19 +674,21 @@ fn corpus_drives_text_rules_analysis_assertions() {
         };
         let analysis = analyze_document(&document, None);
 
-        let has_no_concrete_hints = analysis
-            .issues
-            .iter()
-            .any(|issue| matches!(issue.code, TextRulesIssueCode::NoConcreteProfileHints));
-
-        let accepted_count = analysis.transcription_bias.profile_hints.len();
-        if accepted_count == 0 && !entry.profile.prompt.trim().is_empty() {
-            assert!(
-                has_no_concrete_hints,
-                "[{}] expected NoConcreteProfileHints issue (failure_mode={})",
-                entry.id, entry.failure_mode
-            );
-        }
+        // The context field never reaches the recognizer (ADR 0032), so no
+        // analysis issue may be raised about how it would fare there. A
+        // profile that carries topics and nothing else is correct, not
+        // under-configured.
+        assert!(
+            analysis
+                .transcription_bias
+                .cloud_prompt_preview
+                .as_deref()
+                .map(|preview| !preview.contains("Vocabulary:"))
+                .unwrap_or(true),
+            "[{}] the recognizer prompt must not carry a profile-context section (failure_mode={})",
+            entry.id,
+            entry.failure_mode
+        );
     }
 }
 

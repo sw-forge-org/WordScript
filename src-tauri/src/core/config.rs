@@ -361,24 +361,89 @@ impl TextProfileWorkMode {
     }
 }
 
-/// A word or name the user taught the profile.
+/// Where a vocabulary entry came from.
 ///
-/// `use_as_prompt_hint` is the whole replacement for the old `BiasMode` enum
-/// plus its `ManualBias` flags. Pushing vocabulary into Whisper's initial prompt
-/// is itself a documented hallucination source, so it is off per entry by
-/// default and there is no profile-wide mode left to reason about.
+/// The distinction is what lets the panel stop being a form: a learned row is
+/// the display of something the runtime observed, a user row is a term someone
+/// knew in advance. Removal works the same on both, because a wrong learned
+/// term is removed rather than corrected (ADR 0033 — a term has no left-hand
+/// side to fix).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VocabularyHintOrigin {
+    /// Typed into the panel. Also what every pre-schema-4 entry migrates to:
+    /// nothing was learning terms before, so no existing row can be one.
+    #[default]
+    User,
+    /// Promoted by `vocabulary_learning` after a second sighting.
+    Learned,
+}
+
+/// A word or name the profile carries.
+///
+/// `use_as_prompt_hint` is a migration remnant. It used to be the per-entry
+/// recognizer opt-in, and its intuitive use was backwards: a user switches on
+/// their most important terms, which are the long product names — exactly the
+/// ones `vocabulary_repair` recovers reliably afterwards. The terms that
+/// actually need a recognizer slot are the short ones, which are unrecoverable
+/// once the transcript exists. The runtime allocates the slots now
+/// (`recognizer_slot_phrases`) and nothing reads this field (ADR 0035). It is
+/// kept the way `stt_hints` is kept, so an older config still loads.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct VocabularyHintEntry {
     pub id: String,
     pub phrase: String,
     pub use_as_prompt_hint: bool,
+    pub origin: VocabularyHintOrigin,
+    /// When the runtime promoted this term. `None` for a term someone typed.
+    pub learned_at_ms: Option<u64>,
+    /// How often deterministic repair has acted on this term. The panel says
+    /// which rows earn their place instead of leaving a term list nobody can
+    /// judge.
+    pub hit_count: u32,
+    /// How many times the correction stage was seen repairing this term before
+    /// it was promoted. Ranks the recognizer's slots below the length rule.
+    pub observation_count: u32,
 }
 
 /// Bumped when a profile's shape changes in a way that needs a one-time
 /// migration on load. 1 = pre-vocabulary profiles carrying `stt_hints` as a
-/// free-text blob plus a profile-wide bias policy.
-pub const TEXT_PROFILE_SCHEMA_VERSION: u32 = 2;
+/// free-text blob plus a profile-wide bias policy. 2 = curated profiles whose
+/// context field was seeded with spellings instead of topics (ADR 0032). 3 =
+/// vocabulary entries that predate the learned/user distinction (ADR 0035).
+pub const TEXT_PROFILE_SCHEMA_VERSION: u32 = 4;
+
+/// The curated context fields as they were seeded between 2026-05-25 and
+/// ADR 0032, when the field held spellings rather than the topics its own
+/// description asks for.
+///
+/// Matched byte for byte and never by shape: an edited value must survive
+/// untouched. This is the same restraint `refresh_curated_text_profile_presentation`
+/// documents after the `work_mode` reset — a template may not overwrite what a
+/// user can edit.
+const LEXICAL_SEED_PROMPTS: &[(&str, &str)] = &[
+    (
+        "curated-customer-success",
+        "WordScript\nSEV-1\nSEV-2\nSLA\nRCA\nKB\nStatuspage\nEnterprise plan",
+    ),
+    (
+        "curated-sales",
+        "WordScript\nCRM\nMRR\nACV\nPOC\nROI\nMSA\nMutual Action Plan",
+    ),
+    (
+        "curated-founder-ops",
+        "WordScript\nP&L\nOKR\nQBR\nSOP\n1:1\nBoard update\nBudget variance",
+    ),
+    (
+        "curated-recruiting",
+        "WordScript\nHR\nATS\nHM\nEOD\n1:1\nscorecard\nheadcount",
+    ),
+    (
+        "curated-product-engineering",
+        "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri",
+    ),
+];
 
 fn default_text_profile_schema_version() -> u32 {
     1
@@ -420,8 +485,83 @@ impl TextProfile {
     /// Lines the hint filter would have ignored anyway are dropped here too,
     /// but logged rather than silently lost: they were never reaching Whisper,
     /// and carrying them forward would only recreate the illusion that they did.
-    pub(crate) fn migrate_vocabulary_hints(&mut self) -> bool {
-        if self.schema_version >= TEXT_PROFILE_SCHEMA_VERSION {
+    /// Runs every pending one-time migration in version order and lands the
+    /// profile on the current schema. Returns whether anything changed.
+    ///
+    /// Each step guards on its own version rather than on the constant, so
+    /// bumping the constant cannot silently re-run a migration that already
+    /// happened.
+    pub(crate) fn migrate_to_current_schema(&mut self) -> bool {
+        let mut changed = self.migrate_vocabulary_hints();
+        changed |= self.migrate_lexical_context_seed();
+        changed |= self.migrate_vocabulary_origin();
+        self.schema_version = TEXT_PROFILE_SCHEMA_VERSION;
+        changed
+    }
+
+    /// Version 1 -> 2. Returns the curated context field to topics where it
+    /// still holds the spellings seeded between 2026-05-25 and ADR 0032.
+    ///
+    /// Nothing moves to `vocabulary_hints`: every acronym in those seeds is
+    /// already a `dictionary_entry`, which is where a dictated form maps to a
+    /// written one, and copying it into the recognizer channel would recreate
+    /// exactly the redundancy ADR 0017 removed.
+    fn migrate_lexical_context_seed(&mut self) -> bool {
+        if self.schema_version >= 3 {
+            return false;
+        }
+
+        let Some((_, lexical_seed)) = LEXICAL_SEED_PROMPTS
+            .iter()
+            .find(|(id, _)| *id == self.id.as_str())
+        else {
+            return false;
+        };
+
+        if self.prompt != *lexical_seed {
+            return false;
+        }
+
+        let Some(seed) = curated_text_profile_seeds()
+            .into_iter()
+            .find(|seed| seed.id == self.id)
+        else {
+            return false;
+        };
+
+        self.prompt = seed.prompt;
+        super::runtime_log::record(format!(
+            "[WordScript] Profile context restored to topics profile={}",
+            self.id,
+        ));
+        true
+    }
+
+    /// Version 3 -> 4: vocabulary entries gained an origin.
+    ///
+    /// Every entry that existed before the runtime could learn one is the
+    /// user's, by definition — nothing was promoting terms yet — and serde's
+    /// default already lands there. So this step deliberately rewrites nothing.
+    ///
+    /// It would be easy to write the loop anyway "to be sure", and it would be
+    /// a defect: the frontend mirror in `textProfiles.ts` writes profiles back
+    /// at the version *it* can produce, so this step also runs over configs
+    /// that already hold learned rows. An unconditional overwrite there would
+    /// quietly relabel every learned term as hand-typed on the next load.
+    ///
+    /// What it does do is report the change, which is what makes the config
+    /// carry the new version number after one load.
+    fn migrate_vocabulary_origin(&mut self) -> bool {
+        if self.schema_version >= 4 {
+            return false;
+        }
+
+        self.schema_version = 4;
+        true
+    }
+
+    fn migrate_vocabulary_hints(&mut self) -> bool {
+        if self.schema_version >= 2 {
             return false;
         }
 
@@ -442,6 +582,8 @@ impl TextProfile {
                     id: format!("{}-vocab-{index}", self.id),
                     phrase: phrase.clone(),
                     use_as_prompt_hint: default_use_as_prompt_hint,
+                    origin: VocabularyHintOrigin::User,
+                    ..VocabularyHintEntry::default()
                 })
                 .collect();
         }
@@ -455,19 +597,37 @@ impl TextProfile {
             ));
         }
 
-        self.schema_version = TEXT_PROFILE_SCHEMA_VERSION;
+        self.schema_version = 2;
         true
     }
 
-    /// The phrases that are allowed into the transcription prompt. Everything
-    /// else in the vocabulary is applied deterministically after transcription.
-    pub(crate) fn prompt_hint_phrases(&self) -> Vec<String> {
+    /// Every term in the profile's vocabulary, opted in or not.
+    ///
+    /// Learned or typed, short or long, in the recognizer's slots or not: a
+    /// term is granular profile context and reaches every transform stage
+    /// unconditionally (ADR 0033). The recognizer selection below is an
+    /// *addition* to this, never a filter on it.
+    pub(crate) fn vocabulary_phrases(&self) -> Vec<String> {
         self.vocabulary_hints
             .iter()
-            .filter(|entry| entry.use_as_prompt_hint)
-            .map(|entry| entry.phrase.clone())
-            .filter(|phrase| !phrase.trim().is_empty())
+            .map(|entry| entry.phrase.trim().to_string())
+            .filter(|phrase| !phrase.is_empty())
             .collect()
+    }
+
+    /// The terms the recognizer's initial prompt gets, chosen by the runtime.
+    ///
+    /// The order is the whole point, and it is the one a person gets backwards.
+    /// Asked which terms matter most, anyone picks their long product names —
+    /// and those are exactly the ones `vocabulary_repair` restores reliably
+    /// after the fact. A term below the repair floor has no second chance: once
+    /// the transcript exists, "Tauri" is gone. So the short terms go first, and
+    /// the slots stop being spent on words that did not need them (ADR 0035).
+    ///
+    /// Within each group the term seen mangled more often wins, because that is
+    /// the evidence that the recognizer actually struggles with it.
+    pub(crate) fn recognizer_slot_phrases(&self) -> Vec<String> {
+        select_recognizer_slots(&self.vocabulary_hints)
     }
 
     pub(crate) fn resolved_speech(&self) -> ProfileSpeechSettings {
@@ -481,6 +641,50 @@ impl TextProfile {
     pub(crate) fn resolved_capture(&self) -> ProfileCaptureSettings {
         self.capture.clone().unwrap_or_default()
     }
+}
+
+/// The recognizer's slot allocation over a raw entry list.
+///
+/// A free function rather than a method, because the Settings preview analyses
+/// unsaved entries that are not a profile yet, and it has to show the same
+/// selection the capture path will make. Recomputing the rule there is what
+/// made the panel promise an initial prompt the provider never received.
+pub(crate) fn select_recognizer_slots(entries: &[VocabularyHintEntry]) -> Vec<String> {
+    let mut ranked: Vec<(bool, std::cmp::Reverse<u32>, &str)> = entries
+        .iter()
+        .map(|entry| {
+            let phrase = entry.phrase.trim();
+            (
+                // `false` sorts first, so a term below the repair floor leads.
+                super::vocabulary_repair::is_repairable_term(phrase),
+                std::cmp::Reverse(entry.observation_count),
+                phrase,
+            )
+        })
+        .filter(|(_, _, phrase)| {
+            !phrase.is_empty() && super::transcription_hints::is_stt_hint_candidate(phrase)
+        })
+        .collect();
+
+    // Stable, so among terms of equal rank the profile's own order decides. A
+    // list that reshuffles itself between saves is one nobody can reason about.
+    ranked.sort_by_key(|(repairable, observations, _)| (*repairable, *observations));
+
+    let mut selected: Vec<String> = Vec::new();
+    for (_, _, phrase) in ranked {
+        if selected
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(phrase))
+        {
+            continue;
+        }
+        selected.push(phrase.to_string());
+        if selected.len() >= super::transcription_hints::max_recognizer_slots() {
+            break;
+        }
+    }
+
+    selected
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -1164,8 +1368,9 @@ impl AppConfig {
             }
 
             // Runs after the id is settled, because migrated entries derive
-            // their ids from the profile id.
-            profile.migrate_vocabulary_hints();
+            // their ids from the profile id, and the curated context migration
+            // matches on it.
+            profile.migrate_to_current_schema();
 
             if profile.label.trim().is_empty() {
                 profile.label = if index == 0 {
@@ -3295,7 +3500,7 @@ mod tests {
             ..TextProfile::default()
         };
 
-        assert!(profile.migrate_vocabulary_hints());
+        assert!(profile.migrate_to_current_schema());
 
         assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
         assert_eq!(
@@ -3306,35 +3511,47 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["status update", "triage summary"]
         );
-        // Conservative was the old default and never forwarded terms, so no
-        // entry may silently start feeding the Whisper prompt.
+        // Nothing was learning terms before schema 4, so every migrated row is
+        // the user's. Stated rather than inherited from a derive.
         assert!(profile
             .vocabulary_hints
             .iter()
-            .all(|entry| !entry.use_as_prompt_hint));
-        assert!(profile.prompt_hint_phrases().is_empty());
+            .all(|entry| entry.origin == VocabularyHintOrigin::User));
     }
 
+    /// The old per-entry opt-in still round-trips so an older config loads, but
+    /// it no longer decides anything. A profile that had it switched on must
+    /// not get a different recognizer prompt than one that did not (ADR 0035).
     #[test]
-    fn vocabulary_migration_keeps_an_explicit_manual_opt_in() {
-        let mut profile = TextProfile {
-            id: "support".to_string(),
-            stt_hints: "status update".to_string(),
-            schema_version: 1,
-            work_mode: TextProfileWorkMode {
-                bias_mode: BiasMode::Manual,
-                manual_bias: ManualBias {
-                    cloud_include_profile_terms: true,
-                    ..ManualBias::default()
+    fn the_migrated_opt_in_no_longer_decides_the_recognizer_slots() {
+        let build = |bias_mode: BiasMode| {
+            let mut profile = TextProfile {
+                id: "support".to_string(),
+                stt_hints: "Kubernetes\nStatuspage".to_string(),
+                schema_version: 1,
+                work_mode: TextProfileWorkMode {
+                    bias_mode,
+                    manual_bias: ManualBias {
+                        cloud_include_profile_terms: true,
+                        ..ManualBias::default()
+                    },
+                    ..TextProfileWorkMode::default()
                 },
-                ..TextProfileWorkMode::default()
-            },
-            ..TextProfile::default()
+                ..TextProfile::default()
+            };
+            profile.migrate_to_current_schema();
+            profile
         };
 
-        profile.migrate_vocabulary_hints();
+        let opted_in = build(BiasMode::Manual);
+        let opted_out = build(BiasMode::Conservative);
 
-        assert_eq!(profile.prompt_hint_phrases(), vec!["status update"]);
+        assert!(opted_in.vocabulary_hints[0].use_as_prompt_hint);
+        assert!(!opted_out.vocabulary_hints[0].use_as_prompt_hint);
+        assert_eq!(
+            opted_in.recognizer_slot_phrases(),
+            opted_out.recognizer_slot_phrases()
+        );
     }
 
     #[test]
@@ -3346,11 +3563,282 @@ mod tests {
             ..TextProfile::default()
         };
 
-        assert!(profile.migrate_vocabulary_hints());
-        profile.vocabulary_hints[0].use_as_prompt_hint = true;
+        assert!(profile.migrate_to_current_schema());
+        profile.vocabulary_hints[0].phrase = "triage summary".to_string();
 
-        assert!(!profile.migrate_vocabulary_hints());
-        assert_eq!(profile.prompt_hint_phrases(), vec!["status update"]);
+        assert!(!profile.migrate_to_current_schema());
+        assert_eq!(profile.vocabulary_phrases(), vec!["triage summary"]);
+    }
+
+    #[test]
+    fn context_migration_restores_topics_on_an_untouched_lexical_seed() {
+        let mut profile = TextProfile {
+            id: "curated-product-engineering".to_string(),
+            prompt: "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri".to_string(),
+            schema_version: 2,
+            ..TextProfile::default()
+        };
+
+        assert!(profile.migrate_to_current_schema());
+
+        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
+        assert!(profile.prompt.contains("platform constraints"));
+        assert!(!profile.prompt.contains("SDK"));
+    }
+
+    /// The whole safety of this migration is the byte match. A user who edited
+    /// one character owns that field, and a template may not take it back.
+    #[test]
+    fn context_migration_never_touches_an_edited_field() {
+        let edited = "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri\nKubernetes";
+        let mut profile = TextProfile {
+            id: "curated-product-engineering".to_string(),
+            prompt: edited.to_string(),
+            schema_version: 2,
+            ..TextProfile::default()
+        };
+
+        profile.migrate_to_current_schema();
+
+        assert_eq!(profile.prompt, edited);
+        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
+    }
+
+    /// Installs seeded before 2026-05-25 already hold topics. They must be
+    /// left alone rather than matched by shape and rewritten.
+    #[test]
+    fn context_migration_leaves_a_profile_that_already_holds_topics() {
+        let topics = "feature names\nbug IDs\nrelease scope";
+        let mut profile = TextProfile {
+            id: "curated-product-engineering".to_string(),
+            prompt: topics.to_string(),
+            schema_version: 2,
+            ..TextProfile::default()
+        };
+
+        profile.migrate_to_current_schema();
+
+        assert_eq!(profile.prompt, topics);
+    }
+
+    #[test]
+    fn context_migration_runs_once() {
+        let mut profile = TextProfile {
+            id: "curated-sales".to_string(),
+            prompt: "WordScript\nCRM\nMRR\nACV\nPOC\nROI\nMSA\nMutual Action Plan".to_string(),
+            schema_version: 2,
+            ..TextProfile::default()
+        };
+
+        assert!(profile.migrate_to_current_schema());
+        let migrated = profile.prompt.clone();
+
+        // A user who types the old seed back in owns it from here on.
+        profile.prompt = "WordScript\nCRM\nMRR\nACV\nPOC\nROI\nMSA\nMutual Action Plan".to_string();
+        assert!(!profile.migrate_to_current_schema());
+        assert_ne!(profile.prompt, migrated);
+    }
+
+    fn vocabulary(entries: &[(&str, u32)]) -> Vec<VocabularyHintEntry> {
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, (phrase, observations))| VocabularyHintEntry {
+                id: format!("vocab-{index}"),
+                phrase: phrase.to_string(),
+                observation_count: *observations,
+                ..VocabularyHintEntry::default()
+            })
+            .collect()
+    }
+
+    /// The rule the user gets backwards. Asked which terms matter most, anyone
+    /// names their long product names — and those are exactly the ones repair
+    /// restores afterwards. A term below the repair floor has no second chance.
+    #[test]
+    fn the_recognizer_slots_lead_with_the_terms_repair_cannot_reach() {
+        let entries = vocabulary(&[
+            ("Kubernetes", 9),
+            ("Statuspage", 8),
+            ("PostgreSQL", 7),
+            ("Prometheus", 6),
+            ("Tauri", 1),
+        ]);
+
+        let slots = select_recognizer_slots(&entries);
+
+        assert_eq!(slots.first().map(String::as_str), Some("Tauri"));
+        assert_eq!(slots.len(), 4, "the budget is spent, not exceeded: {slots:?}");
+    }
+
+    #[test]
+    fn among_equals_the_more_often_mangled_term_wins_the_slot() {
+        let entries = vocabulary(&[("Kubernetes", 1), ("Statuspage", 5)]);
+
+        assert_eq!(
+            select_recognizer_slots(&entries),
+            vec!["Statuspage", "Kubernetes"]
+        );
+    }
+
+    /// Every short term already fills the budget, so a long one has nothing
+    /// left to win — which is the point: those are the recoverable ones.
+    #[test]
+    fn short_terms_fill_the_budget_before_a_long_one_is_considered() {
+        let entries = vocabulary(&[
+            ("Kubernetes", 99),
+            ("Tauri", 1),
+            ("Redis", 1),
+            ("Kafka", 1),
+            ("Nginx", 1),
+        ]);
+
+        let slots = select_recognizer_slots(&entries);
+
+        assert!(!slots.contains(&"Kubernetes".to_string()), "{slots:?}");
+        assert_eq!(slots, vec!["Tauri", "Redis", "Kafka", "Nginx"]);
+    }
+
+    /// A phrase the initial prompt could never carry must not take a slot from
+    /// one that could. Same predicate the recognizer path filters on.
+    #[test]
+    fn a_term_the_recognizer_channel_cannot_carry_takes_no_slot() {
+        let entries = vocabulary(&[
+            ("this is a far too long phrase to ever work as an initial prompt hint", 9),
+            ("   ", 9),
+            ("Tauri", 1),
+        ]);
+
+        assert_eq!(select_recognizer_slots(&entries), vec!["Tauri"]);
+    }
+
+    #[test]
+    fn a_term_repeated_in_the_list_takes_one_slot() {
+        let entries = vocabulary(&[("Tauri", 1), ("tauri", 1), ("Redis", 1)]);
+
+        assert_eq!(select_recognizer_slots(&entries), vec!["Tauri", "Redis"]);
+    }
+
+    /// The recognizer selection is an addition to the vocabulary, never a
+    /// filter on it. Every term still reaches repair and every LLM stage.
+    #[test]
+    fn the_slot_selection_never_shrinks_what_the_transform_stages_see() {
+        let profile = TextProfile {
+            vocabulary_hints: vocabulary(&[
+                ("Kubernetes", 0),
+                ("Statuspage", 0),
+                ("PostgreSQL", 0),
+                ("Prometheus", 0),
+                ("Grafana", 0),
+                ("Tauri", 0),
+            ]),
+            ..TextProfile::default()
+        };
+
+        assert_eq!(profile.vocabulary_phrases().len(), 6);
+        assert_eq!(profile.recognizer_slot_phrases().len(), 4);
+    }
+
+    #[test]
+    fn an_entry_written_before_origins_existed_loads_as_the_users() {
+        let raw = r#"{
+            "id": "support",
+            "label": "Support",
+            "prompt": "",
+            "vocabulary_hints": [{"id": "support-vocab-0", "phrase": "Kubernetes"}],
+            "schema_version": 3,
+            "dictionary_entries": [],
+            "snippet_entries": []
+        }"#;
+
+        let mut profile: TextProfile = serde_json::from_str(raw).expect("profile parses");
+        assert!(profile.migrate_to_current_schema());
+
+        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
+        assert_eq!(profile.vocabulary_hints[0].origin, VocabularyHintOrigin::User);
+        assert_eq!(profile.vocabulary_hints[0].learned_at_ms, None);
+        assert_eq!(profile.vocabulary_phrases(), vec!["Kubernetes"]);
+    }
+
+    /// The frontend mirror writes profiles back at the version it can produce,
+    /// so this migration runs over configs that already hold learned rows. It
+    /// must not relabel them — an "overwrite to be sure" here would quietly
+    /// turn every learned term into a hand-typed one on the next load.
+    #[test]
+    fn the_origin_migration_never_relabels_a_learned_term() {
+        let mut profile = TextProfile {
+            id: "support".to_string(),
+            vocabulary_hints: vec![VocabularyHintEntry {
+                id: "support-learned-1".to_string(),
+                phrase: "Kubernetes".to_string(),
+                origin: VocabularyHintOrigin::Learned,
+                learned_at_ms: Some(1_700_000_000_000),
+                hit_count: 3,
+                ..VocabularyHintEntry::default()
+            }],
+            schema_version: 2,
+            ..TextProfile::default()
+        };
+
+        profile.migrate_to_current_schema();
+
+        assert_eq!(
+            profile.vocabulary_hints[0].origin,
+            VocabularyHintOrigin::Learned
+        );
+        assert_eq!(
+            profile.vocabulary_hints[0].learned_at_ms,
+            Some(1_700_000_000_000)
+        );
+        assert_eq!(profile.vocabulary_hints[0].hit_count, 3);
+    }
+
+    /// Every migration guards on its own version number rather than on the
+    /// constant. Without that, bumping the constant re-runs every earlier step:
+    /// the version-2 one would resurrect a deleted vocabulary from the legacy
+    /// blob, and the version-3 one would overwrite an edited context field.
+    #[test]
+    fn bumping_the_schema_does_not_rerun_the_earlier_migrations() {
+        let mut profile = TextProfile {
+            id: "curated-product-engineering".to_string(),
+            prompt: "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri".to_string(),
+            stt_hints: "status update\ntriage summary".to_string(),
+            vocabulary_hints: Vec::new(),
+            schema_version: 3,
+            ..TextProfile::default()
+        };
+
+        profile.migrate_to_current_schema();
+
+        assert!(
+            profile.vocabulary_hints.is_empty(),
+            "the version-2 step re-ran and resurrected a deleted vocabulary"
+        );
+        assert!(
+            profile.prompt.contains("SDK"),
+            "the version-3 step re-ran over a field the user owns: {}",
+            profile.prompt
+        );
+    }
+
+    /// A version-2 profile has already had its vocabulary migrated. Bumping the
+    /// schema constant must not re-run that step over an emptied hint list.
+    #[test]
+    fn bumping_the_schema_does_not_rerun_the_vocabulary_migration() {
+        let mut profile = TextProfile {
+            id: "support".to_string(),
+            stt_hints: "status update\ntriage summary".to_string(),
+            vocabulary_hints: Vec::new(),
+            schema_version: 2,
+            ..TextProfile::default()
+        };
+
+        profile.migrate_to_current_schema();
+
+        assert!(
+            profile.vocabulary_hints.is_empty(),
+            "a deleted vocabulary must not be resurrected from the legacy blob"
+        );
     }
 
     #[test]

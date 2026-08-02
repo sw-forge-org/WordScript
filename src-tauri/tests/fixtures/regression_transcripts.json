@@ -15,14 +15,12 @@
       },
       "raw_transcript": "we need to update the status of the ticket and inform the client about the new release scope",
       "expected_transcription_bias": {
-        "profile_hints_accepted": [],
-        "ignored_profile_lines_count": 6,
         "dictionary_terms": [],
         "stt_hints": []
       },
       "expected_post_correction": "we need to update the status of the ticket and inform the client about the new release scope",
       "expected_guardrail": null,
-      "notes": "Generic CS profile must produce zero usable STT bias. Conservative bias mode keeps Whisper prompt empty so language detection is not pulled into English by the LLM-cleanup-context lines."
+      "notes": "A topic-only profile is correct usage, not a misconfiguration: the context field holds topics for the transform stages and never reaches the recognizer (ADR 0032). With no vocabulary switched on, the Whisper prompt stays empty, so language detection is not pulled into English by the cleanup-context lines."
     },
     {
       "id": "cs_profile_length_explosion_via_english_boilerplate",
@@ -247,7 +245,39 @@
       },
       "expected_post_correction": "Der Release Scope für die Migration Steps ist noch nicht klar.",
       "expected_guardrail": null,
-      "notes": "The real curated Product-and-engineering profile. Before ADR 0021 the same eight lines reached Cleanup as two (the transcription hint filter dropped every multi-word lowercase line), Agent as all eight raw and unbounded, and Prompt Enhance as all eight raw. Measured against 96 real transcripts from this profile: widening Cleanup from two lines to eight changed 26% of outputs, introduced no content from the six previously dropped lines, and did not raise the number of entries with invented words (12 narrow vs 11 widened). The invariant is parity, not a specific width -- a mode that quietly narrows or widens its share of the profile context is the regression."
+      "notes": "Synthetic eight-line topic profile, not a copy of any shipped seed -- an earlier version of this entry claimed to mirror the curated Product-and-engineering profile, and that claim outlived the seed by two months (ADR 0032). Before ADR 0021 these eight lines reached Cleanup as two (the transcription hint filter dropped every multi-word lowercase line), Agent as all eight raw and unbounded, and Prompt Enhance as all eight raw. The parity assertion below is the guard: one width in every mode. Multi-word lowercase lines are deliberate here -- they are the shape this field is for, and the shape a recognizer-oriented filter would reject."
+    },
+    {
+      "id": "vocabulary_terms_reach_every_llm_mode",
+      "failure_mode": "vocab_terms_missing_from_one_mode",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [
+          "Kubernetes",
+          "Statuspage"
+        ],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "wir muessen den service auf Kubernetes umstellen",
+      "expected_profile_context": {
+        "modes": [
+          "cleanup",
+          "rewrite",
+          "agent",
+          "prompt_enhance"
+        ],
+        "contains": [
+          "Kubernetes",
+          "Statuspage"
+        ],
+        "not_contains": []
+      },
+      "expected_post_correction": "wir muessen den service auf Kubernetes umstellen",
+      "expected_guardrail": null,
+      "notes": "A term is granular profile context for every LLM stage (ADR 0033), and Prompt Enhance was the mode that had no channel for one at all -- its config carried no vocabulary field, so a profile's own names could come back respelled from the one mode whose output travels straight into another tool. Asserted across all four modes rather than per mode, because a difference between modes is exactly the class a per-mode test cannot see."
     },
     {
       "id": "workspace_context_enters_prompt_as_weak_last_signal",
@@ -273,6 +303,268 @@
       "expected_post_correction": "Wir müssen den Incident Review noch vor dem Release Freeze machen.",
       "expected_guardrail": null,
       "notes": "Workspace context reaches every mode now, not just prompt enhance. It is a new input into the cleanup prompt and therefore a new hallucination surface, so it must arrive as exactly one bounded line that forbids deriving content from it."
+    },
+    {
+      "id": "vocab_repair_term_split_across_tokens",
+      "failure_mode": "vocab_term_mangled_by_recognizer",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [
+          "Kubernetes"
+        ],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "wir muessen den service auf cuber netties umstellen",
+      "expected_vocabulary_repair": {
+        "text": "wir muessen den service auf Kubernetes umstellen",
+        "applied": [
+          "Kubernetes"
+        ]
+      },
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "wir muessen den service auf Kubernetes umstellen",
+      "expected_guardrail": null,
+      "notes": "The case Replacements structurally cannot cover: the recognizer split one term into two tokens and no left-hand side could have been written in advance."
+    },
+    {
+      "id": "vocab_repair_spacing_and_casing_only",
+      "failure_mode": "vocab_term_split_without_misspelling",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [
+          "Statuspage"
+        ],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "das steht schon auf der status page",
+      "expected_vocabulary_repair": {
+        "text": "das steht schon auf der Statuspage",
+        "applied": [
+          "Statuspage"
+        ]
+      },
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "das steht schon auf der Statuspage",
+      "expected_guardrail": null,
+      "notes": "No edit distance involved -- normalization alone joins the tokens and fixes the casing. The cheapest and most common repair."
+    },
+    {
+      "id": "vocab_repair_declines_below_the_length_floor",
+      "failure_mode": "vocab_short_term_has_ordinary_neighbours",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [
+          "Tauri"
+        ],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "meine Kollegin Tori kommt spaeter dazu",
+      "expected_vocabulary_repair": {
+        "text": "meine Kollegin Tori kommt spaeter dazu",
+        "applied": []
+      },
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "meine Kollegin Tori kommt spaeter dazu",
+      "expected_guardrail": null,
+      "notes": "Tauri is five characters and Tori is an ordinary name. No threshold separates them, so repair must decline and leave the term to the LLM stages, which can read the sentence. This is the entry that guards against destroying a word the user meant."
+    },
+    {
+      "id": "vocab_repair_declines_on_an_unrelated_word",
+      "failure_mode": "vocab_similar_length_unrelated_word",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [
+          "Kubernetes",
+          "Statuspage"
+        ],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "die Umstellung war vollstaendig und lief sauber durch",
+      "expected_vocabulary_repair": {
+        "text": "die Umstellung war vollstaendig und lief sauber durch",
+        "applied": []
+      },
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "die Umstellung war vollstaendig und lief sauber durch",
+      "expected_guardrail": null,
+      "notes": "Long terms present, nothing phonetically close in the transcript. Repair must leave ordinary prose untouched rather than find the nearest term."
+    },
+    {
+      "id": "vocab_repair_keeps_a_correct_occurrence_and_its_neighbours",
+      "failure_mode": "vocab_correct_occurrence_must_be_protected",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [
+          "Kubernetes"
+        ],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Kubernetes laeuft, cuber netties nicht",
+      "expected_vocabulary_repair": {
+        "text": "Kubernetes laeuft, Kubernetes nicht",
+        "applied": [
+          "Kubernetes"
+        ]
+      },
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "Kubernetes laeuft, Kubernetes nicht",
+      "expected_guardrail": null,
+      "notes": "A window containing a correct occurrence plus the following word stays inside the distance budget while deleting that word. The correct span is protected, so only the mangled one is rewritten and the trailing token survives."
+    },
+    {
+      "id": "vocab_learning_finds_a_term_the_correction_reassembled",
+      "failure_mode": "vocab_term_only_knowable_after_the_error",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "wir muessen den service auf cuber netties umstellen",
+      "expected_vocabulary_candidates": [
+        "Kubernetes"
+      ],
+      "expected_post_correction": "wir muessen den service auf Kubernetes umstellen",
+      "expected_guardrail": null,
+      "notes": "The find the whole feature rests on. The profile carries no vocabulary at all, which is the state every real profile is in, and the correction has just proved three things at once: the recognizer cannot spell this word, it belongs to this person, and the sentence identified it. Nobody could have typed it into a form beforehand."
+    },
+    {
+      "id": "vocab_learning_finds_a_term_below_the_repair_floor",
+      "failure_mode": "vocab_short_term_is_unrecoverable_after_transcription",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "wir bauen das mit Tori und React",
+      "expected_vocabulary_candidates": [
+        "Tauri"
+      ],
+      "expected_post_correction": "wir bauen das mit Tauri und React",
+      "expected_guardrail": null,
+      "notes": "Tauri is five characters and sits below the deterministic repair floor, so once the transcript exists it cannot be recovered. That makes the recognizer slot its only chance and makes it exactly the term that has to be learnable -- the candidate floor therefore sits below the repair floor rather than on it (ADR 0035)."
+    },
+    {
+      "id": "vocab_learning_declines_a_reworded_verb",
+      "failure_mode": "vocab_rewording_is_not_a_misrecognition",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "ich denke wir shippen das uebermorgen",
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "ich glaube wir shippen das uebermorgen",
+      "expected_guardrail": null,
+      "notes": "The correction swapped one ordinary verb for another. Nothing about the recognizer failed, and learning 'glaube' would put a common word into the term list, where it would reach every LLM prompt and compete for a recognizer slot. The distance between the two words is what declines it."
+    },
+    {
+      "id": "vocab_learning_declines_a_stripped_filler",
+      "failure_mode": "vocab_filler_removal_is_not_a_term",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "also aehm wir shippen das uebermorgen",
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "wir shippen das uebermorgen",
+      "expected_guardrail": null,
+      "notes": "Cleanup removes fillers by design. A deletion has no replacement word, so there is nothing that could be a term -- but a diff that only looked for changed spans would happily pair the removed filler with the next word."
+    },
+    {
+      "id": "vocab_learning_declines_a_shortened_sentence",
+      "failure_mode": "vocab_restructuring_is_not_a_term",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "wir shippen das uebermorgen und zwar ganz sicher auf jeden Fall",
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "wir shippen das uebermorgen ganz sicher",
+      "expected_guardrail": null,
+      "notes": "Several words in, fewer words out. This is the shape a rewrite has, and the multi-token replacement is what rules it out: a mangled name arrives as one word after correction, never as a shorter phrase."
+    },
+    {
+      "id": "vocab_learning_declines_a_sentence_initial_capital",
+      "failure_mode": "vocab_capitalization_is_not_evidence",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "wir shippen das uebermorgen",
+      "expected_vocabulary_candidates": [],
+      "expected_post_correction": "Wir shippen das uebermorgen",
+      "expected_guardrail": null,
+      "notes": "The correction capitalized the first word, which it does to every dictation. Folded down to the same token, a case-only change on a single token carries no information about whether the recognizer knew the word."
+    },
+    {
+      "id": "cleanup_fuses_spelled_out_letters_into_a_product_name",
+      "failure_mode": "cleanup_invents_a_token_on_broken_input",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Bei c a u d e code oder codex Passt ja alles",
+      "biased_correction": "Bei CAUDE-Code oder Codex passt ja alles",
+      "expected_post_correction": "Bei c a u d e-Code oder Codex passt ja alles",
+      "expected_guardrail": "spelled_letter_merge_reverted",
+      "notes": "Ground truth: the speaker said 'Claude Code'. The recognizer wrote the name out letter by letter and got the letters wrong; the correction then fused them into 'CAUDE-Code'. The wrong letters are not the defect -- the transcript was already broken. The defect is that visible damage became invisible damage: spaced letters are repaired on sight, a capitalized hyphenated token has the shape of a real product name and ships. The profile is deliberately empty, because a dictionary entry would only help someone who has already been bitten (ADR 0036)."
+    },
+    {
+      "id": "cleanup_keeps_a_correct_german_inflection",
+      "failure_mode": "cleanup_invents_a_token_on_broken_input",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "platform constraints\nservice names\nrelease scope",
+        "stt_hints": "",
+        "vocabulary": [],
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "das ist der text des lieds und der zweite switch",
+      "biased_correction": "Das ist der Text des Lieder und der zweite switcht.",
+      "expected_post_correction": "Das ist der Text des Lieder und der zweite switcht.",
+      "expected_guardrail": null,
+      "notes": "The precision half. 'Lieds' -> 'Lieder' and 'switch' -> 'switcht' are correct German morphology and were the two cases that made a naive 'word not in the raw transcript' metric useless. A guardrail that reverts them costs more than the defect it prevents, so the corpus pins the pass-through as hard as it pins the revert."
     }
   ]
 }

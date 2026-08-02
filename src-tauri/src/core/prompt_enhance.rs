@@ -14,6 +14,11 @@ pub struct PromptEnhanceConfig {
     pub sub_mode: String,
     pub target: String,
     pub profile_prompt: String,
+    /// Every vocabulary term the profile carries. ADR 0033 says a term reaches
+    /// every LLM stage; this mode was the one that did not get them, which made
+    /// it the only mode that could spell a profile's own names wrong.
+    #[serde(default)]
+    pub vocabulary: Vec<String>,
     pub workspace_context: Option<WorkspaceContext>,
 }
 
@@ -98,6 +103,15 @@ Add at most 2-3 sentences of context."
     if let Some(context) = profile_context_line(&config.profile_prompt) {
         sections.push(format!(
             "Profile context (take into account where relevant): {context}"
+        ));
+    }
+
+    // The same source, one granularity finer, through the same budget helper so
+    // both lines share one bound. Framed as weakly as the context line above and
+    // for the same reason.
+    if let Some(terms) = profile_context_line(&config.vocabulary.join("\n")) {
+        sections.push(format!(
+            "Names and terms from the profile (keep this spelling where they appear): {terms}"
         ));
     }
 
@@ -446,6 +460,7 @@ mod tests {
             sub_mode: "enhance".to_string(),
             target: "general".to_string(),
             profile_prompt: String::new(),
+            vocabulary: Vec::new(),
             workspace_context: None,
         };
 
@@ -468,6 +483,7 @@ mod tests {
             sub_mode: "expand".to_string(),
             target: "general".to_string(),
             profile_prompt: String::new(),
+            vocabulary: Vec::new(),
             workspace_context: None,
         };
 
@@ -670,6 +686,7 @@ mod tests {
             sub_mode: "enhance".to_string(),
             target: "claude_code".to_string(),
             profile_prompt: String::new(),
+            vocabulary: Vec::new(),
             workspace_context: None,
         };
 
@@ -686,6 +703,7 @@ mod tests {
             sub_mode: "enhance".to_string(),
             target: "general".to_string(),
             profile_prompt: String::new(),
+            vocabulary: Vec::new(),
             workspace_context: Some(WorkspaceContext {
                 app_name: "VS Code".to_string(),
                 bundle_id: "com.microsoft.VSCode".to_string(),
@@ -706,6 +724,75 @@ mod tests {
         assert!(prompt.contains("src/App.tsx"));
     }
 
+    /// ADR 0033 makes a term profile context for *every* LLM stage. This mode
+    /// silently had no channel for them at all, so it was the one place a
+    /// profile's own names could come back respelled.
+    #[test]
+    fn vocabulary_terms_reach_the_enhance_prompt() {
+        let config = PromptEnhanceConfig {
+            provider: "groq".to_string(),
+            model: "test-model".to_string(),
+            sub_mode: "enhance".to_string(),
+            target: "general".to_string(),
+            profile_prompt: "release scope".to_string(),
+            vocabulary: vec!["Kubernetes".to_string(), "Statuspage".to_string()],
+            workspace_context: None,
+        };
+
+        let prompt = build_enhance_system_prompt(&config);
+        assert!(prompt.contains("Kubernetes"));
+        assert!(prompt.contains("Statuspage"));
+        // The context line stays its own line: terms are one granularity finer,
+        // not a replacement for the topics.
+        assert!(prompt.contains("release scope"));
+    }
+
+    /// The terms line goes through the same budget helper as the context line,
+    /// so a pasted wall of terms cannot push the instruction block out of shape.
+    #[test]
+    fn the_vocabulary_line_is_bounded_like_the_context_line() {
+        let config = PromptEnhanceConfig {
+            provider: "groq".to_string(),
+            model: "test-model".to_string(),
+            sub_mode: "enhance".to_string(),
+            target: "general".to_string(),
+            profile_prompt: String::new(),
+            vocabulary: (0..200).map(|index| format!("Term{index:03}")).collect(),
+            workspace_context: None,
+        };
+
+        let prompt = build_enhance_system_prompt(&config);
+        let line = prompt
+            .lines()
+            .find(|line| line.starts_with("Names and terms from the profile"))
+            .expect("the terms line is present");
+        let rendered = line
+            .split_once(": ")
+            .expect("the terms line carries a value")
+            .1;
+
+        assert!(
+            rendered.chars().count() <= super::super::profile_context::MAX_CONTEXT_CHARS,
+            "terms line spent {} chars",
+            rendered.chars().count()
+        );
+    }
+
+    #[test]
+    fn no_vocabulary_means_no_terms_line() {
+        let config = PromptEnhanceConfig {
+            provider: "groq".to_string(),
+            model: "test-model".to_string(),
+            sub_mode: "enhance".to_string(),
+            target: "general".to_string(),
+            profile_prompt: "release scope".to_string(),
+            vocabulary: Vec::new(),
+            workspace_context: None,
+        };
+
+        assert!(!build_enhance_system_prompt(&config).contains("Names and terms"));
+    }
+
     #[test]
     fn workspace_context_not_injected_when_none() {
         let config = PromptEnhanceConfig {
@@ -714,6 +801,7 @@ mod tests {
             sub_mode: "enhance".to_string(),
             target: "general".to_string(),
             profile_prompt: "python expert".to_string(),
+            vocabulary: Vec::new(),
             workspace_context: None,
         };
 
@@ -753,6 +841,7 @@ mod tests {
             sub_mode: "enhance".to_string(),
             target: "general".to_string(),
             profile_prompt: String::new(),
+            vocabulary: Vec::new(),
             workspace_context: None,
         };
 

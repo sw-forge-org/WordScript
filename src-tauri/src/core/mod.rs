@@ -21,6 +21,8 @@ pub mod transcription_hints;
 pub mod transform;
 pub mod trigger;
 pub mod updates;
+pub mod vocabulary_learning;
+pub mod vocabulary_repair;
 pub mod workspace_context;
 
 #[cfg(test)]

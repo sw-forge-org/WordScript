@@ -53,9 +53,8 @@ pub enum TextRulesIssueCode {
     DuplicateSnippetTrigger,
     DictionarySnippetOverlap,
     DuplicateRuleId,
-    BroadProfileContextIgnored,
-    NoConcreteProfileHints,
     IgnoredSttHint,
+    SttHintLimitReached,
     NoUsableSttHints,
     ImportSchemaMismatch,
     ImportParseFailed,
@@ -86,8 +85,24 @@ pub struct TextRulesAnalysis {
     /// lines that exceed the budget. The UI shows this instead of recomputing
     /// the rule, so the boundary it draws is the one the runtime applies.
     pub profile_context: ProfileContextBudget,
+    /// Which vocabulary terms the deterministic repair layer can act on. The
+    /// panel marks the rows that only reach the LLM stages, and restating
+    /// `MIN_TERM_CHARS` in TypeScript would let the two drift apart.
+    pub vocabulary_repair: VocabularyRepairCoverage,
     pub dictionary_count: usize,
     pub snippet_count: usize,
+}
+
+/// The split `core::vocabulary_repair` applies to a profile's term list.
+///
+/// `too_short` is not a defect to fix — the floor exists because a short term
+/// has too many neighbours to rewrite safely (ADR 0033). It is reported so the
+/// row can say which of its two effects it actually has.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct VocabularyRepairCoverage {
+    pub repairable: Vec<String>,
+    pub too_short: Vec<String>,
+    pub min_chars: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -470,6 +485,14 @@ pub fn get_profile_health(request: GetProfileHealthRequest) -> Result<ProfileHea
 pub fn analyze_text_rules(request: AnalyzeTextRulesRequest) -> Result<TextRulesAnalysis, String> {
     let bias_context = bias_context_from_request(&request);
     let recognizer_phrases = recognizer_phrases(&request);
+    // Every term, not the opted-in subset: repair and the LLM term block do not
+    // consult the recognizer switch.
+    let vocabulary: Vec<String> = request
+        .vocabulary_hints
+        .iter()
+        .map(|entry| entry.phrase.trim().to_string())
+        .filter(|phrase| !phrase.is_empty())
+        .collect();
     let document = TextRulesDocument {
         schema_version: TEXT_RULES_SCHEMA_VERSION,
         prompt: request.prompt,
@@ -483,32 +506,31 @@ pub fn analyze_text_rules(request: AnalyzeTextRulesRequest) -> Result<TextRulesA
         dictionary_entries: request.dictionary_entries,
         snippet_entries: request.snippet_entries,
     };
-    Ok(analyze_document_with_context(
+    Ok(analyze_document_with_vocabulary(
         &document,
         request.sample_text.as_deref(),
         &bias_context,
+        &vocabulary,
     ))
 }
 
 /// The phrases the recognizer would actually receive for this request.
 ///
-/// `vocabulary_hints` is the authority (ADR 0017). The legacy `stt_hints` string
-/// is only honoured when the caller sent no vocabulary block at all, which is
-/// the import path — an imported document predates the per-entry opt-in and has
-/// nowhere else to carry its phrases.
+/// `vocabulary_hints` is the authority (ADR 0017), and which of them reach the
+/// initial prompt is the runtime's decision rather than a per-entry switch
+/// (ADR 0035). The selection is asked for rather than reproduced: a preview
+/// that recomputes the rule is a preview that eventually promises an initial
+/// prompt the provider never received.
+///
+/// The legacy `stt_hints` string is only honoured when the caller sent no
+/// vocabulary block at all, which is the import path — an imported document
+/// predates the per-entry model and has nowhere else to carry its phrases.
 fn recognizer_phrases(request: &AnalyzeTextRulesRequest) -> String {
     if request.vocabulary_hints.is_empty() {
         return request.stt_hints.clone();
     }
 
-    request
-        .vocabulary_hints
-        .iter()
-        .filter(|entry| entry.use_as_prompt_hint)
-        .map(|entry| entry.phrase.trim())
-        .filter(|phrase| !phrase.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+    super::config::select_recognizer_slots(&request.vocabulary_hints).join("\n")
 }
 
 fn bias_context_from_request(
@@ -601,10 +623,29 @@ pub fn analyze_document(
     analyze_document_with_context(document, sample_text, &context)
 }
 
+/// Analysis for a document that carries no vocabulary of its own.
+///
+/// The import and export paths land here: an exported document predates the
+/// per-entry vocabulary block and has nowhere to carry terms, so the preview
+/// they show is honestly term-free.
 pub fn analyze_document_with_context(
     document: &TextRulesDocument,
     sample_text: Option<&str>,
     bias_context: &super::transcription_hints::BiasRequestContext,
+) -> TextRulesAnalysis {
+    analyze_document_with_vocabulary(document, sample_text, bias_context, &[])
+}
+
+/// The full analysis, including what the vocabulary layer does.
+///
+/// `vocabulary` is every term in the profile, not the recognizer-opted subset:
+/// deterministic repair and the LLM term block are unconditional, and only the
+/// recognizer hint is opt-in (ADR 0033).
+pub fn analyze_document_with_vocabulary(
+    document: &TextRulesDocument,
+    sample_text: Option<&str>,
+    bias_context: &super::transcription_hints::BiasRequestContext,
+    vocabulary: &[String],
 ) -> TextRulesAnalysis {
     let mut issues = Vec::new();
     let mut seen_ids = BTreeMap::<String, Vec<String>>::new();
@@ -704,9 +745,8 @@ pub fn analyze_document_with_context(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_PREVIEW_TEXT);
-    let (output, applied_rules) = preview_transform(document, sample_text);
+    let (output, applied_rules) = preview_transform(document, sample_text, vocabulary);
     let transcription_bias = analyze_transcription_bias_with_mode(
-        &document.prompt,
         &document.stt_hints,
         &document.dictionary_entries,
         bias_context,
@@ -725,6 +765,7 @@ pub fn analyze_document_with_context(
         },
         transcription_bias,
         profile_context: profile_context_budget(&document.prompt),
+        vocabulary_repair: vocabulary_repair_coverage(vocabulary),
         dictionary_count: document.dictionary_entries.len(),
         snippet_count: document.snippet_entries.len(),
     }
@@ -735,7 +776,6 @@ fn _unused_transcription_bias_for_document(
 ) -> TranscriptionBiasPreview {
     let context = bias_context_for_document(document);
     analyze_transcription_bias_with_mode(
-        &document.prompt,
         &document.stt_hints,
         &document.dictionary_entries,
         &context,
@@ -761,7 +801,6 @@ fn transcription_bias_for_document(
 ) -> TranscriptionBiasPreview {
     let context = bias_context_for_document(document);
     analyze_transcription_bias_with_mode(
-        &document.prompt,
         &document.stt_hints,
         &document.dictionary_entries,
         &context,
@@ -774,39 +813,16 @@ fn bias_warning_issues(
 ) -> Vec<TextRulesIssue> {
     let mut issues = Vec::new();
 
-    let prompt_line_count = document
-        .prompt
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .count();
+    // The profile's context field is deliberately not judged here. It holds
+    // topics for the transform prompt, and the recognizer never reads it
+    // (ADR 0032), so there is no such thing as a context line that is "too
+    // broad" for a path it does not travel.
     let stt_hint_line_count = document
         .stt_hints
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .count();
-
-    if !bias.ignored_profile_lines.is_empty() {
-        issues.push(issue(
-            TextRulesIssueSeverity::Warning,
-            TextRulesIssueCode::BroadProfileContextIgnored,
-            format!(
-                "{} context line(s) are too broad for the automatic STT bias path and will not reach the recognizer. They still reach the transform prompt. Keep recognizer context lexical and concrete.",
-                bias.ignored_profile_lines.len()
-            ),
-            Vec::new(),
-        ));
-    }
-
-    if prompt_line_count > 0 && bias.profile_hints.is_empty() {
-        issues.push(issue(
-            TextRulesIssueSeverity::Warning,
-            TextRulesIssueCode::NoConcreteProfileHints,
-            "This profile currently contributes no concrete automatic STT vocabulary. Add short lexical terms like product names, acronyms or ticket prefixes instead of broad categories.".to_string(),
-            Vec::new(),
-        ));
-    }
 
     if !bias.ignored_stt_hint_lines.is_empty() {
         issues.push(issue(
@@ -815,6 +831,19 @@ fn bias_warning_issues(
             format!(
                 "{} STT hint line(s) are too long for the conservative bias path and will be ignored. Keep STT hints short and phrase-like.",
                 bias.ignored_stt_hint_lines.len()
+            ),
+            Vec::new(),
+        ));
+    }
+
+    if !bias.over_limit_stt_hint_lines.is_empty() {
+        issues.push(issue(
+            TextRulesIssueSeverity::Warning,
+            TextRulesIssueCode::SttHintLimitReached,
+            format!(
+                "{} word(s) are switched on for the recognizer beyond the {} it can take, so they are not sent. Switch some off to choose which ones travel; they still reach every AI mode either way.",
+                bias.over_limit_stt_hint_lines.len(),
+                bias.stt_hints.len(),
             ),
             Vec::new(),
         ));
@@ -944,10 +973,44 @@ fn merge_snippet_entries(
         .collect()
 }
 
-fn preview_transform(document: &TextRulesDocument, sample_text: &str) -> (String, Vec<String>) {
+/// Splits a term list by whether the deterministic layer can act on it.
+///
+/// Blank entries are neither, so a half-typed row does not immediately accuse
+/// itself of being too short.
+fn vocabulary_repair_coverage(vocabulary: &[String]) -> VocabularyRepairCoverage {
+    let mut repairable = Vec::new();
+    let mut too_short = Vec::new();
+
+    for term in vocabulary {
+        let term = term.trim();
+        if term.is_empty() {
+            continue;
+        }
+        if super::vocabulary_repair::is_repairable_term(term) {
+            repairable.push(term.to_string());
+        } else {
+            too_short.push(term.to_string());
+        }
+    }
+
+    VocabularyRepairCoverage {
+        repairable,
+        too_short,
+        min_chars: super::vocabulary_repair::min_repairable_chars(),
+    }
+}
+
+fn preview_transform(
+    document: &TextRulesDocument,
+    sample_text: &str,
+    vocabulary: &[String],
+) -> (String, Vec<String>) {
     let config = NativeTransformConfig {
         provider: "groq".to_string(),
         profile_prompt: String::new(),
+        // Repair runs ahead of the explicit rules in the real transform, so a
+        // preview without it would show a pipeline the runtime does not have.
+        vocabulary: vocabulary.to_vec(),
         dictionary_entries: document.dictionary_entries.clone(),
         snippet_entries: document.snippet_entries.clone(),
         post_process: false,
@@ -1038,6 +1101,8 @@ mod tests {
         stt_hints: &str,
         hints: Vec<(&str, bool)>,
     ) -> AnalyzeTextRulesRequest {
+        // The bool is the migrated `use_as_prompt_hint`. Nothing reads it any
+        // more (ADR 0035); it stays in the fixture so a test can assert that.
         AnalyzeTextRulesRequest {
             prompt: String::new(),
             stt_hints: stt_hints.to_string(),
@@ -1048,6 +1113,7 @@ mod tests {
                     id: format!("vocab-{index}"),
                     phrase: phrase.to_string(),
                     use_as_prompt_hint: opted_in,
+                    ..VocabularyHintEntry::default()
                 })
                 .collect(),
             dictionary_entries: Vec::new(),
@@ -1060,38 +1126,80 @@ mod tests {
         }
     }
 
-    /// The regression: the panel showed the legacy `stt_hints` lines as the
-    /// recognizer prompt while the capture path sent only opted-in vocabulary,
-    /// so toggling an entry changed nothing on screen.
+    /// The regression this guards: the panel showed the legacy `stt_hints`
+    /// lines as the recognizer prompt while the capture path sent something
+    /// else entirely, so the preview described a pipeline the runtime does not
+    /// have.
     #[test]
-    fn recognizer_preview_follows_the_per_entry_opt_in_not_the_legacy_field() {
+    fn the_recognizer_preview_never_falls_back_to_the_legacy_field() {
         let analysis = analyze_text_rules(vocabulary_request(
             "triage summary\nrelease note",
             vec![("Kubernetes", false), ("Grafana", false)],
         ))
         .expect("analysis");
 
+        let cloud = analysis
+            .transcription_bias
+            .cloud_prompt_preview
+            .unwrap_or_default();
         assert!(
-            analysis.transcription_bias.stt_hints.is_empty(),
-            "no entry is opted in, so the recognizer gets nothing: {:?}",
-            analysis.transcription_bias.stt_hints
+            !cloud.contains("triage summary"),
+            "legacy field must not leak: {cloud}"
         );
-        let cloud = analysis.transcription_bias.cloud_prompt_preview.unwrap_or_default();
-        assert!(!cloud.contains("triage summary"), "legacy field must not leak: {cloud}");
+        assert_eq!(
+            analysis.transcription_bias.stt_hints,
+            vec!["Kubernetes", "Grafana"],
+            "the preview shows what the runtime allocated"
+        );
     }
 
+    /// The rule intuition gets backwards, asserted end to end through the
+    /// preview: a short term cannot be recovered once the transcript exists, so
+    /// it takes the slot ahead of the long one that repair restores anyway
+    /// (ADR 0035).
     #[test]
-    fn opting_an_entry_in_puts_it_in_the_recognizer_preview() {
-        let analysis = analyze_text_rules(vocabulary_request(
-            "triage summary",
-            vec![("Kubernetes", true), ("Grafana", false)],
+    fn the_recognizer_slots_go_to_the_terms_repair_cannot_reach() {
+        let long_terms: Vec<(&str, bool)> = vec![
+            ("Kubernetes", true),
+            ("Statuspage", true),
+            ("PostgreSQL", true),
+            ("Prometheus", true),
+            ("Tauri", false),
+        ];
+        let analysis = analyze_text_rules(vocabulary_request("", long_terms)).expect("analysis");
+
+        assert_eq!(
+            analysis.transcription_bias.stt_hints.first().map(String::as_str),
+            Some("Tauri"),
+            "the unrecoverable term must lead: {:?}",
+            analysis.transcription_bias.stt_hints
+        );
+        let cloud = analysis
+            .transcription_bias
+            .cloud_prompt_preview
+            .unwrap_or_default();
+        assert!(cloud.contains("Tauri"), "{cloud}");
+    }
+
+    /// The old per-entry switch is a migration remnant. A profile that had it
+    /// on must get exactly the prompt a profile that had it off gets.
+    #[test]
+    fn the_migrated_opt_in_no_longer_changes_the_recognizer_preview() {
+        let opted_in = analyze_text_rules(vocabulary_request(
+            "",
+            vec![("Kubernetes", true), ("Tauri", true)],
+        ))
+        .expect("analysis");
+        let opted_out = analyze_text_rules(vocabulary_request(
+            "",
+            vec![("Kubernetes", false), ("Tauri", false)],
         ))
         .expect("analysis");
 
-        assert_eq!(analysis.transcription_bias.stt_hints, vec!["Kubernetes"]);
-        let cloud = analysis.transcription_bias.cloud_prompt_preview.unwrap_or_default();
-        assert!(cloud.contains("Likely phrases: Kubernetes"), "{cloud}");
-        assert!(!cloud.contains("Grafana"));
+        assert_eq!(
+            opted_in.transcription_bias.stt_hints,
+            opted_out.transcription_bias.stt_hints
+        );
     }
 
     /// An imported document predates the per-entry opt-in and carries its
@@ -1216,10 +1324,6 @@ mod tests {
         );
 
         assert_eq!(
-            analysis.transcription_bias.profile_hints,
-            vec!["WordScript", "SEV-1"]
-        );
-        assert_eq!(
             analysis.transcription_bias.dictionary_terms,
             vec!["SEV-1"]
         );
@@ -1228,25 +1332,132 @@ mod tests {
             vec!["status update"]
         );
         assert_eq!(
-            analysis.transcription_bias.ignored_profile_lines,
-            vec!["customer names", "refund policy"]
-        );
-        assert_eq!(
             analysis.transcription_bias.ignored_stt_hint_lines,
             vec!["this hint is too long to stay in the automatic bias path"]
         );
-        assert!(analysis.issues.iter().any(|issue| matches!(
-            issue.code,
-            TextRulesIssueCode::BroadProfileContextIgnored
-        )));
         assert!(analysis.issues.iter().any(|issue| matches!(
             issue.code,
             TextRulesIssueCode::IgnoredSttHint
         )));
     }
 
+    /// A term the user switched on must never vanish unreported. The filter
+    /// used to stop at the limit, so terms past it reached no list at all and
+    /// no surface could name them.
     #[test]
-    fn analysis_warns_when_profile_context_or_stt_hints_produce_no_usable_bias() {
+    fn analysis_names_the_terms_that_exceed_the_recognizer_slot_budget() {
+        let analysis = analyze_document(
+            &TextRulesDocument {
+                schema_version: TEXT_RULES_SCHEMA_VERSION,
+                prompt: String::new(),
+                stt_hints: "one\ntwo\nthree\nfour\nfive\nsix".to_string(),
+                dictionary_entries: Vec::new(),
+                snippet_entries: Vec::new(),
+            },
+            None,
+        );
+
+        assert_eq!(
+            analysis.transcription_bias.over_limit_stt_hint_lines,
+            vec!["five", "six"]
+        );
+        assert!(analysis.issues.iter().any(|issue| matches!(
+            issue.code,
+            TextRulesIssueCode::SttHintLimitReached
+        )));
+    }
+
+    #[test]
+    fn analysis_stays_quiet_when_everything_fits_the_slot_budget() {
+        let analysis = analyze_document(
+            &TextRulesDocument {
+                schema_version: TEXT_RULES_SCHEMA_VERSION,
+                prompt: String::new(),
+                stt_hints: "one\ntwo".to_string(),
+                dictionary_entries: Vec::new(),
+                snippet_entries: Vec::new(),
+            },
+            None,
+        );
+
+        assert!(analysis.transcription_bias.over_limit_stt_hint_lines.is_empty());
+        assert!(!analysis.issues.iter().any(|issue| matches!(
+            issue.code,
+            TextRulesIssueCode::SttHintLimitReached
+        )));
+    }
+
+    /// The panel marks which rows get a deterministic rewrite. It reads this
+    /// split instead of restating `MIN_TERM_CHARS`, so the two cannot drift.
+    #[test]
+    fn the_analysis_says_which_terms_the_repair_layer_can_act_on() {
+        let analysis = analyze_text_rules(vocabulary_request(
+            "",
+            vec![("Kubernetes", false), ("Tauri", false)],
+        ))
+        .expect("analysis");
+
+        assert_eq!(analysis.vocabulary_repair.repairable, vec!["Kubernetes"]);
+        assert_eq!(analysis.vocabulary_repair.too_short, vec!["Tauri"]);
+        assert_eq!(
+            analysis.vocabulary_repair.min_chars,
+            super::super::vocabulary_repair::min_repairable_chars(),
+        );
+    }
+
+    /// A term the recognizer never carries still gets repaired and still
+    /// reaches the AI modes, so the coverage must not follow the recognizer
+    /// selection (ADR 0033).
+    #[test]
+    fn repair_coverage_ignores_the_recognizer_opt_in() {
+        let opted_out = analyze_text_rules(vocabulary_request("", vec![("Kubernetes", false)]))
+            .expect("analysis");
+        let opted_in = analyze_text_rules(vocabulary_request("", vec![("Kubernetes", true)]))
+            .expect("analysis");
+
+        assert_eq!(
+            opted_out.vocabulary_repair.repairable,
+            opted_in.vocabulary_repair.repairable,
+        );
+    }
+
+    /// A half-typed row should not accuse itself of being too short before it
+    /// holds a word.
+    #[test]
+    fn a_blank_row_is_neither_repairable_nor_too_short() {
+        let analysis =
+            analyze_text_rules(vocabulary_request("", vec![("   ", false)])).expect("analysis");
+
+        assert!(analysis.vocabulary_repair.repairable.is_empty());
+        assert!(analysis.vocabulary_repair.too_short.is_empty());
+    }
+
+    /// The preview ran without vocabulary while the real transform ran with it,
+    /// so the panel showed a pipeline the runtime does not have.
+    #[test]
+    fn the_preview_runs_the_repair_pass_the_transform_runs() {
+        let mut request = vocabulary_request("", vec![("Kubernetes", false)]);
+        request.sample_text = Some("wir rollen das auf cuber netties aus".to_string());
+        let analysis = analyze_text_rules(request).expect("analysis");
+
+        assert!(
+            analysis.preview.output.contains("Kubernetes"),
+            "preview did not repair the term: {}",
+            analysis.preview.output,
+        );
+        assert!(
+            analysis
+                .preview
+                .applied_rules
+                .iter()
+                .any(|rule| rule == "vocabulary:Kubernetes"),
+            "repair was not reported: {:?}",
+            analysis.preview.applied_rules,
+        );
+    }
+
+    #[test]
+    fn analysis_warns_when_stt_hints_produce_no_usable_bias() {
         let analysis = analyze_document(
             &TextRulesDocument {
                 schema_version: TEXT_RULES_SCHEMA_VERSION,
@@ -1260,19 +1471,15 @@ mod tests {
 
         assert!(analysis.issues.iter().any(|issue| matches!(
             issue.code,
-            TextRulesIssueCode::NoConcreteProfileHints
-        )));
-        assert!(analysis.issues.iter().any(|issue| matches!(
-            issue.code,
             TextRulesIssueCode::NoUsableSttHints
         )));
     }
 
+    /// A profile whose context field holds nothing but broad topics is correct,
+    /// not under-configured: the recognizer never reads that field (ADR 0032).
+    /// The analysis must therefore raise nothing about it.
     #[test]
-    fn regression_customer_success_profile_warns_no_concrete_hints_and_ignores_all_lines() {
-        // Regression: Customer Success Replies-style profiles with only generic lowercase
-        // category phrases silently contributed zero usable STT bias while appearing populated.
-        // This test ensures the warning path fires and all lines land in ignored_profile_lines.
+    fn a_topic_only_context_field_produces_no_analysis_issue() {
         let analysis = analyze_document(
             &TextRulesDocument {
                 schema_version: TEXT_RULES_SCHEMA_VERSION,
@@ -1285,18 +1492,11 @@ mod tests {
         );
 
         assert!(
-            analysis.transcription_bias.profile_hints.is_empty(),
-            "expected no profile hints from generic CS phrases"
+            analysis.issues.is_empty(),
+            "a topic-only context field must raise nothing, got: {:?}",
+            analysis.issues
         );
-        assert_eq!(
-            analysis.transcription_bias.ignored_profile_lines.len(),
-            4,
-            "expected all 4 CS category lines in ignored_profile_lines"
-        );
-        assert!(analysis.issues.iter().any(|issue| matches!(
-            issue.code,
-            TextRulesIssueCode::NoConcreteProfileHints
-        )));
+        assert_eq!(analysis.profile_context.accepted.len(), 4);
     }
 
     // --- Profile Health: BiasPolicyWeak + acknowledged persistence ---
@@ -1452,8 +1652,12 @@ mod tests {
         assert!(analysis.transcription_bias.manual_overrides_applied.is_empty());
     }
 
+    /// The preview's job is to answer "what does the provider actually get".
+    /// Since the context field no longer travels that path (ADR 0032), the
+    /// preview must not show it — including under the legacy manual flags,
+    /// which survive in old configs but no longer route anything.
     #[test]
-    fn analyze_document_manual_with_cloud_flag_surfaces_profile_hints_in_cloud() {
+    fn analyze_document_never_previews_the_context_field_as_recognizer_input() {
         let document = TextRulesDocument {
             schema_version: TEXT_RULES_SCHEMA_VERSION,
             prompt: "WordScript\nSEV-1".to_string(),
@@ -1477,7 +1681,8 @@ mod tests {
             .transcription_bias
             .cloud_prompt_preview
             .expect("cloud preview present");
-        assert!(cloud.contains("Vocabulary: WordScript; SEV-1"));
+        assert!(!cloud.contains("Vocabulary:"));
+        assert!(!cloud.contains("SEV-1"));
         assert!(cloud.contains("Likely phrases: alpha; beta"));
         assert_eq!(
             analysis.transcription_bias.effective_stt_hints_source,

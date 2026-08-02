@@ -1717,7 +1717,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 agent_model,
                                 profile_label: mode_transform_config.profile_label.clone(),
                                 profile_prompt: mode_transform_config.profile_prompt.clone(),
-                                stt_hints: mode_transform_config.stt_hints.clone(),
+                                vocabulary: mode_transform_config.vocabulary.clone(),
                                 dictionary_entries: mode_transform_config.dictionary_entries.clone(),
                                 snippet_entries: mode_transform_config.snippet_entries.clone(),
                                 workspace_context: workspace_context.clone(),
@@ -1760,6 +1760,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 sub_mode: enhance_sub_mode.as_str().to_string(),
                                 target: enhance_target.as_str().to_string(),
                                 profile_prompt: mode_transform_config.profile_prompt.clone(),
+                                vocabulary: mode_transform_config.vocabulary.clone(),
                                 // Reuses the single per-session detection above
                                 // instead of detecting a second time.
                                 workspace_context: workspace_context.clone(),
@@ -1922,6 +1923,29 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 &result,
                             )
                             .ok();
+
+                            // After the insert, deliberately. The text is
+                            // already with the user, so nothing here is in a
+                            // latency-critical path and nothing here may fail a
+                            // delivery that already succeeded (ADR 0035).
+                            if let Some(entry) = history_entry.as_ref() {
+                                core::vocabulary_learning::learn_from_session(
+                                    &app,
+                                    core::vocabulary_learning::LearnFromSessionRequest {
+                                        profile_id: app_config.active_text_profile_id.clone(),
+                                        observation_id: entry.id.clone(),
+                                        raw_transcript: response.text.clone(),
+                                        final_text: text.clone(),
+                                        known_terms: core::vocabulary_learning::known_terms(
+                                            &transform_config.vocabulary,
+                                            &transform_config.dictionary_entries,
+                                        ),
+                                        applied_rules: transformed.applied_rules.clone(),
+                                        source: core::vocabulary_learning::LearningSource::Correction,
+                                    },
+                                );
+                            }
+
                             let completion_applied =
                                 core::sessions::complete_processing_session_from_transcription(
                                     &app,
@@ -2736,7 +2760,7 @@ mod tests {
 
         assert!(
             !prompt.contains("Vocabulary:"),
-            "profile_hints must not reach Whisper"
+            "the profile context field must not reach Whisper (ADR 0032)"
         );
         assert!(prompt.contains("Likely phrases: status update; handoff summary"));
         assert!(
@@ -2746,11 +2770,12 @@ mod tests {
     }
 
     #[test]
-    fn cloud_transcription_prompt_excludes_profile_hints_to_prevent_language_bias() {
-        // profile.prompt contains English vocabulary for LLM cleanup context.
-        // Sending those terms as Whisper initial_prompt biases language detection to English
-        // even when the user speaks another language (e.g. German). Only dictionary_terms
-        // and stt_hints are legitimate STT signals.
+    fn cloud_transcription_prompt_excludes_the_profile_context_field() {
+        // profile.prompt is context for the LLM stages, in whatever language the
+        // profile is written. Sending it as Whisper's initial_prompt biases
+        // language detection toward that language even when the user speaks
+        // another one. Only the opted-in vocabulary is a legitimate STT signal
+        // (ADR 0032).
         let config = NativeCaptureConfig {
             prompt: "customer names\nWordScript\nticket IDs\nrefund policy\nSEV-1".to_string(),
             stt_hints: "status update\ntriage summary".to_string(),
@@ -2773,7 +2798,7 @@ mod tests {
 
         assert!(
             !prompt.contains("Vocabulary:"),
-            "profile_hints must not reach Whisper"
+            "the profile context field must not reach Whisper (ADR 0032)"
         );
         assert!(prompt.contains("Likely phrases: status update; triage summary"));
         assert!(

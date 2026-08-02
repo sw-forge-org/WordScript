@@ -37,9 +37,8 @@ export type TextRulesIssueCode =
   | "duplicate_snippet_trigger"
   | "dictionary_snippet_overlap"
   | "duplicate_rule_id"
-  | "broad_profile_context_ignored"
-  | "no_concrete_profile_hints"
   | "ignored_stt_hint"
+  | "stt_hint_limit_reached"
   | "no_usable_stt_hints"
   | "import_schema_mismatch"
   | "import_parse_failed";
@@ -57,12 +56,21 @@ export interface TextRulesPreview {
   applied_rules: string[];
 }
 
+/**
+ * What the recognizer receives. The profile context field is deliberately
+ * absent: it holds topics, and an initial prompt can only be conditioned on
+ * literal tokens, so the field never travels this path (ADR 0032). The
+ * profile's lexical channel is `vocabulary_hints`, which arrives here as
+ * `stt_hints`.
+ */
 export interface TextRulesBiasPreview {
-  profile_hints: string[];
   dictionary_terms: string[];
   stt_hints: string[];
-  ignored_profile_lines: string[];
   ignored_stt_hint_lines: string[];
+  /** Terms switched on for the recognizer that did not fit its slot budget. Kept
+   * apart from `ignored_stt_hint_lines` because the fix differs: these need a
+   * switch turned off elsewhere, not a shorter term. */
+  over_limit_stt_hint_lines: string[];
   cloud_prompt_preview?: string | null;
   local_prompt_preview?: string | null;
   manual_overrides_applied: string[];
@@ -81,12 +89,26 @@ export interface ProfileContextBudget {
   max_chars: number;
 }
 
+/**
+ * Which vocabulary terms the deterministic repair layer can act on. Mirrors
+ * `core::text_rules::VocabularyRepairCoverage`. `too_short` is not a defect to
+ * fix: below the floor a term has too many neighbours to rewrite safely (ADR
+ * 0033), so the row says which of its two effects it has rather than asking for
+ * a correction.
+ */
+export interface VocabularyRepairCoverage {
+  repairable: string[];
+  too_short: string[];
+  min_chars: number;
+}
+
 export interface TextRulesAnalysis {
   blocking: boolean;
   issues: TextRulesIssue[];
   preview: TextRulesPreview;
   transcription_bias: TextRulesBiasPreview;
   profile_context: ProfileContextBudget;
+  vocabulary_repair: VocabularyRepairCoverage;
   dictionary_count: number;
   snippet_count: number;
 }

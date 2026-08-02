@@ -80,6 +80,16 @@ pub fn history_file_path() -> PathBuf {
     user_data_dir().join("history.json")
 }
 
+/// Terms seen mangled once, waiting for the second sighting that promotes them
+/// into a profile (ADR 0035).
+///
+/// Its own file rather than a field on the config: a candidate is runtime
+/// bookkeeping with a short life, and putting it in `config.json` would mean
+/// every dictation rewrites the file the settings form owns.
+pub fn vocabulary_candidates_file_path() -> PathBuf {
+    user_data_dir().join("vocabulary-candidates.json")
+}
+
 #[cfg(not(test))]
 fn home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
@@ -111,7 +121,12 @@ mod tests {
     fn every_data_file_lives_inside_the_diverted_directory() {
         let dir = user_data_dir();
 
-        for path in [config_file_path(), scratchpad_file_path(), history_file_path()] {
+        for path in [
+            config_file_path(),
+            scratchpad_file_path(),
+            history_file_path(),
+            vocabulary_candidates_file_path(),
+        ] {
             assert!(path.starts_with(&dir), "{path:?} escaped {dir:?}");
         }
     }

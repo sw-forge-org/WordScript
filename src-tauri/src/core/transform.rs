@@ -36,6 +36,10 @@ pub struct NativeTransformConfig {
     /// profile as it was when the recording started (ADR 0025).
     pub profile_label: String,
     pub stt_hints: String,
+    /// Every vocabulary term the profile carries. Reaches every LLM stage as
+    /// granular context and drives deterministic repair before the correction
+    /// step (ADR 0033).
+    pub vocabulary: Vec<String>,
     pub agent_name: String,
     /// The profile's communication style. Read by Rewrite only: it is the one
     /// correction mode that already reformulates, so a register can move within
@@ -73,6 +77,7 @@ impl NativeTransformConfig {
             profile_prompt: config.prompt.clone(),
             profile_label: config.profile_label.clone(),
             stt_hints: config.stt_hints.clone(),
+            vocabulary: config.vocabulary.clone(),
             agent_name: config.agent_name.clone(),
             dictionary_entries: config.dictionary_entries.clone(),
             snippet_entries: config.snippet_entries.clone(),
@@ -370,30 +375,229 @@ fn normalize_correction(
         };
     }
 
+    // The fifth guardrail, and the only one that repairs instead of rejecting.
+    let mut applied_rules = Vec::new();
+    let corrected = match revert_spelled_letter_merges(original, corrected) {
+        Some(reverted) => {
+            runtime_log::record(
+                "[WordScript] Correction guardrail: spelled_letter_merge_reverted".to_string(),
+            );
+            applied_rules.push("spelled_letter_merge_reverted".to_string());
+            reverted
+        }
+        None => corrected.to_string(),
+    };
+
     let changed = corrected != original;
+    applied_rules.push(
+        if changed {
+            "post_corrected"
+        } else {
+            "post_correction_no_change"
+        }
+        .to_string(),
+    );
+
     NativeTransformResult {
         text: if changed {
-            corrected.to_string()
+            corrected
         } else {
             original.to_string()
         },
         corrected: changed,
-        applied_rules: vec![if changed {
-            "post_corrected".to_string()
-        } else {
-            "post_correction_no_change".to_string()
-        }],
+        applied_rules,
         warning: None,
     }
 }
 
+/// The corpus module's door to the guardrails.
+///
+/// `context_measurement` is a child module and reaches them directly;
+/// `regression_corpus` is a sibling, and the alternative to this wrapper is
+/// making `normalize_correction` itself visible across the crate for the sake
+/// of a test.
+#[cfg(test)]
+pub(super) fn normalize_correction_for_tests(
+    original: &str,
+    corrected: &str,
+    config: &NativeTransformConfig,
+) -> NativeTransformResult {
+    normalize_correction(original, corrected, config)
+}
+
+/// Where the speaker spelled something out letter by letter, the correction may
+/// not fuse those letters into a word.
+///
+/// ```text
+/// raw: Bei c a u d e code oder codex Passt ja alles
+/// out: Bei CAUDE-Code oder Codex passt ja alles
+/// ```
+///
+/// The wrong letters are not the defect — the transcript was already broken.
+/// The defect is that **visible** damage became **invisible** damage. Spaced-out
+/// letters get repaired by hand on sight; a capitalized, hyphenated token has
+/// the exact shape of a real product name and ships unnoticed.
+///
+/// It repairs the one token instead of discarding the whole correction, which
+/// is what the four guardrails above do. Their trade is right for what they
+/// catch: an answered question or an assistant reply is wrong end to end. Here
+/// a single token is wrong, and throwing away the cleanup of a long dictation to
+/// undo it is a worse outcome than the defect. The measurement behind ADR 0036
+/// is what settles that — this shape is precise enough to act on surgically, and
+/// rare enough that a full discard would spend far more than it saves.
+///
+/// Returns `None` when there is nothing to revert, so the common path allocates
+/// nothing.
+fn revert_spelled_letter_merges(original: &str, corrected: &str) -> Option<String> {
+    let runs = spelled_letter_runs(original);
+    if runs.is_empty() {
+        return None;
+    }
+
+    let original_words: std::collections::HashSet<String> =
+        word_tokens(original).into_iter().collect();
+
+    let mut out = String::with_capacity(corrected.len());
+    let mut word = String::new();
+    let mut reverted = false;
+
+    let mut flush = |word: &mut String, out: &mut String, reverted: &mut bool| {
+        if word.is_empty() {
+            return;
+        }
+
+        let folded = fold_word(word);
+        let merge = (folded.chars().count() >= MIN_SPELLED_LETTER_RUN
+            && !original_words.contains(&folded))
+        .then(|| runs.iter().find(|run| run.folded.contains(&folded)))
+        .flatten();
+
+        match merge {
+            Some(run) => {
+                out.push_str(&run.spelled);
+                *reverted = true;
+            }
+            None => out.push_str(word),
+        }
+        word.clear();
+    };
+
+    for ch in corrected.chars() {
+        if ch.is_alphanumeric() {
+            word.push(ch);
+        } else {
+            flush(&mut word, &mut out, &mut reverted);
+            out.push(ch);
+        }
+    }
+    flush(&mut word, &mut out, &mut reverted);
+
+    reverted.then_some(out)
+}
+
+/// How many spelled-out letters in a row count as spelling something out. Below
+/// three, single letters are ordinary words — German `a`, English `I` — and a
+/// run of two is a coincidence rather than an act.
+const MIN_SPELLED_LETTER_RUN: usize = 3;
+
+/// A run of single letters as the transcript wrote them down.
+///
+/// `spelled` keeps the original spacing and casing, because that is what gets
+/// put back: the point of the revert is to leave the damage exactly as visible
+/// as the recognizer left it.
+struct SpelledLetterRun {
+    folded: String,
+    spelled: String,
+}
+
+fn spelled_letter_runs(text: &str) -> Vec<SpelledLetterRun> {
+    let mut runs = Vec::new();
+    let mut letters: Vec<String> = Vec::new();
+
+    let mut close = |letters: &mut Vec<String>, runs: &mut Vec<SpelledLetterRun>| {
+        if letters.len() >= MIN_SPELLED_LETTER_RUN {
+            runs.push(SpelledLetterRun {
+                folded: letters.iter().map(|letter| fold_word(letter)).collect(),
+                spelled: letters.join(" "),
+            });
+        }
+        letters.clear();
+    };
+
+    for chunk in text.split_whitespace() {
+        let bare: String = chunk.chars().filter(|ch| ch.is_alphanumeric()).collect();
+        if bare.chars().count() == 1 && bare.chars().all(char::is_alphabetic) {
+            letters.push(bare);
+            continue;
+        }
+        close(&mut letters, &mut runs);
+    }
+    close(&mut letters, &mut runs);
+
+    runs
+}
+
+/// Comparison form: lowercase, umlauts and eszett resolved, everything else
+/// dropped. Shared with the measurement classifier so the guardrail and the
+/// metric that justified it cannot disagree about what a token is.
+pub(super) fn fold_word(value: &str) -> String {
+    let mut folded = String::new();
+
+    for ch in value.chars() {
+        match ch {
+            'ä' | 'Ä' => folded.push('a'),
+            'ö' | 'Ö' => folded.push('o'),
+            'ü' | 'Ü' => folded.push('u'),
+            'ß' => folded.push_str("ss"),
+            _ if ch.is_alphanumeric() => folded.extend(ch.to_lowercase()),
+            _ => {}
+        }
+    }
+
+    folded
+}
+
+/// Splits into folded comparison tokens, breaking at every non-alphanumeric
+/// character. The break matters: `CAUDE-Code` has to become two tokens, or the
+/// merge hides behind the hyphen that makes it look like a product name.
+pub(super) fn word_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        if ch.is_alphanumeric() {
+            current.push(ch);
+            continue;
+        }
+        if !current.is_empty() {
+            tokens.push(fold_word(&std::mem::take(&mut current)));
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(fold_word(&current));
+    }
+
+    tokens
+}
+
+/// Vocabulary repair runs first, then the explicit rules.
+///
+/// The order is the point. Repair restores the term's real spelling, so a
+/// replacement or snippet written against that spelling matches afterwards. The
+/// other way round, an explicit rule would fire on damaged text or not at all,
+/// and repair would then be working on a string a rule had already rewritten.
 fn apply_text_rules(text: &str, config: &NativeTransformConfig) -> (String, Vec<String>) {
+    let repaired = super::vocabulary_repair::repair_vocabulary(text, &config.vocabulary);
     let (dictionary_text, mut dictionary_rules) =
-        apply_dictionary_entries(text, &config.dictionary_entries);
+        apply_dictionary_entries(&repaired.text, &config.dictionary_entries);
     let (snippet_text, mut snippet_rules) =
         apply_snippet_entries(&dictionary_text, &config.snippet_entries);
-    dictionary_rules.append(&mut snippet_rules);
-    (snippet_text, dictionary_rules)
+
+    let mut applied_rules = repaired.applied_rules;
+    applied_rules.append(&mut dictionary_rules);
+    applied_rules.append(&mut snippet_rules);
+    (snippet_text, applied_rules)
 }
 
 fn apply_dictionary_entries(text: &str, entries: &[DictionaryEntry]) -> (String, Vec<String>) {
@@ -569,7 +773,11 @@ fn correction_context_hint(config: &NativeTransformConfig) -> Option<String> {
         .as_ref()
         .and_then(workspace_context_hint);
 
-    if profile_hints.is_none() && dictionary_hints.is_empty() && workspace_hint.is_none() {
+    if profile_hints.is_none()
+        && config.vocabulary.is_empty()
+        && dictionary_hints.is_empty()
+        && workspace_hint.is_none()
+    {
         return None;
     }
 
@@ -579,6 +787,13 @@ fn correction_context_hint(config: &NativeTransformConfig) -> Option<String> {
 
     if let Some(hints) = profile_hints {
         lines.push(format!("Context terms: {hints}"));
+    }
+
+    // The profile's individual terms. Same vocabulary as the context line above,
+    // one granularity finer, and the reason the correction can pick the right
+    // spelling where deterministic repair declined to decide (ADR 0033).
+    if let Some(terms) = profile_context_line(&config.vocabulary.join("\n")) {
+        lines.push(format!("Names and terms: {terms}"));
     }
 
     if !dictionary_hints.is_empty() {
@@ -1332,6 +1547,101 @@ mod tests {
         assert!(result
             .applied_rules
             .contains(&"question_answered_guardrail_fallback".to_string()));
+    }
+
+    fn cleanup_config() -> NativeTransformConfig {
+        NativeTransformConfig {
+            provider: "groq".to_string(),
+            profile_prompt: String::new(),
+            dictionary_entries: Vec::new(),
+            snippet_entries: Vec::new(),
+            post_process: true,
+            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            filter_fillers: true,
+            professionalize: false,
+            ..Default::default()
+        }
+    }
+
+    /// The ground-truth case: `Claude Code` was spelled out letter by letter,
+    /// and the correction fused the letters into a token with the exact shape of
+    /// a real product name. Spaced letters get fixed by hand; `CAUDE-Code` ships.
+    #[test]
+    fn a_spelled_out_run_fused_into_a_word_is_put_back_as_letters() {
+        let result = normalize_correction(
+            "Bei c a u d e code oder codex Passt ja alles",
+            "Bei CAUDE-Code oder Codex passt ja alles",
+            &cleanup_config(),
+        );
+
+        assert_eq!(result.text, "Bei c a u d e-Code oder Codex passt ja alles");
+        assert!(result
+            .applied_rules
+            .contains(&"spelled_letter_merge_reverted".to_string()));
+    }
+
+    /// The point of the fifth guardrail: it repairs the token, it does not throw
+    /// the dictation away. Every other correction in the same text survives.
+    #[test]
+    fn reverting_a_merge_keeps_the_rest_of_the_correction() {
+        let result = normalize_correction(
+            "also c a u d e code ähm das läuft ja gut",
+            "Also CAUDE Code, das läuft ja gut.",
+            &cleanup_config(),
+        );
+
+        assert_eq!(result.text, "Also c a u d e Code, das läuft ja gut.");
+        assert!(result.corrected);
+        assert!(result
+            .applied_rules
+            .contains(&"spelled_letter_merge_reverted".to_string()));
+        assert!(result.applied_rules.contains(&"post_corrected".to_string()));
+    }
+
+    /// The precision cases from the measurement record. Correct German
+    /// morphology must pass untouched, or the guardrail costs more than the
+    /// defect it prevents.
+    #[test]
+    fn legitimate_morphology_is_never_reverted() {
+        for (original, corrected) in [
+            ("das ist der Text des Lieds", "Das ist der Text des Lieder."),
+            ("wenn man da switch", "Wenn man da switcht."),
+            ("wir gehen das jetzt durch", "Wir gehen das jetzt durch."),
+        ] {
+            let result = normalize_correction(original, corrected, &cleanup_config());
+
+            assert_eq!(result.text, corrected, "reverted {original:?}");
+            assert!(
+                !result
+                    .applied_rules
+                    .contains(&"spelled_letter_merge_reverted".to_string()),
+                "reverted {original:?}"
+            );
+        }
+    }
+
+    /// A run has to be a run. Two stray single letters are a coincidence, and a
+    /// merged word that the transcript already contained was never a merge.
+    #[test]
+    fn a_short_letter_run_and_an_already_present_word_are_left_alone() {
+        let short_run = normalize_correction(
+            "ich schreibe a b und dann weiter",
+            "Ich schreibe ab und dann weiter.",
+            &cleanup_config(),
+        );
+        assert!(!short_run
+            .applied_rules
+            .contains(&"spelled_letter_merge_reverted".to_string()));
+
+        let already_there = normalize_correction(
+            "wir nutzen a p i und meinen damit api",
+            "Wir nutzen API und meinen damit API.",
+            &cleanup_config(),
+        );
+        assert_eq!(already_there.text, "Wir nutzen API und meinen damit API.");
+        assert!(!already_there
+            .applied_rules
+            .contains(&"spelled_letter_merge_reverted".to_string()));
     }
 
     #[test]

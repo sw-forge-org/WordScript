@@ -233,13 +233,20 @@ impl GroqClient {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| "verbose_json".to_string());
 
+        // `prompt_chars` is here so the blank-state floor can be verified where
+        // it matters. A floor that only shows up in the settings preview is the
+        // defect `stt-hints-bypass-the-vocabulary-opt-in.md` records, and until
+        // this line carried the number there was no way to tell from a real
+        // dictation whether the provider got a prompt at all (ADR 0036). The
+        // count, not the text: the prompt can carry the user's own terms.
         runtime_log::record(format!(
-            "[WordScript] Groq transcription start file={} bytes={} model={} timeout_ms={} retries={}",
+            "[WordScript] Groq transcription start file={} bytes={} model={} timeout_ms={} retries={} prompt_chars={}",
             file_name,
             audio_bytes.len(),
             model,
             self.timeout.as_millis(),
             self.max_retries,
+            prompt.as_deref().map(str::len).unwrap_or(0),
         ));
 
         validate_audio_upload_size(&file_name, audio_bytes.len())?;

@@ -15,6 +15,9 @@ const runtimeEventHandlers: Array<(event: { payload: { event: string; level?: nu
 // only captured "wordscript-event"; extending it to capture all channels keeps
 // the existing tests intact (they only assert on runtimeEventHandlers).
 const modeEventHandlers: Array<(event: { payload: unknown }) => void> = [];
+// The learning channel is its own, deliberately: it is presentation and must
+// never reach the session reducer (ADR 0018/0019, ADR 0035).
+const learningEventHandlers: Array<(event: { payload: unknown }) => void> = [];
 
 function createTestConfig() {
   return createAppConfig({
@@ -54,6 +57,8 @@ vi.mock("@tauri-apps/api/event", () => ({
       runtimeEventHandlers.push(handler);
     } else if (channel === "wordscript-mode-event") {
       modeEventHandlers.push(handler as never);
+    } else if (channel === "wordscript-learning-event") {
+      learningEventHandlers.push(handler as never);
     }
 
     return () => {
@@ -64,6 +69,10 @@ vi.mock("@tauri-apps/api/event", () => ({
       const modeIndex = modeEventHandlers.indexOf(handler as never);
       if (modeIndex >= 0) {
         modeEventHandlers.splice(modeIndex, 1);
+      }
+      const learningIndex = learningEventHandlers.indexOf(handler as never);
+      if (learningIndex >= 0) {
+        learningEventHandlers.splice(learningIndex, 1);
       }
     };
   }),
@@ -92,11 +101,52 @@ vi.mock("@tauri-apps/api/window", () => ({
   }),
 }));
 
+/**
+ * jsdom performs no layout, so every width is 0 and the learned tab would
+ * always resolve to "hidden". These stubs give the variant logic the three
+ * measurements it actually reads, keyed by class so each element answers for
+ * itself. Painted equals layout here, which is the zoom-1 case — the zoom is
+ * derived from the ratio in production and needs a real engine to exercise.
+ *
+ * Returns its own undo, so a test that stubs is a test that restores.
+ */
+function stubOverlayMetrics(sizes: { windowWidth: number; pill: number; tabInner: number; tabLabel: number }) {
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  const originalOffset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+  const originalInnerWidth = window.innerWidth;
+
+  const widthFor = (element: HTMLElement) => {
+    if (element.classList.contains("ov-pill-shell")) return sizes.pill;
+    if (element.classList.contains("ov-learned-tab__inner")) return sizes.tabInner;
+    if (element.classList.contains("ov-learned-tab__label")) return sizes.tabLabel;
+    return 0;
+  };
+
+  Object.defineProperty(window, "innerWidth", { value: sizes.windowWidth, configurable: true });
+  HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect(this: HTMLElement) {
+    const width = widthFor(this);
+    return { width, height: 22, top: 0, left: 0, right: width, bottom: 22, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+  };
+  Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return widthFor(this);
+    },
+  });
+
+  return () => {
+    HTMLElement.prototype.getBoundingClientRect = originalRect;
+    if (originalOffset) Object.defineProperty(HTMLElement.prototype, "offsetWidth", originalOffset);
+    Object.defineProperty(window, "innerWidth", { value: originalInnerWidth, configurable: true });
+  };
+}
+
 describe("OverlayWindow", () => {
   beforeEach(() => {
     movedHandlers.length = 0;
     runtimeEventHandlers.length = 0;
     modeEventHandlers.length = 0;
+    learningEventHandlers.length = 0;
     invokeMock.mockReset();
     startDraggingMock.mockReset();
     scaleFactorMock.mockReset();
@@ -920,6 +970,177 @@ describe("OverlayWindow", () => {
       resultSurfaceOpen: false,
     });
   }
+
+  // ── Learned a word ────────────────────────────────────────────────────────
+  // A quiet push after a delivery, on its own channel. The two constraints it
+  // has to satisfy are that it appears at all, and that it changes nothing
+  // about the session — per ADR 0018/0019 the session ends in exactly one
+  // reducer commit and no presentation channel may touch its surface.
+  it("opens the learned-word tab to the term without touching the session surface", async () => {
+    // The measurements of the result-actions surface, which is where a delivery
+    // lands and therefore the case that has to work: a 286px pill in a 480px
+    // window leaves 97px beside it, and the tab wants 86.
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 286, tabInner: 80, tabLabel: 50 });
+
+    try {
+      const runtimeValue = buildIdleResultState();
+      useRuntimeMock.mockImplementation(() => runtimeValue);
+      const { container } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+      expect(container.querySelector(".ov-learned-tab")).toBeNull();
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+        );
+      });
+
+      const tab = container.querySelector<HTMLElement>(".ov-learned-tab");
+      expect(tab).not.toBeNull();
+      expect(tab?.getAttribute("data-variant")).toBe("full");
+      // The shutter opens to the measured content width, in the shell's own
+      // layout pixels.
+      expect(tab?.style.getPropertyValue("--ov-learned-width")).toBe("80px");
+      expect(tab?.getAttribute("aria-label")).toBe("Learned: Kubernetes");
+      expect(tab?.querySelector(".ov-learned-tab__label")?.textContent).toContain("Kubernetes");
+      // Out of the pill's flow, so it cannot widen the pill past the window and
+      // clip its rounded ends.
+      expect(tab?.parentElement?.className).toContain("ov-pill-shell");
+
+      // The result surface the session committed is untouched.
+      expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    } finally {
+      restore();
+    }
+  });
+
+  // The graceful middle. A processing-preview carrying a transcript leaves only
+  // ~54px beside it, which holds the marker but not the name. Truncating the
+  // term instead was rejected: "Kuber…" carries less than the marker and reads
+  // as a rendering fault (ADR 0035).
+  it("falls back to the marker when the pill leaves room for it but not for the term", async () => {
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 371, tabInner: 80, tabLabel: 50 });
+
+    try {
+      useRuntimeMock.mockImplementation(() => buildIdleResultState());
+      const { container } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+        );
+      });
+
+      const tab = container.querySelector<HTMLElement>(".ov-learned-tab");
+      expect(tab?.getAttribute("data-variant")).toBe("marker");
+      // 80 content minus a 50 label minus the 5px gap between them.
+      expect(tab?.style.getPropertyValue("--ov-learned-width")).toBe("25px");
+      // Still announced: the tab is really there, it just does not spell the
+      // term out.
+      expect(tab?.getAttribute("aria-label")).toBe("Learned: Kubernetes");
+    } finally {
+      restore();
+    }
+  });
+
+  // Nothing measured yet means nothing may be claimed. A zero-width tab would
+  // otherwise "fit" trivially and be announced while painting nothing.
+  it("stays shut until it has been measured", async () => {
+    useRuntimeMock.mockImplementation(() => buildIdleResultState());
+    const { container } = render(<OverlayWindow />);
+
+    await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+    act(() => {
+      learningEventHandlers.forEach((handler) =>
+        handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+      );
+    });
+
+    const tab = container.querySelector<HTMLElement>(".ov-learned-tab");
+    expect(tab?.getAttribute("data-variant")).toBe("hidden");
+    expect(tab?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("names several learned terms without growing without bound", async () => {
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 286, tabInner: 80, tabLabel: 50 });
+
+    try {
+      useRuntimeMock.mockImplementation(() => buildIdleResultState());
+      const { container } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({
+            payload: { event: "vocabulary_learned", terms: ["Kubernetes", "Statuspage", "Tauri"] },
+          }),
+        );
+      });
+
+      const tab = container.querySelector(".ov-learned-tab");
+      // One term on the tab, the rest as a count. The full list goes to the
+      // accessible label, where it costs no width.
+      expect(tab?.querySelector(".ov-learned-tab__label")?.textContent).toContain("Kubernetes +2");
+      expect(tab?.getAttribute("aria-label")).toBe("Learned: Kubernetes, Statuspage, Tauri");
+    } finally {
+      restore();
+    }
+  });
+
+  // The tab lives in the transparent strip beside the centred pill, and the
+  // pill's width swings with its content. Widening the window is not an option
+  // — a resize per reveal is what the 1px height oscillation exists to work
+  // around — so when the strip is too narrow the shutter stays shut rather than
+  // painting half a tab outside the window.
+  it("stays shut when the pill leaves no room beside it", async () => {
+    // A 460px pill in a 480px window: 10px either side, not even the marker.
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 460, tabInner: 80, tabLabel: 50 });
+
+    try {
+      useRuntimeMock.mockImplementation(() => buildIdleResultState());
+      const { container } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+        );
+      });
+
+      const tab = container.querySelector<HTMLElement>(".ov-learned-tab");
+      // Mounted — that is how it gets measured — but it never opens, and it is
+      // not announced either. A screen reader saying it is there while nothing
+      // is painted is the audible version of the same lie.
+      expect(tab).not.toBeNull();
+      expect(tab?.getAttribute("data-variant")).toBe("hidden");
+      expect(tab?.style.getPropertyValue("--ov-learned-width")).toBe("0px");
+      expect(tab?.getAttribute("aria-hidden")).toBe("true");
+      expect(tab?.getAttribute("role")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("ignores a learning event that carries no terms", async () => {
+    useRuntimeMock.mockImplementation(() => buildIdleResultState());
+    const { container } = render(<OverlayWindow />);
+
+    await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+    act(() => {
+      learningEventHandlers.forEach((handler) =>
+        handler({ payload: { event: "vocabulary_learned", terms: [] } }),
+      );
+    });
+
+    expect(container.querySelector(".ov-learned-tab")).toBeNull();
+  });
 
   // ── Gap-free processing -> result swap (auto_paste) ───────────────────────
   // The auto_paste path goes compact(processing) -> result_actions directly:

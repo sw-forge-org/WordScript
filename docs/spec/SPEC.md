@@ -1,6 +1,6 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-07-30
+Status: created 2026-07-24, last drift check 2026-08-02
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -188,7 +188,28 @@ Workspace context is collected once per session when the active profile allows i
 and the cleanup, rewrite and agent prompts as exactly one bounded hint line that
 forbids deriving content from it.
 
-The profile context reaches every mode at one width (ADR 0021), but what a mode
+The profile context holds topics, not spellings, and reaches the LLM stages
+only. The recognizer never reads it: an initial prompt conditions the decoder on
+literal tokens, so a topic cannot bias it. The only profile path to the
+recognizer is `vocabulary_hints`, whose slots the runtime allocates (ADR 0017,
+narrowed by ADR 0035), and no surface may report a context line as rejected by a
+path it does not travel. See ADR 0032. The context field stays a form because
+topics are few, stable and knowable in advance; the term list does not, because
+it grows with every new project.
+
+**The recognizer is never sent an empty initial prompt.** With no terms to
+carry, `build_transcription_prompt` returns `BLANK_STATE_RECOGNIZER_PROMPT`, a
+constant register line with no profile content in it, on both lanes and through
+the same budget and truncation as any other prompt. An absent prompt is not a
+neutral request: the decoder falls back on its training distribution, whose
+nearest attractor on quiet or damaged audio is the subtitle corpus. The floor is
+not a profile path and does not touch ADR 0032; it also never overrules a
+channel the user switched off (`bias_mode=off`, `local_prompt_strength=off`),
+because those callers return before it is reached. The recognizer preview shows
+it, and the provider's `transcription start` log line carries `prompt_chars` so
+what reached the provider is checkable from a real dictation. See ADR 0036.
+
+It reaches every mode it does travel to at one width (ADR 0021), but what a mode
 may do with it differs. In `agent` it is a reading aid for the instruction and
 nothing else: it sits in the system prompt behind an explicit prohibition on
 deriving content from it, the user turn carries the transcript alone, and
@@ -199,6 +220,15 @@ user: the prompt opens with `AGENT_OUTPUT_CONTRACT`, ahead of profile context
 and style block, fixing the addressee to the person the instruction names and
 returning the dictated content as plain text when the instruction cannot be
 carried out. It holds at every register, `off` included. See ADR 0026.
+
+**`agent` carries out an instruction; it does not act** (ADR 0029). It is one
+chat completion over two messages, and it gains no tool-calling surface, no
+execution loop and no ability to produce effects outside the text it returns.
+This is a contract, not a current implementation limit: side-effecting tools
+stay out of the dictation path because a tool loop has no single session end
+(ADR 0018/0019), because the delivery architecture presupposes a text result
+(ADR 0011a), and because speech is a low-confidence channel that must not drive
+actions (ADR 0016).
 
 The per-profile communication style (`ProfileModesSettings.communication_register`
 / `communication_length` / `style_instructions` / `style_sample`) is read by
@@ -223,16 +253,54 @@ no account. Entities:
   provider selection, seven mode shortcuts (picker plus six direct modes),
   overlay placement, `profile_health_acknowledged_flags` map.
 - **TextProfile** (local text profile): `prompt`, `vocabulary_hints`
-  (`VocabularyHintEntry { id, phrase, use_as_prompt_hint }`), `dictionary`,
-  `snippets`, `schema_version`, `TextProfileWorkMode` (`processing_mode`,
+  (`VocabularyHintEntry { id, phrase, use_as_prompt_hint, origin,
+  learned_at_ms, hit_count, observation_count }`), `dictionary`, `snippets`,
+  `schema_version`, `TextProfileWorkMode` (`processing_mode`,
   `enhance_sub_mode`, `target`, `insert_behavior`) plus optional profile-bound
   `speech`, `modes` and `capture` settings. Profiles are local and manually
   activated; no automatic app-based activation, no team sync.
-  Vocabulary is applied deterministically after transcription;
-  `use_as_prompt_hint` is the only way an entry reaches Whisper's initial
-  prompt, it is per entry and off by default (ADR 0017). `stt_hints`,
-  `bias_mode` and `manual_bias` remain as migration-only remnants for one
-  release and are read by nothing at runtime.
+  `prompt` holds topics and goes to the LLM stages only; `vocabulary_hints`
+  holds the individual terms and is the only profile path to the recognizer
+  (ADR 0032). A term carries no spoken form, and every entry reaches every LLM
+  stage as granular context unconditionally -- Prompt Enhance included (ADR
+  0033, corrected by ADR 0035). Terms of at least seven characters also drive
+  `core::vocabulary_repair`, a deterministic pass that runs before dictionary
+  and snippets in every mode including Verbatim, rewrites spans within a
+  normalized edit distance of a term, declines wherever it cannot decide, and
+  reports every repair through `applied_rules`. `dictionary` is scoped to
+  shorthand the user speaks on purpose, because that is the only case with a
+  knowable left-hand side.
+
+  **The list fills itself** (ADR 0035). `core::vocabulary_learning` reads the
+  correction stage's own output -- the raw transcript against the delivered text
+  -- and records a candidate when a replacement looks like a misrecognized name
+  rather than a rewording. Candidates live in `vocabulary-candidates.json`
+  beside the history file. A term is promoted into `vocabulary_hints` after two
+  sightings in two deliveries; a hand correction in the overlay counts as two
+  and promotes on sight. Promotion writes through the config file lock and emits
+  `ready` plus `wordscript-learning-event`, which is presentation only and never
+  touches session state (ADR 0018/0019). Failures are logged and swallowed:
+  learning runs after the insert and must never fail a delivery.
+
+  **The runtime allocates the recognizer's slots**, ordered by terms below
+  `vocabulary_repair::min_repairable_chars()` first, then by
+  `observation_count`, filtered by the recognizer's own form rules and capped at
+  `MAX_TRANSCRIPTION_STT_HINTS`. Short terms lead because they are
+  unrecoverable once the transcript exists, while a long term the recognizer
+  mangles is restored by repair afterwards -- the order a user picks by hand is
+  the reverse, which is why it is no longer a setting. `use_as_prompt_hint` is a
+  migration remnant read by nothing. `VocabularyRepairCoverage` reports which
+  terms clear the repair floor, so the settings panel names that boundary
+  without restating it, and every per-row fact is resolved from the runtime's
+  analysis rather than recomputed (ADR 0034). `schema_version` is 4; each
+  migration guards on its own version, so bumping the constant cannot re-run an
+  earlier step, and the version-4 step rewrites no entry -- the frontend mirror
+  writes profiles back at a lower version, so an unconditional rewrite there
+  would relabel learned rows as hand-typed. `stt_hints` and `use_as_prompt_hint`
+  remain migration-only remnants read by nothing. `bias_mode` and `manual_bias`
+  are still consulted on the capture path, but no reachable configuration sets
+  anything other than the `Conservative` default: ADR 0017 removed the
+  bias-policy panel and nothing replaced it.
 - **Session** (`sessions.rs`): runtime state machine
   `idle -> capturing -> processing -> completed | aborted | error`. `paused`
   is a capture sub-state within `capturing`. Async provider/transform/insert
@@ -267,11 +335,28 @@ no account. Entities:
    AI cleanup via the correction guardrail stack unless the mode's preset
    disables it). `agent` and `prompt_enhance` run their own transform instead of
    the correction step, each with its own guardrail chain.
+
+   Four of the correction guardrails discard the whole reply and return the
+   original; the fifth, `spelled_letter_merge_reverted`, repairs one token
+   instead. Where the original holds a run of at least three isolated single
+   letters, the correction may not fuse them into a token the original does not
+   contain -- that turns visible damage into invisible damage, since `c a u d e
+   code` is repaired on sight and `CAUDE-Code` has the shape of a real product
+   name. Repair rather than discard because exactly one token is wrong, and the
+   shape is rare enough that discarding a long dictation costs more than the
+   defect. It is deterministic, needs no configured profile, and is gated on a
+   measurement rather than on a prompt rule the model demonstrably ignores. See
+   ADR 0036.
 7b. `transform::finalize_with_text_rules` applies the profile's dictionary and
-   snippets. This is the pipeline's final stage and is **mode-independent**: it
-   sits at the single exit after the mode branch, so no mode can bypass it. The
-   mode decides how the text is produced, the profile's vocabulary decides how the
-   user's own terms are spelled (ADR 0020).
+   snippets. This is the pipeline's final stage and is **mode-independent within
+   the insertion path**: it sits at the single exit after the mode branch, so no
+   mode can bypass it. The mode decides how the text is produced, the profile's
+   vocabulary decides how the user's own terms are spelled (ADR 0020). It does
+   not run on output that is not inserted: text rules exist for text that lands
+   in a document, and the planned voice bridge returns its transcript to a
+   caller, where a replacement rule would make the answer diverge from what the
+   user said (ADR 0030). Getting proper nouns spelled right there is the
+   recognizer's job (ADR 0017), not finalization's.
 8. `insertion.rs` chooses and runs the insert mode; successful direct insert
    best-effort restores the previous clipboard.
 9. `history.rs` writes raw vs transformed transcript, active profile,

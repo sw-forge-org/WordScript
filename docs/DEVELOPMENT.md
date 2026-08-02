@@ -218,5 +218,7 @@ preview.
 
 V1 work prioritizes trustworthy transcription, controlled delivery and
 recovery, clear provider semantics, a first-class local path, and guided setup
-and packaging. Broader notes, sync, MCP, account, and assistant scope remain
-future work until the core dictation path is dependable.
+and packaging. Broader notes, sync, account, and assistant scope remain future
+work until the core dictation path is dependable. MCP is filed separately (ADR
+0029): as a server it is scheduled as ROADMAP Phase 8, as a client inside the
+dictation path it is rejected outright.

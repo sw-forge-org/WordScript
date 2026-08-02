@@ -128,14 +128,32 @@ export interface RuntimeTranscriptionResult {
   occurred_at_ms:          number;
 }
 
-/** A word or name taught to the profile. `use_as_prompt_hint` replaces the
- *  whole `BiasMode` + `ManualBias` combination: it is the only remaining knob,
- *  it is per entry, and it is off by default because pushing vocabulary into
- *  Whisper's initial prompt is itself a hallucination source. */
+/** Where a vocabulary entry came from. `learned` rows were promoted by the
+ *  runtime after seeing the correction stage repair the same term twice; `user`
+ *  rows were typed. Removal works the same on both (ADR 0035). */
+export type VocabularyHintOrigin = "user" | "learned";
+
+/** A word or name the profile carries.
+ *
+ *  `use_as_prompt_hint` is a migration remnant and nothing reads it. It used to
+ *  be a per-entry recognizer opt-in whose intuitive use was backwards: people
+ *  switch on their long product names, which are exactly the terms
+ *  `vocabulary_repair` restores afterwards, while the short ones that are
+ *  unrecoverable after transcription got nothing. The runtime allocates the
+ *  slots now (ADR 0035). */
 export interface VocabularyHintEntry {
   id:                      string;
   phrase:                  string;
+  /** @deprecated Migration-only. The runtime decides which terms reach the
+   *  recognizer; do not write. */
   use_as_prompt_hint:      boolean;
+  origin:                  VocabularyHintOrigin;
+  /** Epoch ms of the promotion, or null for a term someone typed. */
+  learned_at_ms:           number | null;
+  /** How often deterministic repair has acted on this term. */
+  hit_count:               number;
+  /** How often the correction stage was seen repairing it before promotion. */
+  observation_count:       number;
 }
 
 export interface TextProfile {

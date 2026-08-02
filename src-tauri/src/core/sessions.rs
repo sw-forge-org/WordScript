@@ -464,6 +464,40 @@ pub async fn commit_pending_transcription_preview(
             )
             .ok();
 
+            // The one path that holds both the pre-edit text and the user's own
+            // wording at the same moment, which makes a hand correction a
+            // precise signal needing no storage. It stays a secondary source,
+            // though: people normally paste into their target document and
+            // correct there, so most sessions never reach this branch at all
+            // (ADR 0035).
+            if let Some(entry) = history_entry.as_ref() {
+                let active_profile = preview.app_config.active_text_profile();
+                super::vocabulary_learning::learn_from_session(
+                    &app,
+                    super::vocabulary_learning::LearnFromSessionRequest {
+                        profile_id: preview.app_config.active_text_profile_id.clone(),
+                        observation_id: entry.id.clone(),
+                        raw_transcript: preview.raw_text.clone(),
+                        final_text: final_text.clone(),
+                        known_terms: super::vocabulary_learning::known_terms(
+                            &active_profile.vocabulary_phrases(),
+                            &active_profile.dictionary_entries,
+                        ),
+                        applied_rules: preview.transformed.applied_rules.clone(),
+                        source: if preview
+                            .transformed
+                            .applied_rules
+                            .iter()
+                            .any(|rule| rule == "overlay_edit")
+                        {
+                            super::vocabulary_learning::LearningSource::HandEdit
+                        } else {
+                            super::vocabulary_learning::LearningSource::Correction
+                        },
+                    },
+                );
+            }
+
             match complete_processing_session_from_transcription(
                 &app,
                 &session_id,

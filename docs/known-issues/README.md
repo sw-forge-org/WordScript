@@ -126,18 +126,26 @@ status change. Resolved bugs remain as references for the same failure class.
   version blamed the runtime; that was wrong** — the correction is kept in the
   file, because the direction of a UI/runtime disagreement is the whole finding.
 - [profile-context-is-written-as-categories.md](profile-context-is-written-as-categories.md):
-  open (2026-07-30) — the curated profiles fill the context field with category
-  labels (`feature names`, `service names`) instead of the terms those
-  categories contain, which helps neither the recognizer nor the corrector much.
-  Explains why ADR 0021's null result is at least as much a statement about the
-  field's content as about the filter that gated it. Owned by Phase 7.
+  closed 2026-08-01 — **the premise was wrong, twice over, and the correction is
+  kept in the file.** It described a seed that had not shipped for two months
+  (the record and ADR 0021 both read the developer's live config, not
+  `curatedTextProfiles.json`), and the content it called a defect was correct:
+  category labels are topics, which is what this field is for. What was broken
+  was the routing — `prompt` still travelled to the recognizer, where topics
+  cannot work, and the panel reported the filtered lines as rejected. See ADR
+  0032. The question underneath — does profile context earn its place at all —
+  survives and stays with Phase 7.
 - [cleanup-invents-tokens-on-broken-input.md](cleanup-invents-tokens-on-broken-input.md):
-  open (2026-07-30) — where the transcript is already damaged (spelled-out
-  letters, an aborted word), the correction prefers a plausible-looking token
-  over leaving the damage visible: `c a u d e code` → `CAUDE-Code`, `politi…
-  äh…` → `politisch`. Found beside ADR 0021 and independent of it. Also records
-  which look-alikes are legitimate German morphology, so a future metric does
-  not count them.
+  measured 2026-08-02, partially addressed — where the transcript is already
+  damaged (spelled-out letters, an aborted word), the correction prefers a
+  plausible-looking token over leaving the damage visible: `c a u d e code` →
+  `CAUDE-Code`, `politi… äh…` → `politisch`. Found beside ADR 0021 and
+  independent of it. 12 of 197 shipped pairs (6.1 %) verified; the one
+  deterministically detectable category now has a guardrail that repairs the
+  token instead of discarding the correction (ADR 0036). The other two
+  categories, 10 of 14 observed tokens, stay open — no rule that only sees the
+  transcript can reach them. Also records which look-alikes are legitimate
+  German morphology, so the metric does not count them.
 
 ## Boundaries
 

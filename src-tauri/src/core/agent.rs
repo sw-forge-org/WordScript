@@ -60,7 +60,9 @@ pub struct AgentConfig {
     pub agent_model: String,
     pub profile_label: String,
     pub profile_prompt: String,
-    pub stt_hints: String,
+    /// Every vocabulary term the profile carries, not just the ones opted into
+    /// the recognizer. The opt-in governs recognizer bias only (ADR 0033).
+    pub vocabulary: Vec<String>,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
     /// The foreground app, when the active profile allows collecting it. A weak
@@ -268,7 +270,7 @@ pub(crate) fn build_profile_context(config: &AgentConfig) -> String {
     if let Some(context) = profile_context_line(&config.profile_prompt) {
         parts.push(format!("Domain: {context}"));
     }
-    if let Some(terms) = profile_context_line(&config.stt_hints) {
+    if let Some(terms) = profile_context_line(&config.vocabulary.join("\n")) {
         parts.push(format!("Terms: {terms}"));
     }
     if !config.dictionary_entries.is_empty() {
@@ -592,7 +594,7 @@ mod tests {
             agent_model: "test".to_string(),
             profile_label: "Product and engineering".to_string(),
             profile_prompt: "feature names\nrelease scope".to_string(),
-            stt_hints: "Kubernetes".to_string(),
+            vocabulary: vec!["Kubernetes".to_string()],
             dictionary_entries: vec![DictionaryEntry {
                 id: "d1".to_string(),
                 phrase: "Peter Muell".to_string(),
