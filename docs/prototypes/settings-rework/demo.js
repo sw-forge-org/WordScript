@@ -144,6 +144,13 @@
     general: '<path d="M4 7h10"/><path d="M18 7h2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
     keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 9.5h.01"/><path d="M9.5 9.5h.01"/><path d="M13 9.5h.01"/><path d="M16.5 9.5h.01"/><path d="M7.5 14h9"/>',
     mic: '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/>',
+    /* Two lanes running opposite ways. Not one curved arrow: the pair of
+       languages is symmetric and a single arrow has to pick a side. */
+    swap: '<path d="M4 9h13"/><path d="m14 6 3 3-3 3"/><path d="M20 15H7"/><path d="m10 18-3-3 3-3"/>',
+    /* A glyph and a letter, which is the shape every translator's mark has
+       settled on because it says "one script into another" without a flag —
+       and a flag on a language is wrong in the cases that matter most. */
+    translate: '<path d="M3.5 6h8"/><path d="M7.5 4v2"/><path d="M9.5 6c0 3.5-2.5 6.5-6 8"/><path d="M5 10.5c1.5 2 3.5 3.2 5.5 3.8"/><path d="m12.5 20 4-10 4 10"/><path d="M13.9 16.5h5.2"/>',
     models: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v4"/><path d="M14 3v4"/><path d="M10 17v4"/><path d="M14 17v4"/><path d="M3 10h4"/><path d="M3 14h4"/><path d="M17 10h4"/><path d="M17 14h4"/>',
     agents: '<rect x="4" y="8" width="16" height="11" rx="2.5"/><path d="M12 4v4"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M2 12v3"/><path d="M22 12v3"/>',
     delivery: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6Z"/><path d="m9 12 2 2 4-4"/>',
@@ -1695,7 +1702,10 @@
     {
       group: "Previews", items: [
         { id: "onboarding", label: "Onboarding", icon: "wand", surface: "standalone" },
+        { id: "translate", label: "Translation", icon: "translate", surface: "standalone" },
+        { id: "subtitles", label: "Live subtitles", icon: "type", surface: "standalone" },
         { id: "meeting", label: "Meeting capture", icon: "users", surface: "standalone" },
+        { id: "conversation", label: "Client conversations", icon: "user", surface: "standalone" },
         { id: "agentoverlay", label: "Agent overlay", icon: "agents", surface: "standalone" },
         { id: "handoff", label: "Handoff", icon: "handoff", surface: "standalone" },
         { id: "commit", label: "Live preview & commit (withdrawn)", icon: "eye", surface: "standalone" },
@@ -6759,6 +6769,625 @@
     ].join("");
   };
   SCREENS.handoff.layout = "wide";
+
+  /* ── Preview: Translation ───────────────────────────────────────────────
+     FOURTEENTH PASS. ADR 0041 settled that translation is a MODE: a dictation
+     goes in, translated text comes out at the cursor, and Auto never selects
+     it. That decision stands and this window does not touch it.
+
+     This is the other half, and it is a different shape entirely. A mode
+     serves one person writing into somebody else's document. This serves two
+     people in a room who do not share a language, and the moment there are two
+     people the dictation contract breaks in three places at once: there is no
+     insert target, the session does not end after one utterance, and the
+     output has to be HEARD rather than pasted. None of that fits on the pill,
+     so it gets a window.
+
+     WHAT THE REFERENCES ACTUALLY DO. Google Translate's conversation mode
+     stopped asking which language is being spoken — it detects the switch from
+     the audio and takes turns on its own, which is the single interaction that
+     makes it usable at a table rather than a demo. Its face-to-face layout
+     gives each speaker their own half. DeepL contributes the other half of the
+     model: a glossary that pins terminology across every translation, formality
+     as an explicit control, and alternatives on any word of the output.
+
+     WHERE WORDSCRIPT IS ALREADY AHEAD, AND IT IS NOT A COINCIDENCE. Both of
+     DeepL's paid features are decisions this product already made for another
+     reason. The glossary is the profile's Words & names (ADR 0033, ADR 0035),
+     already learned from what you actually dictate rather than typed into a
+     form. Formality is the Translate job's address form (ADR 0041), which
+     exists because German, French and Spanish force a choice English does not
+     carry. So this window does not add a terminology feature — it says out
+     loud that the terminology it has is yours.
+
+     THE ONE THING NEITHER REFERENCE HAS IS THE REASON THIS IS A DESKTOP
+     PRODUCT. On a phone there is one speaker and one screen, so both people
+     share both. On this machine there are two output devices and two
+     audiences, and they do not want the same thing: THEY need to hear their
+     language out loud, YOU need to hear yours without the room hearing it
+     twice. Routing per language is the whole design, and it is only available
+     here. */
+  SCREENS.translate = function () {
+    var tabs = ["One way", "Conversation"];
+    var active = activeSub("translate", tabs);
+
+    /* The pair is the window's whole state, so it lives in the chrome rather
+       than in the body. Swap is one control and not two selects re-picked:
+       reversing direction is the most frequent thing that happens here and it
+       is not a change of configuration. */
+    function pairBar() {
+      return '<div class="trw-pair">' +
+        '<span class="trw-lang">' + select("German", ["German", "English", "French", "Spanish", "Turkish", "Polish"]) + "</span>" +
+        '<button class="trw-swap" aria-label="' + t("Swap the two languages") + '">' + icon("swap") + "</button>" +
+        '<span class="trw-lang">' + select("English", ["English", "German", "French", "Spanish", "Turkish", "Polish"]) + "</span>" +
+        "</div>";
+    }
+
+    /* ONE WAY. Two panes, source above target, because on a 16:9 desktop
+       window side-by-side panes give each half a 40-character measure and this
+       is prose. Typed and spoken enter the same pane: the microphone is a way
+       of filling the field, not a second mode with a second layout. */
+    function oneWay() {
+      return '<div class="trw-body">' +
+        '<div class="trw-pane">' +
+        '<div class="trw-pane-head"><span>' + t("German") + "</span>" +
+        '<span class="trw-src">' + icon("mic") + t("spoken") + "</span></div>" +
+        '<p class="trw-text">' + t("Können wir den Termin auf nächste Woche Dienstag verschieben?") + "</p>" +
+        "</div>" +
+
+        '<div class="trw-pane" data-out>' +
+        '<div class="trw-pane-head"><span>' + t("English") + "</span>" +
+        '<span class="rowflex">' + iconBtn("Play again", "speaker") + iconBtn("Copy", "copy") + "</span></div>" +
+        /* THE ALTERNATIVE IS ON THE WORD, NOT IN A PANEL. DeepL's best idea:
+           the word that could have gone another way is marked in place, and
+           picking a different one rewrites the sentence around it. A list of
+           whole alternative sentences makes you re-read all of them to find
+           the one word you were unsure about. */
+        '<p class="trw-text">' + t("Could we ") +
+        '<button class="trw-alt" aria-haspopup="listbox">' + t("move") + "</button>" +
+        t(" the appointment to next Tuesday?") + "</p>" +
+        '<div class="trw-alts">' +
+        ["move", "push", "reschedule"].map(function (w, ix) {
+          return '<button class="trw-altopt"' + (ix === 0 ? " data-on" : "") + ">" + t(w) + "</button>";
+        }).join("") + "</div>" +
+        "</div></div>";
+    }
+
+    /* CONVERSATION. Each speaker owns a half and reads only their own language
+       in it — their own words to check they were heard, the other's to
+       understand. The alternative was one shared column with two colours, and
+       it fails at the table: you cannot hand a laptop to somebody and ask them
+       to find their language in a mixed list. */
+    function conversation() {
+      var turns = [
+        { side: "them", lang: "German", said: "Ich habe seit drei Tagen Schmerzen im rechten Knie.", heard: "I have had pain in my right knee for three days." },
+        { side: "you", lang: "English", said: "Does it hurt when you put weight on it?", heard: "Tut es weh, wenn Sie es belasten?" },
+        { side: "them", lang: "German", said: "Ja, besonders beim Treppensteigen.", heard: "Yes, especially going up stairs." },
+      ];
+      return '<div class="trw-conv">' +
+        turns.map(function (tn) {
+          return '<div class="trw-turn" data-side="' + tn.side + '">' +
+            '<span class="trw-turn-lang">' + t(tn.lang) + "</span>" +
+            '<p class="trw-said">' + t(tn.said) + "</p>" +
+            '<p class="trw-heard">' + icon("translate") + "<span>" + t(tn.heard) + "</span></p>" +
+            "</div>";
+        }).join("") +
+
+        /* THE LISTENING STRIP IS ONE THING AND NOT TWO BUTTONS. Nobody presses
+           a language button mid-sentence, which is the interaction the
+           references removed and the reason their conversation modes became
+           usable. The strip says which of the two it is currently hearing,
+           and that is a readout rather than a control. */
+        '<div class="trw-listen">' + dot("danger") +
+        matrixField({ mode: "vu", cols: 12, size: 2, gap: 1, ariaLabel: "Input level" }) +
+        "<b>" + t("German") + "</b><span>" + t("heard, switching by itself") + "</span>" +
+        '<span class="grow"></span>' + btn("End", "ghost") + "</div>" +
+        "</div>";
+    }
+
+    function window_() {
+      return '<div class="trw">' +
+        '<div class="chatwin-deco"><b>' + t("Translate") + "</b>" +
+        '<span class="trw-deco-pair">' + t("German → English") + "</span>" +
+        iconBtn("Close", "x") + "</div>" +
+        pairBar() +
+        '<div class="trw-tabs">' + subtabs("translate", tabs) + "</div>" +
+        (active === "Conversation" ? conversation() : oneWay()) +
+        "</div>";
+    }
+
+    return [
+      viewTop({
+        title: "Translation",
+        lead: "Two people, two languages, one machine in the middle — and the part a phone cannot do.",
+        /* NO TABS ON THE VIEW HEADER. Every other screen puts its sub-tabs
+           here, and here it would be the same control drawn twice: the window
+           below carries its own, because in the product that row is part of
+           the window's chrome rather than part of the settings surface around
+           it. The one in the drawing is the real one. */
+        banner: { text: "Not built. Shape and rules only; needs a speech model per direction and text-to-speech." },
+      }),
+
+      sec("It is not the Translate mode, and it is not a second one",
+        "ADR 0041's mode serves one person writing. This serves two people talking, and the dictation contract breaks in three places the moment there are two.",
+        '<div class="hoff-pair">' +
+        '<div class="hoff-side"><span class="hoff-label">' + t("Translate, the mode") + "</span>" +
+        "<p>" + t("You dictate, translated text lands at your cursor.") + "</p>" +
+        '<span class="hoff-side-out">' + icon("type") + t("one utterance, one insert, session over") + "</span></div>" +
+        '<div class="hoff-side" data-desk><span class="hoff-label">' + t("Translate, the window") + "</span>" +
+        "<p>" + t("Two of you talk. Nothing is inserted anywhere.") + "</p>" +
+        '<span class="hoff-side-out">' + icon("sound") + t("no insert target, no end, and it has to be heard") + "</span></div>" +
+        "</div>" +
+        note("Same name on purpose. It is one capability with two surfaces, the way the assistant is one thing with three doors — and the mode keeps its rule: Auto never selects a language.", "about", docLink("ADR 0041"))
+      ),
+
+      sec("The window", "One way for a phrase you need now. Conversation for a table.",
+        '<div class="trw-stage">' + window_() + "</div>" +
+        note("The tab above switches this drawing. Conversation takes no button per turn — the switch between the two languages is detected, which is the one interaction that decides whether this works at a table or only in a demo.", "eye")
+      ),
+
+      /* ── The routing. This is the section the whole window exists for. ──── */
+      sec("Where each translation comes out",
+        "Two languages, two audiences, and on this machine two output devices. They are not the same need.",
+        card({
+          body: '<div class="trw-route">' +
+            [{
+              lang: "German", who: "What they hear",
+              why: "Their language, out loud, so the person across the table hears it without leaning into your screen.",
+              mode: "Out loud", dev: "Desk speakers", tone: "accent"
+            }, {
+              lang: "English", who: "What you hear",
+              why: "Your language, in your ear. The room does not need every sentence twice, and you do not want to talk over it.",
+              mode: "In your ear", dev: "AirPods Pro", tone: "success"
+            }].map(function (r) {
+              return '<div class="trw-route-row">' +
+                '<div class="trw-route-lang"><b>' + t(r.lang) + "</b><span>" + t(r.who) + "</span></div>" +
+                '<p class="trw-route-why">' + p(r.why) + "</p>" +
+                '<div class="trw-route-ctl">' +
+                seg(["Silent", "Out loud", "In your ear"], r.mode) +
+                select(r.dev, [r.dev, "System default", "Desk speakers", "AirPods Pro", "Display audio"]) +
+                "</div></div>";
+            }).join("") + "</div>",
+          rows: [
+            row({
+              label: "Silent is a real setting and not a broken one",
+              hint: "Reading is faster than listening and quieter than both. Somebody translating a menu at the next table wants no sound at all, and that is the same window.",
+              ctl: badge("Per language", "plan")
+            }),
+            row({
+              label: "The voice is text-to-speech and it is named",
+              hint: "The same connection every other job runs on, chosen on AI Models like the rest. A spoken translation is a model output; a surface that does not say which model spoke is hiding the one thing that decides how it sounds.",
+              ctl: btn("Open AI Models", "ghost", { icon: "arrow" })
+            }),
+            row({
+              label: "It never speaks over the microphone it is recording",
+              hint: "Out loud plus an open microphone is the machine transcribing itself. The recogniser is muted for the length of the utterance being spoken, which is why the two devices matter rather than being a convenience.",
+              ctl: badge("Runtime rule", "plan")
+            }),
+          ]
+        })
+      ),
+
+      sec("It already knows your words",
+        "The two features a translator charges for are decisions this product made for other reasons, years-deep in the profile.",
+        card({
+          rows: [
+            row({
+              label: "Terminology",
+              hint: "Your profile's Words & names. Names, products and technical terms a translator must leave alone — learned from what you actually dictate rather than typed into a glossary form nobody maintains.",
+              ctl: badge("Words & names", "success")
+            }),
+            row({
+              label: "Address form",
+              hint: "German, French and Spanish force a choice English does not carry. As dictated keeps a formal sentence formal; the other two decide for you.",
+              ctl: seg(["As dictated", "Formal", "Informal"], "As dictated")
+            }),
+            row({
+              label: "Alternatives on the word",
+              hint: "Marked in the sentence where the choice was, not listed as three whole alternative sentences you have to re-read to find the one word you were unsure about.",
+              ctl: badge("On the output", "plan")
+            }),
+          ]
+        })
+      ),
+
+      /* ── Practice mode: asked for, researched, and not built. ─────────────
+         The owner raised it and doubted it in the same sentence, which was the
+         right instinct, so this is the evaluation rather than a fourth tab. */
+      sec("Practice mode, evaluated and not built",
+        "Google added language practice beside Live Translate in 2025. This is why WordScript should not copy it, and the one form that would not be a copy.",
+        card({
+          rows: [
+            row({
+              label: "Against: it is a different product",
+              hint: "VISION names what WordScript is not — a feature collection. A practice surface has its own progress model, its own scheduling and its own content, and none of it shares a line with trigger, capture, transform or insert.",
+              ctl: badge("Out of scope", "plan")
+            }),
+            row({
+              label: "Against: the competition is free and enormous",
+              hint: "A drill built beside a dictation tool is compared to products with a decade of pedagogy in them, and loses on the axis that is not ours.",
+              ctl: badge("Not our axis", "plan")
+            }),
+            row({
+              label: "For, and it is the only one",
+              hint: "Every generic app drills a generic word list. This one holds the sentences you actually said, in your own vocabulary, that a translator had to repair. That corpus exists here and nowhere else, and it is the difference between a practice feature and a practice product.",
+              ctl: badge("If ever", "warning")
+            }),
+            row({
+              label: "So the recorded shape is small",
+              hint: "Not a tab and not a mode: the words your own translations kept getting wrong, offered where the vocabulary already lives. Nothing is built for it now.",
+              ctl: badge("Candidate", "plan")
+            }),
+          ]
+        })
+      ),
+
+      note("Speech in two directions and a voice that speaks are both new runtime capability. Neither exists today, and this window is drawn so the decisions are settled before either is bought.", "about"),
+    ].join("");
+  };
+  SCREENS.translate.layout = "wide";
+
+  /* ── Preview: Live subtitles ────────────────────────────────────────────
+     FOURTEENTH PASS. TWO THINGS SHARE THIS NAME AND THEY ARE NOT RELATED.
+     The owner said so in as many words, and the screen is built to keep them
+     apart rather than to reconcile them, because the only thing they have in
+     common is the word "subtitle":
+
+       CAPTIONS  read somebody ELSE'S audio — a film, a stream, a call — and
+                 put it on screen as a caption strip. The source is system
+                 audio. You are an audience.
+       ECHO      reads YOUR OWN voice while you dictate and shows what has
+                 been heard so far, so you do not lose your thread in a long
+                 sentence. The source is the microphone already open. You are
+                 the speaker.
+
+     Building them as one feature with a source switch would be the mistake:
+     they have different windows, different lifetimes, different failure modes
+     and different reasons to exist. One is an accessibility and comprehension
+     surface, the other is a memory aid inside the dictation loop. */
+  SCREENS.subtitles = function () {
+
+    /* CAPTIONS. Its own always-on-top strip, wide and short, sitting where the
+       user drags it — over the bottom of a video, usually. It is not the
+       dictation overlay wearing a hat: the dictation overlay is 440 x 60 and
+       parked by the native host, and a caption strip has to be as wide as the
+       reading measure of two lines. */
+    function captionBar(o) {
+      o = o || {};
+      return '<div class="cap-bar"' + (o.tone ? ' data-tone="' + o.tone + '"' : "") + ">" +
+        (o.lang ? '<span class="cap-lang">' + t(o.lang) + "</span>" : "") +
+        '<p class="cap-text">' + t(o.text) + "</p>" +
+        "</div>";
+    }
+
+    return [
+      viewTop({
+        title: "Live subtitles",
+        lead: "Two features with one name. One reads the room, the other reads you.",
+        banner: { text: "Not built. Captions need system-audio capture; the echo needs partial results the pipeline does not emit yet." },
+      }),
+
+      sec("They are two things",
+        "Named together, built apart. The only thing they share is the word.",
+        '<div class="hoff-pair">' +
+        '<div class="hoff-side"><span class="hoff-label">' + t("Captions") + "</span>" +
+        "<p>" + t("A film, a stream, a call somebody else is on.") + "</p>" +
+        '<span class="hoff-side-out">' + icon("monitor") + t("system audio · its own window · you are the audience") + "</span></div>" +
+        '<div class="hoff-side" data-desk><span class="hoff-label">' + t("Echo") + "</span>" +
+        "<p>" + t("Your own voice, while you are dictating it.") + "</p>" +
+        '<span class="hoff-side-out">' + icon("mic") + t("the open microphone · on the overlay · you are the speaker") + "</span></div>" +
+        "</div>"
+      ),
+
+      /* ── 1. Captions ──────────────────────────────────────────────────── */
+      sec("Captions",
+        "A strip you place once. It stays where you put it, over whatever is playing.",
+        '<div class="cap-stage">' +
+        '<div class="cap-scene">' +
+        '<span class="cap-scene-tag">' + icon("monitor") + t("something playing underneath") + "</span>" +
+        captionBar({ text: "…and that is the part nobody measured before shipping it." }) +
+        "</div>" +
+
+        '<div class="cap-scene" data-light>' +
+        '<span class="cap-scene-tag">' + icon("sun") + t("the same strip on a bright frame") + "</span>" +
+        captionBar({ text: "…and that is the part nobody measured before shipping it.", tone: "light" }) +
+        "</div>" +
+
+        '<div class="cap-scene">' +
+        '<span class="cap-scene-tag">' + icon("translate") + t("translated, when the pair is set") + "</span>" +
+        captionBar({ lang: "German", text: "…und genau das hat vor der Auslieferung niemand gemessen." }) +
+        "</div>" +
+        "</div>" +
+        note("Two lines, rolling, no history. A caption strip that scrolls is a transcript window, and a transcript is what the recording is for — this is for the sentence being said right now.", "eye")
+      ),
+
+      sec("What decides whether it is readable",
+        "It lies over content nobody controls, so every rule here is about surviving that.",
+        card({
+          rows: [
+            row({
+              label: "The strip carries its own ground",
+              hint: "Not text on the video. A frame can go white mid-sentence and the caption has to survive the cut, so the ground is part of the component and never borrowed from what is behind it.",
+              ctl: badge("Always opaque", "success")
+            }),
+            row({
+              label: "Never frosted",
+              hint: "Frost is for a surface that floats over this application. This one floats over somebody else's video, which is exactly the case ADR 0051 excludes — and blurring a moving picture costs a filter pass per frame of theirs.",
+              ctl: badge("ADR 0051", "plan")
+            }),
+            row({
+              label: "It is excluded from screen shares",
+              hint: "Same rule the meeting window follows. Subtitles you turned on for yourself must not appear in the recording everybody else receives.",
+              ctl: badge("Not captured", "success")
+            }),
+            row({
+              label: "Click-through",
+              hint: "It sits over a player whose controls are underneath it. A caption that swallows a click on pause is worse than no caption.",
+              ctl: badge("Pointer passes", "success")
+            }),
+            row({
+              label: "Translated is the same strip",
+              hint: "When a language pair is set it shows the translation rather than the transcript. Not a second window and not a second feature — the pair comes from the same place the translation window reads it.",
+              ctl: btn("Open Translation", "ghost", { icon: "arrow" })
+            }),
+          ]
+        })
+      ),
+
+      /* ── 2. Echo ──────────────────────────────────────────────────────── */
+      sec("Echo — your own voice, on the overlay",
+        "A different feature entirely: it exists so a long sentence does not lose its thread halfway through.",
+        '<div class="ovp-stage">' +
+        '<div class="echo-wrap">' +
+        '<div class="ovp-shell"><div class="ovp" data-rec>' +
+        '<span class="ovp-mic">' + icon("mic") + "</span>" +
+        '<span class="ovp-bars">' +
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (i) {
+          return '<i style="height:' + (4 + Math.abs(Math.sin((i + 2) * 1.9)) * 16).toFixed(1) + 'px"></i>';
+        }).join("") + "</span>" +
+        '<span class="ovp-div"></span>' +
+        '<button class="ovp-mode"><span class="ovp-mode-dot"></span>' +
+        '<span class="ovp-mode-label">' + t("Cleanup") + "</span></button>" +
+        '<span class="ovp-div"></span>' +
+        '<span class="ovp-timer">' + t("00:12") + "</span>" +
+        "</div></div>" +
+
+        /* NO CARD, NO GROUND, NO BORDER — the owner's instruction, and it is
+           the right one. This is not a surface, it is a trace: it belongs to
+           the pill the way a shadow belongs to an object. Give it a panel and
+           it becomes a second window that has to be positioned, dismissed and
+           reasoned about, and the dictation overlay's whole discipline is that
+           it is one small object that does not grow. */
+        '<p class="echo-text">' +
+        '<span class="echo-done">' + t("Wir verschieben den Termin auf Dienstag und ") + "</span>" +
+        '<span class="echo-live">' + t("ich sage Sarah vorher noch") + "</span>" +
+        "</p>" +
+        "</div></div>" +
+        note("Bare text under the pill. Not a card and not a panel — it is a trace of the pill rather than a second surface, and anything with a border around it becomes a window that has to be positioned and dismissed.", "eye")
+      ),
+
+      sec("How the echo behaves",
+        "Four rules, and three of them exist because it is drawn over a desktop nobody controls.",
+        card({
+          rows: [
+            row({
+              label: "The text colour follows the contrast",
+              hint: "It sits on whatever application you are dictating into — a white document, a dark editor, a photo. The colour is chosen against what is measured behind it, per redraw, and it is the one place in this product where a colour is not a token.",
+              ctl: badge("Measured, not themed", "accent")
+            }),
+            row({
+              label: "Settled text and the live tail read differently",
+              hint: "What the recogniser has committed is set; the last few words are still moving and are dimmer. Without the split you re-read the whole line every time it changes, which is worse than no echo.",
+              ctl: badge("Two weights", "success")
+            }),
+            row({
+              label: "It shows the tail, not the transcript",
+              hint: "About one line. Growing upward until it covers the window you are dictating into is the failure mode, and a scrollback is the recording's job.",
+              ctl: badge("~1 line", "plan")
+            }),
+            row({
+              label: "It is off by default",
+              hint: "Most dictation is one sentence into a text field, where watching words appear is a distraction from the thing you were actually writing. It earns its place in the long ones.",
+              ctl: toggle(false)
+            }),
+          ]
+        })
+      ),
+
+      sec("What each one needs that does not exist yet",
+        null,
+        card({
+          rows: [
+            row({
+              label: "Captions",
+              hint: "System-audio capture — the same dependency meeting capture is waiting on, and the reason both are drawn rather than built.",
+              ctl: badge("System audio", "plan")
+            }),
+            row({
+              label: "Echo",
+              hint: "Partial results. The pipeline transcribes a finished recording; an echo needs the recogniser to emit as it goes, which is a streaming lane the local and cloud providers expose differently.",
+              ctl: badge("Streaming recognition", "plan")
+            }),
+          ]
+        })
+      ),
+    ].join("");
+  };
+  SCREENS.subtitles.layout = "wide";
+
+  /* ── Preview: Client conversations ──────────────────────────────────────
+     FOURTEENTH PASS. The owner left one question open here — reuse the meeting
+     window, or build a separate view — so this screen answers it and shows the
+     answer rather than asking again.
+
+     IT IS THE MEETING WINDOW. ADR 0045 exists precisely to stop this from
+     becoming a second thing: a dictation, a meeting, an upload, a link and a
+     calendar entry were five models of one object, and the user had to know
+     which route produced a result in order to find it again. A client
+     conversation recorded on site is a recording. Giving it its own window
+     would rebuild the shape that record removed, one release after removing
+     it, and the second window would then need its own transcript view, its own
+     speaker handling, its own export and its own bugs.
+
+     WHAT IS ACTUALLY DIFFERENT IS THE OBJECT AROUND IT, NOT THE WINDOW. Three
+     differences, and all three live in the recording rather than in a second
+     surface:
+
+       1. ONE MICROPHONE, TWO PEOPLE IN A ROOM. A meeting mixes microphone and
+          system audio; here there is no system audio at all, both voices
+          arrive on one device, and separation is the only thing that makes the
+          transcript readable.
+       2. IT HANGS ON A PERSON. A meeting belongs to a calendar entry. This
+          belongs to a client, and the client is the thing you open next month
+          when you need what was agreed.
+       3. IT ENDS IN A DOCUMENT WITH A FIXED SHAPE. A meeting ends in a summary.
+          This ends in a record whose sections are not negotiable, because
+          somebody else's process decides them.
+
+     AND ONE THING THE MEETING NEVER HAD: consent. Recording colleagues in a
+     standup and recording a client or a patient are not the same act, and the
+     second one has a rule attached in most of the places this product is used.
+     That is the one genuinely new surface here. */
+  SCREENS.conversation = function () {
+    return [
+      viewTop({
+        title: "Client conversations",
+        lead: "A conversation recorded in the room, filed under the person it was with, ending in the document their process expects.",
+        banner: { text: "Not built. Uses the meeting window; needs speaker separation on one microphone." },
+      }),
+
+      sec("It is the meeting window",
+        "The question was whether to build a second one. The answer is no, and ADR 0045 is the reason.",
+        card({
+          body: '<div class="cross">' +
+            '<div class="cross-side" data-held>' +
+            '<span class="cross-label">' + icon("check") + t("Reused, unchanged") + "</span>" +
+            '<ul class="cross-list">' +
+            [["The window", "330 × 560, always on top, excluded from screen shares. Same three tabs, same bar, same resize."],
+             ["Summary, Notes, Transcript", "The tabs it has while running are the tabs it has in Context afterwards. Nothing to learn twice."],
+             ["The copilot lane", "One line above the bar, writes and never speaks, never hints without a citation (ADR 0047)."],
+             ["Everything downstream", "One object type, so history, search, export and retention already cover it."]]
+              .map(function (r) { return "<li><b>" + t(r[0]) + "</b><span>" + p(r[1]) + "</span></li>"; }).join("") +
+            "</ul></div>" +
+
+            '<div class="cross-side">' +
+            '<span class="cross-label">' + icon("plus") + t("New, and all of it in the object") + "</span>" +
+            '<ul class="cross-list">' +
+            [["origin: conversation", "Beside dictation, meeting, upload, link and calendar. A value on the existing type, not a new type."],
+             ["It hangs on a client", "A meeting belongs to a calendar entry. This belongs to a person, and the person is what you open next month."],
+             ["One microphone, two voices", "No system audio exists in a room. Separation on a single device is the only thing that makes the transcript readable."],
+             ["Consent", "Recording a colleague and recording a client are not the same act. This is the one genuinely new surface."]]
+              .map(function (r) { return "<li><b>" + t(r[0]) + "</b><span>" + p(r[1]) + "</span></li>"; }).join("") +
+            "</ul></div></div>"
+        }) +
+        note("A second window would need its own transcript view, its own speaker handling, its own export and its own bugs — and it would rebuild the shape ADR 0045 removed, one release after removing it.", "about", docLink("ADR 0045"))
+      ),
+
+      sec("The client is the object",
+        "Conversations hang on the person, because the person is what you look for later.",
+        card({
+          body: '<div class="clnt">' +
+            '<div class="clnt-head">' +
+            '<div class="clnt-id"><b>' + t("Acme GmbH · M. Bergmann") + "</b>" +
+            "<span>" + t("4 conversations · 2h 51m recorded · since 11 Mar") + "</span></div>" +
+            '<span class="rowflex">' + btn("New conversation", null, { icon: "mic" }) + "</span>" +
+            "</div>" +
+            '<div class="clnt-list">' +
+            [["02 Apr", "Acceptance", "23 min", "Documented", "success"],
+             ["18 Mar", "Requirements", "67 min", "Documented", "success"],
+             ["14 Mar", "Follow-up call", "19 min", "Transcript only", "plan"],
+             ["11 Mar", "First conversation", "42 min", "Documented", "success"]]
+              .map(function (r) {
+                return '<div class="clnt-row"><span class="clnt-when mono">' + t(r[0]) + "</span>" +
+                  "<b>" + t(r[1]) + "</b>" +
+                  '<span class="clnt-len mono">' + t(r[2]) + "</span>" +
+                  badge(r[3], r[4]) + "</div>";
+              }).join("") + "</div></div>",
+          rows: [
+            row({
+              label: "A client is a context object",
+              hint: "The same type the calendar, an upload and a link already produce. It carries the terms and names the transcript needs, which is why the fourth conversation transcribes better than the first.",
+              ctl: badge("Existing type", "success")
+            }),
+            row({
+              label: "It is not a CRM and does not grow into one",
+              hint: "A name, the conversations, and what was agreed. Pipelines, deals and reminders belong to the tool that already owns them, and the desk reaches that tool through its own connectors (ADR 0046).",
+              ctl: badge("Stays small", "plan")
+            }),
+          ]
+        })
+      ),
+
+      sec("Consent is the one new rule",
+        "Recording a colleague in a standup and recording a client are not the same act. The product does not decide which applies to you — it makes the answer visible and recorded.",
+        card({
+          rows: [
+            row({
+              label: "It is asked before the first one, per client",
+              hint: "Not per recording. Asking again at the start of every conversation trains the answer to become a reflex, which is the opposite of consent.",
+              ctl: seg(["Given", "Not asked", "Refused"], "Given")
+            }),
+            row({
+              label: "Refused does not mean no notes",
+              hint: "The window still runs with the microphone off: you type, the copilot stays quiet, and the record says it was written rather than heard. A feature that punishes the honest answer will not get honest answers.",
+              ctl: badge("Notes only", "success")
+            }),
+            row({
+              label: "The recording says which it was",
+              hint: "On the object, not in a log — whether it was recorded, written, and under which answer. This is the field somebody reads two years later when it matters.",
+              ctl: badge("On the object", "success")
+            }),
+            row({
+              label: "WordScript does not give legal advice",
+              hint: "Rules differ by country, by profession and by who else is in the room. The product states what it did; it never tells you that what you did was allowed.",
+              ctl: badge("States, never rules", "plan")
+            }),
+          ]
+        })
+      ),
+
+      sec("It ends in a document with a fixed shape",
+        "A meeting ends in a summary somebody reads once. This ends in a record whose sections are decided by a process outside this product.",
+        card({
+          body: '<div class="doct">' +
+            '<div class="doct-head"><span class="doct-pick">' +
+            select("Consultation record", ["Consultation record", "Site visit report", "Intake note", "Custom template"]) +
+            "</span>" + badge("From the profile", "plan") + "</div>" +
+            '<div class="doct-body">' +
+            [["Attending", "M. Bergmann (client), F. Weiss", "From the client object and the speaker separation."],
+             ["Reason", "Acceptance of the March delivery", "One sentence, from the conversation's opening."],
+             ["Agreed", "Two open defects fixed by 14 Apr; invoicing after that", "The part a template exists for — it is looked for in the same place every time."],
+             ["Next step", "F. Weiss confirms the date in writing", "Named owner, or the field says nobody was named."],
+             ["Recorded", "23 min, consent given 11 Mar", "Not editable. It is what happened, not what is being reported."]]
+              .map(function (r) {
+                return '<div class="doct-field"><span class="doct-label">' + t(r[0]) + "</span>" +
+                  '<p class="doct-val">' + t(r[1]) + "</p>" +
+                  '<span class="doct-why">' + p(r[2]) + "</span></div>";
+              }).join("") + "</div></div>",
+          rows: [
+            row({
+              label: "The template belongs to the profile",
+              hint: "A care report, a legal file note and a site visit report are three different documents, and the person recording knows which one they owe. The product ships none of them and holds the one you write.",
+              ctl: btn("Open Profiles", "ghost", { icon: "arrow" })
+            }),
+            row({
+              label: "An empty field says empty",
+              hint: "If nobody named an owner, the field says nobody named an owner. A template that fills its gaps from a model produces a document that reads complete and is not, which is the one failure this must never have.",
+              ctl: badge("Never invents", "success")
+            }),
+            row({
+              label: "Every line can be traced back",
+              hint: "A sentence in the record points at the moment in the transcript it came from. The copilot's rule from ADR 0047 — never a hint without a citation — is the same rule, applied to a document instead of to a line.",
+              ctl: badge("ADR 0047", "plan")
+            }),
+          ]
+        })
+      ),
+
+      note("Speaker separation on a single microphone is what this waits on, and it is a different problem from the meeting's: there both voices arrive on separate lanes, here they are mixed before WordScript ever sees them.", "about"),
+    ].join("");
+  };
+  SCREENS.conversation.layout = "wide";
 
   SCREENS.meeting = function () {
     var lines = [

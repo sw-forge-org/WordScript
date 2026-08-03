@@ -3995,6 +3995,351 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
 .linecmp-row > span:first-child { color: var(--fg); font-weight: 500; }
 .linecmp-row[data-head] > span:first-child { color: var(--fg-muted); font-weight: 650; }
 
+/* ── The client, and its conversations ──────────────────────────────────────
+   A list of recordings hung off one person. Deliberately not a table: four
+   conversations are read, not scanned, and a table header would promise
+   sorting and filtering this surface does not have and should not grow. */
+.clnt { display: flex; flex-direction: column; }
+.clnt-head {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: 0 0 var(--s3);
+  border-bottom: 1px solid var(--border);
+}
+.clnt-head .rowflex { margin-left: auto; }
+.clnt-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.clnt-id b {
+  font-stretch: var(--w-note); letter-spacing: var(--ls-note);
+  font-size: var(--t-note); font-weight: 600; color: var(--fg);
+}
+.clnt-id span {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+  font-size: var(--t-micro); color: var(--fg-muted);
+}
+.clnt-list { display: flex; flex-direction: column; }
+.clnt-row {
+  display: grid; grid-template-columns: 58px minmax(0, 1fr) auto auto;
+  align-items: center; gap: var(--s3);
+  padding: var(--row-py) 0;
+  border-top: 1px solid var(--border);
+}
+.clnt-row:first-child { border-top: 0; }
+.clnt-row b {
+  font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+  font-size: var(--t-label); font-weight: 550; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.clnt-when, .clnt-len { font-size: var(--t-micro); color: var(--fg-muted); }
+
+/* ── The document it ends in ────────────────────────────────────────────────
+   A form the conversation fills, and the third line of every field is the part
+   that matters: WHERE the value came from. A generated document whose
+   provenance is invisible is one nobody can defend in the meeting where it is
+   questioned, and these are documents that get questioned. */
+.doct {
+  display: flex; flex-direction: column;
+  border-radius: var(--r-card);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+.doct-head {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--border);
+}
+.doct-head .badge { margin-left: auto; }
+.doct-body { display: flex; flex-direction: column; }
+.doct-field {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--border);
+}
+.doct-field:first-child { border-top: 0; }
+.doct-label {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: 9px;
+  font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+.doct-val {
+  font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+  font-size: var(--t-label); color: var(--fg);
+}
+/* Set apart from the value it explains, because it is a note about the
+   document rather than part of it. */
+.doct-why {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+  font-size: var(--t-micro); line-height: 1.5; color: var(--fg-muted);
+  font-style: italic;
+}
+
+/* ── Captions ───────────────────────────────────────────────────────────────
+   A strip over content this product does not own, which is the whole design
+   constraint. Three consequences and none of them is a preference:
+
+   IT CARRIES ITS OWN OPAQUE GROUND. Not text on the video with a shadow. A
+   frame can cut to white mid-sentence and the caption has to survive the cut,
+   so the ground belongs to the component rather than being borrowed from what
+   is behind it. This is also why the frost material is excluded here (ADR
+   0051): the surface it would sample belongs to somebody else's player, and
+   blurring a moving picture costs a filter pass per frame of theirs.
+
+   THE MEASURE IS THE LIMIT, NOT THE WINDOW. Captions are read in one glance at
+   the bottom of the visual field, so the line length is set by reading speed
+   and not by how wide the strip could be. */
+.cap-stage { display: flex; flex-direction: column; gap: var(--s3); }
+/* A stand-in for "something is playing under this". Deliberately abstract:
+   a screenshot of a real video would be read as a supported integration. */
+.cap-scene {
+  position: relative;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  gap: var(--s2);
+  min-height: 132px;
+  padding: var(--s4);
+  border-radius: var(--r-card);
+  background:
+    repeating-linear-gradient(115deg,
+      rgba(255, 255, 255, 0.028) 0 14px,
+      rgba(255, 255, 255, 0.008) 14px 28px),
+    #101012;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.cap-scene[data-light] {
+  background:
+    repeating-linear-gradient(115deg,
+      rgba(0, 0, 0, 0.05) 0 14px,
+      rgba(0, 0, 0, 0.015) 14px 28px),
+    #e8e6e1;
+}
+.cap-scene-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+  color: rgba(255, 255, 255, 0.42);
+}
+.cap-scene[data-light] .cap-scene-tag { color: rgba(0, 0, 0, 0.45); }
+.cap-scene-tag svg { width: 13px; height: 13px; }
+
+.cap-bar {
+  align-self: center;
+  max-width: 46ch;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 9px 14px;
+  border-radius: var(--r-control);
+  /* Near-black at high alpha rather than a token: this ground is measured
+     against arbitrary video, not against a WordScript surface. */
+  background: rgba(12, 12, 14, 0.9);
+}
+/* The bright-frame case is the same component with the pair inverted, which is
+   what "the colour follows the contrast" means in practice — the strip flips
+   as a unit so the text never has to win against its own ground. */
+.cap-bar[data-tone="light"] { background: rgba(250, 250, 250, 0.94); }
+.cap-lang {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: 9px;
+  font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.48);
+}
+.cap-bar[data-tone="light"] .cap-lang { color: rgba(0, 0, 0, 0.5); }
+.cap-text {
+  font-size: 15px; line-height: 1.4; font-weight: 500;
+  color: #f4f2ee;
+  text-wrap: balance;
+}
+.cap-bar[data-tone="light"] .cap-text { color: #17171a; }
+
+/* ── Echo ───────────────────────────────────────────────────────────────────
+   NO GROUND, NO BORDER, NO CARD. It is a trace of the pill rather than a
+   second surface: anything with an edge around it becomes a window that has to
+   be positioned, dismissed and reasoned about, and the dictation overlay's
+   entire discipline is that it is one small object which does not grow. */
+.echo-wrap { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+.echo-text {
+  max-width: 44ch;
+  text-align: center;
+  font-size: 15px; line-height: 1.45;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+/* Committed text is set, the live tail is still moving. Without the split you
+   re-read the whole line every time it changes, which is worse than no echo. */
+.echo-done { color: #f2efe9; font-weight: 500; }
+.echo-live { color: rgba(242, 239, 233, 0.52); font-weight: 400; }
+
+/* ── The translation window ─────────────────────────────────────────────────
+   Fifth member of the window family, so it takes `.chatwin-deco` like the
+   other four rather than inventing a header. Wider than the meeting HUD and
+   shorter: this one is read across, not scrolled down. */
+.trw-stage {
+  display: flex; justify-content: center;
+  padding: var(--s6) var(--s4);
+  border-radius: var(--r-card);
+  background: var(--bg-inset);
+}
+.trw {
+  width: 560px; max-width: 100%;
+  display: flex; flex-direction: column;
+  border-radius: var(--r-window);
+  background: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--elev-sheet);
+  overflow: hidden;
+}
+.trw-deco-pair {
+  margin-left: auto; margin-right: var(--s2);
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+}
+
+/* THE PAIR SITS IN THE CHROME. It is the window's entire state and it changes
+   what every other pixel means, so it belongs above the tabs rather than
+   inside whichever one is open. */
+.trw-pair {
+  flex: none;
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--border);
+}
+.trw-lang .sel { width: 100%; }
+/* Reversing direction is the most frequent act in this window and it is not a
+   change of configuration, so it is one button and not two selects re-picked. */
+.trw-swap {
+  width: 30px; height: 30px; flex: none;
+  display: grid; place-items: center;
+  border-radius: var(--r-control);
+  color: var(--fg-muted);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.trw-swap:hover { background: var(--bg-elevated); color: var(--fg); }
+.trw-tabs { flex: none; padding: var(--s3) var(--s4) 0; }
+
+/* ── One way ─────────────────────────────────────────────────────────────── */
+.trw-body { display: flex; flex-direction: column; }
+.trw-pane {
+  display: flex; flex-direction: column; gap: var(--s2);
+  padding: var(--s4);
+  min-height: 108px;
+}
+/* The output is the answer, so it sits on the raised plane and the input does
+   not. Two panes at one elevation read as a form with two fields. */
+.trw-pane[data-out] {
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+}
+.trw-pane-head {
+  display: flex; align-items: center; gap: var(--s2);
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+  font-weight: 600; color: var(--fg-muted);
+}
+.trw-pane-head .rowflex { margin-left: auto; }
+.trw-src { display: inline-flex; align-items: center; gap: 5px; color: var(--fg-muted); }
+.trw-src svg { width: 12px; height: 12px; }
+.trw-text { font-size: 15px; line-height: 1.5; color: var(--fg); }
+.trw-pane:not([data-out]) .trw-text { color: var(--fg-dim); }
+
+/* THE ALTERNATIVE IS MARKED IN THE SENTENCE. A dotted underline rather than a
+   ground: the word is still part of the sentence and has to keep reading as
+   one, which a highlight breaks. */
+.trw-alt {
+  font: inherit; color: var(--fg);
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 62%, transparent);
+  cursor: pointer;
+}
+.trw-alt:hover { color: var(--accent); }
+.trw-alts { display: flex; gap: var(--s1); flex-wrap: wrap; }
+.trw-altopt {
+  height: 24px; padding: 0 9px;
+  border-radius: var(--r-small);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.trw-altopt[data-on] {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--fg);
+}
+
+/* ── Conversation ────────────────────────────────────────────────────────────
+   EACH SPEAKER OWNS A SIDE. The alternative was one column with two colours,
+   and it fails at the table: you cannot hand a laptop to somebody and ask them
+   to find their language in a mixed list. Sides make it findable without
+   reading, which is the only thing that works across a language gap. */
+.trw-conv { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); }
+.trw-turn {
+  max-width: 82%;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 9px 11px;
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
+}
+.trw-turn[data-side="you"] {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-surface));
+}
+.trw-turn-lang {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: 9px;
+  font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+/* WHAT WAS SAID IS SECONDARY AND WHAT WAS HEARD IS PRIMARY, which is the
+   reverse of a transcript and correct here: you already know what you said.
+   The line you need is the one in the other language. */
+.trw-said {
+  font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+  font-size: var(--t-label); color: var(--fg-muted);
+}
+.trw-heard {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 14px; line-height: 1.45; color: var(--fg);
+}
+.trw-heard svg { width: 13px; height: 13px; flex: none; margin-top: 3px; color: var(--fg-muted); }
+
+/* The strip is a readout, not a control. Nobody presses a language button
+   mid-sentence, which is the interaction the references removed. */
+.trw-listen {
+  display: flex; align-items: center; gap: var(--s2);
+  margin-top: var(--s1);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-control);
+  background: var(--bg-inset);
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+  color: var(--fg-muted);
+}
+.trw-listen b { color: var(--fg); font-weight: 600; }
+.trw-listen .grow { flex: 1; }
+
+/* ── Where each translation comes out ────────────────────────────────────────
+   One row per LANGUAGE, not per device, because the question is "what happens
+   to this language" and the device is the answer to it. Inverted — a device
+   list with languages hung off it — it becomes an audio-settings panel and
+   stops being about the conversation. */
+.trw-route { display: flex; flex-direction: column; }
+.trw-route-row {
+  display: grid; grid-template-columns: 150px minmax(0, 1fr) auto;
+  align-items: center; gap: var(--s4);
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--border);
+}
+.trw-route-row:first-child { border-top: 0; }
+.trw-route-lang { display: flex; flex-direction: column; gap: 2px; }
+.trw-route-lang b {
+  font-stretch: var(--w-note); letter-spacing: var(--ls-note);
+  font-size: var(--t-note); font-weight: 600; color: var(--fg);
+}
+.trw-route-lang span {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+  font-size: var(--t-micro); color: var(--accent);
+}
+.trw-route-why {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+  font-size: var(--t-micro); line-height: 1.5; color: var(--fg-muted);
+}
+.trw-route-ctl { display: flex; align-items: center; gap: var(--s2); flex: none; }
+
+@media (max-width: 900px) {
+  .trw-route-row { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
+  .trw-route-ctl { flex-wrap: wrap; }
+}
+
 /* ── What crosses the line ──────────────────────────────────────────────────
    TWO COLUMNS, AND THE SECOND ONE IS THE ARGUMENT. A list of what was handed
    over is a feature description. A list of what was deliberately held back is
