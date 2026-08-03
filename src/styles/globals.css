@@ -431,17 +431,6 @@ body.overlay-window {
   pointer-events: none;
 }
 
-.ws-pill {
-  background: rgba(13, 18, 23, 0.72);
-  backdrop-filter: blur(20px) saturate(1.2);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-pill);
-  box-shadow:
-    var(--shadow-pill),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
 .ws-btn-primary {
   background: var(--btn-primary-bg);
   color: var(--btn-primary-fg);
@@ -482,56 +471,29 @@ body.overlay-window {
   transform: scale(0.97);
 }
 
-/* ── Glass subsystem tokens (scythe domain components: Chat/Notes/FileUpload) ──
-   Additive aliases mapped onto the v2 tokens above so the ported glass UI kit
-   renders natively without touching the overhaul's existing token set.   */
+/* ── Ported-kit token aliases (scythe domain components: Chat/Notes/FileUpload) ──
+   Additive aliases mapped onto the v2 tokens above so the ported UI kit renders
+   natively without touching the overhaul's existing token set. `--surface-glass`
+   left with the glass utilities on 2026-08-04; the five below are load-bearing
+   across the shell, the ui primitives and AboutTab. */
 :root {
   --surface-1: var(--bg-elevated);
   --surface-2: var(--surface-elevated);
   --surface-3: var(--surface-strong);
-  --surface-glass: var(--surface);
   --hairline: var(--border);
   --hairline-strong: var(--border-strong);
 }
 
-/* ── Glassmorphism Utilities (macOS native style) ───────────────────────────── */
-
-/* Base glass surface — frosted background with subtle border */
-.glass {
-  background: rgba(22, 29, 35, 0.65);
-  backdrop-filter: blur(24px) saturate(1.3);
-  -webkit-backdrop-filter: blur(24px) saturate(1.3);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-/* Elevated glass — more opaque for cards */
-.glass-elevated {
-  background: rgba(27, 36, 44, 0.78);
-  backdrop-filter: blur(32px) saturate(1.2);
-  -webkit-backdrop-filter: blur(32px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-/* Strong glass — for inputs, controls */
-.glass-strong {
-  background: rgba(32, 42, 51, 0.85);
-  backdrop-filter: blur(16px) saturate(1.1);
-  -webkit-backdrop-filter: blur(16px) saturate(1.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-/* Subtle glass — for hover states, secondary surfaces */
-.glass-subtle {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
+/* ── The glass utilities are gone ─────────────────────────────────────────────
+   `.glass`, `.glass-elevated`, `.glass-strong`, `.glass-subtle`, `.glass-panel`
+   and `.ws-pill` were removed on 2026-08-04 (plan §5.3). All six were
+   `backdrop-filter`, no markup in the product ever carried one of them, and
+   the property is inert in the shipped WebKitGTK anyway — `@supports` reports
+   it as available, so nothing about the failure was visible from a preview.
+   Frost, the material that replaces the intent, is `filter: blur()` on the
+   layer BEHIND a floating transient surface and belongs to the palette and the
+   settings sheet only; see ADR 0051 and DESIGN_SYSTEM.md. The overlay keeps
+   its own faux glass in `overlay-pill.css` and is not part of it. */
 
 /* Inner highlight — top edge light for depth */
 .inner-light {
@@ -553,16 +515,6 @@ body.overlay-window {
     inset 0 1px 0 var(--specular-strong),
     inset 0 -1px 0 var(--pressed-strong);
 }
-.glass-panel {
-  background: var(--surface-glass);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  border: 1px solid var(--hairline);
-  box-shadow:
-    inset 0 1px 0 var(--specular),
-    0 8px 32px rgba(0, 0, 0, 0.35);
-}
-
 /* ── Deep-link anchors ───────────────────────────────────────────────────────
    A row another surface can link to (the overlay's auto-stop tab, today). The
    scroll alone does not say which row was meant when several look alike, so

@@ -3173,8 +3173,18 @@ li.enh-act:focus-within .enh-act-btn { opacity: 1; }
 
 .agw-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 218px) minmax(0, 1fr); }
 
+/* `min-height: 0` on both grid items, and it is load-bearing. A grid item
+   defaults to `min-height: auto`, which means it refuses to become shorter than
+   its own content — so with `.agw` fixed at 340px the column kept its full
+   324px, the window clipped the last 12px against `overflow: hidden`, and what
+   went was the bottom of the rail's buttons and the whole answer strip. No
+   scrollbar, no mark, just a level readout and a countdown that were not there.
+   `.agw-thread` already carried `min-height: 0` and could not help: an inner
+   scroller only absorbs what the chain above it allows to shrink. Same family
+   as the Profiles defect fixed in the thirteenth pass. */
 .agw-rail {
   display: flex; flex-direction: column;
+  min-height: 0;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-sidebar) 55%, var(--bg-base));
 }
@@ -3186,7 +3196,12 @@ li.enh-act:focus-within .enh-act-btn { opacity: 1; }
 .agw-rail-head b, .agw-main-head b { font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label); font-weight: 600; }
 .agw-main-head > span { font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro); color: var(--fg-muted); }
 
-.agw-targets { display: flex; flex-direction: column; padding: 0 6px; gap: 1px; }
+/* The list is the part of the rail that grows, so it is the part that scrolls.
+   Everything else in the column is fixed furniture — a head, a label and the
+   two buttons at the foot — and the number of targets is the only thing the
+   window does not control. Without this the rail simply grew past a window
+   whose height is fixed, and the foot went out of the bottom. */
+.agw-targets { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 0 6px; gap: 1px; }
 .agw-target {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -3231,7 +3246,7 @@ li.enh-act:focus-within .enh-act-btn { opacity: 1; }
 .ovp-mini svg { width: 12px; height: 12px; }
 .ovp-mini:hover { background: var(--bg-elevated); color: var(--fg); }
 
-.agw-main { display: flex; flex-direction: column; min-width: 0; }
+.agw-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .agw-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 0 var(--s4) var(--s3); overflow-y: auto; scrollbar-width: none; }
 .agw-thread::-webkit-scrollbar { width: 0; }
 .agw-msg { display: flex; flex-direction: column; gap: 5px; }
@@ -3368,17 +3383,59 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
   overflow: hidden;
 }
 
-/* ── The provider grid, removed ─────────────────────────────────────────────
-   `.provgrid` and `.provtile` drew seven 152 px tiles for one radio value, on
-   the argument that picking a provider is a recognition task — you know the
-   mark before you have read the word — and that a `<select>` gives capability
-   nowhere to live. Both halves were true and neither needed a grid: the mark
-   travels with the row's control as `.selmark`, and capability became a
-   sentence about the provider actually chosen rather than a caption under all
-   seven. See `providerPick()` in demo.js. Removed in the thirteenth pass. */
+/* ── The provider chips ─────────────────────────────────────────────────────
+   THE GRID IS STILL GONE AND THE MARKS ARE BACK, which is not a contradiction:
+   `.provgrid` drew seven 152 px TILES on a three-column track — a name, a
+   caption and a readiness check each, three rows of surface for one radio
+   value. This is a CHIP ROW. A chip is a mark and a name at row height, four
+   or five to a line, wrapping when the lane has more. One to two rows instead
+   of three, and unlike the select it had in between, the list answers "who can
+   I pick" without being opened.
 
-/* The mark beside a select, for the rows where the grid would be too much
-   furniture for one choice. */
+   Owner's decision, 2026-08-04: picking a provider is a recognition task and
+   the logo is the fastest way in. The tint stays for that reason — a row of
+   grey marks is a row of shapes, and shape alone is what the wordmark already
+   does.
+
+   THE CHOSEN ONE CARRIES THE ACCENT AND THE OTHERS CARRY NOTHING. An accent
+   ring on every chip would make the row a decoration; the accent means active
+   selection here exactly as it does on a sidebar row. `data-custom` is the
+   door to a self-operated OpenAI-compatible endpoint and is deliberately last:
+   it is not a brand, so it takes the neutral glyph and never the tint. */
+.provrow {
+  display: flex; flex-wrap: wrap;
+  gap: var(--s2);
+  padding-top: var(--s1);
+}
+.provchip {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 32px; padding: 0 11px 0 8px;
+  border-radius: var(--r-control);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+  font-size: var(--t-label); font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+.provchip:hover { background: var(--bg-elevated); color: var(--fg); }
+.provchip[data-on] {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+  color: var(--fg);
+  font-weight: 600;
+}
+/* The mark keeps its own colour in every state. The chip's ground changes
+   around it; a brand that restyles itself on selection is a different brand. */
+.provchip-mark { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
+.provchip-mark .pmark, .provchip-mark svg { width: 16px; height: 16px; }
+.provchip[data-custom] .provchip-mark { color: var(--fg-muted); }
+
+/* The mark beside a select, for the rows where the chip row would be too much
+   furniture for one choice — a per-job override, a model line. */
 .selmark {
   width: 22px; height: 22px;
   display: grid; place-items: center;
@@ -3469,11 +3526,25 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
   background: var(--bg-inset);
   border-top: 1px solid var(--border);
 }
-/* The open body is a well on the inset plane, so its rows align with the
-   summary above them rather than stepping in again. What separates it from the
-   closed rows is the ground and the rule, not an indent. */
-.job-body > .rows > .row { padding-left: 0; padding-right: 0; }
-.job-body .note { margin: 0 0 var(--s2); }
+/* FOURTEENTH PASS — THE BODY ROWS ALIGN WITH THE LABEL, NOT WITH THE CHEVRON.
+   This rule read `padding-left: 0`, which aligned the open body's rows with the
+   summary's grid rather than with the summary's text: the chevron column is
+   25 px wide (13 px mark plus `--s3`), so "Provider", "Model" and "Sub-mode"
+   began exactly on the left wall of their own well while "Prompt Enhance" sat
+   25 px in. Text touching the edge of the ground it sits on is the defect
+   ADR 0052 removed from every other stack, and the well made it more visible
+   rather than less, because the well has a visible edge.
+   They take the chevron column instead, so a detail row starts on the same
+   vertical line as the job it belongs to. The right side is unchanged and
+   flush: there the summary's badge and the row's control already end together,
+   and the card's own inset supplies the gap. */
+.job-body > .rows > .row {
+  padding-left: calc(13px + var(--s3));
+  padding-right: 0;
+}
+/* Same column as the rows above it, for the same reason — a note is the one
+   piece of prose in the well and was the most obvious thing touching the wall. */
+.job-body .note { margin: 0 0 var(--s2); padding-left: calc(13px + var(--s3)); }
 .job[data-none] .job-text > span { color: var(--fg-muted); }
 
 /* ── A downloadable model ───────────────────────────────────────────────────
@@ -4778,7 +4849,7 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
    right edge of a 560 px panel, against a ground chosen to be quiet. It is not
    an exception to the rule; it was never covered by it. */
 .content, .nav, .log, .stage, .pane-scroll, .pane-detail-main > .pane-detail-body,
-.modal-nav, .modal-content, .cmdk-list {
+.modal-nav, .modal-content, .cmdk-list, .agw-targets {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -4786,7 +4857,7 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
 .stage::-webkit-scrollbar, .pane-scroll::-webkit-scrollbar,
 .pane-detail-main > .pane-detail-body::-webkit-scrollbar,
 .modal-nav::-webkit-scrollbar, .modal-content::-webkit-scrollbar,
-.cmdk-list::-webkit-scrollbar { width: 0; height: 0; }
+.cmdk-list::-webkit-scrollbar, .agw-targets::-webkit-scrollbar { width: 0; height: 0; }
 
 
 @media (prefers-reduced-motion: reduce) {

@@ -2,21 +2,23 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  glass?: boolean;
   hoverable?: boolean;
 }
 
+/* The `glass` variant is gone (plan §5.3, ADR 0051). It was `backdrop-blur-xl`,
+   which is inert in the shipped WebKitGTK and reports as supported, so it never
+   rendered anything on Linux and could not be feature-guarded. Frost is a
+   floating-transient material built from `filter: blur()` on the layer behind;
+   a card is neither floating nor transient, so this component does not get it
+   back in another form. */
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
-  ({ className, glass, hoverable, ...props }, ref) => (
+  ({ className, hoverable, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
         "rounded-[var(--radius-card)] border transition-colors duration-[var(--duration-base)]",
-        glass
-          ? "bg-[var(--surface-glass)] backdrop-blur-xl border-[var(--hairline)] shadow-[inset_0_1px_0_var(--specular),0_8px_32px_rgba(0,0,0,0.25)]"
-          : "bg-[var(--surface-2)] border-[var(--hairline)] material",
-        hoverable && !glass && "hover:border-[var(--hairline-strong)]",
-        hoverable && glass && "hover:bg-[rgba(27,36,44,0.80)] hover:border-[var(--hairline-strong)]",
+        "bg-[var(--surface-2)] border-[var(--hairline)] material",
+        hoverable && "hover:border-[var(--hairline-strong)]",
         className
       )}
       {...props}

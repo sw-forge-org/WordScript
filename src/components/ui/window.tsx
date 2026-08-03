@@ -5,15 +5,16 @@ import { cn } from "@/lib/utils";
 interface WindowProps {
   children: React.ReactNode;
   title: string;
-  glass?: boolean;
   onClose?: () => void;
   className?: string;
 }
 
+/* The `glass` variant is gone (plan §5.3, ADR 0051): `backdrop-blur-2xl` is
+   inert in the shipped WebKitGTK while `@supports` reports it as available, so
+   it rendered nothing on Linux and no feature guard could tell. */
 export function Window({
   children,
   title,
-  glass = false,
   onClose,
   className,
 }: WindowProps) {
@@ -24,9 +25,7 @@ export function Window({
       transition={{ type: "spring", stiffness: 380, damping: 30 }}
       className={cn(
         "flex h-full w-full flex-col rounded-[var(--radius-lg)] border overflow-hidden",
-        glass
-          ? "bg-[var(--surface-glass)] backdrop-blur-2xl border-[var(--hairline)] shadow-[inset_0_1px_0_var(--specular),0_20px_60px_rgba(0,0,0,0.40)]"
-          : "bg-[var(--surface-2)] border-[var(--hairline)] shadow-[inset_0_1px_0_var(--specular-strong),inset_0_-1px_0_var(--pressed-strong),0_20px_60px_rgba(0,0,0,0.40)]",
+        "bg-[var(--surface-2)] border-[var(--hairline)] shadow-[inset_0_1px_0_var(--specular-strong),inset_0_-1px_0_var(--pressed-strong),0_20px_60px_rgba(0,0,0,0.40)]",
         className
       )}
     >

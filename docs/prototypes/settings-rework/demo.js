@@ -1685,7 +1685,9 @@
         { id: "integrations", label: "Integrations", icon: "integrations", surface: "settings", tag: "prev" },
         { id: "delivery", label: "Delivery & Insert", icon: "delivery", surface: "settings" },
         { id: "privacy", label: "Privacy & Data", icon: "privacy", surface: "settings" },
-        { id: "account", label: "Account & Sync", icon: "user", surface: "settings", tag: "prev" },
+        /* `account` stood here until 2026-08-04. Removed with its screen: an
+           entry in this list promises that a decision lives behind it, and
+           there is no WordScript account to decide anything about. */
         { id: "diagnostics", label: "Diagnostics", icon: "diagnostics", surface: "settings" },
         { id: "about", label: "About & Updates", icon: "about", surface: "settings" },
       ]
@@ -1702,7 +1704,6 @@
         { id: "agents", label: "Agents", icon: "agents", surface: "settings", alias: true },
         { id: "integrations", label: "Integrations", icon: "integrations", surface: "settings", alias: true },
         { id: "notesettings", label: "Notes & Meetings", icon: "notes", surface: "settings", alias: true },
-        { id: "account", label: "Account & Sync", icon: "user", surface: "settings", alias: true },
         { id: "context", label: "Context", icon: "notes", surface: "workspace", alias: true },
       ]
     },
@@ -1790,7 +1791,7 @@
          Language Models and the Providers & Keys screen that had grown between
          them are `models`. The group is three. */
       { name: "AI", ids: ["models", "agents", "integrations"] },
-      { name: "System", ids: ["delivery", "privacy", "account", "diagnostics", "about"] },
+      { name: "System", ids: ["delivery", "privacy", "diagnostics", "about"] },
     ];
     return '<nav class="modal-nav">' + navSearch() + groups.map(function (g) {
       return '<div class="nav-group"><h3>' + t(g.name) + "</h3>" +
@@ -4143,7 +4144,30 @@
       On a tile, "speech · language" was a permanent caption under a name; as
       the row's hint it is a sentence about the provider you have actually
       chosen, and it can say the thing the tiles could not — that picking a
-      language-only provider leaves the listening jobs somewhere else. */
+      language-only provider leaves the listening jobs somewhere else.
+
+      FOURTEENTH PASS — THE MARKS COME BACK, THE GRID DOES NOT.
+      Owner's decision on 2026-08-04: the providers are to be seen, not opened.
+      That is not a reversal of the paragraphs above, and the distinction is the
+      whole design. What was removed was a GRID: seven tiles on a 152 px track,
+      three rows of surface, each tile carrying a name, a caption and a
+      readiness check. What replaces the select is a CHIP ROW: one line per
+      four or five providers, each chip a mark and a name at row height, wrapping
+      when it must. It states the same one value the select stated and costs one
+      to two rows instead of three, and unlike the select it answers "who can I
+      even pick" without a click — which is the actual reason a logo is worth
+      space here.
+
+      The chip is a radio, not a button. Exactly one is on, the group is a
+      `radiogroup`, and the accent marks the chosen one because that is what the
+      accent means (DESIGN_SYSTEM: primary action, active selection, live
+      capture). The marks keep their brand tint: recognition is the entire
+      point, and a row of grey logos is a row of shapes.
+
+      THE CAPABILITY LINE STILL BELONGS TO THE CHOSEN ONE. It stays the row's
+      hint and is not repeated per chip — a caption under every chip is the tile
+      caption again, and it would say "speech and language" nine times to tell
+      you one thing about the one you picked. */
   function providerPick(lane, selected, opts) {
     opts = opts || {};
     var here = PROVIDERS.filter(function (p) { return p.lane === lane; });
@@ -4151,7 +4175,7 @@
     var caps = cur.stt && cur.llm ? "Speech and language."
       : cur.llm ? "Language only — the listening jobs stay on whichever provider can hear."
         : "Speech only — the writing jobs stay on whichever provider can write.";
-    return row({
+    return stackRow({
       /* Enterprise calls this an Account, because there it is one: a tenant,
          a region and a credential chain rather than a company you buy tokens
          from. Same control, and the label is the caller's to set. */
@@ -4160,17 +4184,32 @@
         b: t(cur.desc) + " Every job below follows this unless you override it on the job itself.",
         a: caps
       },
-      /* NO CREDENTIAL BADGE HERE. The tile carried a small check when a key was
-         stored, which made sense on a grid where each option had to state its
-         own readiness. In a row, the credential has its own row directly below
-         saying `Set` — and one fact stated twice, six pixels apart, is the
-         furniture rule exactly. The mark stays: it is the recognition the grid
-         was built for, and it is the only part of a tile worth its space. */
-      ctl: '<span class="rowflex">' +
-        '<span class="selmark">' + (brand(cur.name) || icon("cloud")) + "</span>" +
-        select(cur.name, here.map(function (p) { return p.name; })) +
-        "</span>"
+      /* NO CREDENTIAL BADGE ON THE CHIP. The old tile carried a small check when
+         a key was stored. The credential has its own row directly below saying
+         `Set`, and one fact stated twice six pixels apart is the furniture rule
+         exactly. */
+      body: provChips(here, cur.name, opts.custom !== false)
     });
+  }
+
+  /** The chip row itself, so the meeting/onboarding callers and the settings
+      caller cannot drift. `custom` is the last chip and is not a provider: it is
+      the door to an OpenAI-compatible endpoint the user operates, which every
+      cloud list needs and no cloud list contains. */
+  function provChips(list, selected, custom) {
+    var chips = list.map(function (pv) {
+      var on = pv.name === selected;
+      return '<button class="provchip" role="radio" aria-checked="' + (on ? "true" : "false") + '"' +
+        (on ? " data-on" : "") + ">" +
+        '<span class="provchip-mark">' + (brand(pv.name) || icon("cloud")) + "</span>" +
+        "<span>" + t(pv.name) + "</span></button>";
+    }).join("");
+    if (custom) {
+      chips += '<button class="provchip" role="radio" aria-checked="false" data-custom>' +
+        '<span class="provchip-mark">' + icon("settings") + "</span>" +
+        "<span>" + t("Custom") + "</span></button>";
+    }
+    return '<div class="provrow" role="radiogroup" aria-label="' + t("Provider") + '">' + chips + "</div>";
   }
 
   /* ── What each lane actually offers ─────────────────────────────────────
@@ -5349,15 +5388,30 @@
 
       /* `Transcripts, profiles, settings — This machine only. No account, no
          cloud sync.` was the second row here and it was Account & Sync's whole
-         first screen said again. This one keeps where things ARE; whether they
-         also go somewhere else is that screen's sentence, and it is linked
-         rather than repeated. */
+         first screen said again — so it was cut and the row below linked there
+         instead.
+         2026-08-04: Account & Sync is gone (no WordScript account, none
+         planned), so the sentence comes home. This is now the only place that
+         answers "does any of this leave", and it answers it with a fact rather
+         than with a door to a screen that promised a decision it did not have.
+         The vendor accounts named in the last row are model vendors' — AI
+         Models is where those are set, and that link stays because it goes
+         somewhere that decides something. */
       sec("Where things live", null, card({
         rows: [
           row({ label: "API keys", hint: "In the OS secret store. Never written to the JSON config and never returned to this window.", ctl: badge("OS secret store", "success") }),
           row({ label: "Transcripts, context, profiles, settings", hint: "Files on this machine, under paths you can open.", ctl: badge("This machine", "success") }),
           row({ label: "Audio", hint: "Sent to the selected provider for transcription, then discarded. The local lane sends nothing.", ctl: badge("Provider, then discarded", "plan") }),
-          row({ label: "Whether any of it leaves", hint: "Only if you turn on sync to a server you run. There is no WordScript account and no cloud of ours.", ctl: btn("Open Account & Sync", "ghost", { icon: "arrow" }) }),
+          row({
+            label: "Whether any of it leaves",
+            hint: "No. There is no WordScript account, no cloud of ours and no sync — nothing to sign up for and no server of ours holding anything.",
+            ctl: badge("Never", "success")
+          }),
+          row({
+            label: "The accounts you do have",
+            hint: "Groq, Anthropic, an enterprise tenant. Those belong to model vendors, they are the only thing audio is ever sent to, and they are set where the model is chosen.",
+            ctl: btn("Open AI Models", "ghost", { icon: "arrow" })
+          }),
         ]
       })),
 
@@ -5382,90 +5436,24 @@
     ].join("");
   };
 
-  /* ── Settings: Account & Sync (preview) ─────────────────────────────────
-     SETTINGS_REWORK_PLAN.md §7 recorded Account as "documented as pending, not
-     rendered". Overruled 2026-08-02: the area ships (AccountArea.tsx) and a
-     user reaches it today, so it is a labelled preview like the others.
+  /* ── Settings: Account & Sync, removed ───────────────────────────────────
+     Owner's decision, 2026-08-04: there is no WordScript account and none is
+     coming in any foreseeable release, so the surface that explained the
+     absence is gone too. The screen was already honest — it led with "there is
+     no WordScript account" and refused to draw a hosted tier — but a settings
+     entry is a promise that a decision lives there, and this one has no
+     decision in it. Two rows saying "never" and a sync lane nobody can enable
+     is a page about a feature, and the feature is that there is no feature.
 
-     REWRITTEN 2026-08-03 — §11.50, on two faults found in review.
+     This is about the WORDSCRIPT account only. It says nothing about local or
+     self-hosted AI models, which are a lane on AI Models and unaffected.
 
-     IT WAS SELLING AN ACCOUNT IT WILL NOT HAVE. The lane read `Local only` /
-     `Self-hosted`, which frames the second as an upgrade path towards signing
-     in somewhere. The decision is the opposite: **there is no WordScript
-     account, and there is not going to be one.** An account exists only if you
-     run the server it lives on. That is not a limitation being apologised for
-     — it is what makes "no account" true for everybody else — so the screen
-     leads with it instead of hiding it in a lane description.
-
-     IT COLLIDED WITH AI MODELS OVER THE WORD "ACCOUNT". AI Models has accounts
-     everywhere: a Groq account with a plan, an enterprise account with a
-     region, an API key per provider. Those are accounts with a model vendor
-     and they are nothing to do with this screen, but the two surfaces both say
-     "account" and a reader who has just set one up in AI Models arrives here
-     expecting to see it. So the first row on this screen says which account it
-     is talking about and points at the other one.
-
-     Its data-export card is still NOT here — §4.2 moved it to Privacy & Data
-     and it stays moved. Where the data LIVES is Privacy's sentence too; this
-     screen only answers whether it goes anywhere else. */
-  SCREENS.account = function () {
-    return [
-      viewTop({
-        title: "Account & Sync",
-        lead: "There is no WordScript account. If you want one, you run it.",
-        banner: { text: "Planned for V2 or later. No data model is decided." },
-      }),
-
-      /* The disambiguation is the first thing on the screen because it is the
-         reason people open it. Both halves are true and they are about
-         different things. */
-      card({
-        rows: [
-          row({
-            label: "The accounts you already have",
-            hint: "Groq, Anthropic, an enterprise tenant — those belong to model vendors and are set where the model is chosen.",
-            ctl: btn("Open AI Models", "ghost", { icon: "arrow" })
-          }),
-          row({
-            label: "A WordScript account",
-            hint: "Does not exist. Nothing to sign up for, nothing to sign in to, and no server of ours holding anything.",
-            ctl: badge("Never", "success")
-          }),
-        ]
-      }),
-
-      /* Two lanes and the second one is deliberately not a hosted tier. A
-         third lane saying "WordScript Cloud — coming soon" is the shape this
-         screen must never take: it would make everything above it read as a
-         limitation of the free plan rather than as the product. */
-      sec("Where your data can go", null, lane({
-        options: [
-          {
-            icon: "local", name: "This machine only", on: true,
-            desc: {
-              b: "Nothing is synced anywhere. This is the default and it stays the default.",
-              a: "Nothing is synced anywhere. The default, permanently."
-            }
-          },
-          {
-            icon: "server", name: "A server you run", on: false, tag: "V2 or later",
-            desc: "Syncs to a server you operate. The account lives there, and so does the data."
-          },
-        ]
-      })),
-
-      sec("If you run one", null, card({
-        rows: [
-          row({ label: "Enable sync", hint: "Off by default. Needs a server URL.", ctl: toggle(false, { disabled: true }) }),
-          row({ label: "Server URL", ctl: field("", { placeholder: "https://sync.example.com", w: "220px" }) }),
-          row({ label: "What syncs", hint: "Transcripts, context objects, profiles and settings. Not API keys — those stay in this machine's secret store.", ctl: badge("Not configured", "plan") }),
-          row({ label: "Who can read it", hint: "Whoever administers that server. It is yours, which also means it is your responsibility.", ctl: badge("You", "plan") }),
-        ]
-      })),
-
-      note("What is stored on this machine and for how long is Privacy & Data's answer, whether or not sync is on.", "arrow", docLink("Open Privacy & Data")),
-    ].join("");
-  };
+     Where its two real sentences went:
+       - "your data stays on this machine"  ->  Privacy & Data, which already
+         owned where the data lives and for how long.
+       - "the accounts you already have are model vendors'"  ->  AI Models,
+         which is where those accounts are set.
+     Its data-export card was never here; §4.2 moved it to Privacy & Data. */
 
   /* ── Settings: Diagnostics ──────────────────────────────────────────── */
 
@@ -5627,15 +5615,20 @@
 
       /* Two of the three rows here were Account & Sync's own banner said a
          second time, one screen away. A thing that has a screen states its
-         status on that screen; this section is for what has no screen at all. */
+         status on that screen; this section is for what has no screen at all.
+         2026-08-04: the account row comes back into this section, because the
+         screen it pointed at no longer exists. It reads differently now and it
+         should — "not built yet" and "not going to be built" are not the same
+         answer, and only the second one belongs in a list somebody reads to
+         find out whether to keep waiting. */
       sec("Not built", "Named here so it is not looked for elsewhere.", card({
         rows: [
           row({ label: "Translation mode", hint: "Not decided. Recorded as a roadmap candidate with an open gate.", ctl: badge("Candidate", "plan") }),
           row({ label: "Meeting capture", hint: "Sketched as a preview. Needs system-audio capture and a second window.", ctl: badge("Preview", "plan") }),
           row({
             label: "Account, sign-in and sync",
-            hint: "Stated where it lives.",
-            ctl: btn("Open Account & Sync", "ghost", { icon: "arrow" })
+            hint: "Not planned, rather than not started. Everything is on this machine, there is nothing to sign in to, and no server of ours holds anything. The keys you do hold are model vendors' and live in AI Models.",
+            ctl: badge("Never", "success")
           }),
         ]
       })),
