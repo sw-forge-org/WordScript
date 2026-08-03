@@ -1,5 +1,18 @@
 # WordScript — GUI rework, third pass
 
+> **Superseded 2026-08-04 by [HANDOFF_gui-port-relay.md](HANDOFF_gui-port-relay.md).**
+> Its four listed faults and its open items were carried through passes four to
+> fourteen and are recorded in the prototype's own pass log: the padding system
+> (ADR 0052), the matrix (ADR 0053), the frosted material (ADR 0051), the
+> provider grid (resolved as a chip row, not a grid and not a select), the live
+> waveform, and the four features that had never been sketched. The validation
+> it never ran was run on 2026-08-04: 154 frontend tests green.
+>
+> Everything below is historical. The prototype it describes is read-only from
+> 2026-08-04 (ADR 0055), and its two large files are no longer edited — but the
+> exact-match editing rule in the next section still governs anyone who has to
+> touch them anyway, and it is the reason this file is kept rather than archived.
+
 Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 Branch: `gui-rework-second-pass`, commit `e92e44c`, pushed.
 

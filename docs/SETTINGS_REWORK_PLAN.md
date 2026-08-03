@@ -1,10 +1,15 @@
 # Settings Surface Rework Plan
 
-Status: 2026-08-03 — **Stage 0 done and accepted; revised by a third pass
-(§11.7–§11.12) and a fourth (§11.16–§11.21, plus the new open problem §10.4).
-Stage 1 is the next task and splits (§11.13): Stage 1a is unblocked, Stage 1b
-waits on a palette look that needs a native host. Nothing has been implemented
-yet.**
+Status: 2026-08-04 — **Stage 0 done and accepted through fourteen passes; the
+prototype is now read-only. The delivery model changed on 2026-08-04 (§16): the
+rework is a port that overwrites rather than a migration (ADR 0054), it is
+judged in a new `/gallery` route rather than against the shipped surface (ADR
+0055), and it runs as a relay of legs on `main`, tracked in
+[`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md).
+Stage 1 is the active leg and splits per §11.13: 1a is unblocked, 1b carries the
+palette checkpoint. In `src/` only two pieces of Stage 1 have landed — the
+`glass*` and `ws-pill` removal, and the Archivo / IBM Plex Mono wiring. Nothing
+else has been implemented.**
 
 > **2026-08-03 — the recording limits changed under this plan.** ADR 0038 and
 > ADR 0039 shipped outside the rework and touched two things it owns. The
@@ -2728,3 +2733,78 @@ failure, and it did not clear on retry. `orb`, `live-waveform`, `matrix`,
 against our own tokens instead. When the registry is reachable, the useful move
 is to read their versions for ideas rather than to swap ours out: ours already
 carry product decisions theirs cannot know about.
+
+## 16. How this plan is delivered
+
+Settled 2026-08-04, after the fourteenth pass closed and the question became
+when the prototype stops being edited and starts being built. Three changes to
+delivery. None of them moves a design decision — §1 through §7 and every
+correction in §11 stand exactly as written.
+
+### 16.1 It is a port that overwrites, not a migration
+
+[ADR 0054](decisions/0054-the-rework-lands-as-an-overwrite-because-there-is-nobody-to-migrate.md).
+`0.2.2-alpha` has no users, so the continuity machinery this plan specified has
+nobody to serve.
+
+**Withdrawn:** §4.3 rule 6 (*"deep links survive"*) and the alias map it
+requires; §13's mitigation that *"old and new sections coexist behind the alias
+map"*. A replaced area is deleted in the commit that replaces it, and Stage 4's
+section ordering stays a working order rather than a safety mechanism.
+
+**Kept:** `src/lib/settingsAnchors.ts`. The overlay deep-links into
+`capture.auto_stop` through a semantic anchor, and that is a runtime contract
+with a native caller, not a convenience for a habit. Every anchor stays
+resolvable when a control moves; updating that one file is the whole obligation.
+
+This expires at the first distributed build. After that the next surface change
+is a migration again.
+
+### 16.2 The gallery is the acceptance surface
+
+[ADR 0055](decisions/0055-the-gallery-is-where-the-port-is-judged-and-it-is-one-route.md).
+One design-time route `/gallery` — Foundations · Components · Motion · Overlay ·
+Screens — folding in the two unlinked routes that already exist
+(`/overlay-gallery`, `/component-lab`).
+
+**A screen is *ported* when it stands in the gallery and *shipped* when it is
+wired.** That split is what makes a 1:1 port of the whole design possible
+against a runtime that cannot yet answer half of it: §11.36 and §11.52 stop
+being blockers and become the list of what the wiring stage needs, discovered
+from a finished design instead of guessed at in front of one.
+
+It also gives §11.13's checkpoint a place to happen. The palette, the frost pair
+and the light scheme become checkable in WebKitGTK with one `npm run tauri
+build` and a walk through Foundations, without the shipped surface having to
+change first.
+
+The prototype is read-only from this point. It is the reference the gallery is
+diffed against.
+
+### 16.3 It runs as a relay on `main`
+
+Tracked in [`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md),
+which carries the rules, the leg map, the active leg's full specification and
+the prompt for the next one. Each leg is one agent session that ends green,
+commits and pushes to `main`, records what it did, and writes the next prompt.
+No feature branch: under §16.1 there is nothing a branch would be protecting.
+
+The legs re-cut §8's stages against the two decisions above:
+
+| Leg | §8 equivalent |
+| --- | --- |
+| 1 | Stage 1a + Stage 1b, plus the gallery shell |
+| 2 | Stage 5, brought forward — every screen into the gallery, statically |
+| 3 | Stage 3, as an overwrite and as a sheet (§11.22) rather than a second window |
+| 4 | Stage 4, plus P1 and P2 from Stage 2 |
+| 5 | §11.36 and §11.52 — the runtime contracts, prioritised by what Leg 4 found |
+| 6 | Stage 6 |
+
+**Two ordering corrections are deliberate.** The system lands before the screens,
+because §11.17 found the prototype patching four missing rules screen by screen
+and a screen-first port carries the patches instead of the rules. And **P1 and
+P2 move out of Stage 2 into the wiring leg**: P1 is a write-contract change —
+every keystroke is an IPC round trip and a disk write — and P2 remounts an area
+on every navigation. Wiring 25 screens onto today's `patch()` would reproduce
+both faults 25 times. P3 through P7 are compositing costs and stay where they
+are.

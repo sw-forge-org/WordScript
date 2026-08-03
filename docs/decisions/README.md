@@ -330,6 +330,20 @@ Status: Proposed | Accepted | Superseded by NNNN
   frozen bar row on a surface claiming to be listening is a fake state. The
   matrix is ported whole rather than as the subset the product uses, with three
   deviations from upstream marked at the point of change.
+- [0054](0054-the-rework-lands-as-an-overwrite-because-there-is-nobody-to-migrate.md):
+  the settings rework overwrites the shipped surface instead of migrating it —
+  no alias map, no coexistence, a replaced area deleted in the commit that
+  replaces it. `0.2.2-alpha` has no users, so the continuity machinery the plan
+  specified has nobody to serve. The semantic anchors survive because they are a
+  runtime contract with a native caller. The decision expires at the first
+  distributed build.
+- [0055](0055-the-gallery-is-where-the-port-is-judged-and-it-is-one-route.md):
+  one design-time route `/gallery` is the acceptance surface for the port, and
+  it absorbs the two unlinked routes that already exist. A screen is *ported*
+  when it stands in the gallery and *shipped* when it is wired — which is what
+  lets a settled 25-screen design land against a runtime that cannot yet answer
+  half of it. The gallery imports the product's components and never copies
+  them.
 
 ## Resolved: the number 0011 was used twice
 
@@ -357,8 +371,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-04 the filed range runs through 0053; the next
-decision takes 0054.)
+takes 0021. (As of 2026-08-04 the filed range runs through 0055; the next
+decision takes 0056.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

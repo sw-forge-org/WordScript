@@ -113,6 +113,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   history list offer a retry that re-transcribes it. Kept recordings are swept
   after seven days or twenty files (ADR 0039).
 
+### Changed
+
+- **The settings rework becomes a port, and the port overwrites.** `0.2.2-alpha`
+  has no users, so the alias map and the coexisting-surfaces provisions in the
+  plan have nobody to serve: a replaced area is now deleted in the commit that
+  replaces it, and area ids are replaced rather than aliased. The semantic
+  anchors in `src/lib/settingsAnchors.ts` survive, because the overlay's
+  deep-link into `capture.auto_stop` is a runtime contract and not a habit. The
+  decision expires at the first distributed build (ADR 0054).
+- **The port is judged in a gallery, not against the shipped surface.** One
+  design-time route `/gallery` — Foundations, Components, Motion, Overlay,
+  Screens — absorbing the two unlinked routes that already exist
+  (`/overlay-gallery`, `/component-lab`). A screen is *ported* when it stands in
+  the gallery and *shipped* when it is wired, which is what lets a settled
+  25-screen design land against a runtime that cannot yet answer half of it, and
+  it gives the palette checkpoint a place to happen in WebKitGTK without the
+  shipped surface having to change first (ADR 0055). The prototype at
+  `docs/prototypes/settings-rework/` is read-only from 2026-08-04.
+- **The work runs as a relay on `main`**, tracked in
+  `docs/handoffs/HANDOFF_gui-port-relay.md`: six legs, each one session that ends
+  green, pushes, records what it did and writes the prompt for the next. Two
+  deliberate ordering corrections against the plan's stages — the design system
+  lands before the screens, because the prototype had been patching four missing
+  rules screen by screen; and P1 and P2 move out of the performance stage into
+  the wiring leg, because wiring 25 screens onto a `patch()` that writes config
+  on every keystroke would reproduce that fault 25 times.
+
 ### Fixed
 
 - **Long recordings could not be transcribed at all.** The transcription budget

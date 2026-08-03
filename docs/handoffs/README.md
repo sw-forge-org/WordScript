@@ -8,6 +8,13 @@ Naming: `HANDOFF_<branch-or-slug>.md`
 
 ## Contents
 
+- [GUI Port Relay](HANDOFF_gui-port-relay.md): **active, opened 2026-08-04.**
+  The chain document for moving the settings rework from prototype to product.
+  Carries the two decisions it rests on (ADR 0054, ADR 0055), the rules every
+  leg obeys, the six-leg map, the active leg's full specification, the leg log,
+  and the prompt for the next leg. Each leg works on `main`, ends green, pushes,
+  and writes the next prompt into it. Supersedes
+  [GUI_REWORK_THIRD_PASS.md](GUI_REWORK_THIRD_PASS.md), whose work is done.
 - [Per-Mode Activation Gestures and Shortcut Defaults](HANDOFF_activation-mode-gestures-and-defaults.md):
   **open — nothing built yet**, written 2026-07-29. The only forward-looking
   document in this folder. Why one set of shortcut defaults cannot serve three
