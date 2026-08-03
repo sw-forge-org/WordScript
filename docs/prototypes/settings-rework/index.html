@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-palette="after" data-density="standard">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WordScript — Settings Rework, Stage 0</title>
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+
+<!--
+  WordScript — Settings Rework, Stage 0 prototype.
+
+  THIS DOES NOT SHIP. Not imported by src/, not routed in App.tsx, no Tauri
+  API, no build-system change. It exists to be looked at and argued with.
+
+  SUBJECT   The design system proposed in docs/SETTINGS_REWORK_PLAN.md §5, and
+            the information architecture proposed in §4, shown together.
+  DECIDES   Three things, before Stage 1 starts: the IA, the palette, and the
+            copy budget. The rig's switches are the decision instrument.
+  TRUTH     Labels, model names, hotkey tokens, provider names and diagnostic
+            vocabulary are read from the current tree. Every string on the
+            "before" side of the copy switch is a verbatim literal from src/.
+            Runtime values are sample data; every preview carries its banner.
+  OUT       The overlay. No overlay token, size or CSS rule is part of this.
+-->
+
+<header class="rig">
+  <div class="rig-id">
+    <b>Settings Rework</b>
+    <span>Stage 0 · static mock, no runtime</span>
+  </div>
+
+  <div class="rig-group">
+    <label>Screen</label>
+    <select class="rig-pick" id="pick" aria-label="Jump to any screen"></select>
+  </div>
+
+  <div class="rig-group">
+    <label>Surface</label>
+    <div class="rig-seg">
+      <button data-rig="palette" data-val="before">Shipped</button>
+      <button data-rig="palette" data-val="after">Proposed<kbd>P</kbd></button>
+    </div>
+  </div>
+
+  <div class="rig-group">
+    <label>Copy</label>
+    <div class="rig-seg">
+      <button data-rig="copy" data-val="before">Today</button>
+      <button data-rig="copy" data-val="after">Budget<kbd>C</kbd></button>
+    </div>
+  </div>
+
+  <div class="rig-group">
+    <label>Density</label>
+    <div class="rig-seg">
+      <button data-rig="density" data-val="tight">Tight<kbd>1</kbd></button>
+      <button data-rig="density" data-val="standard">Standard<kbd>2</kbd></button>
+      <button data-rig="density" data-val="roomy">Roomy<kbd>3</kbd></button>
+    </div>
+  </div>
+
+  <div class="rig-meter" id="meter"></div>
+</header>
+
+<main class="stage">
+  <div class="win" id="win"></div>
+</main>
+
+<script src="demo.js"></script>
+</body>
+</html>

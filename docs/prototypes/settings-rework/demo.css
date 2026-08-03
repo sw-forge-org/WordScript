@@ -1,0 +1,1276 @@
+/* ===========================================================================
+   WordScript — Settings Rework, Stage 0 prototype
+   This file IS the proposed design system. Every token, rule and component
+   here is the demo's subject, not its scaffolding.
+
+   Source of truth: docs/SETTINGS_REWORK_PLAN.md section 5.
+   Numbers in section 5.1 were verified numerically before being pasted here.
+   Nothing in this folder is imported by src/ or shipped.
+   =========================================================================== */
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; padding: 0; }
+button, input, select, textarea { font: inherit; color: inherit; background: none; border: none; }
+button { cursor: pointer; }
+ul, ol { list-style: none; }
+svg { display: block; flex: none; }
+
+/* ===========================================================================
+   1. TOKENS
+   =========================================================================== */
+
+:root {
+  /* Type stack — the shipped stack from src/styles/globals.css, unchanged.
+     Aptos is the intended face; the rest are the platform fallbacks. */
+  --font: "Aptos", "SF Pro Text", "Segoe UI Variable", "Noto Sans", sans-serif;
+  --font-display: "Aptos Display", "SF Pro Display", "Segoe UI Variable Display", "Noto Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", "SF Mono", "Consolas", monospace;
+
+  /* Type scale — kept from DESIGN_SYSTEM.md: 12, 14, 16, 20, 28.
+     11 is added for key caps and counts only; it never carries prose. */
+  --t-micro: 11px;
+  --t-label: 12px;
+  --t-body:  14px;
+  --t-lead:  16px;
+  --t-title: 20px;
+  --t-hero:  28px;
+
+  /* Spacing — 4 px rhythm, kept from DESIGN_SYSTEM.md. */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 20px; --s6: 24px; --s7: 32px; --s8: 40px;
+
+  /* Motion — section 5.4. transform and opacity only. */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --nav-w: 232px;   /* DESIGN_SYSTEM.md */
+
+  /* Semantic colours are unchanged by this plan; they carry across both
+     sides of the switch so the lift can be judged without a second variable. */
+  --success: #81d6ae;
+  --danger:  #ff7a6b;
+  --voice:   #87e6d7;
+}
+
+/* ── Palette: shipped (the "before" side of the switch) ─────────────────── */
+/* Values read from src/styles/globals.css:9-35. */
+
+[data-palette="before"] {
+  --bg-sidebar:  #080a0e;   /* color-mix(in srgb, #0a0d11 80%, black) */
+  --bg-base:     #0a0d11;
+  --bg-inset:    #141a20;
+  --bg-surface:  #1c2127;
+  --bg-elevated: #28333d;
+
+  --border:        rgba(255, 255, 255, 0.13);
+  --border-strong: rgba(255, 255, 255, 0.20);
+
+  --fg:       #f4f1ea;
+  --fg-dim:   #a4b1bd;
+  --fg-muted: #707e8b;
+
+  --accent:      #e68900;
+  --accent-soft: rgba(230, 137, 0, 0.15);
+  --on-accent:   #0f1418;
+
+  --radius-card: 10px;
+  --card-border: 1px solid var(--border);
+  --card-hover-border: var(--border-strong);
+
+  /* globals.css:241-247 — two layers, viewport-fixed. Section 6 P4 proposes
+     removing this; it is measured in the native host, not decided here. */
+  --window-bg-image:
+    radial-gradient(120% 55% at 50% -12%, rgba(230, 137, 0, 0.04), transparent 60%),
+    linear-gradient(180deg, #0b0f13 0%, #090c10 100%);
+  --window-bg-attach: fixed;
+}
+
+/* ── Palette: proposed (section 5.1) ────────────────────────────────────── */
+/* L*: sidebar 6.4 · window 10.3 · inset 7.3 · card 19.0 · elevated 24.6.
+   Verified: fg 11.80:1, fg-dim 7.37:1, fg-muted 4.71:1, accent 6.47:1 on card. */
+
+[data-palette="after"] {
+  --bg-sidebar:  #141416;
+  --bg-base:     #1c1c1e;
+  --bg-inset:    #161617;
+  --bg-surface:  #2e2e31;
+  --bg-elevated: #3a3a3e;
+
+  --border:        rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --fg:       #f2efe9;
+  --fg-dim:   #c2bfb8;
+  --fg-muted: #9b9892;
+
+  --accent:      #ff9c2b;
+  --accent-soft: rgba(255, 156, 43, 0.16);
+  --on-accent:   #1c1c1e;
+
+  --radius-card: 12px;
+  /* Elevation is declared once. The card is 8.7 L* above the window, which
+     reads on its own at this height, so the hairline is spent on inputs
+     instead — see section 3, "One elevation signal". */
+  --card-border: 1px solid transparent;
+  --card-hover-border: transparent;
+
+  --window-bg-image: none;
+  --window-bg-attach: scroll;
+}
+
+/* ── Density and accent reach — the three calibration variants ──────────── */
+/* One world, three settings of it. Density moves the spacing rhythm; accent
+   reach moves how far the accent travels beyond the primary action. */
+
+[data-density="tight"] {
+  --pad-card: 14px;
+  --row-py: 9px;
+  --gap-block: var(--s5);
+  --gap-row: 10px;
+  --nav-row-h: 28px;
+  --content-pad: var(--s6);
+  --content-max: 720px;
+}
+[data-density="standard"] {
+  --pad-card: var(--s5);         /* 20px — DESIGN_SYSTEM.md card padding */
+  --row-py: 13px;
+  --gap-block: var(--s7);        /* 32px between major sections */
+  --gap-row: var(--s3);
+  --nav-row-h: 32px;
+  --content-pad: var(--s7);
+  --content-max: 760px;
+}
+[data-density="roomy"] {
+  --pad-card: var(--s6);
+  --row-py: 17px;
+  --gap-block: var(--s8);
+  --gap-row: var(--s4);
+  --nav-row-h: 38px;
+  --content-pad: var(--s8);
+  --content-max: 820px;
+}
+
+/* Accent reach.
+   tight    — accent on the primary action and the selected radio. Nothing else.
+   standard — plus the active nav icon and the segment thumb's label.
+   roomy    — plus an accent-tinted active nav row and accent section rules. */
+[data-density="tight"]    { --nav-active-bg: var(--bg-elevated); --nav-active-fg: var(--fg); --nav-active-icon: var(--fg-dim); --sec-rule: transparent; }
+[data-density="standard"] { --nav-active-bg: var(--bg-elevated); --nav-active-fg: var(--fg); --nav-active-icon: var(--accent);  --sec-rule: transparent; }
+[data-density="roomy"]    { --nav-active-bg: var(--accent-soft); --nav-active-fg: var(--fg); --nav-active-icon: var(--accent);  --sec-rule: var(--accent); }
+
+/* ===========================================================================
+   2. PAGE SHELL — the rig. Deliberately outside the design system: it is the
+   instrument the prototype is viewed through, and it must never be mistaken
+   for a proposal. It keeps its own fixed colours on both sides of the switch.
+   =========================================================================== */
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--font);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: #e8e6e3;
+  background: #0b0b0c;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  display: flex;
+  flex-direction: column;
+}
+
+.rig {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  flex-wrap: wrap;
+  padding: 10px var(--s4);
+  background: #131315;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.rig-id { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
+.rig-id b { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: #f2efe9; }
+.rig-id span { font-size: var(--t-label); color: #85817c; white-space: nowrap; }
+
+.rig-group { display: flex; align-items: center; gap: var(--s2); }
+.rig-group > label {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #85817c;
+}
+
+.rig-seg { display: flex; padding: 2px; gap: 2px; background: #0b0b0c; border-radius: 999px; border: 1px solid rgba(255,255,255,0.07); }
+.rig-seg button {
+  font-size: var(--t-label);
+  font-weight: 500;
+  padding: 4px 11px;
+  border-radius: 999px;
+  color: #a8a49f;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.rig-seg button:hover { color: #f2efe9; }
+.rig-seg button[aria-pressed="true"] { background: #313134; color: #f2efe9; }
+.rig-seg button kbd {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  opacity: 0.5;
+  margin-left: 5px;
+}
+
+.rig-pick {
+  height: 26px; padding: 0 8px;
+  border-radius: 7px;
+  background: #0b0b0c;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: var(--t-label);
+  color: #e8e6e3;
+  max-width: 200px;
+}
+.rig-pick:hover { border-color: rgba(255, 255, 255, 0.18); }
+.rig-pick optgroup { background: #131315; color: #85817c; }
+.rig-pick option { background: #131315; color: #e8e6e3; }
+
+.rig-meter {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-size: var(--t-micro);
+  color: #85817c;
+  white-space: nowrap;
+}
+.rig-meter .mrow { display: flex; align-items: baseline; gap: 6px; }
+.rig-meter .mrow > span:first-child { min-width: 62px; text-align: right; }
+.rig-meter .cut { min-width: 34px; text-align: right; }
+.rig-meter b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rig-meter .on { color: #f2efe9; }
+.rig-meter .off { color: #6a6660; text-decoration: line-through; text-decoration-thickness: 1px; }
+.rig-meter .cut { color: #7fd6a8; font-variant-numeric: tabular-nums; }
+
+/* ── Stage and mock window ──────────────────────────────────────────────── */
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  padding: var(--s6);
+  overflow: auto;
+}
+
+.win {
+  width: 100%;
+  max-width: 1180px;
+  min-height: 660px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-base);
+  background-image: var(--window-bg-image);
+  background-attachment: var(--window-bg-attach);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  color: var(--fg);
+  font-size: var(--t-body);
+}
+
+/* ADR 0003: the real window uses native decorations on every OS. This strip
+   stands in for what the window manager draws — it is a placeholder, not a
+   design, and deliberately carries no traffic lights. */
+.win-deco {
+  flex: none;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-micro);
+  color: var(--fg-muted);
+  letter-spacing: 0.02em;
+}
+.win-deco em { font-style: normal; color: var(--fg-dim); font-weight: 500; }
+
+.win-body { flex: 1; min-height: 0; display: flex; }
+
+/* ── Window status strip ────────────────────────────────────────────────────
+   The shipped surface saves every change immediately and says so twice: an
+   "Auto-saved" badge in the header and "Changes are saved automatically." in
+   the footer. Two statements of one fact is one too many, and a badge that is
+   permanently green is furniture. It survives as one quiet line, in the place
+   macOS puts standing state — the bottom edge — carrying the readiness the
+   settings window would otherwise lose sight of. */
+.win-foot {
+  flex: none;
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 0 var(--s4);
+  height: 30px;
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border);
+  font-size: var(--t-micro);
+  color: var(--fg-muted);
+}
+.win-foot .sep { opacity: 0.45; }
+.win-foot b { font-weight: 550; color: var(--fg-dim); }
+.win-foot .right { margin-left: auto; }
+
+/* Default icon size. Every icon in the surface is 24-grid, one stroke weight;
+   components that need another size override this rule, never the markup. */
+.win svg { width: 16px; height: 16px; }
+
+/* ===========================================================================
+   3. NAVIGATION
+   =========================================================================== */
+
+.nav {
+  flex: none;
+  width: var(--nav-w);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  padding: var(--s3) 10px;
+  overflow-y: auto;
+}
+
+/* ── Brand ──────────────────────────────────────────────────────────────────
+   The shipped sidebar opens with the wordmark (a 1611×465 PNG, capped at
+   180 px). It is redrawn here as geometry so the prototype stays three files
+   with no assets: the same mark — charcoal tile, cream quill, cream waveform —
+   set beside the name in the display face. It is the one place in the surface
+   that carries brand rather than state, so it gets the top-left corner and
+   nothing else does. */
+.brand {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
+  padding: var(--s3) var(--s2) var(--s5);
+  min-width: 0;
+}
+/* The shipped cap, unchanged: SettingsWindow.tsx sets max-w-[180px] h-auto. */
+.brand img {
+  display: block;
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+  object-fit: contain;
+}
+/* In the settings window the mark stays and gains a qualifier, because the two
+   windows are told apart by their sidebar, not by a title bar the OS draws. */
+.brand .qual {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding-left: 3px;
+}
+
+.nav-group { margin-bottom: var(--s5); }
+.nav-group > h3 {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 0 var(--s2) var(--s2);
+}
+
+.nav-row {
+  width: 100%;
+  min-height: var(--nav-row-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--s2);
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--fg-dim);
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease);
+}
+.nav-row svg { width: 15px; height: 15px; color: var(--fg-muted); transition: color var(--dur-fast) var(--ease); }
+.nav-row:hover { color: var(--fg); }
+.nav-row:hover svg { color: var(--fg-dim); }
+.nav-row[aria-current="true"] {
+  background: var(--nav-active-bg);
+  color: var(--nav-active-fg);
+  font-weight: 550;
+}
+.nav-row[aria-current="true"] svg { color: var(--nav-active-icon); }
+.nav-row .nav-tag {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.nav-foot { margin-top: auto; padding-top: var(--s3); border-top: 1px solid var(--border); }
+
+.nav-profile {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2);
+  margin-top: var(--s1);
+  border-radius: 7px;
+  text-align: left;
+}
+.nav-profile:hover { background: var(--bg-elevated); }
+.nav-profile .av {
+  width: 22px; height: 22px; flex: none;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 700;
+}
+.nav-profile .who { min-width: 0; flex: 1; }
+.nav-profile .who b { display: block; font-size: var(--t-label); font-weight: 550; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-profile .who span { display: block; font-size: var(--t-micro); color: var(--fg-muted); }
+/* The shipped footer is an avatar, a label and a separate select underneath —
+   two controls for one decision. Here the row IS the control: a macOS popup
+   button, which is what the double chevron announces. */
+.nav-profile .caret {
+  flex: none; width: 14px; height: 14px;
+  display: grid; place-items: center;
+  color: var(--fg-muted);
+}
+.nav-profile .caret svg { width: 11px; height: 11px; }
+.nav-profile[data-locked] { opacity: 0.55; }
+.nav-lock { display: flex; gap: 6px; padding: 2px var(--s2) 0; font-size: var(--t-micro); color: var(--fg-muted); line-height: 1.45; }
+.nav-lock svg { width: 11px; height: 11px; flex: none; margin-top: 3px; }
+
+/* ===========================================================================
+   4. CONTENT COLUMN
+   =========================================================================== */
+
+.content { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+
+/* A pane view scrolls inside its own columns. Letting the content area scroll
+   as well produces two bars for one gesture and a header that drifts away from
+   the list it labels. */
+.content[data-layout="pane"] { overflow: hidden; }
+.content-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--content-pad);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-block);
+  width: 100%;
+}
+
+/* A pane view owns the whole content area: the list column has to reach the
+   window edge, or it reads as a card again. */
+.content-inner[data-layout="pane"] {
+  max-width: none;
+  padding: 0;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+.content-inner[data-layout="pane"] > .view-head { padding: var(--content-pad) var(--content-pad) var(--s4); }
+.content-inner[data-layout="pane"] > .banner { margin: 0 var(--content-pad) var(--s4); }
+
+/* View header — the one place a view names itself. */
+.view-head { display: flex; flex-direction: column; gap: 5px; }
+.view-head h1 {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+.view-head p { font-size: 13px; color: var(--fg-dim); max-width: 62ch; }
+
+/* SectionHeader — title plus one line, outside the card. */
+.sec { display: flex; flex-direction: column; gap: var(--s3); }
+.sec-head { display: flex; align-items: baseline; gap: var(--s3); padding-left: 2px; }
+.sec-head h2 {
+  font-size: var(--t-lead);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  position: relative;
+}
+[data-density="roomy"] .sec-head h2::before {
+  content: "";
+  position: absolute;
+  left: -10px; top: 0.35em; bottom: 0.35em;
+  width: 1px;
+  background: var(--sec-rule);
+}
+.sec-head p { font-size: var(--t-label); color: var(--fg-dim); }
+.sec-body { display: flex; flex-direction: column; gap: var(--gap-row); }
+
+/* ===========================================================================
+   5. CARD — the grouping primitive. Elevation is background, never shadow.
+   =========================================================================== */
+
+.card {
+  background: var(--bg-surface);
+  border: var(--card-border);
+  border-radius: var(--radius-card);
+  padding: 0 var(--pad-card);
+  /* Section 2.4 P7: no hover transition on the card border. In the proposed
+     palette there is no card border to transition at all. */
+}
+[data-palette="before"] .card { transition: border-color 150ms ease-out; }
+[data-palette="before"] .card:hover { border-color: var(--card-hover-border); }
+
+.card-head {
+  padding: var(--pad-card) 0 0;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.card-head h3 { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; }
+.card-head p { font-size: var(--t-label); color: var(--fg-dim); max-width: 66ch; }
+.card-head + .rows { margin-top: var(--s3); }
+
+/* ── FormRow ────────────────────────────────────────────────────────────── */
+
+.rows { display: flex; flex-direction: column; }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--row-py) 0;
+  border-bottom: 1px solid var(--border);
+  min-height: 0;
+}
+.row:last-child { border-bottom: none; }
+.row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-text > b { font-size: 13px; font-weight: 500; color: var(--fg); }
+/* Row hints sit on --fg-dim (7.37:1), never on --fg-muted. Section 5.1. */
+.row-hint { font-size: var(--t-label); color: var(--fg-dim); max-width: 62ch; }
+.row-ctl { flex: none; display: flex; align-items: center; gap: var(--s2); }
+.row.stack { flex-direction: column; align-items: stretch; gap: var(--s2); }
+
+/* --fg-muted is 4.71:1 on the card but only 3.94:1 on the elevated surface,
+   so it is confined to labels and counts on the card plane. Measured, not
+   assumed — see the Design System view. */
+.muted { color: var(--fg-muted); font-size: var(--t-label); }
+.mono { font-family: var(--font-mono); font-size: var(--t-label); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ===========================================================================
+   6. CONTROLS
+   =========================================================================== */
+
+/* Button */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 11px;
+  border-radius: 8px;
+  font-size: var(--t-label); font-weight: 550;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  transition: background-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+  white-space: nowrap;
+}
+.btn svg { width: 13px; height: 13px; }
+.btn:hover { background: color-mix(in srgb, var(--bg-elevated) 82%, white); }
+.btn:active { transform: translateY(0.5px); }
+.btn[data-v="primary"] { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.btn[data-v="primary"]:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
+.btn[data-v="ghost"] { background: transparent; border-color: transparent; color: var(--fg-dim); }
+.btn[data-v="ghost"]:hover { background: var(--bg-elevated); color: var(--fg); }
+.btn[data-v="danger"] { background: transparent; border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
+.btn[data-v="danger"]:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.btn[disabled] { opacity: 0.4; pointer-events: none; }
+.btn[data-busy] { color: transparent; position: relative; }
+.btn[data-busy]::after {
+  content: ""; position: absolute; inset: 0; margin: auto;
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1.5px solid var(--fg-muted); border-top-color: var(--fg);
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.btn:focus-visible, .nav-row:focus-visible, .toggle:focus-visible,
+.seg button:focus-visible, .sel:focus-visible, .field:focus-visible,
+.lane-row:focus-visible, .subtabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Toggle */
+.toggle {
+  width: 38px; height: 22px; flex: none;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  position: relative;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.toggle::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--fg-dim);
+  transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.toggle[aria-checked="true"] { background: var(--accent); border-color: transparent; }
+.toggle[aria-checked="true"]::after { transform: translateX(16px); background: var(--on-accent); }
+.toggle[disabled] { opacity: 0.4; pointer-events: none; }
+
+/* SegmentControl — the one authored motion moment: the thumb slides. */
+.seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--bg-inset); border-radius: 999px; border: 1px solid var(--border); }
+.seg button {
+  padding: 4px 12px; border-radius: 999px;
+  font-size: var(--t-label); font-weight: 500; color: var(--fg-dim);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.seg button:hover { color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--bg-elevated); color: var(--fg); font-weight: 550; }
+[data-density="standard"] .seg button[aria-pressed="true"],
+[data-density="roomy"] .seg button[aria-pressed="true"] { color: var(--accent); }
+
+/* Select and text field — a border here means "you can put something in it". */
+.sel, .field {
+  height: 28px; padding: 0 9px;
+  min-width: 0;
+  border-radius: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-size: var(--t-label);
+  color: var(--fg);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.sel-wrap { position: relative; display: inline-flex; }
+.sel-wrap::after {
+  content: "";
+  position: absolute; right: 10px; top: 50%;
+  width: 5px; height: 5px;
+  border-right: 1.5px solid var(--fg-muted);
+  border-bottom: 1.5px solid var(--fg-muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+.sel { padding-right: 26px; appearance: none; width: 100%; }
+.sel:hover, .field:hover { border-color: var(--border-strong); }
+textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: vertical; width: 100%; font-family: inherit; }
+.field::placeholder { color: var(--fg-muted); }
+.field[data-invalid] { border-color: var(--danger); }
+
+.field-wrap { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.meter { display: flex; align-items: center; justify-content: space-between; font-size: var(--t-micro); color: var(--fg-muted); }
+.meter .bar { flex: 1; height: 2px; margin: 0 var(--s2); background: var(--bg-inset); border-radius: 2px; overflow: hidden; }
+.meter .bar i { display: block; height: 100%; background: var(--fg-muted); }
+.meter[data-over] .bar i { background: var(--danger); }
+.meter[data-over] { color: var(--danger); }
+
+/* ── Stepper ────────────────────────────────────────────────────────────────
+   The shipped kit already has one (`shell/Stepper.tsx`, "macOS-style numeric
+   stepper") and the redesign was quietly dropping back to a bare number field.
+   A minute count is bounded, small and adjusted by one — the two buttons are
+   the whole affordance, and the unit belongs inside the control, not in a
+   sentence beside it. */
+.stepper {
+  display: inline-flex; align-items: center;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.stepper:hover { border-color: var(--border-strong); }
+.stepper button {
+  width: 26px; height: 100%;
+  display: grid; place-items: center;
+  color: var(--fg-dim);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.stepper button:hover { background: var(--bg-elevated); color: var(--fg); }
+.stepper button[disabled] { opacity: 0.3; pointer-events: none; }
+.stepper button svg { width: 11px; height: 11px; }
+.stepper .val {
+  min-width: 38px; padding: 0 4px;
+  text-align: center;
+  font-size: var(--t-label);
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  align-self: stretch;
+  display: grid; place-items: center;
+}
+.stepper .unit { padding: 0 9px 0 8px; font-size: var(--t-micro); color: var(--fg-muted); white-space: nowrap; }
+
+/* ── Slider ─────────────────────────────────────────────────────────────────
+   For a value with no meaningful unit to type. The read-out is not decoration:
+   the cue volume multiplies with the OS volume, so without a number there is
+   no telling an in-app change from a system one. */
+.slider { display: flex; align-items: center; gap: var(--s3); width: 172px; }
+.slider .track {
+  flex: 1; height: 4px; border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  position: relative;
+}
+.slider .track i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.slider .knob {
+  position: absolute; top: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--fg); border: 1px solid rgba(0,0,0,0.35);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+.slider .out { width: 34px; flex: none; text-align: right; font-size: var(--t-label); color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Input level ────────────────────────────────────────────────────────────
+   Not a waveform. The shipped meter draws the speech threshold into the track
+   because that mark is the whole point: a capture whose peak never crosses it
+   is discarded as empty, which is what a microphone set too quietly looks
+   like. A decorative waveform states a level and hides the bar to clear. */
+.level { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.level .track { position: relative; height: 8px; border-radius: 999px; background: var(--bg-inset); border: 1px solid var(--border); overflow: hidden; }
+.level .fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--success); }
+.level .hold { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); }
+/* Cut into the bar rather than drawn over it, so the mark stays legible
+   whether the fill has reached it or not. */
+.level .thr { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--bg-base); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.level[data-state="quiet"] .fill { background: var(--fg-muted); }
+.level[data-state="hot"] .fill { background: var(--danger); }
+.level .verdict { font-size: var(--t-label); color: var(--fg-dim); display: flex; align-items: center; gap: 6px; }
+.level[data-state="quiet"] .verdict, .level[data-state="hot"] .verdict { color: var(--danger); }
+.level .verdict .thr-key { color: var(--fg-muted); margin-left: auto; font-size: var(--t-micro); }
+
+/* ── Disclosure ─────────────────────────────────────────────────────────────
+   The donor's lesson in reverse: twelve identical rows in one card is a lot of
+   equal weight, so the recommended path stays visible and the rest folds. The
+   summary states what is inside, never "Advanced". */
+.disc { border-top: 1px solid var(--border); }
+.disc > summary {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--row-py) 0;
+  font-size: var(--t-label); font-weight: 500; color: var(--fg-dim);
+  list-style: none; cursor: pointer;
+}
+.disc > summary::-webkit-details-marker { display: none; }
+.disc > summary:hover { color: var(--fg); }
+.disc > summary svg { width: 12px; height: 12px; color: var(--fg-muted); transition: transform var(--dur-base) var(--ease); }
+.disc[open] > summary svg { transform: rotate(90deg); }
+.disc > summary .n { margin-left: auto; font-size: var(--t-micro); color: var(--fg-muted); }
+.disc > .rows { padding-bottom: var(--s2); }
+.disc > .rows > .row:first-child { border-top: 1px solid var(--border); }
+
+/* Key cap — a hotkey is a target you click, with visible caps. */
+.kbd { display: inline-flex; align-items: center; gap: 3px; }
+.kbd kbd {
+  font-family: var(--font);
+  font-size: var(--t-micro); font-weight: 600;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg);
+}
+.kbd-btn { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px 3px 5px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); }
+.kbd-btn:hover { border-color: var(--border-strong); }
+.kbd-btn .edit { font-size: var(--t-micro); color: var(--fg-muted); }
+.kbd-btn[data-empty] kbd { background: transparent; border-style: dashed; color: var(--fg-muted); font-weight: 500; }
+
+/* Badge and dot */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 20px; padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--t-micro); font-weight: 600; letter-spacing: 0.01em;
+  background: var(--bg-elevated); color: var(--fg-dim);
+  border: 1px solid transparent;
+}
+.badge[data-tone="success"] { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
+.badge[data-tone="warning"] { color: var(--accent);  background: var(--accent-soft); }
+.badge[data-tone="danger"]  { color: var(--danger);  background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.badge[data-tone="accent"]  { color: var(--on-accent); background: var(--accent); }
+.badge[data-tone="plan"]    { color: var(--fg-muted); background: transparent; border-color: var(--border); }
+
+/* ── Scope tag ──────────────────────────────────────────────────────────────
+   Half of the shipped settings are per-profile in the code (delivery, mode,
+   language, bias, recording limits, workspace context) and global in the
+   presentation, which is how ADR 0024's second writable mode control happened.
+   Any row whose value belongs to the active profile says so and links to it —
+   one tag, always the same shape, so "what stays global" is readable at a
+   glance rather than learned by accident. */
+.scope {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 20px; padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: var(--t-micro); font-weight: 600;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.scope:hover { color: var(--fg); border-color: var(--border-strong); }
+.scope svg { width: 10px; height: 10px; }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--fg-muted); }
+.dot[data-tone="success"] { background: var(--success); }
+.dot[data-tone="warning"] { background: var(--accent); }
+.dot[data-tone="danger"]  { background: var(--danger); }
+
+/* ===========================================================================
+   7. NEW COMPONENTS — section 5.3
+   =========================================================================== */
+
+/* LaneCard — one card of radio rows. Replaces SegmentControl plus one card
+   per provider. Section 3, borrow 3. */
+.lane { display: flex; flex-direction: column; }
+.lane-row {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--row-py) 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left; width: 100%;
+}
+.lane-row:last-child { border-bottom: none; }
+.lane-tile {
+  width: 30px; height: 30px; flex: none;
+  border-radius: 8px;
+  background: var(--bg-inset);
+  display: grid; place-items: center;
+  color: var(--fg-dim);
+}
+.lane-row[aria-checked="true"] .lane-tile { background: var(--accent-soft); color: var(--accent); }
+.lane-tile svg { width: 15px; height: 15px; }
+.lane-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.lane-text b { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: var(--s2); }
+.lane-text span { font-size: var(--t-label); color: var(--fg-dim); }
+.radio {
+  width: 17px; height: 17px; flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  display: grid; place-items: center;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.lane-row[aria-checked="true"] .radio { border-color: var(--accent); }
+.radio::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform var(--dur-fast) var(--ease); }
+.lane-row[aria-checked="true"] .radio::after { transform: scale(1); }
+
+/* SubTabs — pill row under a section header. Depth goes here, never into the
+   sidebar. Section 4.3 rule 2. */
+.subtabs { display: flex; gap: var(--s1); padding: 3px; background: var(--bg-inset); border-radius: 999px; align-self: flex-start; border: 1px solid var(--border); }
+.subtabs button {
+  padding: 5px 13px; border-radius: 999px;
+  font-size: var(--t-label); font-weight: 500; color: var(--fg-dim);
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.subtabs button:hover { color: var(--fg); }
+.subtabs button[aria-selected="true"] { background: var(--bg-elevated); color: var(--fg); font-weight: 550; }
+[data-density="roomy"] .subtabs button[aria-selected="true"] { color: var(--accent); }
+
+/* PreviewBanner — a preview says so, on the surface, every time.
+   Section 4.3 rule 5 and section 7. */
+.banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px var(--s3);
+  border-radius: 10px;
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-strong);
+}
+.banner > svg { width: 15px; height: 15px; color: var(--fg-muted); margin-top: 1px; }
+.banner-text { font-size: var(--t-label); color: var(--fg-dim); }
+.banner-text b { color: var(--fg); font-weight: 600; }
+
+/* EmptyState — one line and one action. Never an illustration.
+   Section 3, borrow 5. */
+.empty {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: var(--s8) var(--s5);
+  text-align: center;
+}
+.empty > svg { width: 22px; height: 22px; color: var(--fg-muted); }
+.empty p { font-size: 13px; color: var(--fg-dim); }
+
+/* DangerRow — destructive, red, last in its card. Section 3, borrow 7. */
+.row[data-danger] > .row-text > b { color: var(--danger); }
+
+/* StatTiles */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--s2); }
+.stat { background: var(--bg-surface); border: var(--card-border); border-radius: var(--radius-card); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: 3px; }
+.stat b { font-size: var(--t-title); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat span { font-size: var(--t-micro); color: var(--fg-muted); letter-spacing: 0.02em; }
+.stat[data-tone="success"] b { color: var(--success); }
+.stat[data-tone="warning"] b { color: var(--accent); }
+
+/* ===========================================================================
+   8. COMPOSITE PATTERNS
+   =========================================================================== */
+
+/* Hero — Home only. */
+.hero { background: var(--bg-surface); border: var(--card-border); border-radius: var(--radius-card); padding: var(--s6); display: flex; flex-direction: column; gap: var(--s4); }
+.hero-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.hero h2 { font-family: var(--font-display); font-size: var(--t-hero); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.hero p { font-size: 13px; color: var(--fg-dim); max-width: 60ch; }
+.hero-actions { display: flex; gap: var(--s2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 10px; border-radius: 999px; background: var(--bg-inset); font-size: var(--t-micro); font-weight: 500; color: var(--fg-dim); }
+
+/* ── Toolbar ────────────────────────────────────────────────────────────────
+   Filters are not settings. The shipped History spends a card of labelled
+   FormRows on a search box, a status select and a toggle; here they sit on one
+   line directly above the list they act on, which is where every list view in
+   macOS puts them. The count moves to the section header, because a count is
+   the result of the filter, not another filter. */
+.toolbar { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.toolbar .search { position: relative; flex: 1; min-width: 190px; display: flex; }
+.toolbar .search > svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; color: var(--fg-muted); pointer-events: none; }
+.toolbar .search .field { width: 100%; padding-left: 27px; }
+.toolbar .right { margin-left: auto; }
+
+/* List rows — history, profiles, targets, notes, uploads.
+   content-visibility per section 6 P5. */
+.list { display: flex; flex-direction: column; }
+.list-item {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--row-py) 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left; width: 100%;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
+}
+.list-item:last-child { border-bottom: none; }
+.list-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.list-item-text b { font-size: 13px; font-weight: 450; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-item-meta { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-label); color: var(--fg-muted); flex-wrap: wrap; }
+.list-item-meta .sep { opacity: 0.5; }
+.list-actions { display: flex; gap: var(--s1); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.list-item:hover .list-actions, .list-item:focus-within .list-actions { opacity: 1; }
+
+/* Two-pane — Profiles, Agents.
+   minmax(0, …) on both tracks: a bare `1fr` takes its automatic minimum from
+   the content, which lets a long row push the whole pane past the column. */
+.split { display: grid; grid-template-columns: minmax(0, 210px) minmax(0, 1fr); gap: var(--s4); align-items: start; }
+.split-rail, .split-main { min-width: 0; }
+
+/* ── Pane: a list column and its detail, as ONE surface ─────────────────────
+   The list is not a card. Two cards side by side read as two unrelated boxes
+   with no stated relationship — which is exactly how the first build of
+   Profiles, Notes and Chat failed. The column belongs to the window: it is
+   borderless, sits on the sidebar plane, and is separated by a hairline.
+   Selection in the column governs everything to the right of that hairline. */
+
+.pane {
+  display: grid;
+  grid-template-columns: minmax(0, 236px) minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  flex: 1;
+}
+.pane-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-sidebar) 55%, var(--bg-base));
+}
+.pane-list-head {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s3) var(--s3) var(--s2);
+}
+.pane-list-head b { font-size: var(--t-label); font-weight: 600; color: var(--fg-dim); flex: 1; }
+.pane-list-head .count { font-size: var(--t-micro); color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+.pane-search { padding: 0 var(--s3) var(--s2); }
+.pane-search .field { width: 100%; }
+.pane-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--s2) var(--s2); }
+.pane-group { display: flex; flex-direction: column; }
+.pane-group > label { font-size: var(--t-micro); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fg-muted); padding: var(--s2) 10px 4px; }
+.pane-row .pin { color: var(--accent); display: grid; place-items: center; }
+.pane-row .pin svg { width: 12px; height: 12px; color: var(--accent); margin: 0; }
+
+/* Message bubbles — Chat carries a sender, a time and a copy action per turn */
+.bubble { max-width: 82%; border-radius: 10px; padding: 9px 12px; background: var(--bg-surface); position: relative; }
+.msg[data-from="me"] { flex-direction: row-reverse; }
+.msg[data-from="me"] .bubble { background: var(--accent-soft); }
+.bubble-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); margin-bottom: 3px; }
+.bubble-head b { font-size: var(--t-micro); font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-muted); }
+.bubble-head time { font-size: var(--t-micro); color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+.bubble p { font-size: 13px; line-height: 1.6; color: var(--fg); }
+.bubble .fail { font-size: var(--t-micro); color: var(--danger); margin-top: 3px; }
+.bubble .copy { position: absolute; top: 5px; right: 5px; opacity: 0; width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: var(--fg-muted); transition: opacity var(--dur-fast) var(--ease); }
+.bubble:hover .copy, .bubble:focus-within .copy { opacity: 1; }
+.bubble .copy:hover { background: var(--bg-elevated); color: var(--fg); }
+.bubble .copy svg { width: 11px; height: 11px; }
+
+/* Typing indicator — three dots, the one place a loop is the message.
+   Opacity, not a hop: a bouncing dot reads as decoration, and this is the only
+   animation in the surface that runs unattended. */
+.typing { display: inline-flex; align-items: center; gap: 4px; padding: 12px 13px; background: var(--bg-surface); border-radius: 10px; }
+.typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--fg-muted); animation: pulse 1.2s var(--ease) infinite; }
+.typing i:nth-child(2) { animation-delay: 0.16s; }
+.typing i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes pulse { 0%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+
+/* Speaker tags — Notes */
+.speakers { display: flex; flex-wrap: wrap; gap: 6px; }
+.speaker { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 10px; border-radius: 999px; font-size: var(--t-micro); font-weight: 550; }
+.speaker[data-tone="a"] { background: var(--accent-soft); color: var(--accent); }
+.speaker[data-tone="b"] { background: color-mix(in srgb, var(--voice) 16%, transparent); color: var(--voice); }
+.speaker[data-tone="c"] { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+
+/* Reading pane — transcript and enhanced output are read, not edited */
+.readout { background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: var(--s4); font-size: 13px; line-height: 1.7; color: var(--fg); white-space: pre-wrap; }
+.readout .lead { display: flex; align-items: center; gap: 6px; font-size: var(--t-micro); font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-muted); margin-bottom: var(--s2); }
+.readout .lead svg { width: 12px; height: 12px; color: var(--accent); }
+
+.pane-row {
+  width: 100%;
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  text-align: left;
+  color: var(--fg-dim);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
+}
+.pane-row:hover { background: var(--bg-surface); color: var(--fg); }
+.pane-row[aria-current="true"] { background: var(--nav-active-bg); color: var(--nav-active-fg); }
+.pane-row[aria-current="true"] svg { color: var(--nav-active-icon); }
+.pane-row svg { width: 15px; height: 15px; margin-top: 2px; color: var(--fg-muted); }
+.pane-row-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.pane-row-text b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-row-text span { font-size: var(--t-micro); color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-list-foot { padding: var(--s2); border-top: 1px solid var(--border); }
+
+.pane-detail {
+  min-width: 0;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.pane-detail-head {
+  padding: var(--s4) var(--content-pad) var(--s3);
+  display: flex; align-items: flex-start; gap: var(--s3);
+  border-bottom: 1px solid var(--border);
+}
+.pane-detail-head .grow > h2 { font-size: var(--t-lead); font-weight: 600; letter-spacing: -0.01em; }
+.pane-detail-head .grow > p { font-size: var(--t-label); color: var(--fg-dim); margin-top: 2px; }
+.pane-detail-body {
+  flex: 1; min-height: 0;
+  padding: var(--s4) var(--content-pad) var(--content-pad);
+  display: flex; flex-direction: column; gap: var(--gap-row);
+}
+.pane-detail-body > .subtabs { margin-bottom: var(--s1); }
+
+/* ── Solo: one centred column ───────────────────────────────────────────────
+   For a view whose whole job is one action, or one that is not set up yet.
+   The donor uses it for Upload and for a feature awaiting configuration; it
+   is honest in a way a populated fake layout is not. */
+.solo { max-width: 460px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: var(--s4); align-items: center; text-align: center; }
+.solo-head { display: flex; flex-direction: column; gap: 5px; align-items: center; }
+.solo-head .tile { width: 38px; height: 38px; border-radius: 10px; background: var(--bg-surface); display: grid; place-items: center; color: var(--fg-dim); margin-bottom: var(--s2); }
+.solo-head .tile svg { width: 18px; height: 18px; }
+.solo-head h2 { font-size: var(--t-lead); font-weight: 600; letter-spacing: -0.01em; }
+.solo-head p { font-size: var(--t-label); color: var(--fg-dim); }
+.solo > .card, .solo > .banner { width: 100%; text-align: left; }
+
+.dropzone {
+  width: 100%;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-inset);
+  padding: var(--s8) var(--s5);
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.dropzone:hover { border-color: var(--accent); }
+.dropzone svg { width: 20px; height: 20px; color: var(--fg-muted); }
+.dropzone b { font-size: 13px; font-weight: 500; }
+.dropzone span { font-size: var(--t-micro); color: var(--fg-muted); }
+
+/* ── Action strip — Home's attention line ───────────────────────────────────
+   Present only when something is actually owed. A permanently visible banner
+   telling the user everything is fine is furniture, not information. */
+.strip {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: 11px var(--s4);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+.strip > svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
+.strip-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.strip-text b { font-size: 13px; font-weight: 550; }
+.strip-text span { font-size: var(--t-label); color: var(--fg-dim); }
+
+/* ── Chips — a word list is chips, not rows with hover actions ──────────── */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-x {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 6px 0 10px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-size: var(--t-label);
+  color: var(--fg);
+}
+.chip-x[data-origin="learned"] { border-color: color-mix(in srgb, var(--voice) 35%, transparent); }
+.chip-x button { display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; color: var(--fg-muted); }
+.chip-x button:hover { background: var(--bg-elevated); color: var(--fg); }
+.chip-x button svg { width: 9px; height: 9px; }
+
+/* ── Group label — a small caption above a card group ───────────────────── */
+.grp { display: flex; flex-direction: column; gap: 7px; }
+.grp > label { font-size: var(--t-micro); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fg-muted); padding-left: 2px; }
+
+/* Copyable command */
+.cmd { display: flex; align-items: center; gap: var(--s2); background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 7px 7px 7px 10px; }
+.cmd code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--t-label); color: var(--fg-dim); overflow-x: auto; white-space: nowrap; }
+
+/* Composer — pinned to the foot of its column */
+.composer { display: flex; align-items: flex-end; gap: var(--s2); padding: var(--s3) 0 0; border-top: 1px solid var(--border); margin-top: auto; }
+.split-rail { background: var(--bg-surface); border: var(--card-border); border-radius: var(--radius-card); padding: var(--s2); display: flex; flex-direction: column; gap: 1px; }
+.rail-row { display: flex; align-items: center; gap: var(--s2); padding: 8px 10px; border-radius: 8px; text-align: left; width: 100%; font-size: 13px; color: var(--fg-dim); }
+.rail-row svg { width: 15px; height: 15px; color: var(--fg-muted); }
+.rail-row:hover { background: var(--bg-elevated); color: var(--fg); }
+.rail-row[aria-current="true"] { background: var(--bg-elevated); color: var(--fg); font-weight: 550; }
+.rail-row .rail-sub { font-size: var(--t-micro); color: var(--fg-muted); }
+.split-main { display: flex; flex-direction: column; gap: var(--gap-row); min-width: 0; }
+
+/* Checklist — local runtime setup, onboarding, preflight. */
+.check { display: flex; align-items: flex-start; gap: 10px; padding: var(--row-py) 0; border-bottom: 1px solid var(--border); }
+.check:last-child { border-bottom: none; }
+.check > .mark { width: 18px; height: 18px; flex: none; border-radius: 50%; display: grid; place-items: center; margin-top: 1px; }
+.check > .mark svg { width: 11px; height: 11px; }
+.check[data-state="ok"]   > .mark { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.check[data-state="todo"] > .mark { background: var(--bg-inset); color: var(--fg-muted); border: 1px solid var(--border); }
+.check[data-state="fail"] > .mark { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.check-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.check-text b { font-size: 13px; font-weight: 500; }
+.check-text span { font-size: var(--t-label); color: var(--fg-dim); }
+.check-text code { font-family: var(--font-mono); font-size: var(--t-micro); color: var(--fg-muted); }
+
+/* Stepper — onboarding. */
+.steps { display: flex; align-items: center; gap: var(--s2); }
+.step { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-label); color: var(--fg-muted); }
+.step .n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: var(--t-micro); font-weight: 650; background: var(--bg-inset); border: 1px solid var(--border); }
+.step[data-state="done"] .n { background: var(--success); color: var(--bg-base); border-color: transparent; }
+.step[data-state="done"] { color: var(--fg-dim); }
+.step[data-state="now"] .n { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.step[data-state="now"] { color: var(--fg); font-weight: 550; }
+.steps .bar { width: 24px; height: 1px; background: var(--border-strong); }
+
+/* Log — diagnostics. */
+.log { font-family: var(--font-mono); font-size: var(--t-micro); line-height: 1.7; background: var(--bg-inset); border-radius: 8px; padding: var(--s3); max-height: 210px; overflow: auto; border: 1px solid var(--border); }
+.log div { display: flex; gap: var(--s2); white-space: nowrap; content-visibility: auto; contain-intrinsic-size: auto 19px; }
+.log .ts { color: var(--fg-muted); }
+.log .lv { width: 42px; flex: none; }
+.log .lv[data-l="INFO"] { color: var(--voice); }
+.log .lv[data-l="WARN"] { color: var(--accent); }
+.log .lv[data-l="ERROR"] { color: var(--danger); }
+.log .msg { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; }
+
+/* Diff — live preview and commit. */
+.diff { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+.diff-pane { background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.diff-pane > h4 { font-size: var(--t-micro); font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted); }
+.diff-pane p { font-size: 13px; line-height: 1.6; color: var(--fg-dim); }
+.diff-pane[data-side="out"] p { color: var(--fg); }
+.diff mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 2px; }
+.diff del { color: var(--fg-muted); text-decoration-color: var(--danger); }
+
+/* Thread — agents preview. */
+.thread { display: flex; flex-direction: column; gap: var(--s3); }
+.msg { display: flex; gap: 10px; }
+.msg .who { width: 24px; height: 24px; flex: none; border-radius: 7px; display: grid; place-items: center; font-size: 10px; font-weight: 700; background: var(--bg-inset); color: var(--fg-muted); }
+.msg[data-from="ws"] .who { background: var(--accent-soft); color: var(--accent); }
+.msg-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.msg-body p { font-size: 13px; color: var(--fg-dim); }
+.msg-body .when { font-size: var(--t-micro); color: var(--fg-muted); }
+.msg-opts { display: flex; gap: var(--s1); flex-wrap: wrap; margin-top: 3px; }
+
+/* Waveform — a real geometric bar chart, not a picture of one. */
+.wave { display: flex; align-items: center; gap: 2px; height: 20px; }
+.wave i { width: 2px; border-radius: 1px; background: var(--voice); opacity: 0.85; }
+
+/* ===========================================================================
+   9. DESIGN SYSTEM VIEW — the system, shown as itself
+   =========================================================================== */
+
+.ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: var(--s2); }
+.swatch { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+.swatch .chipx { height: 46px; }
+.swatch .meta { padding: 7px 9px; background: var(--bg-surface); display: flex; flex-direction: column; gap: 1px; }
+.swatch .meta b { font-size: var(--t-label); font-weight: 550; }
+.swatch .meta span { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); }
+
+.spec { width: 100%; border-collapse: collapse; font-size: var(--t-label); }
+.spec th { text-align: left; font-weight: 600; color: var(--fg-muted); font-size: var(--t-micro); letter-spacing: 0.06em; text-transform: uppercase; padding: 0 var(--s3) var(--s2) 0; }
+.spec td { padding: 8px var(--s3) 8px 0; border-top: 1px solid var(--border); color: var(--fg-dim); vertical-align: baseline; }
+.spec td:first-child { color: var(--fg); font-weight: 500; }
+.spec td.n { font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: var(--t-micro); }
+.spec .pass { color: var(--success); }
+.spec .fail { color: var(--danger); }
+.spec .warn { color: var(--accent); }
+.spec-scroll { overflow-x: auto; }
+
+.states { display: flex; flex-wrap: wrap; gap: var(--s5) var(--s6); }
+.state { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.state > label { font-size: var(--t-micro); color: var(--fg-muted); letter-spacing: 0.04em; }
+
+.ramp { display: flex; flex-direction: column; gap: 1px; border-radius: 10px; overflow: hidden; }
+.ramp-row { display: flex; align-items: center; gap: var(--s3); padding: 10px var(--s3); font-size: var(--t-label); }
+.ramp-row .lbl { width: 108px; flex: none; font-weight: 550; }
+.ramp-row .val { font-family: var(--font-mono); font-size: var(--t-micro); opacity: 0.75; }
+.ramp-row .lstar { margin-left: auto; font-family: var(--font-mono); font-size: var(--t-micro); opacity: 0.75; }
+
+.type-row { display: flex; align-items: baseline; gap: var(--s4); padding: var(--s2) 0; border-bottom: 1px solid var(--border); }
+.type-row:last-child { border-bottom: none; }
+.type-row .tag { width: 96px; flex: none; font-size: var(--t-micro); color: var(--fg-muted); font-family: var(--font-mono); }
+
+.rhythm { display: flex; align-items: flex-end; gap: var(--s3); }
+.rhythm div { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 10px; color: var(--fg-muted); font-family: var(--font-mono); }
+.rhythm i { display: block; width: 100%; background: var(--accent-soft); border-top: 2px solid var(--accent); }
+
+.motion-demo { display: flex; gap: var(--s5); flex-wrap: wrap; }
+
+/* ===========================================================================
+   10. UTILITIES
+   =========================================================================== */
+
+.stack { display: flex; flex-direction: column; }
+.gap2 { gap: var(--s2); } .gap3 { gap: var(--s3); } .gap4 { gap: var(--s4); }
+.rowflex { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.link { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); font-weight: 500; }
+.link:hover { border-bottom-color: var(--accent); }
+.note { font-size: var(--t-label); color: var(--fg-muted); display: flex; align-items: flex-start; gap: 7px; }
+.note svg { width: 13px; height: 13px; margin-top: 2px; flex: none; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+/* Scrollbars — narrow, from the surface palette, no custom behaviour. */
+.content::-webkit-scrollbar, .nav::-webkit-scrollbar, .log::-webkit-scrollbar, .stage::-webkit-scrollbar { width: 9px; height: 9px; }
+.content::-webkit-scrollbar-thumb, .nav::-webkit-scrollbar-thumb, .log::-webkit-scrollbar-thumb, .stage::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 999px; border: 2px solid transparent; background-clip: content-box;
+}
+.stage::-webkit-scrollbar-thumb { background: #2c2c2f; background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+
+/* Responsive behaviour is structural: panes stack, the sidebar narrows. Type
+   and spacing do not scale — a window is viewed at a consistent size. */
+@media (max-width: 1000px) {
+  .split { grid-template-columns: 1fr; }
+  .diff { grid-template-columns: 1fr; }
+  .nav { width: 190px; }
+  .rig { gap: var(--s3); }
+  .stage { padding: var(--s3); }
+}
