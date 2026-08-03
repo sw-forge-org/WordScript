@@ -6656,6 +6656,96 @@
         })
       ),
 
+      /* FOURTEENTH PASS — THE CROSSING ITSELF.
+         Everything above this point was the offer: why it exists, what the two
+         keys do, where the line runs. What the screen never drew is the thing
+         the line is FOR — what actually goes across when Enter is pressed. That
+         omission mattered, because ADR 0044's privacy claim lives entirely in
+         this step: "the assistant reads what is on this disk, the desk reaches
+         what comes over the network" is only true if you can see what left the
+         disk. A boundary nobody can inspect is a boundary nobody can trust. */
+      sec("What crosses",
+        "The assistant assembles the brief before it hands over, because gathering is a read and reads are what the assistant is allowed to do. The desk receives a finished prompt and never searches for anything.",
+        card({
+          body: '<div class="cross">' +
+            '<div class="cross-side">' +
+            '<span class="cross-label">' + icon("check") + t("Handed over") + "</span>" +
+            '<ul class="cross-list">' +
+            [["The sentence, verbatim", "Not a paraphrase. It is the thing that will be acted on, so it is the thing you were shown."],
+             ["3 objects from the Acme review", "The decisions, the attendee list and the follow-up note — read off this disk by the assistant."],
+             ["Target and role", "General · work. Set once, on the target, not spoken into the dictation."]]
+              .map(function (r) {
+                return "<li><b>" + t(r[0]) + "</b><span>" + p(r[1]) + "</span></li>";
+              }).join("") + "</ul></div>" +
+
+            /* THE OTHER COLUMN IS THE POINT. A list of what was sent is a
+               feature description; a list of what was deliberately NOT sent is
+               the privacy boundary being shown rather than asserted. */
+            '<div class="cross-side" data-held>' +
+            '<span class="cross-label">' + icon("privacy") + t("Stayed here") + "</span>" +
+            '<ul class="cross-list">' +
+            [["The audio", "Discarded after transcription, as on every other path. The desk never receives sound."],
+             ["Your other context objects", "The assistant read three and sent three. Nothing is handed over on the chance it might be useful."],
+             ["Your API keys", "The desk authenticates with its own credentials to its own connectors. WordScript's keys never leave the OS secret store."],
+             ["Profiles, dictionary, history", "Personalization is how the text was produced. It is not part of what was asked."]]
+              .map(function (r) {
+                return "<li><b>" + t(r[0]) + "</b><span>" + p(r[1]) + "</span></li>";
+              }).join("") + "</ul></div>" +
+            "</div>",
+          rows: [
+            row({
+              label: "Inspect before handing over",
+              hint: "The brief is readable in the card. A handoff you cannot read before pressing the key is the silent auto-handoff this record forbids, arrived at by a different route.",
+              ctl: btn("Show the brief", "ghost", { icon: "eye" })
+            }),
+          ]
+        })
+      ),
+
+      /* The second half of the same omission: the offer had two documented
+         outcomes and the screen drew neither of them past the keypress. */
+      sec("After the key",
+        "Four steps, and the first two are the ones that make it safe.",
+        card({
+          body: '<ol class="crossflow">' +
+            [["The card closes and nothing is inserted", "The dictation does not also go to your cursor. One sentence produces one outcome — the failure this whole record exists to remove is a sentence that lands in two places."],
+             ["A new thing starts, with its own lifetime", "The session that offered the handoff ends in its own single commit (ADR 0018). It does not stay open waiting for the run; the run is not part of it."],
+             ["The thread opens in the agent window", "Your sentence is its first entry, which is why a handed-over dictation is not in the transcript history — it is in the thread, where the answer to it will be."],
+             ["The overlay tab says so", "The same left slot the agent tab uses. A handed-over session runs no finalization, so it learns no words, so the learned-word tab cannot be there at the same time."]]
+              .map(function (r) {
+                return "<li><b>" + t(r[0]) + "</b><span>" + p(r[1]) + "</span></li>";
+              }).join("") + "</ol>"
+        })
+      ),
+
+      sec("And when it comes back",
+        "The desk answers what it can and reaches you for what it cannot. That is a filter, and a filter has an output.",
+        card({
+          rows: [
+            row({
+              label: "It finished",
+              hint: "A line in the thread and the cue that means a round trip completed. No card, no interruption — you asked for it, it happened.",
+              ctl: badge("Thread only", "success")
+            }),
+            row({
+              label: "It has a question",
+              hint: "A row in Home's decision inbox, sorted by what happens if you do nothing. A desk question expires and takes its blocked run with it, which is why that column and not urgency decides the order.",
+              ctl: btn("Open the inbox", "ghost", { icon: "arrow" })
+            }),
+            row({
+              label: "It asked out loud",
+              hint: "Only when you configured it to. One spoken field, length-limited, and the answer is returned verbatim — the desk may compose the question, never the answer.",
+              ctl: badge("ADR 0030", "plan")
+            }),
+            row({
+              label: "The offer was wrong",
+              hint: "You pressed Escape and got a dictation. That costs one keystroke and no words, and it is the entire budget the effect-verb recogniser has: if refusals become common the recogniser is wrong, and the fix is fewer offers rather than a faster path through one.",
+              ctl: badge("One keystroke", "success")
+            }),
+          ]
+        })
+      ),
+
       sec("It is the same tab",
         "While a handed-over run is working, the overlay says so with the component it already has.",
         '<div class="ovp-stage">' +

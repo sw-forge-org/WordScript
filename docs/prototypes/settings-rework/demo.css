@@ -3995,6 +3995,83 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
 .linecmp-row > span:first-child { color: var(--fg); font-weight: 500; }
 .linecmp-row[data-head] > span:first-child { color: var(--fg-muted); font-weight: 650; }
 
+/* ── What crosses the line ──────────────────────────────────────────────────
+   TWO COLUMNS, AND THE SECOND ONE IS THE ARGUMENT. A list of what was handed
+   over is a feature description. A list of what was deliberately held back is
+   the privacy boundary shown instead of asserted, which is the only form in
+   which ADR 0044's claim — the assistant reads this disk, the desk reaches the
+   network — is checkable by the person it is about.
+
+   THE HELD COLUMN IS NOT TINTED RED. Nothing here failed and nothing was
+   blocked: the material stayed where it belongs, which is the normal case and
+   the good one. A warning tint would teach that being handed over is the
+   correct outcome and everything else is an exception. The accent goes on the
+   column that crossed, for the same reason it goes on the desk's side of the
+   pair above — it marks the thing that leaves. */
+.cross { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+.cross-side {
+  display: flex; flex-direction: column; gap: var(--s3);
+  padding: var(--s4);
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.cross-side[data-held] {
+  background: var(--bg-inset);
+  border-color: var(--border);
+}
+.cross-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+  font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.cross-side[data-held] .cross-label { color: var(--fg-muted); }
+.cross-label svg { width: 13px; height: 13px; flex: none; }
+.cross-list { display: flex; flex-direction: column; gap: var(--s3); list-style: none; }
+.cross-list li { display: flex; flex-direction: column; gap: 2px; }
+.cross-list b {
+  font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+  font-size: var(--t-label); font-weight: 550; color: var(--fg);
+}
+.cross-list span {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+  font-size: var(--t-micro); line-height: 1.5; color: var(--fg-muted);
+}
+
+/* ── After the key ──────────────────────────────────────────────────────────
+   A numbered list, and the number is doing real work: this is the one sequence
+   in the product where the order is the safety argument. The counter is drawn
+   rather than left to the marker so it can sit on the same baseline as the
+   step's own title instead of hanging in the gutter. */
+.crossflow { display: flex; flex-direction: column; list-style: none; counter-reset: crossflow; }
+.crossflow li {
+  counter-increment: crossflow;
+  display: grid; grid-template-columns: 22px minmax(0, 1fr);
+  gap: 3px var(--s3);
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--border);
+}
+.crossflow li:first-child { border-top: 0; }
+.crossflow li::before {
+  content: counter(crossflow);
+  grid-row: span 2;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  color: var(--fg-dim);
+}
+.crossflow b {
+  font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+  font-size: var(--t-label); font-weight: 550; color: var(--fg);
+}
+.crossflow span {
+  font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+  font-size: var(--t-micro); line-height: 1.55; color: var(--fg-muted);
+}
+
 /* ── The copilot lane (ADR 0047) ────────────────────────────────────────────
    Above the bar, below the scroller, inside the HUD. It sits in the flow
    rather than floating, so it pushes the transcript up by its own height
