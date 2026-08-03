@@ -295,6 +295,41 @@ Status: Proposed | Accepted | Superseded by NNNN
   `locked` survives the end-of-call re-cluster, or every name typed during a
   call changes after it. Also fixes the meeting copilot's rules: it writes and
   never speaks, and never hints without a citation.
+- [0048](0048-a-light-mode-is-not-the-dark-one-inverted.md): a light mode is not
+  the dark one inverted — three settings, and `System` is the honest third: not
+  a palette but a deferral, resolved against `prefers-color-scheme` at render
+  time and re-resolved when the OS changes. The ladder is rebuilt rather than
+  flipped, because a dark UI raises a surface by lightening it and a light UI
+  cannot (the card is already white). The accent moves to `#b45c00`; the
+  identity orange measures 2.1:1 on white and is unusable as text there.
+- [0049](0049-the-orb-has-four-states-and-a-pulse-is-none-of-them.md): the orb
+  has four states — idle, listening, thinking, speaking — each moving the way
+  that state behaves, and none of them pulses. `thinking` is the state the
+  pulse was lying about: there is no amplitude there to represent, so a fixed
+  period invents one.
+- [0050](0050-the-keyboard-layer-and-what-only-rust-can-grant-it.md): the
+  keyboard layer and what only Rust can grant it — the shortcut assignment is
+  settled in the record so the native work implements rather than invents, and
+  the menu bar must mirror what the renderer handles, because a shortcut that
+  exists only as a `keydown` handler is invisible where macOS users look.
+- [0051](0051-frost-is-a-pair-and-it-is-not-backdrop-filter.md): frost is a
+  pair, and it is not `backdrop-filter` — the property is inert in WebKitGTK
+  2.52.4 while `@supports` reports it as supported, so it cannot be
+  feature-guarded and it fails silently on Linux while looking correct in a
+  Chromium preview. The material is `filter: blur()` on the layer behind, the
+  receding layers nest, and it applies only to a surface that floats and is
+  transient. Carries the measurement that replaced the old ban's wrong reason.
+- [0052](0052-the-item-carries-the-inset-so-the-separator-reaches-the-edge.md):
+  the item carries the horizontal inset and the stack spans the card, so a
+  group's separators reach its edge instead of floating between two margins.
+  The guard names every separated stack, which is the maintenance cost of the
+  arrangement and is deliberate.
+- [0053](0053-a-level-readout-belongs-next-to-what-it-measures.md): a level
+  readout appears where the thing it measures is happening and nowhere else —
+  it leaves Home, taking its card with it. `wave(n, seed)` is deleted because a
+  frozen bar row on a surface claiming to be listening is a fake state. The
+  matrix is ported whole rather than as the subset the product uses, with three
+  deviations from upstream marked at the point of change.
 
 ## Resolved: the number 0011 was used twice
 
@@ -322,8 +357,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-03 the filed range runs through 0047; the next
-decision takes 0048.)
+takes 0021. (As of 2026-08-04 the filed range runs through 0053; the next
+decision takes 0054.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

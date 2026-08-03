@@ -51,15 +51,19 @@ other pixel alone.
 
 ## What is in it
 
-23 screens, reachable from the **Screen** picker in the rig or from the
+25 screens, reachable from the **Screen** picker in the rig or from the
 navigation inside the mock window.
 
 | Group | Screens |
 | --- | --- |
 | System | Design System |
 | Workspace | Home · History · Profiles · Context |
-| Settings | General · Hotkeys · Notes & Meetings · AI Models · Agents · Integrations · Delivery & Insert · Privacy & Data · Account & Sync · Diagnostics · About & Updates |
-| Previews | Onboarding · Meeting capture · Agent overlay · Handoff · Context · intake · Actions & templates · Live preview & commit **(withdrawn)** · *(Notes & Meetings, Agents, Integrations, Account & Sync and Context are previews too, and live in the group they belong to)* |
+| Settings | General · Hotkeys · Notes & Meetings · AI Models · Agents · Integrations · Delivery & Insert · Privacy & Data · Diagnostics · About & Updates |
+| Previews | Onboarding · Translation · Live subtitles · Meeting capture · Client conversations · Agent overlay · Handoff · Context · intake · Actions & templates · Live preview & commit **(withdrawn)** · *(Notes & Meetings, Agents, Integrations and Context are previews too, and live in the group they belong to)* |
+
+*Account & Sync was removed on 2026-08-04 — there is no WordScript account and
+none is planned. Translation, Live subtitles and Client conversations arrived
+the same day.*
 
 **Settings is a sheet, so it is never on screen alone.** Picking any settings
 section renders the workspace view you last had open, with the sheet over it.
@@ -276,6 +280,159 @@ contributes only its open tab — the same thing the eye sees — so opening
 Profiles → Snippets instead of Profiles → Defaults moves the total. That is
 intended, and it is why the numbers here name the default state rather than a
 maximum.
+
+## What the fourteenth pass changed
+
+Landed 2026-08-04. Two halves: the documentation the thirteenth pass owed, and
+a list the owner supplied while it was being written.
+
+### The frost material is documented, and the old rule was wrong for the right reason
+
+`DESIGN_SYSTEM.md` banned `backdrop-filter` outright, on the assumption that a
+GPU-bound effect would produce the black blocks this shell already fights. The
+ban was right and its reason was wrong. Measured in WebKitGTK 2.52.4 against a
+6 px stripe ground, `backdrop-filter: blur(26px)` and the identical alpha with
+no blur at all both produce a stripe contrast of **0.0484** against an
+unoccluded 0.0858 — identical to four decimals. The property is inert, and
+`@supports` reports it as supported, so nothing about the failure is visible
+from a preview.
+
+Frost is therefore `filter: blur()` on the layer *behind*, it is a pair rather
+than a plane, and the receding layers nest — the shell behind the sheet, the
+shell plus the sheet behind the palette. [ADR 0051](../../decisions/0051-frost-is-a-pair-and-it-is-not-backdrop-filter.md)
+carries the table; `DESIGN_SYSTEM.md` gained Frost as a real surface class and
+lost both lines that contradicted the product.
+
+Two more records caught up with the build: [ADR 0052](../../decisions/0052-the-item-carries-the-inset-so-the-separator-reaches-the-edge.md)
+for the row grammar and [ADR 0053](../../decisions/0053-a-level-readout-belongs-next-to-what-it-measures.md)
+for the matrix. `src/styles/globals.css` lost `.glass`, `.glass-elevated`,
+`.glass-strong`, `.glass-subtle`, `.glass-panel`, `.ws-pill` and
+`--surface-glass`, plus the `glass` variants of `ui/card.tsx` and
+`ui/window.tsx` — six dead `backdrop-filter` classes no markup ever used
+(plan §5.3).
+
+### Two clipping defects, and one scan that finds them
+
+`.agw` was fixed at 340 px with `overflow: hidden`, and two of its grid items
+defaulted to `min-height: auto`. A grid item refuses to become shorter than its
+content, so the column kept its full 324 px and the window clipped the last
+12 px: the rail's two buttons and the whole answer strip, with no scrollbar and
+no mark. `.agw-thread` already carried `min-height: 0` and could not help — an
+inner scroller only absorbs what the chain above it allows to shrink. Same
+family as the Profiles defect fixed in the thirteenth pass, and the target list
+is now the rail's scroller.
+
+The open job disclosure aligned its rows with the summary's **grid** rather
+than with the summary's **text**, so every detail row began exactly on the left
+wall of its own well while the job's own name sat 25 px in. That is the defect
+ADR 0052 removed everywhere else, and the well made it more visible rather than
+less because the well has a visible edge.
+
+**The scan that finds this class of bug**, worth keeping — the first two
+versions of it produced hundreds of false positives, and both causes are worth
+knowing:
+
+- **Stop the walk at the first scrolling ancestor.** Content below the fold of
+  a scroll container is not clipped, it is scrolled to. Walking past it to the
+  window's own `overflow: hidden` reports every screen as broken.
+- **Filter on `checkVisibility()`.** A closed `<details>` in current Chromium
+  reports full geometry for content it is not painting, because the UA applies
+  `content-visibility: hidden` to `::details-content` rather than
+  `display: none`. Every collapsed disclosure looks like a clipping bug.
+- Skip `input`, `textarea` and `select`: a long value legitimately scrolls
+  inside its own box.
+- Beware scaled ancestors — `scrollWidth` is unscaled and
+  `getBoundingClientRect()` is not, so comparing them across a `transform:
+  scale()` invents an overflow. That is what the overlay tab's "8 px cut" was.
+- Run it once per density and scheme, with every `<details>` forced open, and
+  at a viewport taller than the simulated window. A short viewport reports the
+  pane layout as clipped on every screen, which is real for the browser and not
+  for the product.
+
+Clean across all 25 screens afterwards.
+
+### The provider marks came back, and the grid did not
+
+Owner's decision. The thirteenth pass replaced a seven-tile grid with a select,
+on the argument that a grid is a dropdown with every option permanently
+unfolded. Half of that holds and half of it did not: the complaint the grid
+answered was that a bare `<select>` throws away *whose logo it is*.
+
+So neither shape. A **chip row** — a mark and a name at row height, four or
+five to a line, wrapping when the lane has more. One to two rows instead of
+three, and unlike the select it answers "who can I even pick" without being
+opened. Shared through `providerPick()`, so onboarding's step 3 mirrors it
+without a second implementation.
+
+### Account & Sync is gone
+
+There is no WordScript account and none is planned. The screen was already
+honest — it led with that sentence and refused to draw a hosted tier — but a
+settings entry promises that a decision lives behind it, and this one had no
+decision in it. Its two real sentences moved: where the data lives to Privacy &
+Data, which already owned that question, and the vendor-account
+disambiguation to About's "Not built" list, where it now reads *not planned*
+rather than *not started*.
+
+### Four features that had never been sketched
+
+Three of them existed nowhere in the repo — not in ROADMAP, not in VISION, not
+in `docs/spec/`, not in fifty-three ADRs — so the owner supplied what they are.
+One was a typo in the handoff.
+
+- **Translation**, not "transcription mode". Its own window, because the
+  dictation contract breaks in three places the moment there are two people:
+  no insert target, no end after one utterance, and the output has to be heard.
+  ADR 0041's Translate *mode* is untouched. Two shapes — One way for a phrase,
+  Conversation for a table, where the language switch is detected rather than
+  pressed.
+
+  **The routing is the part a phone cannot do.** On a phone one speaker serves
+  both people. On this machine there are two output devices and two audiences
+  that do not want the same thing: theirs out loud so the room hears it, yours
+  in your ear so it does not hear every sentence twice. Per language, not per
+  device — the question is "what happens to this language", and the device is
+  the answer to it. Silent is a real setting and not a broken one.
+
+  Two things WordScript already had that a translator charges for: the glossary
+  is the profile's Words & names (ADR 0033, ADR 0035), learned from what you
+  dictate rather than typed into a form, and formality is the Translate job's
+  address form (ADR 0041).
+
+  **Practice mode was asked for, researched and not built.** The evaluation is
+  on the screen rather than in a backlog: it is a different product with its own
+  progress model and its own content, and VISION names a feature collection as
+  the thing WordScript is not. The one version that would not be a copy is one
+  built on the sentences you actually said, in your own vocabulary, that a
+  translator had to repair — a corpus that exists here and nowhere else. Filed
+  as a candidate, nothing built for it.
+
+- **Live subtitles is two features with one name**, and the screen keeps them
+  apart rather than reconciling them. *Captions* read somebody else's audio
+  into a placed strip that carries its own opaque ground (a frame can cut to
+  white mid-sentence), is excluded from frost — ADR 0051's excluded case, since
+  the surface behind belongs to somebody else's player — and is excluded from
+  screen shares. *Echo* reads your own voice under the pill as bare text with
+  no card, no border and no ground, splitting committed words from the still-
+  moving tail, with the colour measured against what is behind it rather than
+  taken from a token. It is off by default: most dictation is one sentence.
+
+- **Client conversations reuses the meeting window**, and the screen argues for
+  it. A second window would rebuild the shape ADR 0045 removed one release
+  after removing it, and would then need its own transcript view, speaker
+  handling, export and bugs. What is new lives in the object: `origin:
+  conversation`, the client it hangs on, one microphone carrying two voices,
+  and **consent** — asked once per client rather than per recording, because
+  asking every time trains the answer into a reflex. Refusing does not mean no
+  notes; the window runs with the microphone off and the record says it was
+  written rather than heard. The document it ends in states where each field's
+  value came from, and says "empty" when nobody named an owner.
+
+- **The handoff screen gained the crossing.** It explained the offer thoroughly
+  and stopped at the keypress, which left ADR 0044's privacy claim unverifiable
+  — "the assistant reads this disk, the desk reaches the network" is only
+  checkable if you can see what left the disk. Two columns: what was handed
+  over beside what was deliberately held back.
 
 ## What the tenth pass changed
 

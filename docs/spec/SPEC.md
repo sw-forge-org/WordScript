@@ -1,6 +1,6 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-02
+Status: created 2026-07-24, last drift check 2026-08-04
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.

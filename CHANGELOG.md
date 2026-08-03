@@ -55,6 +55,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Frost is a named surface class, and it is not `backdrop-filter`.** Measured
+  in WebKitGTK 2.52.4, the engine the Tauri host loads: `backdrop-filter:
+  blur(26px)` and the identical alpha with no blur produce the same stripe
+  contrast to four decimals (0.0484 against an unoccluded 0.0858). The property
+  is inert, `@supports` reports it as supported, and anything built on it looks
+  correct in a Chromium preview and ships to Linux as flat translucency. Frost
+  is `filter: blur()` on the layer behind, it is a pair rather than a plane
+  (the panel goes translucent, the window recedes), and the receding layers
+  nest. It applies only to a surface that floats and is transient — never a
+  card, never the sidebar, never the overlay (ADR 0051).
+- **Four features that had never been drawn.** A translation window with
+  one-way and conversation modes and per-language audio routing — theirs out
+  loud, yours in your ear, which is the part a phone cannot do because it has
+  one speaker for two audiences. Live subtitles as the two separate features
+  they actually are: captions over somebody else's audio, and an echo of your
+  own voice under the dictation pill. Client conversations, reusing the meeting
+  window with consent asked once per client (ADR 0045 is why it is not a second
+  window). And the handoff screen finally drawing what crosses the line.
+- **Provider chips on AI Models and in onboarding.** A wrapping row of brand
+  marks replaces the select, shared through `providerPick()` so the two
+  surfaces cannot drift.
 - **The settings rework prototype got a typeface, three colour schemes and a
   search.** Archivo and IBM Plex Mono are now bundled as woff2 rather than
   named and never shipped — every judgement made about this surface before
@@ -161,6 +182,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   See ADR 0023.
 
 ### Changed
+
+- **`DESIGN_SYSTEM.md` stopped contradicting the product.** Two rules went: the
+  faux-glass rule that forbade blur outright, and the flat ban on
+  `backdrop-filter`. The second is restated as what it is — a property that
+  does nothing in the shipped engine and cannot be feature-guarded — rather
+  than a style choice that was rejected. Frost takes its place as a surface
+  class beside `--bg-base`, `--bg-surface` and `--bg-elevated`.
+- **A group's separators run to its edge.** The item carries the horizontal
+  inset and the stack spans the card, so a settings group reads as one object
+  with divisions rather than as a container with contents (ADR 0052).
+- **A level readout sits next to what it measures.** It leaves Home, which
+  reported a room nobody was recording, and appears where the recording is
+  happening. `wave(n, seed)` is deleted: a frozen bar row on a surface claiming
+  to be listening is a fake state, and it stood in two of them (ADR 0053).
+
+### Removed
+
+- **Account & Sync.** There is no WordScript account and none is planned, so
+  the surface that explained the absence is gone with it — a settings entry
+  promises that a decision lives behind it. Where the data lives is Privacy &
+  Data's sentence now; the fact that the accounts you hold are model vendors'
+  is stated in About's list of what is not built. This is about the WordScript
+  account only and says nothing about local or self-hosted models.
+- **Six dead glass utilities.** `.glass`, `.glass-elevated`, `.glass-strong`,
+  `.glass-subtle`, `.glass-panel` and `.ws-pill`, plus `--surface-glass` and
+  the `glass` variants of `ui/card.tsx` and `ui/window.tsx`. All were
+  `backdrop-filter`, none appeared in any markup, and the property does nothing
+  in the shipped engine anyway (plan §5.3).
+
+### Fixed
+
+- **The agent window cut off its own answer strip.** It is fixed at 340 px with
+  `overflow: hidden`, and two of its grid items kept the default
+  `min-height: auto` — a grid item refuses to become shorter than its content,
+  so 12 px went over the edge with no scrollbar and no mark: the rail's two
+  buttons and the entire answer strip. The inner thread scroller could not help,
+  because it only absorbs what the chain above it allows to shrink.
+- **Rows inside an open job disclosure started on the wall of their own well.**
+  They aligned with the summary's grid rather than with the summary's text, so
+  every detail row sat 25 px left of the job it belonged to.
 
 - **WordScript now identifies itself as SW forge everywhere, including to your
   operating system.** The rename from `SW-Bench` to `sw-forge-org` had only
