@@ -514,6 +514,11 @@ function useTranscriptViewer({
 }
 
 export { useTranscriptViewer }
+/* WORDSCRIPT. `CharacterAlignmentResponseModel` is declared with `export
+   interface` at the top of this file and was re-listed here, which TypeScript
+   rejects as a duplicate export (TS2484) and which failed `npm run build` for
+   every change made after this file was vendored. Upstream's own tsconfig is
+   more permissive; ours is not, and the fix is to name it once. */
 export type {
   UseTranscriptViewerProps,
   UseTranscriptViewerResult,
@@ -522,5 +527,4 @@ export type {
   SegmentComposer,
   TranscriptSegment,
   TranscriptWord,
-  CharacterAlignmentResponseModel,
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import "../lab/lab.css";
 import { Orb, type OrbState } from "../lab/Orb";
 import { LiveWaveform } from "../lab/LiveWaveform";
-import { MatrixField } from "../lab/MatrixField";
+import { Matrix, loader, snake, wave, digits } from "../components/ui/matrix";
 import { Shortcut } from "../lab/Keycap";
 import { ProviderMark, PROVIDER_IDS } from "../lab/ProviderMark";
 import { Button } from "../components/ui/button";
@@ -32,14 +32,14 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "../components/
  * navigation, it touches no Tauri API, and it changes nothing under
  * `src/components/settings/`. Open it at `/component-lab`.
  *
- * ON THE MISSING IMPORTS. The ElevenLabs UI registry (`ui.elevenlabs.io`) is
- * behind a bot check that returns 429 to the CLI, to `shadcn add <url>` and to
- * plain fetch alike, so `orb`, `live-waveform`, `matrix` and the rest could not
- * be pulled. The four primitives below are ours, written against our tokens,
- * with the motion decisions recorded where they are made. When the registry is
- * reachable again the useful move is to read their versions for ideas, not to
- * swap ours out: these already carry product decisions theirs cannot know
- * about.
+ * ON WHERE THESE COME FROM. The ElevenLabs UI registry (`ui.elevenlabs.io`)
+ * answers every request with a bot check, so nothing here was installed from
+ * it. `matrix` and its siblings were vendored from the repository instead
+ * (github.com/elevenlabs/ui, MIT, `6e5b681c01ee`) and carry their upstream
+ * path in a header; the orb, the waveform, the keycap and the provider marks
+ * are ours, written against our tokens, with the motion decisions recorded
+ * where they are made. Where both exist, ours stay: they carry product
+ * decisions upstream cannot know about.
  */
 
 const ORB_STATES: Array<{ state: OrbState; title: string; note: string }> = [
@@ -59,6 +59,16 @@ function Section({ title, lead, children }: { title: string; lead: string; child
       {children}
     </section>
   );
+}
+
+/** A level array for the meter, standing in for the runtime's. Sixteen columns
+ *  of one decaying sweep, so moving the slider moves a shape rather than a
+ *  block — a meter that lights every column to the same height is a bar. */
+function vuLevels(level: number): number[] {
+  return Array.from({ length: 16 }, (_, i) => {
+    const age = (15 - i) / 15;
+    return Math.max(0, level * (1 - age * 0.75) * (0.72 + 0.28 * Math.sin(i * 1.7)));
+  });
 }
 
 function Panel({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -138,30 +148,52 @@ export default function ComponentLabWindow() {
         </Section>
 
         <Section
-          title="Matrix field and the keycap"
-          lead="Home's ground and Home's headline. The field answers 'is this thing listening' without being read, from across a desk — which is the distance this app is used at, because you are looking at another application while you talk. The caps make the shortcut an object instead of a sentence you skip."
+          title="The matrix"
+          lead="A dot-matrix readout, vendored whole from ElevenLabs UI. It replaced a drifting glyph field that was named after it and was not it: that field was a background, and this is an instrument. The product uses one mode — the level meter, in the meeting HUD, where something is actually being recorded."
         >
-          <div
-            className="relative isolate overflow-hidden rounded-[10px] bg-bg-surface p-8"
-            style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,.055)" }}
-          >
-            <MatrixField level={level} />
-            <div className="relative z-10 flex flex-col gap-5">
-              <span className="flex items-center gap-2 text-[12px] font-medium text-fg-dim">
-                <i className="h-[6px] w-[6px] rounded-full bg-green shadow-[0_0_0_3px_rgba(129,214,174,0.16)]" />
-                Ready
-              </span>
-              <div className="flex flex-wrap items-center gap-4">
-                <Shortcut keys={["Ctrl", "Super"]} />
-                <span className="flex flex-col gap-[2px]">
-                  <b className="text-[16px] font-semibold text-fg">Hold in any app to dictate</b>
-                  <span className="text-[13px] text-fg-dim">
-                    Release to stop. What it produces goes to the cursor you left.
-                  </span>
-                </span>
+          <Panel>
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-wrap items-end gap-8">
+                {[
+                  { title: "Level", node: <Matrix rows={7} cols={16} mode="vu" levels={vuLevels(level)} size={10} gap={2} ariaLabel="Level meter" /> },
+                  { title: "Loader", node: <Matrix rows={7} cols={7} frames={loader} fps={12} ariaLabel="Loader" /> },
+                  { title: "Wave", node: <Matrix rows={7} cols={7} frames={wave} fps={16} ariaLabel="Wave" /> },
+                  { title: "Snake", node: <Matrix rows={7} cols={7} frames={snake} fps={14} ariaLabel="Snake" /> },
+                  { title: "Digit", node: <Matrix rows={7} cols={5} pattern={digits[0]} ariaLabel="Digit zero" /> },
+                ].map(({ title, node }) => (
+                  <figure key={title} className="flex flex-col gap-2 text-accent">
+                    <div className="grid min-h-[76px] place-items-center">{node}</div>
+                    <figcaption className="text-[11px] font-medium uppercase tracking-[0.07em] text-fg-muted">
+                      {title}
+                    </figcaption>
+                  </figure>
+                ))}
               </div>
+              <p className="max-w-[68ch] text-[11px] leading-[1.6] text-fg-muted">
+                <b className="text-fg-dim">pulse</b> is exported and deliberately not drawn here. ADR 0049 settles
+                that the orchestrator&rsquo;s voice has four states and that none of them is a periodic pulse, and a
+                readout borrowing that motion would be saying &ldquo;alive&rdquo; in the one product where a
+                component already owns that job.
+              </p>
             </div>
-          </div>
+          </Panel>
+        </Section>
+
+        <Section
+          title="The keycap"
+          lead="Home's headline. The caps make the shortcut an object instead of a sentence you skip — which matters because the shortcut is how the product is started, from inside some other application."
+        >
+          <Panel>
+            <div className="flex flex-wrap items-center gap-4">
+              <Shortcut keys={["Ctrl", "Super"]} />
+              <span className="flex flex-col gap-[2px]">
+                <b className="text-[16px] font-semibold text-fg">Hold in any app to dictate</b>
+                <span className="text-[13px] text-fg-dim">
+                  Release to stop. What it produces goes to the cursor you left.
+                </span>
+              </span>
+            </div>
+          </Panel>
         </Section>
 
         <Section

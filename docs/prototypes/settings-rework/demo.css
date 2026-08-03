@@ -225,6 +225,18 @@ svg { display: block; flex: none; }
     radial-gradient(120% 55% at 50% -12%, rgba(230, 137, 0, 0.04), transparent 60%),
     linear-gradient(180deg, #0b0f13 0%, #090c10 100%);
   --window-bg-attach: fixed;
+
+  /* The shipped side gets no frost, and the zeroes are the statement rather
+     than an oversight: this palette is the measurement the proposal is judged
+     against, and adding a material it never had would make the comparison
+     flatter to the wrong side. The panel is a flat surface here, which is what
+     it is in the build. */
+  --frost-blur:  0px;
+  --frost-sat:   1;
+  --frost-scrim: rgba(0, 0, 0, 0.5);
+  --frost-fill:  var(--bg-surface);
+  --frost-edge:  transparent;
+  --frost-sheen: none;
 }
 
 /* ── Palette: proposed (section 5.1) ────────────────────────────────────── */
@@ -264,6 +276,33 @@ svg { display: block; flex: none; }
 
   --window-bg-image: none;
   --window-bg-attach: scroll;
+
+  /* Frost — the pair, not a plane. Full account at `.win-shell`.
+     THE STRENGTH IS THE SETTINGS SHEET'S, and it is the sheet's because the
+     sheet is the surface this material was first drawn on and the one the
+     product is judged against. `blur(2px) saturate(0.8)` was already written
+     there; it is copied here rather than re-derived, so the two surfaces are
+     one material and not two treatments that happen to co-exist. A stronger
+     blur was built first and measured well — and it made the palette a
+     different kind of surface from the sheet, which is worse than either
+     number is good.
+     The fill stays translucent so the panel takes the colour of whatever is
+     behind it. What comes through is hue and value, never detail: that is what
+     frosted glass is, glass you cannot see through. */
+  --frost-blur: 2px;
+  --frost-sat:  0.8;
+  --frost-scrim: rgba(0, 0, 0, 0.5);
+  --frost-fill: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  /* The lit leading edge, one step brighter than a card's, because this
+     surface is one plane further from the window than a card is. */
+  --frost-edge: rgba(255, 255, 255, 0.16);
+  /* Glass has thickness, and thickness shows where light enters it. A single
+     low-alpha sheen from the top-left is the whole of it — anything the eye can
+     name as a gradient has stopped being a material and become a decoration. */
+  --frost-sheen: linear-gradient(148deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.022) 38%,
+    rgba(255, 255, 255, 0) 72%);
 }
 
 /* ── Palette: light ─────────────────────────────────────────────────────────
@@ -350,6 +389,37 @@ svg { display: block; flex: none; }
   --elev-raised:
     0 6px 16px rgba(52, 40, 22, 0.16),
     0 0 0 1px rgba(24, 20, 14, 0.06);
+
+  /* Frost, rebuilt rather than inverted — ADR 0048's rule, and this surface is
+     where it bites hardest. Three things change and none of them is a flipped
+     number.
+
+     The fill goes UP, not down. On the dark ladder the panel is lighter than
+     the window and a translucent fill lets a darker room through, which reads
+     as depth. Here the panel is white on a near-white window: at 82% the
+     blurred ground behind it is the same value as the panel, and the panel
+     stops having an edge at all. 92% keeps it a distinct object.
+
+     The sheen goes almost away. A white highlight on white is invisible, and
+     pushed until it is visible it is a grey smear. What states the material
+     here is the shadow under it, as it does for the card.
+
+     The blur goes DOWN. On white, blurred text turns to pale grey haze that
+     reads as a rendering fault rather than as distance; less of it keeps the
+     shapes behind legible AS shapes, which is what says "the application is
+     still there". */
+  --frost-blur: 2px;
+  --frost-sat:  0.8;
+  /* The scrim is the one value that cannot carry over. Half black over a light
+     room is a bruise; the light ladder darkens by a quarter and lets the
+     panel's own shadow do the separating, as it does for every card. */
+  --frost-scrim: rgba(24, 20, 14, 0.26);
+  --frost-fill: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  --frost-edge: rgba(255, 255, 255, 0.7);
+  --frost-sheen: linear-gradient(148deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.14) 42%,
+    rgba(255, 255, 255, 0) 78%);
 }
 
 /* The keycap is a physical object and inverts with the room: in light it is a
@@ -361,14 +431,13 @@ svg { display: block; flex: none; }
     0 2px 0 rgba(24, 20, 14, 0.16),
     0 4px 10px -3px rgba(52, 40, 22, 0.24);
 }
-/* The matrix is a light-emitting field. On white there is nothing to emit
-   into, so it darkens instead of glowing, and its leading glyph goes dark
-   rather than near-white — handled in demo.js, which reads this flag. */
-/* The LED grid needs no light-mode override: its lit pixels are `--accent`,
-   which the light ladder already redefines to #b45c00 (ADR 0048), and its
-   unlit ones are `--fg-muted` at 12%. The old glyph field needed one because
-   it carried its own unpacked RGB triples. */
-[data-palette="after"][data-theme="light"] .matrix-led .on {
+/* The LED grid takes no light-mode colour override: its lit pixels are
+   `--accent`, which the light ladder already redefines to #b45c00 (ADR 0048),
+   and its unlit ones are `--fg-muted`. What it does drop is the bloom — a
+   pixel glows into a dark room and there is nothing to glow into on white, so
+   on the light ladder the bloom reads as a smudge around a dot. ADR 0048's
+   rule exactly: the light scheme is rebuilt, not inverted. */
+[data-palette="after"][data-theme="light"] .matrix-pixel-active {
   filter: none;
 }
 [data-palette="after"][data-theme="light"] .wave-live { --wave-fg: var(--fg-dim); }
@@ -575,6 +644,91 @@ td.num, .num, .count, .ratio { font-variant-numeric: tabular-nums; }
 }
 .win-deco em { font-style: normal; color: var(--fg-dim); font-weight: 500; }
 
+/* ── FROST — the fourth surface, and the only one that is a pair ────────────
+   THIRTEENTH PASS. `--bg-base`, `--bg-surface` and `--bg-elevated` are three
+   planes of one stack: each says which layer a thing is on, and each is a flat
+   colour. Frost is not a fourth plane. It is what a floating surface and the
+   window under it do TOGETHER — the panel goes translucent, the window recedes
+   behind it — and neither half is the material on its own. A translucent panel
+   over a sharp window is a panel you can see the text through; a blurred window
+   under an opaque panel is a blurred window.
+
+   IT IS NOT `backdrop-filter`, AND THAT IS MEASURED. DESIGN_SYSTEM.md banned
+   `backdrop-filter` outright because this shell fights WebKitGTK compositing.
+   The ban was right and its reason was wrong, so the rule changes rather than
+   the practice. Benchmarked in WebKitGTK 2.52.4, the engine the Tauri host
+   loads, against a 6 px stripe ground where any real blur flattens the stripes:
+
+     backdrop-filter: blur(26px) on the panel   stripe contrast 0.0484
+     the same alpha with no blur at all         stripe contrast 0.0484
+
+   Identical to four decimals: the property is INERT in this engine. It is inert
+   with GPU compositing on and with WEBKIT_DISABLE_COMPOSITING_MODE=1 — the two
+   captures are byte-identical — inert behind `will-change`, inert inside a
+   promoted stacking context, and inert with the `-webkit-` prefix alone. Worse,
+   `@supports ((backdrop-filter: blur(1px)))` reports SUPPORTED, so the standard
+   guard cannot detect the failure and a frosted panel built on it would look
+   correct in Chromium and ship to Linux as flat translucency over legible text.
+   That is not the black rectangle the old rule feared. It is quieter and worse:
+   nothing looks broken.
+
+   WHAT DOES WORK IS THE OTHER DIRECTION. `filter: blur()` is fully functional
+   in the same engine, so the blur moves off the panel and onto the layer
+   behind it. Measured on this machine, palette open, something repainting every
+   frame: 62.4 fps with no blur, 62.5 fps with `blur(18px)` over the whole
+   shell — and the same on the compositing opt-out path. It costs nothing, and
+   it is closer to what macOS actually does for a sheet than a local backdrop
+   blur is: the application recedes, rather than a rectangle of it.
+
+   WHERE IT MAY BE USED. On a surface that FLOATS and is TRANSIENT — the command
+   palette today, and a sheet or a popover if one earns it. Never on a card,
+   never on the sidebar, never on the overlay: the overlay renders in a
+   transparent window with no desktop behind it to blur, which is why
+   `overlay-pill.css` says what it says and stays out of this. A surface that is
+   always on screen has nothing to recede from.
+
+   IT DEGRADES BY DESIGN, NOT BY FALLBACK. Under `prefers-reduced-transparency`
+   the panel goes opaque and the window is left alone; the material is a
+   refinement of a panel that already reads without it.
+
+   ONE MATERIAL, TWO SURFACES, AND THE SETTINGS SHEET ALREADY HAD IT. The sheet
+   asked for `backdrop-filter: blur(2px) saturate(0.8)` behind a 50% black
+   scrim, which is where this surface's frost was first drawn and what it
+   should go on looking like. That declaration only ever worked in a browser
+   preview — the same measurement above applies to it, and in the Tauri host
+   the sheet has been shipping a plain black scrim with no blur at all. Both
+   surfaces now use the mechanism that works, at the strength the sheet set, so
+   the palette matches the sheet and the sheet finally matches itself.
+
+   THE TWO LAYERS ARE NESTED, NOT PARALLEL. `.win-shell` is the application and
+   recedes behind the sheet; `.win-stack` is the application plus the sheet and
+   recedes behind the palette. Opening the palette from inside settings takes
+   both back a step, which is the only arrangement where the depth order stays
+   true. */
+.win-shell,
+.win-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  transition: filter var(--dur-base) var(--ease);
+}
+/* THE LAYER CARRIES THE WINDOW'S OWN GROUND. A blur samples what is around
+   each pixel, so at the edge of a blurred element it samples whatever is
+   outside it — and with nothing there it fades, drawing a soft rim just inside
+   the window's own edge. Giving each layer the ground it sits on means the
+   blur reaches into the same colour at the edge as in the middle. `.win` keeps
+   its copy: that is what the radius and the shadow are cut from. */
+.win-shell {
+  background-color: var(--bg-base);
+  background-image: var(--window-bg-image);
+  background-attachment: var(--window-bg-attach);
+}
+[data-frost-shell] .win-shell,
+[data-frost-stack] .win-stack {
+  filter: blur(var(--frost-blur)) saturate(var(--frost-sat));
+}
+
 .win-body { flex: 1; min-height: 0; display: flex; }
 
 /* ── Window status strip ────────────────────────────────────────────────────
@@ -623,6 +777,12 @@ td.num, .num, .count, .ratio { font-variant-numeric: tabular-nums; }
    which is the whole difference between a detour and a departure.
    =========================================================================== */
 
+/* The scrim darkens; the receding is done by `.win-shell` behind it. It asked
+   for `backdrop-filter: blur(2px) saturate(0.8)` until the thirteenth pass —
+   a declaration that renders in a browser preview and is inert in WebKitGTK,
+   so the sheet has been shipping a plain black scrim on Linux and nobody could
+   see that from the preview. The blur moved onto the layer behind at the same
+   strength; this is the same effect, actually running. See the frost section. */
 .modal-scrim {
   position: absolute;
   inset: 0;
@@ -630,8 +790,7 @@ td.num, .num, .count, .ratio { font-variant-numeric: tabular-nums; }
   display: grid;
   place-items: center;
   padding: var(--s6);
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(2px) saturate(0.8);
+  background: var(--frost-scrim);
 }
 /* Only on arrival. `render()` rebuilds the whole surface, so an unconditional
    animation here replayed the entrance on every click inside the sheet's own
@@ -1059,11 +1218,29 @@ td.num, .num, .count, .ratio { font-variant-numeric: tabular-nums; }
      palette there is no card border to transition at all. */
 }
 
-/* Everything that is not a row keeps the inset it always had, because only
-   rows have a separator to run to the edge. Without this, a card head, a
-   footer action and a paragraph would all sit flush against the rounded
-   corner. */
-.card > :not(.rows):not(.list):not(.lane):not(.check-list):not(.disc) {
+/* Everything that is not a separated stack keeps the inset it always had,
+   because only a stack has a separator to run to the edge. Without this, a card
+   head, a footer action and a paragraph would all sit flush against the rounded
+   corner.
+
+   THIRTEENTH PASS — THE GUARD NAMED FIVE STACKS AND ONLY ONE OF THEM WAS
+   FINISHED. The eleventh pass moved the horizontal padding from the card onto
+   the row so hairlines could span the group, and exempted `.rows`, `.list`,
+   `.lane`, `.check-list` and `.disc` from the guard. `.row` then took the
+   padding itself. The other four never did, so their children had no horizontal
+   inset from anywhere and every list item, lane row, check and disclosure in
+   the prototype started flush against the rounded corner — plainest on Home's
+   Recent list, where the transcript text began exactly on the card's left edge.
+
+   The rule is the one `.row` already follows: THE ITEM CARRIES THE INSET, so
+   its separator still runs to the group's edge. Three more stacks join the list
+   for the same reason rather than for a bug — `.owed-list`, `.legend` and the
+   type scale all draw separators, and a separator that stops 20 px short of the
+   group is the shape the eleventh pass set out to remove. `.owed` also paid the
+   inset twice (its own `--s4` plus the guard's `--pad-card`, 36 px in from the
+   card wall) and its urgent tint floated inside the group instead of filling a
+   row of it. */
+.card > :not(.rows):not(.list):not(.lane):not(.check-list):not(.disc):not(.owed-list):not(.legend):not(.type-row) {
   padding-left: var(--pad-card);
   padding-right: var(--pad-card);
 }
@@ -1081,8 +1258,19 @@ td.num, .num, .count, .ratio { font-variant-numeric: tabular-nums; }
 
 /* Only against the card's own edge — a stack that follows a head keeps its
    padding, because the head is content, not an edge. */
-.card > :is(.rows, .list, .lane, .check-list):first-child > :first-child { padding-top: 0; }
-.card > :is(.rows, .list, .lane, .check-list):last-child > :last-child { padding-bottom: 0; }
+.card > :is(.rows, .list, .lane, .check-list, .legend):first-child > :first-child { padding-top: 0; }
+.card > :is(.rows, .list, .lane, .check-list, .legend):last-child > :last-child { padding-bottom: 0; }
+
+/* A STACK WHOSE ROWS CARRY A GROUND OF THEIR OWN OWNS THE VERTICAL PADDING TOO.
+   The rule above works for rows because a row has no background: dropping the
+   first row's own top padding leaves the card's 20 px standing as the group's
+   top inset, and nothing draws in it. A tinted row is different — it paints —
+   so the same arrangement gives it 20 px of untinted card above the first row's
+   colour, and the tint reads as a band floating inside the group rather than as
+   one row of it. Here the stack runs to the card's edge and each row keeps its
+   own vertical padding, which the card's `overflow: hidden` then clips to the
+   corner radius. */
+.card:has(> .owed-list:only-child) { padding: 0; }
 
 /* The action that acts on the card's content, at the foot of the card that
    holds it. Replaces `style="padding-top:12px"` in Profiles, `style="padding:0
@@ -1504,7 +1692,11 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
    promise about protected focus that this does not need and cannot keep. */
 .cmdk-scrim {
   position: absolute; inset: 0; z-index: 60;
-  background: color-mix(in srgb, var(--bg-base) 62%, transparent);
+  /* The settings sheet's scrim, exactly — one token, two surfaces. It was a
+     62% wash of `--bg-base` before, which is a different colour and a
+     different weight from the sheet's, so opening the palette and opening
+     settings dimmed the same window by two different amounts. */
+  background: var(--frost-scrim);
   display: flex; justify-content: center;
   /* `flex-start`, not the default `stretch`. Stretched, the panel is always
      the full 56vh regardless of how many rows are in it, and a palette holding
@@ -1516,15 +1708,42 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
 }
 @keyframes cmdk-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* THE PANEL IS THE OTHER HALF OF THE FROST. The window recedes, this catches
+   the light. Four values and they are one material: a translucent fill that
+   takes the blurred colour of whatever the window was showing, a sheen where
+   light enters the sheet, a lit leading edge, and a cast shadow that says the
+   sheet is above rather than inside.
+
+   The fill sits UNDER the sheen in the background stack, which is the order
+   light actually arrives in. Reversed, the sheen tints the fill instead of
+   lying on it, and the panel reads as painted. */
 .cmdk {
   width: min(560px, calc(100% - 2 * var(--s7)));
   max-height: 56vh;
   display: flex; flex-direction: column;
   border-radius: var(--r-window);
-  background: var(--bg-surface);
-  box-shadow: var(--elev-sheet);
+  background: var(--frost-sheen), var(--frost-fill);
+  box-shadow:
+    inset 0 1px 0 var(--frost-edge),
+    var(--elev-sheet);
   overflow: hidden;
   animation: cmdk-in 160ms var(--ease) both;
+}
+
+/* THE MATERIAL IS A REFINEMENT, NEVER THE THING THAT MAKES THE PANEL READABLE.
+   Under reduced transparency the fill goes solid and the window is left sharp;
+   nothing else about the panel changes, because nothing else about it depended
+   on the frost. A user who asks for less transparency gets a settings palette,
+   not a degraded one. */
+@media (prefers-reduced-transparency: reduce) {
+  .cmdk { background: var(--bg-surface); }
+  [data-frost] .win-stack { filter: none; }
+  .cmdk-scrim { background: color-mix(in srgb, var(--bg-base) 62%, transparent); }
+}
+/* A blur that fades in is a blur that is rasterised on every intermediate
+   frame. Reduced motion takes the state without the transit. */
+@media (prefers-reduced-motion: reduce) {
+  .win-stack { transition: none; }
 }
 @keyframes cmdk-in {
   from { opacity: 0; transform: translateY(-8px) scale(0.985); }
@@ -1562,9 +1781,21 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
 .cmdk-row .where { flex: none; font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label); color: var(--fg-muted); }
 /* Selection is a ground, not an accent fill. The palette shows up to a screen
    of rows and exactly one is selected at a time; painting that one in the
-   attention colour makes a list of options look like a list of warnings. */
-.cmdk-row[data-sel] { background: var(--bg-elevated); }
-.cmdk-row[data-sel] .where { color: var(--fg-dim); }
+   attention colour makes a list of options look like a list of warnings.
+
+   HOVER AND SELECTION ARE THE SAME GROUND, AND THAT IS DELIBERATE. A palette
+   has one selected row, moved with the arrow keys and run with Return, and the
+   pointer is a second way to reach the same thing rather than a parallel
+   state. Giving hover its own weaker tint would put two highlights on screen
+   at once and leave the user working out which one Return would take. So the
+   pointer does not paint a second thing: it moves the selection, and this rule
+   is what shows that it has — which is also why hovering does not need to
+   agree with the keyboard's last position to be correct. */
+.cmdk-row[data-sel],
+.cmdk-row:hover { background: var(--bg-elevated); }
+.cmdk-row[data-sel] .where,
+.cmdk-row:hover .where { color: var(--fg-dim); }
+.cmdk-row:hover svg { color: var(--fg-dim); }
 .cmdk-row mark { background: none; color: var(--accent); font-weight: 600; }
 
 .cmdk-empty { padding: var(--s5) var(--s4); color: var(--fg-muted); font-size: var(--t-body); }
@@ -1600,35 +1831,24 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
    bottom — that last part is what stops it reading as a rounded rectangle with
    a letter in it.
 
-   THE FIELD BEHIND IT IS NOT WALLPAPER. It answers the first question without
-   being read. At rest it drifts slowly, and while capturing it brightens and
-   accelerates along the input level, so the app visibly responds to a voice
-   from across a desk — which is the distance this is used at, because the user
-   is looking at another application while they talk. */
-.home-hero {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius-card);
-  background: var(--bg-surface);
-  box-shadow: var(--edge-light);
-  padding: var(--s7) var(--pad-card) var(--s6);
+   THIRTEENTH PASS — THE PANEL IS GONE. `.home-hero` was a `--bg-surface`
+   block with the card's top-edge highlight, its own padding and its own
+   radius: a card in everything but name, and the only panel in the surface
+   that had no head, no rows and no separators. Home now opens the way every
+   other view opens, on the window ground, and the block keeps only the rhythm.
+
+   The keycaps lost nothing by it. A cap is drawn as a raised object — lit top
+   edge, body falling away, a front lip and a cast shadow — and a raised object
+   on a raised panel is one plane too many: the shadow that gives the cap its
+   height was landing on a surface that was itself lifted off the window.
+   Against the window ground it reads as what it is.
+
+   The field that used to sit behind all this was removed in the eleventh pass;
+   the readout that replaced it left in the thirteenth. See `homeHero()`. */
+.home-open {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
-  isolation: isolate;
-}
-.home-hero > * { position: relative; z-index: 1; }
-
-.hero-state {
-  display: flex; align-items: center; gap: var(--s2);
-  font-stretch: var(--w-label); letter-spacing: var(--ls-label);
-  font-size: var(--t-label); font-weight: 550;
-  color: var(--fg-dim);
-}
-.hero-state .dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
 }
 
 .hero-invoke { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
@@ -1730,11 +1950,25 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
    drawn as plain SVG in demo.js, since this folder has no bundler and a screen
    that cannot be shown here is a screen that cannot be argued with.
 
-   No `filter: blur()` and no `feGaussianBlur`. The upstream component glows
-   its lit pixels with an SVG filter, and a filter on a node that repaints
-   every frame is a fresh offscreen buffer every frame; this shell already
-   keeps GPU compositing on a short leash. The bloom here is a static
-   drop-shadow on the lit class, which composites once. */
+   THIRTEENTH PASS — THE PORT IS COMPLETE, AND THE TWO COLOURS ARE PROPS.
+   Upstream takes `palette.on` and `palette.off` and reads them through
+   `--matrix-on` / `--matrix-off` inside the radial fills, so the surface
+   decides what an emitting pixel is made of. They are declared here, on the
+   wrapper, which is what makes a matrix in the dark scheme and one in the
+   light scheme the same component rather than two.
+
+   THE GLOW IS UPSTREAM'S FILTER, AND THE REASON IT IS UPSTREAM'S IS A
+   MEASUREMENT RATHER THAN A PREFERENCE. The twelfth pass replaced
+   `filter: url(#matrix-glow)` with a static `drop-shadow` on the assumption
+   that an SVG filter on a node repainting every frame would be an offscreen
+   buffer per pixel per frame, and that a shell already running with the DMABUF
+   renderer disabled could not afford 168 of them. Benchmarked at 7x24 in
+   WebKitGTK 2.52.4, the engine the Tauri host loads: upstream's filter 62.1
+   fps, static drop-shadow 62.1 fps, no bloom 62.2 fps. The assumption cost the
+   component its rendering and bought nothing, so the filter is back.
+
+   What did need changing is its radius, and for a reason that only shows at
+   our sizes — see the WORDSCRIPT note in `matrixMount`. */
 .matrix-wrap {
   display: inline-flex;
   align-items: center;
@@ -1743,17 +1977,57 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
      out 28px wide inside a 166px drawing, which reads as a dash and not as a
      reading. */
   flex: none;
-  margin-left: auto;
-  padding-left: var(--s3);
+  --matrix-on: var(--accent);
+  --matrix-off: var(--fg-muted);
 }
 .matrix-led { display: block; overflow: visible; }
+
+/* Upstream's transitions, upstream's durations. The opacity ramp is what makes
+   a level fall look like a meter falling rather than like a new frame. */
+.matrix-pixel {
+  transition: opacity 300ms ease-out, transform 150ms ease-out;
+  transform-origin: center;
+  transform-box: fill-box;
+}
 /* The unlit grid is drawn rather than omitted: without it the lit pixels float
    as loose dots, and it is the dark grid behind them that makes the thing read
    as a panel that happens to be mostly off. */
-.matrix-led .off { fill: var(--fg-muted); opacity: 0.22; }
-.matrix-led .on {
-  fill: var(--accent);
-  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent) 55%, transparent));
+.matrix-pixel-active { filter: var(--matrix-glow); }
+
+@media (prefers-reduced-motion: reduce) {
+  .matrix-pixel { transition: none; }
+}
+
+/* The component's own exhibit on the Design System screen. Each cell holds one
+   mode at upstream's default 10 px pixel, on the inset plane — a light-emitting
+   readout needs a ground darker than the card to be judged on, the same way the
+   card needs a ground darker than the window. */
+.mx-lab {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s4);
+  padding: 0 var(--pad-card);
+}
+.mx-cell { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.mx-stage {
+  height: 104px;
+  display: grid; place-items: center;
+  border-radius: var(--r-card);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+}
+.mx-cell figcaption { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mx-cell figcaption b {
+  font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+  font-weight: 600;
+}
+.mx-cell figcaption > span:last-child {
+  font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  color: var(--fg-dim); line-height: 1.5;
+}
+.mx-mode {
+  align-self: flex-start;
+  font-size: var(--t-micro); color: var(--fg-muted);
 }
 
 /* ── Disclosure ─────────────────────────────────────────────────────────────
@@ -1767,7 +2041,7 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
 .card > .disc:first-child > summary { padding-top: 0; }
 .disc > summary {
   display: flex; align-items: center; gap: var(--s2);
-  padding: var(--row-py) 0;
+  padding: var(--row-py) var(--pad-card);
   font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label); font-weight: 500; color: var(--fg-dim);
   list-style: none; cursor: pointer;
 }
@@ -1851,7 +2125,7 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
 .lane { display: flex; flex-direction: column; }
 .lane-row {
   display: flex; align-items: center; gap: var(--s3);
-  padding: var(--row-py) 0;
+  padding: var(--row-py) var(--pad-card);
   border-bottom: 1px solid var(--border);
   text-align: left; width: 100%;
 }
@@ -2020,7 +2294,9 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
 .list { display: flex; flex-direction: column; container-type: inline-size; }
 .list-item {
   display: flex; align-items: center; gap: var(--s3);
-  padding: var(--row-py) 0;
+  /* The item carries the inset, so the separator below it still runs to the
+     group's edge — the same arrangement `.row` uses. See the card's guard. */
+  padding: var(--row-py) var(--pad-card);
   border-bottom: 1px solid var(--border);
   text-align: left; width: 100%;
   content-visibility: auto;
@@ -2099,7 +2375,10 @@ textarea.field { height: auto; padding: 8px 9px; line-height: 1.5; resize: verti
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s3) var(--s5);
   padding: var(--s4);
-  margin-bottom: var(--row-py);
+  /* A panel, not a row: it takes the group's inset as margin so its own rounded
+     edge sits where a row's text starts, rather than as padding on top of the
+     panel's own. */
+  margin: 0 var(--pad-card) var(--row-py);
   border-radius: var(--r-card);
   background: var(--bg-inset);
   border-bottom: none;
@@ -3089,75 +3368,14 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
   overflow: hidden;
 }
 
-/* ── The provider grid ──────────────────────────────────────────────────────
-   Picking a provider is a recognition task: you know the mark before you have
-   read the word. A closed `<select>` makes you open it to find out what is even
-   possible, and gives the capability — which jobs this one can actually run —
-   nowhere to live. The donor puts the choice on the surface for the same
-   reason (`ProviderTabs`, `ModelCardList`).
-
-   `auto-fill` rather than a fixed count: at the sheet's width it settles at
-   three or four across, and the tiles keep their proportions instead of
-   stretching to fill a row that has one item left in it. */
-.provgrid {
-  display: grid;
-  /* 152px is measured, not chosen: it is what "speech · language" needs beside
-     a 26px mark before it touches the tile's right padding. The widest label
-     sets the track, or the grid is sized for the tiles that happen to be short. */
-  grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
-  gap: 6px;
-  width: 100%;
-}
-.provtile {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-items: center;
-  gap: 1px var(--s2);
-  padding: 9px 10px;
-  border-radius: var(--r-control);
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  text-align: left;
-  transition: border-color var(--dur-fast) var(--ease),
-              background-color var(--dur-fast) var(--ease);
-}
-.provtile:hover { border-color: var(--border-strong); background: var(--bg-elevated); }
-.provtile-mark {
-  grid-row: 1 / 3;
-  width: 26px; height: 26px;
-  display: grid; place-items: center;
-  border-radius: var(--r-small);
-  background: var(--bg-elevated);
-  color: var(--fg-dim);
-}
-.provtile-mark .pmark,
-.provtile-mark svg { width: 15px; height: 15px; }
-.provtile-name {
-  font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label); font-weight: 550;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-/* Capability is the fact that decides whether choosing this will work, so it
-   is on the tile and not in a tooltip. Two words, never a badge — a badge here
-   would be reporting an expected state (§11.20). */
-.provtile-caps { display: flex; gap: 5px; font-size: 10px; color: var(--fg-muted); }
-.provtile-caps span + span::before { content: "·"; margin-right: 5px; }
-/* A held key is a tick in the corner, not a row of its own. It is the second
-   thing you look for and it must not cost the tile a line. */
-.provtile-key {
-  position: absolute; top: 6px; right: 6px;
-  width: 13px; height: 13px;
-  display: grid; place-items: center;
-  color: var(--success);
-}
-.provtile-key svg { width: 11px; height: 11px; }
-.provtile[aria-checked="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.provtile[aria-checked="true"] .provtile-mark { color: var(--accent); background: transparent; }
-.provtile[aria-checked="true"] .provtile-name { color: var(--fg); }
+/* ── The provider grid, removed ─────────────────────────────────────────────
+   `.provgrid` and `.provtile` drew seven 152 px tiles for one radio value, on
+   the argument that picking a provider is a recognition task — you know the
+   mark before you have read the word — and that a `<select>` gives capability
+   nowhere to live. Both halves were true and neither needed a grid: the mark
+   travels with the row's control as `.selmark`, and capability became a
+   sentence about the provider actually chosen rather than a caption under all
+   seven. See `providerPick()` in demo.js. Removed in the thirteenth pass. */
 
 /* The mark beside a select, for the rows where the grid would be too much
    furniture for one choice. */
@@ -3213,13 +3431,20 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
   border-top: 1px solid var(--sec-line, var(--border));
 }
 .joblist > .job:first-child { border-top: 0; }
+/* THE JOB LIST IS A GROUP, AND ITS ROWS SIT WHERE EVERY OTHER ROW SITS.
+   The summary carried `--s4` of its own on top of the inset the card's stack
+   already pays, and the body's rows carried a third helping — 40 px in from
+   the card wall while every other row on the screen sat at 16, with the
+   summary's hover ground floating between the two. The nesting is stated by
+   the chevron and by the ground the open body sits on; it does not need to be
+   stated a second time in millimetres. */
 .job > summary,
 .job[data-none] {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--s3);
-  padding: 11px var(--s4);
+  padding: 11px 0;
   cursor: pointer;
   list-style: none;
 }
@@ -3244,8 +3469,11 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
   background: var(--bg-inset);
   border-top: 1px solid var(--border);
 }
-.job-body > .rows { padding: 0 var(--s2); }
-.job-body .note { margin: 0 var(--s4) var(--s2); }
+/* The open body is a well on the inset plane, so its rows align with the
+   summary above them rather than stepping in again. What separates it from the
+   closed rows is the ground and the rule, not an indent. */
+.job-body > .rows > .row { padding-left: 0; padding-right: 0; }
+.job-body .note { margin: 0 0 var(--s2); }
 .job[data-none] .job-text > span { color: var(--fg-muted); }
 
 /* ── A downloadable model ───────────────────────────────────────────────────
@@ -3906,6 +4134,18 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
   padding: var(--s4) var(--content-pad) var(--content-pad);
   display: flex; flex-direction: column; gap: var(--gap-row);
 }
+/* A SCROLL CONTAINER MUST NOT SHRINK WHAT IT SCROLLS.
+   This is a column flex box with a definite height and `overflow-y: auto`, and
+   its children took the default `flex-shrink: 1` — so instead of overflowing
+   and scrolling, three cards needing 827 px were squeezed into 614 and each
+   one clipped its own last row at `overflow: hidden`. On Profiles > Defaults
+   that cut "Delivery" and "Auto-stop" in half, and because the cards still
+   looked like whole cards there was nothing to say content was missing: no
+   scrollbar, no cut-off marker, just two rows that did not exist.
+   Flex shrinking is right for a toolbar and wrong for everything a scroller
+   holds, so the children keep their content height and the container does its
+   job. */
+.pane-detail-body > * { flex-shrink: 0; }
 .pane-detail-body > .subtabs { margin-bottom: var(--s1); }
 
 /* `solo` — one centred 460 px column — was removed on 2026-08-03 along with the
@@ -4064,7 +4304,7 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
   grid-template-columns: minmax(0, 130px) minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--s3);
-  padding: 9px 0;
+  padding: 9px var(--pad-card);
   border-bottom: 1px solid var(--border);
   font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
 }
@@ -4243,7 +4483,10 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
 .owed-list { display: flex; flex-direction: column; }
 .owed {
   display: flex; align-items: flex-start; gap: var(--s3);
-  padding: var(--s3) var(--s4);
+  /* One inset, not two. This carried `--s4` of its own on top of the card
+     guard's `--pad-card`, so a row sat 36 px in from the card wall while every
+     other row in the surface sat at 20. */
+  padding: var(--s4) var(--pad-card);
   border-top: 1px solid var(--border);
 }
 .owed:first-child { border-top: 0; }
@@ -4333,7 +4576,7 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
    probe. The wrapper exists so the card's edge rule can reach the first and
    last item, the same way it reaches a row stack. */
 .check-list { display: flex; flex-direction: column; }
-.check { display: flex; align-items: flex-start; gap: 10px; padding: var(--row-py) 0; border-bottom: 1px solid var(--border); }
+.check { display: flex; align-items: flex-start; gap: 10px; padding: var(--row-py) var(--pad-card); border-bottom: 1px solid var(--border); }
 .check:last-child { border-bottom: none; }
 .check > .mark { width: 18px; height: 18px; flex: none; border-radius: 50%; display: grid; place-items: center; margin-top: 1px; }
 .check > .mark svg { width: 11px; height: 11px; }
@@ -4412,8 +4655,9 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
 .msg-opts { display: flex; gap: var(--s1); flex-wrap: wrap; margin-top: 3px; }
 
 /* Waveform — a real geometric bar chart, not a picture of one. */
-.wave { display: flex; align-items: center; gap: 2px; height: 20px; }
-.wave i { width: 2px; border-radius: 1px; background: var(--voice); opacity: 0.85; }
+/* `.wave` — the static bar row — went with `wave()` in demo.js. What is left
+   is sizing the real component down to swatch scale for the gallery. */
+.state .wave-live { width: 132px; height: 24px; }
 
 /* ===========================================================================
    9. DESIGN SYSTEM VIEW — the system, shown as itself
@@ -4446,7 +4690,11 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
 .ramp-row .val { font-family: var(--font-mono); font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro); opacity: 0.75; }
 .ramp-row .lstar { margin-left: auto; font-family: var(--font-mono); font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro); opacity: 0.75; }
 
-.type-row { display: flex; align-items: baseline; gap: var(--s4); padding: var(--s2) 0; border-bottom: 1px solid var(--border); }
+.type-row { display: flex; align-items: baseline; gap: var(--s4); padding: var(--s2) var(--pad-card); border-bottom: 1px solid var(--border); }
+/* The type rows are direct children of their card with no wrapper, so the
+   card's own edge rule cannot reach them the way it reaches a stack. */
+.card > .type-row:first-child { padding-top: 0; }
+.card > .type-row:last-child { padding-bottom: 0; border-bottom: none; }
 .type-row:last-child { border-bottom: none; }
 .type-row .tag { width: 96px; flex: none; font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro); color: var(--fg-muted); font-family: var(--font-mono); }
 
@@ -4475,6 +4723,14 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
    boundary is; a rule does it between five tabs, a label does it above four
    groups of rows. */
 .grp { display: flex; flex-direction: column; }
+/* A stack inside a group is not against the card's edge — the container it sits
+   in already paid the inset, so the item must not pay it a second time. This is
+   the one place a separated stack is nested rather than a direct card child:
+   Delivery & Insert builds its two driver chains as groups. Without this, a
+   check sat 40 px in while every row on the same screen sat at 20. */
+.grp > .check-list > .check,
+.grp > .list > .list-item,
+.grp > .lane > .lane-row { padding-left: 0; padding-right: 0; }
 .grp > label {
   font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro); font-weight: 600;
   letter-spacing: 0.07em; text-transform: uppercase;
@@ -4513,16 +4769,24 @@ button.obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
    the user's finger answers immediately. The scroll-driven variant that fades
    only the live edge kept the surface in a permanently animating state, which
    is a real cost for a hint. A desktop window that scrolls is not a discovery
-   problem. */
+   problem.
+
+   THIRTEENTH PASS — `.cmdk-list` was missing from this list. The rule was
+   written against the scrollers that existed when it was written, and the
+   palette arrived afterwards, so the one surface that floats over everything
+   else was the one still drawing a platform scrollbar: a bright rail down the
+   right edge of a 560 px panel, against a ground chosen to be quiet. It is not
+   an exception to the rule; it was never covered by it. */
 .content, .nav, .log, .stage, .pane-scroll, .pane-detail-main > .pane-detail-body,
-.modal-nav, .modal-content {
+.modal-nav, .modal-content, .cmdk-list {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .content::-webkit-scrollbar, .nav::-webkit-scrollbar, .log::-webkit-scrollbar,
 .stage::-webkit-scrollbar, .pane-scroll::-webkit-scrollbar,
 .pane-detail-main > .pane-detail-body::-webkit-scrollbar,
-.modal-nav::-webkit-scrollbar, .modal-content::-webkit-scrollbar { width: 0; height: 0; }
+.modal-nav::-webkit-scrollbar, .modal-content::-webkit-scrollbar,
+.cmdk-list::-webkit-scrollbar { width: 0; height: 0; }
 
 
 @media (prefers-reduced-motion: reduce) {

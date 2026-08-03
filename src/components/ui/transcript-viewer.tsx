@@ -121,9 +121,17 @@ function TranscriptViewerContainer({
 
   const { audioRef } = viewerState
 
+  /* WORDSCRIPT. `audioRef` is a `RefObject<HTMLAudioElement | null>`, which is
+     what `useRef<HTMLAudioElement>(null)` produces under React 19's types and
+     what `<audio ref>` accepts there. This project is on React 18.3.1, whose
+     `ref` prop still wants a `RefObject<HTMLAudioElement>` with a non-null
+     payload, so the assignment failed (TS2322) and took `npm run build` with
+     it. The cast is at the seam between the two type generations and asserts
+     nothing about runtime: the ref holds null until the element mounts either
+     way. Remove it if this project moves to React 19. */
   const audioProps = useMemo(
     () => ({
-      ref: audioRef,
+      ref: audioRef as React.RefObject<HTMLAudioElement>,
       controls: false,
       preload: "metadata" as const,
       src: audioSrc,

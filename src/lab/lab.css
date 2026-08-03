@@ -132,22 +132,15 @@
 .ws-wave[data-tone="quiet"] { --wave-fg: var(--fg-muted); }
 .ws-wave[data-tone="hot"]   { --wave-fg: var(--red); }
 
-/* ── Matrix field ──────────────────────────────────────────────────────────── */
+/* ── Matrix ────────────────────────────────────────────────────────────────
+   `.ws-matrix` and its two unpacked RGB triples were the drifting glyph field
+   that stood in for this component while the registry was unreachable. Both
+   the field and the class are gone: `matrix` is vendored from the repository
+   now (src/components/ui/matrix.tsx) and takes its colours as props, so the
+   only thing left to say here is what an unlit pixel is made of. */
 
-.ws-matrix {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  --matrix-fg: 255, 156, 43;
-  --matrix-head: 255, 246, 232;
-  /* Densest in the corner the eye reaches last, gone where the text is. The
-     mask is on the canvas, so it costs one composited node and no repaint. */
-  -webkit-mask-image: radial-gradient(125% 150% at 88% 8%, #000 0%,
-    rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.22) 66%, transparent 88%);
-  mask-image: radial-gradient(125% 150% at 88% 8%, #000 0%,
-    rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.22) 66%, transparent 88%);
+.ws-matrix-stage {
+  --matrix-off: var(--fg-muted);
 }
 
 /* ── Keycap ────────────────────────────────────────────────────────────────── */

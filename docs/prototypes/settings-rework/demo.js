@@ -582,14 +582,15 @@
       (tail || "") + "</span></p>";
   }
 
-  function wave(n, seed) {
-    var bars = "";
-    for (var i = 0; i < n; i++) {
-      var h = 3 + Math.abs(Math.sin((i + seed) * 1.7)) * 15;
-      bars += '<i style="height:' + h.toFixed(1) + 'px"></i>';
-    }
-    return '<span class="wave">' + bars + "</span>";
-  }
+  /* `wave(n, seed)` stood here: a row of `<i>` elements with heights from a
+     sine, drawn once and never again. It was the surface's stand-in for a
+     level wherever a canvas felt like too much — the meeting HUD's state line,
+     the agent window's answer strip, the component gallery — and in two of
+     those three it was reporting a live recording. A frozen meter on a window
+     whose claim is that it is listening is a fake state, which the runtime
+     rules forbid in as many words. Every one of its call sites now carries a
+     real instrument: the matrix where the space is small, `waveform()` where
+     there is room. Removed in the thirteenth pass. */
 
   /** THE ORCHESTRATOR'S VOICE, GIVEN A BODY.
       Added 2026-08-03 — ADR 0043.
@@ -771,7 +772,29 @@
       w.sized = cssW * 10000 + cssH;
     }
     var ctx = el.getContext("2d");
-    var barW = 3, gap = 2, step = barW + gap;
+    /* THIRTEENTH PASS — THE GEOMETRY IS `live-waveform`'S. Upstream is vendored
+       at src/components/ui/live-waveform.tsx and it opens the microphone
+       itself, through `getUserMedia` and an `AnalyserNode`; this prototype has
+       no microphone and fakes levels through `orbEnvelope`, so what is ported
+       is the drawing and not the audio path. Upstream's numbers, upstream's
+       defaults: `barWidth` 3, `barGap` 1, a `barRadius` of half the bar, bars
+       centred on the middle line and grown to 80% of the height, and scrolling
+       mode filling from the right edge backwards so the newest sample is under
+       the leading edge rather than at a fixed slot.
+
+       TWO OF ITS RULES ARE WHY THIS LOOKS DIFFERENT FROM WHAT WAS HERE:
+
+       ALPHA CARRIES LEVEL, NOT JUST HEIGHT. `0.4 + value * 0.6` — a quiet bar
+       is short AND faint, so a run of near-silence reads as one dim texture
+       instead of as a row of little marks each drawn at full strength. The
+       previous version switched between two flat colours at a 0.02 threshold,
+       which put a hard edge in the middle of the quietest part of the signal.
+
+       THE FLOOR IS A BASE HEIGHT, NOT A SECOND COLOUR. Upstream keeps every
+       bar at least `baseBarHeight` tall so silence is a line rather than a
+       gap, which is the same conclusion the old code reached and a cheaper way
+       to reach it. */
+    var barW = 3, gap = 1, step = barW + gap, baseH = 2;
     var slots = Math.max(1, Math.floor(cssW / step));
 
     w.bars.push(orbStep(w.env, dt));
@@ -782,23 +805,25 @@
 
     var cs = getComputedStyle(el);
     var live = cs.getPropertyValue("--wave-fg").trim() || "#c2bfb8";
-    var rest = cs.getPropertyValue("--wave-bg").trim() || "rgba(255,255,255,.10)";
-    var mid = cssH / 2, maxH = cssH - 2;
+    var mid = cssH / 2;
 
+    ctx.fillStyle = live;
     for (var i = 0; i < slots; i++) {
-      var v = w.bars[w.bars.length - slots + i];
-      var known = v != null;
-      if (!known) v = 0;
-      /* A floor, so silence is a visible line rather than a gap. An audio
-         view that disappears when nothing is happening looks broken. */
-      var h = Math.max(2, v * maxH);
-      var x = i * step + (cssW - slots * step + gap) / 2;
-      ctx.fillStyle = known && v > 0.02 ? live : rest;
+      /* Newest at the right edge, walking backwards — upstream's scrolling
+         mode. A history shorter than the canvas leaves the left end empty
+         rather than stretching to fill it, because a meter that rescales its
+         own past is reporting a shape that never happened. */
+      var v = w.bars[w.bars.length - 1 - i];
+      if (v == null) break;
+      var h = Math.max(baseH, v * cssH * 0.8);
+      var x = cssW - (i + 1) * step;
+      ctx.globalAlpha = 0.4 + Math.min(1, v) * 0.6;
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x, mid - h / 2, barW, h, barW / 2);
       else ctx.rect(x, mid - h / 2, barW, h);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
   }
 
   /* ── The matrix ─────────────────────────────────────────────────────────
@@ -830,84 +855,371 @@
      quiet, and the old field kept drifting whether or not anything was
      happening. */
 
-  var MATRIX_ROWS = 7;
+  /* THE PORT IS COMPLETE AS OF THE THIRTEENTH PASS. The twelfth carried `vu()`
+     and the circle geometry and nothing else, which was enough to draw one
+     meter and not enough to be the component: the parts that make a dot-matrix
+     display a display — the patterns it can spell, the frame clock that plays
+     them, the brightness control, the lit-pixel swell and the radial fills that
+     make a pixel read as emitting rather than as a filled circle — were all
+     still upstream. Everything below is ported from
+     `src/components/ui/matrix.tsx`, which is itself vendored from
+     github.com/elevenlabs/ui at 6e5b681c01ee.
 
-  /* Port of `vu(columns, levels)` from the upstream component. Column heights
-     from a level array, brightness stepping down the column so the top of a
-     tall bar is dimmer than its base. */
-  function matrixVu(columns, levels) {
-    var frame = [];
-    for (var r = 0; r < MATRIX_ROWS; r++) frame.push(new Array(columns).fill(0));
+     WHY IT IS A PORT AND NOT A SECOND IMPLEMENTATION. Where upstream and this
+     disagree, upstream wins and the difference is written down. Two of them:
+
+     1. The frame is rendered once and then updated in place. React reconciles
+        attributes on a stable element tree; rebuilding 168 `<circle>` elements
+        from a string every animation frame is not the same thing performed
+        differently, it is a different cost, and at 60 fps with a blur filter
+        attached it is a visible one.
+     2. Gradient and filter ids are per-instance. Upstream hardcodes
+        `matrix-pixel-on`, `matrix-pixel-off` and `matrix-glow`, so two matrices
+        on one page share three definitions and the second one silently renders
+        with the first one's palette. Nothing in this prototype puts two on a
+        screen today; the meeting HUD puts three. */
+
+  var MATRIX_ROWS = 7;
+  var matrixSeq = 0;
+
+  function matrixClamp(v) { return Math.max(0, Math.min(1, v)); }
+
+  function matrixEmpty(rows, cols) {
+    var f = [];
+    for (var r = 0; r < rows; r++) f.push(new Array(cols).fill(0));
+    return f;
+  }
+
+  function matrixSetPixel(frame, row, col, value) {
+    if (row >= 0 && row < frame.length && col >= 0 && col < frame[0].length) {
+      frame[row][col] = value;
+    }
+  }
+
+  /* A frame authored at one size, drawn at another. Upstream pads with zeroes
+     rather than scaling, so a 5-wide digit in a 7-wide field sits left and the
+     caller places it — which is what lets `digits` compose into a clock. */
+  function matrixEnsureSize(frame, rows, cols) {
+    var out = [];
+    for (var r = 0; r < rows; r++) {
+      var row = frame[r] || [];
+      out.push([]);
+      for (var c = 0; c < cols; c++) out[r][c] = row[c] == null ? 0 : row[c];
+    }
+    return out;
+  }
+
+  var MATRIX = {};
+
+  MATRIX.digits = [
+    [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+    [[0,0,1,0,0],[0,1,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,1,1,1,0]],
+    [[0,1,1,1,0],[1,0,0,0,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[1,1,1,1,1]],
+    [[0,1,1,1,0],[1,0,0,0,1],[0,0,0,0,1],[0,0,1,1,0],[0,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+    [[0,0,0,1,0],[0,0,1,1,0],[0,1,0,1,0],[1,0,0,1,0],[1,1,1,1,1],[0,0,0,1,0],[0,0,0,1,0]],
+    [[1,1,1,1,1],[1,0,0,0,0],[1,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+    [[0,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+    [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[0,1,0,0,0],[0,1,0,0,0]],
+    [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+    [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[0,1,1,1,0]],
+  ];
+
+  MATRIX.chevronLeft = [[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0]];
+  MATRIX.chevronRight = [[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0]];
+
+  /* Eight lit pixels walking a circle of radius 2.5 in a 7x7 field, each one
+     dimmer than the one ahead of it. Twelve frames is one revolution. */
+  MATRIX.loader = (function () {
+    var frames = [], size = 7, center = 3, radius = 2.5;
+    for (var frame = 0; frame < 12; frame++) {
+      var f = matrixEmpty(size, size);
+      for (var i = 0; i < 8; i++) {
+        var angle = (frame / 12) * Math.PI * 2 + (i / 8) * Math.PI * 2;
+        var x = Math.round(center + Math.cos(angle) * radius);
+        var y = Math.round(center + Math.sin(angle) * radius);
+        matrixSetPixel(f, y, x, Math.max(0.2, 1 - i / 10));
+      }
+      frames.push(f);
+    }
+    return frames;
+  })();
+
+  /* A ring expanding from a lit centre. Sixteen frames of one sine period.
+     NOT FOR THE ORB, AND NOT FOR ANY STATE OF IT: ADR 0049 settles that the
+     orb has four states and none of them pulses. This is here because the port
+     is a port — the component carries it, so this carries it — and because a
+     dot-matrix readout is not the orchestrator's voice. Using it to say "alive"
+     anywhere in this product would be the thing that ADR forbids. */
+  MATRIX.pulse = (function () {
+    var frames = [], size = 7, center = 3;
+    for (var frame = 0; frame < 16; frame++) {
+      var f = matrixEmpty(size, size);
+      var intensity = (Math.sin((frame / 16) * Math.PI * 2) + 1) / 2;
+      matrixSetPixel(f, center, center, 1);
+      var radius = Math.floor((1 - intensity) * 3) + 1;
+      for (var dy = -radius; dy <= radius; dy++) {
+        for (var dx = -radius; dx <= radius; dx++) {
+          var dist = Math.sqrt(dx * dx + dy * dy);
+          if (Math.abs(dist - radius) < 0.7) {
+            matrixSetPixel(f, center + dy, center + dx, intensity * 0.6);
+          }
+        }
+      }
+      frames.push(f);
+    }
+    return frames;
+  })();
+
+  /* A travelling sine, anti-aliased vertically: the fractional part of the
+     height lights the pixel above and below in proportion, which is what keeps
+     a 7-row wave from stepping. */
+  MATRIX.wave = (function () {
+    var frames = [], rows = 7, cols = 7;
+    for (var frame = 0; frame < 24; frame++) {
+      var f = matrixEmpty(rows, cols);
+      var phase = (frame / 24) * Math.PI * 2;
+      for (var col = 0; col < cols; col++) {
+        var height = Math.sin(phase + (col / cols) * Math.PI * 2) * 2.5 + 3.5;
+        var row = Math.floor(height);
+        if (row >= 0 && row < rows) {
+          matrixSetPixel(f, row, col, 1);
+          var frac = height - row;
+          if (row > 0) matrixSetPixel(f, row - 1, col, 1 - frac);
+          if (row < rows - 1) matrixSetPixel(f, row + 1, col, frac);
+        }
+      }
+      frames.push(f);
+    }
+    return frames;
+  })();
+
+  /* A five-pixel tail walking a boustrophedon path over the whole field. */
+  MATRIX.snake = (function () {
+    var frames = [], rows = 7, cols = 7, path = [];
+    var x = 0, y = 0, dx = 1, dy = 0;
+    var visited = {};
+    while (path.length < rows * cols) {
+      path.push([y, x]);
+      visited[y + "," + x] = true;
+      var nx = x + dx, ny = y + dy;
+      if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[ny + "," + nx]) {
+        x = nx; y = ny;
+      } else {
+        var ndx = -dy, ndy = dx;
+        dx = ndx; dy = ndy;
+        nx = x + dx; ny = y + dy;
+        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[ny + "," + nx]) {
+          x = nx; y = ny;
+        } else break;
+      }
+    }
+    var len = 5;
+    for (var frame = 0; frame < path.length; frame++) {
+      var f = matrixEmpty(rows, cols);
+      for (var i = 0; i < len; i++) {
+        var idx = frame - i;
+        if (idx >= 0 && idx < path.length) {
+          matrixSetPixel(f, path[idx][0], path[idx][1], 1 - i / len);
+        }
+      }
+      frames.push(f);
+    }
+    return frames;
+  })();
+
+  /* Column heights from a level array, brightness stepping down the column so
+     the top of a tall bar is dimmer than its base. */
+  MATRIX.vu = function (columns, levels) {
+    var rows = MATRIX_ROWS;
+    var frame = matrixEmpty(rows, columns);
     for (var col = 0; col < Math.min(columns, levels.length); col++) {
-      var level = Math.max(0, Math.min(1, levels[col]));
-      var height = Math.floor(level * MATRIX_ROWS);
-      for (var row = 0; row < MATRIX_ROWS; row++) {
-        if (MATRIX_ROWS - 1 - row < height) {
-          frame[row][col] = row < MATRIX_ROWS * 0.3 ? 1 : row < MATRIX_ROWS * 0.6 ? 0.8 : 0.6;
+      var height = Math.floor(matrixClamp(levels[col]) * rows);
+      for (var row = 0; row < rows; row++) {
+        if (rows - 1 - row < height) {
+          frame[row][col] = row < rows * 0.3 ? 1 : row < rows * 0.6 ? 0.8 : 0.6;
         }
       }
     }
     return frame;
-  }
+  };
 
-  /* One SVG per matrix, one circle per pixel, sized exactly as upstream:
-     `size` is the pixel diameter, `gap` the space between, radius 0.9 of the
-     half-size so lit pixels do not touch. */
-  function matrixSvg(frame, size, gap) {
-    var rows = frame.length, cols = frame[0].length;
-    var w = cols * (size + gap) - gap, h = rows * (size + gap) - gap;
-    /* Inline width/height, not attributes alone: the reset gives every svg in
-       this prototype a glyph-sized box, and a 142x40 panel declared only in
-       attributes came out 16x16. */
-    var out = '<svg class="matrix-led" viewBox="0 0 ' + w + ' ' + h +
-      '" style="width:' + w + 'px;height:' + h + 'px" aria-hidden="true">';
-    for (var r = 0; r < rows; r++) {
-      for (var c = 0; c < cols; c++) {
-        var v = frame[r][c];
-        var on = v > 0.05;
-        out += '<circle cx="' + (c * (size + gap) + size / 2).toFixed(1) +
-          '" cy="' + (r * (size + gap) + size / 2).toFixed(1) +
-          '" r="' + (size / 2 * 0.9).toFixed(2) +
-          '" class="' + (on ? "on" : "off") + '"' +
-          (on ? ' opacity="' + v.toFixed(2) + '"' : "") + "/>";
-      }
-    }
-    return out + "</svg>";
+  /** One matrix. `mode` is `vu`, `pattern` or `frames`; a `vu` reads levels,
+      the other two read a frame array. Every option below is upstream's, with
+      upstream's default. */
+  function matrixField(o) {
+    o = o || {};
+    return '<span class="matrix-wrap" role="img"' +
+      ' aria-label="' + t(o.ariaLabel || "matrix display") + '"' +
+      ' data-mode="' + (o.mode || "vu") + '"' +
+      (o.pattern ? ' data-pattern="' + t(o.pattern) + '"' : "") +
+      ' data-rows="' + (o.rows || MATRIX_ROWS) + '"' +
+      ' data-cols="' + (o.cols || 28) + '"' +
+      ' data-size="' + (o.size || 4) + '"' +
+      ' data-gap="' + (o.gap || 2) + '"' +
+      ' data-fps="' + (o.fps || 12) + '"' +
+      ' data-brightness="' + (o.brightness == null ? 1 : o.brightness) + '"' +
+      (o.autoplay === false ? ' data-autoplay="false"' : "") +
+      (o.loop === false ? ' data-loop="false"' : "") +
+      (o.live === false ? ' data-live="false"' : "") + "></span>";
   }
 
   var matrixDriven = [];
 
-  function matrixField(o) {
-    o = o || {};
-    return '<span class="matrix-wrap" data-matrix="' + (o.mode || "rest") +
-      '" data-cols="' + (o.cols || 28) + '"></span>';
+  /* The frame source, resolved once per mount. A named pattern is one of the
+     ports above; `vu` has no frames and reads the level ring instead. */
+  function matrixFrames(name) {
+    if (!name) return null;
+    if (name === "digits") return MATRIX.digits;
+    return MATRIX[name] || null;
+  }
+
+  /** Build the SVG once: defs, then one circle per pixel, kept in a flat array
+      so a frame is applied by writing attributes rather than by re-parsing. */
+  function matrixMount(el) {
+    var rows = parseInt(el.getAttribute("data-rows"), 10) || MATRIX_ROWS;
+    var cols = parseInt(el.getAttribute("data-cols"), 10) || 28;
+    var size = parseFloat(el.getAttribute("data-size")) || 4;
+    var gap = parseFloat(el.getAttribute("data-gap")) || 2;
+    var mode = el.getAttribute("data-mode") || "vu";
+    var uid = "mx" + (++matrixSeq);
+    var w = cols * (size + gap) - gap;
+    var h = rows * (size + gap) - gap;
+    var radius = (size / 2) * 0.9;
+
+    /* Inline width/height, not attributes alone: the reset gives every svg in
+       this prototype a glyph-sized box, and a panel declared only in attributes
+       came out 16x16. */
+    var svg = '<svg class="matrix-led" viewBox="0 0 ' + w + " " + h +
+      '" width="' + w + '" height="' + h +
+      '" style="width:' + w + "px;height:" + h + 'px" aria-hidden="true">' +
+      "<defs>" +
+      '<radialGradient id="' + uid + '-on" cx="50%" cy="50%" r="50%">' +
+      '<stop offset="0%" stop-color="var(--matrix-on)" stop-opacity="1"/>' +
+      '<stop offset="70%" stop-color="var(--matrix-on)" stop-opacity="0.85"/>' +
+      '<stop offset="100%" stop-color="var(--matrix-on)" stop-opacity="0.6"/>' +
+      "</radialGradient>" +
+      /* WORDSCRIPT, carried over from matrix.tsx: upstream hardcodes
+         `--muted-foreground` in both stops, so the palette prop it documents
+         never reaches the unlit pixels. */
+      '<radialGradient id="' + uid + '-off" cx="50%" cy="50%" r="50%">' +
+      '<stop offset="0%" stop-color="var(--matrix-off)" stop-opacity="1"/>' +
+      '<stop offset="100%" stop-color="var(--matrix-off)" stop-opacity="0.7"/>' +
+      "</radialGradient>" +
+      /* WORDSCRIPT. Upstream fixes `stdDeviation` at 2 user units, which is
+         tuned to its own default 10 px pixel and is a soft halo there. The
+         blur radius is in the SVG's coordinate system, so at the meeting HUD's
+         2 px pixel the same number blurs each dot across more than the whole
+         grid and the readout dissolves into an orange smear. It scales with
+         the pixel instead, at upstream's own ratio — 2 at size 10 — so a
+         matrix drawn at any size gets the bloom upstream drew at its.
+         Performance is not the reason for this and was measured before the
+         change: at 7x24 in WebKitGTK 2.52.4 the filter, a static drop-shadow
+         and no bloom at all all hold 62 fps. */
+      '<filter id="' + uid + '-glow" x="-50%" y="-50%" width="200%" height="200%">' +
+      '<feGaussianBlur stdDeviation="' + (size / 5).toFixed(3) + '" result="blur"/>' +
+      '<feComposite in="SourceGraphic" in2="blur" operator="over"/>' +
+      "</filter>" +
+      "</defs>";
+
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        svg += '<circle class="matrix-pixel" cx="' + (c * (size + gap) + size / 2).toFixed(2) +
+          '" cy="' + (r * (size + gap) + size / 2).toFixed(2) +
+          '" r="' + radius.toFixed(3) + '" fill="url(#' + uid + '-off)" opacity="0.1"/>';
+      }
+    }
+    el.innerHTML = svg + "</svg>";
+    /* The filter is defined per instance, so the handle to it is too. */
+    el.style.setProperty("--matrix-glow", "url(#" + uid + "-glow)");
+
+    return {
+      el: el,
+      px: el.querySelectorAll("circle"),
+      rows: rows,
+      cols: cols,
+      uid: uid,
+      mode: mode,
+      brightness: parseFloat(el.getAttribute("data-brightness")),
+      fps: parseFloat(el.getAttribute("data-fps")) || 12,
+      loop: el.getAttribute("data-loop") !== "false",
+      playing: el.getAttribute("data-autoplay") !== "false",
+      frames: matrixFrames(el.getAttribute("data-pattern")),
+      frameIndex: 0,
+      acc: 0,
+      /* The levels are sampled, not measured — this is a static mock and there
+         is no microphone. `orbEnvelope` is the same generator the waveforms and
+         the orb use, so every live drawing on a screen agrees about what the
+         room is doing rather than each inventing its own speech. */
+      live: el.getAttribute("data-live") !== "false",
+      env: orbEnvelope("listening"),
+      levels: [],
+      last: null
+    };
+  }
+
+  /** Write one frame onto the mounted circles. Every rule here is upstream's:
+      a pixel is on above 0.05 of computed brightness and swells to 1.1 above
+      0.5, an off pixel holds a fixed 0.1 rather than vanishing, because a dark
+      grid is the display and an empty box is a broken one. */
+  function matrixApply(m, frame) {
+    var key = "";
+    var i = 0;
+    for (var r = 0; r < m.rows; r++) {
+      for (var c = 0; c < m.cols; c++, i++) {
+        var value = matrixClamp(m.brightness * (frame[r] ? frame[r][c] || 0 : 0));
+        key += value > 0.5 ? "2" : value > 0.05 ? "1" : "0";
+        var node = m.px[i];
+        if (!node) continue;
+        var on = value > 0.05;
+        var active = value > 0.5;
+        node.setAttribute("fill", "url(#" + m.uid + (on ? "-on" : "-off") + ")");
+        node.setAttribute("opacity", on ? value.toFixed(3) : "0.1");
+        node.setAttribute("class", "matrix-pixel" + (active ? " matrix-pixel-active" : ""));
+        node.style.transform = active ? "scale(1.1)" : "";
+      }
+    }
+    /* The class string is what changed, or nothing did — the aria-live region
+       upstream declares is only honest while frames actually differ. */
+    if (key !== m.last) m.last = key;
   }
 
   function matrixCollect() {
     matrixDriven = [];
     var nodes = document.querySelectorAll(".matrix-wrap");
-    for (var i = 0; i < nodes.length; i++) {
-      matrixDriven.push({
-        el: nodes[i],
-        cols: parseInt(nodes[i].getAttribute("data-cols"), 10) || 28,
-        live: nodes[i].getAttribute("data-matrix") === "live",
-        env: orbEnvelope("listening"),
-        levels: []
-      });
-    }
+    for (var i = 0; i < nodes.length; i++) matrixDriven.push(matrixMount(nodes[i]));
     for (i = 0; i < matrixDriven.length; i++) matrixDraw(matrixDriven[i], 0.016);
   }
 
-  /* The levels are sampled, not measured — this is a static mock and there is
-     no microphone. It runs on `orbEnvelope`, the same generator the waveforms
-     and the orb use, so every live drawing on a screen agrees about what the
-     room is doing rather than each inventing its own speech. */
   function matrixDraw(m, dt) {
-    var next = m.live ? orbStep(m.env, dt) : 0;
-    m.levels.push(next);
-    while (m.levels.length > m.cols) m.levels.shift();
-    while (m.levels.length < m.cols) m.levels.unshift(0);
-    m.el.innerHTML = matrixSvg(matrixVu(m.cols, m.levels), 4, 2);
+    if (m.mode === "vu") {
+      m.levels.push(m.live ? orbStep(m.env, dt) : 0);
+      while (m.levels.length > m.cols) m.levels.shift();
+      while (m.levels.length < m.cols) m.levels.unshift(0);
+      matrixApply(m, MATRIX.vu(m.cols, m.levels));
+      return;
+    }
+    if (!m.frames || !m.frames.length) { matrixApply(m, matrixEmpty(m.rows, m.cols)); return; }
+    if (m.mode === "pattern") {
+      matrixApply(m, matrixEnsureSize(m.frames[0], m.rows, m.cols));
+      return;
+    }
+    /* The frame clock, upstream's accumulator: real time in, fixed frame
+       interval out, so playback holds its fps whatever the display refresh
+       is doing. A non-looping animation stops on its last frame and stays
+       there rather than clearing. */
+    if (m.playing) {
+      m.acc += dt * 1000;
+      var interval = 1000 / m.fps;
+      while (m.acc >= interval) {
+        m.acc -= interval;
+        var next = m.frameIndex + 1;
+        if (next >= m.frames.length) {
+          if (m.loop) m.frameIndex = 0;
+          else { m.playing = false; break; }
+        } else m.frameIndex = next;
+      }
+    }
+    matrixApply(m, matrixEnsureSize(m.frames[m.frameIndex], m.rows, m.cols));
   }
 
   /* One loop for every live drawing on the page. Three separate rAF chains
@@ -1782,7 +2094,11 @@
             state_("accent", badge("Active", "accent")) +
             state_("planned", badge("Phase 8", "plan")) +
             state_("dot", '<span class="rowflex">' + dot("success") + "<span class='muted'>Direct paste available</span></span>") +
-            state_("waveform", wave(22, 1)) +
+            /* The live component, not a still of it. This swatch used to be
+               `wave(22, 1)` — a row of bars from a sine, drawn once — which is
+               a picture of a waveform standing in a gallery of working
+               controls. Nothing in the product draws that any more. */
+            state_("waveform", waveform({ kind: "input", label: "Live input level" })) +
             "</div>"
         }) +
         card({
@@ -1868,6 +2184,44 @@
         })
       ),
 
+      /* ── THE READOUT, WHOLE ────────────────────────────────────────────────
+         The Design System screen exists so a component is judged as a
+         component rather than inferred from the one screen that happens to use
+         it, and the matrix is the case that argument was written for: the
+         product uses one of its modes, in one place, at one size, and the
+         twelfth pass shipped exactly that much of it and called it the
+         component. Everything it can do is here, drawn at upstream's own
+         default 10 px pixel so the bloom is the one upstream tuned. */
+      sec("The matrix", "A dot-matrix readout. One component, four frame sources and a level mode — ported whole from ElevenLabs UI (MIT), because a subset of a component is a different component.",
+        card({
+          body: '<div class="mx-lab">' +
+            [["VU", "vu", "Levels in, column heights out. The one mode the product uses, in the meeting HUD.",
+              matrixField({ mode: "vu", cols: 16, size: 10, gap: 2, ariaLabel: "Level meter" })],
+             ["Loader", "frames", "Eight pixels around a circle, twelve frames to the turn.",
+              matrixField({ mode: "frames", pattern: "loader", rows: 7, cols: 7, size: 10, gap: 2, fps: 12, ariaLabel: "Loader" })],
+             ["Wave", "frames", "A travelling sine, anti-aliased vertically so seven rows do not step.",
+              matrixField({ mode: "frames", pattern: "wave", rows: 7, cols: 7, size: 10, gap: 2, fps: 16, ariaLabel: "Wave" })],
+             ["Snake", "frames", "A five-pixel tail over every cell in the field.",
+              matrixField({ mode: "frames", pattern: "snake", rows: 7, cols: 7, size: 10, gap: 2, fps: 14, ariaLabel: "Snake" })],
+             ["Pulse", "frames", "A ring out of a lit centre. Ported, and deliberately unused: ADR 0049 settles that the orchestrator's voice has four states and no pulse.",
+              matrixField({ mode: "frames", pattern: "pulse", rows: 7, cols: 7, size: 10, gap: 2, fps: 16, ariaLabel: "Pulse" })],
+             ["Digit", "pattern", "A static frame. Ten of them, 5 x 7 each, which is what makes a clock possible.",
+              matrixField({ mode: "pattern", pattern: "digits", rows: 7, cols: 5, size: 10, gap: 2, ariaLabel: "Digit zero" })]]
+              .map(function (m) {
+                return '<figure class="mx-cell"><div class="mx-stage">' + m[3] + "</div>" +
+                  '<figcaption><b>' + t(m[0]) + '</b><span class="mx-mode mono">' + t(m[1]) + "</span>" +
+                  "<span>" + p(m[2]) + "</span></figcaption></figure>";
+              }).join("") + "</div>",
+          rows: [
+            row({ label: "Lit pixel", hint: "A radial fill, not a flat colour, plus a blur that scales with the pixel. Both are what make a dot read as emitting instead of as a filled circle.", ctl: '<span class="mono muted">radialGradient + feGaussianBlur</span>' }),
+            row({ label: "Unlit pixel", hint: "Drawn, never omitted. The dark grid is what makes a mostly-off display read as a display.", ctl: '<span class="mono muted">opacity 0.1</span>' }),
+            row({ label: "Palette", hint: "Two properties on the wrapper. The light scheme keeps the colours and drops the bloom — there is nothing to glow into on white.", ctl: '<span class="mono muted">--matrix-on / --matrix-off</span>' }),
+            row({ label: "Frame clock", hint: "An accumulator over real time, so playback holds its fps whatever the display is doing. Reduced motion draws one frame and stops.", ctl: '<span class="mono muted">fps · loop · autoplay</span>' }),
+          ]
+        }) +
+        note("Measured in WebKitGTK 2.52.4 at 7 x 24: upstream's SVG glow filter 62.1 fps, a static drop-shadow 62.1, no bloom 62.2. The filter costs nothing here and is what the component looks like, so it is the one that ships.", "eye")
+      ),
+
       sec("What the palette switch changes", "So the comparison is legible rather than atmospheric.",
         card({
           rows: [
@@ -1912,15 +2266,35 @@
      that position is the shortcut, because the shortcut is how the product is
      used and it is used from inside another application. A user who has not
      memorised it cannot start. */
-  function homeHero() {
-    return '<section class="home-hero">' +
-      /* The meter sits on the state line rather than behind the whole panel,
-         because it reports the same thing that line reports and a reading is
-         worth more beside its label than spread out under the text. */
-      '<div class="hero-state">' + '<i class="dot"></i><span>' + t("Ready") + "</span>" +
-      '<span class="sep">·</span><span>' + t("Groq cloud · whisper-large-v3-turbo") + "</span>" +
-      matrixField({ mode: "live", cols: 24 }) + "</div>" +
+  /* ── THIRTEENTH PASS — THE PANEL IS GONE, AND SO IS WHAT IT REPEATED ─────
+     What stood here was a `--bg-surface` block with a top-edge highlight: a
+     card in everything but name, holding a state line, the keycaps and a facts
+     line. The owner's verdict was that the surface was odd and its content was
+     odd, and both halves were right for the same reason.
 
+     THE SURFACE. It was the only panel in the prototype that was not a `.card`
+     and did not behave like one — no head, no rows, no separators, its own
+     padding, and a dot-matrix readout floating in its top-right corner
+     attached to nothing. Every other view opens with `viewTop`: a heading on
+     the window ground. Home's opening block is now the same object, and the
+     one thing that made it worth a panel — the keycaps — was never the panel's
+     doing. A keycap is already a raised object; putting it on a raised panel
+     costs it the ground it is raised from.
+
+     THE CONTENT. The state line said "Ready · Groq cloud ·
+     whisper-large-v3-turbo" directly above a status bar that says "Ready ·
+     Groq cloud · whisper-large-v3-turbo · Insert at cursor" — the same three
+     facts, twice, 700 px apart, and §11.12 calls that furniture. The status
+     bar is the surface that owns runtime state, on every screen rather than on
+     this one, so the duplicate goes and "Insert at cursor" leaves the facts
+     line for the same reason.
+
+     THE READOUT LEFT WITH IT. A VU meter on a screen that is not recording is
+     a measurement of nothing, and DESIGN_SYSTEM.md already names that failure:
+     a permanently moving surface is a status light that never turns off. It is
+     now in the meeting HUD, where a recording is actually running. */
+  function homeHero() {
+    return '<section class="home-open">' +
       '<div class="hero-invoke">' +
         '<span class="hero-keys">' +
           '<kbd class="keycap">' + t("Ctrl") + "</kbd>" +
@@ -1938,8 +2312,6 @@
         "<span>" + t("Next dictation runs as") + " <b>" + t("Cleanup") + "</b></span>" +
         '<span class="sep">·</span>' +
         "<span><b>" + t("General writing") + "</b> " + t("on Auto") + "</span>" +
-        '<span class="sep">·</span>' +
-        "<span>" + t("Insert at cursor") + "</span>" +
         '<span class="grow">' + btn("Change in profile", "ghost", { icon: "arrow" }) + "</span>" +
       "</div>" +
       "</section>";
@@ -3720,7 +4092,7 @@
   }
 
   /** A downloadable model row, shared by Settings and onboarding — the same
-      reason `providerGrid()` is shared. Onboarding's local lane needs real
+      reason `providerPick()` is shared. Onboarding's local lane needs real
       download controls, not a select that names files it cannot fetch, and a
       second implementation of the same row would drift from this one.
 
@@ -3744,26 +4116,61 @@
       '<div class="mdl-ctl">' + act + "</div></div>";
   }
 
-  /** The provider grid, shared by Settings and onboarding.
+  /** The provider picker, shared by Settings and onboarding.
       The donor does the same — its onboarding renders `TranscriptionModelPicker`,
       the very component the settings page uses, rather than a simplified twin.
       A setup flow that draws its own version of a control teaches the wrong
       surface: the user learns a screen they will never see again, and the two
-      drift the first time one is edited. */
-  function providerGrid(lane, selected) {
-    return '<div class="provgrid" role="radiogroup">' +
-      PROVIDERS.filter(function (p) { return p.lane === lane; }).map(function (p) {
-        return '<button class="provtile" role="radio" aria-checked="' +
-          (p.name === selected ? "true" : "false") + '">' +
-          '<span class="provtile-mark">' + (brand(p.name) || icon("cloud")) + "</span>" +
-          '<span class="provtile-name">' + t(p.name) + "</span>" +
-          '<span class="provtile-caps">' +
-          (p.stt ? "<span>" + t("speech") + "</span>" : "") +
-          (p.llm ? "<span>" + t("language") + "</span>" : "") +
-          "</span>" +
-          (p.key ? '<span class="provtile-key" title="Key set">' + icon("check") + "</span>" : "") +
-          "</button>";
-      }).join("") + "</div>";
+      drift the first time one is edited.
+
+      THIRTEENTH PASS — SEVEN TILES BECAME ONE ROW.
+
+      This was a `provgrid`: seven tiles on a 152 px minimum track, three to a
+      row, spending three rows of surface to state one value. It was built that
+      way to answer the "dropdowns eat space" complaint, and it answered it by
+      eating more — a grid is not the opposite of a dropdown, it is a dropdown
+      with every option permanently unfolded. What the complaint was actually
+      about is that a bare `<select>` throws away the two facts that make a
+      provider picker worth looking at: whose logo it is, and what it can run.
+
+      So neither. A row, in the grammar every other setting on this surface
+      already uses, whose control carries the mark beside the name — the same
+      `selmark` + `select` pairing the per-job override rows use one card
+      below. The connection and its overrides finally read as one control
+      appearing twice rather than as two unrelated designs for one decision.
+
+      THE CAPABILITY LINE SURVIVES, AND IT MOVES TO WHERE IT DECIDES SOMETHING.
+      On a tile, "speech · language" was a permanent caption under a name; as
+      the row's hint it is a sentence about the provider you have actually
+      chosen, and it can say the thing the tiles could not — that picking a
+      language-only provider leaves the listening jobs somewhere else. */
+  function providerPick(lane, selected, opts) {
+    opts = opts || {};
+    var here = PROVIDERS.filter(function (p) { return p.lane === lane; });
+    var cur = here.filter(function (p) { return p.name === selected; })[0] || here[0];
+    var caps = cur.stt && cur.llm ? "Speech and language."
+      : cur.llm ? "Language only — the listening jobs stay on whichever provider can hear."
+        : "Speech only — the writing jobs stay on whichever provider can write.";
+    return row({
+      /* Enterprise calls this an Account, because there it is one: a tenant,
+         a region and a credential chain rather than a company you buy tokens
+         from. Same control, and the label is the caller's to set. */
+      label: opts.label || "Provider",
+      hint: opts.hint || {
+        b: t(cur.desc) + " Every job below follows this unless you override it on the job itself.",
+        a: caps
+      },
+      /* NO CREDENTIAL BADGE HERE. The tile carried a small check when a key was
+         stored, which made sense on a grid where each option had to state its
+         own readiness. In a row, the credential has its own row directly below
+         saying `Set` — and one fact stated twice, six pixels apart, is the
+         furniture rule exactly. The mark stays: it is the recognition the grid
+         was built for, and it is the only part of a tile worth its space. */
+      ctl: '<span class="rowflex">' +
+        '<span class="selmark">' + (brand(cur.name) || icon("cloud")) + "</span>" +
+        select(cur.name, here.map(function (p) { return p.name; })) +
+        "</span>"
+    });
   }
 
   /* ── What each lane actually offers ─────────────────────────────────────
@@ -4028,10 +4435,9 @@
 
       if (lane === "Enterprise") {
         return [
-          stackRow({
+          providerPick("Enterprise", "AWS Bedrock", {
             label: "Account",
-            hint: "Each of the three authenticates differently, so picking one changes which fields exist below it.",
-            body: providerGrid("Enterprise", "AWS Bedrock")
+            hint: "Each of the three authenticates differently, so picking one changes which fields exist below it."
           }),
           row({
             label: "Credentials",
@@ -4047,18 +4453,15 @@
         ];
       }
 
-      /* Cloud. The provider is a grid rather than a select — the donor's shape
-         (`ProviderTabs`, `ModelCardList`) and the right one, because picking a
-         provider is a recognition task: you know the mark before you have read
-         the word, and a closed select makes you open it to find out what is
-         even possible. It also states capability per tile, which a select
-         gives nowhere to live. */
+      /* Cloud. The provider was a grid of tiles here, on the argument that
+         picking one is a recognition task — you know the mark before you have
+         read the word. That much held; the tiles were not what delivered it.
+         The mark travels with the row's control now (`providerPick`), so
+         recognition survives at a twelfth of the surface, and capability moved
+         from a caption under every option to a sentence about the one that is
+         actually selected. */
       return [
-        stackRow({
-          label: "Provider",
-          hint: "What each one can run is stated on it. A provider that recognizes no speech stays available for the writing jobs and is skipped by the listening ones.",
-          body: providerGrid("Cloud", "Groq")
-        }),
+        providerPick("Cloud", "Groq"),
         row({
           label: "API key",
           hint: {
@@ -5398,10 +5801,8 @@
           })
         ].concat(
           state.lane === "Cloud" ? [
-            stackRow({
-              label: "Provider",
-              hint: "What each one can run is stated on it. Speech and language are different capabilities and not every provider has both.",
-              body: providerGrid("Cloud", "Groq")
+            providerPick("Cloud", "Groq", {
+              hint: "Speech and language are different capabilities and not every provider has both."
             }),
             row({
               label: "API key",
@@ -5411,10 +5812,9 @@
           ]
 
           : state.lane === "Enterprise" ? [
-            stackRow({
+            providerPick("Enterprise", "AWS Bedrock", {
               label: "Account",
-              hint: "These authenticate against an account and a region rather than with a single token, and each carries its own credential shape.",
-              body: providerGrid("Enterprise", "AWS Bedrock")
+              hint: "These authenticate against an account and a region rather than with a single token, and each carries its own credential shape."
             }),
             row({ label: "Region", ctl: select("eu-central-1", ["eu-central-1", "us-east-1", "us-west-2"]) }),
             row({
@@ -5864,7 +6264,13 @@
         '<span class="agw-when">' + t("09:41") + "</span></div>" +
 
         "</div>" +
-        '<div class="agw-answer">' + icon("mic") + wave(10, 4) +
+        /* The second frozen waveform, and the last one. This strip is the
+           moment the user is speaking an answer into a window that is counting
+           down, so a level that never moves is the one thing it must not show.
+           Same instrument as the meeting HUD and for the same reason — the
+           space is small, and a quantised meter survives being small. */
+        '<div class="agw-answer">' + icon("mic") +
+        matrixField({ mode: "vu", cols: 12, size: 2, gap: 1, ariaLabel: "Input level" }) +
         "<span>" + t("Answer window") + "</span>" +
         '<span class="agw-answer-left">' + t("0:08") + "</span></div>" +
         "</div></div>" +
@@ -6368,9 +6774,33 @@
         '<div class="row1"><div class="grow"><h3>' + t("Sprint Planning") + "</h3>" +
         '<span class="note-date">Mar 11, 2026 <span class="origin-from">· from Google Calendar</span></span></div></div>' +
         '<div class="hud-tabs">' + tabsHtml + "</div>" +
+        /* THE ONE LEVEL READOUT IN THE PRODUCT, AND THIS IS WHERE IT LIVES.
+           What stood here was `wave(12, 2)` — twelve bars from a sine, drawn
+           once and never again. A frozen waveform on a window whose whole
+           claim is that it is recording right now is the fake-state failure
+           the runtime rules name outright, and it was the most conspicuous
+           place in the prototype to commit it.
+
+           IT IS THE MATRIX AND NOT THE WAVEFORM, and the reason is the width.
+           The state line is ~70 px of spare run inside a 330 px window. A
+           waveform trace in 70 px is a texture; a 7-row quantised meter is
+           still a meter — it is the shape a hardware level indicator has taken
+           for fifty years precisely because it survives being small. The
+           waveform keeps the input-level row in General, where it has 600 px
+           and a threshold mark to sit against.
+
+           IT MEASURES SOMETHING. That was the whole objection to it standing
+           on Home: at rest it reported a room nobody was recording. Here the
+           recording is the reason the window is open. */
         '<div class="hud-state">' + dot("danger") + '<span class="el">12:04</span>' +
         "<span>·</span><span>2 of 4 speaking</span><span>·</span><span>mic + system</span>" +
-        '<span class="grow"></span>' + wave(12, 2) + "</div>" +
+        '<span class="grow"></span>' +
+        /* 16 x 7 at a 2 px pixel is 47 x 20 — the height of the line it sits
+           in. Sized up it stops being part of the state line and becomes a
+           second thing on the row, which at 330 px of window is the whole
+           budget. */
+        matrixField({ mode: "vu", cols: 16, size: 2, gap: 1, ariaLabel: "Input level" }) +
+        "</div>" +
         "</div>" +
         '<div class="hud-scroll">' + body + "</div>" +
         (opts.copilot ? copilot(opts.copilot) : "") +
@@ -6801,13 +7231,35 @@
         base.surface === "system" ? "WordScript — design system" :
           "WordScript — " + base.label;
 
-    document.getElementById("win").innerHTML =
+    /* TWO NESTED LAYERS, BECAUSE THERE ARE TWO THINGS THAT CAN FLOAT — see the
+       frost section in demo.css.
+
+       `.win-shell` is the application: decoration, body, status strip. The
+       settings sheet floats over that, so that is what recedes behind it.
+       `.win-stack` is the application AND the sheet. The palette floats over
+       both, so that is what recedes behind the palette — which is what makes
+       Cmd+K work correctly from inside settings, where the sheet has to go
+       soft along with everything under it.
+
+       Each is ONE element on purpose. Blurring the decoration, the body and
+       the status strip separately would blur each against transparency at its
+       own edges, and the seams would show as soft lines across the window. */
+    var win = document.getElementById("win");
+    win.innerHTML =
+      '<div class="win-stack">' +
+      '<div class="win-shell">' +
       '<div class="win-deco">' + icon("dot", "sr") +
       "<span>native window decoration — drawn by the OS · <em>" + t(title) + "</em></span></div>" +
       '<div class="win-body">' + sidebar +
       '<div class="content" id="content" data-layout="' + layout + '">' +
       '<div class="content-inner" data-layout="' + layout + '">' + html +
-      "</div></div></div>" + statusStrip(base.surface) + modal + commandPalette();
+      "</div></div></div>" + statusStrip(base.surface) +
+      "</div>" + modal +
+      "</div>" + commandPalette();
+    /* The flags are on the window, because what they describe is the window's
+       state: something is floating over it, and how far down that goes. */
+    win.toggleAttribute("data-frost-shell", !!modal);
+    win.toggleAttribute("data-frost-stack", !!state.cmdk);
 
     document.documentElement.dataset.palette = state.palette;
     document.documentElement.dataset.density = state.density;
@@ -7018,6 +7470,7 @@
 
     var cmdkRow = e.target.closest("[data-cmdk-act]");
     if (cmdkRow) { runCmdk(cmdkRow.dataset.cmdkAct); return; }
+
     /* Clicking the scrim closes; clicking the panel does not. The check is
        "was the scrim itself the target", because the panel is inside it and
        `closest` would match on both. */
@@ -7090,6 +7543,28 @@
       laneRow.setAttribute("aria-checked", "true");
       return;
     }
+  });
+
+  /* THE POINTER MOVES THE SELECTION RATHER THAN PAINTING BESIDE IT. A palette
+     has exactly one row that Return will run, and a hover highlight that is
+     not that row is a second answer to the only question the surface asks. So
+     hovering takes the selection with it, and the highlight the pointer leaves
+     IS the selection.
+
+     Written straight to the DOM rather than through `render()`: a re-render
+     rebuilds the whole window, and doing that on every row the pointer crosses
+     would also rebuild the field the user is typing in. */
+  document.addEventListener("mouseover", function (e) {
+    if (!state.cmdk) return;
+    var row = e.target.closest("[data-cmdk-i]");
+    if (!row) return;
+    var i = parseInt(row.dataset.cmdkI, 10);
+    if (isNaN(i) || i === state.cmdkSel) return;
+    state.cmdkSel = i;
+    var list = row.closest(".cmdk-list");
+    if (!list) return;
+    list.querySelectorAll("[data-sel]").forEach(function (r) { r.removeAttribute("data-sel"); });
+    row.setAttribute("data-sel", "");
   });
 
   document.getElementById("pick").addEventListener("change", function (e) {
