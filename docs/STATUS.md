@@ -33,6 +33,17 @@ Status: 2026-07-25
 
 ## Implemented core features
 
+- recording limits that agree with what the pipeline can do (ADR 0038): a
+  processing limit resolved per provider, account plan and model; an auto-stop
+  the user sets under it with a recommended safety margin; and the silence stop
+  as the separate thing it always was. The overlay states the auto-stop at the
+  start of a recording and again with two minutes and thirty seconds left, and
+  the tab opens the control that sets it. Providers declare their own limits and
+  account plans, so a new lane is a declaration rather than a new branch
+- recoverable transcription failures keep their recording (ADR 0039): a timeout
+  no longer destroys the capture, the history entry points at it, and both the
+  overlay error surface and the history list retry by re-transcribing it. Kept
+  recordings are swept after seven days or twenty files
 - native start/stop, pause/resume and abort hotkeys
 - one Rust-owned shortcut contract (`core::shortcut`, ADR 0006): a single token
   vocabulary, canonical storage form, human display strings and validity rules,

@@ -39,6 +39,31 @@ Status: 2026-07-25
   unreliable on GTK and was removed
 - The fixed sizes must stay consistent between `OverlaySurface::dimensions()`
   and both invoke paths (base surface sync and `useLayoutEffect`)
+- Two side tabs, one per side, so neither has to yield to the other:
+  `.ov-learned-tab` on the **left** (one-shot, retracts, nothing to click) and
+  `.ov-limit-tab` on the **right** (the auto-stop, open for the whole recording,
+  clickable). Both stay out of the pill's flex flow — a wider pill has its
+  rounded ends clipped by the 480px window — and both animate `width`, never
+  `transform`/`opacity`, which is what keeps them clear of the WebKitGTK
+  ghosting in `docs/known-issues/overlay-ghosting.md`
+- The limit tab is **absent** for most of a recording, then shows a stop mark
+  and a bare `m:ss` countdown until the end: `data-tone` warning, turning danger
+  with a pulsing mark near zero. There is no quiet state — a tab with nothing
+  urgent to say is not on screen. The mark is a square, not a dot: the pill's
+  own timer counts *up* a few pixels away, so a bare number is ambiguous, and
+  minutes are unpadded here (`1:59`) where the timer is padded (`01:59`)
+- The thresholds are **a quarter of the auto-stop**, capped at 120 s (appear)
+  and 30 s (urgent). Fixed thresholds break at the short end: with a 1-minute
+  auto-stop, "two minutes left" is true from the first second and the tab would
+  never leave the screen. *When* to speak is the overlay's call; the number it
+  speaks is `resolve_capture_budget`'s (ADR 0034, ADR 0038)
+- Both tabs are sized by measuring their inner element against the side strip
+  `(480 - pillWidth) / 2`, and paint nothing when they do not fit — a tab that
+  is clipped is worse than no tab, and a tab that paints nothing is not
+  announced either. Two things that measurement must respect: round the layout
+  width **up** (`offsetWidth` truncates, and one pixel short clips the rounded
+  end), and re-measure after `document.fonts.ready` (metrics taken before the
+  webfont lands size the shutter for the fallback face)
 
 ## Project context
 

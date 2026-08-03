@@ -58,4 +58,8 @@ export interface TranscriptionHistoryEntry {
   recovery_message: string | null;
   clipboard_restore: NativeClipboardRestoreStatus | null;
   error: string | null;
+  /** Where the capture this entry failed on is still sitting, when the runtime
+   *  kept it for a retry. `null` on every entry with nothing to retry from — a
+   *  successful run deletes its audio, and so does an unrecoverable failure. */
+  audio_path: string | null;
 }

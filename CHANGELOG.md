@@ -33,6 +33,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A long recording warns you before it stops itself.** In the last quarter of
+  the auto-stop — at most two minutes before it — a small countdown appears
+  beside the pill and turns urgent near zero. Tapping it opens the setting that
+  owns the number. Recordings that never approach the limit never see it.
+- **Three recording limits, each named after what it does.** *Stop after
+  silence* reacts to you stopping. *Auto-stop* ends a recording that got long,
+  early enough that it still goes through. *Processing limit* is the point past
+  which nothing can be transcribed at all — it follows the provider, the account
+  plan and the model, and Settings recommends keeping the auto-stop a safe
+  distance under it (ADR 0038).
+- **Account plan for the speech provider.** Groq's free and developer plans
+  allow different upload sizes, and with them different recording lengths.
+  Selecting the plan is what lets a paying account record to its real limit
+  instead of the free one. Providers declare their own plans, so a lane without
+  any (the local runtime) shows no control.
+- **A failed recording can be retried from the audio.** A transcription that
+  times out keeps its recording, and both the overlay's error surface and the
+  history list offer a retry that re-transcribes it. Kept recordings are swept
+  after seven days or twenty files (ADR 0039).
+
+### Fixed
+
+- **Long recordings could not be transcribed at all.** The transcription budget
+  capped the audio duration at 60 seconds before scaling, so an 11-minute
+  recording was granted the same 35 seconds as a one-minute one and timed out
+  twice. The pipeline watchdog was a fixed 120 seconds and could fire while the
+  provider call was still legitimately running. Both now scale with the
+  recording (ADR 0038).
+- **A failed recording was deleted immediately.** The pipeline removed the
+  capture on every path, the error path included, so a timeout destroyed the
+  recording before the error finished rendering — and the existing retry needed
+  a transcript a timeout never produces. Recoverable failures now keep their
+  audio (ADR 0039).
+
+### Added
+
 - **Words & names fills itself.** You never had a chance of filling it by hand.
   To do that you would have to know in advance which words speech recognition
   will get wrong, and you only find that out in the second the text comes out

@@ -249,6 +249,45 @@ export interface ProfileCaptureSettings {
   silence_timeout_seconds: number;
 }
 
+/// Why a recording cannot be longer than the processing limit.
+export type CaptureCeilingReason =
+  | "provider_upload_limit"
+  | "decode_budget"
+  | "configured_maximum";
+
+/**
+ * What a recording may cost under the current provider and settings.
+ *
+ * Every field is the runtime's answer, resolved by `resolve_capture_budget`.
+ * None of it is recomputed here: a threshold restated in TypeScript drifts, and
+ * the drift is invisible because both sides still look right in isolation
+ * (ADR 0034).
+ */
+export interface CaptureBudget {
+  provider:                      string;
+  /** The hard limit: past this, the recording cannot be processed at all. */
+  ceiling_seconds:               number;
+  ceiling_reason:                CaptureCeilingReason;
+  /** The cause, phrased for display: "the 25 MiB upload size on your free plan". */
+  ceiling_detail:                string;
+  /** The auto-stop in force — the configured value, clamped to the ceiling. */
+  auto_stop_seconds:             number;
+  configured_auto_stop_seconds:  number;
+  auto_stop_clamped:             boolean;
+  safety_margin_seconds:         number;
+  recommended_auto_stop_seconds: number;
+  /** Legal, but with no headroom left between auto-stop and processing limit. */
+  auto_stop_in_margin:           boolean;
+}
+
+/** An account plan and the upload it buys. Declared by the provider. */
+export interface ProviderTier {
+  id:              string;
+  label:           string;
+  max_audio_bytes: number;
+  default:         boolean;
+}
+
 export type OverlayPositionMode = "preset" | "manual";
 export type OverlayAnchor =
   | "top_left"
@@ -275,6 +314,9 @@ export interface AppConfig {
   filter_fillers:          boolean;
   professionalize:         boolean;
   provider:                string;
+  /// Which of the provider's account plans this machine is on. Plans come from
+  /// `resolve_provider_tiers`; empty means the provider's default.
+  provider_tier:           string;
   local_model:             string;
   local_profile:           string;
   local_prompt_strength:   "off" | "profile" | "profile_and_terms";
@@ -455,7 +497,13 @@ export type BackendEvent =
   | ({ event: "empty" } & { message?: string; input_level?: InputLevelSummary })
   | { event: "muted";            muted: boolean }
   | { event: "paused";           paused: boolean }
-  | { event: "error";            message: string }
+  | {
+      event: "error";
+      message: string;
+      /** True when the runtime kept the capture, so the failure can be retried
+       *  from the audio rather than only reported. */
+      audio_retained?: boolean;
+    }
   | { event: "audio_level";      level: number; rms?: number; waveform?: number[] }
   | { event: "shutdown" };
 
@@ -472,6 +520,9 @@ export interface RuntimeState {
   pendingResult:     RuntimeTranscriptionResult | null;
   lastResult:        RuntimeTranscriptionResult | null;
   error:             string | null;
+  /** Whether the failed session's audio survived, i.e. whether the error
+   *  surface has something to offer a retry from. */
+  errorAudioRetained: boolean;
   recordingStartMs:  number | null;   // Date.now() when recording started
   /** Whether a processing preview was staged for the current session. One
    *  decision surface per delivery mode: a session that stopped on the preview

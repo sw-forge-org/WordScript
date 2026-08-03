@@ -53,7 +53,8 @@ Rust core modules in `src-tauri/src/core/`:
 - `paths.rs` -- product paths (config, scratchpad, logs)
 - `shortcut.rs` -- single owner of the shortcut contract (ADR 0006): token vocabulary, canonical form, display strings, validity rules, and the per-session capability matrix (ADR 0007)
 - `trigger.rs` -- global start/stop, pause/resume, abort hotkeys, activation modes (tap / double tap / hold, the latter strictly momentary per ADR 0013 and gating all three capture-lane bindings), grab lifecycle and `[trigger]` observability. Every modifier-only capture-lane binding -- start/stop, pause and abort -- is decided at the release edge, where the interruption signal exists; an interrupted chord acts on nothing (ADR 0014)
-- `capture.rs` -- audio capture, level/waveform events, silence/max-duration autostop, single stream rebuild after transient error
+- `capture.rs` -- audio capture, level/waveform events, silence/max-duration autostop, single stream rebuild after transient error, retained-capture sweep
+- `capture_budget.rs` -- what a recording may cost: the processing limit (the longest capture the current provider, plan and model can process at all), the auto-stop in force, the safety margin between them, the transcription wait and the pipeline watchdog deadline. One source for the capture monitor, the settings surface and the overlay; nothing recomputes it (ADR 0038)
 - `sessions.rs` -- runtime status and shared session transitions
 - `sound/` -- one synthesised G-major theme: startup signature plus listen,
   handoff, done, abort and error cues, four timbre packs, played on a single
@@ -308,7 +309,14 @@ no account. Entities:
   after abort or new capture are discarded and logged.
 - **TranscriptionHistoryEntry** (`history.rs`): persisted entry with raw vs
   transformed transcript, active profile name, effective `ProcessingMode`,
-  insert outcome, server-side filters. Retry re-processes from stored raw.
+  insert outcome, server-side filters, and `audio_path` for a capture the
+  runtime kept. Retry re-processes from the stored raw transcript, or
+  re-transcribes from the kept capture when there is no transcript -- the
+  timeout case, where the audio is the only surviving artifact (ADR 0039).
+- **CaptureBudget** (`capture_budget.rs`): the resolved recording limits. A
+  failure that could survive a second attempt keeps its capture in the temp
+  directory until the retry or the seven-day / twenty-file sweep; every other
+  path deletes it.
 - **NativeInsertionPlatformStatus** (`insertion.rs`): support contract --
   label, support tier, insert strategy, free-text, prerequisites, honest
   limits, Linux driver chain (wl-copy/xdotool/wtype/ydotool/enigo/scratchpad).

@@ -12,9 +12,10 @@ use crate::core::runtime_log;
 
 use super::{
     ChatCompletionRequest, LocalProviderIssueCode, LocalProviderReadiness,
-    LocalProviderSetupStatus, ProviderCapabilities, ProviderCommandError, ProviderCredentialStatus,
-    ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus, TranscribeAudioFileRequest,
-    TranscriptionResponse, ValidateProviderApiKeyResponse, LOCAL_PREVIEW_PROVIDER_ID,
+    LocalProviderSetupStatus, ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError,
+    ProviderCredentialStatus, ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus,
+    ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
+    LOCAL_PREVIEW_PROVIDER_ID,
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 90_000;
@@ -583,6 +584,50 @@ pub async fn create_chat_completion(
 
 fn provider_profiles() -> Vec<ProviderProfile> {
     discover_local_provider_profiles().unwrap_or_else(fallback_provider_profiles)
+}
+
+/// The local runtime has no account plans: nothing here is billed by request
+/// size, so there is nothing to choose between.
+pub fn tiers() -> Vec<ProviderTier> {
+    Vec::new()
+}
+
+/// Seconds of decode per second of audio, by model size.
+///
+/// Deliberately pessimistic — a ceiling that assumes a fast machine is a
+/// ceiling that fails on the machine that needed one. The names are matched as
+/// substrings because the model field carries whatever the user downloaded
+/// ("large-v3", "ggml-medium.en"), not a closed enum.
+fn realtime_factor(model: &str) -> f64 {
+    let model = model.trim().to_ascii_lowercase();
+    if model.contains("large") {
+        2.0
+    } else if model.contains("medium") {
+        1.0
+    } else if model.contains("small") {
+        0.5
+    } else if model.contains("tiny") {
+        0.15
+    } else {
+        // "base", and anything this build has not seen before.
+        0.25
+    }
+}
+
+/// What one capture may cost locally: bounded by how long the model takes to
+/// decode it, never by an upload.
+pub fn capture_limits(model: &str) -> ProviderCaptureLimits {
+    let model = if model.trim().is_empty() {
+        "base"
+    } else {
+        model.trim()
+    };
+
+    ProviderCaptureLimits {
+        max_audio_bytes: None,
+        realtime_factor: Some(realtime_factor(model)),
+        detail: format!("how long {model} takes to decode on this machine"),
+    }
 }
 
 fn provider_capabilities() -> ProviderCapabilities {

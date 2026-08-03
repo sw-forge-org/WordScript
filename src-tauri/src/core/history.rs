@@ -67,6 +67,12 @@ pub struct TranscriptionHistoryEntry {
     pub recovery_message: Option<String>,
     pub clipboard_restore: Option<NativeClipboardRestoreStatus>,
     pub error: Option<String>,
+    /// Where the capture this entry failed on is still sitting, when the
+    /// runtime kept it for a retry. `None` on every entry that has nothing to
+    /// retry from — a successful run deletes its audio, and so does an
+    /// unrecoverable failure.
+    #[serde(default)]
+    pub audio_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +103,7 @@ pub struct RecordHistoryEntryRequest {
     pub recovery_message: Option<String>,
     pub clipboard_restore: Option<NativeClipboardRestoreStatus>,
     pub error: Option<String>,
+    pub audio_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -275,6 +282,7 @@ fn record_entry_with_work_mode(
         recovery_message: request.recovery_message,
         clipboard_restore: request.clipboard_restore,
         error: request.error,
+        audio_path: request.audio_path,
     };
 
     store.entries.push_front(entry.clone());
@@ -358,6 +366,67 @@ pub fn export_transcription_history(
     })
 }
 
+/// Re-transcribe the capture an entry kept, and return the raw text.
+///
+/// The retry path for a failure that never produced a transcript. It rebuilds
+/// the provider request from the *current* capture config rather than the one
+/// the original run used: the retry happens because something was wrong, and
+/// the fix is often a setting the user changed in between.
+async fn transcribe_retained_capture(
+    entry: &TranscriptionHistoryEntry,
+) -> Result<String, String> {
+    let audio_path = entry
+        .audio_path
+        .clone()
+        .filter(|path| !path.trim().is_empty())
+        .ok_or_else(|| {
+            "This history entry has neither a transcript nor a kept recording, so there is nothing to re-process."
+                .to_string()
+        })?;
+
+    // The path comes out of history.json, which is a plain file on disk. Anything
+    // that can write it could otherwise point a retry at an arbitrary file and
+    // have WordScript upload it to the transcription provider — turning a local
+    // write into an exfiltration path. A retry may only ever re-send a capture
+    // this app wrote, in the directory it writes them to.
+    if !super::capture::is_retained_capture_path(&audio_path) {
+        return Err(
+            "This entry does not point at a WordScript recording, so it will not be re-sent."
+                .to_string(),
+        );
+    }
+
+    let metadata = std::fs::metadata(&audio_path).map_err(|_| {
+        "The recording for this entry is no longer on disk. Kept recordings are pruned after seven days."
+            .to_string()
+    })?;
+
+    // Duration from file size, because the export is a fixed-rate mono WAV and
+    // the budget only needs it to size the wait. Reading the header to learn
+    // what the writer already guarantees would be a second source for it.
+    let audio_seconds = metadata.len() as f64 / super::capture_budget::EXPORT_BYTES_PER_SECOND as f64;
+    let timeout_ms = super::capture_budget::transcription_timeout_ms(Some(audio_seconds));
+
+    let capture_config = super::capture::NativeCaptureConfig::load_from_disk();
+    let request = capture_config.resolve_transcription_request(&audio_path, timeout_ms);
+
+    runtime_log::record(format!(
+        "[WordScript] History retry from audio entry_id={} path={} audio_seconds={:.1} timeout_ms={}",
+        entry.id, audio_path, audio_seconds, timeout_ms,
+    ));
+
+    let response = super::providers::transcribe_audio_file(request)
+        .await
+        .map_err(|error| error.message)?;
+
+    let text = response.text.trim().to_string();
+    if text.is_empty() {
+        return Err("The recording was transcribed but produced no text.".to_string());
+    }
+
+    Ok(text)
+}
+
 #[tauri::command]
 pub async fn retry_transcription_history_entry<R: Runtime>(
     app: AppHandle<R>,
@@ -367,14 +436,19 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
         .into_iter()
         .find(|entry| entry.id == request.id)
         .ok_or_else(|| format!("History entry '{}' was not found.", request.id))?;
-    let raw_transcript = existing
+
+    // Two kinds of retry, and which one this is depends on how far the original
+    // run got. With a transcript, only the transform re-runs. Without one — a
+    // transcription that timed out — the retry starts from the audio the
+    // runtime kept, which is the whole reason it is kept.
+    let raw_transcript = match existing
         .raw_transcript
         .clone()
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            "This history entry does not contain a raw transcript, so it cannot be re-processed."
-                .to_string()
-        })?;
+    {
+        Some(transcript) => transcript,
+        None => transcribe_retained_capture(&existing).await?,
+    };
 
     let app_config = AppConfig::load_from_disk();
     let transform_config = transform_config_from_app_config(&app_config);
@@ -423,6 +497,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 recovery_message: None,
                 clipboard_restore: None,
                 error: Some("Retry produced no usable transcript.".to_string()),
+                audio_path: None,
             },
             Some(app_config.resolved_active_text_profile_work_mode()),
         )?
@@ -529,6 +604,7 @@ pub fn history_entry_from_insert_result(
             recovery_message: Some(insert_result.recovery_message.clone()),
             clipboard_restore: Some(insert_result.clipboard_restore),
             error: insert_result.error.clone(),
+            audio_path: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -571,17 +647,25 @@ pub fn record_insert_failure(
             recovery_message: None,
             clipboard_restore: None,
             error: Some(error),
+            audio_path: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
 }
 
+/// Record a transcription that never produced text.
+///
+/// `audio_path` is `Some` when the runtime kept the capture because the failure
+/// could succeed on a second attempt. It is what makes the entry retryable at
+/// all: there is no transcript to re-run the transform from, so the audio is
+/// the only thing left to work with.
 pub fn record_transcription_failure(
     app_config: &AppConfig,
     provider: &str,
     model: Option<String>,
     language: Option<String>,
     error: String,
+    audio_path: Option<String>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -613,6 +697,7 @@ pub fn record_transcription_failure(
             recovery_message: None,
             clipboard_restore: None,
             error: Some(error),
+            audio_path,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -653,6 +738,7 @@ pub fn record_empty_result(
             recovery_message: None,
             clipboard_restore: None,
             error: Some("Pipeline produced no usable transcript.".to_string()),
+            audio_path: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -946,6 +1032,7 @@ mod tests {
                 recovery_message: None,
                 clipboard_restore: None,
                 error: None,
+                audio_path: None,
             })
             .expect("record history entry");
         }
@@ -996,6 +1083,7 @@ mod tests {
             recovery_message: None,
             clipboard_restore: None,
             error: None,
+            audio_path: None,
         })
         .expect("first history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1025,6 +1113,7 @@ mod tests {
             recovery_message: None,
             clipboard_restore: None,
             error: None,
+            audio_path: None,
         })
         .expect("second history entry");
 
@@ -1072,6 +1161,7 @@ mod tests {
             recovery_message: None,
             clipboard_restore: None,
             error: None,
+            audio_path: None,
         })
         .expect("groq history entry");
 
@@ -1102,6 +1192,7 @@ mod tests {
             recovery_message: None,
             clipboard_restore: None,
             error: Some("Model missing".to_string()),
+            audio_path: None,
         })
         .expect("local preview history entry");
 
@@ -1160,6 +1251,7 @@ mod tests {
             recovery_message: None,
             clipboard_restore: None,
             error: None,
+            audio_path: None,
         })
         .expect("first export history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1189,6 +1281,7 @@ mod tests {
             recovery_message: None,
             clipboard_restore: None,
             error: None,
+            audio_path: None,
         })
         .expect("second export history entry");
 
@@ -1246,6 +1339,7 @@ mod tests {
                 recovery_message: None,
                 clipboard_restore: None,
                 error: None,
+                audio_path: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-a".to_string(),
@@ -1277,6 +1371,7 @@ mod tests {
                 recovery_message: None,
                 clipboard_restore: None,
                 error: None,
+                audio_path: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-b".to_string(),
@@ -1308,6 +1403,7 @@ mod tests {
                 recovery_message: None,
                 clipboard_restore: None,
                 error: None,
+                audio_path: None,
             },
         ]);
 

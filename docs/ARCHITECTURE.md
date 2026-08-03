@@ -129,6 +129,13 @@ The active product core lives in `src-tauri/src/core/`.
 - `capture.rs`: audio capture, level/waveform events, silence/max-duration
   autostop, single stream rebuild after a transient cpal stream error
   (matching-gate on sample rate/channels/format; one attempt per session).
+- `capture_budget.rs`: what a recording may cost. Resolves the processing limit
+  (the longest capture the current provider, account plan and model can process
+  at all), the auto-stop in force, the safety margin between them, the
+  transcription wait and the pipeline watchdog deadline. Providers declare their
+  own limits through `providers::capture_limits`, so this module knows the two
+  *shapes* a limit can take -- request size and decode time -- and no individual
+  lane. Everything else reads from here; nothing recomputes it (ADR 0038).
 - `sessions.rs`: runtime status and shared session transitions for trigger,
   commands and native pipeline completion.
 - `capture.rs`: also measures the input level across every capture

@@ -9,12 +9,15 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useRuntime } from "../hooks/useRuntime";
+import { useCaptureBudget } from "../hooks/useCaptureBudget";
+import { SETTINGS_ANCHOR_AUTO_STOP } from "../lib/settingsAnchors";
 import { resolveActiveTextProfile, resolveTextProfileWorkMode } from "../lib/textProfiles";
 import type { AppConfig, ProcessingMode } from "../types/ipc";
 import type { NativeInsertResult } from "../types/nativeInsertion";
 import {
   OverlayPill,
   type OverlayPendingPreview,
+  type OverlayRecordingLimit,
   type OverlayPendingResult,
   type OverlayPillState,
   type OverlayProcessingMode,
@@ -131,6 +134,35 @@ type LearnedNudgeVariant = {
 // resize path reintroduces the WebKitGTK ghosting this codebase already fought
 // (docs/known-issues/overlay-ghosting.md).
 const LEARNED_NUDGE_MIN_PX = 34;
+
+/** How long before the auto-stop the tab appears, and when it turns urgent.
+ *
+ *  Fractions of the recording, capped in absolute terms. Fixed thresholds break
+ *  at the short end: with a 1-minute auto-stop, "two minutes left" is true from
+ *  the first second, so the tab would be on screen for the entire recording —
+ *  the permanent element this design exists to avoid. A quarter of the
+ *  recording is a warning at every length, and the caps keep a long recording
+ *  from being warned about for ten minutes.
+ *
+ *  Presentation only: *when* to speak is the overlay's call, the number it
+ *  speaks is the runtime's (ADR 0034). */
+const LIMIT_WARNING_MAX_SECONDS = 120;
+const LIMIT_DANGER_MAX_SECONDS = 30;
+
+function limitThresholds(autoStopSeconds: number) {
+  const warning = Math.min(LIMIT_WARNING_MAX_SECONDS, Math.floor(autoStopSeconds / 4));
+  return {
+    warning,
+    danger: Math.min(LIMIT_DANGER_MAX_SECONDS, Math.max(3, Math.floor(warning / 3))),
+  };
+}
+
+/** `m:ss` — no leading zero on the minutes. The pill's own timer is padded
+ *  `mm:ss`; this one is deliberately not, so a glance tells the two apart. */
+function formatRemaining(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  return `${Math.floor(safe / 60)}:${(safe % 60).toString().padStart(2, "0")}`;
+}
 
 // Derives the processing mode from runtime config as a fallback for the
 // initial render before the first `resolve_current_processing_mode` call
@@ -285,6 +317,8 @@ export default function OverlayWindow() {
   // new trigger atomically hides a previous epoch's error instead of the old
   // hard-priority `showError` blocking the new recording surface.
   const [errorHidden, setErrorHidden] = useState(false);
+  // A retry started from the error surface, so the button can show it is busy.
+  const [retryPending, setRetryPending] = useState(false);
   // Whether the USER (or the auto-close timer) has closed the result surface
   // for the current result. Whether the surface belongs on screen at all is
   // NOT decided here — that is `state.resultSurfaceOpen`, set atomically with
@@ -984,6 +1018,8 @@ export default function OverlayWindow() {
   // enters the session reducer.
   const [learnedNudge, setLearnedNudge] = useState<string[] | null>(null);
 
+  const { budget: captureBudget } = useCaptureBudget();
+
   // Reactive waveform level driven by native capture sample buckets. OverlayPill
   // turns the single level into bar heights.
   const [audioLevel, setAudioLevel] = useState(0);
@@ -1083,6 +1119,7 @@ export default function OverlayWindow() {
       unlisten.then((fn) => fn());
     };
   }, []);
+
 
   // Listen for processing-mode events from the Rust runtime so the pill stays
   // in sync when the mode changes from outside the overlay (per-mode hotkey,
@@ -1186,6 +1223,39 @@ export default function OverlayWindow() {
     };
   }, [status, paused]);
 
+  // The auto-stop, and only once it is close enough to act on.
+  //
+  // Two earlier shapes were wrong in opposite directions. Announcing it at
+  // thresholds and retracting after 1.9 s meant the last half minute — the one
+  // moment it mattered — had nothing on screen. Showing it for the whole
+  // recording put a countdown next to the timer for ten minutes in which
+  // nothing was going to happen, which is a permanent element earning its space
+  // for a few seconds of it.
+  //
+  // So: silent until the deadline is real, then present and sharpening until it
+  // passes. Most recordings never reach it and never see this.
+  //
+  // The number is the runtime's (`resolve_capture_budget`); the overlay only
+  // decides when and how to say it (ADR 0034, ADR 0038).
+  const recordingLimit = useMemo<OverlayRecordingLimit | null>(() => {
+    if (!isRecording || !captureBudget) return null;
+
+    const remaining = captureBudget.auto_stop_seconds - elapsed;
+    const { warning, danger } = limitThresholds(captureBudget.auto_stop_seconds);
+    if (remaining > warning || remaining < 0) return null;
+
+    return {
+      // Bare `m:ss`. The tab sits in a strip a few dozen pixels wide, and at
+      // this point the only question is how long is left — a word explaining
+      // that costs more room than it adds meaning. The full sentence is on the
+      // tooltip and the accessible name.
+      text: formatRemaining(remaining),
+      tone: remaining <= danger ? "danger" : "warning",
+      label: `This recording stops in ${remaining} second${remaining === 1 ? "" : "s"}. Tap to change the auto-stop.`,
+    };
+  }, [isRecording, elapsed, captureBudget]);
+
+
   const startDrag = async () => {
     await getCurrentWindow().startDragging();
   };
@@ -1221,6 +1291,46 @@ export default function OverlayWindow() {
     event.preventDefault();
     event.stopPropagation();
   };
+
+  // The limit tab is a route, not just a report: it opens the control that sets
+  // the number it just stated. A signal that tells you about a setting and then
+  // leaves you to find it is the defect ADR 0034 names one layer up.
+  //
+  // The target is a semantic anchor, not a settings area id — the settings
+  // surface is being reworked (docs/SETTINGS_REWORK_PLAN.md) and the auto-stop
+  // moves to Profiles → Defaults with it. An id would break silently there.
+  // Retry a failed transcription from the audio the runtime kept.
+  //
+  // Goes through the history entry rather than a second pipeline entry point:
+  // the entry is where the kept recording is recorded, and reusing
+  // `retry_transcription_history_entry` means the overlay and the history list
+  // run the identical path. A retry that behaves differently depending on which
+  // button started it is two behaviours to keep true.
+  const handleRetryFromRecording = useCallback(async () => {
+    setRetryPending(true);
+    try {
+      const entries = await invoke<{ id: string; audio_path: string | null }[]>(
+        "load_transcription_history",
+        { query: { limit: 1, include_errors_only: true } },
+      );
+      const retryable = entries.find((entry) => Boolean(entry.audio_path));
+      if (!retryable) {
+        console.warn("No retryable recording found for the failed session.");
+        return;
+      }
+      await invoke("retry_transcription_history_entry", { request: { id: retryable.id } });
+    } catch (error) {
+      console.error("retry from recording failed:", error);
+    } finally {
+      setRetryPending(false);
+    }
+  }, []);
+
+  const handleOpenAutoStopSetting = useCallback(() => {
+    invoke("open_settings_window", { target: SETTINGS_ANCHOR_AUTO_STOP }).catch((error) => {
+      console.error("open_settings_window failed:", error);
+    });
+  }, []);
 
   // Tap-to-cycle through processing modes straight from the overlay. Uses
   // `set_active_profile_processing_mode` so the change is persisted into the
@@ -1548,7 +1658,14 @@ export default function OverlayWindow() {
     // derived `showError`/`showResultPreview` and an explicit idle guard on
     // edit-mode, so a stale local flag can never bleed into a new session.
     if (showError && error) {
-      return { kind: "error", message: error };
+      return {
+        kind: "error",
+        message: error,
+        // Offered only where the runtime says the recording survived. Every
+        // other failure has nothing behind the button.
+        onRetry: state.errorAudioRetained ? () => void handleRetryFromRecording() : undefined,
+        retrying: retryPending,
+      };
     }
     if (renderModePicker) {
       // Mode-picker surface: a compact pill showing the current mode chip.
@@ -1660,8 +1777,28 @@ export default function OverlayWindow() {
     kind: "hidden",
     width: 0,
   });
+
+  // The side tab carries the learned-word nudge and nothing else.
+  //
+  // The auto-stop was tried here and did not fit: the strip beside the pill is
+  // `(480 - pillWidth) / 2`, which clipped "Ends 12:00" against the window
+  // edge, and a tab that retracts after 1.9 s cannot escalate as a deadline
+  // approaches. It lives inside the pill now (`RecordingPill`), where there is
+  // room and where it can stay.
+  const activeNudge = useMemo<
+    { text: string; label: string } | null
+  >(() => {
+    if (!learnedNudge?.length) return null;
+    return {
+      text:
+        learnedNudge.length > 1
+          ? `${learnedNudge[0]} +${learnedNudge.length - 1}`
+          : learnedNudge[0],
+      label: `Learned: ${learnedNudge.join(", ")}`,
+    };
+  }, [learnedNudge]);
   useLayoutEffect(() => {
-    if (!learnedNudge) {
+    if (!activeNudge) {
       setLearnedNudgeVariant({ kind: "hidden", width: 0 });
       return;
     }
@@ -1698,16 +1835,52 @@ export default function OverlayWindow() {
     } else {
       setLearnedNudgeVariant({ kind: "hidden", width: 0 });
     }
-  }, [learnedNudge, pillVisualEpoch]);
+  }, [activeNudge, pillVisualEpoch]);
 
-  const learnedNudgeTerm = learnedNudge?.length
-    ? learnedNudge.length > 1
-      ? `${learnedNudge[0]} +${learnedNudge.length - 1}`
-      : learnedNudge[0]
-    : "";
-  const learnedNudgeLabel = learnedNudge?.length
-    ? `Learned: ${learnedNudge.join(", ")}`
-    : "";
+
+  // The limit tab is measured the same way the learned one is — the strip beside
+  // the pill is the constraint for both — but it opens once and stays open, and
+  // its text changes while it is open (the countdown), so it re-measures on
+  // every text change rather than only on mount.
+  const limitTabRef = useRef<HTMLSpanElement | null>(null);
+  const [limitTabWidth, setLimitTabWidth] = useState(0);
+  const [fontsReadyEpoch, setFontsReadyEpoch] = useState(0);
+  useLayoutEffect(() => {
+    if (!recordingLimit) {
+      setLimitTabWidth(0);
+      return;
+    }
+    const inner = limitTabRef.current?.querySelector<HTMLElement>(".ov-limit-tab__inner");
+    const shell = shellRef.current?.querySelector<HTMLElement>(".ov-pill-shell");
+    if (!inner) return;
+
+    const sideStrip = (window.innerWidth - (shell?.getBoundingClientRect().width ?? 0)) / 2;
+    const layout = inner.offsetWidth;
+    const painted = inner.getBoundingClientRect().width;
+    // The zoom, derived rather than restated — hard-coding 0.87 here would be a
+    // second copy of a number `.ov-pill-shell` owns.
+    const zoom = layout > 0 ? painted / layout : 1;
+    // `offsetWidth` truncates to whole pixels, so a shutter sized at face value
+    // is up to a pixel short — and one pixel short clips the tab's rounded end
+    // against the window edge, which is exactly how this first shipped.
+    const width = layout > 0 ? Math.ceil(layout) + 2 : 0;
+
+    setLimitTabWidth(
+      painted > 0 && sideStrip >= width * zoom + LEARNED_NUDGE_GAP_PX ? width : 0,
+    );
+  }, [recordingLimit, pillVisualEpoch, fontsReadyEpoch]);
+
+  // Text metrics depend on the webfont, which is not loaded on the first paint.
+  // Measuring before it lands sizes the shutter for the fallback face, and the
+  // real text then does not fit inside it — a tab clipped by a few pixels.
+  useEffect(() => {
+    if (!("fonts" in document)) return;
+    let cancelled = false;
+    void document.fonts.ready.then(() => {
+      if (!cancelled) setFontsReadyEpoch((epoch) => epoch + 1);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div
@@ -1745,7 +1918,7 @@ export default function OverlayWindow() {
               the uniform 480px width exists to prevent (lib.rs:151-171). Also a
               sibling of the keyed <OverlayPill>, so a surface change does not
               remount it mid-nudge. */}
-          {learnedNudge && (
+          {activeNudge && (
             <span
               ref={learnedTabRef}
               className="ov-learned-tab"
@@ -1758,8 +1931,8 @@ export default function OverlayWindow() {
               // painted is the audible version of the same lie.
               role={learnedNudgeVariant.kind === "hidden" ? undefined : "status"}
               aria-hidden={learnedNudgeVariant.kind === "hidden" ? true : undefined}
-              title={learnedNudgeVariant.kind === "hidden" ? undefined : learnedNudgeLabel}
-              aria-label={learnedNudgeVariant.kind === "hidden" ? undefined : learnedNudgeLabel}
+              title={learnedNudgeVariant.kind === "hidden" ? undefined : activeNudge.label}
+              aria-label={learnedNudgeVariant.kind === "hidden" ? undefined : activeNudge.label}
               style={{
                 "--ov-learned-width": `${learnedNudgeVariant.width}px`,
                 "--ov-learned-duration": `${LEARNED_NUDGE_DURATION_MS}ms`,
@@ -1767,8 +1940,49 @@ export default function OverlayWindow() {
             >
               <span className="ov-learned-tab__inner">
                 <span className="ov-learned-tab__dot" />
-                <span className="ov-learned-tab__label">{learnedNudgeTerm}</span>
+                <span className="ov-learned-tab__label">{activeNudge.text}</span>
               </span>
+            </span>
+          )}
+          {/* Right of the pill, where the learned tab is left of it: the two
+              never share a strip, so neither has to yield to the other. Same
+              out-of-flow rule — in the flow it would widen the pill past the
+              window and clip its rounded ends. */}
+          {recordingLimit && (
+            <span
+              ref={limitTabRef}
+              className="ov-limit-tab"
+              data-tone={recordingLimit.tone}
+              data-visible={limitTabWidth > 0 ? "true" : "false"}
+              style={{ "--ov-limit-width": `${limitTabWidth}px` } as CSSProperties}
+            >
+              <button
+                type="button"
+                className="ov-limit-tab__inner"
+                onClick={handleOpenAutoStopSetting}
+                aria-label={recordingLimit.label}
+                title={recordingLimit.label}
+                // Measured before it is known to fit; at width 0 the shutter
+                // paints nothing, and a tab that paints nothing is not
+                // announced either.
+                aria-hidden={limitTabWidth > 0 ? undefined : true}
+                tabIndex={limitTabWidth > 0 ? undefined : -1}
+              >
+                {/* A square, not a dot. The round marker read as decoration —
+                    the mode chip beside it uses one — while this has something
+                    to say: the number is a countdown to a stop, and the square
+                    is the shape this overlay already uses for stopping. */}
+                <svg
+                  className="ov-limit-tab__mark"
+                  width="7"
+                  height="7"
+                  viewBox="0 0 10 10"
+                  aria-hidden="true"
+                >
+                  <rect x="1.5" y="1.5" width="7" height="7" rx="1.6" fill="currentColor" />
+                </svg>
+                <span className="ov-limit-tab__label">{recordingLimit.text}</span>
+              </button>
             </span>
           )}
           <OverlayPill key={pillState.kind} state={pillState} />

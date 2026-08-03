@@ -129,6 +129,21 @@ rules override layered utility classes and can silently break layout spacing.
   cards, duplicate borders, and visual lift on hover.
 - Use `StatusDot` and status badges for compact runtime truth. Green means a
   real validated state, not a merely saved credential.
+- A limit is stated on the control that spends it, and it is the runtime's
+  number (ADR 0034, ADR 0038). The overlay's auto-stop tab sharpens neutral →
+  warning → danger through `data-tone`, mapping onto the overlay's own
+  `--ov-accent` / `--ov-red`; it does not import the settings palette, because
+  the overlay renders in a transparent window with its own compositing rules.
+- A deadline appears when it becomes actionable and stays until it passes.
+  Announcing it once and retracting leaves the moment it matters silent;
+  showing it from the start spends permanent space on something that is
+  irrelevant for most of a recording, and for most recordings entirely. The
+  auto-stop tab is absent until two minutes remain, then present and sharpening.
+- A signal that names a setting links to it. The overlay's auto-stop tab opens
+  the control it just quoted, through a semantic anchor rather than an area id
+  (`src/lib/settingsAnchors.ts`) so the link survives the settings rework. The
+  target row flashes briefly on arrival -- a pointer, not a state; a permanent
+  highlight reads as a warning.
 - Controls expose the native contract. A setting that does not affect runtime
   belongs in neither the UI nor the design system. This rule removed the Modes
   tab's "Cleanup settings" card: three toggles the runtime discarded on read

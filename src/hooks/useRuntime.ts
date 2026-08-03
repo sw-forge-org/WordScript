@@ -32,7 +32,7 @@ type Action =
   | { type: "EMPTY" }
   | { type: "MUTED"; muted: boolean }
   | { type: "PAUSED"; paused: boolean }
-  | { type: "ERROR"; message: string };
+  | { type: "ERROR"; message: string; audioRetained: boolean };
 
 const initial: RuntimeState = {
   status: "idle",
@@ -43,6 +43,7 @@ const initial: RuntimeState = {
   pendingResult: null,
   lastResult: null,
   error: null,
+  errorAudioRetained: false,
   recordingStartMs: null,
   previewStaged: false,
   resultSurfaceOpen: false,
@@ -100,7 +101,7 @@ function buildRuntimeTranscriptionResult(
 function reducer(state: RuntimeState, action: Action): RuntimeState {
   switch (action.type) {
     case "READY":
-      return { ...state, config: action.config, error: null };
+      return { ...state, config: action.config, error: null, errorAudioRetained: false };
     case "RECORDING_STARTED":
       return {
         ...state,
@@ -289,6 +290,7 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         paused: false,
         pendingResult: null,
         error: action.message,
+        errorAudioRetained: action.audioRetained,
         previewStaged: false,
         resultSurfaceOpen: false,
         nativeSyncMirror: null,
@@ -383,7 +385,9 @@ export function useRuntime() {
           // what made a misconfigured microphone look like a broken app.
           cancelNativeSyncFallback();
           if (payload.input_level && payload.input_level.verdict !== "ok" && payload.message) {
-            dispatch({ type: "ERROR", message: payload.message });
+            // An empty capture with a bad input level: nothing was kept,
+            // because nothing usable was recorded.
+            dispatch({ type: "ERROR", message: payload.message, audioRetained: false });
           } else {
             dispatch({ type: "EMPTY" });
           }
@@ -396,7 +400,13 @@ export function useRuntime() {
           break;
         case "error":
           cancelNativeSyncFallback();
-          dispatch({ type: "ERROR", message: payload.message });
+          dispatch({
+            type: "ERROR",
+            message: payload.message,
+            // Absent on every error raised outside the pipeline, which is
+            // exactly where there is no capture to retry from.
+            audioRetained: payload.audio_retained === true,
+          });
           break;
       }
     });
@@ -450,7 +460,12 @@ export function useRuntime() {
             break;
           case "error":
             cancelNativeSyncFallback();
-            dispatch({ type: "ERROR", message: payload.status?.last_error ?? "Native runtime error" });
+            dispatch({
+              type: "ERROR",
+              message: payload.status?.last_error ?? "Native runtime error",
+              // The mirror channel carries no pipeline outcome (ADR 0019).
+              audioRetained: false,
+            });
             break;
         }
       },

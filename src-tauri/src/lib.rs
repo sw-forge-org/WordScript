@@ -37,11 +37,11 @@ const OVERLAY_PARK_MARGIN: f64 = 72.0;
 /// Ticks of the 200 ms capture monitor loop between two stranded-overlay
 /// checks, i.e. one check every two seconds.
 const OVERLAY_STRANDED_CHECK_INTERVAL_TICKS: u32 = 10;
-const MIN_TRANSCRIPTION_TIMEOUT_MS: u64 = 18_000;
-const MAX_TRANSCRIPTION_TIMEOUT_MS: u64 = 35_000;
-const TRANSCRIPTION_TIMEOUT_PER_AUDIO_SECOND_MS: u64 = 800;
-const PIPELINE_HARD_DEADLINE_SECS: u64 = 120;
-const PIPELINE_HARD_DEADLINE: Duration = Duration::from_secs(PIPELINE_HARD_DEADLINE_SECS);
+// The transcription wait and the pipeline watchdog live in
+// `core::capture_budget`, beside the recording ceiling they have to agree with.
+// They were three loose constants here, and the capture path never consulted
+// them: a profile could record 30 minutes into a pipeline that waited 35
+// seconds.
 
 // Flat overlay surfaces all share one window size (480×60). On WebKitGTK/XWayland
 // with GPU compositing, a `set_size` to the SAME size the window already has is a
@@ -1532,6 +1532,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
 
     tauri::async_runtime::spawn(async move {
         let cleanup_path = audio_path.clone();
+        // Set only where a failure leaves something worth retrying from. Every
+        // other path — success, empty result, stale session, abort — still
+        // deletes, so the kept files are exactly the recoverable ones.
+        let mut keep_audio = false;
         if !processing_session_still_current(&app, &session_id, "pipeline_start") {
             let _ = tokio::fs::remove_file(cleanup_path).await;
             return;
@@ -1539,16 +1543,22 @@ fn handle_audio_ready<R: Runtime + 'static>(
 
         let watchdog_app = app.clone();
         let watchdog_session_id = session_id.to_string();
+        // Derived from the same audio the provider call is derived from, so the
+        // watchdog always outlasts every attempt it supervises. It was a fixed
+        // 120 s: on a long capture it fired while the request was still
+        // legitimately running and reported a hang that was really progress.
+        let watchdog_deadline = core::capture_budget::pipeline_deadline(audio_duration_seconds);
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(PIPELINE_HARD_DEADLINE).await;
+            tokio::time::sleep(watchdog_deadline).await;
             if core::sessions::is_processing_session_current(&watchdog_app, &watchdog_session_id) {
+                let deadline_secs = watchdog_deadline.as_secs();
                 let message = format!(
                     "The transcription pipeline did not complete within {}s and was cancelled. Restart the session or try again.",
-                    PIPELINE_HARD_DEADLINE_SECS
+                    deadline_secs
                 );
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline watchdog timeout session_id={} deadline_secs={}",
-                    watchdog_session_id, PIPELINE_HARD_DEADLINE_SECS
+                    watchdog_session_id, deadline_secs
                 ));
                 core::sound::play_if_enabled(core::sound::SoundCue::Error);
                 if matches!(
@@ -2143,12 +2153,21 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     return;
                 }
 
+                // A failure that could succeed on a second attempt keeps its
+                // audio. Deleting it here is what made a timeout permanent: the
+                // history entry has no transcript to retry from, so the
+                // recording — minutes of speech that cost nothing to keep — was
+                // gone before the error finished rendering.
+                keep_audio = error.retryable
+                    || matches!(error.kind, core::providers::ProviderErrorKind::Timeout);
+
                 let _ = core::history::record_transcription_failure(
                     &pipeline_app_config,
                     &provider,
                     requested_model.clone(),
                     requested_language.clone(),
                     error.message.clone(),
+                    keep_audio.then(|| cleanup_path.clone()),
                 );
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transcription failed session_id={} elapsed_ms={} kind={:?} message={}",
@@ -2173,7 +2192,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 "status": error.status,
                                 "retry_after_seconds": error.retry_after_seconds,
                                 "retryable": error.retryable,
-                                "user_action": error.user_action
+                                "user_action": error.user_action,
+                                // The overlay's error surface offers Retry only
+                                // when there is something to retry from.
+                                "audio_retained": keep_audio
                             }),
                         );
                     }
@@ -2194,7 +2216,17 @@ fn handle_audio_ready<R: Runtime + 'static>(
             }
         }
 
-        let _ = tokio::fs::remove_file(cleanup_path).await;
+        if keep_audio {
+            core::runtime_log::record(format!(
+                "[WordScript] Native pipeline retained audio session_id={} path={}",
+                session_id, cleanup_path,
+            ));
+            // Sweep here rather than only at startup: a run that keeps failing
+            // would otherwise fill the directory for a whole session.
+            core::capture::prune_retained_captures();
+        } else {
+            let _ = tokio::fs::remove_file(cleanup_path).await;
+        }
     });
 }
 
@@ -2247,27 +2279,46 @@ fn apply_confidence_gate(
 }
 
 fn runtime_transcription_timeout_ms(audio_duration_seconds: Option<f64>) -> u64 {
-    let audio_duration_ms = audio_duration_seconds
-        .filter(|duration| duration.is_finite() && *duration > 0.0)
-        .map(|duration| {
-            let clamped = duration.min(60.0);
-            (clamped * 1000.0).round() as u64
-        })
-        .unwrap_or_default();
-
-    MIN_TRANSCRIPTION_TIMEOUT_MS
-        .saturating_add(
-            audio_duration_ms.saturating_mul(TRANSCRIPTION_TIMEOUT_PER_AUDIO_SECOND_MS) / 1000,
-        )
-        .clamp(MIN_TRANSCRIPTION_TIMEOUT_MS, MAX_TRANSCRIPTION_TIMEOUT_MS)
+    core::capture_budget::transcription_timeout_ms(audio_duration_seconds)
 }
 
 // ── Tauri Commands (callable from React via invoke()) ─────────────────────────
 
-/// Show (and focus) the settings window.
+/// What a recording may cost under the current provider and settings.
+///
+/// The overlay states the auto-stop and the settings surface states the
+/// ceiling; both read it from here rather than deriving it. A threshold
+/// restated in TypeScript is a threshold that drifts, and the drift is
+/// invisible because both sides still look right in isolation (ADR 0034).
 #[tauri::command]
-async fn open_settings_window(app: AppHandle) -> Result<(), String> {
+fn resolve_capture_budget() -> core::capture_budget::CaptureBudget {
+    core::capture_budget::resolve(&core::config::AppConfig::load_from_disk())
+}
+
+/// The account plans the given provider offers, for the settings surface to
+/// render. Empty when the provider has none to choose between.
+#[tauri::command]
+fn resolve_provider_tiers(provider: String) -> Vec<core::providers::ProviderTier> {
+    core::providers::provider_tiers(&provider)
+}
+
+/// Show (and focus) the settings window, optionally at a specific control.
+///
+/// `target` is a semantic anchor for a control (`capture.auto_stop`), not an
+/// area id. The settings surface is being reworked and controls move between
+/// areas with it; a link that named the area would keep resolving to a screen
+/// that no longer has the control, and it would do so silently. The frontend
+/// owns the anchor→area mapping (`src/lib/settingsAnchors.ts`), so this only
+/// carries the name across.
+#[tauri::command]
+async fn open_settings_window(app: AppHandle, target: Option<String>) -> Result<(), String> {
     reveal_settings_window(&app);
+
+    if let Some(target) = target.filter(|value| !value.trim().is_empty()) {
+        // After the reveal: the window may have been hidden, and a listener in
+        // a hidden window is still mounted, so ordering only matters for focus.
+        let _ = app.emit("wordscript-settings-target", serde_json::json!({ "target": target }));
+    }
     Ok(())
 }
 
@@ -2555,6 +2606,11 @@ pub fn run() {
             NativeInsertionConfig::load_from_disk(),
         )))
         .setup(|app| {
+            // Captures kept for a retry that never came. Swept at startup so a
+            // machine that failed a run weeks ago is not still holding the
+            // audio for it.
+            core::capture::prune_retained_captures();
+
             // ── System tray ───────────────────────────────────────────────
             let title = MenuItem::with_id(app, "title", "WordScript", false, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
@@ -2627,6 +2683,8 @@ pub fn run() {
             core::config::save_config,
             core::sound::preview_sound_cue,
             core::config::switch_active_text_profile,
+            resolve_capture_budget,
+            resolve_provider_tiers,
             open_settings_window,
             open_rebuild_lab_window,
             app_config_file_path,
@@ -2703,16 +2761,28 @@ mod tests {
     fn runtime_transcription_timeout_stays_interactive() {
         assert_eq!(
             runtime_transcription_timeout_ms(None),
-            MIN_TRANSCRIPTION_TIMEOUT_MS
+            core::capture_budget::MIN_TRANSCRIPTION_TIMEOUT_MS
         );
         assert_eq!(runtime_transcription_timeout_ms(Some(3.0)), 20_400);
-        assert_eq!(
-            runtime_transcription_timeout_ms(Some(30.0)),
-            MAX_TRANSCRIPTION_TIMEOUT_MS
+    }
+
+    /// The defect this fixed: the wait was capped at 60 s of audio before
+    /// scaling, so a 679 s capture was granted the same 35 s as a one-minute
+    /// one and could not finish. The pipeline must grant a long capture a
+    /// proportionally long wait, and the watchdog must outlast it.
+    #[test]
+    fn a_long_capture_is_not_budgeted_like_a_short_one() {
+        let one_minute = runtime_transcription_timeout_ms(Some(60.0));
+        let eleven_minutes = runtime_transcription_timeout_ms(Some(679.58));
+
+        assert!(
+            eleven_minutes > one_minute * 5,
+            "an 11-minute capture must not share a one-minute budget: {eleven_minutes} vs {one_minute}"
         );
-        assert_eq!(
-            runtime_transcription_timeout_ms(Some(90.0)),
-            MAX_TRANSCRIPTION_TIMEOUT_MS
+        assert!(
+            core::capture_budget::pipeline_deadline(Some(679.58)).as_millis() as u64
+                > eleven_minutes,
+            "the watchdog must outlast the request it supervises"
         );
     }
 

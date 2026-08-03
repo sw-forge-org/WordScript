@@ -513,3 +513,30 @@ body.overlay-window {
     inset 0 1px 0 var(--specular),
     0 8px 32px rgba(0, 0, 0, 0.35);
 }
+
+/* ── Deep-link anchors ───────────────────────────────────────────────────────
+   A row another surface can link to (the overlay's auto-stop tab, today). The
+   scroll alone does not say which row was meant when several look alike, so
+   the target names itself briefly and then goes quiet — the highlight is a
+   pointer, not a state, and a permanent one would read as a warning.
+
+   Animated on background-color only: the row is inside the settings window's
+   virtualised scroll area, where anything that changes layout costs a reflow
+   of everything below it. */
+.settings-anchor [data-anchor-flash="true"],
+.settings-anchor[data-anchor-flash="true"] {
+  animation: settings-anchor-flash 1.6s ease-out both;
+}
+
+@keyframes settings-anchor-flash {
+  0%, 60% { background-color: var(--accent-soft); }
+  100%    { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-anchor [data-anchor-flash="true"],
+  .settings-anchor[data-anchor-flash="true"] {
+    animation: none;
+    background-color: var(--accent-soft);
+  }
+}

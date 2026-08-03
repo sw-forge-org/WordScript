@@ -36,7 +36,11 @@ function captureBinding(overrides: Partial<ShortcutBindingInfo> = {}): ShortcutB
   };
 }
 
-function mockRuntime(triggerStatus?: NativeTriggerStatus, capabilities?: ShortcutCapabilities) {
+function mockRuntime(
+  triggerStatus?: NativeTriggerStatus,
+  capabilities?: ShortcutCapabilities,
+  budgetOverrides?: Record<string, unknown>,
+) {
   invokeMock.mockImplementation((command: string, args?: Record<string, unknown>) => {
     if (command === "shortcut_capabilities" && capabilities) {
       return Promise.resolve(capabilities);
@@ -47,6 +51,22 @@ function mockRuntime(triggerStatus?: NativeTriggerStatus, capabilities?: Shortcu
         { name: "USB Podcast Mic", is_default: false },
         { name: "Built-in Microphone", is_default: true },
       ]);
+    }
+
+    if (command === "resolve_capture_budget") {
+      return Promise.resolve({
+        provider: "groq",
+        ceiling_seconds: 819,
+        ceiling_reason: "provider_upload_limit",
+        ceiling_detail: "the 25 MiB upload size on your free plan",
+        auto_stop_seconds: 720,
+        configured_auto_stop_seconds: 720,
+        auto_stop_clamped: false,
+        safety_margin_seconds: 81,
+        recommended_auto_stop_seconds: 738,
+        auto_stop_in_margin: false,
+        ...(budgetOverrides ?? {}),
+      });
     }
 
     if (command === "native_capture_status") {
@@ -336,5 +356,64 @@ describe("InputTab", () => {
     expect(
       await screen.findByText(/Super \/ Meta: The desktop consumes Super/i),
     ).toBeInTheDocument();
+  });
+
+  describe("the recording limits", () => {
+    it("states the processing limit the runtime resolved", async () => {
+      render(<InputTab config={createAppConfig()} onChange={vi.fn()} />);
+
+      expect(await screen.findByText("13:39")).toBeInTheDocument();
+      expect(
+        screen.getByText(/set by the 25 MiB upload size on your free plan/i),
+      ).toBeInTheDocument();
+    });
+
+    it("recommends headroom under the limit rather than the limit itself", async () => {
+      render(<InputTab config={createAppConfig()} onChange={vi.fn()} />);
+
+      expect(
+        await screen.findByText(/Recommended: up to 12:18, which keeps 01:21 of headroom/i),
+      ).toBeInTheDocument();
+    });
+
+    it("warns when the auto-stop has no headroom left", async () => {
+      invokeMock.mockReset();
+      mockRuntime(undefined, undefined, {
+        auto_stop_seconds: 780,
+        configured_auto_stop_seconds: 780,
+        auto_stop_in_margin: true,
+      });
+      render(<InputTab config={createAppConfig()} onChange={vi.fn()} />);
+
+      expect(
+        await screen.findByText(/sits within 01:21 of the processing limit/i),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps a saved value that exceeds the limit, and says it is clamped", async () => {
+      invokeMock.mockReset();
+      mockRuntime(undefined, undefined, {
+        auto_stop_seconds: 819,
+        configured_auto_stop_seconds: 1800,
+        auto_stop_clamped: true,
+        auto_stop_in_margin: true,
+      });
+      render(<InputTab config={createAppConfig()} onChange={vi.fn()} />);
+
+      // The user's number is reported, not silently rewritten (ADR 0020).
+      expect(
+        await screen.findByText(/saved value of 30:00 is longer than this setup can process/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/recordings stop at 13:39 instead/i)).toBeInTheDocument();
+    });
+
+    it("names the silence stop as the separate thing it is", async () => {
+      render(<InputTab config={createAppConfig()} onChange={vi.fn()} />);
+
+      expect(await screen.findByLabelText("Stop after silence")).toBeInTheDocument();
+      expect(
+        screen.getByText(/reacts to you stopping, not to the recording getting long/i),
+      ).toBeInTheDocument();
+    });
   });
 });

@@ -11,6 +11,7 @@ import {
 export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     model: "whisper-large-v3-turbo",
+    provider_tier: "",
     language: "",
     active_text_profile_id: "general",
     text_profiles: [

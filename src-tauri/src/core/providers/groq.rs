@@ -12,9 +12,9 @@ use tokio::time::sleep;
 use crate::core::runtime_log;
 
 use super::{
-    ChatCompletionRequest, ProviderCapabilities, ProviderCommandError, ProviderCredentialStatus,
-    ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus, TranscribeAudioFileRequest,
-    TranscriptionResponse, ValidateProviderApiKeyResponse,
+    ChatCompletionRequest, ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError,
+    ProviderCredentialStatus, ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus,
+    ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
 };
 
 const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
@@ -746,6 +746,61 @@ fn validate_audio_upload_size(
         status: Some(StatusCode::PAYLOAD_TOO_LARGE.as_u16()),
         retry_after_seconds: None,
     })
+}
+
+pub const GROQ_FREE_TIER_ID: &str = "free";
+pub const GROQ_DEV_TIER_ID: &str = "dev";
+
+/// Groq's plans, and the upload each one buys.
+///
+/// The two limits were already in this file as the thresholds the upload
+/// validator checks; stating them as plans is what lets a paying account record
+/// to its real ceiling instead of the free one.
+pub fn tiers() -> Vec<ProviderTier> {
+    vec![
+        ProviderTier {
+            id: GROQ_FREE_TIER_ID.to_string(),
+            label: "Free — 25 MiB per request".to_string(),
+            max_audio_bytes: GROQ_FREE_TIER_MAX_AUDIO_BYTES as u64,
+            default: true,
+        },
+        ProviderTier {
+            id: GROQ_DEV_TIER_ID.to_string(),
+            label: "Developer — 100 MiB per request".to_string(),
+            max_audio_bytes: GROQ_DEV_TIER_MAX_AUDIO_BYTES as u64,
+            default: false,
+        },
+    ]
+}
+
+/// What one capture may cost on Groq: bounded by request size, on the selected
+/// plan. An unrecognised plan id falls back to the default one rather than to
+/// the larger — being wrong towards "you may record less" costs a retry, being
+/// wrong the other way costs the recording.
+pub fn capture_limits(tier_id: &str) -> ProviderCaptureLimits {
+    let tiers = tiers();
+    let tier = tiers
+        .iter()
+        .find(|tier| tier.id == tier_id.trim())
+        .or_else(|| tiers.iter().find(|tier| tier.default))
+        .expect("groq always declares a default tier");
+
+    ProviderCaptureLimits {
+        max_audio_bytes: Some(tier.max_audio_bytes),
+        realtime_factor: None,
+        detail: format!(
+            "the {} upload size on your {} plan",
+            format_upload_limit(tier.max_audio_bytes as usize),
+            tier.id,
+        ),
+    }
+}
+
+/// A limit phrased for a settings row: "25 MiB", not
+/// "25.0 MiB (26214400 bytes)". The diagnostic form belongs in an error, the
+/// short one in a sentence a user reads while choosing a number.
+pub fn format_upload_limit(limit_bytes: usize) -> String {
+    format!("{} MiB", limit_bytes / 1_048_576)
 }
 
 fn format_audio_size(audio_bytes_len: usize) -> String {

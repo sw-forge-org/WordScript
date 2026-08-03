@@ -164,6 +164,21 @@ describe("OverlayWindow", () => {
           return Promise.resolve();
         case "sync_overlay_window_visibility":
           return Promise.resolve();
+        case "resolve_capture_budget":
+          return Promise.resolve({
+            provider: "groq",
+            ceiling_seconds: 819,
+            ceiling_reason: "provider_upload_limit",
+            ceiling_detail: "the 25 MiB upload size on your free plan",
+            auto_stop_seconds: 720,
+            configured_auto_stop_seconds: 720,
+            auto_stop_clamped: false,
+            safety_margin_seconds: 81,
+            recommended_auto_stop_seconds: 738,
+            auto_stop_in_margin: false,
+          });
+        case "open_settings_window":
+          return Promise.resolve();
         case "remember_overlay_manual_position":
           return Promise.resolve();
         case "commit_pending_transcription_preview":
@@ -1762,5 +1777,185 @@ describe("OverlayWindow", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("the auto-stop tab", () => {
+    // The tab only paints once it has been measured, and the measurement
+    // requires a positive width — a deliberate guard so a tab that does not fit
+    // is never announced. jsdom reports 0 for every box, so without stand-in
+    // geometry the tab stays shut here and never mounts its contents.
+    let restoreGeometry: (() => void) | null = null;
+
+    beforeEach(() => {
+      const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+      const rect = HTMLElement.prototype.getBoundingClientRect;
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+        configurable: true,
+        get() { return 90; },
+      });
+      HTMLElement.prototype.getBoundingClientRect = function () {
+        return { width: 90, height: 22, top: 0, left: 0, right: 90, bottom: 22, x: 0, y: 0, toJSON() {} } as DOMRect;
+      };
+      restoreGeometry = () => {
+        if (offset) Object.defineProperty(HTMLElement.prototype, "offsetWidth", offset);
+        HTMLElement.prototype.getBoundingClientRect = rect;
+      };
+    });
+
+    afterEach(() => {
+      restoreGeometry?.();
+      restoreGeometry = null;
+    });
+
+    function buildRecordingState(overrides: Record<string, unknown> = {}) {
+      return buildIdleResultState({
+        status: "recording",
+        lastResult: null,
+        lastTranscription: null,
+        pendingResult: null,
+        resultSurfaceOpen: false,
+        ...overrides,
+      });
+    }
+
+    it("says nothing while the recording still has time", async () => {
+      useRuntimeMock.mockReturnValue(buildRecordingState());
+      render(<OverlayWindow />);
+
+      // A 720 s auto-stop: for the first ten minutes there is nothing to say,
+      // and most recordings never get further than this.
+      await waitFor(() => expect(screen.getByText("00:00")).toBeInTheDocument());
+      expect(document.querySelector(".ov-limit-tab")).toBeNull();
+    });
+
+    it("appears inside two minutes and sharpens from there", async () => {
+      useRuntimeMock.mockReturnValue(buildRecordingState());
+      // Fake timers must be installed before the render: the elapsed counter is
+      // a `setInterval` created on mount, and one captured before the swap keeps
+      // ticking in real time and ignores every advance. `shouldAdvanceTime`
+      // keeps the async budget invoke resolvable.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<OverlayWindow />);
+        await act(async () => { vi.advanceTimersByTime(500); });
+        expect(document.querySelector(".ov-limit-tab")).toBeNull();
+
+        // 720 - 601 = 119 s left: the deadline is now close enough to act on.
+        await act(async () => { vi.advanceTimersByTime(601_000); });
+        const warning = screen.getByText("1:59");
+        expect(warning.closest(".ov-limit-tab")).toHaveAttribute("data-tone", "warning");
+
+        // Inside thirty seconds it turns urgent — and is still on screen, which
+        // is the point: the first build had retracted long before this moment.
+        await act(async () => { vi.advanceTimersByTime(95_000); });
+        const danger = screen.getByText("0:24");
+        expect(danger.closest(".ov-limit-tab")).toHaveAttribute("data-tone", "danger");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("opens the setting that owns the number it states", async () => {
+      useRuntimeMock.mockReturnValue(buildRecordingState());
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<OverlayWindow />);
+        await act(async () => { vi.advanceTimersByTime(601_000); });
+
+        const tab = screen.getByRole("button", { name: /stops in 119 seconds/i });
+        fireEvent.click(tab);
+
+        await waitFor(() =>
+          expect(invokeMock).toHaveBeenCalledWith("open_settings_window", {
+            target: "capture.auto_stop",
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("scales its warning to short auto-stops instead of showing from the start", async () => {
+      // A 1-minute auto-stop: a fixed "two minutes left" threshold is true from
+      // the first second, which would put the tab on screen for the whole
+      // recording — the permanent element this design exists to avoid.
+      invokeMock.mockImplementation((command: string) => {
+        if (command === "resolve_capture_budget") {
+          return Promise.resolve({
+            provider: "groq",
+            ceiling_seconds: 819,
+            ceiling_reason: "provider_upload_limit",
+            ceiling_detail: "the 25 MiB upload size on your free plan",
+            auto_stop_seconds: 60,
+            configured_auto_stop_seconds: 60,
+            auto_stop_clamped: false,
+            safety_margin_seconds: 81,
+            recommended_auto_stop_seconds: 738,
+            auto_stop_in_margin: false,
+          });
+        }
+        return Promise.resolve();
+      });
+      useRuntimeMock.mockReturnValue(buildRecordingState());
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<OverlayWindow />);
+        await act(async () => { vi.advanceTimersByTime(500); });
+        expect(document.querySelector(".ov-limit-tab")).toBeNull();
+
+        // A quarter of 60 s is 15 s, so nothing until then.
+        await act(async () => { vi.advanceTimersByTime(40_000); });
+        expect(document.querySelector(".ov-limit-tab")).toBeNull();
+
+        await act(async () => { vi.advanceTimersByTime(6_000); });
+        expect(screen.getByText("0:14")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("is absent when the session is not recording", async () => {
+      useRuntimeMock.mockReturnValue(buildIdleResultState());
+      render(<OverlayWindow />);
+
+      await waitFor(() => expect(document.querySelector(".ov-limit-tab")).toBeNull());
+    });
+  });
+
+  describe("a failed recording", () => {
+    it("offers a retry only when the runtime kept the audio", async () => {
+      const withAudio = buildIdleResultState({
+        status: "idle",
+        lastResult: null,
+        lastTranscription: null,
+        error: "Groq request timed out after 35000ms",
+        errorAudioRetained: true,
+      });
+      const { rerender } = render(<OverlayWindow />);
+      useRuntimeMock.mockReturnValue(withAudio);
+      rerender(<OverlayWindow />);
+
+      expect(
+        await screen.findByRole("button", { name: /retry from the recording/i }),
+      ).toBeInTheDocument();
+
+      // The same failure without a kept capture has nothing to offer.
+      useRuntimeMock.mockReturnValue(
+        buildIdleResultState({
+          status: "idle",
+          lastResult: null,
+          lastTranscription: null,
+          error: "Groq rejected the request.",
+          errorAudioRetained: false,
+        }),
+      );
+      rerender(<OverlayWindow />);
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: /retry from the recording/i }),
+        ).not.toBeInTheDocument(),
+      );
+    });
   });
 });

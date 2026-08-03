@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import {
   ActivitySquare,
   BookText,
@@ -40,6 +41,11 @@ import { UploadArea } from "../components/areas/UploadArea";
 import { NotesArea } from "../components/areas/NotesArea";
 import { AccountArea } from "../components/areas/AccountArea";
 import { Sidebar, ProfileSwitcher, StatusBadge } from "../components/shell";
+import {
+  SETTINGS_ANCHOR_AREAS,
+  settingsAnchorElementId,
+  type SettingsAnchor,
+} from "../lib/settingsAnchors";
 import type { SidebarGroup } from "../components/shell";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -149,6 +155,37 @@ export default function SettingsWindow() {
       : providerStatus?.credential.configured;
 
   const navigate = (id: string) => startTransition(() => setActive(id as AreaId));
+
+  // Deep links from outside the settings window — today the overlay's auto-stop
+  // tab, which states a number and then offers the control that sets it.
+  //
+  // The event carries a semantic anchor, not an area id: the settings surface
+  // is being reworked and controls move between areas with it, so the mapping
+  // lives in one place (`settingsAnchors.ts`) and updating it there is what
+  // keeps every link working. An unknown anchor navigates nowhere rather than
+  // guessing an area.
+  useEffect(() => {
+    const unlisten = listen<{ target?: string }>("wordscript-settings-target", ({ payload }) => {
+      const anchor = payload.target as SettingsAnchor | undefined;
+      if (!anchor) return;
+      const area = SETTINGS_ANCHOR_AREAS[anchor];
+      if (!area) return;
+
+      navigate(area);
+      // After the area has rendered. The row may not exist until the
+      // transition commits, so scrolling in the same tick finds nothing.
+      requestAnimationFrame(() => {
+        const element = document.getElementById(settingsAnchorElementId(anchor));
+        if (!element) return;
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        // A brief highlight, because a scroll alone does not say *which* row
+        // was meant when several look alike.
+        element.setAttribute("data-anchor-flash", "true");
+        setTimeout(() => element.removeAttribute("data-anchor-flash"), 1600);
+      });
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, []);
 
   // Populate form when the runtime provides config; route to Speech if not ready.
   useEffect(() => {

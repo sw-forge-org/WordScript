@@ -144,6 +144,14 @@ export function HistoryArea({ isActive, config, onChange }: HistoryAreaProps) {
                 entry.transformed_transcript ||
                 entry.raw_transcript ||
                 (entry.status === "failed" ? entry.error ?? "Failed" : "Empty capture");
+              // Retry works from a transcript (re-run the transform) or from a
+              // recording the runtime kept after a recoverable failure
+              // (re-transcribe it). With neither there is nothing behind the
+              // button, and a button that only sometimes does something is
+              // worse than one that is plainly unavailable — the same rule the
+              // overlay's error surface follows.
+              const retryable =
+                Boolean(entry.raw_transcript?.trim()) || Boolean(entry.audio_path?.trim());
               return (
                 <li
                   key={entry.id}
@@ -175,8 +183,19 @@ export function HistoryArea({ isActive, config, onChange }: HistoryAreaProps) {
                       <Button
                         size="icon-xs"
                         variant="ghost"
-                        aria-label="Retry"
-                        disabled={history.isLoading}
+                        aria-label={
+                          entry.audio_path && !entry.raw_transcript?.trim()
+                            ? "Retry from the recording"
+                            : "Retry"
+                        }
+                        title={
+                          retryable
+                            ? entry.audio_path && !entry.raw_transcript?.trim()
+                              ? "Transcribe the kept recording again"
+                              : "Run the transform over this transcript again"
+                            : "Nothing to retry from: this entry has no transcript and no kept recording"
+                        }
+                        disabled={history.isLoading || !retryable}
                         onClick={() => void history.retry(entry.id)}
                       >
                         <RotateCcw className="size-3.5" />

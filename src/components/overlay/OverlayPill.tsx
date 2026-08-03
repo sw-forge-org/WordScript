@@ -10,6 +10,7 @@ import {
   Pause,
   Pencil,
   Play,
+  RotateCcw,
   Square,
   X,
 } from "lucide-react";
@@ -24,6 +25,22 @@ export type OverlayProcessingMode =
   | "rewrite"
   | "prompt_enhance"
   | "agent";
+
+/**
+ * The recording's auto-stop, as the overlay states it.
+ *
+ * Rendered beside the pill, not inside it: in the flow it would widen the pill,
+ * and a pill wider than the 480px window has its rounded ends clipped — the
+ * defect the uniform window width exists to prevent.
+ */
+export type OverlayRecordingLimit = {
+  /** Short form: "Ends 12:00" far out, "01:24 left" close in. */
+  text: string;
+  /** Sharpens as the auto-stop approaches. */
+  tone: "neutral" | "warning" | "danger";
+  /** The full sentence, for the tooltip and the screen reader. */
+  label: string;
+};
 
 export type OverlayPendingPreview = { action: "commit" | "abort"; label: string };
 export type OverlayPendingResult = { action: "copy" | "edit" | "insert"; label: string };
@@ -84,6 +101,11 @@ export type OverlayPillState =
   | {
       kind: "error";
       message: string;
+      /** Present only when the runtime kept the failed session's audio, so
+       *  there is something for a retry to work from. A Retry that has nothing
+       *  behind it is a button that lies. */
+      onRetry?: () => void;
+      retrying?: boolean;
     };
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
@@ -283,6 +305,22 @@ function ErrorPill({ state }: { state: Extract<OverlayPillState, { kind: "error"
         <Ban size={18} strokeWidth={2.25} />
       </span>
       <span className="pill__error-text" title={state.message}>{state.message}</span>
+      {/* The one surface where a failure could previously only be read. When
+          the runtime kept the recording, the error is recoverable and the
+          overlay is where the user already is — sending them to the history
+          list to act on something that just happened here is a detour. */}
+      {state.onRetry && (
+        <>
+          <span className="pill__divider" aria-hidden="true" />
+          <IconAction
+            icon={<RotateCcw size={16} strokeWidth={2.25} />}
+            label="Retry from the recording"
+            primary
+            busy={state.retrying}
+            onClick={state.onRetry}
+          />
+        </>
+      )}
     </div>
   );
 }

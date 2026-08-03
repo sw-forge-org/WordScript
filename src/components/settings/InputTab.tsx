@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
-import { FormCard, FormRow, InputLevelMeter, Select, StatTiles, Stepper } from "../shell";
+import { FormCard, FormRow, InputLevelMeter, Select, StatTiles, StatusBadge, Stepper } from "../shell";
+import { useCaptureBudget, formatBudgetDuration } from "../../hooks/useCaptureBudget";
+import { SETTINGS_ANCHOR_AUTO_STOP, settingsAnchorElementId } from "../../lib/settingsAnchors";
 import { useInputLevel } from "../../hooks/useInputLevel";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
@@ -245,6 +247,28 @@ export function InputTab({ config, onChange }: Props) {
     [audioDevices],
   );
   const maxRecordingSeconds = clampCaptureNumber(capture.max_recording_seconds, 60, 1800, 720);
+
+  // What this provider and plan can actually process. Re-read when the speech
+  // settings change, because switching provider or account plan moves the
+  // ceiling under an open panel.
+  const { budget } = useCaptureBudget(`${config.provider}:${config.provider_tier}:${config.local_model}`);
+
+  // The stepper must not offer a length the pipeline cannot honor. Whole
+  // minutes, rounded *down*, so the offered maximum is always reachable.
+  const autoStopMaxMinutes = budget
+    ? Math.max(1, Math.floor(budget.ceiling_seconds / 60))
+    : 30;
+
+  // One row, three possible things to say, in order of how much they matter:
+  // the stored value is impossible, the stored value has no headroom, or
+  // everything is fine and the row explains what it does.
+  const autoStopHint = !budget
+    ? "Ends the recording at this length, so it always finishes processing."
+    : budget.auto_stop_clamped
+      ? `Ends the recording at this length. Your saved value of ${formatBudgetDuration(budget.configured_auto_stop_seconds)} is longer than this setup can process, so recordings stop at ${formatBudgetDuration(budget.auto_stop_seconds)} instead. The saved value is kept — lower it, or raise the processing limit by changing provider or plan.`
+      : budget.auto_stop_in_margin
+        ? `Ends the recording at this length. This sits within ${formatBudgetDuration(budget.safety_margin_seconds)} of the processing limit, which leaves no room for a recording that runs slightly long. ${formatBudgetDuration(budget.recommended_auto_stop_seconds)} or less is the safe range.`
+        : `Ends the recording at this length, so it always finishes processing. Recommended: up to ${formatBudgetDuration(budget.recommended_auto_stop_seconds)}, which keeps ${formatBudgetDuration(budget.safety_margin_seconds)} of headroom under the processing limit.`;
   const silenceTimeoutSeconds = clampCaptureNumber(capture.silence_timeout_seconds, 0, 60, 30);
   const hasExplicitAudioDevice = Boolean(config.audio_device.trim());
   const selectedAudioDeviceAvailable = !hasExplicitAudioDevice || audioDevices.some((device) => device.name === config.audio_device);
@@ -442,24 +466,52 @@ export function InputTab({ config, onChange }: Props) {
           layout="stacked"
           control={<InputLevelMeter reading={inputLevel} />}
         />
+        {/* Three different things end or bound a recording, and they were
+            previously two rows that did not mention each other. In order of
+            how hard they are:
+
+              1. Stop after silence — you stopped talking.
+              2. Auto-stop — the recording got long, and it ends here so that
+                 it still goes through.
+              3. Processing limit — past this nothing can be processed at all.
+
+            The limit is the runtime's answer, not a number recomputed here: it
+            moves with the provider, the account plan and the model, and a copy
+            in TypeScript drifts invisibly (ADR 0034). */}
         <FormRow
-          label="Max recording"
-          hint="Maximum recording length in minutes (1–30). Enforced in the native capture monitor — keeps working after this window is closed."
+          label="Processing limit"
+          hint={
+            budget
+              ? `The longest recording this setup can process at all — ${formatBudgetDuration(budget.ceiling_seconds)}, set by ${budget.ceiling_detail}. Past it the recording cannot be transcribed, so the auto-stop below stays underneath it.`
+              : "Reading the current provider limit…"
+          }
           control={
-            <Stepper
-              value={Math.round(capture.max_recording_seconds / 60)}
-              min={1}
-              max={30}
-              step={1}
-              suffix="min"
-              onChange={(value) => onChange(buildProfileCapturePatch(config, { max_recording_seconds: value * 60 }))}
-              aria-label="Max recording"
-            />
+            budget ? (
+              <StatusBadge tone="neutral">{formatBudgetDuration(budget.ceiling_seconds)}</StatusBadge>
+            ) : null
           }
         />
+        <div id={settingsAnchorElementId(SETTINGS_ANCHOR_AUTO_STOP)} className="settings-anchor">
+          <FormRow
+            label="Auto-stop"
+            hintTone={budget?.auto_stop_clamped ? "danger" : "default"}
+            hint={autoStopHint}
+            control={
+              <Stepper
+                value={Math.round(capture.max_recording_seconds / 60)}
+                min={1}
+                max={autoStopMaxMinutes}
+                step={1}
+                suffix="min"
+                onChange={(value) => onChange(buildProfileCapturePatch(config, { max_recording_seconds: value * 60 }))}
+                aria-label="Auto-stop"
+              />
+            }
+          />
+        </div>
         <FormRow
-          label="Silence timeout"
-          hint="Auto-stop after this many seconds of silence (0 = disabled, max 60). Enforced in the native capture monitor — keeps working after this window is closed."
+          label="Stop after silence"
+          hint="Ends the recording after this many seconds without speech (0 = disabled, max 60). Independent of the length limits above — it reacts to you stopping, not to the recording getting long. Enforced in the native capture monitor, so it keeps working after this window is closed."
           divider={false}
           control={
             <Stepper
@@ -469,7 +521,7 @@ export function InputTab({ config, onChange }: Props) {
               step={1}
               suffix={silenceTimeoutSeconds > 0 ? "s" : "Disabled"}
               onChange={(value) => onChange(buildProfileCapturePatch(config, { silence_timeout_seconds: value }))}
-              aria-label="Silence timeout"
+              aria-label="Stop after silence"
             />
           }
         />

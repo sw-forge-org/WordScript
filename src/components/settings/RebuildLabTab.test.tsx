@@ -143,6 +143,7 @@ beforeEach(() => {
         status: "completed",
         source: "native_pipeline",
         retry_of: null,
+        audio_path: null,
         provider: "groq",
         model: "whisper-large-v3-turbo",
         language: "de",

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ExternalLink, FileJson, Stethoscope } from "lucide-react";
@@ -16,7 +16,7 @@ import {
 import type { StatusTone } from "../shell";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import type { AppConfig, ProfileSpeechSettings } from "../../types/ipc";
+import type { AppConfig, ProfileSpeechSettings, ProviderTier } from "../../types/ipc";
 import type {
   LocalProviderIssueCode,
   LocalProviderSetupStatus,
@@ -345,6 +345,21 @@ function MetaRow({
 }
 
 export function ApiModelsTab({ config, onChange, onOpenDiagnostics }: Props) {
+  // Account plans the selected provider offers. Empty for lanes that have none.
+  const [providerTiers, setProviderTiers] = useState<ProviderTier[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<ProviderTier[]>("resolve_provider_tiers", { provider: config.provider })
+      .then((tiers) => { if (!cancelled) setProviderTiers(tiers); })
+      .catch(() => { if (!cancelled) setProviderTiers([]); });
+    return () => { cancelled = true; };
+  }, [config.provider]);
+
+  // An empty stored value means "the provider's default", which is what the
+  // runtime resolves it to as well.
+  const resolvedTierId =
+    config.provider_tier || providerTiers.find((tier) => tier.default)?.id || "";
+
   const [showTypedKey, setShowTypedKey] = useState(false);
   const [pendingKey, setPendingKey] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -684,6 +699,31 @@ export function ApiModelsTab({ config, onChange, onOpenDiagnostics }: Props) {
           <MetaRow
             label="Cleanup model"
             value={(localSetup?.resolved_chat_model ?? config.local_correction_model) || "No cleanup model resolved"}
+          />
+        )}
+        {/* The account plan bounds how long a recording may be, so it belongs
+            beside the credential it applies to: the plan is a property of the
+            key, not of a profile. Rendered only where the provider declares
+            plans — the local runtime is not billed by request size and has
+            none, and an empty select would be a control that decides nothing.
+
+            The plans themselves come from the provider
+            (`resolve_provider_tiers`), never from a list in this file. */}
+        {providerTiers.length > 0 && (
+          <FormRow
+            label="Account plan"
+            hint="Which plan this API key is on. It sets the largest upload the provider accepts, and with it the longest recording WordScript can process — see Input → Processing limit."
+            control={
+              <Select
+                value={resolvedTierId}
+                onChange={(event) => onChange({ provider_tier: event.target.value })}
+                aria-label="Account plan"
+              >
+                {providerTiers.map((tier) => (
+                  <option key={tier.id} value={tier.id}>{tier.label}</option>
+                ))}
+              </Select>
+            }
           />
         )}
         <MetaRow label="Cleanup" value={providerCapabilities.chat_completion ? "Available" : "Unavailable"} />

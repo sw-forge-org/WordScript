@@ -859,6 +859,13 @@ pub struct AppConfig {
     pub professionalize: bool,
     #[serde(alias = "backend")]
     pub provider: String,
+    /// Which of the provider's account plans this machine is on. Plans are
+    /// declared by the provider (`providers::provider_tiers`), never listed
+    /// here, and they bound how long a recording may be. Machine-wide rather
+    /// than per-profile: the plan belongs to the credential, and every profile
+    /// using that provider shares it. Empty means the provider's default plan.
+    #[serde(default)]
+    pub provider_tier: String,
     pub local_model: String,
     pub local_profile: String,
     pub local_prompt_strength: String,
@@ -972,6 +979,7 @@ impl Default for AppConfig {
             filter_fillers: true,
             professionalize: false,
             provider: default_provider_id().to_string(),
+            provider_tier: String::new(),
             local_model: "base".to_string(),
             local_profile: default_local_profile.clone(),
             local_prompt_strength: default_local_prompt_strength.clone(),

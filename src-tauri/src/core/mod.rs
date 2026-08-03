@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod capture;
+pub mod capture_budget;
 pub mod communication_style;
 pub mod confidence_gate;
 pub mod config;

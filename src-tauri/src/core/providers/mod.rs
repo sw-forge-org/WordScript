@@ -130,6 +130,70 @@ pub struct ProviderProfile {
     pub requires_api_key: bool,
 }
 
+/// An account plan, and the upload it buys.
+///
+/// Declared per provider rather than hardcoded anywhere that reads it, so a new
+/// lane ships its own plans and every surface picks them up without edits. An
+/// empty list means the lane has no plans to choose between — the local runtime
+/// is not billed by request size.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProviderTier {
+    pub id: String,
+    pub label: String,
+    pub max_audio_bytes: u64,
+    pub default: bool,
+}
+
+/// What a provider can accept from one capture.
+///
+/// Two different shapes of limit, because the lanes are bound by different
+/// things: a cloud lane by request size, a local one by decode time. A lane
+/// states whichever binds it and leaves the other `None`; a lane that states
+/// neither is unbounded, and the configured maximum is what remains.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProviderCaptureLimits {
+    /// Largest upload the provider accepts, when bounded by request size.
+    pub max_audio_bytes: Option<u64>,
+    /// Seconds of decode per second of audio, when bounded by compute.
+    pub realtime_factor: Option<f64>,
+    /// The binding cause, phrased for a settings row: "the 25 MiB upload size".
+    pub detail: String,
+}
+
+impl ProviderCaptureLimits {
+    /// No limit this lane knows about. Deliberately not a borrowed number from
+    /// another lane: a guessed ceiling reads as authoritative and sends the fix
+    /// in the wrong direction when it is wrong.
+    pub fn unbounded() -> Self {
+        Self {
+            max_audio_bytes: None,
+            realtime_factor: None,
+            detail: String::new(),
+        }
+    }
+}
+
+/// The account plans a provider offers, for the settings surface to render.
+pub fn provider_tiers(provider: &str) -> Vec<ProviderTier> {
+    match resolve_provider_id(provider) {
+        Ok(ProviderId::Groq) => groq::tiers(),
+        Ok(ProviderId::LocalPreview) => local_preview::tiers(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// What one capture may cost on this provider, under this model and plan.
+///
+/// The dispatch every other provider capability already uses. The capture
+/// budget calls this and knows nothing about any particular lane.
+pub fn capture_limits(provider: &str, model: &str, tier_id: &str) -> ProviderCaptureLimits {
+    match resolve_provider_id(provider) {
+        Ok(ProviderId::Groq) => groq::capture_limits(tier_id),
+        Ok(ProviderId::LocalPreview) => local_preview::capture_limits(model),
+        Err(_) => ProviderCaptureLimits::unbounded(),
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderCapabilities {
     pub transcription: bool,

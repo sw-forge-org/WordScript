@@ -1428,6 +1428,7 @@ fn write_transcription_wav(
     writer
         .finalize()
         .map_err(|error| format!("Could not finalize native capture WAV file: {error}"))?;
+    restrict_capture_permissions(&file_path);
 
     if let Ok(metadata) = std::fs::metadata(&file_path) {
         runtime_log::record(format!(
@@ -1577,6 +1578,119 @@ fn capture_temp_dir(config: &NativeCaptureConfig) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("Could not create native capture temp dir: {error}"))?;
     Ok(directory)
+}
+
+/// How long a retained capture stays on disk, and how many may pile up.
+///
+/// A recording kept for a retry is worth keeping until the retry happens, but
+/// not forever: these are raw WAVs of everything the microphone heard, and an
+/// unbounded directory of them is both a disk problem and a privacy one.
+const RETAINED_CAPTURE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const RETAINED_CAPTURE_MAX_FILES: usize = 20;
+
+/// Whether a path is a capture this app wrote, in the directory it writes to.
+///
+/// The membership test the retry path uses before re-sending a file to a
+/// provider. Both halves matter: the name proves the shape, the directory
+/// proves it is ours.
+pub fn is_retained_capture_path(path: &str) -> bool {
+    let path = std::path::Path::new(path);
+    let config = super::config::AppConfig::load_from_disk();
+    let expected = if config.temp_audio_dir.trim().is_empty() {
+        user_data_dir().join("tmp")
+    } else {
+        PathBuf::from(config.temp_audio_dir.trim())
+    };
+
+    is_retained_capture_file(path) && path.parent().is_some_and(|parent| parent == expected)
+}
+
+/// Whether a path is a capture file this app wrote.
+fn is_retained_capture_file(path: &std::path::Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
+        && path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| {
+                stem.strip_prefix("capture-")
+                    .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+            })
+}
+
+/// Restrict a captured file to owner-only access.
+///
+/// A retained capture is a raw recording of everything the microphone heard,
+/// and it now survives a failure by up to a week instead of being deleted at
+/// once. The default 0644 that leaves it readable by every local account was
+/// tolerable for a file that lived for two seconds; it is not for one that
+/// lives for days.
+#[cfg(unix)]
+fn restrict_capture_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn restrict_capture_permissions(_path: &std::path::Path) {}
+
+/// Prune captures kept for a retry, oldest first.
+///
+/// Reads the same directory `capture_temp_dir` writes to, using the on-disk
+/// config rather than a live capture's, so it can run at startup when no
+/// capture exists. Failures are logged and swallowed: a sweep that cannot run
+/// must never take a session down with it.
+pub fn prune_retained_captures() {
+    let config = super::config::AppConfig::load_from_disk();
+    let directory = if config.temp_audio_dir.trim().is_empty() {
+        user_data_dir().join("tmp")
+    } else {
+        PathBuf::from(config.temp_audio_dir.trim())
+    };
+
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        return;
+    };
+
+    let mut captures: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        // Only files this app wrote. `temp_audio_dir` is user-configurable, so
+        // "every .wav in the directory" would delete the user's own recordings
+        // the moment they point it at a folder that has some — a sweep is not
+        // allowed to be destructive outside what it created. The name pattern
+        // is the one `start_native_capture` writes (`capture-<n>.wav`).
+        .filter(|entry| is_retained_capture_file(&entry.path()))
+        .filter_map(|entry| {
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            Some((modified, entry.path()))
+        })
+        .collect();
+
+    // Newest first, so the count rule keeps the most recent — the ones a retry
+    // is most likely to want.
+    captures.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let now = std::time::SystemTime::now();
+    let mut removed = 0usize;
+    for (index, (modified, path)) in captures.iter().enumerate() {
+        let too_old = now
+            .duration_since(*modified)
+            .map(|age| age > RETAINED_CAPTURE_MAX_AGE)
+            .unwrap_or(false);
+        let past_count = index >= RETAINED_CAPTURE_MAX_FILES;
+
+        if (too_old || past_count) && std::fs::remove_file(path).is_ok() {
+            removed += 1;
+        }
+    }
+
+    if removed > 0 {
+        runtime_log::record(format!(
+            "[WordScript] Retained capture sweep removed={} kept={}",
+            removed,
+            captures.len().saturating_sub(removed),
+        ));
+    }
 }
 
 fn sample_format_label(sample_format: SampleFormat) -> &'static str {
@@ -2124,6 +2238,29 @@ mod tests {
 
         let _ = std::fs::remove_file(&file_path);
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn the_sweep_only_claims_files_this_app_wrote() {
+        // `temp_audio_dir` is user-configurable. Pointed at a folder holding the
+        // user's own recordings, "every .wav here" would delete them.
+        assert!(is_retained_capture_file(std::path::Path::new("capture-7.wav")));
+        assert!(is_retained_capture_file(std::path::Path::new("capture-1042.WAV")));
+
+        assert!(!is_retained_capture_file(std::path::Path::new("interview.wav")));
+        assert!(!is_retained_capture_file(std::path::Path::new("capture-.wav")));
+        assert!(!is_retained_capture_file(std::path::Path::new("capture-notes.wav")));
+        assert!(!is_retained_capture_file(std::path::Path::new("my-capture-3.wav")));
+        assert!(!is_retained_capture_file(std::path::Path::new("capture-3.mp3")));
+    }
+
+    #[test]
+    fn a_retry_will_not_re_send_a_file_from_outside_the_capture_directory() {
+        // history.json is a plain file; anything able to write it must not be
+        // able to make WordScript upload an arbitrary path to a provider.
+        assert!(!is_retained_capture_path("/etc/passwd"));
+        assert!(!is_retained_capture_path("/home/someone/Documents/capture-1.wav"));
+        assert!(!is_retained_capture_path(""));
     }
 
     #[test]
