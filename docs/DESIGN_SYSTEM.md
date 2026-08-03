@@ -17,8 +17,13 @@ Status: 2026-07-25
 
 ## Visual Direction
 
-WordScript is a dark, calm voice-workstation utility with an SW forge orange
-accent. It uses hierarchy, grouped forms, precise status, and restrained motion
+WordScript is a calm voice-workstation utility with an SW forge orange accent,
+in three colour schemes: light, dark and system. Dark was the only scheme until
+2026-08-03 and was never a decision — [ADR 0048](decisions/0048-a-light-mode-is-not-the-dark-one-inverted.md)
+records why a product used from inside someone else's bright document window
+cannot ship dark-only, and why the light ladder is rebuilt rather than
+inverted. The light accent is `#b45c00`, not `#ff9c2b`; the identity value
+measures 2.1:1 on white and is unusable as text there. It uses hierarchy, grouped forms, precise status, and restrained motion
 instead of generic dark-dashboard styling. Orange identifies primary capture and
 intentional attention; it is not a default decoration for every control.
 
@@ -111,7 +116,12 @@ Do not recreate provider labels or local metadata from model-name heuristics.
 | Rule | Current standard |
 | --- | --- |
 | Background hierarchy | `--bg-base`, `--bg-surface`, `--bg-elevated` |
-| Type scale | 12, 14, 16, 20, 28 px |
+| Typeface | Archivo (UI and display), IBM Plex Mono (measurement and code). Self-hosted woff2 in `assets/fonts/`, both SIL OFL |
+| Type scale | 11, 12, 13, 14, 16, 20, 28 px |
+| Optical size | Width, tracking and weight vary per step: 104% / +0.012em at 11 px through 96% / −0.026em at 28 px |
+| Card material | One 1px inset highlight on the top edge only. Never on the bottom |
+| Elevation | `--elev-raised`, `--elev-pop`, `--elev-sheet`, `--elev-window`. Floating surfaces only |
+| Focus | 1.5px accent core flush to the control, plus a wide low-alpha halo. Never an offset ring |
 | Spacing | 4 px rhythm; 20 px card padding; 32 px between major sections |
 | Card shape | 12 px radius, border and background elevation |
 | Card elevation | background and hairline border; no drop shadow |
@@ -125,6 +135,18 @@ rules override layered utility classes and can silently break layout spacing.
 
 - Reuse shell primitives such as `Sidebar`, `FormCard`, `FormRow`, `Inspector`,
   `SegmentControl`, `StatusBadge`, `Toggle`, and `ProfileSwitcher`.
+- The accent means primary action, active selection, or live capture. It does
+  not mean "this row is interesting". A disabled control drops the accent
+  entirely rather than dimming it: at reduced opacity an accent surface is
+  still the most saturated thing in its row, so the eye is drawn to the one
+  control that cannot be operated.
+- A measurement in its normal range carries no colour. The input meter's fill
+  is neutral and only its verdict line tones, because a permanently coloured
+  moving surface is a status light that never turns off.
+- Motion primitives live once, in `src/lab/`, and are shown at the unrouted
+  `/component-lab`. The orb has four states and no periodic pulse
+  ([ADR 0049](decisions/0049-the-orb-has-four-states-and-a-pulse-is-none-of-them.md));
+  a level-driven component smooths at one end only, never in both JS and CSS.
 - Form cards group one decision and its supporting explanation. Avoid nested
   cards, duplicate borders, and visual lift on hover.
 - Use `StatusDot` and status badges for compact runtime truth. Green means a

@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New features or capabilities
 
 ### Changed
+
+- **The orb has four states and none of them pulses.** `idle`, `listening`,
+  `thinking` and `speaking`, each moving the way that state behaves. The
+  predecessor had two and a fixed-period keyframe — a heartbeat, which says
+  ALIVE in three states where that is the wrong thing to say, and which drives
+  a voice with a symmetrical oscillator when speech has no period at all
+  (ADR 0049).
+- **The focus ring stopped outweighing the primary action.** It was
+  `2px solid var(--accent)` at a 2px offset on eight control classes; the
+  offset detached it from its control so it read as a warning badge around the
+  object. Now a thin saturated core flush to the control plus a wide low-alpha
+  halo — quieter at the same visibility.
+- **The accent is spent on one thing at a time.** A disabled toggle no longer
+  wears it, a status badge is tinted rather than filled, the toggle knob is
+  light in both states so an on switch reads as a track rather than a slab, and
+  the input meter's fill is neutral until something is worth acting on.
+- **Surfaces have material, not only elevation.** One 1px inset highlight on
+  the top edge — the edge that turns toward the light — plus a four-step cast
+  shadow ladder replacing four hardcoded literals.
+- **Home is built around the shortcut.** "Press Ctrl+Super in any app" was the
+  most important fact in the product, set at 13 px in the colour for things you
+  may skip. It is now keycaps over a field that responds to input level.
 - Changes to existing functionality
 
 ### Deprecated
@@ -33,6 +55,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The settings rework prototype got a typeface, three colour schemes and a
+  search.** Archivo and IBM Plex Mono are now bundled as woff2 rather than
+  named and never shipped — every judgement made about this surface before
+  2026-08-03 was made in Noto Sans on Linux and Segoe on Windows. Light, dark
+  and system schemes, with the light ladder rebuilt rather than inverted and
+  the accent moved to `#b45c00`, which the identity value cannot substitute for
+  on white (ADR 0048). `Cmd/Ctrl+K` opens a palette that searches screens,
+  settings and actions, each row carrying the path it lives at (ADR 0050).
+- **A component lab at the unrouted `/component-lab`.** The orb, the live
+  waveform, the matrix field and the keycap as real React components on the
+  shipped tokens, so a motion model is built once rather than in vanilla now
+  and React later. Not linked from any product surface and wired to no runtime.
+- **A live waveform where a microphone is actually judged.** The level bar
+  reports one number as a length and cannot show whether a signal is steady or
+  spiky, or whether peaks clip while the average sits far too low. It sits
+  above the bar rather than replacing it — the bar carries the discard
+  threshold, which is a boundary the runtime applies.
 - **A long recording warns you before it stops itself.** In the last quarter of
   the auto-stop — at most two minutes before it — a small countdown appears
   beside the pill and turns urgent near zero. Tapping it opens the setting that

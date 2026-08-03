@@ -1,6 +1,41 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@custom-variant dark (&:is(.dark *));
+
+/* ── Faces ─────────────────────────────────────────────────────────────────────
+   Self-hosted. The stack below named Aptos first and shipped no font file, so
+   the product rendered in Noto Sans on Linux, Segoe on Windows and SF on macOS
+   — three identities, none of them chosen. Archivo carries a weight and a
+   width axis, which is what the settings-rework prototype spends on optical
+   size; IBM Plex Mono was already the intended mono and is now actually
+   present. Both are SIL OFL and the licences ship in assets/fonts/. */
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: block;
+  src: url("../../assets/fonts/archivo-latin-variable.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../assets/fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url("../../assets/fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
+
 /* ── Design tokens v2 ───────────────────────────────────────────────────────── */
 /* Quellen: UI-UX-Pro-Max "Operation orange on dark", macOS HIG, Tauri v2 APIs  */
 
@@ -103,9 +138,9 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ── Typography ── */
-  --font-display: "Aptos Display", "SF Pro Display", "Segoe UI Variable Display", "Noto Sans", sans-serif;
-  --font: "Aptos", "SF Pro Text", "Segoe UI Variable", "Noto Sans", sans-serif;
-  --font-mono: "IBM Plex Mono", "Cascadia Code", "SF Mono", "Consolas", monospace;
+  --font-display: "Archivo", "SF Pro Display", "Segoe UI Variable Display", sans-serif;
+  --font: "Archivo", "SF Pro Text", "Segoe UI Variable", sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", "Cascadia Code", "Consolas", monospace;
 
   --text-display-lg: 28px;
   --text-display: 24px;
@@ -115,6 +150,13 @@
   --text-body-sm: 12px;
   --text-label: 11px;
   --text-caption: 10px;
+  --sidebar-foreground: hsl(240 5.3% 26.1%);
+  --sidebar-primary: hsl(240 5.9% 10%);
+  --sidebar-primary-foreground: hsl(0 0% 98%);
+  --sidebar-accent: hsl(240 4.8% 95.9%);
+  --sidebar-accent-foreground: hsl(240 5.9% 10%);
+  --sidebar-border: hsl(220 13% 91%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 
 /* ── shadcn/ui semantic tokens (bridged to WordScript v2 tokens) ─────────────── */
@@ -197,6 +239,13 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────────── */
@@ -539,4 +588,15 @@ body.overlay-window {
     animation: none;
     background-color: var(--accent-soft);
   }
+}
+
+.dark {
+  --sidebar: hsl(240 5.9% 10%);
+  --sidebar-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }

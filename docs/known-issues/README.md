@@ -52,23 +52,34 @@ status change. Resolved bugs remain as references for the same failure class.
   D1-D12 closed; D11 (hold to talk) turned out to be a threshold-semantics
   defect rather than a delivery one and was corrected under ADR 0013
   (2026-07-29). One open item: the physical half of the S0 measurement.
-- [overlay-recording-freeze.md](overlay-recording-freeze.md): open, and narrower
-  than when filed — the recording overlay freezes mid-capture, timer and input
-  included, while capture and pipeline continue. The 2026-07-30 measurement did
-  not reproduce it: zero `[ov-beat]` lines in a confirmed dev build whose other
-  diagnostics logged normally, and level-emit shortfall at its 4% baseline. The
-  sightings from that day were placement, not a stall. What stays open is the
-  original signature only — pill visible, input dead — and the
-  release-versus-dev comparison it always needed (2026-07-27, re-measured
-  2026-07-30).
-- [overlay-stranded-off-screen.md](overlay-stranded-off-screen.md): fixed in
-  code, not yet confirmed through a live monitor change — the overlay was placed
-  where no monitor is. Reveals only ever positioned on hidden→visible, so a
-  monitor topology change during a session left stale coordinates, and in a
-  staggered layout those fall into the dark part of the union bounding box
-  (measured: 18.3% of it). Reported as "the overlay becomes completely invisible
-  mid-recording"; the stop hotkey appeared to fix it because the park→reveal
-  cycle recomputed placement (2026-07-30, ADR 0022).
+- [capture-loses-half-the-recording.md](capture-loses-half-the-recording.md):
+  **open, and the most damaging entry in this directory** — 8 of 782 captures
+  recorded only 48–88% of their wall-clock duration, and nothing said so. The
+  transcript is of what was recorded, not of what was said. Found by comparing
+  two counters the runtime already logged: over 353 captures of at least 20 s,
+  `shortfall_ratio` and the missing audio fraction correlate at **r = 0.9999**.
+  No stream error, no rebuild, no device change in either affected window; ruled
+  out as a pause artifact and as a webview stall. This is what the overlay
+  freeze reports were describing (2026-08-03).
+- [overlay-recording-freeze.md](overlay-recording-freeze.md): largely resolved by
+  attribution — the recording overlay freezes mid-capture, timer and input
+  included, while the pipeline continues. The 2026-07-30 measurement did not
+  reproduce it and its sightings turned out to be placement. On 2026-08-03 it
+  did reproduce, on the emit axis, and the cause is not the overlay: the pill
+  stops because the capture stream stopped delivering samples (see above). The
+  main-thread hypotheses are dead — `[ov-beat]` stays empty while the other
+  `[ov-*]` kinds log normally. What stays open is the residual signature alone:
+  hover, click and drag dying while a *live* stream runs.
+- [overlay-stranded-off-screen.md](overlay-stranded-off-screen.md): **reopened
+  2026-08-03** — the overlay is placed where no monitor is. The ADR 0022 rescue
+  works and is firing, but it does not prevent the stranding: in 82.9 hours on a
+  build carrying the fix, 65 of 503 reveals found an already-visible window on no
+  work area, while the mid-session check that was meant to catch it fired **zero**
+  times — it runs only during an active native capture, and every observed case
+  happened with the pill visible and idle. Third finding: all 482 park moves
+  landed somewhere other than requested (parking works through `hide()` alone),
+  and 31 of them landed on the measured dead-zone corner, which is now the
+  leading candidate for the cause (originally 2026-07-30, ADR 0022).
 - [overlay-leave-hold-dead-actions.md](overlay-leave-hold-dead-actions.md):
   fixed — the 240 ms leave hold replayed the `clipboard_only` preview from a
   snapshot with its buttons wired unconditionally to handlers that had already
@@ -146,6 +157,27 @@ status change. Resolved bugs remain as references for the same failure class.
   categories, 10 of 14 observed tokens, stay open — no rule that only sees the
   transcript can reach them. Also records which look-alikes are legitimate
   German morphology, so the metric does not count them.
+- [singular-address-becomes-plural.md](singular-address-becomes-plural.md): open,
+  located but not scoped (2026-08-03) — a dictated instruction to one addressee
+  arrives addressed to several: `fix das bitte` ships as `fixt das bitte`. The
+  output is well-formed German, so nothing marks it as damaged. Located on the
+  **recognizer**, not on cleanup: in all 3 cases found across 167 records the
+  plural already stands in `raw_transcript`, cleanup passes it through, and in one
+  of them cleanup did not run at all. Zero cases of cleanup pluralizing a singular.
+  Also qualifies the `switch` → `switcht` classification in the entry above —
+  the same suffix in an imperative is this defect, so a token-level metric cannot
+  separate them.
+- [macos-port-is-a-second-platform-backend.md](macos-port-is-a-second-platform-backend.md):
+  open, scope record (2026-08-03) — what a macOS build actually costs. The
+  conclusion "second backend, not a port" holds, but the blocker sits elsewhere
+  than assumed: injection and hotkeys exist in code and are merely unrun
+  (`ydotool`/`wtype` are deliberately skipped on Linux too), while the **overlay
+  window strategy has no macOS path at all** — XWayland plus a KWin script,
+  click-through pending layer-shell, and zero macOS branches in `lib.rs`. Second
+  gap: Accessibility and Input Monitoring exist only as strings, with no probe,
+  no request and no `bundle.macOS` block, so an ungranted session would render
+  "ready" and paste nothing. The core is cleanly separated; the missing seam is a
+  platform-window abstraction.
 
 ## Boundaries
 

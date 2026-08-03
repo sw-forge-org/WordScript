@@ -239,6 +239,62 @@ Status: Proposed | Accepted | Superseded by NNNN
   migration is tested without touching the developer's real secret store. The
   update endpoint stops depending on GitHub's org-rename redirect, which any
   stranger can break by claiming the freed name.
+- [0038](0038-a-recording-the-app-permits-is-one-the-pipeline-can-finish.md): a
+  recording the app permits is one the pipeline can finish — the capture limit
+  is derived from what the provider will accept rather than chosen, and stated
+  where it is spent.
+- [0039](0039-a-failed-recording-keeps-its-audio-until-the-retry-or-the-sweep.md):
+  a failed recording keeps its audio until the retry or the sweep, so a
+  transcription that failed is retryable rather than lost.
+- [0040](0040-the-assistant-is-one-thing-with-three-doors.md): the assistant is
+  one thing with three doors — Draft, the Ask window and the actions on a note
+  were being built as two assistants with two models, and the split could not
+  serve "write the mail from Tuesday's meeting". One model, one name, one set of
+  rules, and a single bounded read of your own notes. Narrows exactly one clause
+  of ADR 0029 and answers its four reasons; side-effecting tools stay
+  prohibited.
+- [0041](0041-translation-is-a-mode-not-a-switch-on-cleanup.md): translation is
+  a mode, not a switch on cleanup — a flag that turns the smallest transform
+  into the largest one makes the mode indicator lie (ADR 0024), and translation
+  needs the profile's words left alone in a way cleanup never did. Auto never
+  selects it: it may choose how text reads, never what language it is in.
+- [0042](0042-one-surface-owns-every-model-choice.md): one surface owns every
+  model choice — a model could be set in five places and the answer to "which
+  model is doing this" took four screens. One connection, one row per job,
+  grouped by what the job does, plus one tab for what is installed on this
+  machine. Records the wrong fix too: a sixth screen for credentials, which made
+  it worse.
+- [0043](0043-the-orchestrator-has-one-voice-and-that-voice-has-a-body.md): the
+  orchestrator has one voice and that voice has a body — the agent window read
+  as three agents talking, which argues against ADR 0030. One orb, singular by
+  construction, plus an always-on-top notification because Focus and screen
+  sharing suppress OS ones. Its sound is a cue on ADR 0010's existing stream.
+- [0044](0044-the-effect-line-and-the-handoff-across-it.md): the effect line,
+  and the handoff across it — the assistant and the orchestrator cannot merge
+  (one ends in a single reducer commit, the other runs for days; one is ours,
+  the other is a foreign process), but their surface can. "Write the mail" and
+  "send the mail" are one verb apart, so the assistant hands over visibly and by
+  key rather than failing. Renames the orchestrator `the desk`, and extends
+  ADR 0041's rule: Auto may choose how text reads, never whether something
+  happens.
+- [0045](0045-everything-recorded-is-one-object.md): everything recorded is one
+  object — a dictation, a meeting, an upload, a link and a calendar entry were
+  four models of the same thing, and the user had to know the route to find the
+  result. One type with `origin` and `state`; `scheduled` is what lets a meeting
+  exist before it happens. Upload becomes a state rather than a place, and the
+  workspace drops from five entries to four.
+- [0046](0046-intake-bridge-reach.md): intake, bridge, reach — one question
+  sorts every connector, *does it write anywhere?* WordScript reads what makes a
+  context object exist (the calendar, read-only, and it is the only source of a
+  speaker's name); everything that writes runs in the desk, which is already an
+  MCP client with its own permission model. We build the door into its
+  directory, not a second connector surface.
+- [0047](0047-a-speakers-name-is-never-in-the-audio.md): a speaker's name is
+  never in the audio — source attribution is free, clustering produces a count
+  and a separation, and a name comes from the invite, a saved voice or a click.
+  `locked` survives the end-of-call re-cluster, or every name typed during a
+  call changes after it. Also fixes the meeting copilot's rules: it writes and
+  never speaks, and never hints without a citation.
 
 ## Resolved: the number 0011 was used twice
 
@@ -266,8 +322,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-03 the filed range runs through 0037; the next
-decision takes 0038.)
+takes 0021. (As of 2026-08-03 the filed range runs through 0047; the next
+decision takes 0048.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

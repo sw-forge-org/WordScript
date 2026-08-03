@@ -1,6 +1,6 @@
 # WordScript -- Vision
 
-Status: 2026-07-25
+Status: 2026-08-03
 
 > Architecture decisions that ground this vision live as append-only ADRs in
 > `docs/decisions/`. This file is the living north star; the roadmap is the
@@ -102,6 +102,41 @@ unscheduled.
 The current settings shell exposes Chat, Upload, Notes and Account only as
 clearly labeled layout previews. Their sample or component-local state is not
 evidence that the later platform behavior exists.
+
+### One input, three outputs — the direction as of 2026-08-03
+
+A planning pass on the settings prototype (ADR 0044--0047) moved the long-term
+shape from a list of later features to one sentence:
+
+> **The voice is the input. What stays is context. The output is the cursor, an
+> object, or an agent.**
+
+The pull behind it is real and is stated here rather than left implicit: speech
+to text is becoming a commodity, so a product whose whole claim is "your words,
+transcribed and inserted" is competing on something that will be everywhere. The
+part that does not commoditize is what happens either side of the transcription
+— **what accumulates from what you said**, and **what can act on it**.
+
+Concretely, and all of it planning direction rather than built:
+
+- **Everything recorded is one object** (ADR 0045). A dictation, a meeting, an
+  uploaded file, a link and a calendar entry that has not happened yet share one
+  type. What accumulates is a living record rather than a folder of transcripts.
+- **The effect line is the product's central boundary** (ADR 0044). The
+  assistant writes text and reaches nothing; `the desk` — the one orchestrator
+  of ADR 0030 — acts and reaches whatever it is connected to. A dictation
+  crosses that line only through a visible, keyed handoff.
+- **We do not build the connector layer** (ADR 0046). The desk is an agent CLI
+  with its own MCP client. WordScript reads what makes a context object exist
+  and builds the door into that directory; it does not maintain a second
+  integration surface.
+
+**What this does not change.** V1 is unchanged and this direction does not pull
+any of it forward: transcription reliability outside `General Writing` is still
+the acute gap, none of the above is implemented, and the rule at the top of
+"What must not happen now" still governs. What has changed is that the later
+platform stage now has a decided shape rather than a list, so that when it is
+built it is built once.
 
 Even in that later platform stage the core stays the same: WordScript stays
 usable without an account, while later sync and workspace features add on.

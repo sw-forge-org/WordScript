@@ -1,0 +1,193 @@
+/* ===========================================================================
+   Component lab styles.
+
+   These are the WordScript versions of the primitives the settings rework
+   needs and shadcn does not carry: the orb, the live waveform, the matrix
+   field and the keycap. They live here rather than in globals.css because
+   nothing in the shipped surface imports them yet — the lab route is where
+   they are judged before Stage 1 wires them in.
+
+   Every value reads a token from globals.css. A component that arrives with
+   its own palette has to be re-skinned at integration time, which is when
+   nobody has budget for it.
+   =========================================================================== */
+
+/* ── Orb ─────────────────────────────────────────────────────────────────────
+   Light comes from below left in every state, which is what makes it read as a
+   sphere rather than as a disc with a gradient on it. */
+
+.ws-orb {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--orb-size, 72px);
+  height: var(--orb-size, 72px);
+}
+
+.ws-orb-body,
+.ws-orb-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ws-orb-body {
+  background: radial-gradient(circle at 30% 80%,
+    #ffffff 0%, #fff6e2 20%, #ffd394 40%, #ffa348 60%, #f57d10 80%, #d95a08 100%);
+}
+
+/* Sits under the body, scaled past it so the falloff is outside rather than
+   over it. */
+.ws-orb-glow {
+  box-shadow:
+    0 0 calc(var(--orb-size, 72px) * 0.34) calc(var(--orb-size, 72px) * 0.06)
+      rgba(255, 156, 48, calc(0.22 + 0.36 * var(--orb-level, 0))),
+    0 0 calc(var(--orb-size, 72px) * 0.9) calc(var(--orb-size, 72px) * 0.18)
+      rgba(255, 118, 16, calc(0.11 + 0.26 * var(--orb-level, 0)));
+  transform: scale(calc(0.92 + 0.1 * var(--orb-level, 0)));
+}
+
+/* Idle is not a dimmed version of speaking. It is a different material:
+   unlit, neutral, no glow. A fainter glow still reads as "saying something
+   quietly", which is a lie about a process that is silent. */
+.ws-orb[data-state="idle"] .ws-orb-body {
+  background: radial-gradient(circle at 38% 74%,
+    #ffffff 0%, #f6f5f3 46%, #d9d7d2 78%, #b9b6b0 100%);
+}
+.ws-orb[data-state="idle"] .ws-orb-glow {
+  box-shadow: 0 0 calc(var(--orb-size, 72px) * 0.22) rgba(255, 255, 255, 0.1);
+  transform: none;
+}
+
+/* Listening is receiving, so it is not speaking at lower volume: cooler, less
+   saturated, glow held close to the body. Lit from outside, not within. */
+.ws-orb[data-state="listening"] .ws-orb-body {
+  background: radial-gradient(circle at 32% 78%,
+    #ffffff 0%, #f2f4f6 22%, #cfd8de 46%, #9fb2c0 72%, #6f8798 100%);
+}
+.ws-orb[data-state="listening"] .ws-orb-glow {
+  box-shadow:
+    0 0 calc(var(--orb-size, 72px) * 0.26) calc(var(--orb-size, 72px) * 0.04)
+      rgba(180, 205, 225, calc(0.14 + 0.3 * var(--orb-level, 0)));
+  transform: scale(calc(0.94 + 0.06 * var(--orb-level, 0)));
+}
+
+.ws-orb[data-state="speaking"] .ws-orb-body,
+.ws-orb[data-state="listening"] .ws-orb-body {
+  transform: scale(calc(0.93 + 0.09 * var(--orb-level, 0)));
+  transition: transform 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* A DRIVEN orb gets no transition. JS writes --orb-level every frame with the
+   attack and release already applied, and a CSS transition on top of a
+   per-frame write is two smoothers fighting: the result lags the signal by the
+   transition duration and rounds off exactly the transients that make speech
+   look like speech. Smoothing belongs at one end. */
+.ws-orb[data-driven] .ws-orb-body,
+.ws-orb[data-driven] .ws-orb-glow { transition: none; }
+
+/* Thinking holds its size and walks the light around instead. Rotating the
+   body rotates an off-centre highlight — a moving light source for the cost of
+   one transform, no gradient recomputed, no layer promoted. A pendulum rather
+   than a full turn, because a full turn is a spinner and a spinner means
+   "waiting for a network", not "working". */
+.ws-orb[data-state="thinking"] .ws-orb-body {
+  background: radial-gradient(circle at 30% 80%,
+    #fff2dd 0%, #ffdba8 18%, #f3b163 42%, #cf8433 68%, #9c5f22 100%);
+  animation: ws-orb-consider 3.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.ws-orb[data-state="thinking"] .ws-orb-glow {
+  box-shadow:
+    0 0 calc(var(--orb-size, 72px) * 0.3) calc(var(--orb-size, 72px) * 0.05)
+      rgba(255, 176, 92, 0.2);
+  transform: scale(0.96);
+}
+@keyframes ws-orb-consider {
+  0%   { transform: rotate(-38deg); }
+  50%  { transform: rotate(38deg); }
+  100% { transform: rotate(-38deg); }
+}
+
+/* Reduced motion keeps every state and drops every movement. All four stay
+   distinguishable, because material and glow carry the state and those are
+   information. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-orb .ws-orb-body {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* ── Live waveform ─────────────────────────────────────────────────────────── */
+
+.ws-wave {
+  display: block;
+  width: 100%;
+  --wave-fg: var(--fg-dim);
+  --wave-bg: color-mix(in srgb, var(--fg-muted) 26%, transparent);
+}
+.ws-wave[data-tone="voice"] { --wave-fg: var(--accent); }
+.ws-wave[data-tone="quiet"] { --wave-fg: var(--fg-muted); }
+.ws-wave[data-tone="hot"]   { --wave-fg: var(--red); }
+
+/* ── Matrix field ──────────────────────────────────────────────────────────── */
+
+.ws-matrix {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  --matrix-fg: 255, 156, 43;
+  --matrix-head: 255, 246, 232;
+  /* Densest in the corner the eye reaches last, gone where the text is. The
+     mask is on the canvas, so it costs one composited node and no repaint. */
+  -webkit-mask-image: radial-gradient(125% 150% at 88% 8%, #000 0%,
+    rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.22) 66%, transparent 88%);
+  mask-image: radial-gradient(125% 150% at 88% 8%, #000 0%,
+    rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.22) 66%, transparent 88%);
+}
+
+/* ── Keycap ────────────────────────────────────────────────────────────────── */
+
+.ws-shortcut { display: inline-flex; align-items: center; gap: 7px; }
+.ws-shortcut-plus { color: var(--fg-muted); font-size: 16px; }
+
+.ws-keycap {
+  --cap-base: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 42px;
+  padding: 0 12px var(--cap-base);
+  border-radius: 9px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg-elevated) 82%, white) 0%,
+    var(--bg-elevated) 46%,
+    color-mix(in srgb, var(--bg-elevated) 88%, black) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 calc(-1 * var(--cap-base)) 0 color-mix(in srgb, black 34%, transparent),
+    0 2px 0 color-mix(in srgb, black 46%, transparent),
+    0 4px 10px -2px rgba(0, 0, 0, 0.5);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 560;
+  line-height: 1;
+}
+.ws-keycap[data-wide] { min-width: 74px; }
+
+/* ── Provider marks ────────────────────────────────────────────────────────── */
+
+/* The marks are supplied as multi-colour SVG. `data-mono` flattens them to the
+   surrounding text colour so a list of providers has one voice and the accent
+   stays available to mean "overridden". */
+.ws-provider-mark { display: block; flex: none; }
+.ws-provider-mark[data-mono] {
+  filter: grayscale(1) brightness(0) invert(0.72);
+  opacity: 0.9;
+}

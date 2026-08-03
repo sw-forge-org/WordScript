@@ -408,26 +408,42 @@ Additional rules:
   (`WORDSCRIPT_NATIVE_WAYLAND=1`) global shortcuts are unavailable and are named
   as unavailable rather than silently failing. Both points are tracked in
   [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
+- **a capture can silently record only part of what was said.** 8 of 782
+  captures kept between 48% and 88% of their wall-clock duration, with no stream
+  error, no rebuild and no device change in the log — the user receives a
+  transcript of what was recorded, presented as complete. Measured 2026-08-03 by
+  comparing two counters the runtime already wrote: across 353 captures of at
+  least 20 s, the level-emit `shortfall_ratio` and the missing audio fraction
+  correlate at r = 0.9999. Ruled out as a pause artifact and as a webview stall;
+  cause not located. The first step is independent of the cause — a capture that
+  is short against its own clock has to say so:
+  [known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)
 - the recording overlay is reported to freeze mid-capture at irregular
-  intervals — pill, seconds timer and all input at once — while capture and
-  pipeline continue and the transcription completes normally. Observed only
-  under `npm run tauri dev` so far and never checked against a release build.
-  The 2026-07-30 measurement did **not** reproduce it: zero `[ov-beat]` lines
-  across every capture of that day in a confirmed dev build whose other overlay
-  diagnostics logged normally, with level-emit shortfall at its 4% baseline and
-  no failed emits. The sightings that prompted the re-report were placement, not
-  a stall (see the next entry). What stays open is the original signature only —
-  pill visible, input dead — and the release-versus-dev comparison it always
-  needed:
+  intervals — pill, seconds timer and all input at once. As of 2026-08-03 the
+  freeze is attributed: the pill stops because the capture stream stopped
+  delivering samples (previous entry), which is correct behavior for the overlay.
+  The main-thread hypotheses are dead — `[ov-beat]` stays empty across every
+  measured capture while the other `[ov-*]` diagnostics log normally, and no emit
+  has ever failed. What stays open is the residual signature alone: hover, click
+  and drag dying while a *live* stream runs, which no measurement has reproduced:
   [known-issues/overlay-recording-freeze.md](known-issues/overlay-recording-freeze.md)
-- the overlay could be placed where no monitor is, and was: reveals only ever
-  positioned the window on the hidden→visible transition, so a monitor topology
-  change during a session left stale coordinates, and the union bounding box of
-  a staggered layout has corners no monitor covers (measured: 18.3% of a
-  4320x1568 box). Fixed in code — a rectangle intersecting no work area is
-  corrected on every reveal and on a 2 s cadence during a capture (ADR 0022) —
-  but not yet confirmed through a live monitor change:
+- the overlay is still placed where no monitor is, on a build carrying the
+  ADR 0022 fix. The rescue works and fires — 65 of 503 reveals in 82.9 hours
+  found an already-visible window on no work area — but it repairs rather than
+  prevents, and until the next reveal the user has no overlay. The mid-session
+  check meant to cover a long recording fired **zero** times, because it runs
+  only during an active native capture while every observed case happened with
+  the pill visible and idle. Separately, all 482 park moves landed somewhere
+  other than requested (parking works through `hide()` alone) and 31 of them on
+  the measured dead-zone corner, which is the leading candidate for the cause:
   [known-issues/overlay-stranded-off-screen.md](known-issues/overlay-stranded-off-screen.md)
+- a dictated instruction to one addressee can arrive addressed to several:
+  `fix das bitte` ships as `fixt das bitte`. The output is well-formed German, so
+  nothing marks it as damaged, and in an AI coding assistant the reader cannot
+  detect the change. Located on the recognizer, not on cleanup — in all 3 cases
+  found across 167 records the plural already stands in the raw transcript — but
+  not scoped:
+  [known-issues/singular-address-becomes-plural.md](known-issues/singular-address-becomes-plural.md)
 - `react-router-dom` 6.30.4 carries an open advisory with no patch in the 6.x
   line; the app has no `<Link>` or `useNavigate` call site the advisory could
   act on, but the move to v7 is still owed. Two further transitive advisories
@@ -502,11 +518,15 @@ Additional rules:
 - overlay monitor restore with identity-miss rederivation is implemented
   (manual mode rederives the target monitor from saved coordinates against
   all work areas; primary is only the last fallback)
-- an overlay that ends up on no monitor at all recovers on its own: the
-  reposition gate is no longer limited to hidden→visible, and the existing
-  capture monitor loop rechecks every 2 s so a topology change mid-recording is
-  answered without waiting for the session to end (ADR 0022). The drag-snap
-  protection is unchanged for any position that is actually visible
+- an overlay that ends up on no monitor at all recovers **on the next reveal**:
+  the reposition gate is no longer limited to hidden→visible (ADR 0022), and the
+  drag-snap protection is unchanged for any position that is actually visible.
+  The 2 s recheck in the capture monitor loop is implemented but has never fired
+  in 82.9 measured hours, because it runs only during an active native capture
+  and the observed strandings all happen with the pill visible and idle — so
+  between a stranding and the next reveal there is no overlay on screen. Neither
+  path prevents the stranding; see
+  [known-issues/overlay-stranded-off-screen.md](known-issues/overlay-stranded-off-screen.md)
 - remembered overlay placement is implemented; the three roots (persist
   debounce ending the drag session too early, reveal-grace suppression
   discarding fast drags, `set_position` before `show()` dropped by GTK) are

@@ -1,9 +1,52 @@
 # Bug: Recording Overlay Freezes Mid-Capture
 
-Status: **Open — and narrower than when it was filed. The 2026-07-30
-measurement did not reproduce it, and the sightings from that day belonged to
-[overlay-stranded-off-screen.md](overlay-stranded-off-screen.md). What remains
-open is the original signature only: pill visible, input dead.**
+Status: **Largely resolved by attribution 2026-08-03 — the freeze is real and
+its cause is not the overlay. The pill stops moving because the capture stream
+stops delivering samples; see
+[capture-loses-half-the-recording.md](capture-loses-half-the-recording.md).
+What is left here is the residual signature — dead input while the pill is
+visible — which that finding does not explain.**
+
+## Addendum 2026-08-03: the freeze is a capture stall, not a render stall
+
+Reported again as "the overlay still freezes". This time it reproduced in the
+measurement, and the answer came from the instrumentation this document asked
+for in 2026-07-27 — specifically from the emit accounting, read against a
+counter nobody had compared it to.
+
+Eight captures out of 782 show `shortfall_ratio` between 0.155 and 0.540 against
+a baseline whose maximum is 0.0909. In every one of them the recorded audio is
+short by the same fraction that the emits are short: over 353 captures of at
+least 20 s, **Pearson r = 0.9999** between `shortfall_ratio` and the missing
+fraction of wall-clock audio. The worst case lost 52 % of a 405 s dictation.
+
+That is the **second row** of the decision table below — *runtime-side emit loss
+without a webview stall* — observed for the first time, and it settles the
+question this entry was opened on:
+
+- `[ov-beat]` is still absent from `/tmp/kilo/overlay-diag.log` while the other
+  four `[ov-*]` kinds log normally, so the main thread is healthy.
+- `failed=0` and `slowest_emit_ms` of 0–1 in every affected capture, so the emit
+  path is healthy.
+- The overlay stops updating because there is nothing to update it with. **That
+  is correct behavior for a stream that has stopped.**
+
+Hypotheses 1 (development instrumentation) and 3 (PRIME offload) are effectively
+dead: both predict a stalled webview, and the heartbeat says there is none.
+Hypothesis 2 — the emit sitting inside the realtime cpal callback — is not the
+cause either, but it is now the reason the failure is *invisible*: a callback
+that is not being called cannot report that it is not being called.
+
+The measurement, the eight captures and the next steps live in
+[capture-loses-half-the-recording.md](capture-loses-half-the-recording.md). The
+damage is not cosmetic and it is not an overlay problem, so it was filed on its
+own.
+
+**What stays open here.** The 2026-07-27 report also describes hover, click and
+drag dying — input death, not just a stopped animation. A stalled audio stream
+does not explain that, and no measurement has reproduced it. If a future
+sighting has a live capture stream behind it, that is this entry; if the audio
+is short, it is the other one.
 
 ## Addendum 2026-07-30: measured, not reproduced
 

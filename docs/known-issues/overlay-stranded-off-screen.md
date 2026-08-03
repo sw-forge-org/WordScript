@@ -1,12 +1,80 @@
 # Bug: The overlay is placed where no monitor is
 
-Status: **Fixed in code (2026-07-30, ADR 0022); not yet confirmed through a
-monitor change in a live session**
+Status: **Reopened 2026-08-03 — reported again from a build that carries the
+ADR 0022 fix. The fix works as a rescue and is measurably firing; what it does
+not do is prevent the stranding, and the one path that was supposed to catch it
+during a recording has never fired at all.**
 
 First reported: 2026-07-30, as "the overlay becomes completely invisible
 mid-recording despite always-on-top"
+Reported again: 2026-08-03, same wording, from a build containing `ffe57ee`
 Affected area: overlay window placement on multi-monitor layouts, all platforms;
 observed on Linux/XWayland
+
+## Addendum 2026-08-03: the rescue fires, the prevention does not exist
+
+The observability added with the fix answers the reopened report without a new
+instrumentation round. Counted over `~/.config/WordScript/logs/wordscript-runtime.log`,
+which begins at the log rotation on 2026-07-30 19:54 -- i.e. **entirely after**
+`ffe57ee` (2026-07-30 18:08) -- and ends 2026-08-03 06:50. 82.9 hours of real
+use.
+
+| Line | Count |
+|---|---|
+| `Overlay placement … reason=reveal` | 503 |
+| `Overlay placement … reason=stranded` (`was_visible=true`) | **65** |
+| `Overlay stranded off every work area … repositioning` | 64 |
+| `Overlay stranded mid-session … repositioning` | **0** |
+| `Overlay parked requested=… applied=…` | 482 |
+| … of which `applied` differs from `requested` | **482 (100 %)** |
+
+(The 64-versus-65 gap is one line lost to the rotation boundary, not a second
+code path.)
+
+Three findings, in order of what they cost:
+
+**1. The stranding still happens, roughly once every 8 reveals.** 65 reveals in
+82.9 hours found an already-visible window sitting on no work area. Each of
+those is a window the user could not see until the next reveal happened to
+rescue it. ADR 0022 made the reveal a repair; it did not remove the cause. The
+report "the overlay disappears" is therefore accurate against this build, and
+the entry's old status line -- "not yet confirmed through a monitor change in a
+live session" -- was understated: it has now been confirmed 65 times, just never
+attributed to a monitor change.
+
+**2. The mid-session check has never fired in 82.9 hours.** `ensure_overlay_on_screen`
+(`src-tauri/src/lib.rs`) is the path that was supposed to make a long recording
+survivable, and it produced zero lines while the reveal path produced 65. It is
+reached only from `spawn_native_capture_monitor`, so it runs **only during an
+active native capture**, and only while `OVERLAY_WINDOW_SHOWN` is set. Every
+observed stranding happened outside that window -- with the pill visible and
+idle. The 2 s cadence is not the problem; the coverage is. Whether a stranding
+can *also* occur inside a recording is still unmeasured, because in this corpus
+none did.
+
+**3. The park move never lands, on any layout.** All 482 parks report an
+`applied` position different from the requested `(4392,1640)`, and the applied
+values are scattered across on-screen coordinates -- the window simply stayed
+where it was. Parking works exclusively through `hide()`. ADR 0022 already
+called the move best-effort; the measurement upgrades that to *never effective
+on this platform*, which makes it dead code that logs.
+
+Of those 482 applied positions, **31 are `(3840,1507)` or `(3840,1508)`** -- the
+exact dead-zone corner measured below. That is the park clamping the window into
+the region no monitor covers. It is the strongest available candidate for what
+produces the 65 strandings, and it is a candidate, not a proven cause: nothing
+currently correlates a park to the next reveal's `reason`.
+
+### What to do about it, in order
+
+1. Correlate park-to-next-reveal in the existing log (no new code): if a
+   `reason=stranded` reveal is reliably preceded by a park whose `applied` is
+   the dead-zone corner, the cause is the park, and removing the move -- which
+   never works anyway -- removes the defect outright.
+2. Move the stranded check off the capture monitor. It has to cover the idle
+   visible pill, which is where every observed case lives.
+3. Only then revisit the monitor-change hypothesis. It is still unverified and,
+   on this evidence, no longer the leading explanation.
 
 ## Symptom
 

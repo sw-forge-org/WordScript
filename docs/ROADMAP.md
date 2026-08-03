@@ -126,6 +126,19 @@ native insert or recovery path.
   another name for on-device `local`.
 - Drive UI capability, setup, and error copy from `ProviderStatus` and
   `ProviderCommandError`.
+- **The target set is ten providers across four lanes** (ADR 0042), and they
+  land one at a time rather than as a group. Cloud: Groq, OpenAI, Anthropic,
+  Google Gemini, Mistral, xAI, OpenRouter. Enterprise: AWS Bedrock, Azure
+  OpenAI, GCP Vertex AI. The enterprise three are not a variation on a bearer
+  token -- each authenticates against an account and a region with its own
+  credential shape, so each is a separate native adapter. A provider with no
+  adapter is offered in no picker; the settings surface lists what is intended
+  so the shape is settled, and shows only what can actually run.
+- **One connection, and per-job overrides.** ADR 0042 makes the settings
+  surface state one lane, provider and key that every job follows unless it
+  says otherwise. The config has to support that shape directly -- a resolved
+  default plus a sparse override per job -- rather than storing a full
+  provider/model pair per job and reconstructing what "default" meant.
 
 The motivation for a stronger chat lane is **instruction following, not cost**.
 Real usage sits below a cent, so caching and price are not the argument. The
@@ -134,6 +147,16 @@ with the writing sample -- subtle instruction following that
 `llama-3.3-70b-versatile` is the current limit on. A frontier model is not
 required, only a better one. On the local lane the same need is met by a
 stronger local model rather than by a new provider.
+
+- **`ProcessingMode::Translate` lands with this phase** (ADR 0041). It is filed
+  here and not with the other modes because it is the scope where model quality
+  shows first: rendering a German dictation as English prose is a harder
+  instruction-following job than tidying one, and the same argument that
+  motivates a stronger chat lane motivates this mode being able to reach it. It
+  is a mode in the full sense -- cycle, picker, profile default, overlay chip --
+  and it is the first with no default hotkey, because the shipped defaults
+  occupy `Alt+1` through `Alt+6`. Auto never selects it: **Auto may choose how
+  text reads, never what language it is in.**
 
 **Out of scope:** runtime provider switching without save, account binding, or
 a WordScript proxy.
@@ -155,12 +178,34 @@ guided on-device runtime lane.
 - Explicit model download or pull actions from approved sources.
 - Profile-owned decode and prompt-bias controls with truthful preview.
 - Clear fast-versus-quality tradeoffs.
+- **In-app model installation, for both kinds, on one surface** (ADR 0042).
+  Speech models and language models sit on the same disk, under the same
+  runtime, and compete for the same memory, so they are managed together: a
+  size stated before the download, progress with cancel, removal, and the
+  installed total. The surface currently names models it cannot install and
+  tells the user to run a command elsewhere, which is the specific failure this
+  closes.
+- **An OpenAI-compatible server, and the decision of whether WordScript ships
+  one.** Local language models need a server in front of them, and the surface
+  offers two answers: WordScript bundles and manages one, or it talks to the
+  Ollama or LM Studio the user already runs. Bundling means a sidecar binary
+  with a lifecycle, a port, a start-on-demand path and a shutdown that survives
+  a crash -- the pattern the donor uses for its own sidecars, and a real piece
+  of packaging work rather than a flag. **Which server, and whether to bundle
+  at all, is open and belongs to this phase.**
+- **Detected acceleration, reported rather than configured.** A CPU-only
+  machine runs the small models and struggles above 7B, and that has to be
+  visible before a 4 GB download rather than after it.
 
 **Out of scope:** non-Whisper engines, distributed local pipelines, and custom
 model training.
 
 **Success measure:** a first-time user can configure and use local dictation
 without assembling the full runtime from terminal-only instructions.
+
+**Gate:** until in-app installation exists, the local lane is expert
+configuration and the surface says so. ADR 0042 makes this a prerequisite for
+offering the lane, not an improvement to it.
 
 ## Phase 6 - Guided Setup and Packaging
 
@@ -282,10 +327,33 @@ decision, and the user starts work by speaking without opening a repository.
   pre-roll. The answer window after a question is the default and needs no mode;
   continuous listening stays an option and requires a visible microphone-active
   indicator.
-- The surface is a pill with two wings: targets and their state on the left, the
-  thread on the right. Compact and New Session are controls there. Tray state and
-  OS notifications carry the background case.
-- Its own settings area, named `Agents`.
+- **The surface is the shipped overlay plus a tab, and a window the tab opens.**
+  Revised 2026-08-03 by the settings rework §11.29: "a pill with two wings" was
+  followed to the letter first and produced 1038 px of always-on-top furniture
+  with a whole application on it. What ships instead is the recording pill
+  unchanged except that the mode chip reads `Agent`, a tab out of its left edge
+  (the learned-word tab's slot, structurally free because bridge output runs no
+  finalization), and a 620 × 340 window carrying ADR 0030's split intact —
+  targets and their state on the left, the thread on the right, Compact and New
+  Session at the rail's foot.
+- **One orchestrator, drawn as one voice** (ADR 0043). The target rail read as
+  three agents talking, which argues against the record it implements. An orb —
+  idle small, white and still; speaking larger, warm and moving with its own
+  amplitude — sits at the head of the rail as the identity the targets are
+  indented under, and again in a dash across the window's foot. Bars are plural
+  and a sphere is not, which is the whole reason for the shape.
+- **The background case is WordScript's own always-on-top notification, not an
+  OS one** (ADR 0043). Focus mode and screen sharing suppress OS notifications,
+  and a screen share is exactly when an agent is likely to be running; `await`
+  blocks until the budget expires, so a question nobody sees is the one failure
+  this surface may not have. It is content-protected like the meeting HUD,
+  carries the orb, the question and the offered options, and dismisses when
+  answered or expired — never on a timer of its own. Its sound is a cue on the
+  existing persistent audio stream (ADR 0010), which means a second motif has to
+  be composed rather than sampled.
+- Its own settings area, named `Agents`. The voice preset itself is a row in AI
+  Models like every other model choice (ADR 0042); what stays in `Agents` is
+  targets, the answer budget, the notification and the thread.
 
 **Out of scope:** modelling agents. WordScript starts and supervises **one**
 configured orchestrator and knows nothing about what it spawns -- no agent
@@ -401,6 +469,67 @@ reliable; and any per-paste privilege prompt, under any mechanism.
 **Success measure:** a pure Wayland session on Plasma 6 completes
 "Copy and insert at cursor" with at most one authorization dialog for the
 lifetime of the restore token.
+
+## Candidate - Meeting capture
+
+**Status:** candidate, not scheduled. Added 2026-08-03. Needs the decision gate
+below before it becomes scope, and an ADR before any of it is built.
+
+**Why it is written down at all.** `NotesArea` ships speaker separation, and
+nothing in the product creates a note that contains audio — a note is authored
+as text. That is a feature with no entry point, and it was found while reworking
+the settings surface rather than while planning a feature. Either the diarization
+goes, or the recording that would feed it arrives. This entry is the second
+option, stated as a candidate rather than a promise. The layout it would produce
+is sketched in
+[prototypes/settings-rework](prototypes/settings-rework/README.md) as
+*Meeting capture*, and the open problem is
+[SETTINGS_REWORK_PLAN.md](SETTINGS_REWORK_PLAN.md) §10.4.
+
+**It is a second capture type, not a longer dictation.** A dictation runs for
+seconds, captures the microphone, and ends by inserting text at the cursor. A
+meeting runs for an hour, captures the microphone *and* system audio, inserts
+nothing, and ends as a note. They share the recorder and nothing else.
+
+**It therefore needs a second window, and that window is not the overlay.** The
+dictation pill is 440 × 60 with `focus: false`, because taking focus moves the
+insert target away from the app being dictated into. A meeting inserts nothing,
+so there is no insert target to protect: its window may be moved, resized,
+collapsed and focused. This does not relax anything about the pill and does not
+reopen the settings rework's §1 — the two are different windows with different
+obligations.
+
+**Scope, if it goes ahead:**
+
+- **System-audio capture**, per platform. This is the real cost and there is no
+  native path in the runtime today.
+- **Echo cancellation.** The microphone hears the speakers, so every remote
+  voice arrives twice. A real component, not a flag.
+- **Content protection on the meeting window.** It floats over a call that is
+  often being screen-shared and must not appear in the share or the recording.
+- A **dedicated hotkey**, separate from the dictation trigger, and a decision
+  about detection (see the gate).
+- Notes gains the states a session has — recording, transcribing, ready — and
+  the note detail becomes transcript-and-notes side by side.
+
+**Decision gate — answer before writing code:**
+
+1. Does capture start from a hotkey, from detecting a call, or both? A detection
+   prompt cannot be an OS notification (invisible in Focus mode, visible in a
+   screen share), which makes it a third surface to own.
+2. What happens to the audio of a meeting nobody keeps? ADR 0038 and ADR 0039
+   bound a dictation's audio; an hour of meeting is a different size of promise
+   and the sweep that covers one may not cover the other.
+3. Does system-audio capture work without a per-session authorization prompt on
+   the target platforms? Same gate, same reason, as the libei candidate above.
+
+**Out of scope:** joining a call as a participant or a bot — WordScript is
+local-first and has no server to send one from; and any cloud-hosted meeting
+record.
+
+**Success measure:** a one-hour meeting produces a note whose transcript can be
+read beside the notes taken during it, with no prompt after the recording
+started and nothing of the window visible in a screen share.
 
 ## Dependencies
 
