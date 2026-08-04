@@ -289,7 +289,7 @@ Serve the prototype for comparison:
 | --- | --- | --- | --- | --- |
 | 0 | 2026-08-04 | Opus 5 | `dbd83c6` | Relay opened. `gui-rework-second-pass` consolidated into `main` and deleted. ADR 0054 and 0055 filed. Baseline: 154 tests green, `/gallery` does not exist, Stage 1a and 1b unstarted apart from the `glass*` removal and the font wiring. |
 | 1 | 2026-08-04 | Opus 5 | `135771f` | Dead code out, token write, eight primitives, `/gallery` shell, native-host look. 154 → 217 tests, `npm run build` green. ADR 0056 filed: the light scheme's `--fg-muted` was measured for the first time and missed AA. **The gallery's own pages were composed rather than ported — Leg 2 fixes that first.** Full account below. |
-| **2a** | 2026-08-04 | Opus 5 | `(this commit)` | **§2.1 done: the four gallery pages are ported, not composed.** The controls of `demo.css` §6 and the nav/content grammar of §3–§4 are in the library — 17 new components, ~700 lines of ported CSS. 217 → 244 frontend tests, `cargo test` 623 green, `npm run build` green. Verified by computed-style diff against the running prototype, property by property, and in the native host. **The frost pair is settled: the material runs.** ADR 0058 filed. §2.2 is Leg 2b's. Full account below. |
+| **2a** | 2026-08-04 | Opus 5 | `438d1d4` | **§2.1 done: the four gallery pages are ported, not composed.** The controls of `demo.css` §6 and the nav/content grammar of §3–§4 are in the library — 17 new components, ~700 lines of ported CSS. 217 → 244 frontend tests, `cargo test` 623 green, `npm run build` green. Verified by computed-style diff against the running prototype, property by property, and in the native host. **The frost pair is settled: the material runs.** ADR 0058 filed. §2.2 is Leg 2b's. Full account below. |
 
 ### Leg 1 — what landed, and the one thing it got wrong
 
@@ -534,7 +534,12 @@ for whoever repeats this:
 9. **`DisclosureRow` is deleted.** It was pre-port, the gallery was its only
    caller, and `Disclosure` replaces it — ADR 0054's rule that a replaced
    surface goes in the commit that replaces it.
-10. **`assets/logos/wordscipt-logo-light-transparent.png` is new.** Copied from
+10. **The gallery's sidebar has no search box, and that is deliberate.**
+    `demo.css` §3's `.nav-search` is ported and `NavSearch` is in the library
+    for Leg 3, but it is not mounted here: it opens the command palette, the
+    gallery has none, and a search field that opens nothing is the fake
+    affordance rule 7 forbids. Mount it when the palette exists.
+11. **`assets/logos/wordscipt-logo-light-transparent.png` is new.** Copied from
     the prototype, which carries a recoloured wordmark for the light scheme
     because the white word disappears on a light ground and `filter: invert()`
     would fix the word by destroying the tile. The dark file in `assets/` is
