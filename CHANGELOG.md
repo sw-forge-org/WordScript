@@ -55,6 +55,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Eleven of the prototype's 25 screens stand in `/gallery` → Screens.** Leg 2b
+  ported Home, History, Profiles, General, Hotkeys, Delivery & Insert, Privacy
+  & Data, Diagnostics, About & Updates, Integrations and the withdrawn Live
+  preview & commit, each measured exact against the running prototype. Into the
+  library with them: the icon set (79 drawings, `demo.js`'s own — several exist
+  nowhere else and each carries the record of which obvious glyph was
+  rejected), the orb and its four states, the provider marks and their sprite,
+  the list row and its unfolded raw panel, the decision inbox, the pane, the
+  connection block, the runtime log and the raw-beside-transformed diff.
+- **The port has a check, and it is committed.** `npm run port:diff <screen>…`
+  opens the running prototype and the running gallery in one headless Chromium,
+  walks both block trees and reports every structural and computed-style
+  difference. Leg 2a described the same check as a hand-run selector list;
+  writing it down turned up nine defects in the library that no screen showed
+  on its own, four measurement false positives worth knowing about, and the one
+  fact where the prototype disagrees with itself.
+- **The settings sheet's own scale is ported (§11.22).** `.ws-sheet-scale` is a
+  scope, not a density: the structure tokens are redeclared inside it and the
+  type is not, so a settings screen is demonstrably drawn smaller than a
+  workspace screen without one component knowing about it.
 - **The controls the design system is made of are in the library.** Leg 2a of
   the GUI port relay ported `demo.css` §6, §3 and §4 into
   `src/components/shell/` and `src/styles/shell.css`: the button with its
