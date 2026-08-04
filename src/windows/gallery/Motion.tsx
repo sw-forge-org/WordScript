@@ -1,18 +1,21 @@
 import { useState } from "react";
-import "../lab/lab.css";
-import { Orb, type OrbState } from "../lab/Orb";
-import { LiveWaveform } from "../lab/LiveWaveform";
-import { Matrix, loader, snake, wave, digits } from "../components/ui/matrix";
-import { Shortcut } from "../lab/Keycap";
-import { ProviderMark, PROVIDER_IDS } from "../lab/ProviderMark";
-import { Button } from "../components/ui/button";
-import { Kbd } from "../components/ui/kbd";
-import { Spinner } from "../components/ui/spinner";
-import { ButtonGroup } from "../components/ui/button-group";
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "../components/ui/empty";
+import "../../lab/lab.css";
+import { Orb, type OrbState } from "../../lab/Orb";
+import { LiveWaveform } from "../../lab/LiveWaveform";
+import { Matrix, loader, snake, wave, digits } from "../../components/ui/matrix";
+import { Shortcut } from "../../lab/Keycap";
+import { ProviderMark, PROVIDER_IDS } from "../../lab/ProviderMark";
+import { Button } from "../../components/ui/button";
+import { Kbd } from "../../components/ui/kbd";
+import { Spinner } from "../../components/ui/spinner";
+import { ButtonGroup } from "../../components/ui/button-group";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "../../components/ui/empty";
 
 /**
- * THE COMPONENT LAB — not a product surface, and not routed from one.
+ * MOTION — the four motion primitives, folded into /gallery on 2026-08-04.
+ *
+ * Was the route `/component-lab`, retired by ADR 0055. The content is
+ * unchanged apart from losing the page chrome the gallery shell now provides.
  *
  * WHAT IT IS FOR. The settings-rework prototype in `docs/prototypes/` is the
  * agreed target and is written in plain HTML, CSS and JS with no build step,
@@ -20,17 +23,10 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "../components/
  * anyone, argued with, and changed in one file. What it cannot do is BE the
  * component. An orb whose motion model is four states with different physics,
  * a canvas waveform, a per-frame envelope — those have to exist as real
- * components before Stage 1 can wire them to the runtime, and building them
- * twice guarantees the two drift.
- *
- * So they are built here, once, in React, against the shipped tokens, and the
- * prototype draws the same thing in its own way for the screens that need to
- * show them in context. Where the prototype cannot render one truthfully it
- * says so and points at this route.
- *
- * WHAT IT IS NOT. It is not reachable from Home, Settings or any shipped
- * navigation, it touches no Tauri API, and it changes nothing under
- * `src/components/settings/`. Open it at `/component-lab`.
+ * components before anything can wire them to the runtime, and building them
+ * twice guarantees the two drift. A motion model also cannot be judged from a
+ * still, which is why §15.2 moved these out of the prototype rather than
+ * drawing them there.
  *
  * ON WHERE THESE COME FROM. The ElevenLabs UI registry (`ui.elevenlabs.io`)
  * answers every request with a bot check, so nothing here was installed from
@@ -71,31 +67,25 @@ function vuLevels(level: number): number[] {
   });
 }
 
+/* The card, on the card's own material: `--edge-light` rather than the literal
+   it used to carry, so the panel inverts with the scheme like every other
+   surface (ADR 0048). */
 function Panel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={`rounded-[10px] bg-bg-surface p-5 ${className ?? ""}`}
-      style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,.055)" }}
-    >
-      {children}
-    </div>
+    <div className={`ws-card px-[var(--pad-card)] ${className ?? ""}`}>{children}</div>
   );
 }
 
-export default function ComponentLabWindow() {
+export function Motion() {
   const [level, setLevel] = useState(0.62);
 
   return (
-    <div className="min-h-screen bg-bg-base text-fg" style={{ fontFamily: "var(--font)" }}>
-      <div className="mx-auto flex max-w-[860px] flex-col gap-8 px-8 py-10">
-        <header className="flex flex-col gap-2">
-          <h1 className="text-[28px] font-semibold tracking-[-0.026em] text-fg">Component lab</h1>
-          <p className="max-w-[68ch] text-[13px] text-fg-dim">
-            The primitives the settings rework needs and shadcn does not carry, built against the
-            shipped tokens. Not routed from any product surface and wired to no runtime — every
-            moving thing here runs a demonstration envelope, not a measurement.
-          </p>
-        </header>
+      <div className="flex flex-col gap-[var(--gap-block)]">
+        <p className="max-w-[68ch] text-[length:var(--t-note)] text-fg-dim">
+          The primitives the rework needs and shadcn does not carry, built against the
+          shipped tokens. Wired to no runtime — every moving thing here runs a
+          demonstration envelope, not a measurement.
+        </p>
 
         <Section
           title="The orb"
@@ -104,7 +94,11 @@ export default function ComponentLabWindow() {
           <div className="grid grid-cols-4 gap-3">
             {ORB_STATES.map(({ state, title, note }) => (
               <figure key={state} className="flex min-w-0 flex-col gap-2">
-                <div className="grid h-[132px] place-items-center rounded-[8px] bg-[#0d0d0f] ring-1 ring-white/10">
+                {/* The stage stays dark in both schemes, deliberately: a glow is
+                    legible only against something dark. That is physics, not
+                    styling, and it is the same reason a colour swatch sits on a
+                    neutral card regardless of the page (ADR 0048). */}
+                <div className="grid h-[132px] place-items-center rounded-card bg-[#0d0d0f] ring-1 ring-white/10">
                   <Orb state={state} size={72} demo />
                 </div>
                 <figcaption className="flex flex-col gap-[3px]">
@@ -244,6 +238,5 @@ export default function ComponentLabWindow() {
           </Panel>
         </Section>
       </div>
-    </div>
   );
 }

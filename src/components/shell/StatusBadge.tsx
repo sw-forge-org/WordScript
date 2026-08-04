@@ -7,24 +7,27 @@ export type StatusTone =
   | "error"
   | "info"
   | "accent"
+  | "plan"
   | "neutral";
 
-const toneClasses: Record<StatusTone, string> = {
-  success: "bg-[color-mix(in_srgb,var(--green)_16%,transparent)] text-[var(--green)]",
-  warning: "bg-[color-mix(in_srgb,var(--orange)_16%,transparent)] text-[var(--orange)]",
-  error: "bg-[color-mix(in_srgb,var(--red)_16%,transparent)] text-[var(--red)]",
-  info: "bg-[color-mix(in_srgb,var(--voice)_16%,transparent)] text-[var(--voice)]",
-  accent: "bg-brand-soft text-brand-strong",
-  neutral: "bg-surface-strong text-fg-dim",
+/**
+ * The grammar carries five tones. `error` and `info` are pre-port names two
+ * shipped callers still use; `error` is `danger` and `info` takes the neutral
+ * ground, because the voice colour was never a status.
+ */
+const dataTone: Partial<Record<StatusTone, string>> = {
+  success: "success",
+  warning: "warning",
+  error: "danger",
+  accent: "accent",
+  plan: "plan",
 };
 
-const dotClasses: Record<StatusTone, string> = {
-  success: "bg-[var(--green)]",
-  warning: "bg-[var(--orange)]",
-  error: "bg-[var(--red)]",
-  info: "bg-[var(--voice)]",
-  accent: "bg-brand",
-  neutral: "bg-fg-muted",
+const dotTone: Partial<Record<StatusTone, string>> = {
+  success: "success",
+  warning: "warning",
+  error: "danger",
+  accent: "warning",
 };
 
 interface StatusBadgeProps {
@@ -34,7 +37,25 @@ interface StatusBadgeProps {
   children: React.ReactNode;
 }
 
-/** Small status pill used in headers, cards and the Home dashboard. */
+/**
+ * A BADGE IS FOR A STATUS THAT IS NOT EXPECTED (§11.20). An expected status is
+ * a dot and a word, or nothing. The upload queue was nine rows each carrying a
+ * coloured pill, two thirds of them reporting that things had gone as expected,
+ * which left the one row needing a decision nothing to stand out from.
+ *
+ * AND IT IS A RECTANGLE NOW. It was a capsule until the radius ladder (§11.32):
+ * a badge, a status tag, a segmented control, a sub-tab row, a chip and a
+ * profile flag were all capsules, so every label-shaped thing on screen was a
+ * pill. A tool people keep open all day is not a consumer app, and a capsule on
+ * every label is the fastest way to look like one. Capsules survive only where
+ * the object is physically a capsule — which the dot beside the text still is.
+ *
+ * IN A LIST, BADGES LIVE IN A FIXED RIGHT-ALIGNED COLUMN, not in the flow
+ * (§11.28). One inline badge works until a row is both "Clipboard only" and
+ * "Audio swept", at which point the actions start at whatever x the badges
+ * happened to end at and every row ends its actions somewhere different. That
+ * column belongs to the list, not to this component.
+ */
 export function StatusBadge({
   tone = "neutral",
   dot = false,
@@ -42,16 +63,8 @@ export function StatusBadge({
   children,
 }: StatusBadgeProps) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium",
-        toneClasses[tone],
-        className,
-      )}
-    >
-      {dot && (
-        <span className={cn("size-1.5 rounded-full", dotClasses[tone])} aria-hidden />
-      )}
+    <span className={cn("ws-badge", className)} data-tone={dataTone[tone]}>
+      {dot && <span className="ws-dot" data-tone={dotTone[tone]} aria-hidden />}
       {children}
     </span>
   );

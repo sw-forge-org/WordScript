@@ -344,6 +344,13 @@ Status: Proposed | Accepted | Superseded by NNNN
   lets a settled 25-screen design land against a runtime that cannot yet answer
   half of it. The gallery imports the product's components and never copies
   them.
+- [0056](0056-the-light-schemes-muted-step-was-measured-for-the-first-time-and-missed-aa.md):
+  the light scheme's `--fg-muted` measured 4.48:1 on the card the first time
+  anybody computed it, and moves to `#7a736a` at 4.68:1 — the dark side's
+  distance above AA, not an arbitrary darker value. ADR 0048 asked for this
+  measurement and nothing had taken it; the other five light foregrounds are
+  confirmed by the same pass. A contrast figure that is stored rather than
+  computed stops being true when the colour moves.
 
 ## Resolved: the number 0011 was used twice
 
@@ -371,8 +378,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-04 the filed range runs through 0055; the next
-decision takes 0056.)
+takes 0021. (As of 2026-08-04 the filed range runs through 0056; the next
+decision takes 0057.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

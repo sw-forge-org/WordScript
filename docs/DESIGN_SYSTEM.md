@@ -1,6 +1,8 @@
 # WordScript Design System
 
-Status: 2026-08-04
+Status: 2026-08-04 — the token write of the GUI port's Leg 1 has landed
+(`src/styles/globals.css` and `src/styles/shell.css`). The rules below are the
+product's, and `/gallery` renders them live.
 
 > The product contract is [SPEC.md](spec/SPEC.md). Native window decorations
 > are established by [ADR 0003](decisions/0003-native-fensterdekorationen.md).
@@ -30,6 +32,24 @@ intentional attention; it is not a default decoration for every control.
 The active technical stack is Tailwind CSS v4 with shadcn/ui patterns. Tokens in
 `src/styles/globals.css` exposed through `@theme inline` remain the single
 source of truth. Do not create parallel color, spacing, or component token sets.
+
+**Where the system is judged: [`/gallery`](../src/windows/GalleryWindow.tsx).**
+One design-time route, five sections — Foundations · Components · Motion ·
+Overlay · Screens ([ADR 0055](decisions/0055-the-gallery-is-where-the-port-is-judged-and-it-is-one-route.md)).
+Foundations renders the tokens in all three schemes and **measures** contrast at
+render time rather than printing stored figures, because a number typed beside a
+colour stops being true the moment the colour moves — which is how the light
+scheme's muted step carried the dark scheme's figure for a whole pass while
+failing AA ([ADR 0056](decisions/0056-the-light-schemes-muted-step-was-measured-for-the-first-time-and-missed-aa.md)).
+The gallery imports the product's components and never copies them; if a
+primitive looks right there and wrong in the product, the gallery is what lied.
+
+**The prototype at `docs/prototypes/settings-rework/` is the design.** It is
+read-only, and where it and a shipped surface disagree the prototype wins — that
+is the point of the port. Read `demo.js` for the screen you are building and
+`demo.css` for the rule; do not reconstruct from what this document implies. A
+design rebuilt from its description loses the detail that was decided on
+purpose, and the loss is invisible until somebody puts the two side by side.
 
 ## Sonic Identity
 
@@ -96,6 +116,15 @@ Diagnostics and About. Chat, Upload, Notes and Account are visible preview
 layouts without native runtime behavior. Every area must state that boundary
 honestly and keep one dominant content surface.
 
+The surface model above is what ships today. The port replaces it with a
+**workspace window and a settings sheet over it at its own scale** — the sheet
+is 1000 × 680 with `--nav-w` 196, `--nav-row-h` 28, `--content-max` 640,
+`--pad-card` 16 and `--row-py` 11, over a scrim, closing on Escape, on the scrim
+and on its close control. Type does not scale: 13 px body in a sheet and 13 px
+body in a window is the same reading task; structure scales, type does not. That
+is Leg 3 of the port relay and is not built yet; every value it moves is already
+a token here, which is why no component has to change for it.
+
 Use native window decorations on every platform. Do not add fake traffic lights,
 frameless main-window chrome, or custom title-bar controls. Diagnostics uses the
 same rule when opened as a pop-out.
@@ -135,9 +164,10 @@ recedes behind it — and neither half is the material on its own.
   reads without it, so nothing else changes. Under `prefers-reduced-motion` the
   filter transition is dropped and the state is taken without the transit.
 
-Judge it with `npm run tauri dev`. A browser preview cannot show whether this
-material is running, which is how the sheet shipped a plain black scrim for
-several passes while its stylesheet asked for a blur.
+Judge it in the native host — `/gallery` → Foundations carries the pair with a
+control that takes the blur off the layer behind. A browser preview cannot show
+whether this material is running, which is how the sheet shipped a plain black
+scrim for several passes while its stylesheet asked for a blur.
 
 ### Diagnostics
 
@@ -149,30 +179,151 @@ Do not recreate provider labels or local metadata from model-name heuristics.
 
 ## Layout and Tokens
 
+### The ladder
+
+Five surfaces, one ladder, and the scheme moves the whole thing rather than its
+spacing. L\* and contrast below are the dark scheme, measured on the card.
+
+| Token | Dark | L\* | Light | For |
+| --- | --- | ---: | --- | --- |
+| `--bg-sidebar` | `#141416` | 6.4 | `#eceae7` | Sidebar, below the window |
+| `--bg-inset` | `#161617` | 7.3 | `#eae7e3` | Inputs, wells, code, logs |
+| `--bg-base` | `#1c1c1e` | 10.3 | `#f5f3f0` | Window |
+| `--bg-surface` | `#2e2e31` | 19.0 | `#ffffff` | Card |
+| `--bg-elevated` | `#3a3a3e` | 24.6 | `#f2efeb` | Hover, active, segment thumb |
+
+| Token | Dark | On card | Light | On card | For |
+| --- | --- | ---: | --- | ---: | --- |
+| `--fg` | `#f2efe9` | 11.80:1 | `#1a1815` | 17.72:1 | Primary text |
+| `--fg-dim` | `#c2bfb8` | 7.37:1 | `#55504a` | 7.98:1 | Row hints, descriptions |
+| `--fg-muted` | `#9b9892` | 4.71:1 | `#7a736a` | 4.68:1 | Labels and counts only |
+| `--accent` | `#ff9c2b` | 6.47:1 | `#b45c00` | 4.70:1 | Primary action, selection |
+
+**`--fg-muted` is confined to the card plane.** It is 4.71:1 on the card and
+3.94:1 on `--bg-elevated` in dark, 4.68:1 and 4.08:1 in light — the same shape on
+both sides. That is also *why* a row carrying muted text does not change ground
+on hover, which is the fix for the hover repaint in the plan's §6 P7.
+
+**The window is one flat colour.** The two-layer viewport-fixed gradient left
+with the palette: it was two literal dark hexes and could not be carried into the
+light scheme at all.
+
+### The rest
+
 | Rule | Current standard |
 | --- | --- |
-| Background hierarchy | `--bg-base`, `--bg-surface`, `--bg-elevated` |
-| Frost | Floating transient surfaces only. Not a fourth plane — see below |
+| Schemes | Light, Dark, System. `System` is a deferral resolved against `prefers-color-scheme` and re-resolved when the OS changes, never a third palette. `<html data-theme>` always carries the RESOLVED value; with no attribute the ladder is dark ([ADR 0048](decisions/0048-a-light-mode-is-not-the-dark-one-inverted.md), `hooks/useColorScheme.ts`) |
+| Frost | A pair, on floating transient surfaces only. Not a fourth plane — see below |
 | Typeface | Archivo (UI and display), IBM Plex Mono (measurement and code). Self-hosted woff2 in `assets/fonts/`, both SIL OFL |
-| Type scale | 11, 12, 13, 14, 16, 20, 28 px |
+| Type scale | `--t-micro` 11, `--t-label` 12, `--t-note` 13, `--t-body` 14, `--t-lead` 16, `--t-title` 20, `--t-hero` 28 px. 13 is a named step: it lets a card title sit below body size and still outrank it, on weight rather than on size |
 | Optical size | Width, tracking and weight vary per step: 104% / +0.012em at 11 px through 96% / −0.026em at 28 px |
-| Card material | One 1px inset highlight on the top edge only. Never on the bottom |
-| Elevation | `--elev-raised`, `--elev-pop`, `--elev-sheet`, `--elev-window`. Floating surfaces only |
+| Radius ladder | `--r-window` 10, `--r-card` 8, `--r-control` 6, `--r-small` 4 — assigned by what a thing **is**, not by how big it is. See below |
+| Card material | One 1px inset highlight on the top edge only, `--edge-light`. Never on the bottom — that is a bevel. In light it inverts to a soft downward shading, because white cannot get whiter |
+| Elevation | `--elev-raised`, `--elev-pop`, `--elev-window`, `--elev-sheet`. Floating surfaces only; a card never casts |
 | Focus | 1.5px accent core flush to the control, plus a wide low-alpha halo. Never an offset ring |
-| Spacing | 4 px rhythm; 20 px card padding; 32 px between major sections |
-| Card shape | 12 px radius, border and background elevation |
+| Spacing | 4 px rhythm (`--s1`…`--s8`). Structure reads `--pad-card`, `--row-py`, `--gap-row`, `--gap-block`, `--content-max`, `--nav-w` — never a literal, so the settings sheet can redeclare the scale in its own scope |
 | Row grammar | The item carries the horizontal inset; the stack spans the card so its separators reach the group edge ([ADR 0052](decisions/0052-the-item-carries-the-inset-so-the-separator-reaches-the-edge.md)) |
-| Card elevation | background and hairline border; no drop shadow |
-| Sidebar | 232 px, grouped and vertically scrollable when required |
+| Card elevation | Background step plus the top-edge highlight. No drop shadow, no hairline in the proposed palette, and no hover transition on a card border |
+| Scrollbars | Not drawn anywhere, and nothing replaces them. The edge fade was built and removed: a static mask dims every scroller's first and last 20 px permanently, and the scroll-driven variant keeps the surface animating |
+| Sidebar | 232 px (`--nav-w`), grouped, its icons in rounded tiles |
 | Long lists | `content-visibility: auto` and intrinsic-size utilities |
 
+### The radius ladder
+
+| Token | Value | For |
+| --- | ---: | --- |
+| `--r-window` | 10 px | A window or a sheet — the outermost object on its layer |
+| `--r-card` | 8 px | A grouping surface — card, panel, stage, well |
+| `--r-control` | 6 px | Something you operate — button, input, select, tab bar |
+| `--r-small` | 4 px | A label, and anything sitting inside a control |
+
+The surface had twelve radius values and no rule, and the aggregate read soft to
+the point of unseriousness: a badge, a status tag, a segmented control, a sub-tab
+row, a chip and a profile flag were all capsules, so every label-shaped thing on
+screen was a pill. **Capsules survive only where the object is physically a
+capsule** — a switch track and its knob, a level bar, a count bubble, an avatar,
+a status dot, a radio, a round mic button. Everything that is a rectangle with
+text in it is a rectangle.
+
+**The overlay is exempt and stays exempt.** It keeps its own
+`--ov-radius-compact: 999px` and `--ov-radius-tall: 14px`: it is a capsule by
+design, it is outside the rework's scope, and it references no token from
+`globals.css` at all — which is why the guard for it is a look in the native
+host rather than a pinning job.
+
 The universal CSS reset belongs inside Tailwind's `@layer base`. Unlayered reset
-rules override layered utility classes and can silently break layout spacing.
+rules override layered utility classes and can silently break layout spacing. The
+shell grammar in `src/styles/shell.css` is in `@layer components` for the same
+reason: a Tailwind utility at a call site still has to win over it.
+
+## The rules that live in a primitive, never in a screen
+
+These four came out of the prototype's eleventh pass, which found it patching
+each of them screen by screen with a different inline value. They belong in
+`components/shell/` and `styles/shell.css`; a screen that restates one of them
+is a signal that the primitive is missing it.
+
+- **The card owns its inset, and the item carries the horizontal half.** The
+  card pays its vertical padding, a separated stack spans the card's full width
+  so its hairlines reach both edges of the group, and each item inside the stack
+  pays `--pad-card` left and right. Nothing inside a card needs to know it is at
+  an edge ([ADR 0052](decisions/0052-the-item-carries-the-inset-so-the-separator-reaches-the-edge.md)).
+  **The action that acts on a card's content is a footer component**, not a flex
+  row with a padding guessed per screen.
+- **A control that must look centred is drawn on integers.** 16 / 2 / 8, never
+  17 px with a 1.5 px border: an odd box has no integer centre, and a fractional
+  border snaps to different device pixels on each side.
+- **A stat tile carries a number that changes and summarises more rows than fit
+  on screen.** Otherwise it is a row. Three tiles across the top had become a
+  habit — nine of them stood on three screens, six carrying words that never
+  change, all restating the banner beneath them.
+- **No coloured edge bar, ever.** A vertical accent rule down the side of a
+  notice is a web convention that reads as a rendering defect at this scale.
+  Emphasis is the ground plus an icon tile.
+
+Three more of the same kind:
+
+- **A badge is for a status that is not expected.** An expected status is a dot
+  and a word, or nothing. In a list, badges live in a fixed right-aligned column
+  and not in the flow, or a row carrying two of them starts its actions at a
+  different x from every other row.
+- **A list and its detail are one surface, not two cards.** Two cards side by
+  side state no relationship between themselves; the `pane` primitive puts the
+  list on the sidebar plane behind a hairline.
+- **One control per kind of value.** A bounded number with a unit is a stepper,
+  a proportion is a slider, a measurement with a decision threshold is a meter
+  with the threshold drawn in, and a text field is what is left.
+
+## Copy budget
+
+Not a preference. Facts that do not fit move to `docs/` and are linked from the
+control that needs them.
+
+| Element | Budget |
+| --- | --- |
+| Section header | 1–4 words |
+| Section description | ≤ 90 characters, one line |
+| Row label | 1–4 words |
+| Row hint | ≤ 90 characters, one line |
+| Empty state | 1 line + 1 action |
+| Anything longer | → `docs/`, reached by a link |
 
 ## Component Rules
 
-- Reuse shell primitives such as `Sidebar`, `FormCard`, `FormRow`, `Inspector`,
-  `SegmentControl`, `StatusBadge`, `Toggle`, and `ProfileSwitcher`.
+- The ported shell kit is `Card`, `CardFooter`, `CardRows`, `Row`, `LaneCard`,
+  `SubTabs`, `SectionHeader`, `PreviewBanner`, `EmptyState`, `DangerRow`,
+  `Toolbar` and `ScopeTag`, plus `Stepper`, `VolumeSlider`, `InputLevelMeter`,
+  `DisclosureRow`, `SegmentControl`, `StatusBadge`, `StatusDot`, `Select`,
+  `Toggle`, `Inspector` and `ProfileSwitcher`. `FormCard`, `FormRow` and
+  `Sidebar` are the **pre-port** shell that the shipped settings areas still
+  render; nothing new may use them, and they are deleted with the last screen
+  that reads them.
+- **A preview says so on the surface, every time.** `PreviewBanner` is a chip and
+  one line, 26 px. Its withdrawn variant keeps a box and a border, because a stop
+  is exactly the case that has to interrupt.
+- **A row states its scope when its value is not the window's.** *Settings means
+  this machine*; anything a profile owns carries a `ScopeTag` naming the profile
+  and linking to it.
 - The accent means primary action, active selection, or live capture. It does
   not mean "this row is interesting". A disabled control drops the accent
   entirely rather than dimming it: at reduced opacity an accent surface is
@@ -186,8 +337,8 @@ rules override layered utility classes and can silently break layout spacing.
   Never a frozen bar row standing in for a live signal: a still meter on a
   surface that claims to be listening is a fake state. Where there is room, the
   waveform; where there is not, the quantised matrix.
-- Motion primitives live once, in `src/lab/`, and are shown at the unrouted
-  `/component-lab`. The orb has four states and no periodic pulse
+- Motion primitives live once, in `src/lab/`, and are shown in `/gallery` →
+  Motion. The orb has four states and no periodic pulse
   ([ADR 0049](decisions/0049-the-orb-has-four-states-and-a-pulse-is-none-of-them.md));
   a level-driven component smooths at one end only, never in both JS and CSS.
 - Form cards group one decision and its supporting explanation. Avoid nested

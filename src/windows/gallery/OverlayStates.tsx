@@ -1,13 +1,25 @@
 import { useState } from "react";
-import { OverlayPill, type OverlayProcessingMode } from "../components/overlay/OverlayPill";
+import { OverlayPill, type OverlayProcessingMode } from "../../components/overlay/OverlayPill";
 
 /* ════════════════════════════════════════════════════════════════════════════
-   OverlayGallery — Phase 1 isolated state gallery.
+   OVERLAY — every OverlayPill state, folded into /gallery on 2026-08-04.
 
-   Renders every OverlayPill state on a neutral backdrop so the visual layer
-   can be tuned without the Tauri runtime. A mock audio-level slider drives the
-   recording waveform; the interactive cards keep their own local mock state.
-   No Tauri commands, no window resize — browser hot-reload only.
+   Was the route `/overlay-gallery`, retired by ADR 0055: two unlinked
+   design-time routes were already one too many. The content is unchanged, and
+   deliberately so — the overlay is out of the rework's scope (§1), it
+   references no token from `globals.css` (§11.14), and this page is the check
+   that the token write did not reach it.
+
+   IT STAYS DARK IN BOTH SCHEMES. The overlay renders in a transparent
+   always-on-top window with its own compositing rules, it has no light mode,
+   and a drawing that invented one would be documenting something that does not
+   exist (ADR 0048). The `og-*` chrome below is `overlay-pill.css`'s own and is
+   not part of the settings ladder.
+
+   Renders every state on a neutral backdrop so the visual layer can be tuned
+   without the Tauri runtime. A mock audio-level slider drives the recording
+   waveform; the interactive cards keep their own local mock state. No Tauri
+   commands, no window resize.
    ════════════════════════════════════════════════════════════════════════════ */
 
 const MODE_CYCLE: OverlayProcessingMode[] = ["auto", "verbatim", "cleanup", "rewrite", "agent", "prompt_enhance"];
@@ -41,7 +53,7 @@ function Card({ index, title, hint, wide, children }: CardProps) {
   );
 }
 
-export default function OverlayGallery() {
+export function OverlayStates() {
   const [level, setLevel] = useState(0.62);
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -66,11 +78,12 @@ export default function OverlayGallery() {
       <main className="og-main">
         <header className="og-header">
           <div>
-            <span className="og-eyebrow">Phase 1 · Visual rebuild</span>
+            <span className="og-eyebrow">Out of the rework's scope · unchanged</span>
             <h1 className="og-title">Overlay capsule — state gallery</h1>
             <p className="og-lede">
-              Every visual state in isolation. Adaptive width, fake-glass solid fill (no backdrop blur),
-              single warm accent. Wire-up to the Rust runtime lands in Phase 2.
+              Every visual state in isolation. Adaptive width, faux-glass solid fill, single warm
+              accent, its own two radii. The pill reads no token from the settings ladder, so
+              nothing the port writes can reach it — this page is where that is checked.
             </p>
           </div>
 

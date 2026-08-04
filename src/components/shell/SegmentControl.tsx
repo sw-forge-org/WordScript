@@ -18,9 +18,14 @@ interface SegmentControlProps<T extends string> {
 }
 
 /**
- * macOS-style segmented control. One translucent track, the active segment is
- * an elevated chip. Used for binary/few-way choices (cloud/local, tap/hold,
- * delivery mode) instead of radio groups.
+ * macOS-style segmented control. One inset track, the active segment is an
+ * elevated chip. Used for binary/few-way choices (cloud/local, tap/hold,
+ * delivery mode) instead of radio groups; where an option needs a sentence
+ * rather than a word, the control is `LaneCard`.
+ *
+ * The track is a control (`--r-control`) and the chip is inside one
+ * (`--r-small`). It was a capsule on both counts until the radius ladder
+ * (§11.32).
  */
 export function SegmentControl<T extends string>({
   options,
@@ -35,7 +40,7 @@ export function SegmentControl<T extends string>({
       role="tablist"
       aria-label={rest["aria-label"]}
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-lg bg-surface-strong p-0.5",
+        "inline-flex items-center gap-0.5 rounded-control border border-border bg-bg-inset p-0.5",
         className,
       )}
     >
@@ -50,10 +55,10 @@ export function SegmentControl<T extends string>({
             disabled={opt.disabled}
             onClick={() => !opt.disabled && onChange(opt.value)}
             className={cn(
-              "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-all duration-100 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-40",
+              "inline-flex items-center justify-center gap-1.5 rounded-small font-medium transition-colors duration-100 outline-none disabled:cursor-not-allowed disabled:opacity-40",
               size === "sm" ? "h-6 px-2.5 text-[11px]" : "h-7 px-3 text-[13px]",
               active
-                ? "bg-surface-elevated text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.25)]"
+                ? "bg-bg-elevated font-[550] text-brand"
                 : "text-fg-dim hover:text-foreground",
             )}
           >

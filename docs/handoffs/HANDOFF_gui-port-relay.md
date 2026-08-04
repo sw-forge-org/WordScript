@@ -1,6 +1,6 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Leg 1 is next and nothing in it has been started.**
+Opened 2026-08-04. **Active — Leg 1 is done and pushed. Leg 2 is next.**
 
 Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 Work happens on `main`. There is no feature branch; `gui-rework-second-pass` was
@@ -37,13 +37,22 @@ and this is the order in which they become product.
    green.
 2. **Never `--no-verify`.** The Husky hooks are the secret gate.
 3. **ADRs are append-only.** New file, never an edit to an existing one. Next
-   free number is **0056**; update `docs/decisions/README.md` when you file one.
+   free number is **0057**; update `docs/decisions/README.md` when you file one.
 4. **The prototype is read-only from here on** (ADR 0055). It is the reference
    the gallery is diffed against. If you ever must edit `demo.css` or `demo.js`,
    use **exact-match string replacement only** — never line numbers, never a
    computed byte range. On 2026-08-03 a rewrite by computed index destroyed
    about 1350 lines and was recovered only from a Claude Code file-history
    snapshot.
+4b. **The prototype is the UI source of truth, and you read it per screen.**
+   Added 2026-08-04 by the owner, against Leg 1's own output. Before you build a
+   screen or a section, find its builder in `demo.js` — `grep -n "SCREENS\.<id>"`
+   — read it whole, and read the rules it uses in `demo.css`. Do not reconstruct
+   a screen from what `DESIGN_SYSTEM.md` implies. The design is already made;
+   rebuilding it from its description silently drops the parts that were decided
+   on purpose, and the loss is invisible until the two are put side by side.
+   Leg 1 did exactly this in one place and it was caught in one glance — see its
+   record below.
 5. **The overlay is out of scope.** No token, size or rule in `overlay*.css` or
    `OverlayPill.tsx` changes. Reading it in order to draw it is allowed and is
    what the prototype does; frost explicitly excludes it (ADR 0051).
@@ -74,175 +83,261 @@ and this is the order in which they become product.
 Legs 2 and 4 are large and may split into sub-legs (2a, 2b, …). A leg that
 splits says so in its record and writes the prompt for the next sub-leg.
 
-## Leg 1 — the active leg, in full
+## Leg 2 — the active leg, in full
 
-Plan reference: `docs/SETTINGS_REWORK_PLAN.md` §8 Stage 1, as split by §11.13,
-plus §15.1 which grew what the token write contains, plus §16 which records this
-relay.
+Plan reference: `docs/SETTINGS_REWORK_PLAN.md` §8 Stage 5 brought forward by
+§16.3, read with §7 (what is a preview and what is not) and §11.15 (the one
+withdrawn screen).
 
-### 1.1 Dead code out
+**Leg 2 has two halves and the first one is a repair.** Leg 1 ported the design
+system correctly and then displayed it in four files it wrote from scratch. The
+owner caught it in one glance on 2026-08-04. Fixing that is not optional
+housekeeping: those four files are the gallery, the gallery is the acceptance
+surface, and a gallery that shows a system nobody drew cannot be diffed against
+the prototype it exists to be diffed against.
 
-- Delete `src/components/areas/PermissionsArea.tsx`. It is exported and imported
-  by nothing; its provenance and its four cards being a strict subset of
-  `InsertRecoveryArea`'s six are re-verified in plan §2.2. Confirm no import
-  survives.
-- `glass*`, `ws-pill`, `--surface-glass` and the `glass` variants of
-  `ui/card.tsx` and `ui/window.tsx` were removed in the fourteenth pass.
-  **Verify, do not redo.** `grep -rn "glass\|ws-pill\|backdrop-filter" src/`
-  should return only the sound pack named "Glass — soft bell", one line of prose
-  in `OverlayGallery.tsx`, and the two comments in `overlay-pill.css` about the
-  overlay's own faux glass.
+### 2.1 Re-port the gallery's own pages — do this first
 
-### 1.2 The token write
+`SCREENS.ds` in `demo.js` **is** the Design System screen, and it is 350 lines
+of decided content: sections, copy, tables, state lists. Port it.
 
-Everything below lands in `src/styles/globals.css` and its `@theme inline` map.
+| File | Port from |
+| --- | --- |
+| `src/windows/gallery/Foundations.tsx` | `SCREENS.ds`, the sections up to and including *Radius* — `.ramp` with its L\* column, the `.spec` contrast table, `.type-row`, `.rhythm`, the *Elevation* rows, the *Rules this pass added* card, the *Radius* rows. Keep Leg 1's one addition: contrast and L\* are **measured** at render time from the live tokens, never printed as literals (ADR 0056 is the record of what happens otherwise) |
+| `src/windows/gallery/Components.tsx` | `SCREENS.ds`'s *Components* section — five cards, *Buttons* · *Inputs* · *Level* · *Status* · *New in this plan* — plus the *Layout primitives* and *Motion* sections that follow it. Every state in each list, and the copy as written |
+| `src/windows/gallery/Motion.tsx` | the matrix presentation the owner screenshotted: a card per mode with a name, its type (`vu` / `frames` / `pattern`) and a description, under a *Frame clock* header carrying `fps · loop · autoplay`. What is there now is the old `/component-lab` row of unlabelled swatches |
+| `src/windows/GalleryWindow.tsx` | the prototype's `.rig` plus `.nav` grammar. The scheme switch stays where Leg 1 put it |
 
-- **The palette**, plan §5.1: the prototype's `[data-palette="after"]` values,
-  with `--bg-inset` added. The dead duplicate `--bg-elevated: #141a20` — declared
-  twice in the same `:root`, the first shadowed by the second — goes with it.
-- **Three schemes** (ADR 0048): dark as today's default, light **rebuilt rather
-  than inverted** with the accent at `#b45c00` because the identity orange is
-  unreadable on white, and system following. Take the mechanism from the
-  prototype, not from memory.
-- **The radius ladder** (§11.32): `--r-window: 10px`, `--r-card: 8px`,
-  `--r-control: 6px`, `--r-small: 4px`, assigned by what a thing *is*. Capsules
-  survive only where the object is physically a capsule. The overlay keeps its
-  own two radii and is not touched.
-- **Material** (§15.1): the 1 px inset top highlight on cards and the four-step
-  cast shadow ladder, replacing the four hardcoded shadow literals.
-- **Frost as a named surface class** (ADR 0051): `filter: blur()` on the layer
-  *behind*, a pair rather than a plane, receding layers nest. **Never
-  `backdrop-filter`** — it is inert in WebKitGTK 2.52.4 while `@supports`
-  reports it as supported. Only for a surface that floats and is transient:
-  never a card, never the sidebar, never the overlay.
-- **13 px is a named type step.** It was used 28 times before it was in the
-  scale.
-- **Fonts are already wired** — Archivo and IBM Plex Mono are bundled in
-  `assets/fonts/` and declared in `globals.css`. Verify, do not redo.
-- **Overlay guard, as a verification and not a job** (§11.14): confirm by grep
-  that `overlay-pill.css` and `overlay-shell.css` reference no token from
-  `globals.css`, then leave them alone. `git diff --stat` at the end of the leg
-  must show them untouched.
+The buttons the prototype's component cards need do not exist as React
+components yet — Leg 1 built eight primitives and `.btn` was not among them,
+because §5.3 does not list it. Build it now, in `components/shell/`, ported from
+`demo.css`'s `.btn` including `data-v="primary"` with its three-value material,
+`ghost`, `danger`, `disabled` and `data-busy`. Same for `.chip` and `.ibtn` if a
+section needs them. A gallery that draws a button inline is the same defect one
+level down.
 
-### 1.3 The eight primitives
+### 2.2 Every screen into `/gallery` → Screens
 
-`LaneCard`, `SubTabs`, `SectionHeader`, `PreviewBanner`, `EmptyState`,
-`DangerRow`, `Toolbar`, `ScopeTag` — plan §5.3 plus §11.7 — each with tests, in
-`src/components/shell/`. Two notes that are not optional:
+25 entries, listed in `src/windows/gallery/Screens.tsx` and in the prototype's
+README. Each one 1:1 against the prototype: spacing, radii, states and copy.
 
-- `SubTabs` takes a `"|"` item that renders the dividing rule (§11.31).
-- `PreviewBanner` is **a chip and one line, about 26 px** (§11.47), not the old
-  dashed card with a paragraph. The withdrawn-screen variant keeps its box and
-  its border, because a stop is exactly the case that has to interrupt.
+**The method, and it is the rule this leg is judged on.** For each screen:
 
-Do **not** re-invent the four that already exist and were silently replaced by
-worse controls in the first Stage 0 build (§11.9): `Stepper`, `VolumeSlider`,
-`InputLevelMeter`, `DisclosureRow`. Use them.
+1. `grep -n "SCREENS\.<id>" docs/prototypes/settings-rework/demo.js`, then read
+   the whole builder. It carries the structure, the copy and the sample data.
+2. Read the rules it uses in `demo.css`. If a rule is missing from
+   `src/styles/shell.css`, add it there — never at the call site.
+3. Serve the prototype and put the two side by side:
+   `python3 -m http.server 8791 --directory docs/prototypes/settings-rework`.
+4. Where the prototype and this repo's shipped surface disagree, the prototype
+   wins. That is the point of the port.
 
-**These rules go into the primitives, not into the screens.** They are what
-§11.17 found the prototype patching screen by screen, and porting the patches
-instead of the rules is the single most likely way this leg fails:
+**Do not reconstruct a screen from `DESIGN_SYSTEM.md`.** It describes the
+system; it is not the design. This is rule 4b, it is the reason Leg 2 starts
+with a repair, and it is the single most likely way this leg fails.
 
-- The card owns its inset on all four sides; the **item** carries the horizontal
-  inset so a group's separators reach the card's edge (ADR 0052). The action
-  that acts on a card's content is a footer component, not a flex row with a
-  guessed padding.
-- A control that must look centred is drawn on integers — 16 / 2 / 8, never
-  17 px with a 1.5 px border.
-- A stat tile carries a number that **changes** and summarises more rows than
-  fit on screen. Otherwise it is a row.
-- **No coloured edge bar, ever.** Emphasis is the ground plus an icon tile.
-- A badge is for a status that is **not expected**; an expected status is a dot
-  and a word, or nothing. Badges live in a fixed right-aligned column, not in
-  the flow (§11.20, §11.28).
-- `--fg-muted` is confined to the card plane — 4.71:1 there, 3.94:1 on elevated.
-  That is also why a row carrying muted text does not change ground on hover.
-- **No scrollbars are drawn anywhere**, and nothing replaces them: the edge fade
-  was built and removed (§11.28).
-- No hover transition on card borders (§5.4, §6 P7).
-- A list and its detail are one surface, not two cards — the `pane` primitive.
-- One control per kind of value: a bounded number with a unit is a stepper, a
-  proportion is a slider, a measurement with a decision threshold is a meter
-  with the threshold drawn in, and a text field is what is left (§12.3).
+Order suggestion, not a requirement: the Design System screen is already covered
+by §2.1, so start with the four workspace views (Home · History · Profiles ·
+Context), then the eleven settings sections, then the previews. A leg that runs
+long splits into 2a/2b and says so in its record.
 
-### 1.4 The gallery shell
+### 2.3 What a screen in the gallery may and may not do
 
-New route `/gallery` in `App.tsx`, lazy, no Tauri API, linked from no product
-surface — the terms `/component-lab` already ships under. Five sections per
-ADR 0055: **Foundations · Components · Motion · Overlay · Screens**.
+- **It carries sample data and asserts nothing** (ADR 0055). That is what makes
+  it compatible with *never render fake readiness*: the fake state is the same
+  screen on a product surface implying the runtime reached something it did not.
+- **Every preview screen carries its `PreviewBanner`**, and the withdrawn one
+  carries the withdrawn variant. `Live preview & commit` is drawn and is
+  explicitly not a target shape (§11.15) — draw it with the stop on it, or the
+  next reader builds Phase 3 out of it.
+- **No screen imports a Tauri API.** The gallery route uses none, and its test
+  asserts that by mocking `invoke` to throw.
+- **A screen never copies a component.** If a screen needs something the shell
+  kit does not have, the shell kit grows it.
+- **No screen carries an inline spacing value.** If one seems to need it, the
+  primitive is missing a rule — that is ADR 0052's whole subject.
 
-- Foundations renders the tokens live in all three schemes with measured
-  contrast, the type scale, the spacing rhythm, the radius ladder, elevation and
-  the frost pair. The scheme switch belongs here so it is judged in one place.
-- Components renders every shell primitive in every state, importing the real
-  components. **The gallery never copies a component.**
-- Motion is today's `/component-lab` content, folded in.
-- Overlay is today's `/overlay-gallery` content, folded in.
-- Screens is the frame only in this leg; Leg 2 fills it.
-- Retire `/overlay-gallery` and `/component-lab` as routes once their content is
-  in. Under ADR 0054 they are deleted, not aliased.
+### 2.4 The one check Leg 1 could not finish
 
-### 1.5 The native-host checkpoint
+**Look at the frost pair in the native host, before you build on it.** It is at
+the foot of `/gallery` → Foundations and it carries a button that takes the blur
+off the layer behind. If the ground visibly sharpens when you press it, the
+material is running; if nothing changes, it is not, and that is a finding rather
+than a nuisance — ADR 0051 exists because the settings sheet shipped a plain
+black scrim for several passes while its stylesheet asked for a blur and no
+browser preview could show it. Leg 1 could not deliver a pointer event to the
+window under this compositor. A human with a mouse can.
 
-This is the checkpoint §11.13 moved *into* Stage 1b. It happens after the tokens
-are written, not before.
+### 2.5 What Leg 2 must write down
 
-- `npm run tauri build`, launch it, open `/gallery` → Foundations, and look at
-  all three schemes on the real panel. Look at the frost pair. Look at the
-  overlay in the same session (verification, not pinning).
-- `npm run tauri dev` was recorded as not runnable here on 2026-08-03. Try it;
-  if it runs, say so in your leg record, because the plan currently states the
-  opposite.
-- Record the outcome either way. **If today's palette does not crush on the
-  panel, §2.3's premise is weaker than the plan claims** — say so plainly. That
-  is the one outcome that reopens a value §0 records as settled.
+- Every place where a screen could not be drawn on the real components without
+  inventing a control. That list is what Leg 4 wires and what Leg 5 costs.
+- Every place where the prototype and the shipped surface disagree on a **fact**
+  rather than on presentation — a label the runtime does not use, a status that
+  does not exist. §11.11 found three of those; a 25-screen port will find more.
+- A new ADR only if a design decision departs from the prototype. Never an edit
+  to an existing record. The next free number is **0057**; update
+  `docs/decisions/README.md` when you file one.
+- `CHANGELOG.md` under `[Unreleased]`, your record in the leg log, and the
+  **Leg 3 prompt**.
 
-### 1.6 Documentation this leg owes
+### Leg 2 is done when
 
-- A new ADR only if a value departs from §5.1 or from ADR 0048/0051 — never an
-  edit to those records.
-- `docs/DESIGN_SYSTEM.md`: the new tokens, the three schemes, frost as a surface
-  class beside `--bg-base` / `--bg-surface` / `--bg-elevated`, the radius ladder,
-  the four rules of §11.17, the copy budget, the surface model. Correct anything
-  in it that the product now contradicts.
-- `CHANGELOG.md` under `[Unreleased]`.
-- Your record in the leg log below, and **the Leg 2 prompt**.
+- The four files of §2.1 are ported rather than composed, and a reader with the
+  prototype open beside `/gallery` cannot name a section that was invented.
+- All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on
+  the components in `components/shell/`.
+- `npm test` and `npm run build` are green, and the new screens carry tests —
+  under ADR 0054 there is no coexisting old surface to fall back to, which makes
+  the test obligation stricter than the plan's, not looser.
+- The result was looked at in the native host, not only in a browser.
+- It is committed and pushed to `main`, and the Leg 3 prompt is in this file.
 
-### Leg 1 is done when
-
-- `npm test` is green — 154 existing tests plus the new primitive tests — and
-  `npm run build` is green.
-- `/gallery` renders Foundations and Components, and the scheme switch works in
-  all three schemes.
-- `grep -rn "PermissionsArea\|backdrop-filter\|ws-pill" src/` returns nothing
-  that is not a documented exception.
-- `git diff --stat` shows `overlay-pill.css` and `overlay-shell.css` untouched.
-- No primitive carries an inline spacing value.
-- The native-host look happened and its outcome is written down.
-- It is committed and pushed to `main`, and the Leg 2 prompt is in this file.
-
-## Read before starting Leg 1
+## Read before starting Leg 2
 
 | Read | For |
 | --- | --- |
 | `CLAUDE.md` (= `AGENTS.md`) | The repo's own rules; they outrank any default |
-| `docs/SETTINGS_REWORK_PLAN.md` §0, §5, §8, §11.7–§11.52, §12, §15, §16 | The derivation and every correction to it |
+| `docs/prototypes/settings-rework/demo.js` | **The screens themselves.** Read the builder for each screen you port, whole |
+| `docs/prototypes/settings-rework/demo.css` | The rules those builders use |
 | `docs/prototypes/settings-rework/README.md` | The pass log, what is real and what is sample, the known limits |
-| `docs/prototypes/settings-rework/demo.css` | The design system written out — tokens, scale, elevation rule, the three layout primitives |
-| `docs/DESIGN_SYSTEM.md` | What the product currently claims, including what this leg corrects |
-| ADR 0048, 0051, 0052, 0053, 0054, 0055 | Light mode, frost, the row grammar, the level readout, and this relay's two decisions |
+| `docs/DESIGN_SYSTEM.md` | What the product now claims — as a check on your port, never as its source |
+| `src/styles/shell.css` and `src/components/shell/` | What Leg 1 ported. Grow this, do not work around it |
+| `docs/SETTINGS_REWORK_PLAN.md` §7, §11.11, §11.15, §11.17, §11.20, §11.28 | Previews, invented vocabulary, the withdrawn screen, and the four rules that belong in primitives |
+| ADR 0048, 0051, 0052, 0053, 0054, 0055, 0056 | Light mode, frost, the row grammar, the level readout, the two delivery decisions, and the measured-contrast rule |
 | `docs/REFERENCE.md` | Overlay sizes and CSS invariants, before drawing anything near the overlay |
 
 Serve the prototype for comparison:
 `python3 -m http.server 8791 --directory docs/prototypes/settings-rework`
-
 ## Leg log
 
 | Leg | Date | Agent | Commit | Outcome |
 | --- | --- | --- | --- | --- |
-| 0 | 2026-08-04 | Opus 5 | *this commit* | Relay opened. `gui-rework-second-pass` consolidated into `main` and deleted. ADR 0054 and 0055 filed. Baseline: 154 tests green, `/gallery` does not exist, Stage 1a and 1b unstarted apart from the `glass*` removal and the font wiring. |
+| 0 | 2026-08-04 | Opus 5 | `dbd83c6` | Relay opened. `gui-rework-second-pass` consolidated into `main` and deleted. ADR 0054 and 0055 filed. Baseline: 154 tests green, `/gallery` does not exist, Stage 1a and 1b unstarted apart from the `glass*` removal and the font wiring. |
+| 1 | 2026-08-04 | Opus 5 | *this commit* | Dead code out, token write, eight primitives, `/gallery` shell, native-host look. 154 → 217 tests, `npm run build` green. ADR 0056 filed: the light scheme's `--fg-muted` was measured for the first time and missed AA. **The gallery's own pages were composed rather than ported — Leg 2 fixes that first.** Full account below. |
 
-## The prompt for Leg 1
+### Leg 1 — what landed, and the one thing it got wrong
+
+**Ported 1:1 from `demo.css`, read rather than reconstructed.** The whole token
+block — the `[data-palette="after"]` palette with `--bg-inset`, the light ladder,
+the radius ladder, `--edge-light` and the four-step elevation ladder, the frost
+set, the type scale with its optical-size trio per step, the 4 px rhythm, and
+the structure tokens (`--pad-card`, `--row-py`, `--gap-row`, `--gap-block`,
+`--content-max`, `--nav-w`, `--nav-row-h`) at the accepted Standard values. And
+the shell grammar in the new `src/styles/shell.css`: the card and its inset
+guard, the row stack, the lane rows with the 16/2/8 radio, the sub-tab bar with
+its `"|"` rule, the banner and its withdrawn variant, the empty state, the
+toolbar and its search, the badge, the dot, the scope tag, the section header,
+the card footer, the frost pair and the two-layer focus ring. Those are
+line-for-line from the prototype with the class names prefixed `ws-`.
+
+**Composed instead of ported, and this is the defect.** Raised by the owner on
+2026-08-04 against this leg's own output, from two screenshots put side by side:
+the gallery's Motion section against the prototype's own matrix section. His
+verdict, and it is right: *the design system already exists 1:1, and building
+from memory as an outsider instead of taking the demo GUI as the UI source of
+truth produces something that partly has nothing to do with it.*
+
+Concretely, four files display the system and none of them was read out of
+`demo.js`:
+
+| File | What the prototype already has |
+| --- | --- |
+| `windows/gallery/Foundations.tsx` | `SCREENS.ds` — the whole Design System screen, with its own sections, copy, `.ramp`, the `.spec` contrast table, `.type-row`, `.rhythm`, the *Rules this pass added* card, the radius rows and the motion table |
+| `windows/gallery/Components.tsx` | the Components section inside `SCREENS.ds` — five cards (*Buttons*, *Inputs*, *Level*, *Status*, *New in this plan*), each with an exact state list and exact copy |
+| `windows/gallery/Motion.tsx` | the richer matrix presentation: a card per mode carrying a name, its type (`vu` / `frames` / `pattern`) and a description, under a *Frame clock* header with `fps · loop · autoplay`. What is there now is the thin `/component-lab` row of unlabelled swatches |
+| `windows/GalleryWindow.tsx` | the prototype's `.rig` and `.nav` grammar |
+
+The distinction that matters for the next leg: **the system is ported, the pages
+that show it are not.** Nothing in `globals.css` or `shell.css` needs revisiting
+for this; the four files above do.
+
+**What the native-host look settled.** Recorded in full under §1.5's obligation:
+
+- `npm run tauri dev` **is not the toolchain's fault here.** It failed on
+  `beforeDevCommand` because a pre-existing Vite server held the strict port
+  1420 — a stale server from an earlier session, not a broken dev path. The plan
+  records "not runnable here" as a property of the machine; the observed cause on
+  2026-08-04 is a port conflict, and the next leg should free 1420 and try again
+  rather than assume the production build is the only route.
+- The premise check of §11.13 — **whether today's palette crushes on the panel** —
+  could not be run as the plan writes it, and the reason is structural rather
+  than incidental: this leg replaced the shipped tokens, so the production build
+  no longer carries the old palette to look at. It is one `git stash` away for
+  anyone who wants it, and §2.3's premise therefore stays **unverified on the
+  panel**, exactly as it was before this leg. It is not weakened and it is not
+  confirmed. Whoever wants to close it should do it before Leg 3 builds on the
+  ladder, and it costs one build of `dbd83c6`.
+- **The lifted ladder reads on the target panel.** All five planes separate:
+  the sidebar at L\* 6.4 sits visibly below the window at 10.3, the card at 19.0
+  is a distinct layer rather than a slightly-less-black rectangle, and the
+  hover plane at 24.6 is legible against it. §11.13's second row — *whether the
+  lifted ladder reads on that panel* — is answered, and it reads.
+- **The light scheme reads on it too**, and reads as a light theme rather than
+  as an inverted dark one: warm grey window, white card coming forward, sidebar
+  receding below the window. Checked by defaulting the gallery to `light` for
+  one build.
+- **The primitives render correctly in WebKitGTK.** The lane rows with their
+  icon tiles and the 16/2/8 radio, the rectangular badges, the sub-tab bar with
+  its `"|"` rule, the keycaps, the provider marks, and the primary button's
+  three-value material.
+- **The frost pair was NOT settled, and it is the one that most needed to be.**
+  ADR 0051 is explicit that a browser preview cannot show whether this material
+  is running. It sits at the foot of Foundations, and no synthetic pointer event
+  — click or wheel — could be delivered to the window under the running Wayland
+  compositor (the app is an XWayland client and the reported X geometry does not
+  match the scanout position), so the section could not be scrolled to or its
+  toggle operated. **This is thirty seconds of work for a human with a mouse and
+  it is still owed.** Open `/gallery` → Foundations in the native host, scroll to
+  *Frost*, and press the button that takes the blur off the layer behind: if the
+  panel's ground visibly sharpens, the material is running.
+
+**Two findings worth carrying forward.**
+
+1. **A stored contrast figure is a lie waiting to happen.** Foundations measures
+   the live tokens at render time rather than printing figures, and the first
+   switch to the light scheme produced the first measurement anybody had taken
+   of it: `--fg-muted` at 4.48:1 on the white card, under AA. The prototype's
+   own design-system screen prints the dark ladder's numbers on both sides of
+   its theme switch, which is why nobody had seen it. ADR 0056.
+2. **The dark ladder measures exactly what §5.1 claims.** L\* 6.4 / 7.3 / 10.3 /
+   19.0 / 24.6 and 11.80:1, 7.37:1, 4.71:1, 6.47:1 on the card, computed from
+   the shipped tokens rather than copied from the plan. The palette port is
+   exact.
+
+**Known exceptions to the acceptance greps.** `grep -rn "backdrop-filter" src/`
+returns `src/styles/overlay.css` (three declarations). That is the Storybook-era
+file §11.14 records as imported by nothing, and rule 5 puts every `overlay*.css`
+out of scope, so it was left alone. `git diff --stat` shows `overlay-pill.css`
+and `overlay-shell.css` untouched.
+
+**`/gallery` has no door in the native host, and this is a gap in ADR 0055.**
+Every window's URL is pinned in `src-tauri/tauri.conf.json` — `#/overlay`,
+`#/settings`, `#/rebuild-lab` — and rule 6 puts `src-tauri/` out of scope until
+Leg 5, so a gallery window cannot be added. The ADR's *"checkable with one `npm
+run tauri build` and a walk through Foundations"* therefore does not hold as
+written. Leg 1 looked at it by temporarily pointing the `/settings` route at
+`GalleryWindow` in `src/App.tsx`, building, looking, and reverting — a
+frontend-only instrument that touches nothing out of scope. **Do the same, and
+revert it before you commit.** The permanent fix is one entry in
+`tauri.conf.json` and belongs to the first leg allowed to open that file.
+
+**Two smaller things the next leg should know.**
+
+- `FormCard` and `FormRow` were left alone. The card grammar is ported as
+  `Card` / `CardRows` / `Row` / `CardFooter` on `.ws-card`, and the pre-port pair
+  is still what the thirteen shipped areas render — several of them with a
+  `bodyClassName="py-4"` patch that the new grammar makes wrong. They are
+  deleted with the last screen that reads them, which is Leg 3's business.
+- `vitest.setup.ts` gained a `ResizeObserver` stub. jsdom has none and the Radix
+  primitive behind `Toggle` measures its thumb with one, so any test that
+  renders a switch threw from a layout effect. It is an environment gap, not a
+  product fault.
+- `src-tauri/src/core/mode_router.rs:7` cites `OverlayGallery.tsx`, which is now
+  `src/windows/gallery/OverlayStates.tsx`. Out of scope to fix under rule 6 — a
+  note for whichever leg opens that file.
+
+## The prompt for Leg 2
 
 Copied to a fresh agent verbatim.
 
@@ -254,33 +349,54 @@ on the `main` branch. Do not create a branch.
 
 Read `docs/handoffs/HANDOFF_gui-port-relay.md` first and in full. It is the
 chain document: it names the two decisions this work rests on (ADR 0054 and ADR
-0055), the rules every leg obeys, and the full specification of **Leg 1**, which
-is yours. Then read what its "Read before starting Leg 1" table lists.
+0055), the rules every leg obeys, the record of what Leg 1 landed and got wrong,
+and the full specification of **Leg 2**, which is yours. Then read what its
+"Read before starting Leg 2" table lists.
 
-Do Leg 1 completely — all six sections: dead code out, the token write, the
-eight primitives, the `/gallery` shell, the native-host checkpoint, and the
-documentation the leg owes. Follow the acceptance list at the end of the leg
-specification; do not declare it done while any item is open.
+**The one rule this leg is judged on: the prototype is the UI source of truth,
+and you read it per screen.** For every screen and every section you build,
+`grep -n "SCREENS\.<id>" docs/prototypes/settings-rework/demo.js`, read the
+builder whole, and read the rules it uses in `demo.css`. Do not reconstruct a
+screen from what `docs/DESIGN_SYSTEM.md` implies — that document describes the
+system, it is not the design. Leg 1 ported the design system correctly and then
+wrote the four files that display it from scratch; the owner saw the difference
+in one glance, and repairing it is §2.1, which comes before anything else.
+
+Serve the prototype and keep it open beside the app:
+`python3 -m http.server 8791 --directory docs/prototypes/settings-rework`
+
+Do Leg 2 completely — §2.1 (re-port the gallery's own four pages and add the
+button/chip/icon-button primitives the prototype's component cards need), then
+§2.2 (all 25 screens into `/gallery` → Screens, 1:1). Follow the acceptance list
+at the end of the leg specification; do not declare it done while any item is
+open. If it runs long, split into 2a/2b, say so in your record, and write the
+prompt for 2b.
 
 The short version of what governs this work, so you can spot it if you drift:
 
-- The prototype at `docs/prototypes/settings-rework/` is the accepted design and
-  is now read-only. The port is 1:1 against it, down to spacing, radii, states
-  and copy. Where the prototype and this repo's shipped surface disagree, the
-  prototype wins — that is the point of the port.
-- The design-system rules go into the primitives, never into a screen. The
-  prototype had been patching four missing rules screen by screen; porting those
-  patches instead of the rules is how this leg fails.
+- The prototype is the accepted design and is read-only. The port is 1:1, down
+  to spacing, radii, states and copy. Where it and this repo's shipped surface
+  disagree, the prototype wins — that is the point of the port.
+- The design-system rules live in `src/components/shell/` and
+  `src/styles/shell.css`, never in a screen. If a screen needs a rule, the
+  primitive grows it. No screen carries an inline spacing value.
+- The gallery imports the product's components and never copies them. If a
+  primitive looks right in the gallery and wrong in the product, the gallery is
+  what lied.
 - The overlay does not change. `src-tauri/` does not change.
-- Nothing renders fake readiness on a product surface. The gallery may carry
-  sample data because a gallery asserts nothing.
-- End green: `npm test`, `npm run build`. Look at the result in the native host
-  via `npm run tauri build`, not only in a browser.
+- A gallery screen carries sample data and asserts nothing; every preview screen
+  carries its `PreviewBanner`, and the withdrawn one carries the withdrawn
+  variant.
+- End green: `npm test`, `npm run build`. Look at the result in the native host,
+  not only in a browser — and read Leg 1's record first, because reaching
+  `/gallery` there needs a temporary frontend route and the reason is written
+  down.
 
-When Leg 1 is green: commit it, push it to `main`, append your leg record to the
-leg log in the relay document, and write the **Leg 2 prompt** into that same
-document — Leg 2 is every prototype screen into `/gallery` → Screens, 1:1, on
-the real components. Then report what you did, what you found, and anything the
-next leg needs to know that is not already written down.
+When Leg 2 is green: commit it, push it to `main`, append your leg record to the
+leg log in the relay document, and write the **Leg 3 prompt** into that same
+document — Leg 3 is the shell overwrite: one window, settings as a sheet over
+the workspace at its own scale (§11.22), the new IA replacing the 14 flat areas,
+`Cmd+,`, and the old areas deleted. Then report what you did, what you found,
+and anything the next leg needs to know that is not already written down.
 
 ---

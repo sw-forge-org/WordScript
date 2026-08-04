@@ -55,6 +55,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The settings rework is in the product.** Leg 1 of the GUI port relay wrote
+  the accepted prototype's design system into `src/`: the lifted palette, the
+  radius ladder, the material, the type scale with its optical-size axis, frost,
+  and three colour schemes. The shipped surface changes colour, shape and
+  contrast with it. The prototype under `docs/prototypes/settings-rework/` stays
+  the reference and is read-only from here (ADR 0055).
+- **A gallery at `/gallery`, and it is where the port is judged.** One
+  design-time route in the bundle, lazy, using no Tauri API and linked from no
+  product surface: Foundations · Components · Motion · Overlay · Screens. It
+  folds in `/overlay-gallery` and `/component-lab`, which are deleted rather
+  than aliased. Foundations **measures** contrast and L\* off the live tokens at
+  render time instead of printing stored figures, and re-measures when the
+  scheme switches, so a number on that page cannot be true of a palette that has
+  moved (ADR 0055).
+- **Light, dark and system, in the product.** `system` is a deferral resolved
+  against `prefers-color-scheme` and re-resolved when the OS changes, never a
+  third palette; `<html data-theme>` always carries the resolved value. The
+  light ladder is rebuilt rather than inverted — the window sits grey, the card
+  is white and comes forward, the sidebar recedes below the window, the accent
+  moves to `#b45c00`, and the material signal inverts from a top highlight to a
+  warm downward shading (ADR 0048).
+- **The eight primitives of the plan's §5.3.** `LaneCard`, `SubTabs`,
+  `SectionHeader`, `PreviewBanner`, `EmptyState`, `DangerRow`, `Toolbar` and
+  `ScopeTag`, with `Card`, `CardFooter`, `CardRows` and `Row` under them. Each
+  reads `--pad-card`, `--row-py` and `--gap-row` rather than a spacing literal,
+  which is what will let the settings sheet redeclare the scale in its own scope
+  without a component knowing about it. 63 new tests.
 - **Frost is a named surface class, and it is not `backdrop-filter`.** Measured
   in WebKitGTK 2.52.4, the engine the Tauri host loads: `backdrop-filter:
   blur(26px)` and the identical alpha with no blur produce the same stripe
@@ -115,6 +142,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The light scheme's muted step missed AA, and nobody had ever measured it.**
+  `--fg-muted: #7d766d` computes to 4.48:1 on the white card — under 4.5:1 by
+  two hundredths. The prototype's design-system screen prints the dark ladder's
+  figures on both sides of its theme switch, so the light values had been chosen
+  by eye against the dark ones' roles and never computed. It moves to `#7a736a`
+  at 4.68:1, which is the dark side's own 4.71:1 rather than an arbitrary darker
+  value. The other five light foregrounds are confirmed by the same measurement
+  (ADR 0056, and ADR 0048 is the record that asked for it).
+- **Every radius on the surface is now one of four.** `--r-window` 10,
+  `--r-card` 8, `--r-control` 6, `--r-small` 4, assigned by what a thing *is*
+  rather than by how big it is. The surface had twelve values and no rule, and a
+  badge, a status tag, a segmented control, a sub-tab row and a chip were all
+  capsules, so every label-shaped thing on screen was a pill. Capsules survive
+  only where the object is physically one — a switch track, a level bar, an
+  avatar, a status dot, a radio. The overlay keeps its own two radii and is
+  untouched.
+- **No scrollbar is drawn anywhere, and nothing replaces it.** Profiles showed
+  five permanent rails at once. A scrollbar is a control you use twice a session
+  and a border you look at continuously, and on a fixed-size desktop window there
+  is no doubt about which region scrolls. The edge fade built as a replacement is
+  not adopted: a static mask dims every scroller's first and last 20 px
+  permanently, and the scroll-driven variant keeps the surface animating.
+- **The window is one flat colour.** The two-layer viewport-fixed body gradient
+  left with the palette — it was two literal dark hexes and could not be carried
+  into the light scheme at all.
+- **The focus ring is in the product, not only in the prototype.** It was
+  `2px solid var(--accent)` at a 2 px offset, which detached it from its control
+  and outweighed the primary action beside it. Now a 1.5 px saturated core flush
+  to the control plus a wide low-alpha halo, with the core on `outline` so a
+  control inside an `overflow: hidden` scroller keeps its ring.
+- **`PermissionsArea.tsx` deleted.** Exported and imported by nothing, and its
+  four cards were a strict subset of `InsertRecoveryArea`'s six.
 - **The settings rework becomes a port, and the port overwrites.** `0.2.2-alpha`
   has no users, so the alias map and the coexisting-surfaces provisions in the
   plan have nobody to serve: a replaced area is now deleted in the commit that

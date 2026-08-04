@@ -1,0 +1,573 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE SHELL GRAMMAR
+
+   Ported 2026-08-04 by Leg 1 of the GUI port relay from
+   docs/prototypes/settings-rework/demo.css, which is the accepted design
+   system written out. Every rule here is 1:1 with the prototype's proposed
+   side; nothing was re-derived.
+
+   WHY THIS IS CSS AND NOT UTILITY CLASSES ON THE COMPONENTS. Three of the
+   rules below cannot be written as a utility on an element, because they are
+   statements about a child's relationship to its parent:
+
+     - the card's inset guard, which exempts every stack that draws separators
+     - the first/last child of a row stack dropping its own edge padding
+     - a stack whose rows carry a ground of their own owning the vertical inset
+
+   §11.17 found the prototype patching exactly these three, screen by screen,
+   with three different inline paddings. Writing them here is what stops the
+   port carrying the patches instead of the rule (ADR 0052).
+
+   AND WHY NOTHING HERE CARRIES A SPACING LITERAL. Every inset, gap and row
+   height reads --pad-card, --row-py, --gap-row or the --s* rhythm. That is
+   what lets the settings sheet redeclare the scale in its own scope (§11.22)
+   without a single component knowing about it. A primitive that hardcodes
+   20 px cannot be put in a sheet.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     SECTION — title plus one line, outside the card
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-sec { display: flex; flex-direction: column; gap: var(--s3); }
+  .ws-sec-head {
+    display: flex; align-items: baseline; gap: var(--s3);
+    padding-left: 2px;
+  }
+  .ws-sec-head h2 {
+    font-stretch: var(--w-lead);
+    letter-spacing: var(--ls-lead);
+    font-size: var(--t-lead);
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .ws-sec-head p {
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+  .ws-sec-head .ws-sec-action { margin-left: auto; align-self: center; }
+  .ws-sec-body { display: flex; flex-direction: column; gap: var(--gap-row); }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     CARD — the grouping primitive. Elevation is background, never shadow.
+
+     THE CARD OWNS ITS INSET, AND THE ITEM CARRIES THE HORIZONTAL HALF.
+     Until the eleventh prototype pass the card paid padding on all four sides,
+     so every row's hairline started --pad-card in from the left edge and
+     stopped the same distance short of the right one: twenty pixels of surface
+     above the line, twenty below, and a divider floating between them attached
+     to nothing. macOS runs the separator to the group's edge, which is what
+     makes a System Settings group read as one object with divisions rather
+     than as a container with contents.
+
+     So the card keeps only its vertical padding, every separated stack spans
+     the full width, and each ITEM inside the stack pays the horizontal inset —
+     which puts every row's content on the same vertical line as the card's
+     heads and footers while letting the line reach both edges. ADR 0052.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-card {
+    background: var(--bg-surface);
+    border: 1px solid transparent;
+    border-radius: var(--r-card);
+    padding: var(--pad-card) 0;
+    box-shadow: var(--edge-light);
+    overflow: hidden;
+    /* §6 P7: no hover transition on a card border. There is no card border to
+       transition — elevation is the background step, declared once. */
+  }
+
+  /* Everything that is NOT a separated stack keeps the inset it always had,
+     because only a stack has a separator to run to the edge. Without this, a
+     card head, a footer action and a paragraph all sit flush against the
+     rounded corner.
+
+     Adding a stack that draws separators means adding it to this list. That is
+     the maintenance cost of the arrangement and it is deliberate: the
+     alternative is a blanket rule that puts heads and footers on the corner. */
+  .ws-card > :not(.ws-rows):not(.ws-list):not(.ws-lane):not(.ws-scale) {
+    padding-left: var(--pad-card);
+    padding-right: var(--pad-card);
+  }
+
+  .ws-card-head { display: flex; flex-direction: column; gap: 3px; }
+  .ws-card-head h3 {
+    font-stretch: var(--w-note);
+    letter-spacing: var(--ls-note);
+    font-size: var(--t-note);
+    font-weight: 600;
+    color: var(--fg);
+  }
+  /* One measure for prose in a card, so a description and a row hint below it
+     wrap on the same column. Two measures read as two typographic systems. */
+  .ws-card-head p {
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+    color: var(--fg-dim);
+    max-width: 62ch;
+  }
+  .ws-card-head + * { margin-top: var(--s3); }
+
+  /* Only against the card's own edge. A stack that follows a head keeps its
+     padding, because the head is content, not an edge. */
+  .ws-card > :is(.ws-rows, .ws-list, .ws-lane):first-child > :first-child {
+    padding-top: 0;
+  }
+  .ws-card > :is(.ws-rows, .ws-list, .ws-lane):last-child > :last-child {
+    padding-bottom: 0;
+  }
+
+  /* A STACK WHOSE ROWS CARRY A GROUND OF THEIR OWN OWNS THE VERTICAL PADDING.
+     The rule above works for rows because a row has no background: dropping
+     the first row's own top padding leaves the card's inset standing as the
+     group's top edge, and nothing paints in it. A tinted row paints, so the
+     same arrangement leaves an untinted band above the first row's colour and
+     the tint reads as floating inside the group rather than as one row of it.
+     There the stack runs to the card's edge, each row keeps its own vertical
+     padding, and `overflow: hidden` clips the result to the corner radius. */
+  .ws-card:has(> .ws-rows[data-tinted]:only-child) { padding: 0; }
+
+  /* THE ACTION THAT ACTS ON A CARD'S CONTENT IS A FOOTER, NOT A FLEX ROW WITH
+     A GUESSED PADDING. This component replaces three different inline paddings
+     that had grown in the prototype — `padding-top: 12px` on Profiles,
+     `padding: 0 0 16px` on Agents and Diagnostics, and nothing at all
+     everywhere else. */
+  .ws-card-foot {
+    display: flex; align-items: center; gap: var(--s2);
+    flex-wrap: wrap;
+    margin-top: var(--s4);
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     ROW STACK
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-rows { display: flex; flex-direction: column; }
+
+  .ws-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: var(--row-py) var(--pad-card);
+    border-bottom: 1px solid var(--border);
+    min-height: 0;
+  }
+  /* The last row in a group has nothing under it to be separated from, and a
+     line against the group's bottom edge draws a second border a pixel inside
+     the first one. */
+  .ws-rows > .ws-row:last-child { border-bottom: none; }
+
+  .ws-row-text {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .ws-row-text > b {
+    font-stretch: var(--w-note);
+    letter-spacing: var(--ls-note);
+    font-size: var(--t-note);
+    font-weight: 500;
+    color: var(--fg);
+  }
+  /* Row hints sit on --fg-dim (7.37:1), never on --fg-muted. Plan §5.1. */
+  .ws-row-hint {
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+    color: var(--fg-dim);
+    max-width: 62ch;
+  }
+  .ws-row-ctl { flex: none; display: flex; align-items: center; gap: var(--s2); }
+  .ws-row[data-layout="stack"] {
+    flex-direction: column; align-items: stretch; gap: var(--s2);
+  }
+
+  /* DangerRow — destructive, red, last in its card. It is a row and not a
+     surface: the tone lives on the label and on the control, because a red
+     ground on a settings row is a warning about the row rather than about
+     what pressing it does. */
+  .ws-row[data-danger] > .ws-row-text > b { color: var(--danger); }
+
+  /* --fg-muted is 4.71:1 on the card and 3.94:1 on the elevated plane, so it
+     is confined to labels and counts on the card. That is also why a row
+     carrying muted text does not change ground on hover. */
+  .ws-muted {
+    color: var(--fg-muted);
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+  }
+  .ws-mono {
+    font-family: var(--font-mono);
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+  }
+  .ws-num { font-variant-numeric: tabular-nums; }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     LANE CARD — one card of radio rows: icon tile, name, one line, radio,
+     badge. Replaces SegmentControl plus one card per provider.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-lane { display: flex; flex-direction: column; }
+  .ws-lane-row {
+    display: flex; align-items: center; gap: var(--s3);
+    padding: var(--row-py) var(--pad-card);
+    border-bottom: 1px solid var(--border);
+    text-align: left; width: 100%;
+    color: var(--fg);
+  }
+  .ws-lane-row:last-child { border-bottom: none; }
+  .ws-lane-row[disabled] { opacity: 0.5; pointer-events: none; }
+
+  .ws-lane-tile {
+    width: 30px; height: 30px; flex: none;
+    border-radius: var(--r-card);
+    background: var(--bg-inset);
+    display: grid; place-items: center;
+    color: var(--fg-dim);
+  }
+  .ws-lane-tile svg { width: 15px; height: 15px; }
+  .ws-lane-row[aria-checked="true"] .ws-lane-tile {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .ws-lane-text {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .ws-lane-text b {
+    font-stretch: var(--w-note);
+    letter-spacing: var(--ls-note);
+    font-size: var(--t-note);
+    font-weight: 500;
+    display: flex; align-items: center; gap: var(--s2);
+  }
+  .ws-lane-text span {
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+
+  /* A CONTROL THAT MUST LOOK CENTRED IS DRAWN ON INTEGERS.
+     Every number here is even and the border is a whole pixel. The first build
+     was 17 px with a 1.5 px border: an odd box has no integer centre, and a
+     fractional border snaps to different device pixels on the left and the
+     right, so the dot sat visibly off-centre. 16 − 2×2 = 12 px of content with
+     an 8 px dot leaves exactly 2 px on every side, at any device pixel ratio. */
+  .ws-radio {
+    width: 16px; height: 16px; flex: none;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    display: grid; place-items: center;
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .ws-radio::after {
+    content: "";
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: scale(0);
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  .ws-lane-row[aria-checked="true"] .ws-radio { border-color: var(--accent); }
+  .ws-lane-row[aria-checked="true"] .ws-radio::after { transform: scale(1); }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     SUB-TABS — a pill row under a section header. Depth goes here, never into
+     the sidebar (§4.3 rule 2).
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-subtabs {
+    display: flex; gap: var(--s1);
+    padding: 2px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--r-control);
+    align-self: flex-start;
+  }
+  .ws-subtabs button {
+    padding: 5px 13px;
+    border-radius: var(--r-small);
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+    font-weight: 500;
+    color: var(--fg-dim);
+    white-space: nowrap;
+    transition: color var(--dur-fast) var(--ease),
+                background-color var(--dur-fast) var(--ease);
+  }
+  .ws-subtabs button:hover { color: var(--fg); }
+  .ws-subtabs button[aria-selected="true"] {
+    background: var(--bg-elevated);
+    color: var(--fg);
+    font-weight: 550;
+  }
+
+  /* A rule inside the pill row, for a tab that is not the same kind of thing
+     as the ones before it. Cheaper than a second bar and cheaper than a
+     heading: the entries stay one control and the eye still gets told where
+     the category ends. 1 px, inset from the pill's own edges, so it divides
+     the run rather than splitting it into two controls (§11.30, §11.31). */
+  .ws-subtabs-rule {
+    align-self: stretch;
+    width: 1px;
+    margin: 4px 5px;
+    background: var(--border-strong);
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     PREVIEW BANNER — a preview says so, on the surface, every time.
+
+     A STRIP, NOT A BOX (§11.47). It was a dashed card at about 60 px on eleven
+     screens, which on the three that need it most was a third of everything
+     above the fold — spent on a fact taken in once and scrolled past forever
+     after. The dashed border went with the box: the chip already says the
+     status, and a dashed rule around a single line reads as an unfinished
+     control rather than as a caveat.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-banner {
+    display: flex; align-items: center; gap: var(--s2);
+    min-height: 26px;
+    font-stretch: var(--w-micro);
+    letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-banner-tag {
+    display: inline-flex; align-items: center; gap: 5px; flex: none;
+    height: 19px; padding: 0 7px;
+    border-radius: var(--r-small);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+  }
+  .ws-banner-tag svg { width: 11px; height: 11px; color: var(--fg-muted); }
+  .ws-banner-text { min-width: 0; line-height: 1.45; }
+
+  /* A withdrawn screen is not a preview of anything. It reads as a stop, not
+     as a promise — and it keeps a border where the preview lost one, because a
+     stop is exactly the case that has to interrupt. */
+  .ws-banner[data-tone="withdrawn"] {
+    padding: 9px var(--s3);
+    border-radius: var(--r-card);
+    border: 1px solid var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, var(--bg-inset));
+    color: var(--fg-dim);
+    font-stretch: var(--w-label);
+    letter-spacing: var(--ls-label);
+    font-size: var(--t-label);
+    align-items: flex-start;
+  }
+  .ws-banner[data-tone="withdrawn"] .ws-banner-tag {
+    background: transparent;
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .ws-banner[data-tone="withdrawn"] .ws-banner-tag svg { color: var(--danger); }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     EMPTY STATE — one line and one action. Never an illustration.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-empty {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: var(--s8) var(--s5);
+    text-align: center;
+  }
+  .ws-empty > svg { width: 22px; height: 22px; color: var(--fg-muted); }
+  .ws-empty p {
+    font-stretch: var(--w-note);
+    letter-spacing: var(--ls-note);
+    font-size: var(--t-note);
+    color: var(--fg-dim);
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     TOOLBAR — filters on one line above the list they act on.
+
+     Filters are not settings. The shipped History spends a card of labelled
+     rows on a search box, a status select and a toggle; here they sit on one
+     line directly above the list, which is where every list view in macOS puts
+     them. The count moves to the section header, because a count is the result
+     of the filter, not another filter.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-toolbar {
+    display: flex; align-items: center; gap: var(--s2);
+    flex-wrap: wrap;
+  }
+  .ws-toolbar-right { margin-left: auto; }
+  /* Unscoped from the toolbar deliberately: the same search affordance is
+     needed inside a note, and the alternative is an inline
+     `position:relative;display:flex` at the call site — the class of patch
+     this grammar exists to delete. */
+  .ws-search { position: relative; flex: 1; min-width: 190px; display: flex; }
+  .ws-search > svg {
+    position: absolute; left: 9px; top: 50%;
+    transform: translateY(-50%);
+    width: 13px; height: 13px;
+    color: var(--fg-muted);
+    pointer-events: none;
+  }
+  .ws-search input { width: 100%; padding-left: 27px; }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     BADGE, DOT, SCOPE TAG
+
+     A BADGE IS FOR A STATUS THAT IS NOT EXPECTED. An expected status is a dot
+     and a word, or nothing (§11.20). Badges live in a fixed right-aligned
+     column, not in the flow (§11.28) — a row that is both "Clipboard only" and
+     "Audio swept" otherwise pushes its actions left by the width of whatever
+     it happened to say, so every row in a list ends its actions at a different
+     x.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 20px; padding: 0 8px;
+    border-radius: var(--r-small);
+    font-stretch: var(--w-micro);
+    letter-spacing: 0.01em;
+    font-size: var(--t-micro);
+    font-weight: 600;
+    background: var(--bg-elevated);
+    color: var(--fg-dim);
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .ws-badge[data-tone="success"] {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 14%, transparent);
+  }
+  .ws-badge[data-tone="warning"] {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .ws-badge[data-tone="danger"] {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+  }
+  /* Tinted, not filled. A solid accent badge is the same weight as the primary
+     button, and these carry "changed", "Active" and "Insert at cursor" —
+     labels, not actions. When a label and the one button you can press are the
+     same colour at the same saturation, the button stops being findable. */
+  .ws-badge[data-tone="accent"] {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .ws-badge[data-tone="plan"] {
+    color: var(--fg-muted);
+    background: transparent;
+    border-color: var(--border);
+  }
+
+  .ws-dot {
+    width: 7px; height: 7px; flex: none;
+    border-radius: 50%;
+    background: var(--fg-muted);
+  }
+  .ws-dot[data-tone="success"] { background: var(--success); }
+  .ws-dot[data-tone="warning"] { background: var(--accent); }
+  .ws-dot[data-tone="danger"] { background: var(--danger); }
+
+  /* Half the shipped settings are per-profile in the runtime and global in the
+     presentation, which is how ADR 0024's second writable mode control
+     happened. Any row whose value belongs to the active profile says so and
+     links to it — one tag, always the same shape, so "what stays global" is
+     readable at a glance rather than learned by accident (§11.7). */
+  .ws-scope {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 20px; padding: 0 8px;
+    border-radius: var(--r-small);
+    border: 1px solid var(--border);
+    font-stretch: var(--w-micro);
+    letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro);
+    font-weight: 600;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    transition: color var(--dur-fast) var(--ease),
+                border-color var(--dur-fast) var(--ease);
+  }
+  .ws-scope:hover { color: var(--fg); border-color: var(--border-strong); }
+  .ws-scope svg { width: 10px; height: 10px; }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     FROST — ADR 0051. A pair: the panel catches the light, the layer behind it
+     recedes. Never `backdrop-filter`, which is inert in the shipped WebKitGTK
+     while @supports reports it as available.
+
+     THE RECEDING LAYERS NEST, THEY ARE NOT PARALLEL. `.ws-frost-shell` is the
+     application and recedes behind a sheet; `.ws-frost-stack` is the
+     application plus the sheet and recedes behind the palette. Opening the
+     palette from inside settings takes both back one step, which is the only
+     arrangement in which the depth order stays true.
+
+     EACH BLURRED LAYER CARRIES ITS OWN OPAQUE GROUND. A blur samples the
+     neighbourhood of each pixel, so at the edge of a blurred element it
+     samples whatever lies outside it — with nothing there it fades, drawing a
+     soft rim just inside the window edge and eating the corner radius.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-frost-shell,
+  .ws-frost-stack {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    transition: filter var(--dur-base) var(--ease);
+  }
+  .ws-frost-shell {
+    background-color: var(--bg-base);
+    background-image: var(--window-bg-image);
+    background-attachment: var(--window-bg-attach);
+  }
+  [data-frost-shell] .ws-frost-shell,
+  [data-frost-stack] .ws-frost-stack {
+    filter: blur(var(--frost-blur)) saturate(var(--frost-sat));
+  }
+
+  /* The scrim darkens; the receding is done by the layer behind it. */
+  .ws-frost-scrim { background: var(--frost-scrim); }
+
+  /* THE PANEL IS THE OTHER HALF OF THE MATERIAL. Four values and they are one
+     material: a translucent fill that takes the blurred colour of whatever the
+     window was showing, a sheen where light enters the sheet, a lit leading
+     edge, and a cast shadow that says the sheet is above rather than inside.
+     The fill sits UNDER the sheen in the background stack, which is the order
+     light actually arrives in; reversed, the sheen tints the fill instead of
+     lying on it and the panel reads as painted. */
+  .ws-frost-panel {
+    background: var(--frost-sheen), var(--frost-fill);
+    box-shadow:
+      inset 0 1px 0 var(--frost-edge),
+      var(--elev-sheet);
+  }
+
+  /* IT DEGRADES BY DESIGN, NOT BY FALLBACK. The fill goes opaque and the
+     window behind it is left sharp; nothing else about the panel changes,
+     because nothing else about it depended on the frost. A user who asks for
+     less transparency gets a settings palette, not a degraded one. */
+  @media (prefers-reduced-transparency: reduce) {
+    .ws-frost-panel { background: var(--bg-surface); }
+    [data-frost-shell] .ws-frost-shell,
+    [data-frost-stack] .ws-frost-stack { filter: none; }
+  }
+  /* A blur that fades in is a blur rasterised on every intermediate frame.
+     Reduced motion takes the state without the transit. */
+  @media (prefers-reduced-motion: reduce) {
+    .ws-frost-shell,
+    .ws-frost-stack { transition: none; }
+  }
+}

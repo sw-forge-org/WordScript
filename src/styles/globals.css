@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* The shell grammar — the card, the row stack and the eight primitives of plan
+   §5.3, ported from the prototype. It lives in @layer components, so a Tailwind
+   utility at a call site still wins over it. */
+@import "./shell.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -36,120 +40,268 @@
   src: url("../../assets/fonts/ibm-plex-mono-500.woff2") format("woff2");
 }
 
-/* ── Design tokens v2 ───────────────────────────────────────────────────────── */
-/* Quellen: UI-UX-Pro-Max "Operation orange on dark", macOS HIG, Tauri v2 APIs  */
+/* ── Design tokens v3 — the settings-rework port ───────────────────────────────
+   Written 2026-08-04 by Leg 1 of the GUI port relay
+   (docs/handoffs/HANDOFF_gui-port-relay.md). The source is the accepted
+   prototype at docs/prototypes/settings-rework/demo.css, which IS the design
+   system: this file carries its `[data-palette="after"]` block, its scale, its
+   material and its light scheme, and nothing here was re-derived from memory.
+
+   THE OVERLAY IS NOT ON THIS LADDER AND CANNOT REACH IT (plan §11.14).
+   `overlay-pill.css` declares its own `--ov-*` set as literals and references
+   no token from this file; `overlay-shell.css` references none at all. No value
+   below can move the overlay, which is why the guard for it is a look in the
+   native host rather than a pinning job.
+
+   The scheme is written on <html data-theme>, always as a resolved value —
+   `dark` or `light`, never `system`. `system` is a deferral resolved against
+   `prefers-color-scheme` at render time and re-resolved when the OS changes
+   (ADR 0048); a value sampled once at boot is a guess that goes stale. With no
+   attribute at all the ladder below is dark, which is what the overlay window
+   and every test render get. */
 
 :root {
-  /* ── Backgrounds ── */
-  --bg: #0a0d11;
-  --bg-elevated: #141a20;
-  --sidebar: rgba(13, 17, 22, 0.94);
-  /* Sidebar surface: eine Nuance dunkler als der Content-Bereich */
-  --sidebar-bg: color-mix(in srgb, var(--bg) 80%, black);
+  /* ── The ladder — plan §5.1, prototype [data-palette="after"] ──────────────
+     L*: sidebar 6.4 · window 10.3 · inset 7.3 · card 19.0 · elevated 24.6.
+     Measured on the card: fg 11.80:1, fg-dim 7.37:1, fg-muted 4.71:1,
+     accent 6.47:1. `--bg-inset` is new to the product and is what a text
+     input, a well, a log or a code block sits on.
 
-  /* ── Surfaces (Elevation durch Background, nicht Shadow) ── */
-  /* Cards sit a clear step above the window so grouped forms read as native
-     macOS "inset" groups (System Settings idiom): card is visibly lighter than
-     the window background + a hairline ring + a soft drop shadow (darwin-ui). */
-  --surface: rgba(30, 39, 48, 0.92);
-  --surface-elevated: #1c2127;
-  --surface-strong: #28333d;
-  --surface-soft: rgba(245, 206, 123, 0.08);
+     `--bg-elevated` was declared twice in this block before the port — once as
+     #141a20 and again as var(--surface-strong), the first dead by shadowing.
+     One declaration now. */
+  --bg-sidebar:  #141416;
+  --bg-base:     #1c1c1e;
+  --bg-inset:    #161617;
+  --bg-surface:  #2e2e31;
+  --bg-elevated: #3a3a3e;
 
-  /* ── Background layers (Home / Shell v2 design system) ── */
-  /* 3 explicit layers, aliased onto existing palette: base = window,
-     surface = cards, elevated = hover/active. Use these names in new UI work
-     instead of raw --bg / --surface-* values. */
-  --bg-base: var(--bg);
-  --bg-surface: var(--surface-elevated);
-  --bg-elevated: var(--surface-strong);
+  --border:        rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
 
-  /* ── Foregrounds ── */
-  --fg: #f4f1ea;
-  --fg-dim: #a4b1bd;
-  --fg-muted: #707e8b;
+  --fg:       #f2efe9;
+  --fg-dim:   #c2bfb8;
+  --fg-muted: #9b9892;
 
-  /* ── SW-labs Orange Accent ── */
-  --accent: #e68900;
-  --accent-hover: #ff9800;
-  --accent-strong: #f5a623;
-  --accent-soft: rgba(230, 137, 0, 0.15);
-  --accent-muted: #2c1e16;
-  --accent-glow: rgba(230, 137, 0, 0.25);
-  --accent-glow-strong: rgba(230, 137, 0, 0.40);
+  /* SW forge orange, lifted one step for the lighter ground: #e68900 drops to
+     5.1:1 against the proposed card. */
+  --accent:      #ff9c2b;
+  --accent-soft: rgba(255, 156, 43, 0.16);
+  --on-accent:   #1c1c1e;
 
   /* ── Semantic ── */
-  --green: #81d6ae;
-  --red: #ff7a6b;
-  --orange: #e68900;
-  --voice: #87e6d7;
-  --voice-soft: rgba(230, 137, 0, 0.18);
+  --success: #81d6ae;
+  --danger:  #ff7a6b;
+  --voice:   #87e6d7;
 
-  /* ── Buttons ── */
-  --btn-bg: #202a33;
-  --btn-primary-bg: var(--accent);
-  --btn-primary-fg: #0f1418;
+  /* The window is one flat colour, like System Settings. The two-layer
+     viewport-fixed gradient is gone with the palette (§5.1, §6 P4): a dark
+     gradient cannot be carried into the light scheme at all, so this is a
+     token rather than a rule. */
+  --window-bg-image: none;
+  --window-bg-attach: scroll;
 
-  /* ── Borders (hairlines: low-alpha 1px, macOS style) ── */
-  --border: rgba(255, 255, 255, 0.13);
-  --border-strong: rgba(255, 255, 255, 0.20);
+  /* ── Radius — the ladder, plan §11.32 ─────────────────────────────────────
+     Four steps assigned by what a thing IS, not by how big it is. The surface
+     had twelve values and no rule, and the aggregate read soft to the point of
+     unseriousness. Capsules survive only where the object is physically a
+     capsule — a switch track and its knob, a level bar, a count bubble, an
+     avatar, a status dot, a radio, a round mic button. Everything that is a
+     rectangle with text in it is a rectangle.
 
-  /* ── Material Lights ── */
+     The overlay keeps its own --ov-radius-compact: 999px and
+     --ov-radius-tall: 14px. It is a capsule by design and out of scope. */
+  --r-window:  10px;
+  --r-card:     8px;
+  --r-control:  6px;
+  --r-small:    4px;
+  --r-round:  999px;
+
+  /* ── Material — plan §15.1 ────────────────────────────────────────────────
+     Elevation says which PLANE a surface is on and that stays a background
+     step. This is the other half: how a surface takes light. One hairline,
+     1px, inside, top only — a card that also gets it on the bottom is a bevel.
+     Floating surfaces get a real cast shadow because they genuinely are above
+     the plane; cards never do. Replaces the six shadow literals this file
+     carried, which had accumulated without a rule between them. */
+  --edge-light:        inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --edge-light-strong: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  --elev-raised:
+    0 6px 18px rgba(0, 0, 0, 0.4),
+    var(--edge-light);
+  --elev-pop:
+    0 14px 32px -8px rgba(0, 0, 0, 0.58),
+    0 1px 4px rgba(0, 0, 0, 0.4),
+    var(--edge-light-strong);
+  --elev-window:
+    0 24px 70px rgba(0, 0, 0, 0.55),
+    var(--edge-light-strong);
+  --elev-sheet:
+    0 32px 80px -12px rgba(0, 0, 0, 0.7),
+    0 2px 10px rgba(0, 0, 0, 0.34),
+    var(--edge-light-strong);
+
+  /* ── Frost — ADR 0051. A pair, never a plane, never backdrop-filter ───────
+     The panel goes translucent and the window behind it recedes; neither half
+     is the material alone. The blur runs on the layer BEHIND through
+     `filter: blur()`, because `backdrop-filter` is inert in WebKitGTK 2.52.4
+     while @supports reports it as available. See .ws-frost-* below. */
+  --frost-blur: 2px;
+  --frost-sat:  0.8;
+  --frost-scrim: rgba(0, 0, 0, 0.5);
+  --frost-fill: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  --frost-edge: rgba(255, 255, 255, 0.16);
+  --frost-sheen: linear-gradient(148deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.022) 38%,
+    rgba(255, 255, 255, 0) 72%);
+
+  /* ── Material lights (used by .material and the nav icon tile) ── */
   --specular: rgba(255, 255, 255, 0.06);
   --specular-strong: rgba(255, 255, 255, 0.10);
   --pressed: rgba(0, 0, 0, 0.35);
   --pressed-strong: rgba(0, 0, 0, 0.45);
 
-  /* ── Shadows (macOS card elevation = hairline ring + soft drop, darwin-ui) ── */
-  --shadow-pill: 0 8px 32px rgba(0, 0, 0, 0.25);
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.4);
-  --shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.36);
-  --shadow-lg: 0 22px 60px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 14px 30px rgba(0, 0, 0, 0.2);
-  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.40);
+  /* Resolved where it is painted, so one declaration serves every scheme. */
+  --focus-halo: color-mix(in srgb, var(--accent) 18%, transparent);
 
-  /* ── Radius ── */
-  --radius-control: var(--radius-button);
-  --radius-card: 10px;
-  --radius-button: 8px;
-  --radius-toggle: 8px;
-  --radius-badge: 4px;
-  --radius-pill: 20px;
-  --radius-lg: 24px;
-  --radius-md: 16px;
-  --radius-sm: 10px;
-  --radius-modal: 16px;
+  /* ── Spacing — 4 px rhythm ── */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 20px; --s6: 24px; --s7: 32px; --s8: 40px;
 
-  /* ── Spacing (4pt Grid) ── */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
+  /* ── Structure — the Standard calibration, settled by review 2026-08-02 ────
+     These are the values a surface reads instead of a literal, which is what
+     lets the settings sheet redeclare them at its own scale (§11.22) without a
+     single component knowing about it. A primitive that hardcodes 20px cannot
+     be put in a sheet. */
+  --pad-card: var(--s5);
+  --row-py: 13px;
+  --gap-block: var(--s7);
+  --gap-row: var(--s3);
+  --nav-w: 232px;
+  --nav-row-h: 32px;
+  --content-pad: var(--s7);
+  --content-max: 760px;
 
-  /* ── Motion ── */
-  --duration-fast: 140ms;
-  --duration-base: 200ms;
-  --duration-slow: 320ms;
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Accent reach at Standard: the primary action, the selected radio, the
+     active nav icon and the segment thumb's label. Nothing else. */
+  --nav-active-bg: var(--bg-elevated);
+  --nav-active-fg: var(--fg);
+  --nav-active-icon: var(--accent);
 
-  /* ── Typography ── */
+  /* ── Motion — plan §5.4. transform and opacity only ── */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ── Typography ─────────────────────────────────────────────────────────── */
   --font-display: "Archivo", "SF Pro Display", "Segoe UI Variable Display", sans-serif;
   --font: "Archivo", "SF Pro Text", "Segoe UI Variable", sans-serif;
   --font-mono: "IBM Plex Mono", "SF Mono", "Cascadia Code", "Consolas", monospace;
 
-  --text-display-lg: 28px;
+  /* The scale: 11, 12, 13, 14, 16, 20, 28. 13 px is a named step because it
+     was used 28 times in the prototype before it was in the scale — it is what
+     lets a card title sit BELOW body size and still outrank it, on weight
+     rather than on size, which is how a dense settings surface keeps a heading
+     from shouting. 11 px is for key caps, counts and group headers and never
+     carries prose. */
+  --t-micro: 11px;
+  --t-label: 12px;
+  --t-note:  13px;
+  --t-body:  14px;
+  --t-lead:  16px;
+  --t-title: 20px;
+  --t-hero:  28px;
+
+  /* Optical size. One face, six sizes, six shapes: small text needs more
+     width, more tracking and more weight to hold its counters open, large text
+     needs less of all three. Archivo's width axis pays for the difference
+     directly. Nothing past ~106%, or it stops reading as the same face. */
+  --w-micro:   104%;  --ls-micro:   0.012em;  --wt-micro:  520;
+  --w-label:   102%;  --ls-label:   0.006em;  --wt-label:  500;
+  --w-note:    101%;  --ls-note:    0.002em;  --wt-note:   400;
+  --w-body:    100%;  --ls-body:    0;        --wt-body:   400;
+  --w-lead:     99%;  --ls-lead:   -0.006em;  --wt-lead:   400;
+  --w-title:    97%;  --ls-title:  -0.016em;  --wt-title:  600;
+  --w-hero:     96%;  --ls-hero:   -0.026em;  --wt-hero:   600;
+
+  /* ── Pre-port aliases ─────────────────────────────────────────────────────
+     Everything below is an OLD name resolved onto the ladder above, so the
+     shipped areas keep rendering while Legs 2 and 3 port them. They are not a
+     second token set and nothing new may use them; each disappears with the
+     last screen that reads it. */
+  --bg: var(--bg-base);
+  --sidebar: var(--bg-sidebar);
+  --sidebar-bg: var(--bg-sidebar);
+  --surface: var(--bg-surface);
+  --surface-elevated: var(--bg-surface);
+  --surface-strong: var(--bg-elevated);
+  --surface-soft: color-mix(in srgb, var(--accent) 8%, transparent);
+  --surface-1: var(--bg-elevated);
+  --surface-2: var(--bg-surface);
+  --surface-3: var(--bg-elevated);
+  --hairline: var(--border);
+  --hairline-strong: var(--border-strong);
+
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, white);
+  --accent-strong: var(--accent);
+  --accent-muted: color-mix(in srgb, var(--accent) 18%, var(--bg-inset));
+  --accent-glow: color-mix(in srgb, var(--accent) 25%, transparent);
+  --accent-glow-strong: color-mix(in srgb, var(--accent) 40%, transparent);
+  --green: var(--success);
+  --red: var(--danger);
+  --orange: var(--accent);
+  --voice-soft: color-mix(in srgb, var(--voice) 18%, transparent);
+
+  --btn-bg: var(--bg-elevated);
+  --btn-primary-bg: var(--accent);
+  --btn-primary-fg: var(--on-accent);
+
+  --shadow-pill: var(--elev-pop);
+  --shadow-modal: var(--elev-sheet);
+  --shadow-dropdown: var(--elev-pop);
+  --shadow-lg: var(--elev-window);
+  --shadow-md: var(--elev-raised);
+  /* A card takes light, it does not float. Was a 0 2px 8px cast shadow. */
+  --shadow-card: var(--edge-light);
+
+  --radius-window: var(--r-window);
+  --radius-card: var(--r-card);
+  --radius-control: var(--r-control);
+  --radius-button: var(--r-control);
+  --radius-toggle: var(--r-control);
+  --radius-badge: var(--r-small);
+  --radius-pill: var(--r-small);
+  --radius-lg: var(--r-window);
+  --radius-md: var(--r-card);
+  --radius-sm: var(--r-control);
+  --radius-modal: var(--r-window);
+
+  --space-1: var(--s1);
+  --space-2: var(--s2);
+  --space-3: var(--s3);
+  --space-4: var(--s4);
+  --space-5: var(--s5);
+  --space-6: var(--s6);
+  --space-8: var(--s7);
+  --space-10: var(--s8);
+
+  --duration-fast: var(--dur-fast);
+  --duration-base: var(--dur-base);
+  --duration-slow: 320ms;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --text-display-lg: var(--t-hero);
   --text-display: 24px;
   --text-title: 18px;
   --text-body-lg: 15px;
-  --text-body: 13px;
-  --text-body-sm: 12px;
-  --text-label: 11px;
+  --text-body: var(--t-note);
+  --text-body-sm: var(--t-label);
+  --text-label: var(--t-micro);
   --text-caption: 10px;
+
   --sidebar-foreground: hsl(240 5.3% 26.1%);
   --sidebar-primary: hsl(240 5.9% 10%);
   --sidebar-primary-foreground: hsl(0 0% 98%);
@@ -159,55 +311,155 @@
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 
-/* ── shadcn/ui semantic tokens (bridged to WordScript v2 tokens) ─────────────── */
-/* WordScript ships dark-only; semantic names map onto the brand palette above.   */
-:root {
-  --radius: 8px;
+/* ── The light scheme — ADR 0048 ───────────────────────────────────────────────
+   IT IS NOT THE DARK LADDER INVERTED. A dark UI raises a surface by making it
+   lighter than its ground; a light UI cannot, because the card is already white
+   and white does not go further. So a light UI raises a surface by moving the
+   GROUND down: the window sits slightly grey, the card is pure white and comes
+   forward, and the sidebar recedes BELOW the window instead of above it.
+   Inverting produces a light theme whose cards are darker than the window,
+   which is the tell in every theme that was generated rather than designed.
 
-  --background: var(--bg);
+   THE ACCENT HAS TO MOVE. #ff9c2b measures 2.1:1 on white — the hex that
+   carries the whole identity on a dark ground is not readable as text on a
+   bright one. #b45c00 is the same hue at a lightness that clears AA, and
+   --on-accent flips to white with it, so the filled primary button is the dark
+   theme's mirror rather than a bright slab with unreadable text on it.
+
+   THE MATERIAL SIGNAL INVERTS. On white there is no highlight available, so
+   --edge-light becomes a soft downward shading that reads as thickness. Shadows
+   are warm: a neutral black shadow on a white surface reads as dirt. */
+:root[data-theme="light"] {
+  --bg-sidebar:  #eceae7;
+  --bg-base:     #f5f3f0;
+  --bg-inset:    #eae7e3;
+  --bg-surface:  #ffffff;
+  --bg-elevated: #f2efeb;
+
+  --border:        rgba(24, 20, 14, 0.13);
+  --border-strong: rgba(24, 20, 14, 0.22);
+
+  --fg:       #1a1815;
+  --fg-dim:   #55504a;
+  /* #7d766d until 2026-08-04, when the gallery measured it for the first time
+     and it came out at 4.48:1 on the white card — under AA by two hundredths.
+     The dark ladder's whole argument for its own muted step is that it clears
+     AA (§5.1), so a light scheme where the same token does not is that defect
+     mirrored. #7a736a is 4.68:1, which puts the light side at the dark side's
+     4.71:1 rather than at an arbitrary darker value. ADR 0056. */
+  --fg-muted: #7a736a;
+
+  --accent:      #b45c00;
+  --accent-soft: rgba(180, 92, 0, 0.11);
+  --on-accent:   #ffffff;
+
+  --success: #1e6f4c;
+  --danger:  #b3271b;
+  --voice:   #17706a;
+
+  --specular: rgba(255, 255, 255, 0.9);
+  --specular-strong: rgba(255, 255, 255, 1);
+  --pressed: rgba(24, 20, 14, 0.08);
+  --pressed-strong: rgba(24, 20, 14, 0.12);
+
+  --edge-light:
+    0 1px 2px rgba(60, 45, 25, 0.05),
+    0 1px 0.5px rgba(60, 45, 25, 0.04);
+  --edge-light-strong:
+    0 1px 3px rgba(60, 45, 25, 0.09);
+
+  --elev-raised:
+    0 6px 16px rgba(52, 40, 22, 0.16),
+    0 0 0 1px rgba(24, 20, 14, 0.06);
+  --elev-pop:
+    0 14px 30px -8px rgba(52, 40, 22, 0.22),
+    0 1px 5px rgba(52, 40, 22, 0.10),
+    0 0 0 1px rgba(24, 20, 14, 0.07);
+  --elev-window:
+    0 24px 60px rgba(52, 40, 22, 0.20),
+    0 0 0 1px rgba(24, 20, 14, 0.08);
+  --elev-sheet:
+    0 32px 70px -14px rgba(52, 40, 22, 0.26),
+    0 3px 12px rgba(52, 40, 22, 0.10),
+    0 0 0 1px rgba(24, 20, 14, 0.07);
+
+  /* Frost is rebuilt here too, and none of the three changes is a flipped
+     number. The fill goes UP (82% → 92%): on a near-white window an 82% panel
+     is the same value as the ground behind it and stops having an edge. The
+     sheen goes almost away, because a white highlight on white is either
+     invisible or a grey smear, and the shadow states the material instead. The
+     scrim cannot carry over at all — half black over a light room is a bruise. */
+  --frost-scrim: rgba(24, 20, 14, 0.26);
+  --frost-fill: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  --frost-edge: rgba(255, 255, 255, 0.7);
+  --frost-sheen: linear-gradient(148deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.14) 42%,
+    rgba(255, 255, 255, 0) 78%);
+}
+
+/* ── shadcn/ui semantic tokens (bridged onto the ladder above) ────────────────
+   These follow the scheme because every one of them resolves through a token
+   that does. Nothing here carries a literal except the hover wash, which is a
+   white overlay in dark and a warm one in light. */
+:root {
+  --radius: var(--r-card);
+
+  --background: var(--bg-base);
   --foreground: var(--fg);
-  --card: var(--surface-elevated);
+  --card: var(--bg-surface);
   --card-foreground: var(--fg);
-  --popover: var(--surface-strong);
+  --popover: var(--bg-elevated);
   --popover-foreground: var(--fg);
   --primary: var(--accent);
-  --primary-foreground: var(--btn-primary-fg);
-  --secondary: var(--btn-bg);
+  --primary-foreground: var(--on-accent);
+  --secondary: var(--bg-elevated);
   --secondary-foreground: var(--fg);
-  --muted: var(--surface-strong);
+  --muted: var(--bg-elevated);
   --muted-foreground: var(--fg-dim);
   /* shadcn "accent" = subtle hover surface, NOT the brand accent (that is --primary) */
   --accent-surface: rgba(255, 255, 255, 0.06);
   --accent-surface-foreground: var(--fg);
-  --destructive: var(--red);
-  --destructive-foreground: #0f1418;
+  --destructive: var(--danger);
+  --destructive-foreground: var(--bg-base);
   --input: var(--border);
   --ring: var(--accent);
 }
 
+:root[data-theme="light"] {
+  --accent-surface: rgba(24, 20, 14, 0.05);
+}
+
 /* ── Tailwind v4 theme bridge (inline = resolve via the vars above at runtime) ── */
 @theme inline {
-  /* Brand + surface palette -> utilities like bg-surface-elevated, text-fg-dim */
-  --color-bg: var(--bg);
+  /* The ladder -> utilities like bg-bg-inset, text-fg-dim, border-border-strong */
+  --color-bg-sidebar: var(--bg-sidebar);
   --color-bg-base: var(--bg-base);
+  --color-bg-inset: var(--bg-inset);
   --color-bg-surface: var(--bg-surface);
   --color-bg-elevated: var(--bg-elevated);
-  --color-sidebar: var(--sidebar);
-  --color-surface: var(--surface);
-  --color-surface-elevated: var(--surface-elevated);
-  --color-surface-strong: var(--surface-strong);
   --color-fg: var(--fg);
   --color-fg-dim: var(--fg-dim);
   --color-fg-muted: var(--fg-muted);
   --color-brand: var(--accent);
-  --color-brand-hover: var(--accent-hover);
-  --color-brand-strong: var(--accent-strong);
   --color-brand-soft: var(--accent-soft);
-  --color-green: var(--green);
-  --color-red: var(--red);
+  --color-on-accent: var(--on-accent);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
   --color-voice: var(--voice);
   --color-border-subtle: var(--border);
   --color-border-strong: var(--border-strong);
+
+  /* Pre-port aliases, retired with the last screen that reads them. */
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-strong: var(--surface-strong);
+  --color-brand-hover: var(--accent-hover);
+  --color-brand-strong: var(--accent-strong);
+  --color-green: var(--green);
+  --color-red: var(--red);
 
   /* shadcn semantic mapping */
   --color-background: var(--background);
@@ -233,12 +485,25 @@
   --font-sans: var(--font);
   --font-mono: var(--font-mono);
 
-  --shadow-card: var(--shadow-card);
+  --shadow-card: var(--edge-light);
+  --shadow-raised: var(--elev-raised);
+  --shadow-pop: var(--elev-pop);
+  --shadow-window: var(--elev-window);
+  --shadow-sheet: var(--elev-sheet);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* The radius ladder as utilities: rounded-window, rounded-card,
+     rounded-control, rounded-small. The four below are the pre-port t-shirt
+     sizes, now resolved onto the ladder instead of onto a calc chain. */
+  --radius-window: var(--r-window);
+  --radius-card: var(--r-card);
+  --radius-control: var(--r-control);
+  --radius-small: var(--r-small);
+  /* The t-shirt sizes resolved onto the same ladder, so `rounded-md` on a
+     button and `rounded-control` on a button are the same 6 px. */
+  --radius-sm: var(--r-small);
+  --radius-md: var(--r-control);
+  --radius-lg: var(--r-card);
+  --radius-xl: var(--r-window);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -282,29 +547,35 @@ body {
   height: 100%;
 }
 
-/* ── Main Window Background ── */
-/* Calm, flat-ish surface (macOS System Settings) with only a whisper of brand
-   warmth at the very top so it never reads as a busy "glow".
-   background-attachment: fixed prevents the gradient from scrolling with the
-   content, so WebKitGTK composites it once instead of every scroll frame. */
+/* ── Main window background ───────────────────────────────────────────────────
+   One flat colour, like System Settings. The two-layer viewport-fixed gradient
+   that stood here is gone with the palette (§5.1, §6 P4): it was two literal
+   dark hexes, so it could not be carried into the light scheme at all, and the
+   window it painted is now the ladder's own --bg-base. */
 body:not(.overlay-window) {
-  background-color: var(--bg);
-  background-image:
-    radial-gradient(120% 55% at 50% -12%, rgba(230, 137, 0, 0.04), transparent 60%),
-    linear-gradient(180deg, #0b0f13 0%, #090c10 100%);
-  background-attachment: fixed;
+  background-color: var(--bg-base);
+  background-image: var(--window-bg-image);
+  background-attachment: var(--window-bg-attach);
 }
 
-/* ── Overlay Window (transparent fuer Glassmorphism) ── */
+/* ── Overlay window (transparent; the pill draws its own faux glass) ── */
 body.overlay-window {
   background: transparent !important;
 }
 
-/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar       { width: 6px; }
-::-webkit-scrollbar-track { background: var(--surface); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+/* ── No scrollbars are drawn anywhere, and nothing replaces them ──────────────
+   Plan §11.28. Profiles showed five permanent 9 px rails at once. A scrollbar
+   is a control you use twice a session and a border you look at continuously,
+   and on a fixed-size desktop window there is no doubt about which region
+   scrolls. An edge fade was built as a replacement and removed: a static mask
+   dims the first and last 20 px of every scroller permanently, and the
+   scroll-driven variant keeps the surface permanently animating. Nothing
+   replaces it. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ── Long-list scroll performance ─────────────────────────────────────────────
    content-visibility: auto lets the WebKit compositor skip paint/layout/style
@@ -360,34 +631,34 @@ body.overlay-window {
   color: var(--fg);
 }
 
-/* ── Focus States ───────────────────────────────────────────────────────────── */
+/* ── Focus ────────────────────────────────────────────────────────────────────
+   Was `2px solid var(--accent)` at `outline-offset: 2px`. Two things made that
+   read as an alarm rather than as a position: the offset detached the ring from
+   the control, so it floated around the object instead of belonging to it, and
+   at full saturation and full width it outweighed the primary action standing
+   next to it — the one thing a focus ring must never do. It says WHERE YOU ARE,
+   not WHAT MATTERS.
+
+   Two layers instead, which is the macOS construction: a thin fully saturated
+   core flush against the control carries the contrast the ring is required to
+   have, and a wide low-alpha halo carries the softness. `outline` for the core
+   rather than `box-shadow`, so a control inside an `overflow: hidden` scroller
+   keeps its ring — the halo may clip, the core may not. */
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--accent);
+  outline-offset: 0;
+  box-shadow: 0 0 0 3.5px var(--focus-halo);
 }
 
-/* ── Utility Classes (Basis) ────────────────────────────────────────────────── */
-.ws-card {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: var(--space-5);
-  transition: border-color 150ms ease-out;
-}
-
-.ws-card:hover {
-  border-color: var(--border-strong);
-}
-
-.ws-card-title {
-  font-size: var(--text-label);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--fg-muted);
-  margin-bottom: var(--space-4);
-}
-
+/* ── Pre-port utility classes ─────────────────────────────────────────────────
+   `.ws-card` and `.ws-card-title` were deleted here on 2026-08-04 by Leg 1 of
+   the GUI port. Nothing referenced either; the card is a component now
+   (`shell/Card.tsx` over `.ws-card` in shell.css), and the old declaration
+   carried three values the port reverses — a 10 px radius, a permanent
+   hairline, and a 150 ms border-color transition on hover that §6 P7 removes.
+   The three below are equally unreferenced but belong to the sidebar and the
+   button, which Leg 3 replaces; they are left for that leg to delete with the
+   surface that would have used them. */
 .ws-sidebar-item {
   display: flex;
   align-items: center;
@@ -471,19 +742,6 @@ body.overlay-window {
   transform: scale(0.97);
 }
 
-/* ── Ported-kit token aliases (scythe domain components: Chat/Notes/FileUpload) ──
-   Additive aliases mapped onto the v2 tokens above so the ported UI kit renders
-   natively without touching the overhaul's existing token set. `--surface-glass`
-   left with the glass utilities on 2026-08-04; the five below are load-bearing
-   across the shell, the ui primitives and AboutTab. */
-:root {
-  --surface-1: var(--bg-elevated);
-  --surface-2: var(--surface-elevated);
-  --surface-3: var(--surface-strong);
-  --hairline: var(--border);
-  --hairline-strong: var(--border-strong);
-}
-
 /* ── The glass utilities are gone ─────────────────────────────────────────────
    `.glass`, `.glass-elevated`, `.glass-strong`, `.glass-subtle`, `.glass-panel`
    and `.ws-pill` were removed on 2026-08-04 (plan §5.3). All six were
@@ -491,13 +749,15 @@ body.overlay-window {
    the property is inert in the shipped WebKitGTK anyway — `@supports` reports
    it as available, so nothing about the failure was visible from a preview.
    Frost, the material that replaces the intent, is `filter: blur()` on the
-   layer BEHIND a floating transient surface and belongs to the palette and the
-   settings sheet only; see ADR 0051 and DESIGN_SYSTEM.md. The overlay keeps
-   its own faux glass in `overlay-pill.css` and is not part of it. */
+   layer BEHIND a floating transient surface; it is built in shell.css and
+   governed by ADR 0051. The overlay keeps its own faux glass in
+   `overlay-pill.css` and is not part of it. */
 
-/* Inner highlight — top edge light for depth */
+/* Inner highlight — top edge light for depth. `--edge-light` is the system's
+   name for this and inverts with the scheme; this class is what the pre-port
+   markup calls it. */
 .inner-light {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: var(--edge-light);
 }
 
 /* ── Material Utilities (macOS-Native) ───────────────────────────────────────── */
@@ -505,7 +765,7 @@ body.overlay-window {
    scroll jank in the settings window. Solid background + inset shadows keep
    the material look without the blur cost. */
 .material {
-  background: var(--surface-2);
+  background: var(--bg-surface);
   box-shadow:
     inset 0 1px 0 var(--specular),
     inset 0 -1px 0 var(--pressed);
