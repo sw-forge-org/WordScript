@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   CardRows,
@@ -28,15 +28,20 @@ import { ALL_SCREENS, SCREEN_GROUPS, findScreen } from "./screens/registry";
  * mounted. This section is scaffolding and retires per screen in the commit
  * that wires it, during Leg 4 (ADR 0057).
  */
-export function Screens() {
+export function Screens({ onLayout }: { onLayout?: (layout?: "pane" | "wide") => void }) {
   const [active, setActive] = useState("");
   const screen = active ? findScreen(active) : undefined;
+
+  /* The content column, not the screen, carries `data-layout` — a pane view
+     gives up the column's measure, padding and block rhythm, and only the
+     column can do that. Reported upward rather than reached for. */
+  useEffect(() => onLayout?.(screen?.layout), [screen?.layout, onLayout]);
 
   const total = ALL_SCREENS.length;
   const done = ALL_SCREENS.filter((entry) => entry.render || entry.alias).length;
 
   return (
-    <div className="flex flex-col gap-[var(--gap-block)]">
+    <div className="ws-screens">
       <Toolbar label="Screen">
         <Select
           value={active}

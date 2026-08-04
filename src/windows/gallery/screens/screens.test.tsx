@@ -8,6 +8,7 @@ import { DeliveryScreen } from "./Delivery";
 import { PrivacyScreen } from "./Privacy";
 import { DiagnosticsScreen } from "./Diagnostics";
 import { AboutScreen } from "./About";
+import { ProfilesScreen } from "./Profiles";
 import { ALL_SCREENS, SCREEN_GROUPS } from "./registry";
 import { HISTORY, RECENT } from "./data";
 
@@ -227,6 +228,50 @@ describe("About & Updates", () => {
     const { container } = render(<AboutScreen />);
     expect(container.querySelector(".ws-stats")).toBeNull();
     expect(screen.getByText("0.2.2-alpha")).toBeInTheDocument();
+  });
+});
+
+describe("Profiles", () => {
+  it("is a pane — one surface, not two cards side by side", () => {
+    const { container } = render(<ProfilesScreen />);
+    expect(container.querySelector(".ws-pane")).not.toBeNull();
+    expect(container.querySelector(".ws-pane-list")).not.toBeNull();
+    expect(container.querySelector(".ws-pane-detail")).not.toBeNull();
+    /* The list column is not a card. Two cards side by side read as two
+       unrelated boxes, which is how the first build of this screen failed. */
+    expect(container.querySelector(".ws-pane-list .ws-card")).toBeNull();
+  });
+
+  it("carries the health flag in the detail header, visible from all five tabs", () => {
+    const { container } = render(<ProfilesScreen />);
+    const head = container.querySelector(".ws-pane-detail-head")!;
+    expect(head.querySelector(".ws-flag")).not.toBeNull();
+    /* It was a card on Defaults, which made a property of the profile look like
+       a property of one tab. */
+    expect(container.querySelector(".ws-card .ws-flag")).toBeNull();
+  });
+
+  it("splits Defaults into two decisions rather than six equal rows", () => {
+    render(<ProfilesScreen />);
+    expect(screen.getByRole("heading", { name: "How this profile writes" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "When a recording stops" })).toBeInTheDocument();
+    /* The ceiling is the runtime's number — stated, not offered. */
+    expect(screen.getByText("13:39")).toBeInTheDocument();
+  });
+
+  it("draws the four lists as a legend, which sets nothing", () => {
+    const { container } = render(<ProfilesScreen />);
+    const legend = container.querySelector(".ws-legend")!;
+    expect(legend.querySelectorAll(".ws-legend-row")).toHaveLength(4);
+    expect(legend.querySelector("input, select, button")).toBeNull();
+  });
+
+  it("keeps a word list as chips rather than as rows with hover actions", () => {
+    const { container } = render(<ProfilesScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Words" }));
+    /* Rows with hover actions imply a record with fields; a term has none. */
+    expect(container.querySelectorAll(".ws-chip-x")).toHaveLength(8);
+    expect(container.querySelector(".ws-list-item")).toBeNull();
   });
 });
 

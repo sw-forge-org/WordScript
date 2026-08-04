@@ -84,6 +84,10 @@ export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
 export { TranscriptRow } from "./TranscriptRow";
 export { OwedList, Owed } from "./Owed";
 export { Log, Diff, DiffPane, DiffMark } from "./Log";
+export {
+  Pane, PaneListHead, PaneSearch, PaneScroll, PaneGroup, PaneRow, PaneListFoot,
+  PanePath, PaneDetailHead, PaneDetailMain, Legend, LegendRow, Flag,
+} from "./Pane";
 export type { LogLevel, LogLine } from "./Log";
 
 export { StatusBadge } from "./StatusBadge";

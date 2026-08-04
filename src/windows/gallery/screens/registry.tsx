@@ -7,6 +7,7 @@ import { DeliveryScreen } from "./Delivery";
 import { PrivacyScreen } from "./Privacy";
 import { DiagnosticsScreen } from "./Diagnostics";
 import { AboutScreen } from "./About";
+import { ProfilesScreen } from "./Profiles";
 
 /**
  * THE SCREEN REGISTRY — the prototype's `NAV`, minus its rig.
@@ -36,6 +37,9 @@ export type ScreenEntry = {
   /** Which surface the prototype draws this screen on. `settings` is a sheet
    *  over the workspace and carries the sheet's own scale (§11.22). */
   surface?: "workspace" | "settings" | "standalone" | "system";
+  /** `pane` is `SCREENS.<id>.layout` in the prototype: the view fills the
+   *  content column and scrolls inside its own two halves. */
+  layout?: "pane" | "wide";
 };
 
 export type ScreenGroup = { group: string; lead: string; screens: ScreenEntry[] };
@@ -52,8 +56,8 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
     screens: [
       { id: "home", surface: "workspace", label: "Home", render: () => <HomeScreen /> },
       { id: "history", surface: "workspace", label: "History", render: () => <HistoryScreen /> },
-      { id: "profiles", surface: "workspace", label: "Profiles" },
-      { id: "context", surface: "workspace", label: "Context", preview: true },
+      { id: "profiles", surface: "workspace", layout: "pane", label: "Profiles", render: () => <ProfilesScreen /> },
+      { id: "context", surface: "workspace", layout: "pane", label: "Context", preview: true },
     ],
   },
   {

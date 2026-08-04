@@ -739,6 +739,24 @@
     container-type: inline-size;
   }
   .ws-content-inner[data-layout="wide"] { max-width: none; }
+  /* A pane view fills the column and scrolls inside its own two halves, so the
+     column gives up its measure, its padding and its block rhythm — the
+     masthead takes the padding back for itself. */
+  .ws-content-inner[data-layout="pane"] {
+    max-width: none;
+    padding: 0;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+  }
+  /* The stage is `display: contents`, so a screen's own masthead is a DOM
+     child of it while being a box child of the column. Both spellings are
+     named, because the product mounts a screen directly and the gallery mounts
+     it through the stage. */
+  .ws-content-inner[data-layout="pane"] > .ws-view-top,
+  .ws-content-inner[data-layout="pane"] .ws-screen-stage > .ws-view-top {
+    padding: var(--content-pad) var(--content-pad) var(--s4);
+  }
 
   /* The gallery's screen stage. It is a handle, not a box: the prototype's
      screen blocks are direct children of its content column, and a wrapper with
@@ -746,6 +764,24 @@
      tree. `display: contents` is what lets a ported screen be diffed against
      the prototype property by property. */
   .ws-screen-stage { display: contents; }
+
+  /* The gallery's Screens section: the picker, then the screen. It carries the
+     column's block rhythm so a ported screen sits at the same rhythm it would
+     in the product, and it grows for a pane screen — a pane is `flex: 1`, and
+     it has to be a flex child of something with a definite height or it
+     collapses to its content. */
+  .ws-screens {
+    display: flex; flex-direction: column;
+    gap: var(--gap-block);
+    min-height: 0;
+  }
+  .ws-content-inner[data-layout="pane"] > .ws-screens { flex: 1; gap: 0; }
+  /* The picker pays its own inset, so taking it out of the flow — which the
+     port verifier does, because it is the rig — leaves the column exactly as
+     the prototype's. */
+  .ws-content-inner[data-layout="pane"] > .ws-screens > .ws-toolbar {
+    padding: var(--content-pad) var(--content-pad) 0;
+  }
 
   /* ── THE SETTINGS SHEET'S OWN SCALE — §11.22 ──────────────────────────────
      Not a media query and not a density: a SCOPE. Everything inside the sheet
@@ -1497,6 +1533,214 @@
     font-weight: 500;
   }
   .ws-link:hover { border-bottom-color: var(--accent); }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     PANE — a list column and its detail, as ONE surface.
+
+     THE LIST IS NOT A CARD. Two cards side by side read as two unrelated boxes
+     with no stated relationship — which is exactly how the first build of
+     Profiles, Notes and Chat failed. The column belongs to the window: it is
+     borderless, sits on the sidebar plane, and is separated by a hairline.
+     Selection in the column governs everything to the right of that hairline.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-pane {
+    display: grid;
+    grid-template-columns: minmax(0, 236px) minmax(0, 1fr);
+    align-items: stretch;
+    min-height: 0;
+    border-top: 1px solid var(--border);
+    flex: 1;
+  }
+  .ws-pane-list {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-right: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-sidebar) 55%, var(--bg-base));
+  }
+  .ws-pane-list-head {
+    display: flex; align-items: center; gap: var(--s2);
+    padding: var(--s3) var(--s3) var(--s2);
+  }
+  .ws-pane-list-head b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 600; color: var(--fg-dim); flex: 1;
+  }
+  .ws-pane-list-head .ws-count {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); font-variant-numeric: tabular-nums;
+  }
+  .ws-pane-search { padding: 0 var(--s3) var(--s2); }
+  .ws-pane-search .ws-field { width: 100%; }
+  .ws-pane-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--s2) var(--s2); }
+  .ws-pane-group { display: flex; flex-direction: column; }
+  .ws-pane-group > label {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 600;
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--fg-muted);
+    padding: var(--s2) 10px 4px;
+  }
+
+  .ws-pane-row {
+    width: 100%;
+    display: flex; align-items: flex-start; gap: 9px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    text-align: left;
+    color: var(--fg-dim);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 52px;
+  }
+  .ws-pane-row:hover { background: var(--bg-surface); color: var(--fg); }
+  .ws-pane-row[aria-current="true"] { background: var(--nav-active-bg); color: var(--nav-active-fg); }
+  .ws-pane-row[aria-current="true"] svg { color: var(--nav-active-icon); }
+  .ws-pane-row svg { width: 15px; height: 15px; margin-top: 2px; color: var(--fg-muted); }
+  .ws-pane-row-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .ws-pane-row-text b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-pane-row-text span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* A state badge goes on the SUB-line, not beside the title. The list column
+     is 236 px wide; a badge next to the title left about ninety pixels for the
+     name, so "Planning — Q3 scope" rendered as "Planning — …". */
+  .ws-pane-row-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .ws-pane-row-meta .ws-badge { height: 16px; padding: 0 6px; font-size: 10px; flex: none; }
+  /* --fg-muted measures 3.94:1 on --bg-elevated, below AA, and the selected row
+     IS --bg-elevated. The rule "muted is confined to the card plane" was
+     written in this file and then broken by the one row every reader looks at.
+     Selected and hovered rows lift their sub-line to --fg-dim. */
+  .ws-pane-row[aria-current="true"] .ws-pane-row-text span,
+  .ws-pane-row:hover .ws-pane-row-text span { color: var(--fg-dim); }
+  /* A note row carries when it happened on the title line, so the preview
+     under it gets the full width instead of competing with a timestamp. */
+  .ws-pane-row .ws-when {
+    flex: none;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); font-variant-numeric: tabular-nums;
+    margin-left: auto; padding-left: var(--s2);
+  }
+  .ws-pane-row-top { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
+  .ws-pane-row-top b { min-width: 0; }
+  .ws-pane-row .ws-pin { color: var(--accent); display: grid; place-items: center; }
+  .ws-pane-row .ws-pin svg { width: 12px; height: 12px; color: var(--accent); margin: 0; }
+
+  /* Where a list's create actions live — the source-list footer, as in Finder
+     or Mail. It takes more than one, because "record a meeting" and "write a
+     note" are two ways to make the same kind of thing and neither is a
+     property of the note that happens to be selected. */
+  .ws-pane-list-foot {
+    padding: var(--s2);
+    border-top: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: var(--s1);
+  }
+  .ws-pane-list-foot .ws-btn { flex: 1 1 auto; justify-content: center; }
+
+  /* Where the folders actually are — a path, not a reassurance, and a control
+     rather than a caption. A path you can read but not change is a statement
+     about somebody else's machine; the row opens the folder picker, which is
+     also the honest place to say that moving the root moves the files. */
+  .ws-pane-path {
+    width: 100%;
+    padding: var(--s2) var(--s3);
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--fg-muted);
+    display: flex; align-items: center; gap: 6px;
+    text-align: left;
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  .ws-pane-path svg { width: 11px; height: 11px; flex: none; }
+  .ws-pane-path span {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+  }
+  .ws-pane-path .ws-chg {
+    font-family: var(--font);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    flex: none; opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  .ws-pane-path:hover { background: var(--bg-surface); color: var(--fg-dim); }
+  .ws-pane-path:hover .ws-chg { opacity: 1; }
+
+  .ws-pane-detail { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  /* The scroller is the body, not the column. The floating bar and the chat
+     panel are positioned against THIS wrapper: against the page they escape the
+     window, and against the scroller they scroll away with the content. */
+  .ws-pane-detail-main { position: relative; flex: 1; min-height: 0; display: flex; }
+  .ws-pane-detail-main > .ws-pane-detail-body { flex: 1; min-width: 0; overflow-y: auto; }
+  .ws-pane-detail-head {
+    padding: var(--s4) var(--content-pad) var(--s3);
+    display: flex; align-items: flex-start; gap: var(--s3);
+    border-bottom: 1px solid var(--border);
+  }
+  /* Two rows once the head carries tabs: identity and windows above, views
+     below. A fourth tab made the single row overflow, and every way of
+     squeezing it back meant cutting content to fit a layout. */
+  .ws-pane-detail-head[data-two] { flex-direction: column; gap: var(--s3); }
+  .ws-pane-detail-row { display: flex; align-items: flex-start; gap: var(--s3); width: 100%; }
+  .ws-pane-detail-head .ws-grow > h2 {
+    font-stretch: var(--w-lead); letter-spacing: var(--ls-lead); font-size: var(--t-lead);
+    font-weight: 600;
+  }
+  .ws-pane-detail-head .ws-grow > p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim); margin-top: 2px;
+  }
+  .ws-pane-detail-tabs { width: 100%; }
+  .ws-pane-detail-body {
+    padding: var(--s4) var(--content-pad) var(--content-pad);
+    display: flex; flex-direction: column; gap: var(--gap-row);
+  }
+  /* A SCROLL CONTAINER MUST NOT SHRINK WHAT IT SCROLLS. This is a column flex
+     box with a definite height and `overflow-y: auto`, and its children took
+     the default `flex-shrink: 1` — so instead of overflowing and scrolling,
+     three cards needing 827 px were squeezed into 614 and each clipped its own
+     last row at `overflow: hidden`. On Profiles → Defaults that cut "Delivery"
+     and "Auto-stop" in half, and because the cards still looked like whole
+     cards there was nothing to say content was missing. */
+  .ws-pane-detail-body > * { flex-shrink: 0; }
+  .ws-pane-detail-body > .ws-subtabs { margin-bottom: var(--s1); }
+
+  /* ── The legend ───────────────────────────────────────────────────────────
+     Four lists, four destinations. This was four labelled rows with a badge
+     each, under a two-sentence card description — the shape of a settings
+     card, on a block that sets nothing. Three columns, one line each, no hint
+     column. */
+  .ws-legend { display: flex; flex-direction: column; }
+  .ws-legend-row {
+    display: grid;
+    grid-template-columns: minmax(0, 130px) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s3);
+    padding: 9px var(--pad-card);
+    border-bottom: 1px solid var(--border);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-legend-row:last-child { border-bottom: none; }
+  .ws-legend-row b { font-weight: 550; color: var(--fg); }
+  .ws-legend-row > span { color: var(--fg-dim); min-width: 0; }
+
+  /* The one thing wrong with the selected profile, in its header. A flag is a
+     count AND a way in, so it is one control — not a badge beside a button. */
+  .ws-flag {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 22px; padding: 0 9px 0 7px;
+    border-radius: var(--r-small);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    font-weight: 550;
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  .ws-flag svg { width: 12px; height: 12px; }
+  .ws-flag:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
 
   /* ── The runtime log ──────────────────────────────────────────────────────
      Buffered while the runtime is active. The level column is fixed-width so

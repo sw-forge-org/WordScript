@@ -45,7 +45,16 @@ const PROPS = ["display","flexDirection","alignItems","justifyContent","gap","pa
 const UNSKIP = `(() => {
   let s = document.getElementById("__cmp_unskip");
   if (!s) { s = document.createElement("style"); s.id = "__cmp_unskip";
-    s.textContent = "* { content-visibility: visible !important; }";
+    // The screen picker is the rig, and the rig does not come across. It is
+    // gallery chrome occupying column height the prototype spends outside its
+    // mock window, so it is taken out of the flow for the measurement.
+    // The screen picker and the gallery's own section masthead are both rig,
+    // and the rig does not come across: they occupy column space the prototype
+    // spends outside its mock window. Taken out of the flow for the
+    // measurement so what is compared is the screen.
+    s.textContent = "* { content-visibility: visible !important; }" +
+      ".ws-screens > .ws-toolbar { display: none !important; }" +
+      ".ws-content-inner > .ws-view-top { display: none !important; }";
     document.head.appendChild(s); }
   return true;
 })()`;
@@ -174,6 +183,34 @@ for (const id of screens) {
   })()`);
   if (mounted !== id) { console.log("  APP DID NOT MOUNT (got " + mounted + ") — not ported?"); bad++; continue; }
   await sleep(250);
+
+  await proto.evaluate(UNSKIP); await app.evaluate(UNSKIP);
+  await sleep(150);
+
+  // MATCH THE COLUMN, NOT THE WINDOW. The prototype draws inside a mock window
+  // capped at 1180 px with its own 196 px sidebar; the gallery is a real window
+  // at the viewport's width with a sidebar of its own. A column layout hides
+  // the difference behind `--content-max`, but a pane layout fills, so the two
+  // content columns have to be brought to the same width before any width can
+  // be compared. Anything left after this is the port's.
+  {
+    const box = `(el => { const r = el.getBoundingClientRect(); return [r.width, r.height]; })`;
+    const [protoW, protoH] = await proto.evaluate(
+      `${box}(document.querySelector(".modal-content .content-inner") ?? document.querySelector(".content-inner"))`);
+    let [appW, appH] = await app.evaluate(`${box}(document.querySelector(".ws-content-inner"))`);
+    if (Math.abs(appW - protoW) > 0.5 || Math.abs(appH - protoH) > 0.5) {
+      await app.send("Emulation.setDeviceMetricsOverride", {
+        width: Math.round(1440 - (appW - protoW)),
+        height: Math.round(1000 - (appH - protoH)),
+        deviceScaleFactor: 1, mobile: false,
+      });
+      await sleep(200);
+      [appW, appH] = await app.evaluate(`${box}(document.querySelector(".ws-content-inner"))`);
+      if (Math.abs(appW - protoW) > 0.5 || Math.abs(appH - protoH) > 0.5) {
+        console.log(`  (columns still differ: ${protoW}x${protoH} vs ${appW}x${appH})`);
+      }
+    }
+  }
   await proto.evaluate(UNSKIP); await app.evaluate(UNSKIP);
   await sleep(150);
   // A settings screen is a SHEET over a workspace screen, so the prototype
@@ -183,6 +220,8 @@ for (const id of screens) {
     `(${WALK})(document.querySelector(".modal-content .content-inner") ? ".modal-content .content-inner" : ".content-inner")`));
   const B = JSON.parse(await app.evaluate(`(${WALK})(".ws-screen-stage")`));
   bad += diff(A, B, showText);
+  await app.send("Emulation.setDeviceMetricsOverride",
+    { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
 }
 proto.close(); app.close(); chrome.kill();
 console.log(bad === 0 ? "\nALL EXACT" : `\n${bad} difference(s)`);

@@ -100,6 +100,7 @@ const SECTIONS: Array<{
 
 export default function GalleryWindow() {
   const [active, setActive] = useState<SectionId>("foundations");
+  const [screenLayout, setScreenLayout] = useState<"pane" | "wide" | undefined>();
   const { scheme, setScheme, resolved } = useColorScheme("dark");
   const section = SECTIONS.find((entry) => entry.id === active) ?? SECTIONS[0];
 
@@ -153,15 +154,18 @@ export default function GalleryWindow() {
         </NavFoot>
       </Nav>
 
-      <main className="ws-content">
-        <div className="ws-content-inner" data-layout={section.wide ? "wide" : undefined}>
+      <main className="ws-content" data-layout={active === "screens" ? screenLayout : undefined}>
+        <div
+          className="ws-content-inner"
+          data-layout={active === "screens" ? screenLayout : section.wide ? "wide" : undefined}
+        >
           <ViewTop title={section.label} lead={section.lead} />
 
           {active === "foundations" && <Foundations resolved={resolved} />}
           {active === "components" && <Components />}
           {active === "motion" && <Motion />}
           {active === "overlay" && <OverlayStates />}
-          {active === "screens" && <Screens />}
+          {active === "screens" && <Screens onLayout={setScreenLayout} />}
         </div>
       </main>
     </div>
