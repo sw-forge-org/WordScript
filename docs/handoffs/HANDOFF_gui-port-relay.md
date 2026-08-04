@@ -31,6 +31,52 @@ and this is the order in which they become product.
   That split is what lets a 25-screen design land 1:1 against a runtime that
   cannot yet answer half of it.
 
+## What the library is, and what the gallery is
+
+Stated by the owner on 2026-08-04 and written down here because the distinction
+decides where every future component goes.
+
+**The library is `src/components/shell/` plus `src/styles/shell.css`.** That is
+the productive component library and it is the point of the whole exercise: it
+is where the design components live, and it is what the product renders. It is
+built by taking the demo GUI's structure across **1:1** — the same components,
+the same grammar, the same states, the same copy.
+
+**The gallery is where that library is displayed and judged. It is not where it
+lives.** ADR 0055 is explicit: *the gallery imports the product's components and
+never copies them.* A screen in the gallery and the same screen in the product
+are one implementation with two sets of props. The moment a component exists
+only inside `src/windows/gallery/`, the gallery has become a second product and
+the thing it was built to prevent — a component that is correct in the gallery
+and wrong in the app — is already true.
+
+So both halves are load-bearing and neither substitutes for the other:
+
+| | Lives in | Is | Is not |
+| --- | --- | --- | --- |
+| The library | `src/components/shell/`, `src/styles/shell.css` | The design components, ported 1:1 from the demo GUI | A place screens are assembled |
+| The gallery | `src/windows/gallery/` | Every component in every state, and every screen at the prototype's fidelity | A place components are defined |
+
+**Three things are deliberately not carried across 1:1**, and each is already a
+decision rather than a liberty:
+
+1. **The prototype's rig.** `demo.css` §2 — the top strip with the Surface,
+   Theme, Copy, Density and Screen switches — is the instrument the prototype is
+   viewed through and is deliberately outside its own design system. It is not
+   part of the product. The gallery's scheme switch is the one control that
+   survives, because three schemes have to be judged in one place.
+2. **The light scheme's `--fg-muted`.** The prototype's `#7d766d` measures
+   4.48:1 on the white card and misses AA; the product carries `#7a736a`
+   (ADR 0056). Where the two now differ by one hex, that record says which is
+   right.
+3. **Measured rather than printed contrast.** The prototype hardcodes its
+   contrast figures and prints the dark ladder's numbers on both sides of its
+   theme switch, which is how (2) went unnoticed for a pass. Foundations
+   computes them from the live tokens instead.
+
+Everything else is 1:1, and where the prototype and this repo's shipped surface
+disagree, the prototype wins.
+
 ## Rules every leg obeys
 
 1. **Commit and push to `main`.** No branch, no PR. Push only when the leg is
@@ -90,11 +136,16 @@ Plan reference: `docs/SETTINGS_REWORK_PLAN.md` §8 Stage 5 brought forward by
 withdrawn screen).
 
 **Leg 2 has two halves and the first one is a repair.** Leg 1 ported the design
-system correctly and then displayed it in four files it wrote from scratch. The
-owner caught it in one glance on 2026-08-04. Fixing that is not optional
-housekeeping: those four files are the gallery, the gallery is the acceptance
-surface, and a gallery that shows a system nobody drew cannot be diffed against
-the prototype it exists to be diffed against.
+system into the library correctly — the tokens, the grammar and the eight
+primitives are read out of `demo.css` line for line — and then displayed it in
+four gallery files it wrote from scratch. The owner caught it in one glance on
+2026-08-04.
+
+**The gallery is not the mistake and is not up for removal.** It is the
+acceptance surface (ADR 0055) and the library needs a display surface. What is
+wrong is only its *content*: a gallery that shows a system nobody drew cannot be
+diffed against the prototype it exists to be diffed against. So those four files
+get their content taken across 1:1, exactly like every screen in §2.2.
 
 ### 2.1 Re-port the gallery's own pages — do this first
 
@@ -108,13 +159,14 @@ of decided content: sections, copy, tables, state lists. Port it.
 | `src/windows/gallery/Motion.tsx` | the matrix presentation the owner screenshotted: a card per mode with a name, its type (`vu` / `frames` / `pattern`) and a description, under a *Frame clock* header carrying `fps · loop · autoplay`. What is there now is the old `/component-lab` row of unlabelled swatches |
 | `src/windows/GalleryWindow.tsx` | the prototype's `.rig` plus `.nav` grammar. The scheme switch stays where Leg 1 put it |
 
-The buttons the prototype's component cards need do not exist as React
-components yet — Leg 1 built eight primitives and `.btn` was not among them,
-because §5.3 does not list it. Build it now, in `components/shell/`, ported from
-`demo.css`'s `.btn` including `data-v="primary"` with its three-value material,
-`ghost`, `danger`, `disabled` and `data-busy`. Same for `.chip` and `.ibtn` if a
-section needs them. A gallery that draws a button inline is the same defect one
-level down.
+**Grow the library, do not grow the gallery.** The prototype's component cards
+need controls the kit does not carry yet — Leg 1 built the eight primitives
+§5.3 names and `.btn` is not one of them. Build it in `components/shell/`,
+ported from `demo.css`'s `.btn`: `data-v="primary"` with its three-value
+material, `ghost`, `danger`, `disabled`, `data-busy`. Same for `.chip` and
+`.ibtn` where a section needs them. A gallery that draws a button inline is the
+same defect one level down, and it is the defect that makes the gallery a second
+product rather than the library's display surface.
 
 ### 2.2 Every screen into `/gallery` → Screens
 

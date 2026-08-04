@@ -310,6 +310,13 @@ control that needs them.
 
 ## Component Rules
 
+**The component library is `src/components/shell/` plus `src/styles/shell.css`.**
+It holds the design components, ported 1:1 from the prototype, and it is what
+the product renders. `/gallery` **displays** that library; it never defines it.
+A screen in the gallery and the same screen in the product are one
+implementation with two sets of props, and a component that exists only under
+`src/windows/gallery/` has already made the gallery a second product.
+
 - The ported shell kit is `Card`, `CardFooter`, `CardRows`, `Row`, `LaneCard`,
   `SubTabs`, `SectionHeader`, `PreviewBanner`, `EmptyState`, `DangerRow`,
   `Toolbar` and `ScopeTag`, plus `Stepper`, `VolumeSlider`, `InputLevelMeter`,
