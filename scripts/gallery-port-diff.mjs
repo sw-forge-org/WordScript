@@ -9,6 +9,9 @@
 //   npm run dev
 //   node scripts/gallery-port-diff.mjs home history general       [--text]
 //
+// A screen with more than one state takes `#n` — `models#1` is its second
+// sub-tab, `onboarding#4` its fifth step. See SUBSTATE below.
+//
 // Leg 2a verified by hand with a selector list and recorded two false
 // positives it produces; this is that check written down, plus the third one
 // (content-visibility) and the deliberate renames. Written by Leg 2b — the
@@ -53,6 +56,15 @@ const UNSKIP = `(() => {
     // spends outside its mock window. Taken out of the flow for the
     // measurement so what is compared is the screen.
     s.textContent = "* { content-visibility: visible !important; }" +
+      // FALSE POSITIVE THE FIFTH, found by Leg 2c driving onboarding's steps:
+      // a transitioning property measured mid-flight. The rail step animates
+      // its colour, and the prototype rebuilds its window wholesale on every
+      // render so the new element is born at its final value with nothing to
+      // transition FROM; React mutates the same node's state attribute, so the
+      // same change animates. The walk then caught the app halfway and reported
+      // a done step at the now colour, intermittently, which is worse than
+      // consistently. Nothing measured here depends on a transition being live.
+      "* { transition: none !important; animation: none !important; }" +
       ".ws-screens > .ws-toolbar { display: none !important; }" +
       ".ws-content-inner > .ws-view-top { display: none !important; }";
     document.head.appendChild(s); }
@@ -97,6 +109,55 @@ const WALK = `(rootSel) => {
   out.__meta = { dpr: devicePixelRatio, count: Object.keys(out).length };
   return JSON.stringify(out);
 }`;
+
+// SCREENS WITH MORE THAN ONE STATE — added by Leg 2c.
+//
+// The walk can only see what is on screen, so a screen whose second half is
+// behind a sub-tab or a wizard step was measured in its default state only and
+// the rest was taken on trust. AI Models hides a whole tab that way, onboarding
+// hides six of its seven steps, and Context hides two panels. Naming the state
+// on the command line — `onboarding#4`, `models#1` — drives BOTH sides into it
+// with their own controls before anything is measured, which is the same act a
+// reader performs and therefore the same evidence.
+//
+// Two shapes, because the two controls differ: a tab is indexed and jumped to
+// once, a wizard step is pressed forward n times. Each press is its own
+// evaluate with a frame between them — both surfaces re-render asynchronously,
+// so six clicks dispatched in one tick all land on a button that has not been
+// replaced yet and advance the flow by one.
+//
+// `reset` is not optional for the stepping kind: BOTH surfaces keep their wizard state when
+// the screen is re-selected — the prototype in `state.ob`, the gallery in the
+// component's own `useState` — so a run of `onboarding#1 onboarding#2` walked
+// 1 then 2 MORE steps and reported step 4 under the name of step 3. The two
+// sides stayed in step with each other, which is exactly what makes it silent.
+// The rail's first entry is always a button, so it is the way back to zero.
+const SUBSTATE = {
+  onboarding: {
+    repeat: true,
+    proto: '.obfoot button[data-v="primary"]',
+    app: '.ws-obfoot button[data-v="primary"]',
+    resetProto: ".obrail-step", resetApp: ".ws-obrail-step",
+  },
+  tab: { proto: ".subtabs button", app: ".ws-subtabs button" },
+};
+const substateOf = (id) => SUBSTATE[id] ?? SUBSTATE.tab;
+
+const clickAt = (selector, index) =>
+  `(() => { const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
+    if (!el) return "missing"; el.click(); return "ok"; })()`;
+
+async function drive(tab, spec, n, side) {
+  const reset = side === "proto" ? spec.resetProto : spec.resetApp;
+  const selector = side === "proto" ? spec.proto : spec.app;
+  if (reset) { await tab.evaluate(clickAt(reset, 0)); await sleep(120); }
+  if (n === undefined) return;
+  for (let k = 0; k < (spec.repeat ? n : 1); k++) {
+    const got = await tab.evaluate(clickAt(selector, spec.repeat ? 0 : n));
+    if (got !== "ok") console.log(`  (substate: ${selector} ${got})`);
+    await sleep(120);
+  }
+}
 
 let chrome, nextId = 1;
 async function cdp() {
@@ -179,8 +240,9 @@ await app.evaluate(`[...document.querySelectorAll(".ws-nav-row")].find(r => r.te
 await sleep(400);
 
 let bad = 0;
-for (const id of screens) {
-  console.log("\n=== " + id + " ===");
+for (const spec of screens) {
+  const [id, sub] = spec.split("#");
+  console.log("\n=== " + spec + " ===");
   await proto.evaluate(`(() => { const p = document.getElementById("pick"); p.value = ${JSON.stringify(id)}; p.dispatchEvent(new Event("change", { bubbles: true })); return p.value; })()`);
   const mounted = await app.evaluate(`(() => {
     const sel = document.querySelector(".ws-toolbar select");
@@ -190,6 +252,18 @@ for (const id of screens) {
   })()`);
   if (mounted !== id) { console.log("  APP DID NOT MOUNT (got " + mounted + ") — not ported?"); bad++; continue; }
   await sleep(250);
+
+  {
+    const spec2 = substateOf(id);
+    const n = sub === undefined ? undefined : Number(sub);
+    // The reset runs even with no `#`, so a plain `onboarding` after an
+    // `onboarding#4` still measures step one.
+    if (n !== undefined || spec2.resetProto) {
+      await drive(proto, spec2, n, "proto");
+      await drive(app, spec2, n, "app");
+      await sleep(200);
+    }
+  }
 
   await proto.evaluate(UNSKIP); await app.evaluate(UNSKIP);
   await sleep(150);

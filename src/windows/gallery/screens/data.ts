@@ -165,3 +165,120 @@ export const HISTORY: Transcript[] = [
     path: "~/WordScript/transcripts/2026/07/31-1622-rueckmeldung.md",
   },
 ];
+
+/* ── AI Models: the providers and the four lanes ────────────────────────────
+   `demo.js`'s `PROVIDERS` and `LANES`, copied whole. It is data in the
+   prototype too, and for the reason the lane switch exists at all: a lane
+   decides what a provider even IS — a cloud account with a key, a binary on
+   this disk, a URL you operate, an account with a region — and with it what a
+   model is called, whether it can be downloaded, and whether a credential
+   exists at all.
+
+   THE MODEL NAMES CHANGE ACROSS LANES. `whisper-large-v3-turbo` is a Groq
+   endpoint; `ggml-large-v3-turbo` is a file on this disk. They are the same
+   weights and they are not the same thing — one is billed per request and
+   bounded by an upload limit, the other costs 1.6 GB and a load. A surface that
+   shows the same string in both lanes is hiding the only difference that
+   matters.
+
+   A JOB CAN BE UNAVAILABLE IN A LANE. No enterprise provider we would ship
+   transcribes except Azure, and no self-hosted OpenAI-compatible endpoint does
+   at all. Those jobs say so and name the lane that can run them, rather than
+   offering a picker with nothing in it. */
+
+export type LaneName = "Cloud" | "Local" | "Self-hosted" | "Enterprise";
+
+export type Provider = {
+  name: string;
+  lane: LaneName;
+  stt: boolean;
+  llm: boolean;
+  key?: boolean;
+  desc: string;
+};
+
+export const PROVIDERS: Provider[] = [
+  { name: "Groq", lane: "Cloud", stt: true, llm: true, key: true, desc: "Speech and language. The fastest lane, and today's default for both." },
+  { name: "OpenAI", lane: "Cloud", stt: true, llm: true, key: true, desc: "Speech and language." },
+  { name: "Anthropic", lane: "Cloud", stt: false, llm: true, key: true, desc: "Language only. No speech recognition." },
+  { name: "Gemini", lane: "Cloud", stt: false, llm: true, desc: "Language only." },
+  { name: "Mistral", lane: "Cloud", stt: true, llm: true, desc: "Speech and language." },
+  { name: "xAI", lane: "Cloud", stt: true, llm: false, desc: "Speech only." },
+  { name: "OpenRouter", lane: "Cloud", stt: false, llm: true, desc: "One key, many models. Reaches providers with no adapter of their own." },
+  { name: "AWS Bedrock", lane: "Enterprise", stt: false, llm: true, desc: "Access key, secret and region — or the ambient AWS credential chain." },
+  { name: "Azure OpenAI", lane: "Enterprise", stt: true, llm: true, desc: "Endpoint, deployment and key. The deployment name is the model id." },
+  { name: "GCP Vertex AI", lane: "Enterprise", stt: false, llm: true, desc: "Service account JSON, project and location." },
+];
+
+export function providerNames(cap: "stt" | "llm", lane?: LaneName): string[] {
+  return PROVIDERS.filter((p) => p[cap] && (!lane || p.lane === lane)).map((p) => p.name);
+}
+
+/** What a lane offers a job. `none` is the sentence that stands where a model
+ *  would; `mark: null` takes the row off the connection's axis entirely. */
+export type LaneJob = {
+  model?: string;
+  models?: string[];
+  override?: string;
+  mark?: string | null;
+  none?: string;
+};
+
+export type JobKey =
+  | "dictation" | "meetings" | "upload"
+  | "cleanup" | "rewrite" | "translate" | "enhance" | "assistant";
+
+export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, LaneJob> }> = {
+  Cloud: {
+    provider: "Groq",
+    jobs: {
+      dictation: { model: "whisper-large-v3-turbo", models: ["whisper-large-v3-turbo", "whisper-large-v3", "distil-whisper-large-v3-en"] },
+      meetings: { model: "whisper-large-v3", models: ["whisper-large-v3", "whisper-large-v3-turbo"] },
+      upload: { model: "whisper-1", models: ["whisper-1", "gpt-4o-transcribe", "whisper-large-v3"], override: "OpenAI" },
+      cleanup: { model: "llama-3.1-8b-instant", models: ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"] },
+      rewrite: { model: "llama-3.3-70b-versatile", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
+      translate: { model: "claude-sonnet-4-6", models: ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-7"], override: "Anthropic" },
+      enhance: { model: "llama-3.3-70b-versatile", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
+      assistant: { model: "claude-sonnet-4-6", models: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"], override: "Anthropic" },
+    },
+  },
+  Local: {
+    provider: "llama.cpp",
+    jobs: {
+      dictation: { model: "ggml-base", models: ["ggml-base", "ggml-base.en", "ggml-small"], mark: "openai" },
+      meetings: { model: "ggml-small", models: ["ggml-small", "ggml-base", "ggml-medium"], mark: "openai" },
+      upload: { model: "ggml-small", models: ["ggml-small", "ggml-medium", "ggml-large-v3-turbo"], mark: "openai" },
+      cleanup: { model: "llama-3.2-3b-instruct", models: ["llama-3.2-3b-instruct", "qwen2.5-7b-instruct"], mark: "llama" },
+      rewrite: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "llama-3.2-3b-instruct"], mark: "qwen" },
+      translate: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "gemma-3-4b-it"], mark: "qwen" },
+      enhance: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "llama-3.2-3b-instruct"], mark: "qwen" },
+      assistant: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "gemma-3-4b-it"], mark: "qwen" },
+    },
+  },
+  "Self-hosted": {
+    provider: "your server",
+    jobs: {
+      dictation: { none: "Speech has no OpenAI-compatible shape to talk to. Use Cloud or Local for the listening jobs." },
+      meetings: { none: "Same — a self-hosted chat endpoint does not transcribe." },
+      upload: { none: "Same — a self-hosted chat endpoint does not transcribe." },
+      cleanup: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
+      rewrite: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
+      translate: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
+      enhance: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
+      assistant: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
+    },
+  },
+  Enterprise: {
+    provider: "AWS Bedrock",
+    jobs: {
+      dictation: { none: "Only Azure OpenAI transcribes among the three. Switch the provider above, or use Cloud or Local." },
+      meetings: { none: "Only Azure OpenAI transcribes among the three." },
+      upload: { none: "Only Azure OpenAI transcribes among the three." },
+      cleanup: { model: "anthropic.claude-haiku-4-5", models: ["anthropic.claude-haiku-4-5", "anthropic.claude-sonnet-4-6"], mark: "bedrock" },
+      rewrite: { model: "anthropic.claude-sonnet-4-6", models: ["anthropic.claude-sonnet-4-6", "anthropic.claude-haiku-4-5"], mark: "bedrock" },
+      translate: { model: "anthropic.claude-sonnet-4-6", models: ["anthropic.claude-sonnet-4-6"], mark: "bedrock" },
+      enhance: { model: "anthropic.claude-haiku-4-5", models: ["anthropic.claude-haiku-4-5"], mark: "bedrock" },
+      assistant: { model: "anthropic.claude-sonnet-4-6", models: ["anthropic.claude-sonnet-4-6", "anthropic.claude-opus-4-7"], mark: "bedrock" },
+    },
+  },
+};

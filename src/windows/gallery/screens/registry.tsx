@@ -10,6 +10,9 @@ import { AboutScreen } from "./About";
 import { ProfilesScreen } from "./Profiles";
 import { CommitScreen } from "./Commit";
 import { IntegrationsScreen } from "./Integrations";
+import { NoteSettingsScreen } from "./NoteSettings";
+import { OnboardingScreen } from "./Onboarding";
+import { ModelsScreen } from "./Models";
 
 /**
  * THE SCREEN REGISTRY — the prototype's `NAV`, minus its rig.
@@ -68,8 +71,8 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
     screens: [
       { id: "general", surface: "settings", label: "General", render: () => <GeneralScreen /> },
       { id: "hotkeys", surface: "settings", label: "Hotkeys", render: () => <HotkeysScreen /> },
-      { id: "notesettings", surface: "settings", label: "Notes & Meetings", preview: true },
-      { id: "models", surface: "settings", label: "AI Models" },
+      { id: "notesettings", surface: "settings", label: "Notes & Meetings", preview: true, render: () => <NoteSettingsScreen /> },
+      { id: "models", surface: "settings", label: "AI Models", render: () => <ModelsScreen /> },
       { id: "agents", surface: "settings", label: "Agents", preview: true },
       { id: "integrations", surface: "settings", label: "Integrations", preview: true, render: () => <IntegrationsScreen /> },
       { id: "delivery", surface: "settings", label: "Delivery & Insert", render: () => <DeliveryScreen /> },
@@ -82,7 +85,7 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
     group: "Previews",
     lead: "Layout only, each carrying its PreviewBanner. Four more are previews of a screen already listed above.",
     screens: [
-      { id: "onboarding", surface: "standalone", label: "Onboarding" },
+      { id: "onboarding", surface: "standalone", label: "Onboarding", render: () => <OnboardingScreen /> },
       { id: "translate", surface: "standalone", label: "Translation" },
       { id: "subtitles", surface: "standalone", label: "Live subtitles" },
       { id: "meeting", surface: "standalone", label: "Meeting capture" },

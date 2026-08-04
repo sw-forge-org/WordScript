@@ -93,6 +93,13 @@ export {
 } from "./Connection";
 export type { LogLevel, LogLine } from "./Log";
 
+/* ── AI Models, and onboarding's rail — Leg 2c ── */
+export { OnboardingRail, OnboardingStepHead, OnboardingFoot } from "./Onboarding";
+export type { OnboardingStep } from "./Onboarding";
+export { JobList, Job, JobNone, JobModel, SelectMark } from "./Job";
+export { ModelList, ModelRow } from "./ModelRow";
+export type { ModelState } from "./ModelRow";
+
 export { StatusBadge } from "./StatusBadge";
 export type { StatusTone } from "./StatusBadge";
 export { StatusDot } from "./StatusDot";

@@ -5,6 +5,10 @@ interface FieldProps extends React.ComponentPropsWithoutRef<"input"> {
   /** The border carries the state at reduced strength and a faint ground backs
    *  it up; the sentence underneath carries the reason. */
   invalid?: boolean;
+  /** `demo.js`'s `field(value, { w })`. A field is sized to what it holds — a
+   *  URL is not a model id is not a name — and the length is a property of the
+   *  value, so it is the field's option rather than a style at the call site. */
+  w?: string;
 }
 
 /**
@@ -18,11 +22,12 @@ interface FieldProps extends React.ComponentPropsWithoutRef<"input"> {
  * "wrong".
  */
 export const Field = React.forwardRef<HTMLInputElement, FieldProps>(
-  ({ invalid, className, ...props }, ref) => (
+  ({ invalid, w, style, className, ...props }, ref) => (
     <input
       ref={ref}
       className={cn("ws-field", className)}
       data-invalid={invalid ? "" : undefined}
+      style={w ? { width: w, ...style } : style}
       {...props}
     />
   ),

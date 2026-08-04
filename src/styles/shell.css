@@ -47,6 +47,22 @@
   .ws-content svg,
   .ws-nav svg { flex: none; }
 
+  /* THE DEFAULT ICON SIZE — `demo.css`'s `.win svg`, its own second base rule.
+     Every icon in the surface is 24-grid at one stroke weight; components that
+     need another size override this rule, never the markup.
+
+     It went unported through Leg 2b because every icon those ten screens drew
+     sat under a more specific rule — `.ws-btn svg` at 13, `.ws-nav-row svg` at
+     15, `.ws-lane-tile svg` at 15 — so the fallback was never reached. AI
+     Models is the first screen to draw a mark with no such rule over it: the
+     provider mark inside `.ws-jobmodel` and `.ws-selmark`. Note that this rule
+     BEATS `.ws-pmark`'s own 14 px on specificity, in the prototype exactly as
+     here, which is why a mark measures 16 in both and 14 in neither.
+
+     Fenced to the same two roots and for the same reason as the rule above. */
+  .ws-content svg,
+  .ws-nav svg { width: 16px; height: 16px; }
+
   /* ═════════════════════════════════════════════════════════════════════════
      SECTION — title plus one line, outside the card
      ═════════════════════════════════════════════════════════════════════════ */
@@ -2390,6 +2406,248 @@
   .ws-provchip-mark { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
   .ws-provchip-mark .ws-pmark, .ws-provchip-mark svg { width: 16px; height: 16px; }
   .ws-provchip[data-custom] .ws-provchip-mark { color: var(--fg-muted); }
+
+  /* ── The onboarding rail ──────────────────────────────────────────────────
+     A progress indicator you cannot click is a promise that the flow is
+     linear, and this one is not: every step before the current one is a
+     decision worth revisiting once you have seen what it caused. Steps behind
+     are buttons, steps ahead are not — claiming you can jump to a step whose
+     prerequisites are unmet is the same lie in the other direction. */
+  .ws-obrail {
+    display: flex; align-items: center;
+    gap: 0;
+    padding: 0 0 var(--s4);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ws-obrail::-webkit-scrollbar { height: 0; }
+  .ws-obrail-step {
+    display: flex; align-items: center; gap: 7px;
+    padding: 5px 9px;
+    border-radius: var(--r-control);
+    flex: none;
+    color: var(--fg-muted);
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  button.ws-obrail-step:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-obrail-dot {
+    width: 22px; height: 22px;
+    display: grid; place-items: center;
+    border-radius: var(--r-round);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-inset);
+    flex: none;
+  }
+  .ws-obrail-dot svg { width: 12px; height: 12px; }
+  .ws-obrail-label {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); font-weight: 550; white-space: nowrap;
+  }
+  .ws-obrail-step[data-state="now"] { color: var(--fg); }
+  .ws-obrail-step[data-state="now"] .ws-obrail-dot {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .ws-obrail-step[data-state="done"] .ws-obrail-dot {
+    border-color: transparent;
+    background: var(--success);
+    color: var(--on-accent, #fff);
+  }
+  .ws-obrail-step[data-state="todo"] { color: var(--fg-dim); }
+  /* The bar carries the same state as the step behind it, so the filled run
+     reads as one object rather than as dots with lines between them. */
+  .ws-obrail-bar {
+    flex: 1 1 12px; min-width: 8px;
+    height: 1px;
+    background: var(--border);
+  }
+  .ws-obrail-bar[data-state="done"] { background: var(--success); }
+
+  .ws-obstep { display: flex; flex-direction: column; gap: 2px; padding-bottom: var(--s2); }
+  .ws-obstep-n {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--fg-muted);
+  }
+  .ws-obstep h2 {
+    font-stretch: var(--w-title); letter-spacing: var(--ls-title);
+    font-size: var(--t-title); font-weight: var(--wt-title);
+  }
+
+  /* Back on the left, forward on the right, and the gap between them is the
+     point: they are opposite actions and must never be adjacent. */
+  .ws-obfoot {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--s3);
+    padding-top: var(--s3);
+    border-top: 1px solid var(--border);
+  }
+
+  /* The mark that travels with a select. The same pairing the connection row
+     and the per-job override rows both use, which is what makes them read as
+     one control appearing twice rather than as two designs for one decision. */
+  .ws-selmark {
+    width: 22px; height: 22px;
+    display: grid; place-items: center;
+    border-radius: var(--r-small);
+    background: var(--bg-inset);
+    color: var(--fg-dim);
+    flex: none;
+  }
+
+  /* ── The model a job runs ─────────────────────────────────────────────────
+     Not a badge. A badge is a status, and this is an identity: a mark, a name
+     and where it came from. Twelve rows of bare model names have to be read;
+     twelve with a mark in front are sorted by shape, and the overridden one is
+     visible without reading any of them. */
+  .ws-jobmodel {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px 3px 7px;
+    border-radius: var(--r-small);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    max-width: 100%;
+  }
+  .ws-jobmodel-name {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); font-family: var(--font-mono);
+    color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-jobmodel[data-override] {
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .ws-jobmodel[data-override] .ws-job-prov { color: var(--accent); }
+
+  /* ── The job list ─────────────────────────────────────────────────────────
+     Every job that runs a model, one row each, and the row opens into that
+     job's settings rather than navigating to them.
+
+     THE CLOSED ROW IS THE PRODUCT OF THE WHOLE SECTION. It answers the
+     question people actually arrive with — what is running this, and did I
+     change it — without opening anything. The settings behind it are the rarer
+     case and are priced accordingly: one click, in place, no screen change.
+
+     `default` versus a named provider is the only distinction the badge draws,
+     because it is the only one that predicts what happens when the connection
+     above is edited.
+
+     The prototype writes the separator as `var(--sec-line, var(--border))` and
+     never declares `--sec-line`, so the fallback is the only branch that ever
+     runs. Ported as what it resolves to. */
+  .ws-joblist { display: flex; flex-direction: column; }
+  .ws-job { border-top: 1px solid var(--border); }
+  .ws-joblist > .ws-job:first-child { border-top: 0; }
+  /* THE JOB LIST IS A GROUP, AND ITS ROWS SIT WHERE EVERY OTHER ROW SITS.
+     The summary carried `--s4` of its own on top of the inset the card's stack
+     already pays, and the body's rows carried a third helping — 40 px in from
+     the card wall while every other row on the screen sat at 16, with the
+     summary's hover ground floating between the two. The nesting is stated by
+     the chevron and by the ground the open body sits on; it does not need to
+     be stated a second time in millimetres. */
+  .ws-job > summary,
+  .ws-job[data-none] {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s3);
+    padding: 11px 0;
+    cursor: pointer;
+    list-style: none;
+  }
+  .ws-job[data-none] { grid-template-columns: minmax(0, 1fr) auto; cursor: default; }
+  .ws-job > summary::-webkit-details-marker { display: none; }
+  .ws-job > summary:hover { background: var(--bg-elevated); }
+  .ws-job > summary > svg {
+    width: 13px; height: 13px; flex: none;
+    color: var(--fg-muted);
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  .ws-job[open] > summary > svg { transform: rotate(90deg); }
+  .ws-job-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .ws-job-text b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); font-weight: 550;
+  }
+  .ws-job-text > span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); color: var(--fg-muted); line-height: 1.5;
+  }
+  .ws-job-ctl { flex: none; display: flex; align-items: center; gap: var(--s2); }
+  /* Not a badge: it qualifies the badge beside it, and two badges on one row
+     read as two independent facts. */
+  .ws-job-prov { font-size: 10px; color: var(--fg-dim); }
+  .ws-job-body {
+    padding: 0 0 var(--s2);
+    background: var(--bg-inset);
+    border-top: 1px solid var(--border);
+  }
+  /* THE BODY ROWS ALIGN WITH THE LABEL, NOT WITH THE CHEVRON.
+     This rule read `padding-left: 0`, which aligned the open body's rows with
+     the summary's grid rather than with the summary's text: the chevron column
+     is 25 px wide (13 px mark plus `--s3`), so "Provider", "Model" and
+     "Sub-mode" began exactly on the left wall of their own well while "Prompt
+     Enhance" sat 25 px in. Text touching the edge of the ground it sits on is
+     the defect ADR 0052 removed from every other stack, and the well made it
+     more visible rather than less, because the well has a visible edge. */
+  .ws-job-body > .ws-rows > .ws-row {
+    padding-left: calc(13px + var(--s3));
+    padding-right: 0;
+  }
+  /* Same column as the rows above it, for the same reason — a note is the one
+     piece of prose in the well and was the most obvious thing touching the
+     wall. */
+  .ws-job-body .ws-note { margin: 0 0 var(--s2); padding-left: calc(13px + var(--s3)); }
+  .ws-job[data-none] .ws-job-text > span { color: var(--fg-muted); }
+
+  /* ── A downloadable model ─────────────────────────────────────────────────
+     The local lane could be selected and then not populated: the surface named
+     models it had no way to install and told the user to run a command
+     elsewhere. The size is stated before the download rather than discovered
+     during it, because the size is the fact that decides whether you want it. */
+  .ws-mdl-list { display: flex; flex-direction: column; }
+  .ws-mdl {
+    display: flex; align-items: center; gap: var(--s3);
+    padding: 10px var(--s4);
+    border-top: 1px solid var(--border);
+  }
+  .ws-mdl-list > .ws-mdl:first-child { border-top: 0; }
+  /* The mark answers "whose model is this" before the name is read, which is
+     the question a list of fifteen filenames raises and cannot answer itself. */
+  .ws-mdl-mark {
+    width: 28px; height: 28px;
+    display: grid; place-items: center;
+    border-radius: var(--r-small);
+    background: var(--bg-inset);
+    color: var(--fg-dim);
+    flex: none;
+  }
+  .ws-mdl-mark .ws-pmark, .ws-mdl-mark svg { width: 15px; height: 15px; }
+  .ws-mdl[data-state="installed"] .ws-mdl-mark { color: var(--fg); }
+  .ws-mdl-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .ws-mdl-text b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); font-weight: 550; font-family: var(--font-mono);
+  }
+  .ws-mdl-meta {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); color: var(--fg-muted);
+  }
+  .ws-mdl-ctl { flex: none; display: flex; align-items: center; gap: var(--s2); }
+  .ws-mdl[data-state="installed"] .ws-mdl-text b { color: var(--fg); }
+  .ws-mdl[data-state="available"] .ws-mdl-text b { color: var(--fg-dim); }
+  /* A progress bar in a row, not a dialog over one. A download that blocks the
+     list it came from is a download you cannot start a second of. */
+  .ws-dl {
+    width: 76px; height: 4px;
+    border-radius: var(--r-round);
+    background: var(--bg-elevated);
+    overflow: hidden;
+  }
+  .ws-dl i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
 
   /* ═════════════════════════════════════════════════════════════════════════
      HOME'S HERO — the shortcut, made the object.
