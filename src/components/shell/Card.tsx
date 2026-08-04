@@ -8,6 +8,17 @@ interface CardProps {
   description?: React.ReactNode;
   /** The action that acts on this card's content. Rendered as the card's foot. */
   footer?: React.ReactNode;
+  /**
+   * WHAT IS NOT A ROW STACK, AFTER WHAT IS. `demo.js`'s `card()` renders head,
+   * then ROWS, then BODY, then foot — and a card that carries both had them the
+   * wrong way round in three separate places across Legs 2b, 2c and 2d, each
+   * time visible only once the card's first/last-child edge rules drew the
+   * inset on the wrong side. Free children could not stop it, because the order
+   * of two siblings is not something a caller can be wrong about loudly. So the
+   * order is the component's: pass the stack as `children` and everything else
+   * as `body`, and it cannot come out reversed.
+   */
+  body?: React.ReactNode;
   className?: string;
   children?: React.ReactNode;
 }
@@ -31,7 +42,7 @@ interface CardProps {
  * Not to be confused with `FormCard`, which is the pre-port card the shipped
  * settings areas still use. Legs 2 and 3 move those callers here and delete it.
  */
-export function Card({ title, description, footer, className, children }: CardProps) {
+export function Card({ title, description, footer, body, className, children }: CardProps) {
   return (
     <div className={cn("ws-card", className)}>
       {(title || description) && (
@@ -41,6 +52,7 @@ export function Card({ title, description, footer, className, children }: CardPr
         </div>
       )}
       {children}
+      {body}
       {footer && <CardFooter>{footer}</CardFooter>}
     </div>
   );

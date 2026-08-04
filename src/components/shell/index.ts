@@ -101,6 +101,52 @@ export { McpList, McpRow, Thread, Message } from "./Thread";
 export { ModelList, ModelRow } from "./ModelRow";
 export type { ModelState } from "./ModelRow";
 
+/* ── Context: the rail's second level, the note, and the windows over it — 2d ── */
+export { PaneSec, PaneSecHead, Folders, FolderRow } from "./Folders";
+export {
+  NoteTabs, NoteBody, NoteDate, Transcript, TLine, Speakers, Speaker,
+  WhoChips, WhoChip, WhoAdd, Enh, EnhItem, EnhAct, LinkGroup, LinkRow, Readout,
+} from "./NoteBody";
+export type { WhoHow, WhoStatus } from "./NoteBody";
+export { FloatBar, MicButton, SplitButton, Menu } from "./FloatBar";
+export type { MenuEntry } from "./FloatBar";
+export {
+  ChatWindow, ChatWinDeco, AiChatBody, AiChatFoot, Msg, Bubble, Typing,
+} from "./ChatWindow";
+export {
+  ActionsBody, ActionsList, ActionsRule, ActionRow, ActionNew, ActionsEdit,
+  ActionsDesk, ActionsFoot, FieldRow,
+} from "./ActionsWindow";
+export { DropZone, Intake, IntakeOr, IntakeLink, RecStart } from "./Intake";
+export { CaptionStage, CaptionScene, CaptionBar, EchoWrap, EchoText } from "./Caption";
+export {
+  TranslateStage, TranslateWindow, TranslateDecoPair, TranslatePair, TranslateTabs,
+  TranslateBody, TranslatePane, TranslateSource, TranslateText, TranslateAlt,
+  TranslateAlts, TranslateConversation, TranslateTurn, TranslateListen,
+  TranslateRoute, TranslateRouteRow,
+} from "./Translate";
+export {
+  Client, ClientHead, ClientList, ClientRow,
+  DocTemplate, DocTemplateHead, DocTemplateBody, DocField,
+} from "./Client";
+export {
+  AgentStage, AgentWindow, AgentBody, AgentRail, AgentRailHead, AgentRailLabel,
+  AgentTargets, AgentTarget, AgentRailFoot, OverlayMiniButton, AgentMain,
+  AgentMainHead, AgentThread, AgentMessage, AgentAnswer, AgentVoice,
+  AgentPopupStage, AgentPopup, ModeCycle, ModeCycleItem,
+} from "./AgentWindow";
+export {
+  Hud, HudRow, HudWrap, HudDeco, HudHead, HudTitle, HudTabs, HudState, HudElapsed,
+  HudScroll, HudCap, Copilot, StageList, StageRow,
+} from "./Hud";
+/* The shipped overlay, DRAWN — rule 5 stands, `overlay*.css` is untouched. */
+export { OverlayPillDrawing, OverlayStage, OverlayTab } from "./OverlayPillDrawing";
+export {
+  Handoff, HandoffStage, HandoffHead, HandoffSaid, HandoffGrid, HandoffCell,
+  HandoffFoot, HandoffPair, HandoffSide, LineCompare, LineCompareRow,
+  Cross, CrossSide, CrossItem, CrossFlow, CrossFlowStep,
+} from "./Handoff";
+
 export { StatusBadge } from "./StatusBadge";
 export type { StatusTone } from "./StatusBadge";
 export { StatusDot } from "./StatusDot";

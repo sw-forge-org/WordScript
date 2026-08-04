@@ -33,11 +33,26 @@ type MatrixProps = React.ComponentProps<typeof MatrixLed>;
  *
  * THE UNLIT GRID IS DRAWN, NEVER OMITTED. It is what makes a mostly-off display
  * read as a display rather than as loose dots floating on the panel.
+ *
+ * `ws-matrix-wrap` NAMES THE WRAPPER THE PROTOTYPE ALSO NAMES, and it is the
+ * one place the two are not the same DOM. The prototype hand-builds its SVG —
+ * one `<circle>` per pixel written by `matrixMount` — where this mounts
+ * upstream's component, which brings its own wrapper, its own inline `<style>`
+ * and its own active-pixel class. The drawing agrees; the tree does not, and
+ * the class is what lets the port verifier say so by name rather than report a
+ * hundred and twelve missing elements. Same recorded divergence as the live
+ * waveform, and for the same reason.
  */
 export function Matrix({ className, palette, ...props }: MatrixProps) {
   return (
     <MatrixLed
-      className={cn("flex-none", className)}
+      /* `inline-flex` and `static` are here to BEAT upstream's own
+         `relative inline-block`, not to restate it: they are in the same
+         tailwind-merge groups, so passing them drops upstream's pair and the
+         wrapper computes what `.ws-matrix-wrap` in shell.css asks for. Without
+         them the utilities layer wins over the components layer and the
+         prototype's inline-flex is silently not what ships. */
+      className={cn("ws-matrix-wrap inline-flex static flex-none", className)}
       palette={palette ?? { on: "var(--accent)", off: "var(--fg-muted)" }}
       {...props}
     />

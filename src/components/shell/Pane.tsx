@@ -148,10 +148,27 @@ export function PaneDetailHead({
   );
 }
 
-export function PaneDetailMain({ children, overlay }: { children: ReactNode; overlay?: ReactNode }) {
+/**
+ * The body scrolls; the floating bar and the window over it do not. Both are
+ * positioned against THIS wrapper rather than against the scroller, or they
+ * would scroll away with the content, and they sit below the detail head
+ * rather than over it, so switching tabs stays reachable with a panel open.
+ */
+export function PaneDetailMain({
+  children,
+  float,
+  overlay,
+}: {
+  children: ReactNode;
+  /** The floating action bar, over the content at every scroll position. */
+  float?: ReactNode;
+  /** A window over part of the detail — Ask, or Actions. */
+  overlay?: ReactNode;
+}) {
   return (
     <div className="ws-pane-detail-main" data-panel={overlay ? "" : undefined}>
       <div className="ws-pane-detail-body">{children}</div>
+      {float}
       {overlay}
     </div>
   );

@@ -754,7 +754,13 @@
     width: 100%;
     container-type: inline-size;
   }
-  .ws-content-inner[data-layout="wide"] { max-width: none; }
+  /* The preview column. Wider than a settings column because the window it
+     holds is 620 px, and drawing a surface smaller than it is makes every
+     judgement about it wrong. It is a WIDER MEASURE, not the absence of one:
+     `max-width: none` stood here until Leg 2d ported the first screen that
+     asks for it, and it would have let a 900 px preview run to the width of
+     whatever window it was opened in. */
+  .ws-content-inner[data-layout="wide"] { max-width: 900px; }
   /* A pane view fills the column and scrolls inside its own two halves, so the
      column gives up its measure, its padding and its block rhythm — the
      masthead takes the padding back for itself. */
@@ -2985,6 +2991,2023 @@
   /* Aligned to the row's first line so the buttons sit beside the title rather
      than floating at the vertical centre of a three-line block. */
   .ws-owed-acts { flex: none; align-items: center; min-height: 28px; }
+
+  /* ── Folders ──────────────────────────────────────────────────────────────
+     Notes were one flat list, which works until there are forty of them and
+     the meeting you want is under two weeks of dictations. The rail carries
+     the folders above the notes, and the folder selection governs the list the
+     way the list governs the detail — one column, two levels, no second
+     window.
+
+     THESE FOLDERS ARE DIRECTORIES. WordScript keeps notes as files under a
+     real path on this machine, so a folder here is the same thing your file
+     manager shows, and moving a note between folders moves a file. That is a
+     promise the surface makes and the runtime has to keep: the path is stated
+     in the rail footer precisely so it cannot quietly become a database table
+     with folder-shaped rows. */
+  .ws-pane-sec { display: flex; flex-direction: column; min-height: 0; }
+  .ws-pane-sec-head {
+    display: flex; align-items: center; gap: var(--s2);
+    padding: var(--s3) var(--s3) var(--s2);
+  }
+  .ws-pane-sec-head > b {
+    flex: 1; min-width: 0;
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--fg-muted);
+  }
+  .ws-pane-sec-head .ws-add {
+    width: 20px; height: 20px; flex: none;
+    border-radius: 5px; display: grid; place-items: center;
+    color: var(--fg-muted);
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  .ws-pane-sec-head .ws-add:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-pane-sec-head .ws-add svg { width: 12px; height: 12px; }
+
+  .ws-folders { display: flex; flex-direction: column; padding: 0 var(--s2) var(--s2); }
+  .ws-folder-row {
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; padding: 6px 10px;
+    border-radius: 8px;
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    color: var(--fg-dim);
+    text-align: left;
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  .ws-folder-row svg { width: 14px; height: 14px; color: var(--fg-muted); }
+  .ws-folder-row .ws-fname {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-folder-row .ws-n {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); font-variant-numeric: tabular-nums;
+  }
+  .ws-folder-row:hover { background: var(--bg-surface); color: var(--fg); }
+  .ws-folder-row[aria-current="true"] {
+    background: var(--nav-active-bg); color: var(--nav-active-fg); font-weight: 550;
+  }
+  .ws-folder-row[aria-current="true"] svg { color: var(--nav-active-icon); }
+  .ws-folder-row[aria-current="true"] .ws-n { color: var(--fg-dim); }
+
+  .ws-pane-sec + .ws-pane-sec { border-top: 1px solid var(--border); }
+
+  /* A meeting transcript without timestamps cannot be used against a
+     recording. The time is the index: it is how you get back to the moment,
+     and how a note on the right refers to a line on the left. */
+  .ws-tscript {
+    background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
+    padding: var(--s2) var(--s3);
+    max-height: 340px; overflow-y: auto;
+  }
+  .ws-tline {
+    display: flex; gap: var(--s3); padding: 7px 0;
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    line-height: 1.6;
+    content-visibility: auto; contain-intrinsic-size: auto 42px;
+  }
+  .ws-tline + .ws-tline { border-top: 1px solid var(--border); }
+  .ws-tline > time {
+    flex: none; width: 40px;
+    font-family: var(--font-mono);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); font-variant-numeric: tabular-nums;
+    padding-top: 3px;
+  }
+  .ws-tline .ws-said { flex: 1; min-width: 0; color: var(--fg); }
+  .ws-tline .ws-said .ws-speaker { margin-right: 6px; vertical-align: 1px; }
+  .ws-tline[data-marked] {
+    background: var(--accent-soft); border-radius: 6px;
+    margin: 0 -6px; padding-inline: 6px;
+  }
+
+  /* Speaker tags. */
+  .ws-speakers { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ws-speaker {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 20px; padding: 0 9px;
+    border-radius: var(--r-small);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    font-weight: 550;
+  }
+  .ws-speaker[data-tone="a"] { background: var(--accent-soft); color: var(--accent); }
+  .ws-speaker[data-tone="b"] {
+    background: color-mix(in srgb, var(--voice) 16%, transparent); color: var(--voice);
+  }
+  .ws-speaker[data-tone="c"] {
+    background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success);
+  }
+
+  /* ── Note tabs, note body, enhanced output ────────────────────────────────
+     A note is read three ways and they are genuinely exclusive: the transcript
+     is what was said, the notes are what you wrote, the enhanced view is what
+     was derived from both. Two columns were tried first and were wrong for a
+     reason worth keeping: the transcript is long, the notes are short, and
+     pinning them side by side gives the most-read view half a column while the
+     least-read one gets the other half. The tabs sit at the top right of the
+     note, where the view switch belongs — not under the view title, where they
+     read as sections of it. */
+  .ws-note-tabs {
+    display: inline-flex; gap: 2px; padding: 2px;
+    background: var(--bg-inset); border-radius: var(--r-control);
+    border: 1px solid var(--border); flex: none;
+  }
+  .ws-note-tabs button {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 11px; border-radius: var(--r-small);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 500; color: var(--fg-dim);
+    white-space: nowrap;
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  .ws-note-tabs button:hover { color: var(--fg); }
+  .ws-note-tabs button[aria-selected="true"] {
+    background: var(--bg-elevated); color: var(--fg); font-weight: 550;
+  }
+  .ws-note-tabs button svg { width: 11px; height: 11px; }
+  .ws-note-tabs button[aria-selected="true"] svg { color: var(--accent); }
+
+  /* The note body scrolls under a floating action bar, so it owes that bar
+     room at the bottom — otherwise the last line is unreadable exactly when
+     the note is longest. */
+  .ws-note-body {
+    display: flex; flex-direction: column; gap: var(--s4); padding-bottom: 64px;
+  }
+  .ws-note-date {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+  }
+
+  .ws-enh { display: flex; flex-direction: column; gap: var(--s2); }
+  .ws-enh > h4 {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 650; color: var(--fg);
+  }
+  .ws-enh > ul { display: flex; flex-direction: column; gap: 7px; }
+  .ws-enh > ul > li {
+    display: flex; gap: 9px;
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    line-height: 1.6; color: var(--fg-dim);
+  }
+  .ws-enh > ul > li::before { content: "·"; color: var(--fg-muted); flex: none; }
+  .ws-enh > ul > li b { color: var(--fg); font-weight: 550; }
+
+  /* A derived row that can be acted on. The button is revealed on hover and on
+     focus and holds its space when it is not visible, so a list of four rows
+     of which one has an action does not shift under the cursor. */
+  .ws-enh > ul > li.ws-enh-act {
+    align-items: baseline; justify-content: space-between; gap: var(--s3);
+  }
+  .ws-enh > ul > li.ws-enh-act > span:first-of-type { flex: 1; min-width: 0; }
+  .ws-enh-act-btn {
+    flex: none; opacity: 0; transition: opacity var(--dur-fast) var(--ease);
+  }
+  li.ws-enh-act:hover .ws-enh-act-btn,
+  li.ws-enh-act:focus-within .ws-enh-act-btn { opacity: 1; }
+
+  /* ── Speaker chips — the name, and how sure we are of it (ADR 0047) ────────
+     Four statuses and the dot is what tells them apart, because the difference
+     is a degree of confidence and a degree does not want four hues. `locked`
+     is the only one that gets the accent: it is the only one the end-of-meeting
+     re-clustering may not touch, which makes it the only one that is a
+     decision rather than a reading. */
+  .ws-who-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .ws-who-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 26px; padding: 0 10px;
+    border-radius: var(--r-small);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-who-chip b { font-weight: 550; color: var(--fg); }
+  .ws-who-how { color: var(--fg-muted); }
+  .ws-who-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--fg-muted);
+  }
+  .ws-who-chip[data-status="provisional"] .ws-who-dot {
+    background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-muted);
+  }
+  .ws-who-chip[data-status="suggested"] .ws-who-dot { background: var(--fg-dim); }
+  .ws-who-chip[data-status="confirmed"] .ws-who-dot { background: var(--success); }
+  .ws-who-chip[data-status="locked"] .ws-who-dot { background: var(--accent); }
+  .ws-who-chip[data-status="locked"] {
+    border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  }
+  .ws-who-add {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 26px; padding: 0 9px;
+    border-radius: var(--r-small);
+    border: 1px dashed var(--border);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+  }
+  .ws-who-add:hover { color: var(--fg-dim); border-color: var(--fg-muted); }
+  .ws-who-add svg { width: 12px; height: 12px; }
+
+  /* ── Linked — relationships as a list, deliberately not a graph (§11.42) ─── */
+  .ws-linkgrp { display: flex; flex-direction: column; gap: 5px; }
+  .ws-linkgrp > h4 {
+    font-size: 9px; font-weight: 650; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--fg-muted);
+    margin-bottom: 2px;
+  }
+  .ws-link-row {
+    display: flex; align-items: center; gap: var(--s3);
+    padding: 8px 10px; margin: 0 -10px;
+    border-radius: var(--r-control);
+    text-align: left; width: calc(100% + 20px);
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  .ws-link-row:hover { background: var(--bg-inset); }
+  .ws-link-row > svg { width: 15px; height: 15px; color: var(--fg-muted); flex: none; }
+  .ws-link-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .ws-link-text b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 500; color: var(--fg);
+  }
+  .ws-link-text > span {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+  }
+  .ws-link-go {
+    flex: none; color: var(--fg-muted); opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  .ws-link-go svg { width: 13px; height: 13px; }
+  .ws-link-row:hover .ws-link-go { opacity: 1; }
+
+  /* Where a context object came from, on its own header line. Muted because
+     the origin is the least-read of the three facts on that line and the first
+     two are what the reader came for. */
+  .ws-origin-from { color: var(--fg-muted); }
+
+  /* The intake is a state of Context, so it renders inside the same detail
+     column the object does — one scroller, one measure, and the rail behind it
+     keeps showing what is already running. */
+  .ws-intake-body { display: flex; flex-direction: column; gap: var(--s5); }
+
+  /* ── Write: the blank object (§11.48) ─────────────────────────────────────
+     No card. A blank note is a title and a body, and every row of chrome
+     between the button and the first word is a reason not to have pressed the
+     button. The title is a borderless input at heading size — it looks like
+     the thing it will become rather than like a field that has to be filled in
+     first. */
+  .ws-write-head { display: flex; flex-direction: column; gap: 3px; }
+  .ws-field.ws-write-title {
+    height: auto; padding: 0;
+    background: transparent; border: 0;
+    font-stretch: var(--w-lead); letter-spacing: var(--ls-lead); font-size: var(--t-lead);
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .ws-field.ws-write-title::placeholder { color: var(--fg-muted); font-weight: 600; }
+  .ws-write-meta {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-write-foot {
+    display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-write-foot > .ws-rowflex > svg { width: 13px; height: 13px; color: var(--fg-muted); }
+
+  /* Record: one target, big enough to be the answer to "how do I start one". */
+  .ws-rec-start {
+    display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+    padding: var(--s7) var(--s5);
+    border-radius: var(--r-card);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    text-align: center;
+  }
+  .ws-rec-start > b { font-size: 15px; font-weight: 600; }
+  .ws-rec-start > p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim); max-width: 46ch; line-height: 1.55;
+  }
+  .ws-mic-btn.ws-rec-big { width: 46px; height: 46px; box-shadow: none; }
+  .ws-mic-btn.ws-rec-big svg { width: 19px; height: 19px; }
+
+  /* ── Floating action bar ──────────────────────────────────────────────────
+     Centred at the foot of the note, over the content rather than after it:
+     the two things you do to a note — talk to it, and act on it — are
+     available at every scroll position instead of only at the end. */
+  .ws-floatbar {
+    position: absolute; left: 50%; bottom: var(--s4);
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: var(--s2);
+    z-index: 4;
+  }
+  .ws-mic-btn {
+    width: 34px; height: 34px; flex: none;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    box-shadow: var(--elev-raised);
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  .ws-mic-btn:hover {
+    color: var(--fg); background: color-mix(in srgb, var(--bg-elevated) 82%, white);
+  }
+  .ws-mic-btn svg { width: 15px; height: 15px; }
+  .ws-mic-btn[data-live] {
+    background: var(--accent); color: var(--on-accent); border-color: transparent;
+  }
+
+  /* Split button: the action, and the menu of the other actions it belongs to.
+     One target for the common case, one for the choice — not a select that
+     makes you pick before you can act. */
+  .ws-split-btn { display: inline-flex; align-items: stretch; position: relative; }
+  .ws-split-btn > .ws-btn {
+    border-radius: var(--r-control) 0 0 var(--r-control);
+    height: 34px; padding: 0 var(--s4); box-shadow: var(--elev-raised);
+  }
+  .ws-split-btn > .ws-btn + .ws-btn {
+    border-radius: 0 999px 999px 0; padding: 0 10px; margin-left: 1px;
+  }
+  .ws-split-btn > .ws-btn svg { width: 13px; height: 13px; }
+
+  .ws-menu {
+    position: absolute; bottom: calc(100% + var(--s2)); left: 50%;
+    transform: translateX(-50%);
+    width: 230px;
+    padding: var(--s1);
+    border-radius: 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--elev-pop);
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .ws-menu button {
+    display: flex; align-items: flex-start; gap: 9px;
+    padding: 8px 10px; border-radius: 8px;
+    text-align: left; width: 100%;
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  .ws-menu button:hover,
+  .ws-menu button[aria-current="true"] { background: var(--bg-elevated); }
+  .ws-menu button > svg {
+    width: 13px; height: 13px; color: var(--fg-muted); margin-top: 2px; flex: none;
+  }
+  .ws-menu button[aria-current="true"] > svg { color: var(--accent); }
+  .ws-menu .ws-mtext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .ws-menu .ws-mtext b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 550; color: var(--fg);
+  }
+  .ws-menu .ws-mtext span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+
+  /* ── AI chat: its own window ──────────────────────────────────────────────
+     Chat was a separate workspace view, then a full-height panel welded to the
+     right edge of the note. Both are wrong for the same reason in opposite
+     directions: the view made you leave the note to ask about the note, and
+     the panel covered the note you were asking about.
+
+     It is a small window. Always on top, movable, resizable — so it can sit
+     beside the main window and you can read the note and the answer at once,
+     which is the entire point of asking. Drawn here over the note because that
+     is where it opens; nothing holds it there.
+
+     Same window family as the meeting HUD: a decoration strip the OS draws
+     (ADR 0003), a resize grip, and no invented chrome. */
+  .ws-chatwin {
+    position: absolute; right: var(--s4); bottom: var(--s4);
+    width: 330px; max-width: calc(100% - var(--s5));
+    height: 400px; max-height: calc(100% - var(--s5));
+    display: flex; flex-direction: column;
+    border-radius: var(--r-window);
+    background: var(--bg-base);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--elev-sheet);
+    overflow: hidden;
+    z-index: 6;
+  }
+  .ws-chatwin-deco {
+    flex: none; height: 26px;
+    display: flex; align-items: center; gap: var(--s2);
+    padding: 0 var(--s2) 0 var(--s3);
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px; color: var(--fg-muted);
+    cursor: grab;
+  }
+  .ws-chatwin-deco b {
+    flex: 1;
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--fg-dim);
+  }
+  .ws-chatwin-deco button {
+    width: 18px; height: 18px; border-radius: 5px;
+    display: grid; place-items: center; color: var(--fg-muted); flex: none;
+  }
+  .ws-chatwin-deco button:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-chatwin-deco svg { width: 11px; height: 11px; }
+  .ws-aichat-body {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: var(--s3); display: flex; flex-direction: column; gap: var(--s3);
+    scrollbar-width: none;
+  }
+  .ws-aichat-body::-webkit-scrollbar { width: 0; }
+  .ws-aichat-foot {
+    flex: none; padding: var(--s2) var(--s3);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: var(--s2);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-aichat-foot svg { width: 12px; height: 12px; flex: none; }
+  /* An answer's list is the same component as a note's, one step smaller — it
+     is the same kind of content and must not look like a different one. */
+  .ws-chatwin .ws-enh > ul > li {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.55;
+  }
+  .ws-chatwin .ws-bubble { max-width: 100%; padding: 8px 10px; }
+  .ws-chatwin .ws-bubble p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-chatwin .ws-msg[data-from="me"] .ws-bubble { background: var(--accent-soft); }
+  .ws-chatwin .ws-msg[data-from="me"] .ws-bubble p { color: var(--fg); }
+  .ws-chatwin .ws-sources { font-size: 10px; }
+  /* No avatar column at this width — the bubble side already says who spoke. */
+  .ws-chatwin .ws-msg > .ws-who { display: none; }
+  .ws-aichat-foot kbd {
+    font-family: var(--font); font-size: 10px; font-weight: 600;
+    padding: 1px 5px; border-radius: 4px;
+    background: var(--bg-inset); border: 1px solid var(--border); color: var(--fg-dim);
+  }
+
+  /* Message bubbles — a turn carries a sender, a time and a copy action.
+     `.ws-msg[data-from="me"]` itself is declared with the thread above, where
+     the agents preview first reads it. */
+  .ws-bubble {
+    max-width: 82%; border-radius: var(--r-card); padding: 9px 12px;
+    background: var(--bg-surface); position: relative;
+  }
+  .ws-msg[data-from="me"] .ws-bubble { background: var(--accent-soft); }
+  .ws-bubble-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
+    margin-bottom: 3px;
+  }
+  .ws-bubble-head b {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 650;
+    letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--fg-muted);
+  }
+  .ws-bubble-head time {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); font-variant-numeric: tabular-nums;
+  }
+  .ws-bubble p {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    line-height: 1.6; color: var(--fg);
+  }
+  .ws-bubble .ws-fail {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--danger); margin-top: 3px;
+  }
+  .ws-bubble .ws-copy {
+    position: absolute; top: 5px; right: 5px; opacity: 0;
+    width: 20px; height: 20px; border-radius: 5px;
+    display: grid; place-items: center; color: var(--fg-muted);
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  .ws-bubble:hover .ws-copy,
+  .ws-bubble:focus-within .ws-copy { opacity: 1; }
+  .ws-bubble .ws-copy:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-bubble .ws-copy svg { width: 11px; height: 11px; }
+
+  /* Typing indicator — three dots, the one place a loop is the message.
+     Opacity, not a hop: a bouncing dot reads as decoration, and this is the
+     only animation in the surface that runs unattended. */
+  .ws-typing {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 12px 13px; background: var(--bg-surface);
+    border-radius: var(--r-card); align-self: flex-start;
+  }
+  .ws-typing i {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--fg-muted); animation: ws-pulse 1.2s var(--ease) infinite;
+  }
+  .ws-typing i:nth-child(2) { animation-delay: 0.16s; }
+  .ws-typing i:nth-child(3) { animation-delay: 0.32s; }
+  @keyframes ws-pulse { 0%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+
+  /* Reading pane — transcript and enhanced output are read, not edited. */
+  .ws-readout {
+    background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
+    padding: var(--s4);
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    line-height: 1.7; color: var(--fg); white-space: pre-wrap;
+  }
+  .ws-readout .ws-lead {
+    display: flex; align-items: center; gap: 6px;
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 650;
+    letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--fg-muted); margin-bottom: var(--s2);
+  }
+  .ws-readout .ws-lead svg { width: 12px; height: 12px; color: var(--accent); }
+
+  /* The resize grip — the corner the OS would draw on a window it owns. */
+  .ws-hud-resize {
+    position: absolute; right: 3px; bottom: 3px;
+    width: 12px; height: 12px; cursor: nwse-resize; opacity: 0.5;
+  }
+  .ws-hud-resize::after,
+  .ws-hud-resize::before {
+    content: ""; position: absolute; right: 2px;
+    background: var(--fg-muted); height: 1px;
+    transform: rotate(-45deg); transform-origin: right center;
+  }
+  .ws-hud-resize::before { bottom: 4px; width: 8px; }
+  .ws-hud-resize::after { bottom: 8px; width: 4px; }
+
+  /* ── The intake, and the two equal ways in (§11.24) ─────────────────────── */
+  .ws-dropzone {
+    width: 100%;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-card);
+    background: var(--bg-inset);
+    padding: var(--s8) var(--s5);
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .ws-dropzone:hover { border-color: var(--accent); }
+  .ws-dropzone svg { width: 20px; height: 20px; color: var(--fg-muted); }
+  .ws-dropzone b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 500;
+  }
+  .ws-dropzone span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  /* A dropzone with a queue below it is a band, not a hero. Upload was built
+     as one centred 460 px column, which is right for an empty Upload and wrong
+     the moment a file is in it. Empty stays solo; populated becomes a band. */
+  .ws-dropzone[data-band] {
+    flex-direction: row; justify-content: center;
+    padding: var(--s5) var(--s4);
+    gap: var(--s3);
+  }
+  .ws-dropzone[data-band] .ws-dz-text {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  }
+
+  /* ── Intake — a file you have, or a file you can reach ────────────────────
+     Two ways in, one block. Built as two stacked cards they read as a primary
+     and a fallback, and which one is which changes with whoever laid them out;
+     side by side with a rule and the word "or" between them, neither is
+     subordinate and the choice is stated rather than implied.
+
+     The dropzone keeps the larger share (3:2) because dropping is the gesture
+     the screen is named after, not because linking is a lesser intake. Under
+     640 px they stack and the rule turns horizontal — the same relationship,
+     drawn the only other way it can be. */
+  .ws-intake {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) auto minmax(0, 2fr);
+    align-items: stretch;
+    gap: var(--s4);
+  }
+  .ws-intake > .ws-dropzone { height: 100%; }
+
+  /* The rule and its word. `or` sits on the window plane so the line appears
+     to pass behind it rather than to stop at a box. */
+  .ws-intake-or {
+    position: relative;
+    display: grid; place-items: center;
+    width: 1px;
+    background: var(--border);
+  }
+  .ws-intake-or span {
+    position: absolute;
+    padding: var(--s2) 0;
+    background: var(--bg-base);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+
+  .ws-intake-link {
+    display: flex; flex-direction: column; gap: var(--s2); justify-content: center;
+  }
+  .ws-intake-link-label {
+    display: flex; align-items: center; gap: 6px;
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 500; color: var(--fg);
+  }
+  .ws-intake-link-label svg { width: 14px; height: 14px; color: var(--fg-muted); }
+  /* The URL field has no icon inside it — a link glyph in the field and a link
+     glyph in the label above is the same word twice. `.ws-search` is reused
+     for the layout only, so it must not inherit the search box's left inset. */
+  .ws-search.ws-grow > input { padding-left: 10px; }
+  .ws-intake-hint {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); line-height: 1.55;
+  }
+
+  @container (max-width: 640px) {
+    .ws-intake { grid-template-columns: minmax(0, 1fr); }
+    .ws-intake-or { width: auto; height: 1px; }
+  }
+
+  /* ── Actions & templates — the third member of the window family ──────────
+     Built first as a panel docked to the note's right edge, and corrected: Ask
+     is a small always-on-top window (§11.20) and this is reached the same way,
+     from a button beside it, so it has to BE the same thing. Two overlays that
+     open from adjacent buttons and behave differently teach two rules for one
+     gesture. Wider than Ask because it holds a list beside an editor. */
+  .ws-actionswin { width: 520px; height: 440px; }
+  .ws-win-sub { flex: none; font-size: 10px; color: var(--fg-muted); }
+  /* The subtitle takes the middle, so the title stops growing and the close
+     control keeps the right edge. */
+  .ws-actionswin .ws-chatwin-deco b { flex: none; }
+  .ws-actionswin .ws-chatwin-deco { gap: 7px; }
+  .ws-actionswin .ws-chatwin-deco button { margin-left: auto; }
+
+  .ws-actions-body {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: minmax(0, 178px) minmax(0, 1fr);
+  }
+  .ws-actions-list {
+    display: flex; flex-direction: column;
+    padding: var(--s2) 6px;
+    border-right: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-sidebar) 55%, var(--bg-base));
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .ws-actions-list::-webkit-scrollbar { width: 0; }
+  .ws-action-row {
+    display: flex; align-items: flex-start; gap: var(--s2);
+    padding: 7px var(--s2);
+    border-radius: var(--r-control);
+    text-align: left;
+    color: var(--fg-dim);
+    transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .ws-action-row > svg {
+    width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--fg-muted);
+  }
+  .ws-action-row:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-action-row[aria-current="true"] {
+    background: var(--nav-active-bg); color: var(--nav-active-fg);
+  }
+  .ws-action-row[aria-current="true"] > svg { color: var(--nav-active-icon); }
+  .ws-action-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .ws-action-text b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-action-text > span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); line-height: 1.4;
+  }
+  /* A built-in badge in a 178 px column would take the width the name needs,
+     so it states itself by position instead: the two built-ins lead the list,
+     and the badge only appears on the row that is open. */
+  .ws-action-row .ws-badge { display: none; }
+  .ws-action-row[aria-current="true"] .ws-badge {
+    display: inline-flex; align-self: flex-start; margin-top: 1px;
+  }
+
+  /* ── The boundary inside a list of two kinds (§11.30, §11.43) ─────────────
+     A hairline with its label sitting in a gap in the line. The label is what
+     this instance adds over the mode cycle's bare rule: the cycle's two sides
+     are self-evident once you know the vocabulary, and this one has to say the
+     consequence out loud, because the difference between the halves is whether
+     pressing the button changes something in the world. */
+  .ws-actions-rule,
+  .ws-menu-rule {
+    display: flex; align-items: center; gap: var(--s2);
+    margin: var(--s2) var(--s2) var(--s1);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    white-space: nowrap;
+  }
+  .ws-actions-rule::after,
+  .ws-menu-rule::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+  }
+  .ws-menu-rule { margin: var(--s2) var(--s3) var(--s1); }
+
+  /* A desk action carries two more decisions than an assistant one, and they
+     belong side by side because they are one decision in two halves: which
+     repository, and what it may do there. */
+  .ws-actions-desk { display: flex; flex-direction: column; gap: var(--s3); }
+  .ws-field-row { display: flex; gap: var(--s3); }
+  .ws-field-row > .ws-field-wrap.ws-grow { flex: 1; min-width: 0; }
+
+  .ws-action-new {
+    display: flex; align-items: center; gap: var(--s2);
+    padding: 7px var(--s2); margin-top: var(--s1);
+    border-radius: var(--r-control);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+    transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .ws-action-new svg { width: 13px; height: 13px; }
+  .ws-action-new:hover { background: var(--bg-elevated); color: var(--fg); }
+
+  .ws-actions-edit {
+    display: flex; flex-direction: column; gap: var(--s3);
+    padding: var(--s4);
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .ws-actions-edit::-webkit-scrollbar { width: 0; }
+  .ws-actions-edit > .ws-field-wrap > label {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--fg-muted);
+  }
+  .ws-actions-edit textarea {
+    font-family: var(--font-mono);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.6;
+  }
+  .ws-actions-foot {
+    display: flex; align-items: center; gap: var(--s2);
+    margin-top: auto; padding-top: var(--s2);
+  }
+  .ws-actions-foot .ws-right { margin-left: auto; }
+
+  /* The dot-matrix readout's wrapper, `demo.css`'s `.matrix-wrap`. The two
+     tokens are the design's, not a call site's — an emitting pixel is the
+     accent and the dark grid is `--fg-muted` — and `flex: none` is here for a
+     measured reason: the meeting HUD's state line is a flex row, and a
+     shrinkable SVG in one is squashed to its content box rather than clipped.
+     The meter came out 28 px wide inside a 166 px drawing, which reads as a
+     dash and not as a reading. */
+  .ws-matrix-wrap {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    --matrix-on: var(--accent);
+    --matrix-off: var(--fg-muted);
+  }
+  /* THE SURFACE'S 16 px DEFAULT ICON SIZE IS FOR ICONS. A readout declares its
+     own box in `width`/`height` ATTRIBUTES, and an attribute loses to any
+     stylesheet — so the base rule shrank a 47 × 20 meter to a 16 × 16 square,
+     which reads as a smudge in the state line. The prototype hit exactly this
+     and answered it with an inline `style` on the svg it builds by hand; here
+     the svg is upstream's, so the answer is a rule beside the base rule that
+     hands the box back to what the component declared. */
+  .ws-matrix-wrap svg { width: auto; height: auto; }
+
+  /* ── Meeting HUD ──────────────────────────────────────────────────────────
+     A SECOND window, not a second state of the dictation overlay. The
+     dictation pill is 440 × 60, `focus:false`, and lives for seconds because
+     it must not move the insert target away from the app being dictated into.
+     A meeting runs for an hour, inserts nothing, and has to be read while you
+     talk — which means it may be moved, resized, collapsed, and may take
+     focus, because there is no insert target to protect. Keeping them apart is
+     what lets this exist without reopening the plan's §1 or its §10.3.
+
+     IT IS THE NOTE, LIVE. The first sketch made it a strip of transcript with
+     a quick-note field beside it — a control panel for a recording. Wrong
+     object: during a meeting you are not operating a recorder, you are reading
+     and writing the note that the meeting is producing. So the window is the
+     note, with the same three tabs it will have in Context afterwards, and the
+     recording is one line of state at the top. Tall and narrow, because it
+     stands beside a call rather than over it, and because a column of 40
+     characters is what a list of decisions actually needs.
+
+     Content protection is the one property neither window can do without and
+     only this one has a reason for: it floats over a call that is often being
+     screen-shared. */
+  .ws-hud-wrap {
+    display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start;
+  }
+  .ws-hud {
+    width: 330px; max-width: 100%;
+    height: 560px;
+    display: flex; flex-direction: column;
+    border-radius: var(--r-window);
+    background: var(--bg-base);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--elev-sheet);
+    overflow: hidden;
+    position: relative;
+  }
+  /* ADR 0003: the OS draws the frame. This strip stands in for it, exactly as
+     the main window's does — no traffic lights are invented here either. */
+  .ws-hud-deco {
+    flex: none; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px; color: var(--fg-muted);
+    cursor: grab;
+  }
+  /* 330 px is not much to put a title, a date and a three-way switch into, so
+     nothing here is allowed to wrap: the title truncates, the date stays on
+     one line, and the tabs shrink a step rather than pushing the title into
+     two. */
+  .ws-hud-head {
+    flex: none; padding: var(--s3) var(--s4) var(--s3);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .ws-hud-head h3 {
+    font-family: var(--font-display); font-size: var(--t-body); font-weight: 600;
+    font-stretch: var(--w-lead); letter-spacing: var(--ls-lead); line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-hud-head .ws-note-date { white-space: nowrap; }
+  .ws-hud-head .ws-row1 { display: flex; align-items: center; gap: var(--s2); }
+  .ws-hud-head .ws-row1 .ws-grow { min-width: 0; }
+  /* The tabs are their own row at 330 px. The gap is tighter than the head's
+     because the two rows are one block — what this is, and how you are looking
+     at it — rather than two things stacked. */
+  .ws-hud-tabs { margin-top: -4px; }
+  .ws-hud-tabs .ws-note-tabs { width: 100%; }
+  .ws-hud-state {
+    display: flex; align-items: center; gap: 7px;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-hud-state .ws-el {
+    font-family: var(--font-mono); color: var(--fg-dim); font-variant-numeric: tabular-nums;
+  }
+  /* No scrollbar. In a 330 px window standing beside a call, a permanent 9 px
+     gutter is a tenth of the measure spent on saying something the content
+     already says — a page that continues past the bottom edge continues. The
+     window still scrolls; it just does not draw furniture about it. */
+  .ws-hud-scroll {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 0 var(--s4) 76px;
+    display: flex; flex-direction: column; gap: var(--s4);
+    scrollbar-width: none;
+  }
+  .ws-hud-scroll::-webkit-scrollbar { width: 0; height: 0; }
+  /* The HUD's action bar is the note's, at the HUD's scale. */
+  .ws-hud .ws-floatbar { bottom: var(--s3); }
+  .ws-hud .ws-split-btn > .ws-btn {
+    height: 30px; padding: 0 var(--s3);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-hud .ws-split-btn > .ws-btn + .ws-btn { padding: 0 8px; }
+  .ws-hud .ws-mic-btn { width: 30px; height: 30px; }
+  .ws-hud .ws-menu { width: 200px; }
+  .ws-hud .ws-note-tabs { padding: 2px; flex: none; }
+  .ws-hud .ws-note-tabs button { padding: 3px 6px; font-size: 10px; gap: 3px; }
+  .ws-hud .ws-note-tabs button svg { width: 9px; height: 9px; }
+  .ws-hud .ws-hud-state { font-size: 10px; }
+  .ws-hud .ws-enh > h4 {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-hud .ws-enh > ul > li {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.55;
+  }
+  .ws-hud .ws-readout {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    padding: var(--s3);
+  }
+  .ws-hud .ws-tline {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+
+  /* Caption under a drawn window, so a mock is never mistaken for a
+     screenshot. */
+  .ws-hud-cap {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    display: flex; align-items: center; gap: 6px;
+    max-width: 330px; line-height: 1.5;
+  }
+  .ws-hud-cap b { color: var(--fg-dim); font-weight: 600; }
+  .ws-hud-row { display: flex; gap: var(--s6); flex-wrap: wrap; }
+
+  /* ── The copilot lane (ADR 0047) ──────────────────────────────────────────
+     Above the bar, below the scroller, inside the HUD. It sits in the flow
+     rather than floating, so it pushes the transcript up by its own height
+     instead of covering the newest line — which is the one line a person
+     reading a live transcript is actually looking at.
+
+     The source is a button and not a caption, because it is the only thing on
+     this component the user can act on and because a citation you cannot open
+     is decoration. */
+  .ws-cop {
+    display: flex; align-items: flex-start; gap: var(--s2);
+    /* The floating bar is absolute and sits 16 px off the bottom edge, so a
+       strip in the flow at the foot of the window is exactly where the bar
+       lands. The strip therefore carries the bar's height as its own bottom
+       padding: the hint reads above it, and the bar has a ground to sit on
+       instead of hovering over a sentence. */
+    padding: 9px var(--s3) 54px 11px;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+  .ws-cop > svg {
+    width: 13px; height: 13px; flex: none; margin-top: 1px; color: var(--accent);
+  }
+  .ws-cop-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .ws-cop-text b {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    font-weight: 500; line-height: 1.45; color: var(--fg);
+  }
+  .ws-cop-src {
+    display: inline-flex; align-items: center; gap: 4px;
+    align-self: flex-start;
+    font-size: 10px; color: var(--fg-muted);
+  }
+  .ws-cop-src svg { width: 10px; height: 10px; }
+  .ws-cop-src:hover { color: var(--fg-dim); text-decoration: underline; }
+  .ws-cop-x {
+    flex: none; width: 16px; height: 16px;
+    display: grid; place-items: center; border-radius: 4px; color: var(--fg-muted);
+  }
+  .ws-cop-x svg { width: 10px; height: 10px; }
+  .ws-cop-x:hover { background: var(--bg-inset); color: var(--fg-dim); }
+
+  /* ── The three stages of a speaker name (ADR 0047) ────────────────────────
+     Numbered because they are ordered and each one depends on the one above,
+     which a plain list of rows would not say. The right-hand tag carries what
+     each stage costs, since "free", "a second pass" and "not audio at all" is
+     the comparison the reader is making. */
+  .ws-stagelist { display: flex; flex-direction: column; }
+  .ws-stage-row {
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) 132px;
+    gap: var(--s3); align-items: baseline;
+    padding: 11px var(--s4);
+    border-top: 1px solid var(--border);
+  }
+  .ws-stage-row:first-child { border-top: 0; }
+  .ws-stage-n {
+    display: grid; place-items: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--bg-inset);
+    font-size: 10px; font-weight: 650; color: var(--fg-dim);
+  }
+  .ws-stage-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ws-stage-text b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 550; color: var(--fg);
+  }
+  .ws-stage-text > span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    line-height: 1.5; color: var(--fg-muted);
+  }
+  .ws-stage-tag {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted); text-align: right;
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE OVERLAY, DRAWN — geometry and tokens read out of `overlay-pill.css`
+     and `tauri.conf.json`, never re-derived.
+
+     RULE 5 OF THE RELAY IS INTACT: nothing in `overlay*.css` or
+     `OverlayPill.tsx` changes. This is a DRAWING of the shipped pill on a
+     preview surface, which is exactly what the prototype does and the only way
+     a screen about the overlay can say anything true about it. If the shipped
+     pill ever moves, this moves with it — it is a copy of a measurement, and a
+     copy of a measurement that drifts is worse than none.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* The overlay floats over whatever the user is working in, so it is shown on
+     a ground darker than the window rather than on a surface lighter than it —
+     the one place in this design where something sits on top of the product
+     instead of inside it. */
+  .ws-ovp-stage,
+  .ws-agw-stage {
+    display: flex;
+    justify-content: center;
+    padding: var(--s6) var(--s4);
+    border-radius: var(--r-card);
+    background: var(--bg-inset);
+  }
+
+  /* `zoom: 0.87` is the shipped shell's, and it is reproduced because it
+     changes what the pill LOOKS like — at 1.0 this preview would be showing a
+     pill 15% larger than the one on the user's screen. */
+  .ws-ovp-shell { display: inline-flex; position: relative; zoom: 0.87; }
+
+  .ws-ovp {
+    box-sizing: border-box;
+    display: inline-flex; align-items: center; gap: 2px;
+    width: max-content; height: 40px;
+    padding: 0 6px;
+    background: #1b1b1d;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: var(--r-round);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    color: #e9e9ec;
+    user-select: none;
+    font-family: var(--font);
+  }
+  /* Recording: warm hairline and a soft inner ring. The live waveform already
+     signals capture, so the surface stays calm — no halo, no pulse. */
+  .ws-ovp[data-rec] {
+    border-color: rgba(232, 145, 42, 0.34);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
+                inset 0 0 0 1px rgba(232, 145, 42, 0.16);
+  }
+
+  .ws-ovp-mic {
+    flex: none; width: 30px; height: 30px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: #e8912a;
+    position: relative;
+  }
+  .ws-ovp-mic::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    background: radial-gradient(circle at 48% 42%, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 55%, transparent 80%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .ws-ovp-mic svg { width: 16px; height: 16px; position: relative; z-index: 1; }
+
+  .ws-ovp-bars {
+    flex: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 2px;
+    height: 30px; padding: 0 6px;
+  }
+  .ws-ovp-bars i {
+    display: block; width: 3px;
+    border-radius: var(--r-round);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.10);
+  }
+
+  .ws-ovp-div {
+    flex: none; width: 1px; height: 20px; margin: 0 2px;
+    background: rgba(255, 255, 255, 0.10);
+  }
+
+  .ws-ovp-mode {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 26px; padding: 0 8px 0 10px;
+    border-radius: var(--r-round);
+    color: #e9e9ec;
+    transition: background 140ms ease-out;
+  }
+  .ws-ovp-mode:hover { background: rgba(255, 255, 255, 0.05); }
+  .ws-ovp-mode-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #e8912a;
+    box-shadow: 0 0 6px rgba(232, 145, 42, 0.6);
+  }
+  .ws-ovp-mode-label {
+    font-family: var(--font-display);
+    font-size: 12px; font-weight: 600; letter-spacing: 0.01em; line-height: 1;
+    white-space: nowrap;
+  }
+  .ws-ovp-timer {
+    flex: none;
+    font-family: var(--font-display);
+    font-stretch: var(--w-note); font-size: var(--t-note); font-weight: 600;
+    line-height: 1; letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    padding: 0 2px;
+  }
+
+  /* ── The tab ──────────────────────────────────────────────────────────────
+     A third instance of the component the overlay already has on both edges,
+     built to the same three constraints as the two that ship:
+
+     - `position: absolute`, out of the pill's flex flow. In the flow it widens
+       the pill, and a pill wider than the 480 px window has its rounded ends
+       clipped.
+     - `width` animates, never `transform` or `opacity`. Both of those are
+       composited, and a compositor layer that outlives a surface swap is
+       exactly what WebKitGTK fails to invalidate. A width animation drives
+       layout, which forces a repaint per frame instead of caching a raster.
+     - The shutter paints nothing and the inner element is pinned to its right
+       edge, so the content never moves: it is uncovered, not grown.
+
+     It differs from the learned tab in one way and it is deliberate: this one
+     stays out. A learned word is news and retracts; "an agent is waiting for
+     you" is a state, and a state that retracts has to be remembered. */
+  .ws-ovp-tab {
+    position: absolute;
+    top: 50%; right: calc(100% + 6px);
+    height: 22px; margin-top: -11px;
+    width: 0;
+    overflow: hidden;
+    pointer-events: none;
+    animation: ws-ovp-tab-out 520ms cubic-bezier(0.22, 0.85, 0.28, 1) 260ms both;
+  }
+  @keyframes ws-ovp-tab-out { from { width: 0; } to { width: 108px; } }
+
+  .ws-ovp-tab-inner {
+    position: absolute; top: 0; right: 0;
+    height: 100%; width: max-content; max-width: 168px;
+    box-sizing: border-box;
+    display: flex; align-items: center; gap: 5px;
+    padding: 0 9px;
+    border-radius: var(--r-round);
+    background: #1b1b1d;
+    border: 1px solid rgba(232, 145, 42, 0.34);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    font-family: var(--font);
+    font-size: 10.5px; font-weight: 500; letter-spacing: 0.01em;
+    color: #e8912a;
+    pointer-events: auto;
+    white-space: nowrap;
+  }
+  .ws-ovp-tab-dot {
+    flex: none; width: 6px; height: 6px; border-radius: 50%; background: #e8912a;
+  }
+
+  /* ── The handoff card ─────────────────────────────────────────────────────
+     NOT A MEMBER OF THE WINDOW FAMILY, and deliberately not shaped like one:
+     no title bar, no close control, no resize grip. It is one question with
+     two answers and it is on screen for a few seconds. Giving it window chrome
+     would invite the user to move it, which would mean remembering where they
+     put it, which would mean it has a life. It does not.
+
+     The two actions are not equal weight and the layout says so twice — by
+     button variant, and by the keys line naming the safe one second. */
+  .ws-hoff-stage {
+    display: grid; place-items: center;
+    padding: var(--s6) var(--s4);
+    border-radius: var(--r-card);
+    background: radial-gradient(120% 100% at 50% 0%, #17171a 0%, #0d0d0f 100%);
+    border: 1px solid var(--border);
+  }
+  .ws-hoff {
+    width: 460px; max-width: 100%;
+    display: flex; flex-direction: column; gap: var(--s3);
+    padding: 15px 16px 13px;
+    border-radius: var(--r-window);
+    background: #1b1b1d;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: var(--elev-pop);
+    color: rgba(255, 255, 255, 0.92);
+  }
+  .ws-hoff-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ws-hoff-head > svg { width: 15px; height: 15px; color: var(--accent); flex: none; }
+  .ws-hoff-head b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 600;
+  }
+  .ws-hoff-why {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: rgba(255, 255, 255, 0.45);
+  }
+  .ws-hoff-label {
+    font-size: 9px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+  }
+  .ws-hoff-said {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 9px 11px;
+    border-radius: var(--r-control);
+    background: rgba(255, 255, 255, 0.045);
+  }
+  .ws-hoff-said p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.55;
+  }
+  /* Two by two rather than four in a row: the pairs are (what it is, what it
+     may do) and (what it reads, what it can reach), and a single row of four
+     would put "Role" beside "May reach" and suggest they answer each other. */
+  .ws-hoff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+  .ws-hoff-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ws-hoff-cell b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 550;
+  }
+  .ws-hoff-cell > span:last-child {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    line-height: 1.45; color: rgba(255, 255, 255, 0.45);
+  }
+  .ws-hoff-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+    flex-wrap: wrap;
+    padding-top: var(--s3);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .ws-hoff-keys {
+    display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: rgba(255, 255, 255, 0.45);
+  }
+  .ws-hoff-keys .ws-sep { opacity: 0.4; }
+  .ws-hoff-keys kbd {
+    font: inherit; font-size: 10px;
+    padding: 1px 5px; border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  /* The two sentences, side by side. Only the desk half is tinted: the point
+     is that one of the two crosses a line, and tinting both would say they are
+     two flavours of the same thing. */
+  .ws-hoff-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+  .ws-hoff-side {
+    display: flex; flex-direction: column; gap: 7px;
+    padding: var(--s4);
+    border-radius: var(--r-card);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+  }
+  .ws-hoff-side[data-desk] {
+    background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface));
+    border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+  .ws-hoff-side .ws-hoff-label { color: var(--fg-muted); }
+  .ws-hoff-side p { font-size: 14px; line-height: 1.5; color: var(--fg-dim); }
+  .ws-hoff-side p b { color: var(--fg); font-weight: 650; }
+  .ws-hoff-side-out {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+  }
+  .ws-hoff-side-out svg { width: 13px; height: 13px; flex: none; }
+  .ws-hoff-side[data-desk] .ws-hoff-side-out { color: var(--accent); }
+
+  /* The comparison table. A grid rather than a real table because the first
+     column is a label and the other two are the things being compared, and a
+     table header would claim the first cell is a column heading. */
+  .ws-linecmp { display: flex; flex-direction: column; }
+  .ws-linecmp-row {
+    display: grid; grid-template-columns: 96px 1fr 1fr; gap: var(--s3);
+    padding: 9px var(--s4);
+    border-top: 1px solid var(--border);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+  .ws-linecmp-row:first-child { border-top: 0; }
+  .ws-linecmp-row[data-head] {
+    font-size: 9px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--fg-muted);
+  }
+  .ws-linecmp-row > span:first-child { color: var(--fg); font-weight: 500; }
+  .ws-linecmp-row[data-head] > span:first-child { color: var(--fg-muted); font-weight: 650; }
+
+  /* ── What crosses ─────────────────────────────────────────────────────────
+     TWO COLUMNS, AND THE SECOND ONE IS THE ARGUMENT. A list of what was handed
+     over is a feature description. A list of what was deliberately held back
+     is the privacy boundary shown instead of asserted, which is the only form
+     in which ADR 0044's claim — the assistant reads this disk, the desk
+     reaches the network — is checkable by the person it is about.
+
+     THE HELD COLUMN IS NOT TINTED RED. Nothing here failed and nothing was
+     blocked: the material stayed where it belongs, which is the normal case
+     and the good one. A warning tint would teach that being handed over is the
+     correct outcome and everything else is an exception. The accent goes on
+     the column that crossed, for the same reason it goes on the desk's side of
+     the pair above — it marks the thing that leaves. */
+  .ws-cross { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+  .ws-cross-side {
+    display: flex; flex-direction: column; gap: var(--s3);
+    padding: var(--s4);
+    border-radius: var(--r-card);
+    background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+  .ws-cross-side[data-held] {
+    background: var(--bg-inset);
+    border-color: var(--border);
+  }
+  .ws-cross-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-stretch: var(--w-micro); font-size: var(--t-micro);
+    font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+  .ws-cross-side[data-held] .ws-cross-label { color: var(--fg-muted); }
+  .ws-cross-label svg { width: 13px; height: 13px; flex: none; }
+  .ws-cross-list {
+    display: flex; flex-direction: column; gap: var(--s3); list-style: none;
+  }
+  .ws-cross-list li { display: flex; flex-direction: column; gap: 2px; }
+  .ws-cross-list b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); font-weight: 550; color: var(--fg);
+  }
+  .ws-cross-list span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); line-height: 1.5; color: var(--fg-muted);
+  }
+
+  /* ── After the key ────────────────────────────────────────────────────────
+     A numbered list, and the number is doing real work: this is the one
+     sequence in the product where the order is the safety argument. The
+     counter is drawn rather than left to the marker so it can sit on the same
+     baseline as the step's own title instead of hanging in the gutter. */
+  .ws-crossflow {
+    display: flex; flex-direction: column; list-style: none;
+    counter-reset: ws-crossflow;
+  }
+  .ws-crossflow li {
+    counter-increment: ws-crossflow;
+    display: grid; grid-template-columns: 22px minmax(0, 1fr);
+    gap: 3px var(--s3);
+    padding: var(--s3) var(--s4);
+    border-top: 1px solid var(--border);
+  }
+  .ws-crossflow li:first-child { border-top: 0; }
+  .ws-crossflow li::before {
+    content: counter(ws-crossflow);
+    grid-row: span 2;
+    width: 22px; height: 22px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    color: var(--fg-dim);
+  }
+  .ws-crossflow b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); font-weight: 550; color: var(--fg);
+  }
+  .ws-crossflow span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); line-height: 1.55; color: var(--fg-muted);
+  }
+
+  /* ── Captions ─────────────────────────────────────────────────────────────
+     THE STRIP CARRIES ITS OWN GROUND. Not text on the video: a frame can cut
+     to white mid-sentence and the caption has to survive the cut, so the
+     ground belongs to the component rather than being borrowed from what is
+     behind it. This is also why the frost material is excluded here (ADR
+     0051): the surface it would sample belongs to somebody else's player, and
+     blurring a moving picture costs a filter pass per frame of theirs.
+
+     THE MEASURE IS THE LIMIT, NOT THE WINDOW. Captions are read in one glance
+     at the bottom of the visual field, so the line length is set by reading
+     speed and not by how wide the strip could be. */
+  .ws-cap-stage { display: flex; flex-direction: column; gap: var(--s3); }
+  /* A stand-in for "something is playing under this". Deliberately abstract: a
+     screenshot of a real video would be read as a supported integration. */
+  .ws-cap-scene {
+    position: relative;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    gap: var(--s2);
+    min-height: 132px;
+    padding: var(--s4);
+    border-radius: var(--r-card);
+    background:
+      repeating-linear-gradient(115deg,
+        rgba(255, 255, 255, 0.028) 0 14px,
+        rgba(255, 255, 255, 0.008) 14px 28px),
+      #101012;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .ws-cap-scene[data-light] {
+    background:
+      repeating-linear-gradient(115deg,
+        rgba(0, 0, 0, 0.05) 0 14px,
+        rgba(0, 0, 0, 0.015) 14px 28px),
+      #e8e6e1;
+  }
+  .ws-cap-scene-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: rgba(255, 255, 255, 0.42);
+  }
+  .ws-cap-scene[data-light] .ws-cap-scene-tag { color: rgba(0, 0, 0, 0.45); }
+  .ws-cap-scene-tag svg { width: 13px; height: 13px; }
+
+  .ws-cap-bar {
+    align-self: center;
+    max-width: 46ch;
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 9px 14px;
+    border-radius: var(--r-control);
+    /* Near-black at high alpha rather than a token: this ground is measured
+       against arbitrary video, not against a WordScript surface. */
+    background: rgba(12, 12, 14, 0.9);
+  }
+  /* The bright-frame case is the same component with the pair inverted, which
+     is what "the colour follows the contrast" means in practice — the strip
+     flips as a unit so the text never has to win against its own ground. */
+  .ws-cap-bar[data-tone="light"] { background: rgba(250, 250, 250, 0.94); }
+  .ws-cap-lang {
+    font-stretch: var(--w-micro); font-size: 9px;
+    font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.48);
+  }
+  .ws-cap-bar[data-tone="light"] .ws-cap-lang { color: rgba(0, 0, 0, 0.5); }
+  .ws-cap-text {
+    font-size: 15px; line-height: 1.4; font-weight: 500;
+    color: #f4f2ee;
+    text-wrap: balance;
+  }
+  .ws-cap-bar[data-tone="light"] .ws-cap-text { color: #17171a; }
+
+  /* ── Echo ─────────────────────────────────────────────────────────────────
+     NO GROUND, NO BORDER, NO CARD. It is a trace of the pill rather than a
+     second surface: anything with an edge around it becomes a window that has
+     to be positioned, dismissed and reasoned about, and the dictation
+     overlay's entire discipline is that it is one small object which does not
+     grow. */
+  .ws-echo-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+  }
+  .ws-echo-text {
+    max-width: 44ch;
+    text-align: center;
+    font-size: 15px; line-height: 1.45;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  }
+  /* Committed text is set, the live tail is still moving. Without the split
+     you re-read the whole line every time it changes, which is worse than no
+     echo. */
+  .ws-echo-done { color: #f2efe9; font-weight: 500; }
+  .ws-echo-live { color: rgba(242, 239, 233, 0.52); font-weight: 400; }
+
+  /* ── The translation window ───────────────────────────────────────────────
+     Fifth member of the window family, so it takes `.ws-chatwin-deco` like the
+     other four rather than inventing a header. Wider than the meeting HUD and
+     shorter: this one is read across, not scrolled down. */
+  .ws-trw-stage {
+    display: flex; justify-content: center;
+    padding: var(--s6) var(--s4);
+    border-radius: var(--r-card);
+    background: var(--bg-inset);
+  }
+  .ws-trw {
+    width: 560px; max-width: 100%;
+    display: flex; flex-direction: column;
+    border-radius: var(--r-window);
+    background: var(--bg-base);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--elev-sheet);
+    overflow: hidden;
+  }
+  .ws-trw-deco-pair {
+    margin-left: auto; margin-right: var(--s2);
+    font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+  }
+
+  /* THE PAIR SITS IN THE CHROME. It is the window's entire state and it
+     changes what every other pixel means, so it belongs above the tabs rather
+     than inside whichever one is open. */
+  .ws-trw-pair {
+    flex: none;
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: var(--s2);
+    padding: var(--s3) var(--s4);
+    border-bottom: 1px solid var(--border);
+  }
+  .ws-trw-lang .ws-sel { width: 100%; }
+  /* Reversing direction is the most frequent act in this window and it is not
+     a change of configuration, so it is one button and not two selects
+     re-picked. */
+  .ws-trw-swap {
+    width: 30px; height: 30px; flex: none;
+    display: grid; place-items: center;
+    border-radius: var(--r-control);
+    color: var(--fg-muted);
+    transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .ws-trw-swap:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-trw-tabs { flex: none; padding: var(--s3) var(--s4) 0; }
+
+  /* ── One way ──────────────────────────────────────────────────────────────
+     Two panes, source above target, because on a 16:9 desktop window
+     side-by-side panes give each half a 40-character measure and this is
+     prose. Typed and spoken enter the same pane: the microphone is a way of
+     filling the field, not a second mode with a second layout. */
+  .ws-trw-body { display: flex; flex-direction: column; }
+  .ws-trw-pane {
+    display: flex; flex-direction: column; gap: var(--s2);
+    padding: var(--s4);
+    min-height: 108px;
+  }
+  /* The output is the answer, so it sits on the raised plane and the input
+     does not. Two panes at one elevation read as a form with two fields. */
+  .ws-trw-pane[data-out] {
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border);
+  }
+  .ws-trw-pane-head {
+    display: flex; align-items: center; gap: var(--s2);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    font-weight: 600; color: var(--fg-muted);
+  }
+  .ws-trw-pane-head .ws-rowflex { margin-left: auto; }
+  .ws-trw-src {
+    display: inline-flex; align-items: center; gap: 5px; color: var(--fg-muted);
+  }
+  .ws-trw-src svg { width: 12px; height: 12px; }
+  .ws-trw-text { font-size: 15px; line-height: 1.5; color: var(--fg); }
+  .ws-trw-pane:not([data-out]) .ws-trw-text { color: var(--fg-dim); }
+
+  /* THE ALTERNATIVE IS MARKED IN THE SENTENCE, not listed in a panel. A dotted
+     underline rather than a ground: the word is still part of the sentence and
+     has to keep reading as one, which a highlight breaks. A list of whole
+     alternative sentences makes you re-read all of them to find the one word
+     you were unsure about. */
+  .ws-trw-alt {
+    font: inherit; color: var(--fg);
+    border-bottom: 1px dashed color-mix(in srgb, var(--accent) 62%, transparent);
+    cursor: pointer;
+  }
+  .ws-trw-alt:hover { color: var(--accent); }
+  .ws-trw-alts { display: flex; gap: var(--s1); flex-wrap: wrap; }
+  .ws-trw-altopt {
+    height: 24px; padding: 0 9px;
+    border-radius: var(--r-small);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-dim);
+    cursor: pointer;
+  }
+  .ws-trw-altopt[data-on] {
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+    color: var(--fg);
+  }
+
+  /* ── Conversation ─────────────────────────────────────────────────────────
+     EACH SPEAKER OWNS A SIDE. The alternative was one column with two colours,
+     and it fails at the table: you cannot hand a laptop to somebody and ask
+     them to find their language in a mixed list. Sides make it findable
+     without reading, which is the only thing that works across a language
+     gap. */
+  .ws-trw-conv {
+    display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4);
+  }
+  .ws-trw-turn {
+    max-width: 82%;
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 9px 11px;
+    border-radius: var(--r-card);
+    background: var(--bg-surface);
+  }
+  .ws-trw-turn[data-side="you"] {
+    align-self: flex-end;
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-surface));
+  }
+  .ws-trw-turn-lang {
+    font-stretch: var(--w-micro); font-size: 9px;
+    font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--fg-muted);
+  }
+  /* WHAT WAS SAID IS SECONDARY AND WHAT WAS HEARD IS PRIMARY, which is the
+     reverse of a transcript and correct here: you already know what you said.
+     The line you need is the one in the other language. */
+  .ws-trw-said {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); color: var(--fg-muted);
+  }
+  .ws-trw-heard {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 14px; line-height: 1.45; color: var(--fg);
+  }
+  .ws-trw-heard svg {
+    width: 13px; height: 13px; flex: none; margin-top: 3px; color: var(--fg-muted);
+  }
+
+  /* The strip is a readout, not a control. Nobody presses a language button
+     mid-sentence, which is the interaction the references removed and the
+     reason their conversation modes became usable. */
+  .ws-trw-listen {
+    display: flex; align-items: center; gap: var(--s2);
+    margin-top: var(--s1);
+    padding: var(--s2) var(--s3);
+    border-radius: var(--r-control);
+    background: var(--bg-inset);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-trw-listen b { color: var(--fg); font-weight: 600; }
+  .ws-trw-listen .ws-grow { flex: 1; }
+
+  /* ── Where each translation comes out ─────────────────────────────────────
+     One row per LANGUAGE, not per device, because the question is "what
+     happens to this language" and the device is the answer to it. Inverted — a
+     device list with languages hung off it — it becomes an audio-settings
+     panel and stops being about the conversation. */
+  .ws-trw-route { display: flex; flex-direction: column; }
+  .ws-trw-route-row {
+    display: grid; grid-template-columns: 150px minmax(0, 1fr) auto;
+    align-items: center; gap: var(--s4);
+    padding: var(--s3) var(--s4);
+    border-top: 1px solid var(--border);
+  }
+  .ws-trw-route-row:first-child { border-top: 0; }
+  .ws-trw-route-lang { display: flex; flex-direction: column; gap: 2px; }
+  .ws-trw-route-lang b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note);
+    font-size: var(--t-note); font-weight: 600; color: var(--fg);
+  }
+  .ws-trw-route-lang span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); color: var(--accent);
+  }
+  .ws-trw-route-why {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); line-height: 1.5; color: var(--fg-muted);
+  }
+  .ws-trw-route-ctl { display: flex; align-items: center; gap: var(--s2); flex: none; }
+
+  @media (max-width: 900px) {
+    .ws-trw-route-row { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
+    .ws-trw-route-ctl { flex-wrap: wrap; }
+  }
+
+  /* ── The client, and its conversations ────────────────────────────────────
+     A list of recordings hung off one person. Deliberately not a table: four
+     conversations are read, not scanned, and a table header would promise
+     sorting and filtering this surface does not have and should not grow. */
+  .ws-clnt { display: flex; flex-direction: column; }
+  .ws-clnt-head {
+    display: flex; align-items: center; gap: var(--s3);
+    padding: 0 0 var(--s3);
+    border-bottom: 1px solid var(--border);
+  }
+  .ws-clnt-head .ws-rowflex { margin-left: auto; }
+  .ws-clnt-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ws-clnt-id b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note);
+    font-size: var(--t-note); font-weight: 600; color: var(--fg);
+  }
+  .ws-clnt-id span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); color: var(--fg-muted);
+  }
+  .ws-clnt-list { display: flex; flex-direction: column; }
+  .ws-clnt-row {
+    display: grid; grid-template-columns: 58px minmax(0, 1fr) auto auto;
+    align-items: center; gap: var(--s3);
+    padding: var(--row-py) 0;
+    border-top: 1px solid var(--border);
+  }
+  .ws-clnt-row:first-child { border-top: 0; }
+  .ws-clnt-row b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); font-weight: 550; color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-clnt-when,
+  .ws-clnt-len { font-size: var(--t-micro); color: var(--fg-muted); }
+
+  /* ── The document it ends in ──────────────────────────────────────────────
+     A form the conversation fills, and the third line of every field is the
+     part that matters: WHERE the value came from. A generated document whose
+     provenance is invisible is one nobody can defend in the meeting where it
+     is questioned, and these are documents that get questioned. */
+  .ws-doct {
+    display: flex; flex-direction: column;
+    border-radius: var(--r-card);
+    background: var(--bg-inset);
+    overflow: hidden;
+  }
+  .ws-doct-head {
+    display: flex; align-items: center; gap: var(--s3);
+    padding: var(--s3) var(--s4);
+    border-bottom: 1px solid var(--border);
+  }
+  .ws-doct-head .ws-badge { margin-left: auto; }
+  .ws-doct-body { display: flex; flex-direction: column; }
+  .ws-doct-field {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: var(--s3) var(--s4);
+    border-top: 1px solid var(--border);
+  }
+  .ws-doct-field:first-child { border-top: 0; }
+  .ws-doct-label {
+    font-stretch: var(--w-micro); font-size: 9px;
+    font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--fg-muted);
+  }
+  .ws-doct-val {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); color: var(--fg);
+  }
+  /* Set apart from the value it explains, because it is a note about the
+     document rather than part of it. */
+  .ws-doct-why {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); line-height: 1.5; color: var(--fg-muted);
+    font-style: italic;
+  }
+
+  /* ── The agent window ─────────────────────────────────────────────────────
+     Fourth member of the window family — Ask, the meeting HUD, Actions, this —
+     with the same chrome, the same OS-drawn decoration (ADR 0003) and the same
+     resize grip. This is where ADR 0030's two halves land, and the split it
+     names is the window's layout rather than two wings on a pill: space on the
+     left (targets, their state, what is unread), time on the right (the
+     thread, and the answer window at its foot). On a pill that split cost
+     1038 px of always-on-top furniture. In a window it costs nothing until you
+     open it, which is the correction. */
+  .ws-agw {
+    width: 620px; max-width: 100%;
+    height: 340px;
+    display: flex; flex-direction: column;
+    border-radius: var(--r-window);
+    background: var(--bg-base);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--elev-sheet);
+    overflow: hidden;
+    position: relative;
+  }
+  .ws-agw .ws-chatwin-deco b { flex: none; }
+  .ws-agw .ws-chatwin-deco { gap: 7px; }
+  .ws-agw .ws-chatwin-deco button { margin-left: auto; }
+
+  .ws-agw-body {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: minmax(0, 218px) minmax(0, 1fr);
+  }
+
+  /* `min-height: 0` on both grid items, and it is load-bearing. A grid item
+     defaults to `min-height: auto`, which means it refuses to become shorter
+     than its own content — so with the window fixed at 340 px the column kept
+     its full 324 px, the window clipped the last 12 px against `overflow:
+     hidden`, and what went was the bottom of the rail's buttons and the whole
+     answer strip. No scrollbar, no mark, just a level readout and a countdown
+     that were not there. An inner scroller only absorbs what the chain above
+     it allows to shrink. */
+  .ws-agw-rail {
+    display: flex; flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-sidebar) 55%, var(--bg-base));
+  }
+  .ws-agw-rail-head,
+  .ws-agw-main-head {
+    flex: none;
+    display: flex; align-items: baseline; gap: 7px;
+    padding: 11px var(--s3) var(--s2);
+  }
+  .ws-agw-rail-head b,
+  .ws-agw-main-head b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 600;
+  }
+  .ws-agw-main-head > span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+
+  /* The list is the part of the rail that grows, so it is the part that
+     scrolls. Everything else in the column is fixed furniture, and the number
+     of targets is the only thing the window does not control. */
+  .ws-agw-targets {
+    flex: 1; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; padding: 0 6px; gap: 1px;
+  }
+  .ws-agw-target {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 7px;
+    padding: 7px var(--s2);
+    border-radius: var(--r-control);
+    text-align: left;
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  .ws-agw-target:hover { background: var(--bg-elevated); }
+  /* The selected target is where an unaddressed remark lands, so selection
+     here is a statement about the future and not only about the view. */
+  .ws-agw-target[aria-current="true"] { background: var(--bg-elevated); }
+  .ws-agw-target-text { min-width: 0; display: flex; flex-direction: column; }
+  .ws-agw-target-text b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-agw-target-text > span {
+    font-size: 10px; color: var(--fg-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-agw-target-state {
+    grid-column: 2 / 4;
+    font-size: 10px; color: var(--fg-dim);
+    padding-top: 2px;
+  }
+  .ws-agw-target[aria-current="true"] .ws-agw-target-state { color: var(--accent); }
+  /* A count bubble is one of the few things that stays round: it is a disc
+     with a digit in it, not a label with a rectangle around it. */
+  .ws-agw-unread {
+    min-width: 17px; height: 17px; padding: 0 5px;
+    display: grid; place-items: center;
+    border-radius: var(--r-round);
+    background: var(--accent); color: var(--on-accent);
+    font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums;
+  }
+
+  .ws-agw-rail-foot {
+    margin-top: auto; display: flex; gap: var(--s1); padding: var(--s2) 6px 10px;
+  }
+  .ws-ovp-mini {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 24px; padding: 0 9px;
+    border-radius: var(--r-control);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .ws-ovp-mini svg { width: 12px; height: 12px; }
+  .ws-ovp-mini:hover { background: var(--bg-elevated); color: var(--fg); }
+
+  .ws-agw-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .ws-agw-thread {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 0 var(--s4) var(--s3);
+    overflow-y: auto; scrollbar-width: none;
+  }
+  .ws-agw-thread::-webkit-scrollbar { width: 0; }
+  .ws-agw-msg { display: flex; flex-direction: column; gap: 5px; }
+  .ws-agw-msg p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.55; color: var(--fg);
+  }
+  /* A completion message is not a question and must not read like one: the
+     thread carries both, so the eye has to sort them without reading them. */
+  .ws-agw-msg[data-from="done"] p {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--fg-muted);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+  }
+  .ws-agw-msg[data-from="done"] svg {
+    width: 12px; height: 12px; color: var(--success); flex: none;
+  }
+  .ws-agw-when { font-size: 10px; color: var(--fg-muted); }
+
+  .ws-agw-opts { display: flex; gap: 5px; flex-wrap: wrap; }
+  .ws-agw-opt {
+    height: 24px; padding: 0 10px;
+    border-radius: var(--r-small);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-dim);
+    transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .ws-agw-opt:hover { border-color: var(--border-strong); color: var(--fg); }
+
+  /* The answer window is open because the question opened it, and it closes
+     itself. It is the pane's foot rather than a message in the thread: a thing
+     that is counting down is state. */
+  .ws-agw-answer {
+    flex: none;
+    display: flex; align-items: center; gap: var(--s2);
+    padding: 9px var(--s4) 11px;
+    border-top: 1px solid var(--border);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-dim);
+  }
+  .ws-agw-answer > svg { width: 13px; height: 13px; color: var(--accent); flex: none; }
+  .ws-agw-answer .ws-wave { flex: none; }
+  .ws-agw-answer-left {
+    margin-left: auto; font-family: var(--font-mono); color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── The dash ─────────────────────────────────────────────────────────────
+     A strip across the foot of the agent window: who is speaking, what is
+     being said, how loudly. It is STATE, not an entry in the thread — the
+     sentence is already the last message above, and drawing it twice would
+     double every question. The orb at 22 px is an indicator; the same object
+     at 96 px is the notification's whole content. One component, two sizes,
+     and the size is what says how much of your attention it is asking for. */
+  .ws-agw-voice {
+    flex: none;
+    display: flex; align-items: center; gap: var(--s2);
+    padding: 8px var(--s3) 9px;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-elevated) 45%, var(--bg-base));
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+  }
+  .ws-agw-voice-text { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+  .ws-agw-voice-text b { font-weight: 600; color: var(--fg); flex: none; }
+  .ws-agw-voice-text > span {
+    color: var(--fg-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-agw-voice-meta {
+    margin-left: auto; flex: none; color: var(--fg-dim);
+    font-family: var(--font-mono); font-size: 10px;
+  }
+  .ws-agw-voice .ws-ovp-mini { flex: none; }
+
+  /* The rail head is the orchestrator's own row: the orb is its identity, and
+     the targets below are indented under it as what it is working on — the
+     same relationship the connection block draws for accounts under a
+     provider. THE RAIL WAS READING AS THREE AGENTS until ADR 0043: three rows,
+     three status dots, three names, and nothing saying that one process drives
+     all of them. A window that suggests three peers argues against the
+     decision it implements. */
+  .ws-agw-rail-head {
+    align-items: center; gap: 8px; padding-bottom: 6px; flex-wrap: wrap;
+  }
+  .ws-agw-rail-sub { flex-basis: 100%; font-size: 10px; color: var(--fg-muted); }
+  .ws-agw-rail-label { padding: 4px var(--s3) 5px; }
+  .ws-agw-rail-label label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--fg-dim);
+  }
+
+  /* ── The notification ─────────────────────────────────────────────────────
+     WordScript's own always-on-top window, above every other surface it owns.
+     NOT AN OS NOTIFICATION: Focus mode and screen sharing suppress those, and
+     a screen share is precisely when a coding agent is likely to be running.
+     It is content-protected for the same reason the meeting HUD is.
+
+     Its whole content is the orb, the question and the way out of it. Anything
+     more belongs in the window the tab opens — this one arrives uninvited, and
+     what arrives uninvited earns the least space it can do its job in. */
+  .ws-agpop-stage {
+    display: grid; place-items: center;
+    padding: var(--s5) var(--s4);
+    border-radius: var(--r-card);
+    background:
+      radial-gradient(120% 100% at 50% 0%, #17171a 0%, #0d0d0f 100%);
+    border: 1px solid var(--border);
+  }
+  .ws-agpop {
+    position: relative;
+    width: 372px; max-width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--s3);
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: var(--r-window);
+    background: #1b1b1d;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: var(--elev-pop);
+  }
+  .ws-agpop-orb { display: grid; place-items: center; }
+  .ws-agpop-body { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+  .ws-agpop-from {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.42);
+  }
+  .ws-agpop-body p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.5; color: rgba(255, 255, 255, 0.92);
+  }
+  .ws-agpop-opts { display: flex; gap: 5px; flex-wrap: wrap; }
+  .ws-agpop .ws-agw-opt {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.78);
+  }
+  .ws-agpop .ws-agw-opt:hover { border-color: rgba(255, 255, 255, 0.28); color: #fff; }
+  /* Answering out loud is the mode this product is for, so it is offered
+     beside the buttons rather than behind them — but it is not a button-shaped
+     thing, because pressing it starts listening rather than sending an
+     answer. */
+  .ws-agpop-more {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 24px; padding: 0 8px;
+    border-radius: var(--r-small);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--accent);
+  }
+  .ws-agpop-more svg { width: 12px; height: 12px; }
+  .ws-agpop-more:hover { background: rgba(255, 255, 255, 0.06); }
+  .ws-agpop-meta {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; color: rgba(255, 255, 255, 0.4);
+  }
+  .ws-agpop-meta svg { width: 11px; height: 11px; }
+  .ws-agpop-x {
+    position: absolute; top: 7px; right: 7px;
+    width: 20px; height: 20px;
+    display: grid; place-items: center;
+    border-radius: 5px;
+    color: rgba(255, 255, 255, 0.35);
+  }
+  .ws-agpop-x svg { width: 11px; height: 11px; }
+  .ws-agpop-x:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+  /* ── The mode cycle ───────────────────────────────────────────────────────
+     The same rule the sub-tab bar carries before Notes, for the same reason:
+     what follows it is reachable from this control and is not a member of the
+     category the control is named after. */
+  .ws-cycle {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: var(--s2);
+    border-radius: var(--r-card);
+    background: var(--bg-inset);
+  }
+  .ws-cycle-item {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 11px;
+    border-radius: var(--r-small);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+  .ws-cycle-item svg { width: 13px; height: 13px; }
+  .ws-cycle-item[data-on] {
+    background: var(--accent-soft); color: var(--accent); font-weight: 550;
+  }
+  .ws-cycle-rule {
+    width: 1px; align-self: stretch; margin: 2px 5px; background: var(--border-strong);
+  }
 
   /* ═════════════════════════════════════════════════════════════════════════
      FROST — ADR 0051. A pair: the panel catches the light, the layer behind it

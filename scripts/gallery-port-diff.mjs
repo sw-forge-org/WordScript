@@ -84,7 +84,18 @@ const WALK = `(rootSel) => {
     "kbd-edit": "edit", "banner-tag": "banner-tag", "sec-action": "sec-action",
     "brand-qual": "qual", "nav-tag": "nav-tag" };
   const norm = c => { const n = c.replace(/^ws-/, ""); return ALIAS[n] ?? n; };
-  const sig = el => { const c = [...el.classList].map(norm).filter(Boolean);
+  // THE DOT-MATRIX READOUT IS COMPARED AS ONE NODE, not as a hundred and
+  // twelve circles. The prototype hand-builds its SVG in \`matrixMount\`; the
+  // port mounts upstream's component, which brings a different wrapper tag, an
+  // inline <style> inside the svg and an active-pixel CLASS where the
+  // prototype writes an attribute. It is also the one thing on a measured
+  // screen that moves on the prototype side — 12 fps off \`orbEnvelope\` — so a
+  // per-pixel comparison compares whatever frame the walk caught. ADR 0058
+  // puts the port at one held frame. What still IS compared is the wrapper:
+  // its display, its flex, and the box the readout occupies in the row.
+  const BLACKBOX = el => [...el.classList].some(c => norm(c) === "matrix-wrap");
+  const sig = el => { if (BLACKBOX(el)) return "matrix";
+    const c = [...el.classList].map(norm).filter(Boolean);
     // The prototype writes the stacked row as a second class; the port writes
     // it as an attribute. Same rule, same rendering, different spelling.
     if (el.getAttribute("data-layout") === "stack") c.push("stack");
@@ -97,6 +108,7 @@ const WALK = `(rootSel) => {
     o["#text"] = [...el.childNodes].filter(n => n.nodeType === 3)
       .map(n => n.textContent).join("").replace(/\\s+/g, " ").trim();
     out[path] = o;
+    if (BLACKBOX(el)) return;
     const seen = {};
     for (const kid of [...el.children]) { const s = sig(kid); seen[s] = (seen[s] ?? -1) + 1;
       walk(kid, path + " > " + s + "[" + seen[s] + "]"); }
@@ -139,21 +151,57 @@ const SUBSTATE = {
     app: '.ws-obfoot button[data-v="primary"]',
     resetProto: ".obrail-step", resetApp: ".ws-obrail-step",
   },
+  // The note's four views are a tab bar of their own — `.note-tabs`, not
+  // `.subtabs` — and they sit in the pane's detail head rather than in the
+  // content column. Same shape, different spelling. `contextactions` is the
+  // same screen with the other window over it, so it drives the same control.
+  //
+  // IT RESETS TO ITS OWN DEFAULT, AND THAT DEFAULT IS THE THIRD TAB. An
+  // absolute tab index needs no reset within one screen, but this family
+  // spans three: the prototype keeps the choice in `state.sub.context`, which
+  // `context`, `contextactions` and their aliases all read, while the gallery
+  // remounts the screen and returns to Summary. So `contextactions` measured
+  // after a `context#3` compared Linked against Summary. `resetAt` is which
+  // entry the surface opens on — the wizard shape resets to its first, a note
+  // resets to Summary.
+  context: { proto: ".note-tabs button", app: ".ws-note-tabs button", resetAt: 2 },
+  contextactions: { proto: ".note-tabs button", app: ".ws-note-tabs button", resetAt: 2 },
+  // The intake's three ways are a SEGMENT, because they decide what is being
+  // made rather than which view of one thing is open (§11.38).
+  contextintake: { proto: ".seg button", app: ".ws-seg button" },
   tab: { proto: ".subtabs button", app: ".ws-subtabs button" },
 };
 const substateOf = (id) => SUBSTATE[id] ?? SUBSTATE.tab;
 
-const clickAt = (selector, index) =>
-  `(() => { const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
+// A DRIVER SELECTOR IS SCOPED TO THE SCREEN, NOT TO THE DOCUMENT. Found by
+// Leg 2d on the intake: `.ws-seg button` matched the GALLERY'S OWN scheme
+// switch first — it is a `SegmentControl` too — so the click landed on the rig
+// and the screen never left its default state, while the prototype (whose rig
+// is outside its mock window) moved correctly. The two sides then measured
+// different states and reported it as ninety-six missing elements.
+//
+// Both roots are the ones the walk itself uses, so a driver can only ever
+// reach a control the measurement is about to look at.
+const APP_ROOT = ".ws-screen-stage";
+const protoRootOf = () =>
+  `(document.querySelector(".modal-content .content-inner") ? ".modal-content .content-inner" : ".content-inner")`;
+
+const clickAt = (rootExpr, selector, index) =>
+  `(() => { const root = document.querySelector(${rootExpr});
+    if (!root) return "no root";
+    const el = root.querySelectorAll(${JSON.stringify(selector)})[${index}];
     if (!el) return "missing"; el.click(); return "ok"; })()`;
 
 async function drive(tab, spec, n, side) {
-  const reset = side === "proto" ? spec.resetProto : spec.resetApp;
   const selector = side === "proto" ? spec.proto : spec.app;
-  if (reset) { await tab.evaluate(clickAt(reset, 0)); await sleep(120); }
+  const reset = spec.resetAt === undefined
+    ? (side === "proto" ? spec.resetProto : spec.resetApp)
+    : selector;
+  const root = side === "proto" ? protoRootOf() : JSON.stringify(APP_ROOT);
+  if (reset) { await tab.evaluate(clickAt(root, reset, spec.resetAt ?? 0)); await sleep(120); }
   if (n === undefined) return;
   for (let k = 0; k < (spec.repeat ? n : 1); k++) {
-    const got = await tab.evaluate(clickAt(selector, spec.repeat ? 0 : n));
+    const got = await tab.evaluate(clickAt(root, selector, spec.repeat ? 0 : n));
     if (got !== "ok") console.log(`  (substate: ${selector} ${got})`);
     await sleep(120);
   }
@@ -257,8 +305,9 @@ for (const spec of screens) {
     const spec2 = substateOf(id);
     const n = sub === undefined ? undefined : Number(sub);
     // The reset runs even with no `#`, so a plain `onboarding` after an
-    // `onboarding#4` still measures step one.
-    if (n !== undefined || spec2.resetProto) {
+    // `onboarding#4` still measures step one, and a plain `context` after a
+    // `context#3` still measures Summary.
+    if (n !== undefined || spec2.resetProto || spec2.resetAt !== undefined) {
       await drive(proto, spec2, n, "proto");
       await drive(app, spec2, n, "app");
       await sleep(200);

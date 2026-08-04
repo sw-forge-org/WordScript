@@ -14,6 +14,13 @@ import { NoteSettingsScreen } from "./NoteSettings";
 import { OnboardingScreen } from "./Onboarding";
 import { AgentsScreen } from "./Agents";
 import { ModelsScreen } from "./Models";
+import { ContextActionsScreen, ContextIntakeScreen, ContextScreen } from "./Context";
+import { MeetingScreen } from "./Meeting";
+import { HandoffScreen } from "./Handoff";
+import { SubtitlesScreen } from "./Subtitles";
+import { TranslateScreen } from "./Translate";
+import { ConversationScreen } from "./Conversation";
+import { AgentOverlayScreen } from "./AgentOverlay";
 
 /**
  * THE SCREEN REGISTRY — the prototype's `NAV`, minus its rig.
@@ -63,7 +70,7 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "home", surface: "workspace", label: "Home", render: () => <HomeScreen /> },
       { id: "history", surface: "workspace", label: "History", render: () => <HistoryScreen /> },
       { id: "profiles", surface: "workspace", layout: "pane", label: "Profiles", render: () => <ProfilesScreen /> },
-      { id: "context", surface: "workspace", layout: "pane", label: "Context", preview: true },
+      { id: "context", surface: "workspace", layout: "pane", label: "Context", preview: true, render: () => <ContextScreen /> },
     ],
   },
   {
@@ -87,15 +94,15 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
     lead: "Layout only, each carrying its PreviewBanner. Four more are previews of a screen already listed above.",
     screens: [
       { id: "onboarding", surface: "standalone", label: "Onboarding", render: () => <OnboardingScreen /> },
-      { id: "translate", surface: "standalone", label: "Translation" },
-      { id: "subtitles", surface: "standalone", label: "Live subtitles" },
-      { id: "meeting", surface: "standalone", label: "Meeting capture" },
-      { id: "conversation", surface: "standalone", label: "Client conversations" },
-      { id: "agentoverlay", surface: "standalone", label: "Agent overlay" },
-      { id: "handoff", surface: "standalone", label: "Handoff" },
+      { id: "translate", surface: "standalone", layout: "wide", label: "Translation", render: () => <TranslateScreen /> },
+      { id: "subtitles", surface: "standalone", layout: "wide", label: "Live subtitles", render: () => <SubtitlesScreen /> },
+      { id: "meeting", surface: "standalone", label: "Meeting capture", render: () => <MeetingScreen /> },
+      { id: "conversation", surface: "standalone", layout: "wide", label: "Client conversations", render: () => <ConversationScreen /> },
+      { id: "agentoverlay", surface: "standalone", layout: "wide", label: "Agent overlay", render: () => <AgentOverlayScreen /> },
+      { id: "handoff", surface: "standalone", layout: "wide", label: "Handoff", render: () => <HandoffScreen /> },
       { id: "commit", surface: "standalone", label: "Live preview & commit", withdrawn: true, render: () => <CommitScreen /> },
-      { id: "contextintake", surface: "workspace", label: "Context · intake" },
-      { id: "contextactions", surface: "workspace", label: "Actions & templates" },
+      { id: "contextintake", surface: "workspace", layout: "pane", label: "Context · intake", render: () => <ContextIntakeScreen /> },
+      { id: "contextactions", surface: "workspace", layout: "pane", label: "Actions & templates", render: () => <ContextActionsScreen /> },
     ],
   },
 ];

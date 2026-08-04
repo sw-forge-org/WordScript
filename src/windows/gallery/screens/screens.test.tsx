@@ -15,8 +15,16 @@ import { NoteSettingsScreen } from "./NoteSettings";
 import { ModelsScreen } from "./Models";
 import { OnboardingScreen } from "./Onboarding";
 import { AgentsScreen } from "./Agents";
+import { ContextActionsScreen, ContextIntakeScreen, ContextScreen } from "./Context";
+import { MeetingScreen } from "./Meeting";
+import { HandoffScreen } from "./Handoff";
+import { SubtitlesScreen } from "./Subtitles";
+import { TranslateScreen } from "./Translate";
+import { ConversationScreen } from "./Conversation";
+import { AgentOverlayScreen } from "./AgentOverlay";
 import { ALL_SCREENS, SCREEN_GROUPS } from "./registry";
 import { HISTORY, LANES, PROVIDERS, RECENT } from "./data";
+import { ACTIONS, CTX } from "./contextData";
 
 /**
  * WHAT A GALLERY SCREEN'S TEST IS FOR, and it is not visual fidelity.
@@ -512,6 +520,362 @@ describe("Agents", () => {
     for (const orb of orbs) {
       expect((orb as HTMLElement).style.getPropertyValue("--orb-level")).toBe("0.00");
     }
+  });
+});
+
+describe("Context", () => {
+  it("lists one object type with its state on the row, and no second queue", () => {
+    const { container } = render(<ContextScreen />);
+    expect(container.querySelectorAll(".ws-pane-row")).toHaveLength(CTX.length);
+    /* A file being transcribed IS a context object without a transcript, so it
+       is a row in this list rather than an entry in a queue of its own. */
+    expect(screen.getByText("Transcribing")).toBeInTheDocument();
+    expect(screen.getByText("Recording")).toBeInTheDocument();
+    expect(screen.getByText("Fetching")).toBeInTheDocument();
+  });
+
+  it("opens on Summary and carries four tabs, not the seven-tab draft", () => {
+    const { container } = render(<ContextScreen />);
+    const tabs = container.querySelectorAll(".ws-note-tabs button");
+    expect([...tabs].map((t) => t.textContent)).toEqual([
+      "Transcript",
+      "Notes",
+      "Summary",
+      "Linked",
+    ]);
+    /* Decisions and Tasks are SECTIONS of the summary, not tabs: a tab is a
+       view of the whole object, not a heading inside one of them. */
+    expect(screen.getByRole("heading", { level: 4, name: "Decisions" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 4, name: "Tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 4, name: "Open questions" })).toBeInTheDocument();
+  });
+
+  it("puts the speakers on the transcript with how sure it is of each name", () => {
+    const { container } = render(<ContextScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Transcript" }));
+    const chips = container.querySelectorAll(".ws-who-chip");
+    expect(chips).toHaveLength(3);
+    /* ADR 0047: "Sarah" that was guessed and "Sarah" that you confirmed behave
+       differently, so the chip has to say which it is. `locked` is the one the
+       end-of-meeting re-clustering may not overwrite. */
+    expect([...chips].map((c) => c.getAttribute("data-status"))).toEqual([
+      "locked",
+      "suggested",
+      "provisional",
+    ]);
+    expect(screen.getByText("from your microphone")).toBeInTheDocument();
+    expect(screen.getByText("voice cluster, unnamed")).toBeInTheDocument();
+  });
+
+  it("draws Linked as a list of groups and never as a graph", () => {
+    const { container } = render(<ContextScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Linked" }));
+    expect(container.querySelectorAll(".ws-linkgrp")).toHaveLength(4);
+    expect(screen.getByText("Computed on this machine. Nothing was fetched to build this.")).toBeInTheDocument();
+    /* Mail is the obvious fifth group and is on the other side of the effect
+       line (ADR 0046) — the desk reaches a mailbox, WordScript does not. */
+    expect(screen.queryByText("Mail")).not.toBeInTheDocument();
+  });
+
+  it("opens the Ask window with an answer that names the rows it read", () => {
+    const { container } = render(<ContextScreen />);
+    expect(container.querySelector(".ws-chatwin")).not.toBeNull();
+    const sources = container.querySelector(".ws-sources")!;
+    /* An answer about your own record names the rows it was read from. Scoped
+       to the source list, because "Product Sync" is also the object's own name
+       in the rail and in the detail head. */
+    expect(within(sources as HTMLElement).getByText("Product Sync")).toBeInTheDocument();
+    expect(within(sources as HTMLElement).getByText("Weekly standup")).toBeInTheDocument();
+  });
+
+  it("draws the floating bar's mic at rest — a gallery screen opens no device", () => {
+    const { container } = render(<ContextScreen />);
+    const mic = container.querySelector(".ws-floatbar .ws-mic-btn");
+    expect(mic).not.toBeNull();
+    expect(mic).not.toHaveAttribute("data-live");
+  });
+
+  it("draws the menu closed here, because two overlays at once is a state nobody is in", () => {
+    const { container } = render(<ContextScreen />);
+    expect(container.querySelector(".ws-menu")).toBeNull();
+  });
+});
+
+describe("Context · actions", () => {
+  it("keeps both kinds in one list with a rule between them", () => {
+    const { container } = render(<ContextActionsScreen />);
+    expect(container.querySelectorAll(".ws-action-row")).toHaveLength(ACTIONS.length);
+    /* §11.43: the user's intent is one intent, so splitting the list would ask
+       them to classify their own idea before they can act on it. What is not
+       shared is the button. */
+    expect(container.querySelectorAll(".ws-actions-rule")).toHaveLength(1);
+    expect(screen.getByText("Runs on the desk")).toBeInTheDocument();
+  });
+
+  it("shows a desk action's extra decisions and its keyed confirmation", () => {
+    render(<ContextActionsScreen />);
+    expect(screen.getByLabelText("Target")).toHaveValue("WordScript");
+    expect(screen.getByLabelText("Role")).toHaveValue("work");
+    /* ADR 0030 puts a visible keyed confirmation before anything a process does
+       in a real repository, so the button says it is not the last step. */
+    expect(screen.getByRole("button", { name: /Hand over…/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run on this object" })).not.toBeInTheDocument();
+  });
+
+  it("states the file, because an action IS a file", () => {
+    render(<ContextActionsScreen />);
+    expect(
+      screen.getByText(/_actions\/turn-this-into-a-pr\.md/),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("Context · intake", () => {
+  it("defaults to Write, which is the cheapest and most frequent way in", () => {
+    render(<ContextIntakeScreen />);
+    expect(screen.getByRole("button", { name: "Write", pressed: true })).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Start typing, or hold Ctrl+Space and talk."),
+    ).toBeInTheDocument();
+  });
+
+  it("gives each of the three ways controls that have nothing in common", () => {
+    const { container } = render(<ContextIntakeScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Record" }));
+    expect(container.querySelector(".ws-rec-start")).not.toBeNull();
+    expect(container.querySelector(".ws-dropzone")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(container.querySelector(".ws-dropzone")).not.toBeNull();
+    expect(container.querySelector(".ws-rec-start")).toBeNull();
+  });
+
+  it("says the fourth import decision is gone rather than leaving a gap", () => {
+    render(<ContextIntakeScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(
+      screen.getByText(/“Write a note” is gone/),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("Meeting capture", () => {
+  it("draws one window in three states, not three windows", () => {
+    const { container } = render(<MeetingScreen />);
+    expect(container.querySelectorAll(".ws-hud")).toHaveLength(3);
+    expect(container.querySelectorAll(".ws-hud-cap")).toHaveLength(3);
+  });
+
+  it("holds the level readout at rest — the gallery measures nothing (ADR 0058)", () => {
+    const { container } = render(<MeetingScreen />);
+    const meters = container.querySelectorAll('[aria-label="Input level"]');
+    expect(meters).toHaveLength(3);
+    /* The prototype drives this from a synthetic envelope at 12 fps because it
+       has no microphone. A gallery screen is not recording, so no pixel is lit
+       and none of them moves. */
+    for (const meter of meters) {
+      expect(meter.querySelectorAll(".matrix-pixel-active")).toHaveLength(0);
+    }
+  });
+
+  it("opens the action menu on exactly one of the three, with the desk entry ruled off", () => {
+    const { container } = render(<MeetingScreen />);
+    expect(container.querySelectorAll(".ws-menu")).toHaveLength(1);
+    expect(container.querySelectorAll(".ws-menu-rule")).toHaveLength(1);
+    expect(screen.getByText("Draft one per attendee, then send")).toBeInTheDocument();
+  });
+
+  it("carries the copilot hint with its citation, on one window only", () => {
+    const { container } = render(<MeetingScreen />);
+    const hints = container.querySelectorAll(".ws-cop");
+    expect(hints).toHaveLength(1);
+    /* ADR 0047: every hint carries the place it came from, and the link is part
+       of the hint rather than an affordance beside it. */
+    expect(hints[0].querySelector(".ws-cop-src")).not.toBeNull();
+    expect(screen.getByText("Product Sync · 27 Jul · 14:02")).toBeInTheDocument();
+  });
+
+  it("names the three stages of a speaker name and says the third is not audio", () => {
+    const { container } = render(<MeetingScreen />);
+    expect(container.querySelectorAll(".ws-stage-row")).toHaveLength(3);
+    expect(screen.getByText("not audio at all")).toBeInTheDocument();
+  });
+});
+
+describe("Handoff", () => {
+  it("shows the dictation verbatim before anything can be started", () => {
+    render(<HandoffScreen />);
+    /* ADR 0030: the input arrived over an unreliable channel, so the last thing
+       the user sees has to be the thing that will actually be sent. */
+    expect(screen.getByText(/Take the decisions from Tuesday's Acme review/)).toBeInTheDocument();
+    expect(screen.getByText("What you said")).toBeInTheDocument();
+  });
+
+  it("names both keys, and Escape keeps the words", () => {
+    const { container } = render(<HandoffScreen />);
+    const keys = container.querySelector(".ws-hoff-keys")!;
+    expect(within(keys as HTMLElement).getByText("Enter")).toBeInTheDocument();
+    expect(within(keys as HTMLElement).getByText("Esc")).toBeInTheDocument();
+    /* Refusing costs one keystroke and no words, which is what makes the offer
+       cheap enough to be offered. Doing nothing is the safe answer. */
+    expect(screen.getAllByText("Inserts the text")).toHaveLength(2);
+  });
+
+  it("draws what stayed here beside what crossed, and does not tint the held column red", () => {
+    const { container } = render(<HandoffScreen />);
+    const sides = container.querySelectorAll(".ws-cross-side");
+    expect(sides).toHaveLength(2);
+    expect(sides[1]).toHaveAttribute("data-held");
+    expect(screen.getByText("Your API keys")).toBeInTheDocument();
+    expect(screen.getByText("The audio")).toBeInTheDocument();
+  });
+
+  it("draws the shipped pill rather than inventing one, with its own left tab", () => {
+    const { container } = render(<HandoffScreen />);
+    /* Rule 5: reading the overlay in order to draw it is allowed; changing it
+       is not. Eleven bars, the shipped composition, at the shipped geometry. */
+    expect(container.querySelectorAll(".ws-ovp-bars i")).toHaveLength(11);
+    expect(container.querySelector(".ws-ovp-tab")).not.toBeNull();
+    expect(screen.getByText("handed over")).toBeInTheDocument();
+  });
+});
+
+describe("Live subtitles", () => {
+  it("keeps the two features apart rather than reconciling them", () => {
+    render(<SubtitlesScreen />);
+    expect(screen.getByText("system audio · its own window · you are the audience")).toBeInTheDocument();
+    expect(screen.getByText("the open microphone · on the overlay · you are the speaker")).toBeInTheDocument();
+  });
+
+  it("draws the strip on a dark frame, a bright one, and translated", () => {
+    const { container } = render(<SubtitlesScreen />);
+    expect(container.querySelectorAll(".ws-cap-scene")).toHaveLength(3);
+    expect(container.querySelectorAll(".ws-cap-scene[data-light]")).toHaveLength(1);
+    /* The bright-frame case is the same component with the pair inverted — the
+       strip flips as a unit so the text never has to win against its ground. */
+    expect(container.querySelectorAll('.ws-cap-bar[data-tone="light"]')).toHaveLength(1);
+    expect(screen.getByText("German")).toBeInTheDocument();
+  });
+
+  it("splits the echo into settled text and a live tail, with no box around it", () => {
+    const { container } = render(<SubtitlesScreen />);
+    expect(container.querySelector(".ws-echo-done")).not.toBeNull();
+    expect(container.querySelector(".ws-echo-live")).not.toBeNull();
+    /* No card and no panel: anything with a border becomes a window that has to
+       be positioned and dismissed. */
+    expect(container.querySelector(".ws-echo-text")?.closest(".ws-card")).toBeNull();
+  });
+});
+
+describe("Translation", () => {
+  it("puts the pair in the chrome, above the tabs", () => {
+    const { container } = render(<TranslateScreen />);
+    const pair = container.querySelector(".ws-trw-pair");
+    expect(pair).not.toBeNull();
+    expect(screen.getByLabelText("From")).toHaveValue("German");
+    expect(screen.getByLabelText("To")).toHaveValue("English");
+    expect(screen.getByRole("button", { name: "Swap the two languages" })).toBeInTheDocument();
+  });
+
+  it("marks the alternative on the word rather than listing whole sentences", () => {
+    const { container } = render(<TranslateScreen />);
+    expect(container.querySelector(".ws-trw-alt")?.textContent).toBe("move");
+    expect(container.querySelectorAll(".ws-trw-altopt")).toHaveLength(3);
+  });
+
+  it("gives each speaker a side, and states the two languages separately", () => {
+    const { container } = render(<TranslateScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    const turns = container.querySelectorAll(".ws-trw-turn");
+    expect(turns).toHaveLength(3);
+    expect([...turns].map((t) => t.getAttribute("data-side"))).toEqual(["them", "you", "them"]);
+    /* The strip is a readout: nobody presses a language button mid-sentence. */
+    expect(screen.getByText("heard, switching by itself")).toBeInTheDocument();
+  });
+
+  it("routes per language and not per device, with Silent as a real setting", () => {
+    const { container } = render(<TranslateScreen />);
+    expect(container.querySelectorAll(".ws-trw-route-row")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Silent" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Out loud", pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "In your ear", pressed: true })).toBeInTheDocument();
+  });
+});
+
+describe("Client conversations", () => {
+  it("reuses the meeting window rather than building a second one", () => {
+    render(<ConversationScreen />);
+    expect(screen.getByText("Reused, unchanged")).toBeInTheDocument();
+    expect(screen.getByText("New, and all of it in the object")).toBeInTheDocument();
+    expect(screen.getByText("origin: conversation")).toBeInTheDocument();
+  });
+
+  it("hangs the conversations on the person", () => {
+    const { container } = render(<ConversationScreen />);
+    expect(screen.getByText("Acme GmbH · M. Bergmann")).toBeInTheDocument();
+    expect(container.querySelectorAll(".ws-clnt-row")).toHaveLength(4);
+    /* It is not a CRM and does not grow into one. */
+    expect(screen.getByText("Stays small")).toBeInTheDocument();
+  });
+
+  it("records what the consent answer was, and never gives legal advice", () => {
+    render(<ConversationScreen />);
+    expect(screen.getByRole("button", { name: "Given", pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refused" })).toBeInTheDocument();
+    expect(screen.getByText("States, never rules")).toBeInTheDocument();
+    /* Refusing must not cost the notes, or the honest answer stops being given. */
+    expect(screen.getByText("Notes only")).toBeInTheDocument();
+  });
+
+  it("says where every field of the document came from", () => {
+    const { container } = render(<ConversationScreen />);
+    const fields = container.querySelectorAll(".ws-doct-field");
+    expect(fields).toHaveLength(5);
+    for (const field of fields) expect(field.querySelector(".ws-doct-why")).not.toBeNull();
+    expect(screen.getByText("Never invents")).toBeInTheDocument();
+  });
+});
+
+describe("Agent overlay", () => {
+  it("draws three states of ONE overlay, with Agent where a mode would stand", () => {
+    const { container } = render(<AgentOverlayScreen />);
+    expect(container.querySelectorAll(".ws-ovp")).toHaveLength(2);
+    expect(container.querySelectorAll(".ws-ovp-mode-label")).toHaveLength(2);
+    for (const label of container.querySelectorAll(".ws-ovp-mode-label")) {
+      expect(label.textContent).toBe("Agent");
+    }
+    /* Only the second pill has grown the tab. */
+    expect(container.querySelectorAll(".ws-ovp-tab")).toHaveLength(1);
+  });
+
+  it("draws the rail as one process with targets under it, not as three agents", () => {
+    const { container } = render(<AgentOverlayScreen />);
+    /* ADR 0043. The orb at the head is the identity the rail belongs to; the
+       targets are what the one voice is working on. */
+    expect(container.querySelector(".ws-agw-rail-head .ws-orb")).not.toBeNull();
+    expect(screen.getByText("one process · speaks for all three")).toBeInTheDocument();
+    expect(container.querySelectorAll(".ws-agw-target")).toHaveLength(3);
+    expect(container.querySelectorAll(".ws-agw-unread")).toHaveLength(1);
+  });
+
+  it("holds the answer window's level at rest and the orbs without a generator", () => {
+    const { container } = render(<AgentOverlayScreen />);
+    const meter = container.querySelector('[aria-label="Input level"]')!;
+    expect(meter.querySelectorAll(".matrix-pixel-active")).toHaveLength(0);
+    /* The orbs keep the prototype's own levels — `drive` is absent, so nothing
+       generates a frame (ADR 0058, and Leg 2c's finding 5). */
+    for (const orb of container.querySelectorAll(".ws-orb")) {
+      expect(orb).not.toHaveAttribute("data-drive");
+    }
+  });
+
+  it("puts Agent after the rule in the cycle, because it is not a mode", () => {
+    const { container } = render(<AgentOverlayScreen />);
+    expect(container.querySelector(".ws-cycle-rule")).not.toBeNull();
+    const on = container.querySelectorAll(".ws-cycle-item[data-on]");
+    expect(on).toHaveLength(1);
+    expect(on[0].textContent).toBe("Agent");
+    expect(screen.getByText("delivery axis")).toBeInTheDocument();
   });
 });
 
