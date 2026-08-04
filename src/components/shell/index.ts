@@ -57,7 +57,7 @@ export { InputLevelMeter } from "./InputLevelMeter";
 export { Keycaps, HotkeyButton } from "./Keycap";
 export { Chip, TermChips } from "./Chip";
 export type { TermChip } from "./Chip";
-export { Note } from "./Note";
+export { Note, DocLink } from "./Note";
 export type { NoteTone } from "./Note";
 export { CheckList } from "./CheckList";
 export type { CheckItem, CheckState } from "./CheckList";
@@ -70,10 +70,19 @@ export { Matrix, MATRIX_FRAMES, vu } from "./Matrix";
 export type { Frame } from "./Matrix";
 export { Waveform } from "./Waveform";
 
-/* ── The orchestrator's body, and the provider marks — ported by Leg 2b ── */
+/* ── The icon set, the orchestrator's body, the provider marks — Leg 2b ── */
+export { Icon } from "./Icon";
+export type { IconName } from "./Icon";
 export { Orb, OrbDemo, OrbFigure } from "./Orb";
 export type { OrbState } from "./Orb";
 export { ProviderMark, ProviderSprite, ProviderChips, brandSymbolId } from "./ProviderMark";
+
+/* ── The workspace grammar — Leg 2b ── */
+export { HomeOpen, HeroInvoke, HeroFacts, KeyCap } from "./HomeHero";
+export { ListRows, ListItem, RawPanel } from "./ListItem";
+export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
+export { TranscriptRow } from "./TranscriptRow";
+export { OwedList, Owed } from "./Owed";
 
 export { StatusBadge } from "./StatusBadge";
 export type { StatusTone } from "./StatusBadge";

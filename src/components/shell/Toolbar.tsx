@@ -1,6 +1,6 @@
 import * as React from "react";
-import { SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Icon } from "./Icon";
 
 interface ToolbarProps {
   children: React.ReactNode;
@@ -27,7 +27,12 @@ export function Toolbar({ children, right, label, className }: ToolbarProps) {
   return (
     <div className={cn("ws-toolbar", className)} role="toolbar" aria-label={label}>
       {children}
-      {right && <div className="ws-toolbar-right">{right}</div>}
+      {/* THE TRAILING SLOT IS A ROW, not just a margin. The prototype writes it
+          `class="right rowflex"` — two classes, and Leg 2a carried only the
+          first across, so a slot holding more than one control drew them
+          touching and unaligned. It has one caller with one button today,
+          which is exactly why it went unseen. */}
+      {right && <span className="ws-toolbar-right ws-rowflex">{right}</span>}
     </div>
   );
 }
@@ -46,9 +51,9 @@ export function ToolbarSearch({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("ws-search", className)}>
-      <SearchIcon aria-hidden />
+    <span className={cn("ws-search", className)}>
+      <Icon name="search" />
       {children}
-    </div>
+    </span>
   );
 }

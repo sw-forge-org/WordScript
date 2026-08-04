@@ -28,6 +28,26 @@
 @layer components {
 
   /* ═════════════════════════════════════════════════════════════════════════
+     THE ONE BASE RULE THE SHELL BRINGS WITH IT
+
+     `demo.css` line 57 is `svg { display: block; flex: none; }`, unscoped.
+     Tailwind's preflight already gives every SVG `display: block`; what it does
+     not give is `flex: none`, so an icon inside a flex control — a button's
+     glyph, an owed row's tile — computed `flex: 0 1 auto` here against the
+     prototype's `0 0 auto` and could be squeezed below its declared 13 px in a
+     tight row.
+
+     IT IS FENCED TO THE PORTED SURFACE rather than written globally, because
+     the thirteen pre-port areas still render lucide icons under their own
+     layout assumptions and this port does not touch them (ADR 0054 replaces an
+     area in the commit that replaces it, and none of these is that commit).
+     Leg 3 owns the window root and can unfence it there.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-content svg,
+  .ws-nav svg { flex: none; }
+
+  /* ═════════════════════════════════════════════════════════════════════════
      SECTION — title plus one line, outside the card
      ═════════════════════════════════════════════════════════════════════════ */
 
@@ -42,6 +62,13 @@
     font-size: var(--t-lead);
     font-weight: 600;
     color: var(--fg);
+    /* Inert here, and kept because the prototype declares it. It is the
+       containing block for the roomy-density rule's `::before` hairline, and
+       density is one of the three things that deliberately do not come across
+       — the product ships at Standard and has no density switch. Dropping the
+       line would be a decision; keeping it costs nothing and keeps the two
+       files diffable. */
+    position: relative;
   }
   .ws-sec-head p {
     font-stretch: var(--w-label);
@@ -138,7 +165,8 @@
      the tint reads as floating inside the group rather than as one row of it.
      There the stack runs to the card's edge, each row keeps its own vertical
      padding, and `overflow: hidden` clips the result to the corner radius. */
-  .ws-card:has(> .ws-rows[data-tinted]:only-child) { padding: 0; }
+  .ws-card:has(> .ws-rows[data-tinted]:only-child),
+  .ws-card:has(> .ws-owed-list:only-child) { padding: 0; }
 
   /* THE ACTION THAT ACTS ON A CARD'S CONTENT IS A FOOTER, NOT A FLEX ROW WITH
      A GUESSED PADDING. This component replaces three different inline paddings
@@ -454,7 +482,6 @@
     background: var(--bg-elevated);
     color: var(--fg-dim);
     border: 1px solid transparent;
-    white-space: nowrap;
   }
   .ws-badge[data-tone="success"] {
     color: var(--success);
@@ -682,6 +709,18 @@
     flex: 1; min-width: 0;
     overflow-y: auto;
     display: flex; flex-direction: column;
+    /* THE WINDOW'S TYPOGRAPHIC BASE, and it is here rather than on `body`
+       because `body` is not this port's to set yet. The prototype declares
+       `font-size: var(--t-body)` on `.win`, the element that wraps the nav and
+       the content; this repo's `body` reads `--text-body`, which is the
+       pre-port alias for `--t-note` at 13 px, and the thirteen shipped areas
+       still inherit from it. Measured against the running prototype on Home:
+       every element that sets no size of its own — the hero's key row, the
+       card foot, the owed list — came out one step small.
+
+       It moves to the window root in Leg 3, which is the leg that owns
+       `body`. */
+    font-size: var(--t-body);
   }
   /* A pane view scrolls inside its own columns. Letting the content area scroll
      as well produces two bars for one gesture and a header that drifts away
@@ -701,6 +740,13 @@
     container-type: inline-size;
   }
   .ws-content-inner[data-layout="wide"] { max-width: none; }
+
+  /* The gallery's screen stage. It is a handle, not a box: the prototype's
+     screen blocks are direct children of its content column, and a wrapper with
+     a box here would make every computed-style comparison measure a different
+     tree. `display: contents` is what lets a ported screen be diffed against
+     the prototype property by property. */
+  .ws-screen-stage { display: contents; }
 
   /* THE TITLE, THE PREVIEW BANNER AND THE SUB-TAB ROW ARE ONE MASTHEAD, not
      three sections. They used to be siblings of the content blocks and
@@ -1417,6 +1463,16 @@
   }
   .ws-note svg { width: 13px; height: 13px; margin-top: 2px; flex: none; }
 
+  /* A link inside prose. Underlined by a border rather than by
+     `text-decoration`, so the rule sits clear of the descenders. */
+  .ws-link {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    font-weight: 500;
+  }
+  .ws-link:hover { border-bottom-color: var(--accent); }
+
   .ws-rowflex { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
   .ws-stack { display: flex; flex-direction: column; }
   .ws-gap2 { gap: var(--s2); }
@@ -1812,6 +1868,276 @@
   .ws-provchip-mark { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
   .ws-provchip-mark .ws-pmark, .ws-provchip-mark svg { width: 16px; height: 16px; }
   .ws-provchip[data-custom] .ws-provchip-mark { color: var(--fg-muted); }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     HOME'S HERO — the shortcut, made the object.
+
+     Home's whole job at rest is to answer two questions — is this thing ready,
+     and how do I start it — and the shipped answer to the second was a sentence
+     in the view description. That sentence is the single most important fact in
+     the product and it was set at 13 px in the colour reserved for things you
+     may skip.
+
+     So the shortcut becomes the object. Not a graphic of a shortcut: keycaps
+     built the way a key is built, because the thing being named is a physical
+     act. The panel behind them is gone (thirteenth pass) — a cap is already a
+     raised object, and a raised object on a raised panel is one plane too many.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-home-open { display: flex; flex-direction: column; gap: var(--s5); }
+
+  .ws-hero-invoke { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
+  .ws-hero-keys { display: flex; align-items: center; gap: 7px; }
+  .ws-hero-keys .ws-plus { color: var(--fg-muted); font-size: var(--t-lead); }
+
+  /* The cap. Four values do the whole job: a lit top edge, a body gradient that
+     falls away from it, a dark front lip below the label, and a cast shadow.
+     `--cap-base` is the lip — it is a real 3 px of the element rather than a
+     border, so the cap has a front face and not just an outline. */
+  .ws-keycap {
+    --cap-base: 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 46px; height: 42px;
+    padding: 0 12px calc(var(--cap-base));
+    border-radius: 9px;
+    background:
+      linear-gradient(180deg,
+        color-mix(in srgb, var(--bg-elevated) 82%, white) 0%,
+        var(--bg-elevated) 46%,
+        color-mix(in srgb, var(--bg-elevated) 88%, black) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 calc(-1 * var(--cap-base)) 0 color-mix(in srgb, black 34%, transparent),
+      0 2px 0 color-mix(in srgb, black 46%, transparent),
+      0 4px 10px -2px rgba(0, 0, 0, 0.5);
+    color: var(--fg);
+    font-stretch: var(--w-label);
+    font-size: var(--t-lead);
+    font-weight: 560;
+    line-height: 1;
+    letter-spacing: 0;
+  }
+  .ws-keycap[data-wide] { min-width: 74px; }
+
+  .ws-hero-invoke .ws-what {
+    display: flex; flex-direction: column; gap: 2px;
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    color: var(--fg-dim);
+  }
+  .ws-hero-invoke .ws-what b {
+    font-stretch: var(--w-lead); letter-spacing: var(--ls-lead);
+    font-size: var(--t-lead); font-weight: 600; color: var(--fg);
+  }
+
+  /* The standing facts, on one line at the foot of the hero. They were a card of
+     their own with a heading, which spent a whole grouping surface on four words
+     that never change while you read them. */
+  .ws-hero-facts {
+    display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+    padding-top: var(--s4);
+    border-top: 1px solid color-mix(in srgb, var(--fg-muted) 16%, transparent);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+  }
+  .ws-hero-facts b { color: var(--fg-dim); font-weight: 550; }
+  .ws-hero-facts .ws-sep { opacity: 0.5; }
+  .ws-hero-facts .ws-grow { margin-left: auto; }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE LIST — history, profiles, targets, notes, uploads.
+
+     The list is the container the raw panel measures itself against: it is the
+     only element between the card's padding and the panel, so it is the one
+     that knows how wide two columns of transcript would actually be.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-list { display: flex; flex-direction: column; container-type: inline-size; }
+  .ws-list-item {
+    display: flex; align-items: center; gap: var(--s3);
+    /* The item carries the inset, so the separator below it still runs to the
+       group's edge — the same arrangement `.ws-row` uses. See the card guard. */
+    padding: var(--row-py) var(--pad-card);
+    border-bottom: 1px solid var(--border);
+    text-align: left; width: 100%;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 52px;
+  }
+  .ws-list-item:last-child { border-bottom: none; }
+  .ws-list-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .ws-list-item-text b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 450; color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-list-item-meta {
+    display: flex; align-items: center; gap: var(--s2);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted); flex-wrap: wrap;
+  }
+  .ws-list-item-meta .ws-sep { opacity: 0.5; }
+  /* An expected state: a dot and a word, at the head of the meta line. */
+  .ws-list-item-meta .ws-st { display: inline-flex; align-items: center; gap: 5px; }
+  /* One line, truncated. A sentence belongs on its own line in a row, not among
+     the facts — as a meta entry it wrapped and pushed the status badge into the
+     middle of the row. */
+  .ws-list-item-preview {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 1px;
+  }
+  .ws-list-item-preview[data-tone="danger"] { color: var(--danger); }
+
+  /* ── The badge column ─────────────────────────────────────────────────────
+     A badge used to be a single inline slot between the text and the actions.
+     That holds for one badge and breaks at two: a row that is both "Clipboard
+     only" and "Audio swept" pushed the actions left by the width of whatever it
+     happened to say, so every row in the list ended its actions at a different
+     x. They stack in a fixed column now — right-aligned, so the row reads
+     text · state · action from left to right at a constant rhythm. */
+  .ws-list-item-badges {
+    flex: none;
+    width: 108px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  }
+  .ws-list-item-badges:empty { display: none; }
+
+  /* ── Row actions ──────────────────────────────────────────────────────────
+     Icons, not labels. Five labelled ghost buttons ran to roughly 330 px on a
+     row whose whole job is to show a sentence; the same five as icons run to
+     140. The label is not lost — it is the accessible name and the tooltip —
+     only its drawing is.
+
+     They stay hidden until the row is touched, and the space is reserved either
+     way (`visibility`, not `display`), so nothing reflows on hover. */
+  .ws-list-actions {
+    flex: none;
+    display: flex; gap: 2px;
+    opacity: 0; visibility: hidden;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  .ws-list-item:hover .ws-list-actions,
+  .ws-list-item:focus-within .ws-list-actions,
+  .ws-list-item[data-open] .ws-list-actions { opacity: 1; visibility: visible; }
+
+  /* ── Raw transcript, unfolded ─────────────────────────────────────────────
+     Two texts side by side, because the only question this panel answers is
+     what changed — and a stacked pair makes the reader hold the first one in
+     memory to answer it. Below 560 px of row they stack, which is the point at
+     which the columns are too narrow to compare anyway.
+
+     It sits on the inset plane so it reads as inside the record rather than as
+     the next one, and the row above it drops its rule so the pair is one
+     block. */
+  .ws-list-item:has(+ .ws-list-raw) { border-bottom: none; }
+  .ws-list-raw {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s3) var(--s5);
+    padding: var(--s4);
+    /* A panel, not a row: it takes the group's inset as margin so its own
+       rounded edge sits where a row's text starts, rather than as padding on
+       top of the panel's own. */
+    margin: 0 var(--pad-card) var(--row-py);
+    border-radius: var(--r-card);
+    background: var(--bg-inset);
+    border-bottom: none;
+  }
+  .ws-raw-col { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ws-raw-label {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--fg-muted);
+  }
+  .ws-raw-col p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.6; color: var(--fg-dim);
+  }
+  .ws-raw-foot {
+    grid-column: 1 / -1;
+    display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap;
+    padding-top: var(--s2);
+    border-top: 1px solid var(--border);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-raw-path {
+    margin-left: auto;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  @container (max-width: 560px) {
+    .ws-list-raw { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE DECISION INBOX — ADR 0044. One row per thing waiting on you.
+
+     The action strip is this component with one entry, and the rows keep its
+     ground and its tile so the two do not read as different kinds of notice.
+     What is added is the third column.
+
+     THE THIRD COLUMN IS THE POINT. `.ws-owed-cost` states what happens if the
+     user does nothing. Three things reach this list and they behave nothing
+     alike when ignored: a desk question blocks a process until its answer
+     budget expires, a question raised out of a meeting sits in the note
+     forever, and a transcript on the clipboard survives exactly until the next
+     copy. A list that draws them identically is telling the user they are the
+     same kind of debt, and only one of them has somebody on the other end.
+
+     ONLY THE URGENT ROW IS TINTED, and there is no coloured edge rule — ground
+     plus tile, per the standing rule.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-owed-list { display: flex; flex-direction: column; }
+  .ws-owed {
+    display: flex; align-items: flex-start; gap: var(--s3);
+    /* One inset, not two. This carried `--s4` of its own on top of the card
+       guard's `--pad-card`, so a row sat 36 px in from the card wall while
+       every other row in the surface sat at 20. */
+    padding: var(--s4) var(--pad-card);
+    border-top: 1px solid var(--border);
+  }
+  .ws-owed:first-child { border-top: 0; }
+  .ws-owed[data-urgent] {
+    background: color-mix(in srgb, var(--accent) 11%, transparent);
+  }
+  .ws-owed-tile {
+    width: 28px; height: 28px; flex: none;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+    color: var(--fg-dim);
+  }
+  .ws-owed[data-urgent] .ws-owed-tile {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: var(--accent);
+  }
+  .ws-owed-tile svg { width: 15px; height: 15px; }
+  .ws-owed-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .ws-owed-text b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 550; line-height: 1.4;
+  }
+  .ws-owed-from {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+  }
+  /* The third line, and the one this component exists for. It is separated from
+     the source line by its icon rather than by a heading: a heading over one
+     sentence spends a line to say what the sentence already says, and this list
+     is meant to be scanned rather than read. */
+  .ws-owed-cost {
+    display: inline-flex; align-items: baseline; gap: 5px;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+  .ws-owed-cost svg { width: 11px; height: 11px; flex: none; align-self: center; color: var(--fg-muted); }
+  .ws-owed[data-urgent] .ws-owed-cost { color: var(--fg); }
+  .ws-owed[data-urgent] .ws-owed-cost svg { color: var(--accent); }
+  /* Aligned to the row's first line so the buttons sit beside the title rather
+     than floating at the vertical centre of a three-line block. */
+  .ws-owed-acts { flex: none; align-items: center; min-height: 28px; }
 
   /* ═════════════════════════════════════════════════════════════════════════
      FROST — ADR 0051. A pair: the panel catches the light, the layer behind it
