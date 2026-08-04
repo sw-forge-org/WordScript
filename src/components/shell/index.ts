@@ -97,6 +97,7 @@ export type { LogLevel, LogLine } from "./Log";
 export { OnboardingRail, OnboardingStepHead, OnboardingFoot } from "./Onboarding";
 export type { OnboardingStep } from "./Onboarding";
 export { JobList, Job, JobNone, JobModel, SelectMark } from "./Job";
+export { McpList, McpRow, Thread, Message } from "./Thread";
 export { ModelList, ModelRow } from "./ModelRow";
 export type { ModelState } from "./ModelRow";
 

@@ -12,6 +12,7 @@ import { CommitScreen } from "./Commit";
 import { IntegrationsScreen } from "./Integrations";
 import { NoteSettingsScreen } from "./NoteSettings";
 import { OnboardingScreen } from "./Onboarding";
+import { AgentsScreen } from "./Agents";
 import { ModelsScreen } from "./Models";
 
 /**
@@ -73,7 +74,7 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "hotkeys", surface: "settings", label: "Hotkeys", render: () => <HotkeysScreen /> },
       { id: "notesettings", surface: "settings", label: "Notes & Meetings", preview: true, render: () => <NoteSettingsScreen /> },
       { id: "models", surface: "settings", label: "AI Models", render: () => <ModelsScreen /> },
-      { id: "agents", surface: "settings", label: "Agents", preview: true },
+      { id: "agents", surface: "settings", label: "Agents", preview: true, render: () => <AgentsScreen /> },
       { id: "integrations", surface: "settings", label: "Integrations", preview: true, render: () => <IntegrationsScreen /> },
       { id: "delivery", surface: "settings", label: "Delivery & Insert", render: () => <DeliveryScreen /> },
       { id: "privacy", surface: "settings", label: "Privacy & Data", render: () => <PrivacyScreen /> },
