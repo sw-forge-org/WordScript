@@ -423,6 +423,17 @@ result surface (ADR 0011a).
 - Chat, Upload, Notes and Account are visible layout previews backed only by
   local component state. They have no runtime-backed chat, batch
   transcription, meeting-note, account or sync behavior.
+- A 25-screen accepted design now stands in full at the design-time route
+  `/gallery`, on the productive component library, and **none of it is wired**
+  (ADR 0055: a screen is *ported* when it stands there and *shipped* when it is
+  wired). It states facts this spec's Contracts and Data Model sections do not
+  have -- a context object with an `origin` and five states, folders that are
+  directories on disk, four speaker-confidence statuses, actions as files in
+  `_actions/`, a second capture window, a spoken agent channel, and per-language
+  audio routing. The full list is §2.5 of
+  `docs/handoffs/HANDOFF_gui-port-relay.md`, split between what is wiring and
+  what is a new runtime contract. **Nothing in that design may be read as
+  implemented**, and the shipped surface above is unchanged by it.
 - Sync/accounts/cloud workspaces are planned (ADR 0005, local-first,
   WordScript-owned) but not built. Docs and UI must not present them as
   active product reality outside clearly labeled preview surfaces.

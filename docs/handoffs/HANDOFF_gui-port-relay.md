@@ -1,6 +1,6 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Leg 2c is done and pushed. Leg 2d is next.**
+Opened 2026-08-04. **Active — Leg 2 is CLOSED. All 25 screens stand. Leg 3 is next.**
 
 Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 Work happens on `main`. There is no feature branch; `gui-rework-second-pass` was
@@ -77,12 +77,14 @@ decision rather than a liberty:
 Everything else is 1:1, and where the prototype and this repo's shipped surface
 disagree, the prototype wins.
 
-**And the four surfaces are a state of the port, not the steady state**
+**THE PROTOTYPE IS NOW PROVENANCE — flipped 2026-08-04 by Leg 2d**
 ([ADR 0057](../decisions/0057-the-prototype-has-an-expiry-date-and-the-gallery-has-two-halves.md)).
-The prototype turns from source into provenance at the end of Leg 2: it is
-read-only, ADR 0056 has already overtaken it by one hex, and every further leg
-widens that gap, so after the last screen stands in the gallery **the gallery is
-the source** and a disagreement with the prototype is either an ADR or a bug.
+All 25 screens stand, so the flip the ADR scheduled has happened: the prototype
+is read-only, ADR 0056 has already overtaken it by one hex, every further leg
+widens that gap, and **the gallery is the source**. A disagreement with the
+prototype is either an ADR or a bug in the gallery — never a reason to change
+the gallery back. Read `demo.js` and `demo.css` for the derivations their
+comments carry; do not read them for what the product should look like.
 The gallery's Foundations, Components, Motion and Overlay are permanent; its
 **Screens section is scaffolding** and retires per screen in the commit that
 wires it, during Leg 4. The steady state is the library, the product, and a
@@ -101,7 +103,13 @@ gallery of four sections.
    computed byte range. On 2026-08-03 a rewrite by computed index destroyed
    about 1350 lines and was recovered only from a Claude Code file-history
    snapshot.
-4b. **The prototype is the UI source of truth, and you read it per screen.**
+4b. **EXPIRED 2026-08-04 with Leg 2d, and kept here as the record of why it existed.**
+   ~~The prototype is the UI source of truth, and you read it per screen.~~
+   Every screen is ported, so there is no screen left to read it for, and ADR
+   0057's flip has happened: **the gallery is the source**. Read the prototype
+   for WHY a screen is shaped the way it is — its comments carry derivations
+   nothing else does — never for what the product should look like. What the
+   rule said, while it bound:
    Added 2026-08-04 by the owner, against Leg 1's own output. Before you build a
    screen or a section, find its builder in `demo.js` — `grep -n "SCREENS\.<id>"`
    — read it whole, and read the rules it uses in `demo.css`. Do not reconstruct
@@ -134,7 +142,7 @@ gallery of four sections.
 | **2a** | The library, and the gallery's own pages re-ported | *Done.* The controls of `demo.css` §6 and the shell of §3–§4 are in `components/shell/`; Foundations, Components, Motion and `GalleryWindow` are read out of `SCREENS.ds` |
 | **2b** | Ten of the remaining 24 screens, and the library they needed | *Done.* Eleven of 25 stand in `/gallery` → Screens, each measured exact; the port's check is committed as `npm run port:diff` |
 | **2c** | Four screens, and the check taught to reach a screen's other states | *Done.* Fifteen of 25 stand, each measured exact |
-| **2d** | The last 10 screens | All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on the real components |
+| **2d** | The last 10 screens | *Done.* All 25 stand in `/gallery` → Screens at the prototype's fidelity, on the real components, each measured exact in every state |
 | **3** | The shell overwrite | One window; settings is a sheet over the workspace at its own scale (§11.22); the new IA replaces the 14 flat areas; `Cmd+,`; old areas deleted |
 | **4** | Wiring, section by section | Each section either reads the runtime truthfully or carries a `PreviewBanner`; P1 and P2 fixed at the seam; the list of what the runtime cannot answer is written down; **each wired screen's Gallery → Screens entry is deleted in the commit that wires it** (ADR 0057) |
 | **5** | Runtime contracts | §11.36 and §11.52, prioritised by what Leg 4 found blocking |
@@ -253,20 +261,21 @@ window under this compositor. A human with a mouse can.
 
 ### Leg 2 is done when
 
-Leg 2a closed the first, fourth and fifth of these on 2026-08-04. Leg 2b closed
-the third and got the second to eleven of twenty-five; Leg 2c took it to fifteen.
-The leg is not done until every one is closed.
+**ALL FIVE ARE CLOSED as of 2026-08-04. Leg 2 is done.** Leg 2a closed the
+first, fourth and fifth; Leg 2b closed the third and got the second to eleven of
+twenty-five; Leg 2c took it to fifteen; Leg 2d took it to twenty-five.
 
 - ✅ The four files of §2.1 are ported rather than composed, and a reader with the
   prototype open beside `/gallery` cannot name a section that was invented.
-- ⬜ All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on
-  the components in `components/shell/`. *Fifteen of 25 as of Leg 2c, each
-  measured exact. The ten left are listed in its record.*
+- ✅ All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on
+  the components in `components/shell/`, **each measured structural 0 / style 0
+  in every state it has** — 40 measurements across 25 screens.
 - ✅ `npm test` and `npm run build` are green, and the new screens carry tests.
-  *298 frontend tests after 2c, `cargo test` 623, both builds green.*
+  *335 frontend tests after 2d, `cargo test` 623, both builds green.*
 - ✅ The result was looked at in the native host, not only in a browser. **The
   frost pair is settled and the material runs** — see Leg 2a's record. Leg 2b
-  looked at Home there too.
+  looked at Home there, 2c at AI Models, 2d at Context. *The agent overlay is
+  owed — see Leg 2d's finding 5.*
 - ✅ It is committed and pushed to `main`, and the next prompt is in this file.
 
 ## Read before starting Leg 2
@@ -294,6 +303,7 @@ Serve the prototype for comparison:
 | **2a** | 2026-08-04 | Opus 5 | `438d1d4` | **§2.1 done: the four gallery pages are ported, not composed.** The controls of `demo.css` §6 and the nav/content grammar of §3–§4 are in the library — 17 new components, ~700 lines of ported CSS. 217 → 244 frontend tests, `cargo test` 623 green, `npm run build` green. Verified by computed-style diff against the running prototype, property by property, and in the native host. **The frost pair is settled: the material runs.** ADR 0058 filed. §2.2 is Leg 2b's. Full account below. |
 | **2b** | 2026-08-04 | Opus 5 | `d0f4baa` | **Ten screens ported, eleven of 25 now stand, every one measured exact.** Home, History, Profiles, General, Hotkeys, Delivery & Insert, Privacy & Data, Diagnostics, About & Updates, Integrations and the withdrawn Live preview & commit. The icon set, the orb, the provider marks, the list row, the decision inbox, the pane, the connection block and the log are in the library; `src/lab/` is deleted. **The port's check is committed** as `npm run port:diff`, and it found nine library defects no single screen showed. 244 → 282 frontend tests, `cargo test` 623, both builds green. Home looked at in the native host. **The prototype's status is NOT flipped — 14 screens remain.** Full account below. |
 | **2c** | 2026-08-04 | Opus 5 | `0fbddce`…`cd320f5` | **Four screens ported, fifteen of 25 now stand — and the leg SPLIT rather than overrun.** Notes & Meetings, AI Models, Onboarding and Agents, every tab and every one of onboarding's seven steps measured exact. The job list, the model badge, the downloadable model row, the onboarding rail, the desk's MCP readout and the agent thread are in the library. **The verifier can now reach a screen's other states** — `npm run port:diff models#1 onboarding#4` drives both surfaces into them — which turned up a fifth measurement false positive and a library defect Leg 2b could not have seen: the prototype's SECOND base rule, a 16 px default icon size, was never ported. 282 → 298 frontend tests, `cargo test` 623, both builds green. AI Models and its job list looked at in the native host. **The prototype's status is NOT flipped — 10 screens remain.** Full account below. |
+| **2d** | 2026-08-04 | Opus 5 | `ae5af81`… | **The last ten screens ported. ALL 25 STAND, every one measured exact in every state it has.** Context with its four note tabs and both windows over it, the intake's three ways in, Actions & templates, meeting capture, the handoff, live subtitles, translation, client conversations and the agent overlay. The note grammar, the five-member window family, the intake, the shipped overlay pill drawn at its real geometry, the caption strip and the echo, the translation window and the client record are in the library. Three library defects no earlier screen could show: the wide layout had no measure, the 16 px icon base rule was shrinking the dot-matrix readout to a square, and `Card` now owns the head/rows/body/foot order that three legs had got wrong at a call site. 298 → 335 frontend tests, `cargo test` 623, both builds green. Context looked at in the native host; the agent overlay is owed there. **The prototype's status IS flipped — Leg 2 is closed.** Full account below. |
 
 ### Leg 1 — what landed, and the one thing it got wrong
 
@@ -841,10 +851,73 @@ presentation difference:
   shortcut and delivery preflights the runtime does have — those two are wiring
   rather than contract, and are the cheapest part of that screen to make real.
 
-**The prototype's status is NOT flipped.** ADR 0057 puts the flip at the point
-where the last screen stands in the gallery. Ten are unported, so the prototype
-is still the source and rule 4b still binds. Leg 2d flips it, in this document
-and in `SETTINGS_REWORK_PLAN.md` §0, and writes the Leg 3 prompt.
+**Leg 2d's additions to the same list.** The distinction Leg 2c set is kept: a
+label the runtime does not use is a **Leg 5 contract**; a screen that could not
+be drawn without inventing a control is a **Leg 4 wiring problem**.
+
+- **The context object is one type with five states and four origins, and the
+  runtime has one of them.** `origin` — `calendar`, `meeting`, `upload`,
+  `link`, `dictation`, and `conversation` on top of those — is the field the
+  whole of Context, the intake and Client conversations hang off, and the
+  transcript record has nothing like it. **Leg 5 contract, and it is the
+  largest single one this port has drawn**: everything downstream of it
+  (search, the rail, Linked, retention) reads it.
+- **Folders are directories and the surface says so in as many words.** The
+  rail states a real path and promises that moving an object between folders
+  moves a file. Nothing in the runtime keeps notes as files under a root today.
+  **Leg 5 contract** — and the one place where getting it wrong later is a data
+  migration rather than a relabel.
+- **Speaker status is four values and diarization produces none of them.** ADR
+  0047's `provisional` / `suggested` / `confirmed` / `locked` is a product
+  decision borrowed from the donor, and `locked` is load-bearing: without a
+  status that survives the end-of-meeting re-clustering, every name typed
+  during a call changes after it. **Leg 5 contract.**
+- **The Summary tab says out loud that nothing on it was produced by a model,**
+  which is honest today and is the whole of what Leg 4 has to make true or
+  visibly untrue. Decisions, tasks and open questions are drawn complete.
+- **Two gestures on the Summary tab reach outside the note** — a task to the
+  desk, an open question to Home's decision inbox. The inbox exists as a
+  drawing (Leg 2b) and neither gesture has a receiver. **Leg 4 wiring**, and it
+  needs the inbox to be real first.
+- **The Linked tab is computed and says it is computed on this machine.** Four
+  groups from shared people, shared topics and a calendar series. There is no
+  index behind any of it. **Leg 5 contract.**
+- **The actions are files in `_actions/` and the surface states the filename.**
+  Six of them, two built-in, two running on the desk with a target and a role.
+  Nothing reads or writes that directory. **Leg 5 contract**; the desk half of
+  it also needs ADR 0030's keyed confirmation, which does not exist.
+- **The meeting HUD is a second window and there is no second window.** 330 ×
+  560, always on top, resizable, content-protected, and it captures system
+  audio — which is the same dependency Live subtitles' captions wait on and the
+  reason both are drawn rather than built. **Leg 4 cannot wire this screen at
+  all**; it is a capability, not a control.
+- **The copilot lane has three rules and no producer.** It never speaks, never
+  hints without a citation, and replaces rather than stacks. The citation rule
+  is the one that has to survive into whatever produces the hints.
+- **The handoff's effect-verb recognition does not exist**, and neither does the
+  keyed card that must not take focus. Rust owns the key grab (ADR 0006). The
+  card's whole budget is that refusing costs one keystroke — **if refusals
+  become common the recogniser is wrong**, which means Leg 5 owes a way to
+  measure the refusal rate, not just the feature.
+- **The agent window draws a live thread, an answer window that counts down and
+  a voice with a named model and a measured latency.** `Cartesia Sonic-3 ·
+  240 ms` is a fact about a text-to-speech path that has no implementation.
+  **Leg 5 contract**, and it is where ADR 0030's spoken half lands.
+- **Translation routes per language to two output devices and names a
+  text-to-speech model.** Speech in two directions plus a voice that speaks are
+  both new runtime capability. The address form and the terminology are
+  already the profile's (ADR 0033, 0035, 0041) — those two are wiring.
+- **Consent is a field on a conversation and there is nowhere to put it.**
+  Whether it was recorded, written, and under which answer. It is the field
+  somebody reads two years later, so it is a contract rather than a label.
+- **The document template belongs to the profile and the product ships none.**
+  Five fields, each stating where its value came from, and the rule that an
+  empty field says empty rather than being filled by a model.
+
+**THE PROTOTYPE'S STATUS IS FLIPPED.** All 25 screens stand, so ADR 0057's
+condition is met: the prototype is provenance, the gallery is the source, and
+rule 4b has expired. Said here, in the rules section above, and in
+`SETTINGS_REWORK_PLAN.md` §0. **Leg 2 is closed.**
 
 **What is left, in the order the prompt below suggests.**
 
@@ -852,6 +925,176 @@ and in `SETTINGS_REWORK_PLAN.md` §0, and writes the Leg 3 prompt.
 | --- | --- |
 | Workspace | `context` — and its two states `contextintake`, `contextactions` |
 | Previews | `meeting`, `handoff`, `subtitles`, `translate`, `conversation`, `agentoverlay` |
+
+### Leg 2d — the last ten, and what closing Leg 2 turned up
+
+**ALL 25 STAND AND EVERY ONE MEASURES EXACT.** Ten are Leg 2d's: Context,
+Context · intake, Actions & templates, Meeting capture, Handoff, Live subtitles,
+Translation, Client conversations, Agent overlay — and `notes`, `noteactions`
+and `upload`, which are aliases of the first three and were never separate work.
+Forty measurements across the twenty-five screens, every one **structural 0 |
+style 0**, including four note tabs, three intake ways, seven onboarding steps
+and every sub-tab.
+
+**The leg did NOT split, and the reason is worth recording against Leg 2c's
+costing.** 2c predicted no cheap screen was left and was right about the
+reading; what it could not price is that the first family pays for the rest.
+Context, its intake and its actions panel are one builder read once and three
+screens out of it, and between them they bring the note grammar, the window
+family and the floating bar — which is most of what meeting capture, the agent
+overlay and the translation window then ask for. Handoff brought the overlay
+drawing and `hoff*`; subtitles is then almost entirely those two plus twenty
+lines of its own. The right unit of costing is the FAMILY, not the screen.
+
+**THE ONE THING TO TAKE FROM THIS LEG: three library defects that only the last
+ten screens could show, and all three were invisible until a screen asked.**
+
+1. **A wide preview had no measure.** `.ws-content-inner[data-layout="wide"]`
+   was `max-width: none`; the prototype caps it at 900 px. Four of this leg's
+   screens are `layout: "wide"` and Handoff is the first screen in the whole
+   port to ask for it, so the value had never been read. `none` would have let
+   a preview column holding a 620 px window run to the width of whatever window
+   it was opened in.
+2. **The 16 px icon base rule was shrinking the dot-matrix readout to a
+   square.** Leg 2c ported `demo.css`'s second base rule and re-measured every
+   earlier screen, correctly, and it changed none of them. It could not: no
+   ported screen drew a matrix. The meeting HUD is the first, and the readout
+   declares its box in `width`/`height` ATTRIBUTES, which lose to any
+   stylesheet — so a 47 × 20 meter came out 16 × 16. **The prototype hit exactly
+   this and says so in `matrixMount`**, and answered it with an inline `style`
+   on the SVG it builds by hand; here the SVG is upstream's, so the answer is
+   one rule beside the base rule. It was also wrong on the six matrices on
+   `/gallery` → Motion, which nobody had noticed because that page is not
+   measured by `port:diff`.
+3. **`card()`'s child order caught out a third leg, so it is the component's
+   now.** `demo.js` renders head, then ROWS, then BODY, then foot. Leg 2b found
+   it on Integrations, Leg 2c on both of Agents' mixed cards, and 2d on the
+   meeting's speaker-stages card. Leg 2c wrote "worth considering as a `body`
+   prop if it recurs a third time"; it recurred. `Card` takes `body` now and the
+   order cannot come out reversed at a call site.
+
+**THE VERIFIER LEARNED TWO THINGS, and the first is a silent-wrong-answer
+class.**
+
+- **A driver selector is scoped to the screen, not to the document.** Driving
+  the intake's segment with `.ws-seg button` clicked the GALLERY'S OWN SCHEME
+  SWITCH — it is a `SegmentControl` too, and it comes first in the document. The
+  prototype's rig sits outside its mock window so its side moved correctly, and
+  the two surfaces then measured different states: ninety-six "missing"
+  elements, none of them a port defect. Both roots are now the roots the walk
+  itself uses, so a driver can only reach a control the measurement is about to
+  look at.
+- **The state a screen family shares has to be reset, even when the control is
+  an absolute index.** Leg 2c's reset exists for the wizard, where the presses
+  are relative. Absolute tabs need one too, for a different reason: the
+  prototype keeps the note tab in `state.sub.context`, which `context`,
+  `contextactions` and their three aliases all read, while the gallery remounts
+  the screen and returns to Summary. So `contextactions` measured after a
+  `context#3` compared Linked against Summary. `resetAt` is which entry the
+  surface opens on — a wizard resets to its first, a note to its third.
+
+**A SIXTH MEASUREMENT FALSE POSITIVE, and it is a different kind.** The
+dot-matrix readout is the first thing on a measured screen that MOVES on the
+prototype's side — 12 fps off `orbEnvelope` — and its lit pixels carry a CLASS,
+so a per-pixel comparison compares whatever frame the walk caught and reports it
+as structure. It is also upstream's component where the prototype hand-builds
+the same SVG, so the tree differs even at rest. It is compared as ONE node now:
+the wrapper's display, flex and box are checked, the 112 circles under it are
+not. `ws-matrix-wrap` is the name that says where the line is, and it is on the
+shell wrapper rather than only in the script — which turned up defect 2 above.
+
+**THE PROTOTYPE DISAGREES WITH ITSELF IN TWO MORE PLACES.** Leg 2b found the
+first (`dot("accent")` with no `accent` rule). Add:
+
+- **`.sources` is a `<span>` in one place and a `<div>` in the other**, with
+  identical rules, so the tag changes nothing it draws. Both are ported as
+  written — `Sources` takes `as` — because normalising one of them makes the
+  measurement report an element that is missing when nothing is.
+- **`icon("sound")` is not a name the prototype's own icon set carries**, so it
+  falls back to the dot glyph. Translation's desk-side outcome line therefore
+  draws a dot where a speaker was meant. Ported as it renders, on Leg 2b's rule:
+  the drawing is what was looked at and accepted.
+
+**WHERE ADR 0058 WAS APPLIED, AND WHERE IT DELIBERATELY WAS NOT.** Four of these
+ten screens carry a capture surface, and the line this leg drew is *does the
+component claim a MEASUREMENT*:
+
+- **At rest, always:** the meeting HUD's level readout, the translation
+  window's listening strip and the agent window's answer meter all sit at zero,
+  which is the value Leg 2c gave the orb on Agents. The prototype drives all
+  three from a synthetic envelope because it has no microphone.
+- **Following the prototype:** `data-live` on a mic button, and `data-rec` on
+  the drawn pill. Those are colours, not generators — and on a window that
+  already carries "12:04 elapsed" and a red dot as sample data, a grey mic
+  would be the only thing on it pretending the drawing is not a drawing.
+  A gallery screen carries sample data and asserts nothing (ADR 0055); what it
+  may not do is show a reading it did not take.
+
+**Ported into the library**, all read out of `demo.css` line for line: the
+`pane-sec` / `folders` / `folder-row` family, `note-tabs` / `note-body` /
+`note-date` / `origin-from`, `tscript` / `tline` / `speaker`, the `who-chip`
+family and its four statuses, `enh` / `enh-act`, `linkgrp` / `link-row`,
+`floatbar` / `mic-btn` / `split-btn` / `menu`, `chatwin` and its deco, `bubble` /
+`typing` / `readout`, `hud-resize`, the `intake` family with `dropzone` and
+`rec-start`, `write-*`, the `actionswin` family, the `hud` family with `cop` and
+`stagelist`, `ovp*` including the tab, `hoff*`, `linecmp`, `cross` and
+`crossflow`, `cap*` and `echo*`, the `trw*` family, `clnt*` and `doct*`, the
+`agw*` and `agpop*` families, and `cycle`. Twelve new component files in
+`components/shell/`, none in the gallery.
+
+**`CTX` and `ACTIONS` are data, in `screens/contextData.ts`**, for the reason
+they are data in the prototype: the object list is one type in five states from
+four origins and the states are the point, and the action list is two kinds in
+one list where `kind` is what the surface reads to know which button it gets.
+
+**Findings for Leg 3 and beyond.**
+
+1. **The window family is five members and one chrome, and that is now a rule
+   in `DESIGN_SYSTEM.md`.** Ask, Actions, the meeting HUD, the agent window and
+   the translation window all take `ChatWinDeco` and the same resize grip. The
+   handoff card is deliberately NOT one of them — no title bar, no close, no
+   grip — and the reason is written on the component.
+2. **The overlay is drawn from `overlay-pill.css` and `tauri.conf.json`, and it
+   is a copy of a measurement.** `OverlayPillDrawing` reproduces the shipped
+   pill including the shell's `zoom: 0.87`. Rule 5 held: `git diff` touches no
+   `overlay*.css` and not `OverlayPill.tsx`. **If the shipped pill ever moves,
+   this has to move with it** — a copy of a measurement that drifts is worse
+   than no copy.
+3. **`ChatWinDeco` grew an `actions` slot** because the translation window
+   closes with an `IconButton` where Ask and Actions draw the strip's own bare
+   button. That is the prototype's own difference, not a divergence, and
+   passing the controls in is what keeps it a decision.
+4. **`FormCard`, `FormRow`, `Sidebar` and `StatTiles` are still pre-port**, and
+   `src-tauri/src/core/mode_router.rs:7` still cites `OverlayGallery.tsx`. Both
+   unchanged, both still owed — and `FormCard`/`FormRow`/`Sidebar` are Leg 3's
+   directly, because Leg 3 is the leg that deletes their last caller.
+5. **The native-host recipe still works and still needs a hoist.** `npm run
+   tauri build` (the AppImage step fails on `linuxdeploy`; the binary is built),
+   run `src-tauri/target/release/wordscript`, `xdotool search --name
+   "WordScript – Settings"`, `import -window <id>`. Synthetic input still cannot
+   be delivered. **Context was looked at this way and renders correctly**: the
+   folder rail with its counts and its open folder highlighted, the pane search,
+   the object rows with their state badges, the note tabs with the accent on the
+   open one's glyph, the two window buttons with Ask lit, the object's own
+   header line with its origin, and the derived Decisions list.
+
+   **The agent overlay was NOT looked at there, and it is the one thing this
+   leg owes.** A second build was started for it, with the default screen
+   hoisted to `agentoverlay`, and it was interrupted and then spent twenty
+   minutes recompiling every dependency from scratch rather than finishing.
+   It is the screen most worth a human's thirty seconds: it is the largest new
+   CSS block, it is drawn dark-on-dark on hardcoded hex rather than on tokens,
+   and it carries the only `zoom` in the port. **Open `/gallery` → Screens →
+   Agent overlay in the native host and check three things**: that the drawn
+   pill is the size of the real one, that the agent window's rail and thread do
+   not clip at 340 px, and that the notification's orb glows rather than
+   flattening. Everything else on it measured exact in Chromium.
+
+   Do not interrupt `npm run tauri build` to change something — killing cargo
+   mid-link costs a full dependency rebuild, which is how this was lost.
+6. **The gallery still has no door in the native host.** One entry in
+   `tauri.conf.json`, still out of scope under rule 6, and now owed by four
+   legs. Leg 3 opens `src/App.tsx` anyway.
 
 ## The prompt for Leg 2d
 
@@ -1380,3 +1623,149 @@ Then report what you did, what you found, and anything the next leg needs to kno
 that is not already written down.
 
 ---
+
+## The prompt for Leg 3
+
+Copied to a fresh agent verbatim.
+
+---
+
+You are picking up the WordScript GUI port. Work in
+`/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
+on the `main` branch. Do not create a branch. **Leg 3 is yours: the shell
+overwrite.** Leg 2 is closed — all 25 screens stand in `/gallery` → Screens on
+the real components, each measured exact.
+
+**What changes, and it is one thing said four ways**
+
+Today the product is a settings window with fourteen flat areas in it. After
+this leg it is **one window**: a workspace with four views, and settings as a
+**sheet laid over it at its own scale**, reached with `Cmd+,`. The fourteen
+areas are deleted in the commit that replaces them (ADR 0054 — there is nobody
+to migrate, so nothing is aliased and the old and new never coexist).
+
+1. **One window.** `SettingsWindow.tsx` is the window; it stops being *the
+   settings window* and becomes the workspace. Home · History · Profiles ·
+   Context are its views. All four are ported and standing in the gallery.
+2. **Settings is a sheet over it, at its own scale (§11.22).** A modal sheet,
+   not a second top-level window, because configuring something is a detour you
+   come back from — and drawn at a smaller scale, because two surfaces at
+   exactly one scale read as one surface whose content changed. **The scale is
+   already ported**: `.ws-sheet-scale` in `shell.css` redeclares `--nav-w`,
+   `--nav-row-h`, `--content-max` and `--pad-card` and nothing else. Today the
+   gallery applies it around a settings screen. **Your job is to move it onto
+   the sheet**, where it belongs. That it moves from one container to another
+   without a single component changing is the proof ADR 0052's tokens work —
+   if you find yourself editing a component to make the sheet fit, stop.
+3. **The new IA (§4.2).** Five workspace views become four (Chat became a panel
+   inside Context, §11.19; Upload became its intake state, §11.41), and eleven
+   settings sections in three groups — APP · AI · SYSTEM. The longest list a
+   user scans drops from 14 to 4.
+4. **`Cmd+,` opens the sheet**, and Escape closes it. It is a frontend
+   shortcut, not a Rust one: it is scoped to a focused window, which is the
+   whole difference from every shortcut ADR 0006 owns.
+
+**Read this first**
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`, in full — Leg 2d's record directly
+above this prompt, then 2c and 2b. Then `docs/SETTINGS_REWORK_PLAN.md` §4.1,
+§4.2, §4.3 and §11.22, which are the IA and the sheet in full. Then
+`CLAUDE.md`, which outranks any default you carry.
+
+**THE PROTOTYPE IS NO LONGER THE SOURCE.** ADR 0057's flip happened at the end
+of Leg 2. `/gallery` is the source now: every screen you are about to mount
+already stands there, measured exact, and if the gallery and the prototype
+disagree the gallery is right. Read `demo.js` and `demo.css` for the shell
+grammar's derivations — the sheet, the scrim, the nav, `§11.22` — because their
+comments carry reasoning nothing else does. Do not re-port a screen from them.
+
+**What you are moving, and where it already is**
+
+Everything you need is in `src/components/shell/` and rendered by
+`src/windows/gallery/screens/`. A screen in the gallery and the same screen in
+the product are one implementation with two sets of props (ADR 0055) — so
+mounting one on a product surface is **passing it different props**, never
+copying it. If you find yourself copying JSX out of a gallery screen, the screen
+needed a prop and you are about to make the gallery a second product.
+
+| The window | Today | After |
+| --- | --- | --- |
+| Chrome | `WindowChrome`, `Sidebar`, `FormCard`, `FormRow` | `Nav` / `NavGroup` / `NavRow` / `NavFoot`, `ViewTop`, `Card` / `CardRows` / `Row` |
+| Areas | 14 in `AREAS` in `SettingsWindow.tsx` | 4 views + a sheet of 11 sections |
+| Scale | one | workspace, plus `.ws-sheet-scale` inside the sheet |
+
+**The four things that will bite**
+
+1. **`src/lib/settingsAnchors.ts` IS A RUNTIME CONTRACT** and the one exception
+   ADR 0054 names. Rust deep-links into settings by anchor; every anchor must
+   still resolve after the restructure, and several of them now land inside the
+   sheet rather than in a window. Read it before you move a control, and check
+   `SETTINGS_ANCHOR_AREAS` against your new IA row by row.
+2. **`FormCard`, `FormRow`, `Sidebar` and `StatTiles` are the pre-port shell**
+   and this is the leg that deletes their last caller. Delete them **in the
+   commit that replaces their last caller**, not before and not after. Several
+   of their callers carry a `bodyClassName="py-4"` patch that the ported card
+   grammar makes wrong — that patch goes with them, it is not ported.
+3. **The frost material is what the sheet is made of, and it is not
+   `backdrop-filter`** (ADR 0051, and it is inert in this engine). The pair is
+   ported: `.ws-frost-shell` / `.ws-frost-stack` recede, `.ws-frost-panel`
+   catches the light, `.ws-frost-scrim` darkens. The nesting is the part to get
+   right — `shell` is the application receding behind a sheet, `stack` is the
+   application *plus* the sheet receding behind the palette. Read the comment.
+4. **`/gallery` has no door in the native host**, and four legs have now owed
+   it. Every window's URL is pinned in `src-tauri/tauri.conf.json` and rule 6
+   put that file out of scope for Legs 1–4 — but you are rewriting `App.tsx`
+   and the routes anyway, so **decide explicitly** whether the gallery gets a
+   route you can reach or whether the temporary-hoist recipe stands for another
+   leg. Say which in your record.
+
+**The rules that still bind**
+
+- Commit and push to `main`. No branch, no PR. Never `--no-verify`.
+- ADRs are append-only. Next free number is **0059**; update
+  `docs/decisions/README.md` when you file one.
+- **The overlay does not change.** Rule 5 stands: no token, size or rule in
+  `overlay*.css` or `OverlayPill.tsx`. `OverlayPillDrawing` draws it and is a
+  copy of a measurement — if you change the shipped pill, that copy moves too.
+- **`src-tauri/` is not touched.** Rule 6 stands through Leg 4, `tauri.conf.json`
+  included; if point 4 above makes you want to open it, that is a decision to
+  record and hand to Leg 5, not one to take quietly.
+- **Never render fake readiness on a product surface.** This is the leg where it
+  starts to matter for real: a gallery screen may carry sample data and assert
+  nothing, and **the moment the same screen stands on the product surface it may
+  not imply a state the runtime did not reach.** Nine of the 25 are previews and
+  carry a `PreviewBanner`; the rest are wired in Leg 4, not here. A screen that
+  is mounted but not wired **keeps its banner** until Leg 4 takes it off.
+- No screen carries an inline spacing value. If one seems to need it, a
+  primitive is missing a rule (ADR 0052).
+- End green: `npm test`, `npm run build`, and `cd src-tauri && cargo test`
+  because you are touching the shell. **Check it in the native host** — a
+  window, a sheet and a shortcut are exactly what a browser preview cannot
+  judge. The recipe is finding 5 in Leg 2d's record.
+
+**What `npm run port:diff` is for now**
+
+It compares the gallery against the prototype, and both of those still exist —
+so it is your **regression check**, not your acceptance check. Run it after you
+touch `shell.css` or any component: 40 measurements, and all 40 are exact today.
+A shell change that breaks one has broken a screen you are not looking at.
+
+`node scripts/gallery-port-diff.mjs home history profiles context context#0
+context#1 context#3 contextintake contextintake#1 contextintake#2 contextactions
+general hotkeys notesettings models models#1 agents agents#1 agents#2
+integrations delivery privacy diagnostics about onboarding onboarding#3
+translate subtitles meeting conversation agentoverlay handoff commit`
+
+**When it is green**
+
+Commit it, push it to `main`, append your record to the leg log, and write the
+**Leg 4 prompt** into this document. Leg 4 is the wiring, section by section:
+each section either reads the runtime truthfully or keeps its `PreviewBanner`;
+P1 and P2 are fixed at the seam; and **each wired screen's Gallery → Screens
+entry is deleted in the commit that wires it** (ADR 0057). The list of what the
+runtime cannot answer is already written — §2.5 in this document, twenty
+entries, split between Leg 4 wiring and Leg 5 contracts. Add to it; do not start
+a second one.
+
+Then report what you did, what you found, and anything the next leg needs to
+know that is not already written down.

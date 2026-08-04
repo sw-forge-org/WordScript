@@ -36,11 +36,15 @@ Status: 2026-08-04
   productive component library (`src/components/shell/`, `src/styles/shell.css`)
   ported 1:1 from the settings-rework prototype, and one design-time route
   `/gallery` where it is displayed and judged (ADR 0055). A screen is *ported*
-  when it stands in the gallery and *shipped* when it is wired; **15 of the
-  prototype's 25 screens are ported** as of 2026-08-04, each verified by
-  computed-style diff against the running prototype (`npm run port:diff`). The
-  shell overwrite, the wiring and the runtime contracts are later legs — see
-  `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what is next.
+  when it stands in the gallery and *shipped* when it is wired; **all 25 of the
+  prototype's screens are ported** as of 2026-08-04, each verified by
+  computed-style diff against the running prototype in every state it has
+  (`npm run port:diff`). With the last one standing, the prototype turned from
+  source into provenance (ADR 0057) and the gallery is the source. **Nothing is
+  shipped.** The shell overwrite, the wiring and the runtime contracts are later
+  legs — see `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what
+  is next, including the list of facts the drawn screens state that the runtime
+  cannot yet answer.
 
 ## Implemented core features
 

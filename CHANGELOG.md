@@ -55,6 +55,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **All 25 of the prototype's screens stand in `/gallery` → Screens, each
+  measured exact.** Leg 2d took the last ten: Context with its four note tabs
+  and both windows over it, the intake's three ways in, Actions & templates,
+  meeting capture, the handoff, live subtitles, translation, client
+  conversations and the agent overlay. Into the library with them: the note
+  grammar (four tabs, the transcript with its timestamps and speaker chips, the
+  derived lists that can carry one action each, the linked groups), the window
+  family (Ask, Actions, the meeting HUD, the agent window and its
+  notification), the folder rail, the intake and its two equal ways in, the
+  shipped overlay pill drawn at its real geometry, the caption strip and the
+  echo, the translation window with its per-language routing, and the client
+  record with the document it ends in.
+- **The prototype has turned from source into provenance (ADR 0057).** With the
+  last screen standing, the gallery is the source: a disagreement between the
+  two is either an ADR or a bug in the gallery. Relay rule 4b — read the
+  prototype's builder before you build a screen — expired with the screens it
+  applied to.
 - **Fifteen of the prototype's 25 screens stand in `/gallery` → Screens.** Leg 2c
   added Notes & Meetings, AI Models, Onboarding and Agents — every tab and every
   one of onboarding's seven steps measured exact. Into the library with them:
@@ -280,6 +297,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The dot-matrix level readout drew as a 16 × 16 smudge.** The surface's own
+  default icon size — the 16 px base rule ported by Leg 2c — captured the
+  readout's `<svg>`, because a component that declares its box in `width` and
+  `height` ATTRIBUTES loses to any stylesheet. The prototype hit exactly this
+  and answered it with an inline style on the SVG it builds by hand; here the
+  SVG is upstream's, so the answer is a rule beside the base rule. It was wrong
+  everywhere a matrix was drawn, including the six on `/gallery` → Motion.
+- **A card's rows and its body could be the wrong way round, and were, three
+  times.** The prototype's `card()` renders head, then ROWS, then BODY, then
+  foot; `Card` took free children, so the order was the caller's and three
+  separate call sites across three legs got it backwards — visible only once
+  the card's first/last-child edge rules drew an inset on the wrong side.
+  `Card` now takes `body`, and the order cannot come out reversed.
+- **A wide preview had no measure.** `.ws-content-inner[data-layout="wide"]`
+  was `max-width: none` where the prototype caps it at 900 px, which would have
+  let a 620 px window's preview column run to the width of whatever window it
+  was opened in. Handoff is the first screen that asks for the layout.
 - **Every icon in the ported shell was two pixels small wherever nothing sized
   it.** `demo.css` carries a second base rule — a default icon size of 16 px —
   which was never ported, and which beats a component's own declaration on

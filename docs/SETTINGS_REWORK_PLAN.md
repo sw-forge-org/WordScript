@@ -1,15 +1,17 @@
 # Settings Surface Rework Plan
 
-Status: 2026-08-04 — **Stage 0 done and accepted through fourteen passes; the
-prototype is now read-only. The delivery model changed on 2026-08-04 (§16): the
-rework is a port that overwrites rather than a migration (ADR 0054), it is
-judged in a new `/gallery` route rather than against the shipped surface (ADR
-0055), and it runs as a relay of legs on `main`, tracked in
+Status: 2026-08-04 — **Stage 0 done and accepted through fourteen passes. The
+delivery model changed on 2026-08-04 (§16): the rework is a port that overwrites
+rather than a migration (ADR 0054), it is judged in a new `/gallery` route
+rather than against the shipped surface (ADR 0055), and it runs as a relay of
+legs on `main`, tracked in
 [`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md).
-Stage 1 is the active leg and splits per §11.13: 1a is unblocked, 1b carries the
-palette checkpoint. In `src/` only two pieces of Stage 1 have landed — the
-`glass*` and `ws-pill` removal, and the Archivo / IBM Plex Mono wiring. Nothing
-else has been implemented.**
+**Leg 2 is closed: all 25 prototype screens now stand in `/gallery` → Screens on
+the ported components, each measured exact against the running prototype. The
+prototype has turned from source into provenance (ADR 0057) and the gallery is
+the source from here.** Leg 3 is next and is the shell overwrite — one window,
+settings as a sheet at its own scale, the new IA replacing the 14 flat areas,
+`Cmd+,`, and the old areas deleted.**
 
 > **2026-08-03 — the recording limits changed under this plan.** ADR 0038 and
 > ADR 0039 shipped outside the rework and touched two things it owns. The
@@ -54,12 +56,22 @@ The one correction that changes how the whole plan is read is **§11.7**:
 runtime and were presented as global; §4.2's table sorts by where a control is
 found, and has to be read with the scope rule on top of it.
 
-**The prototype is mandatory reading and must not be deleted.**
+**The prototype is PROVENANCE, not the source — as of 2026-08-04.**
 [`prototypes/settings-rework/`](prototypes/settings-rework/README.md) — open
-`index.html` in a browser. It is the accepted shape of the target: 20 screens,
-the proposed design system on its own screen, and the switches that settled the
-calibration. It is not imported by `src/`, ships nothing, and is the reference
-Stage 1 through Stage 5 build against.
+`index.html` in a browser. It is the accepted shape the port was built from: 25
+screens, the proposed design system on its own screen, and the switches that
+settled the calibration. It is not imported by `src/` and ships nothing.
+
+It was mandatory reading, per screen, for as long as a screen was unported —
+that is the relay's rule 4b, and **it expired with Leg 2d**, which took the last
+ten across. ADR 0057 is the record: the prototype is read-only, ADR 0056 has
+already overtaken it by one hex, and every further leg widens that gap. **From
+here the gallery is the source**, and a disagreement between the two is either
+an ADR or a bug in the gallery — never a reason to change the gallery back.
+
+Read it for WHY a screen is shaped the way it is; the comments in `demo.js` and
+`demo.css` carry derivations nothing else does. Do not read it for what the
+product should now look like.
 
 **Settled by review on 2026-08-02, do not reopen:**
 

@@ -330,8 +330,28 @@ implementation with two sets of props, and a component that exists only under
   control of `demo.css` §6, the nav and content column, the icon set, the orb,
   the provider marks and their sprite, the list row and its raw panel, the
   decision inbox, the pane, the connection block, the runtime log and the diff
-  (Leg 2b), and `Job` / `JobList` / `JobModel`, `ModelRow`, `OnboardingRail`,
-  `McpList` and `Thread` (Leg 2c).
+  (Leg 2b); `Job` / `JobList` / `JobModel`, `ModelRow`, `OnboardingRail`,
+  `McpList` and `Thread` (Leg 2c); and the note grammar, the window family, the
+  intake, the overlay drawing and the four preview families (Leg 2d, below).
+- **THE WINDOW FAMILY IS FIVE MEMBERS AND ONE CHROME.** Ask, Actions, the
+  meeting HUD, the agent window and the translation window all take
+  `ChatWinDeco` — a decoration strip standing in for the one the OS draws (ADR
+  0003) — and the same corner resize grip. None of them invents a header, none
+  of them draws traffic lights, and the differences between them are width,
+  height and content. A sixth window that reaches for its own header is the
+  defect this family exists to prevent.
+- **THE HANDOFF CARD IS DELIBERATELY NOT A MEMBER OF IT.** No title bar, no
+  close control, no resize grip: it is one question with two answers, on screen
+  for about four seconds. Window chrome would invite the user to move it, which
+  would mean remembering where they put it, which would mean it has a life. It
+  does not.
+- **THE OVERLAY IS DRAWN, NEVER RE-DERIVED.** `OverlayPillDrawing` reproduces
+  the shipped pill from `overlay-pill.css` and `tauri.conf.json` — 40 px tall,
+  `width: max-content`, the composition mic · bars · divider · mode · divider ·
+  timer, and the shell's own `zoom: 0.87`, because at 1.0 a preview shows a
+  pill 15% larger than the one on the user's screen. It is a copy of a
+  measurement: if the shipped pill moves, this moves with it. Nothing in
+  `overlay*.css` or `OverlayPill.tsx` may change to serve a preview.
 - **Two base rules travel with the shell**, both from `demo.css` and both fenced
   to `.ws-content` / `.ws-nav` until the leg that owns the window root:
   `svg { flex: none }`, and a **default icon size of 16 px**. The second one
