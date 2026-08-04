@@ -55,6 +55,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fifteen of the prototype's 25 screens stand in `/gallery` → Screens.** Leg 2c
+  added Notes & Meetings, AI Models, Onboarding and Agents — every tab and every
+  one of onboarding's seven steps measured exact. Into the library with them:
+  the job list (a row that opens into its own settings rather than navigating to
+  them), the model badge that names where a job went, the downloadable model row
+  with its size stated before the download, the onboarding rail, the desk's MCP
+  readout and the agent thread.
+- **The port's check can reach a screen's other states.** `npm run port:diff`
+  now takes `models#1` and `onboarding#4`: it drives BOTH surfaces into the
+  named sub-tab or wizard step with their own controls before measuring. Whole
+  halves of three screens were previously taken on trust. It immediately found
+  false positive the fifth — a transitioning colour measured mid-flight, which
+  only the port shows because the prototype rebuilds its window wholesale on
+  every render and so never transitions at all.
 - **Eleven of the prototype's 25 screens stand in `/gallery` → Screens.** Leg 2b
   ported Home, History, Profiles, General, Hotkeys, Delivery & Insert, Privacy
   & Data, Diagnostics, About & Updates, Integrations and the withdrawn Live
@@ -266,6 +280,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every icon in the ported shell was two pixels small wherever nothing sized
+  it.** `demo.css` carries a second base rule — a default icon size of 16 px —
+  which was never ported, and which beats a component's own declaration on
+  specificity in the prototype exactly as it does here. Every icon Leg 2b drew
+  sat under a more specific rule, so the gap only appeared when a screen finally
+  drew one that did not: the provider mark inside a job badge.
 - **Long recordings could not be transcribed at all.** The transcription budget
   capped the audio duration at 60 seconds before scaling, so an 11-minute
   recording was granted the same 35 seconds as a one-minute one and timed out

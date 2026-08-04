@@ -11,8 +11,12 @@ import { AboutScreen } from "./About";
 import { ProfilesScreen } from "./Profiles";
 import { CommitScreen } from "./Commit";
 import { IntegrationsScreen } from "./Integrations";
+import { NoteSettingsScreen } from "./NoteSettings";
+import { ModelsScreen } from "./Models";
+import { OnboardingScreen } from "./Onboarding";
+import { AgentsScreen } from "./Agents";
 import { ALL_SCREENS, SCREEN_GROUPS } from "./registry";
-import { HISTORY, RECENT } from "./data";
+import { HISTORY, LANES, PROVIDERS, RECENT } from "./data";
 
 /**
  * WHAT A GALLERY SCREEN'S TEST IS FOR, and it is not visual fidelity.
@@ -353,6 +357,161 @@ describe("Integrations", () => {
        itself. */
     expect(screen.getByText(/No way to add one here/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Agents" })).toBeInTheDocument();
+  });
+});
+
+describe("Notes & Meetings", () => {
+  it("keeps what a meeting RECORDS and sends the model elsewhere", () => {
+    render(<NoteSettingsScreen />);
+    /* The meeting speech engine stood on this screen until 2026-08-03 and
+       repeated Speech-to-Text's rows. It is a model setting, so it is a row in
+       AI Models; what stays is the capture question. */
+    expect(screen.getByText("Record system audio")).toBeInTheDocument();
+    expect(screen.getByText("Echo cancellation")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /AI Models/ })).toBeInTheDocument();
+  });
+
+  it("disables the three capture switches the runtime cannot yet honour", () => {
+    render(<NoteSettingsScreen />);
+    const switches = screen.getAllByRole("switch");
+    expect(switches).toHaveLength(3);
+    for (const s of switches) expect(s).toBeDisabled();
+  });
+
+  it("marks the undecided retention as an open decision rather than picking one", () => {
+    render(<NoteSettingsScreen />);
+    expect(screen.getByText("Open decision")).toBeInTheDocument();
+    expect(screen.getByLabelText("Keep the audio")).toHaveValue("Until the note is saved");
+  });
+});
+
+describe("AI Models", () => {
+  it("states the modes that run no model instead of leaving them out", () => {
+    render(<ModelsScreen />);
+    /* An absence answers nothing: "why can I not set a model for Verbatim" is
+       answered by seeing it stated. */
+    expect(screen.getByText("Verbatim")).toBeInTheDocument();
+    expect(screen.getByText("No model")).toBeInTheDocument();
+    expect(screen.getByText("Routes with Cleanup's model")).toBeInTheDocument();
+    expect(screen.getByText("delivery axis")).toBeInTheDocument();
+  });
+
+  it("marks an overridden job and names where it went, and leaves the rest default", () => {
+    const { container } = render(<ModelsScreen />);
+    const overridden = container.querySelectorAll(".ws-jobmodel[data-override]");
+    /* Cloud overrides exactly three of eight: upload, translate and the
+       assistant. Every other job says `default`, which is the one fact the list
+       exists for. */
+    expect(overridden).toHaveLength(3);
+    /* Eight jobs carry the suffix. The desk's voice is `mark: null` — off the
+       connection's axis entirely — so it gets neither a mark nor `default`,
+       which would be claiming it follows something. */
+    expect(container.querySelectorAll(".ws-job-prov")).toHaveLength(8);
+  });
+
+  it("changes what a job runs when the lane changes — the one segment that governs", () => {
+    const { container } = render(<ModelsScreen />);
+    /* Read the badge, not the page: the same string is also an <option> in the
+       job's own Model select. */
+    const badge = () => container.querySelector(".ws-jobmodel .ws-jobmodel-name")!.textContent;
+    expect(badge()).toBe(LANES.Cloud.jobs.dictation.model);
+    fireEvent.click(screen.getByRole("button", { name: "Local" }));
+    expect(badge()).toBe(LANES.Local.jobs.dictation.model);
+  });
+
+  it("says a job is not on this lane rather than offering an empty picker", () => {
+    render(<ModelsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Self-hosted" }));
+    expect(screen.getAllByText("Not on this lane")).toHaveLength(3);
+    expect(screen.getByText(LANES["Self-hosted"].jobs.dictation.none!)).toBeInTheDocument();
+  });
+
+  it("installs a local model in the app rather than naming a command", () => {
+    render(<ModelsScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "On this machine" }));
+    expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0);
+    /* The size is stated BEFORE the download, because the size is the fact that
+       decides whether you want it. */
+    expect(screen.getByText(/1.6 GB · multilingual/)).toBeInTheDocument();
+    expect(screen.getByText("38%")).toBeInTheDocument();
+  });
+});
+
+describe("Onboarding", () => {
+  it("is walkable, and the rail only reaches backwards", () => {
+    const { container } = render(<OnboardingScreen />);
+    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
+    /* A step you cannot reach is a span, not a button: claiming you can jump to
+       a step whose prerequisites are unmet is a lie in the other direction. */
+    expect(container.querySelectorAll("button.ws-obrail-step")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Step 2 of 7")).toBeInTheDocument();
+    expect(container.querySelectorAll("button.ws-obrail-step")).toHaveLength(2);
+  });
+
+  it("renders the settings screen's own provider picker, not a simplified twin", () => {
+    const { container } = render(<OnboardingScreen />);
+    for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const chips = container.querySelectorAll(".ws-provchip");
+    /* Seven cloud providers plus the Custom door — the same row AI Models
+       draws, from the same list. */
+    expect(chips).toHaveLength(PROVIDERS.filter((p) => p.lane === "Cloud").length + 1);
+  });
+
+  it("gives the local lane real download controls rather than a select", () => {
+    render(<OnboardingScreen />);
+    for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Local" }));
+    expect(screen.getByRole("heading", { name: "Pick one speech model" })).toBeInTheDocument();
+    expect(screen.getByText("46%")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0);
+  });
+
+  it("states what it deliberately left out, on the last step and not the first", () => {
+    render(<OnboardingScreen />);
+    expect(screen.queryByText("Deliberately not in this flow")).not.toBeInTheDocument();
+    for (let i = 0; i < 6; i++) {
+      fireEvent.click(screen.getByRole("button", { name: /Continue|It worked/ }));
+    }
+    expect(screen.getByRole("heading", { name: "Deliberately not in this flow" })).toBeInTheDocument();
+  });
+});
+
+describe("Agents", () => {
+  it("reads the desk's connectors and offers no way to write them", () => {
+    const { container } = render(<AgentsScreen />);
+    expect(container.querySelectorAll(".ws-mcp-row")).toHaveLength(5);
+    /* ADR 0046: a second writer would put WordScript in the business of
+       maintaining connectors. */
+    expect(screen.queryByRole("button", { name: /add server/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Open terminal" })).toHaveLength(2);
+  });
+
+  it("marks the one server WordScript issued, and only that one", () => {
+    const { container } = render(<AgentsScreen />);
+    expect(container.querySelectorAll('.ws-mcp-row[data-owner="ours"]')).toHaveLength(1);
+    expect(screen.getByText("loopback")).toBeInTheDocument();
+  });
+
+  it("reports the desk's own model as read-only rather than offering to set it", () => {
+    render(<AgentsScreen />);
+    expect(screen.getByText("claude-opus-5")).toBeInTheDocument();
+    expect(screen.getByText("read-only")).toBeInTheDocument();
+    expect(screen.getByText("Needs a restart")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/desk model/i)).not.toBeInTheDocument();
+  });
+
+  it("draws all four orb states at rest — no generator, no device", () => {
+    const { container } = render(<AgentsScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Voice" }));
+    const orbs = container.querySelectorAll(".ws-orb");
+    expect(orbs).toHaveLength(4);
+    /* ADR 0058. The prototype drives two of these from a synthetic envelope
+       because it has no voice to follow; here `drive` removes the transition
+       and nothing else, and every orb sits at level 0. */
+    for (const orb of orbs) {
+      expect((orb as HTMLElement).style.getPropertyValue("--orb-level")).toBe("0.00");
+    }
   });
 });
 

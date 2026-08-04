@@ -325,6 +325,20 @@ implementation with two sets of props, and a component that exists only under
   `Sidebar` are the **pre-port** shell that the shipped settings areas still
   render; nothing new may use them, and they are deleted with the last screen
   that reads them.
+- The kit has since grown by what the ported screens actually needed, and the
+  authority is `src/components/shell/index.ts` rather than this list: every
+  control of `demo.css` §6, the nav and content column, the icon set, the orb,
+  the provider marks and their sprite, the list row and its raw panel, the
+  decision inbox, the pane, the connection block, the runtime log and the diff
+  (Leg 2b), and `Job` / `JobList` / `JobModel`, `ModelRow`, `OnboardingRail`,
+  `McpList` and `Thread` (Leg 2c).
+- **Two base rules travel with the shell**, both from `demo.css` and both fenced
+  to `.ws-content` / `.ws-nav` until the leg that owns the window root:
+  `svg { flex: none }`, and a **default icon size of 16 px**. The second one
+  BEATS a component's own `width` on specificity — in the prototype exactly as
+  here — so a mark that declares 14 px still draws at 16 unless something more
+  specific says otherwise. A component that needs another size overrides the
+  rule, never the markup.
 - **A preview says so on the surface, every time.** `PreviewBanner` is a chip and
   one line, 26 px. Its withdrawn variant keeps a box and a border, because a stop
   is exactly the case that has to interrupt.

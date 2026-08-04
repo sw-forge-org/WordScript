@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-07-25
+Status: 2026-08-04
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -30,6 +30,17 @@ Status: 2026-07-25
   defaults are editable in Profiles; Modes shows an effective-mode
   precedence indicator. Storybook and Glass prototypes were removed; the
   MORE areas are built in the settings kit, not the isolated Glass kit.
+- **The settings rework is a port in progress, and it is design-time only.**
+  The shipped surface above is unchanged: nothing in this section is wired to
+  the runtime and nothing in it replaces an area yet. What exists is the
+  productive component library (`src/components/shell/`, `src/styles/shell.css`)
+  ported 1:1 from the settings-rework prototype, and one design-time route
+  `/gallery` where it is displayed and judged (ADR 0055). A screen is *ported*
+  when it stands in the gallery and *shipped* when it is wired; **15 of the
+  prototype's 25 screens are ported** as of 2026-08-04, each verified by
+  computed-style diff against the running prototype (`npm run port:diff`). The
+  shell overwrite, the wiring and the runtime contracts are later legs — see
+  `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what is next.
 
 ## Implemented core features
 

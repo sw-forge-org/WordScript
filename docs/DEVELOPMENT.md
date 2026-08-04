@@ -182,10 +182,32 @@ changes.
 | Native Rust | `cd src-tauri && cargo test` |
 | UI and runtime contract | `npm test`, `npm run build`, and `cd src-tauri && cargo test` |
 | Release build-up | prior checks plus `npm run tauri build` |
+| A screen in the settings-rework port | the above plus `npm run port:diff` |
 
 Run local behavior in the native host whenever a change crosses the webview or
 operating-system boundary. Do not claim platform support based only on a browser
 preview.
+
+### The settings-rework port has its own check
+
+While the port runs (see `docs/handoffs/HANDOFF_gui-port-relay.md`), a screen in
+`/gallery` → Screens is accepted by **measurement**, not by eye. `npm run
+port:diff` opens the running prototype and the running gallery in one headless
+Chromium, walks both block trees and prints every structural and computed-style
+difference. A screen is ported when it reports `structural 0 | style 0 | text 0`;
+a unit test cannot see a pixel, so nothing else is evidence.
+
+```bash
+python3 -m http.server 8791 --directory docs/prototypes/settings-rework
+npm run dev
+npm run port:diff models onboarding agents        # add --text to compare copy
+npm run port:diff models#1 onboarding#4           # a sub-tab or a wizard step
+```
+
+`#n` drives both surfaces into a screen's other state before measuring — a
+screen checked only in its default state is a screen half checked. The script's
+own header documents the five measurement false positives found so far and the
+divergences that are deliberate.
 
 ## Repository Workflow
 
