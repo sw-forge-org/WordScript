@@ -5,6 +5,8 @@ import { GeneralScreen } from "./General";
 import { HotkeysScreen } from "./Hotkeys";
 import { DeliveryScreen } from "./Delivery";
 import { PrivacyScreen } from "./Privacy";
+import { DiagnosticsScreen } from "./Diagnostics";
+import { AboutScreen } from "./About";
 
 /**
  * THE SCREEN REGISTRY — the prototype's `NAV`, minus its rig.
@@ -66,8 +68,8 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "integrations", surface: "settings", label: "Integrations", preview: true },
       { id: "delivery", surface: "settings", label: "Delivery & Insert", render: () => <DeliveryScreen /> },
       { id: "privacy", surface: "settings", label: "Privacy & Data", render: () => <PrivacyScreen /> },
-      { id: "diagnostics", surface: "settings", label: "Diagnostics" },
-      { id: "about", surface: "settings", label: "About & Updates" },
+      { id: "diagnostics", surface: "settings", label: "Diagnostics", render: () => <DiagnosticsScreen /> },
+      { id: "about", surface: "settings", label: "About & Updates", render: () => <AboutScreen /> },
     ],
   },
   {

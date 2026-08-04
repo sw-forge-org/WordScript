@@ -337,7 +337,6 @@
     font-size: var(--t-label);
     font-weight: 500;
     color: var(--fg-dim);
-    white-space: nowrap;
     transition: color var(--dur-fast) var(--ease),
                 background-color var(--dur-fast) var(--ease);
   }
@@ -1498,6 +1497,59 @@
     font-weight: 500;
   }
   .ws-link:hover { border-bottom-color: var(--accent); }
+
+  /* ── The runtime log ──────────────────────────────────────────────────────
+     Buffered while the runtime is active. The level column is fixed-width so
+     the messages start at one x and the eye can scan down them; only the three
+     levels carry a hue, and INFO's is the voice colour rather than the accent,
+     which stays spent on what needs acting on. */
+  .ws-log {
+    font-family: var(--font-mono);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    line-height: 1.7;
+    background: var(--bg-inset);
+    border-radius: 8px;
+    padding: var(--s3);
+    max-height: 210px;
+    overflow: auto;
+    border: 1px solid var(--border);
+  }
+  .ws-log div {
+    display: flex; gap: var(--s2); white-space: nowrap;
+    content-visibility: auto; contain-intrinsic-size: auto 19px;
+  }
+  .ws-log .ws-ts { color: var(--fg-muted); }
+  .ws-log .ws-lv { width: 42px; flex: none; }
+  .ws-log .ws-lv[data-l="INFO"] { color: var(--voice); }
+  .ws-log .ws-lv[data-l="WARN"] { color: var(--accent); }
+  .ws-log .ws-lv[data-l="ERROR"] { color: var(--danger); }
+  .ws-log .ws-msg { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── Diff — raw beside transformed ────────────────────────────────────────
+     The one idea kept from the withdrawn commit screen (§11.15), where the
+     pairing was first drawn. It is a pairing, not a feature: no commit action
+     follows it in Diagnostics, because a commit control there would commit a
+     session nobody dictated. */
+  .ws-diff { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+  .ws-diff-pane {
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: var(--s3);
+    display: flex; flex-direction: column; gap: var(--s2);
+    min-width: 0;
+  }
+  .ws-diff-pane > h4 {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 650;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted);
+  }
+  .ws-diff-pane p {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    line-height: 1.6; color: var(--fg-dim);
+  }
+  .ws-diff-pane[data-side="out"] p { color: var(--fg); }
+  .ws-diff mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 2px; }
+  .ws-diff del { color: var(--fg-muted); text-decoration-color: var(--danger); }
 
   /* ── The labelled group ───────────────────────────────────────────────────
      A heading over a block INSIDE a card, for the one screen that has stages

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { HomeScreen } from "./Home";
 import { HistoryScreen } from "./History";
@@ -6,6 +6,8 @@ import { GeneralScreen } from "./General";
 import { HotkeysScreen } from "./Hotkeys";
 import { DeliveryScreen } from "./Delivery";
 import { PrivacyScreen } from "./Privacy";
+import { DiagnosticsScreen } from "./Diagnostics";
+import { AboutScreen } from "./About";
 import { ALL_SCREENS, SCREEN_GROUPS } from "./registry";
 import { HISTORY, RECENT } from "./data";
 
@@ -175,6 +177,56 @@ describe("Privacy & Data", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/danger zone/i)).not.toBeInTheDocument();
     expect(container.querySelectorAll(".ws-row[data-danger]")).toHaveLength(2);
+  });
+});
+
+describe("Diagnostics", () => {
+  it("opens on Checks, with the sub-tab row inside the masthead", () => {
+    const { container } = render(<DiagnosticsScreen />);
+    const top = container.querySelector(".ws-view-top")!;
+    expect(top.querySelector(".ws-subtabs")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Runtime snapshot" })).toBeInTheDocument();
+  });
+
+  it("shows raw beside transformed, and offers no commit action for it", () => {
+    render(<DiagnosticsScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    expect(screen.getByText("Raw")).toBeInTheDocument();
+    expect(screen.getByText("Cleanup")).toBeInTheDocument();
+    /* §11.15: a commit control here would commit a session nobody dictated.
+       That is half the reason `Live preview & commit` is withdrawn. */
+    expect(screen.queryByRole("button", { name: /commit/i })).not.toBeInTheDocument();
+  });
+
+  it("colours the log by level and nothing else", () => {
+    const { container } = render(<DiagnosticsScreen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    const levels = [...container.querySelectorAll(".ws-lv")].map((el) => el.getAttribute("data-l"));
+    expect(new Set(levels)).toEqual(new Set(["INFO", "WARN", "ERROR"]));
+  });
+});
+
+describe("About & Updates", () => {
+  it("does not read as though installers or in-app updates already work", () => {
+    render(<AboutScreen />);
+    expect(screen.getByText("In progress")).toBeInTheDocument();
+    expect(screen.getByText(/There is no installer yet/)).toBeInTheDocument();
+    expect(screen.getByText(/the cross-platform release path is still being assembled/)).toBeInTheDocument();
+  });
+
+  it("separates not-yet from never", () => {
+    render(<AboutScreen />);
+    /* "not built yet" and "not going to be built" are not the same answer, and
+       only the second belongs in a list read to decide whether to keep
+       waiting. */
+    expect(screen.getByText("Candidate")).toBeInTheDocument();
+    expect(screen.getByText("Never")).toBeInTheDocument();
+  });
+
+  it("carries no stat tile — a version string is not a metric", () => {
+    const { container } = render(<AboutScreen />);
+    expect(container.querySelector(".ws-stats")).toBeNull();
+    expect(screen.getByText("0.2.2-alpha")).toBeInTheDocument();
   });
 });
 

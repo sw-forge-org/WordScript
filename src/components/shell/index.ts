@@ -83,6 +83,8 @@ export { ListRows, ListItem, RawPanel } from "./ListItem";
 export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
 export { TranscriptRow } from "./TranscriptRow";
 export { OwedList, Owed } from "./Owed";
+export { Log, Diff, DiffPane, DiffMark } from "./Log";
+export type { LogLevel, LogLine } from "./Log";
 
 export { StatusBadge } from "./StatusBadge";
 export type { StatusTone } from "./StatusBadge";
