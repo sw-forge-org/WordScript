@@ -4,20 +4,24 @@ import { cn } from "@/lib/utils";
 export type StatusTone =
   | "success"
   | "warning"
-  | "error"
-  | "info"
+  | "danger"
   | "accent"
   | "plan"
-  | "neutral";
+  | "neutral"
+  | "error"
+  | "info";
 
 /**
- * The grammar carries five tones. `error` and `info` are pre-port names two
- * shipped callers still use; `error` is `danger` and `info` takes the neutral
- * ground, because the voice colour was never a status.
+ * The grammar carries five tones — success, warning, danger, accent, plan —
+ * and `neutral` is the badge with no tone at all. `error` and `info` are
+ * pre-port names shipped callers still use: `error` IS `danger`, and `info`
+ * takes the neutral ground because the voice colour was never a status. Both
+ * disappear with the last caller that reads them.
  */
 const dataTone: Partial<Record<StatusTone, string>> = {
   success: "success",
   warning: "warning",
+  danger: "danger",
   error: "danger",
   accent: "accent",
   plan: "plan",
@@ -26,6 +30,7 @@ const dataTone: Partial<Record<StatusTone, string>> = {
 const dotTone: Partial<Record<StatusTone, string>> = {
   success: "success",
   warning: "warning",
+  danger: "danger",
   error: "danger",
   accent: "warning",
 };

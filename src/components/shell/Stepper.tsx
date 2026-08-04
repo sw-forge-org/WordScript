@@ -1,20 +1,30 @@
 import * as React from "react";
-import { Minus, Plus } from "lucide-react";
+import { MinusIcon, PlusIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StepperProps {
   value: number;
-  onChange: (value: number) => void;
+  onChange?: (value: number) => void;
   min?: number;
   max?: number;
   step?: number;
+  /** The unit lives INSIDE the control, not in a sentence beside it. */
   suffix?: string;
   id?: string;
   className?: string;
   "aria-label"?: string;
 }
 
-/** macOS-style numeric stepper: -, editable field, +, optional unit suffix. */
+/**
+ * A BOUNDED NUMBER ADJUSTED BY ONE.
+ *
+ * "One control per kind of value": a number with a unit and a small range is a
+ * stepper, never a text field. The two buttons are the whole affordance, which
+ * is why the readout in the middle is a readout — Leg 1 kept an editable
+ * `<input type="number">` there, and a field invites a keyboard for a value
+ * whose entire range is reachable in a few presses. The end of the range is
+ * visible because the button at that end is disabled.
+ */
 export function Stepper({
   value,
   onChange,
@@ -26,54 +36,37 @@ export function Stepper({
   className,
   ...rest
 }: StepperProps) {
+  const atMin = min !== undefined && value <= min;
+  const atMax = max !== undefined && value >= max;
+
   const clamp = (n: number) =>
     Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, n));
 
-  const commit = (n: number) => {
-    if (Number.isNaN(n)) return;
-    onChange(clamp(n));
-  };
-
   return (
-    <div
-      className={cn(
-        "inline-flex items-center overflow-hidden rounded-md border border-border bg-surface-strong",
-        className,
-      )}
+    <span
+      id={id}
+      role="group"
+      aria-label={rest["aria-label"]}
+      className={cn("ws-stepper", className)}
     >
       <button
         type="button"
         aria-label="Decrease"
-        disabled={min !== undefined && value <= min}
-        onClick={() => commit(value - step)}
-        className="flex size-7 items-center justify-center text-fg-dim transition-colors hover:text-foreground disabled:opacity-30"
+        disabled={atMin}
+        onClick={() => onChange?.(clamp(value - step))}
       >
-        <Minus className="size-3.5" />
+        <MinusIcon aria-hidden />
       </button>
-      <input
-        id={id}
-        type="number"
-        inputMode="numeric"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        aria-label={rest["aria-label"]}
-        onChange={(e) => commit(Number(e.target.value))}
-        className="w-12 border-x border-border bg-transparent py-1 text-center text-[13px] tabular-nums text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-      />
+      <span className="ws-stepper-val">{value}</span>
       <button
         type="button"
         aria-label="Increase"
-        disabled={max !== undefined && value >= max}
-        onClick={() => commit(value + step)}
-        className="flex size-7 items-center justify-center text-fg-dim transition-colors hover:text-foreground disabled:opacity-30"
+        disabled={atMax}
+        onClick={() => onChange?.(clamp(value + step))}
       >
-        <Plus className="size-3.5" />
+        <PlusIcon aria-hidden />
       </button>
-      {suffix && (
-        <span className="px-2 text-[12px] text-fg-muted select-none">{suffix}</span>
-      )}
-    </div>
+      {suffix && <span className="ws-stepper-unit">{suffix}</span>}
+    </span>
   );
 }

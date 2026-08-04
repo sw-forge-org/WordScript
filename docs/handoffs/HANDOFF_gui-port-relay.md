@@ -1,6 +1,6 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Leg 1 is done and pushed. Leg 2 is next.**
+Opened 2026-08-04. **Active — Leg 2a is done and pushed. Leg 2b is next.**
 
 Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 Work happens on `main`. There is no feature branch; `gui-rework-second-pass` was
@@ -94,7 +94,7 @@ gallery of four sections.
    green.
 2. **Never `--no-verify`.** The Husky hooks are the secret gate.
 3. **ADRs are append-only.** New file, never an edit to an existing one. Next
-   free number is **0058**; update `docs/decisions/README.md` when you file one.
+   free number is **0059**; update `docs/decisions/README.md` when you file one.
 4. **The prototype is read-only from here on** (ADR 0055). It is the reference
    the gallery is diffed against. If you ever must edit `demo.css` or `demo.js`,
    use **exact-match string replacement only** — never line numbers, never a
@@ -131,7 +131,8 @@ gallery of four sections.
 | Leg | What | Done when |
 | --- | --- | --- |
 | **1** | Foundations, primitives, gallery shell | `/gallery` renders Foundations and Components in three schemes; the eight primitives exist with tests; dead code gone |
-| **2** | Every prototype screen into the gallery, 1:1 | All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on the real components |
+| **2a** | The library, and the gallery's own pages re-ported | *Done.* The controls of `demo.css` §6 and the shell of §3–§4 are in `components/shell/`; Foundations, Components, Motion and `GalleryWindow` are read out of `SCREENS.ds` |
+| **2b** | The remaining 24 screens into the gallery, 1:1 | All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on the real components |
 | **3** | The shell overwrite | One window; settings is a sheet over the workspace at its own scale (§11.22); the new IA replaces the 14 flat areas; `Cmd+,`; old areas deleted |
 | **4** | Wiring, section by section | Each section either reads the runtime truthfully or carries a `PreviewBanner`; P1 and P2 fixed at the seam; the list of what the runtime cannot answer is written down; **each wired screen's Gallery → Screens entry is deleted in the commit that wires it** (ADR 0057) |
 | **5** | Runtime contracts | §11.36 and §11.52, prioritised by what Leg 4 found blocking |
@@ -239,7 +240,7 @@ window under this compositor. A human with a mouse can.
   rather than on presentation — a label the runtime does not use, a status that
   does not exist. §11.11 found three of those; a 25-screen port will find more.
 - A new ADR only if a design decision departs from the prototype. Never an edit
-  to an existing record. The next free number is **0057**; update
+  to an existing record. The next free number is **0059**; update
   `docs/decisions/README.md` when you file one.
 - `CHANGELOG.md` under `[Unreleased]`, your record in the leg log, and the
   **Leg 3 prompt**.
@@ -250,15 +251,21 @@ window under this compositor. A human with a mouse can.
 
 ### Leg 2 is done when
 
-- The four files of §2.1 are ported rather than composed, and a reader with the
+Leg 2a closed the first, fourth and fifth of these on 2026-08-04. The second and
+third are Leg 2b's, and the leg is not done until every one is closed.
+
+- ✅ The four files of §2.1 are ported rather than composed, and a reader with the
   prototype open beside `/gallery` cannot name a section that was invented.
-- All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on
-  the components in `components/shell/`.
-- `npm test` and `npm run build` are green, and the new screens carry tests —
+- ⬜ All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on
+  the components in `components/shell/`. *One of 25 as of Leg 2a: the Design
+  System screen, which is Foundations plus Components plus Motion.*
+- ⬜ `npm test` and `npm run build` are green, and the new screens carry tests —
   under ADR 0054 there is no coexisting old surface to fall back to, which makes
-  the test obligation stricter than the plan's, not looser.
-- The result was looked at in the native host, not only in a browser.
-- It is committed and pushed to `main`, and the Leg 3 prompt is in this file.
+  the test obligation stricter than the plan's, not looser. *Green at 244 after
+  2a; the screens Leg 2b adds bring their own.*
+- ✅ The result was looked at in the native host, not only in a browser. **The
+  frost pair is settled and the material runs** — see Leg 2a's record.
+- ✅ It is committed and pushed to `main`, and the next prompt is in this file.
 
 ## Read before starting Leg 2
 
@@ -271,7 +278,7 @@ window under this compositor. A human with a mouse can.
 | `docs/DESIGN_SYSTEM.md` | What the product now claims — as a check on your port, never as its source |
 | `src/styles/shell.css` and `src/components/shell/` | What Leg 1 ported. Grow this, do not work around it |
 | `docs/SETTINGS_REWORK_PLAN.md` §7, §11.11, §11.15, §11.17, §11.20, §11.28 | Previews, invented vocabulary, the withdrawn screen, and the four rules that belong in primitives |
-| ADR 0048, 0051, 0052, 0053, 0054, 0055, 0056 | Light mode, frost, the row grammar, the level readout, the two delivery decisions, and the measured-contrast rule |
+| ADR 0048, 0051, 0052, 0053, 0054, 0055, 0056, 0057, 0058 | Light mode, frost, the row grammar, the level readout, the two delivery decisions, the measured-contrast rule, the prototype's expiry, and why a gallery draws a live instrument at rest |
 | `docs/REFERENCE.md` | Overlay sizes and CSS invariants, before drawing anything near the overlay |
 
 Serve the prototype for comparison:
@@ -282,6 +289,7 @@ Serve the prototype for comparison:
 | --- | --- | --- | --- | --- |
 | 0 | 2026-08-04 | Opus 5 | `dbd83c6` | Relay opened. `gui-rework-second-pass` consolidated into `main` and deleted. ADR 0054 and 0055 filed. Baseline: 154 tests green, `/gallery` does not exist, Stage 1a and 1b unstarted apart from the `glass*` removal and the font wiring. |
 | 1 | 2026-08-04 | Opus 5 | `135771f` | Dead code out, token write, eight primitives, `/gallery` shell, native-host look. 154 → 217 tests, `npm run build` green. ADR 0056 filed: the light scheme's `--fg-muted` was measured for the first time and missed AA. **The gallery's own pages were composed rather than ported — Leg 2 fixes that first.** Full account below. |
+| **2a** | 2026-08-04 | Opus 5 | `(this commit)` | **§2.1 done: the four gallery pages are ported, not composed.** The controls of `demo.css` §6 and the nav/content grammar of §3–§4 are in the library — 17 new components, ~700 lines of ported CSS. 217 → 244 frontend tests, `cargo test` 623 green, `npm run build` green. Verified by computed-style diff against the running prototype, property by property, and in the native host. **The frost pair is settled: the material runs.** ADR 0058 filed. §2.2 is Leg 2b's. Full account below. |
 
 ### Leg 1 — what landed, and the one thing it got wrong
 
@@ -404,7 +412,243 @@ revert it before you commit.** The permanent fix is one entry in
   `src/windows/gallery/OverlayStates.tsx`. Out of scope to fix under rule 6 — a
   note for whichever leg opens that file.
 
-## The prompt for Leg 2
+### Leg 2a — what landed, what it found, and what it deliberately did not do
+
+**§2.1 is done and §2.2 is not started.** The leg split because the expensive
+shared half turned out to be the library, not the screens: the Design System
+screen's Components section is a page of controls, and Leg 1 had built the eight
+primitives §5.3 names while leaving every control they sit next to on the
+pre-port kit — a shadcn Switch, a Tailwind stepper, a Radix slider. None of
+those could be shown on a page whose subject is what the controls look like. So
+the leg ported the controls first, which is what Leg 2b now spends rather than
+earns.
+
+**Ported into the library**, all read out of `demo.css` line for line:
+`.btn` with its three-value primary material and its `ghost` / `danger` /
+`disabled` / `data-busy` / `data-on` states, `.ibtn`, `.toggle`, `.seg`,
+`.sel-wrap` + `.sel`, `.field`, `.stepper`, `.slider`, `.level`, `.kbd` +
+`.kbd-btn`, `.chip` + `.chips`/`.chip-x`, `.note`, `.check-list`, `.strip`,
+`.disc`, `.sources`, plus the Design System screen's own grammar (`.ramp`,
+`.spec`, `.type-row`, `.rhythm`, `.states`, `.mx-lab`) and the navigation and
+content column of §3–§4 (`.nav`, `.brand`, `.nav-search`, `.nav-group`,
+`.nav-row`, `.nav-foot`, `.content`, `.content-inner`, `.view-top`,
+`.view-head`). Seventeen new components in `components/shell/`, none in the
+gallery.
+
+**The card guard was carrying four of eight names.** Leg 1 wrote
+`.ws-card > :not(.ws-rows):not(.ws-list):not(.ws-lane):not(.ws-scale)`; the
+prototype exempts eight, and `.ws-scale` is not one of them — it was a wrapper
+Leg 1 invented, because the prototype's type rows are direct children of the
+card and are exempted by name. `.check-list`, `.disc`, `.owed-list`, `.legend`
+and `.type-row` are in the guard now. The thirteenth prototype pass is the
+record of what a missing name costs: every list item, lane row, check and
+disclosure started flush against the rounded corner until it was fixed.
+
+**How the port was verified, and it was not by eye.** Screenshots could not be
+written to disk from the Playwright MCP server, so both surfaces were measured
+instead: ~70 selectors, ~20 computed properties each, prototype against gallery,
+diffed in the browser. Foundations, Components and Motion came out identical on
+every checked property. Two classes of false positive are worth knowing about
+for whoever repeats this:
+
+- **A stale browser zoom.** The first pass reported five border widths as 0.8px
+  against 1px. The tab was at 80%; re-measured at 100% both sides read 1px and
+  2px. Check `devicePixelRatio` and a fresh `1px` probe element before believing
+  a sub-pixel difference.
+- **`inline-flex` blockifies.** Seven controls "differed" as `inline-flex` vs
+  `flex`. Chromium reports `flex` for an `inline-flex` element that is itself a
+  flex item — on **both** pages. Compare against what the prototype actually
+  reports, never against what its stylesheet says.
+
+**The native host, and the check Leg 1 left owed is now answered.**
+
+- **THE FROST MATERIAL RUNS.** Rendering the pair twice — once with
+  `data-frost-stack`, once without — put both states in one still and removed
+  the need for any input at all. In the captured window the frosted block's
+  heading and bars are unreadable and the sharp block's are crisp, same layer,
+  same text. `filter: blur()` on the layer behind does in WebKitGTK what
+  `backdrop-filter` cannot (ADR 0051). **This is closed. Do not re-open it.**
+- **Synthetic input still cannot be delivered.** `xdotool key`, `xdotool click`
+  and wheel events all left the window unchanged, exactly as Leg 1 found. A
+  window resize is also clamped to the screen height, so a tall window is not a
+  way around it either. What *does* work: `import -window <id>` captures the
+  window's own buffer correctly, and `xdotool search --name "WordScript –
+  Settings"` finds it. **If you need to see something below the fold, hoist it
+  for one build — that is cheaper than fighting the compositor.**
+- **`npm run tauri build` works and Leg 1's diagnosis of the dev server was
+  wrong.** Leg 1 recorded the `beforeDevCommand` failure as a stale Vite server
+  holding port 1420. Nothing was listening on 1420; the bind is refused by the
+  **agent sandbox**, and `npm run dev` starts immediately when run outside it.
+  The AppImage bundling step fails on `linuxdeploy`, which is packaging and not
+  the app — `target/release/wordscript` is built and runs.
+- **The gallery renders correctly in WebKitGTK**: the ported nav with its brand
+  mark and icon tiles, the ramp, the spec table, the light scheme and the dark
+  one. The scheme switch persists across launches through the webview's own
+  storage.
+
+**Findings for Leg 2b and beyond.**
+
+1. **`src/lab/` is gallery-only, and after this leg nothing imports it.**
+   `Orb.tsx`, `LiveWaveform.tsx`, `Keycap.tsx`, `ProviderMark.tsx` and
+   `lab.css` were imported by exactly one file — the old Motion page — which is
+   the defect ADR 0055 forbids in as many words: a component that exists only
+   under the gallery. They are **left in place and unreferenced**, deliberately,
+   because deleting them is not the fix and porting from them would be rule 4b's
+   failure a second time. The orb and the provider marks are components the
+   prototype has (`demo.css` §"The orb", §"Provider marks") and Leg 2b's screens
+   need them: **port them from `demo.css` into `components/shell/`, then delete
+   `src/lab/` in the same commit.**
+2. **The prototype's type scale is missing a step its own stylesheet declares.**
+   `demo.css` declares `--t-note: 13px` and reads it 28 times; `SCREENS.ds`'s
+   `typeScale` array lists six steps and leaves it out. Foundations shows seven
+   and says why in a comment. The page was behind the system it draws; the
+   prototype is read-only so it could not be fixed there.
+3. **A moving instrument is a claimed measurement** — ADR 0058. The prototype
+   animates its waveform and VU meter from a synthetic envelope because it has
+   no microphone; the product's components open one. Gallery screens draw them
+   at rest, or hold one frame of sample data. This governs the meeting HUD, the
+   agent overlay, Live subtitles and Client conversations in Leg 2b.
+4. **`SegmentControl` announced itself as navigation.** Leg 1 gave it
+   `role="tablist"` and `aria-selected`; the prototype's `.seg` is
+   `aria-pressed` and its `.subtabs` is the tablist, and the difference is real
+   — a segment sets a value, a sub-tab swaps the panel under it. Corrected, and
+   `ApiModelsTab.test.tsx` updated with it. Its `size` prop is gone: the
+   prototype has one segment size, and the second existed only so the gallery's
+   scheme switch could be smaller than the control it displays.
+5. **The `.seg` active label is `--accent`, unconditionally.** The prototype
+   makes that conditional on `[data-density="standard"|"roomy"]`. The product
+   ships at Standard and has no density switch — the rig does not come across —
+   so the conditional collapses to the branch that is always true.
+6. **`StatTiles` was NOT re-ported, on purpose.** `SCREENS.ds` never renders a
+   stat tile, and porting a primitive no ported screen asks for is the same
+   guess the composed gallery pages were. `.ws-stats` is in `shell.css` ready
+   for Context · intake, which is the one honest use left. The component still
+   renders its six pre-port callers and is marked as pre-port.
+7. **The light `--accent` clears AA by 0.20.** Measured on the card: `#b45c00`
+   at 4.70:1, against the dark side's 6.47:1. It passes and nothing is owed —
+   but it is the thinnest margin in either ladder, and the next person to adjust
+   that hex should re-read Foundations before and after.
+8. **`--bg-surface` prints as `#fff` in a production build.** The token is
+   declared `#ffffff`; the CSS minifier shortens it, and Foundations shows what
+   `getComputedStyle` returns. Cosmetic, in the value column of one table.
+9. **`DisclosureRow` is deleted.** It was pre-port, the gallery was its only
+   caller, and `Disclosure` replaces it — ADR 0054's rule that a replaced
+   surface goes in the commit that replaces it.
+10. **`assets/logos/wordscipt-logo-light-transparent.png` is new.** Copied from
+    the prototype, which carries a recoloured wordmark for the light scheme
+    because the white word disappears on a light ground and `filter: invert()`
+    would fix the word by destroying the tile. The dark file in `assets/` is
+    byte-identical to the prototype's, which confirms the prototype's claim that
+    it copied the shipped mark rather than redrawing it.
+
+**What was deliberately not carried across.** `SCREENS.ds`'s last section,
+*What the palette switch changes*, is not ported and should not be: it compares
+the shipped palette against the §5.1 proposal, and the product carries only the
+proposal. It is the rig's Surface switch documenting itself, which is exception
+1 in this document.
+
+**The prototype's status is NOT flipped.** ADR 0057 puts the flip at the end of
+Leg 2 — when the last screen stands in the gallery. Twenty-four screens are
+still unported, so the prototype is still the source and rule 4b still binds.
+Leg 2b flips it, in this document and in `SETTINGS_REWORK_PLAN.md` §0.
+
+## The prompt for Leg 2b
+
+Copied to a fresh agent verbatim.
+
+---
+
+You are picking up the WordScript GUI port. Work in
+`/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
+on the `main` branch. Do not create a branch. **Leg 2b is yours: the 24
+remaining screens.**
+
+**Read this first**
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`, in full — especially Leg 2a's record
+directly above this prompt, which lists ten findings you would otherwise
+rediscover. Then the "Read before starting Leg 2" table, and `CLAUDE.md`, which
+outranks any default you carry.
+
+**The one rule this leg is judged on**
+
+**The demo GUI is the UI source of truth, and you read it per screen. You do not
+design anything.** For every screen, in this order:
+
+1. `grep -n "SCREENS\.<id>" docs/prototypes/settings-rework/demo.js` and read the
+   whole builder function. It carries the structure, the copy and the sample data.
+2. Read the CSS rules it uses in `demo.css`. If a rule is not yet in
+   `src/styles/shell.css`, add it **there** — never at the call site.
+3. Serve the prototype and put it side by side with the app:
+   `python3 -m http.server 8791 --directory docs/prototypes/settings-rework`.
+   The prototype persists its screen; set the picker with
+   `document.getElementById("pick").value = "<id>"` plus a `change` event.
+4. Compare. If you cannot point at the prototype and say "this line, this
+   value", you invented it — go back to step 1.
+
+**Leg 2a already bought you the library.** `src/components/shell/` now carries
+the card grammar, the eight primitives AND every control of `demo.css` §6, plus
+the nav and content-column grammar. Read `src/components/shell/index.ts` before
+you write anything: the thing you are about to need probably exists. When it
+does not — the orb, the provider marks, the pane layout, the list item and its
+raw panel, the transcript line, the decision inbox, the meeting HUD — **grow the
+library, not the gallery.**
+
+**What to build**
+
+All 24 remaining screens into `/gallery` → Screens, at the prototype's fidelity,
+on the real components. Order suggestion, not a requirement: the four workspace
+views (Home · History · Profiles · Context), then the eleven settings sections,
+then the previews. `src/windows/gallery/Screens.tsx` carries the ledger; update
+its counts as you go.
+
+Start by porting the orb and the provider marks out of `demo.css` into
+`components/shell/` and deleting `src/lab/` in the same commit — finding 1 above
+explains why that is the first move rather than a cleanup.
+
+**The rest of what governs this**
+
+- Where the prototype and this repo's shipped surface disagree, **the prototype
+  wins.**
+- **No screen carries an inline spacing value.** If one seems to need it, a
+  primitive is missing a rule (ADR 0052).
+- A gallery screen carries sample data and asserts nothing. Every preview screen
+  carries its `PreviewBanner`; `Live preview & commit` carries the **withdrawn**
+  variant — it is drawn and is explicitly not a target shape (§11.15).
+- **A live instrument is drawn at rest** (ADR 0058). Never pass `active` to a
+  capture component from a gallery page.
+- **No screen imports a Tauri API.** `GalleryWindow.test.tsx` asserts that by
+  mocking `invoke` to throw.
+- **The overlay does not change. `src-tauri/` does not change.**
+- End green: `npm test`, `npm run build`, and `cd src-tauri && cargo test` if you
+  touch the shell. New screens carry tests — under ADR 0054 there is no old
+  surface to fall back on.
+- Verify by **measuring**, not by eye: the computed-style diff Leg 2a used is
+  described in its record, including the two false positives it produces.
+- Looking in the native host: `npm run tauri build` (ignore the AppImage
+  bundling failure), run `src-tauri/target/release/wordscript`, find the window
+  with `xdotool search --name "WordScript – Settings"`, capture with
+  `import -window <id>`. Reaching `/gallery` there needs a temporary route in
+  `src/App.tsx` — **revert it before committing.** No synthetic input reaches
+  the window; hoist what you need to see.
+
+**When it is green**
+
+Commit, push to `main`, append your record to the leg log, and then — because
+the last screen will be standing in the gallery — **flip the prototype's status
+per ADR 0057**: it stops being the source and becomes provenance. Say so in this
+document and in `SETTINGS_REWORK_PLAN.md` §0, which still calls it mandatory
+reading with no horizon. Then write the **Leg 3 prompt** into this document.
+Leg 3 is the shell overwrite: one window, settings as a sheet over the workspace
+at its own scale (§11.22), the new IA replacing the 14 flat areas, `Cmd+,`, and
+the old areas deleted.
+
+Then report what you did, what you found, and anything the next leg needs to
+know that is not already written down.
+
+---
+
+## The prompt for Leg 2 (spent — kept for the chain's record)
 
 Copied to a fresh agent verbatim.
 
@@ -418,7 +662,7 @@ completely.**
 **Read this first**
 
 `docs/handoffs/HANDOFF_gui-port-relay.md`, in full. It is the chain document: it
-names the decisions this rests on (ADR 0054, 0055, 0056, 0057), the rules every
+names the decisions this rests on (ADR 0054, 0055, 0056, 0057, 0058), the rules every
 leg obeys, what Leg 1 landed and got wrong, and the full specification of Leg 2.
 Then read what its "Read before starting Leg 2" table lists — and read
 `CLAUDE.md`, which outranks any default you carry.

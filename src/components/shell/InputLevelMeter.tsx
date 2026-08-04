@@ -4,19 +4,20 @@ import {
   toDbfs,
   type InputLevelReading,
 } from "@/hooks/useInputLevel";
-import { cn } from "@/lib/utils";
+import { LevelMeter, type LevelState } from "./LevelMeter";
 
 /**
- * Live input meter with the speech threshold drawn in.
+ * The live input meter: `LevelMeter` fed by the runtime's reading.
  *
- * The threshold marker is the point: a capture whose peak never crosses it is
- * discarded as empty, so the user needs to see the bar they have to clear —
- * not just an abstract level.
+ * The drawing, the threshold mark and the three states belong to the primitive.
+ * What lives here is the one thing that is not design — reading a level the
+ * runtime measured and saying in dBFS what it means.
  */
 export function InputLevelMeter({ reading }: { reading: InputLevelReading }) {
   const { peak, hold, active } = reading;
   const tooQuiet = active && hold > 0 && hold <= VOICE_THRESHOLD;
   const clipping = active && hold >= TARGET_PEAK_HIGH;
+  const state: LevelState = tooQuiet ? "quiet" : clipping ? "hot" : "ok";
 
   const verdict = !active
     ? "Speak to measure the level."
@@ -29,39 +30,12 @@ export function InputLevelMeter({ reading }: { reading: InputLevelReading }) {
           : `Good — peak ${toDbfs(hold).toFixed(0)} dBFS.`;
 
   return (
-    <div className="flex w-full flex-col gap-1.5">
-      <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface-strong">
-        <div
-          className={cn(
-            "absolute inset-y-0 left-0 rounded-full transition-[width] duration-75",
-            tooQuiet
-              ? "bg-fg-muted"
-              : clipping
-                ? "bg-[var(--red)]"
-                : "bg-primary",
-          )}
-          style={{ width: `${Math.min(peak, 1) * 100}%` }}
-        />
-        <div
-          className="absolute inset-y-0 w-0.5 bg-foreground/70"
-          style={{ left: `${Math.min(hold, 1) * 100}%` }}
-          aria-hidden
-        />
-        <div
-          className="absolute inset-y-0 w-px bg-border-strong"
-          style={{ left: `${VOICE_THRESHOLD * 100}%` }}
-          aria-hidden
-          title="Speech threshold"
-        />
-      </div>
-      <p
-        className={cn(
-          "text-[12px] leading-snug",
-          tooQuiet || clipping ? "text-[var(--red)]" : "text-fg-dim",
-        )}
-      >
-        {verdict}
-      </p>
-    </div>
+    <LevelMeter
+      peak={Math.min(peak, 1) * 100}
+      hold={Math.min(hold, 1) * 100}
+      threshold={VOICE_THRESHOLD * 100}
+      state={state}
+      verdict={verdict}
+    />
   );
 }

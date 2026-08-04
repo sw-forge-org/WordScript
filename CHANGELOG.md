@@ -55,6 +55,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The controls the design system is made of are in the library.** Leg 2a of
+  the GUI port relay ported `demo.css` §6, §3 and §4 into
+  `src/components/shell/` and `src/styles/shell.css`: the button with its
+  three-value primary material, the icon button, the switch, the segmented
+  control, the pop-up button, the text field, the stepper, the slider, the level
+  meter with its threshold mark, the key caps, the chips, the note, the check
+  list, the action strip, the disclosure, the source list — plus the sidebar and
+  content-column grammar Leg 3 builds the product's navigation on. Leg 1 built
+  the eight primitives §5.3 names; these are the controls those primitives sit
+  next to, and the Design System screen could not be ported without them.
+- **The gallery's own pages are ported rather than composed.** Foundations,
+  Components, Motion and the gallery window are read out of `SCREENS.ds` in
+  `demo.js` — the prototype's sections, in its order, with its copy. Foundations
+  gains *Rules this pass added*, the surface ramp and the contrast table, which
+  the composed version did not have; Motion is the readout's own six-mode
+  exhibit instead of a row of unlabelled swatches. Verified by diffing computed
+  styles against the running prototype, property by property.
+- **The frost pair is confirmed running in WebKitGTK.** Leg 1 could not settle
+  it because no synthetic pointer event reaches the window under this
+  compositor. Shown instead by rendering the pair in both states at once and
+  capturing the native window: the layer behind is unreadable when frosted and
+  crisp when not, so `filter: blur()` on the layer behind does what
+  `backdrop-filter` could not (ADR 0051).
+
+### Changed
+
+- **A switch, a stepper and a slider are the prototype's, not a component
+  library's.** The switch was a Radix `Switch` whose knob went dark when checked
+  — a near-black disc on a saturated track, which reads as an orange slab with a
+  hole in it rather than a knob that has travelled — and which measured its own
+  thumb with a `ResizeObserver`. The stepper had an editable number field where
+  the design has a readout, because a bounded value adjusted by one is two
+  buttons and nothing else. The slider is now the prototype's drawing over a
+  native `range`.
+- **A segmented control is a group of pressed buttons, not a tablist.** A
+  segment sets a value and reveals nothing; a sub-tab swaps the panel under it.
+  The prototype draws the two differently on purpose and Leg 1 gave both the tab
+  roles, which made every value control on the surface announce itself as
+  navigation.
+- **A gallery draws a live instrument at rest** (ADR 0058). The prototype
+  animates its waveform and VU meter from a synthetic envelope because it has no
+  microphone; the real components open one. A moving meter on a page that is
+  measuring nothing is a claimed measurement, which is the fake readiness the
+  runtime rules forbid.
+
 - **The settings rework is in the product.** Leg 1 of the GUI port relay wrote
   the accepted prototype's design system into `src/`: the lifted palette, the
   radius ladder, the material, the type scale with its optical-size axis, frost,

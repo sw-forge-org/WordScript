@@ -1,4 +1,4 @@
-import { Card, CardRows, Row, SectionHeader, StatusBadge } from "@/components/shell";
+import { Card, CardRows, Note, Row, SectionHeader, StatusBadge } from "@/components/shell";
 
 /**
  * A screen is PORTED when it stands here and SHIPPED when it is wired
@@ -6,20 +6,24 @@ import { Card, CardRows, Row, SectionHeader, StatusBadge } from "@/components/sh
  * port of a 25-screen design possible against a runtime that cannot yet answer
  * half of it.
  *
- * Leg 1 builds the frame. Leg 2 fills it: every prototype screen, at the
- * prototype's fidelity, on the real components. The ledger below is the port's
- * own list, taken from the prototype's README, and it asserts nothing about the
- * runtime — a row saying "not ported" is a statement about this repository,
- * which is the only kind of claim a gallery is allowed to make.
+ * Leg 1 built the frame. Leg 2a ported the library and the Design System screen
+ * — which is not an entry here, because it IS Foundations plus Components plus
+ * Motion. Leg 2b fills the rest.
+ *
+ * The ledger asserts nothing about the runtime: a row saying "not ported" is a
+ * statement about this repository, which is the only kind of claim a gallery is
+ * allowed to make. This section is scaffolding and retires per screen in the
+ * commit that wires it, during Leg 4 (ADR 0057).
  */
 
-type Group = { group: string; lead: string; screens: string[] };
+type Group = { group: string; lead: string; screens: string[]; done?: number };
 
 const LEDGER: Group[] = [
   {
     group: "System",
-    lead: "The system on one page. Foundations and Components already carry it.",
+    lead: "The system on one page. Foundations, Components and Motion are it — read out of SCREENS.ds, not composed.",
     screens: ["Design System"],
+    done: 1,
   },
   {
     group: "Workspace",
@@ -63,33 +67,40 @@ const WITHDRAWN = "Live preview & commit";
 
 export function Screens() {
   const total = LEDGER.reduce((n, group) => n + group.screens.length, 0) + 1;
+  const done = LEDGER.reduce((n, group) => n + (group.done ?? 0), 0);
 
   return (
     <div className="flex flex-col gap-[var(--gap-block)]">
-      <p className="max-w-[68ch] text-[length:var(--t-note)] text-fg-dim">
-        The frame only. Leg 2 fills it with every screen of the prototype, at the
-        prototype's fidelity, on the components in the Components section — never copies of
-        them. Nothing here is wired to the runtime, and nothing here claims to be.
-      </p>
+      <Note>
+        {done} of {total} ported. Leg 2b fills the rest, at the prototype's fidelity, on the
+        components in the library — never copies of them. Nothing here is wired to the
+        runtime, and nothing here claims to be.
+      </Note>
 
-      {LEDGER.map(({ group, lead, screens }) => (
+      {LEDGER.map(({ group, lead, screens, done: groupDone = 0 }) => (
         <SectionHeader
           key={group}
           title={group}
           description={lead}
           action={
             <span className="ws-mono ws-muted ws-num">
-              0 / {screens.length}
+              {groupDone} / {screens.length}
             </span>
           }
         >
           <Card>
             <CardRows>
-              {screens.map((screen) => (
+              {screens.map((screen, index) => (
                 <Row
                   key={screen}
                   label={screen}
-                  control={<StatusBadge tone="plan">Leg 2</StatusBadge>}
+                  control={
+                    index < groupDone ? (
+                      <StatusBadge tone="success">Ported</StatusBadge>
+                    ) : (
+                      <StatusBadge tone="plan">Leg 2b</StatusBadge>
+                    )
+                  }
                 />
               ))}
             </CardRows>

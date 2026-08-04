@@ -385,8 +385,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-04 the filed range runs through 0057; the next
-decision takes 0058.)
+takes 0021. (As of 2026-08-04 the filed range runs through 0058; the next
+decision takes 0059.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

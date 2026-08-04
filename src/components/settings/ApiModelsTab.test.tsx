@@ -296,7 +296,11 @@ describe("ApiModelsTab", () => {
     expect(screen.getByText("Start local AI runtime")).toBeInTheDocument();
     expect(screen.getByText("Pull cleanup model")).toBeInTheDocument();
     expect(screen.getAllByText(/wordscript_local_whisper_cli/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("tab", { name: /local/i, selected: true })).toBeInTheDocument();
+    /* `SegmentControl` is a group of pressed buttons, not a tablist: a segment
+       sets a value and reveals nothing, and the prototype draws the two things
+       differently on purpose (`.seg` is aria-pressed, `.subtabs` is a tablist).
+       Leg 2 of the GUI port corrected the role. */
+    expect(screen.getByRole("button", { name: /local/i, pressed: true })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /profile/i })).toHaveValue("local-preview-base-fast");
     expect(screen.getByText(/fast transcription mode/i)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /bias strength/i })).toHaveValue("profile");

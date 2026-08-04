@@ -1,284 +1,144 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
+  ArrowRightIcon,
   CloudIcon,
-  HardDriveIcon,
   HistoryIcon,
+  RotateCcwIcon,
+  SearchIcon,
   ServerIcon,
-  TrashIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import {
+  ActionStrip,
+  Button,
   Card,
   CardRows,
-  DangerRow,
-  DisclosureRow,
+  Disclosure,
   EmptyState,
+  Field,
+  HotkeyButton,
   LaneCard,
+  LevelMeter,
+  Note,
   PreviewBanner,
   Row,
   ScopeTag,
   SectionHeader,
   SegmentControl,
   Select,
+  Slider,
+  Sources,
   StatusBadge,
   StatusDot,
   Stepper,
   SubTabs,
+  TermChips,
   Toggle,
   Toolbar,
   ToolbarSearch,
-  VolumeSlider,
+  Waveform,
   type LaneOption,
+  type TermChip,
 } from "@/components/shell";
-import { InputLevelMeter } from "@/components/shell";
-import { VOICE_THRESHOLD, type InputLevelReading } from "@/hooks/useInputLevel";
+
+/**
+ * COMPONENTS — the *Components*, *Layout primitives* and *Motion* sections of
+ * `SCREENS.ds`, ported out of `demo.js`.
+ *
+ * "EVERY STATE, ON ONE PAGE. A component missing a state is a component that
+ * ships broken." That sentence is the section's own description and it is why
+ * the page exists: a component judged from the one screen that happens to use
+ * it is a component judged in one state.
+ *
+ * Leg 1 wrote this page from scratch and the five cards it drew were not the
+ * prototype's five. The copy below is the prototype's, on the budget side of
+ * its copy switch — `state.copy` defaults to `after`, so the shorter of every
+ * `{b, a}` pair is the decided text.
+ *
+ * IT ASSERTS NOTHING. Every value is sample data and no control here reaches
+ * the runtime. The one thing that had to be settled rather than copied is the
+ * waveform: the prototype animates it from a synthetic envelope because it has
+ * no microphone at all, and the real component opens one through
+ * `getUserMedia`. A display surface does not take a device, so it is drawn at
+ * rest — which is also the only honest state for a page measuring nothing.
+ */
+
+/** The prototype's `state_(label, body)`: a swatch under its name. */
+function State({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="ws-state">
+      <label>{label}</label>
+      {children}
+    </div>
+  );
+}
 
 const LANES: LaneOption[] = [
   {
     id: "cloud",
-    icon: <CloudIcon />,
+    icon: <CloudIcon aria-hidden />,
     name: "Groq cloud",
     description: "Bring your own key. Fastest lane.",
   },
   {
     id: "local",
-    icon: <HardDriveIcon />,
+    icon: <ServerIcon aria-hidden />,
     name: "Local",
     description: "whisper-cli and Ollama on this machine.",
   },
-  {
-    id: "hosted",
-    icon: <ServerIcon />,
-    name: "A server you run",
-    description: "Self-hosted, on your own network.",
-    badge: "Phase 8",
-  },
 ];
 
-/** A sample reading. It drives the meter's three verdicts without claiming a
- *  microphone was open — the gallery asserts nothing (ADR 0055). */
-const reading = (peak: number, active = true): InputLevelReading => ({
-  peak,
-  rms: peak * 0.6,
-  hold: peak,
-  active,
-});
+const INITIAL_TERMS: TermChip[] = [
+  { term: "WordScript", origin: "learned" },
+  { term: "ydotool", origin: "added" },
+];
 
-function States({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-center gap-[var(--s3)]">{children}</div>;
-}
-
-function State({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <figure className="flex flex-col items-start gap-[var(--s2)]">
-      <div className="flex min-h-[30px] items-center">{children}</div>
-      <figcaption className="text-[length:var(--t-micro)] font-semibold uppercase tracking-[0.07em] text-fg-muted">
-        {label}
-      </figcaption>
-    </figure>
-  );
-}
-
-/**
- * COMPONENTS — every shell primitive in every state, on the real components.
- *
- * THE GALLERY NEVER COPIES A COMPONENT (ADR 0055). Everything below is imported
- * from `components/shell`; a screen here and the same screen in the product are
- * one implementation with two sets of props. And if a primitive looks right
- * here and wrong in the product, this page is what lied — the section that
- * finds that owes the fix.
- *
- * A component missing a state is a component that ships broken, which is the
- * whole reason for putting every state of each one on one page rather than
- * inferring the system from the screens that happen to use it.
- */
 export function Components() {
-  const [lane, setLane] = useState("cloud");
-  const [sub, setSub] = useState("defaults");
-  const [modes, setModes] = useState("cleanup");
   const [on, setOn] = useState(true);
-  const [minutes, setMinutes] = useState(5);
+  const [trigger, setTrigger] = useState("Tap");
+  const [beam, setBeam] = useState(5);
+  const [bestOf, setBestOf] = useState(5);
   const [volume, setVolume] = useState(70);
-  const [activation, setActivation] = useState<"tap" | "double" | "hold">("tap");
+  const [sub, setSub] = useState("Defaults");
+  const [lane, setLane] = useState("cloud");
+  const [terms, setTerms] = useState(INITIAL_TERMS);
 
   return (
     <div className="flex flex-col gap-[var(--gap-block)]">
       <SectionHeader
-        title="LaneCard"
-        description="One card of radio rows. Replaces a segmented control plus one card per provider."
+        title="Components"
+        description="Every state, on one page. A component missing a state is a component that ships broken."
       >
-        <LaneCard
-          options={LANES}
-          value={lane}
-          onChange={setLane}
-          label="Speech lane"
-          title="Where speech is recognised"
-          description="One connection, stated once. Everything follows it unless a job says otherwise."
-        />
-      </SectionHeader>
-
-      <SectionHeader
-        title="SubTabs"
-        description="A pill row under a section header. Depth goes here, never into the sidebar."
-      >
-        <Card>
-          <div className="flex flex-col items-start gap-[var(--s4)]">
-            <SubTabs
-              label="Profile"
-              value={sub}
-              onChange={setSub}
-              items={[
-                { id: "defaults", label: "Defaults" },
-                { id: "context", label: "Context" },
-                { id: "words", label: "Words" },
-                { id: "replacements", label: "Replacements" },
-                { id: "snippets", label: "Snippets" },
-              ]}
-            />
-            <SubTabs
-              label="Models"
-              value={modes}
-              onChange={setModes}
-              items={[
-                { id: "cleanup", label: "Cleanup" },
-                { id: "rewrite", label: "Rewrite" },
-                { id: "draft", label: "Draft" },
-                { id: "enhance", label: "Prompt Enhance" },
-                "|",
-                { id: "notes", label: "Notes" },
-              ]}
-            />
-          </div>
-        </Card>
-        <p className="text-[length:var(--t-label)] text-fg-dim">
-          The second bar carries the rule. A tab bar is a claim that its entries are the
-          same kind of thing, and four of those five are processing modes while the fifth
-          is the model a note is formatted with. The rule marks the boundary and the
-          control stays one control.
-        </p>
-      </SectionHeader>
-
-      <SectionHeader
-        title="PreviewBanner"
-        description="A chip and one line, 26 px. The withdrawn variant keeps its box, because a stop has to interrupt."
-      >
-        <Card>
-          <div className="flex flex-col gap-[var(--s4)]">
-            <PreviewBanner>Planned: Phase 8.</PreviewBanner>
-            <PreviewBanner tone="withdrawn">
-              Withdrawn 2026-08-03. It duplicates Diagnostics and draws a window that
-              cannot exist. Do not build Phase 3 from it.
-            </PreviewBanner>
-          </div>
-        </Card>
-      </SectionHeader>
-
-      <SectionHeader
-        title="EmptyState, DangerRow, ScopeTag"
-        description="One line and one action; destructive last in its card; a value that is not the window's."
-      >
-        <Card>
-          <EmptyState
-            icon={<HistoryIcon />}
-            action={
-              <button
-                type="button"
-                className="inline-flex h-7 items-center rounded-control px-[11px] text-[length:var(--t-label)] font-[550] text-fg-dim hover:bg-bg-elevated hover:text-fg"
-              >
-                Press Ctrl+Super to start
-              </button>
-            }
-          >
-            No transcriptions yet.
-          </EmptyState>
-        </Card>
-        <Card>
-          <CardRows>
-            <Row
-              label="Language"
-              hint="What the recognizer expects to hear."
-              scope={<ScopeTag profile="Support reply" onOpen={() => undefined} />}
-              control={
-                <Select defaultValue="en" aria-label="Language" className="w-[140px]">
-                  <option value="en">English</option>
-                  <option value="de">German</option>
-                </Select>
-              }
-            />
-            <DangerRow
-              label="Reset all settings"
-              hint="Restores every setting to its default. History and profiles are untouched."
-              action={
-                <button
-                  type="button"
-                  className="inline-flex h-7 items-center gap-[6px] rounded-control border border-[color-mix(in_srgb,var(--danger)_45%,transparent)] px-[11px] text-[length:var(--t-label)] font-[550] text-[var(--danger)]"
-                >
-                  <TrashIcon className="size-[13px]" />
-                  Reset
-                </button>
-              }
-            />
-          </CardRows>
-        </Card>
-      </SectionHeader>
-
-      <SectionHeader
-        title="Toolbar"
-        description="Filters on one line above the list they act on. The count is the result of a filter, not another filter."
-      >
-        <Toolbar label="History filters">
-          <ToolbarSearch>
-            <input
-              aria-label="Search transcripts"
-              placeholder="Search transcripts"
-              className="h-7 w-full rounded-control border border-border bg-bg-inset pl-[27px] pr-[9px] text-[length:var(--t-label)] text-fg placeholder:text-fg-muted"
-            />
-          </ToolbarSearch>
-          <Select defaultValue="all" aria-label="Status" className="w-[150px]">
-            <option value="all">All statuses</option>
-            <option value="completed">Completed</option>
-            <option value="empty">Empty</option>
-            <option value="failed">Failed</option>
-          </Select>
-        </Toolbar>
-      </SectionHeader>
-
-      <SectionHeader
-        title="Status"
-        description="A badge is for a status that is NOT expected. An expected one is a dot and a word, or nothing."
-      >
-        <Card>
-          <States>
-            <State label="success">
-              <StatusBadge tone="success">Ready</StatusBadge>
+        <Card title="Buttons">
+          <div className="ws-states">
+            <State label="default">
+              <Button variant="primary">Capture</Button>
             </State>
-            <State label="warning">
-              <StatusBadge tone="warning">Fallback</StatusBadge>
+            <State label="secondary">
+              <Button>Refresh</Button>
+            </State>
+            <State label="ghost">
+              <Button variant="ghost">Review</Button>
+            </State>
+            <State label="with icon">
+              <Button icon={<RotateCcwIcon aria-hidden />}>Restore</Button>
             </State>
             <State label="danger">
-              <StatusBadge tone="error">Failed</StatusBadge>
+              <Button variant="danger">Reset all settings</Button>
             </State>
-            <State label="accent">
-              <StatusBadge tone="accent">Active</StatusBadge>
+            <State label="disabled">
+              <Button variant="primary" disabled>
+                Commit
+              </Button>
             </State>
-            <State label="planned">
-              <StatusBadge tone="plan">Phase 8</StatusBadge>
+            <State label="loading">
+              <Button busy>Running check</Button>
             </State>
-            <State label="expected">
-              <span className="inline-flex items-center gap-[5px] text-[length:var(--t-label)] text-fg-muted">
-                <StatusDot tone="success" />
-                Direct paste available
-              </span>
-            </State>
-          </States>
+          </div>
         </Card>
-      </SectionHeader>
 
-      <SectionHeader
-        title="Controls"
-        description="One control per kind of value. A bounded number with a unit is never a text field."
-      >
-        <Card>
-          <States>
+        <Card title="Inputs" description="One control per kind of value.">
+          <div className="ws-states">
             <State label="toggle off">
               <Toggle checked={false} onCheckedChange={() => undefined} aria-label="Off" />
             </State>
@@ -290,105 +150,310 @@ export function Components() {
             </State>
             <State label="segment">
               <SegmentControl
-                aria-label="Activation"
-                value={activation}
-                onChange={setActivation}
+                aria-label="Trigger"
+                value={trigger}
+                onChange={setTrigger}
                 options={[
-                  { value: "tap", label: "Tap" },
-                  { value: "double", label: "Double tap" },
-                  { value: "hold", label: "Hold" },
+                  { value: "Tap", label: "Tap" },
+                  { value: "Double tap", label: "Double tap" },
+                  { value: "Hold", label: "Hold" },
                 ]}
               />
             </State>
-            <State label="stepper">
-              <Stepper
-                value={minutes}
-                onChange={setMinutes}
-                min={0}
-                max={60}
-                suffix="min"
-                aria-label="Auto-stop"
-              />
-            </State>
-            <State label="stepper at min">
-              <Stepper value={0} onChange={() => undefined} min={0} suffix="min" aria-label="Off" />
-            </State>
             <State label="select">
-              <Select defaultValue="turbo" aria-label="Model" className="w-[230px]">
-                <option value="turbo">whisper-large-v3-turbo</option>
-                <option value="large">whisper-large-v3</option>
+              <Select defaultValue="whisper-large-v3-turbo" aria-label="Model">
+                <option>whisper-large-v3-turbo</option>
+                <option>whisper-large-v3</option>
+                <option>distil-whisper-large-v3-en</option>
               </Select>
             </State>
-          </States>
-        </Card>
-        <Card title="Slider and level">
-          <div className="flex flex-col gap-[var(--s5)] py-[var(--s2)]">
-            <VolumeSlider value={volume} onChange={setVolume} />
-            <div className="flex flex-col gap-[var(--s4)]">
-              <InputLevelMeter reading={reading(0.62)} />
-              <InputLevelMeter reading={reading(VOICE_THRESHOLD * 0.6)} />
-              <InputLevelMeter reading={reading(0.99)} />
-            </div>
+            <State label="stepper">
+              <Stepper value={12} min={0} max={60} suffix="s" aria-label="Stepper" />
+            </State>
+            <State label="stepper at min">
+              <Stepper value={0} min={0} max={60} suffix="Disabled" aria-label="At minimum" />
+            </State>
+            <State label="slider">
+              <Slider value={volume} onChange={setVolume} aria-label="Slider" />
+            </State>
+            <State label="text">
+              <Field defaultValue="General writing" style={{ width: 170 }} aria-label="Text" />
+            </State>
+            <State label="invalid">
+              <Field defaultValue="Ctrl+" invalid style={{ width: 120 }} aria-label="Invalid" />
+            </State>
+            <State label="hotkey">
+              <HotkeyButton combo="Ctrl+Super" />
+            </State>
+            <State label="hotkey empty">
+              <HotkeyButton combo={null} />
+            </State>
           </div>
         </Card>
-        <p className="text-[length:var(--t-label)] text-fg-dim">
-          The threshold mark is the meter, not decoration on it: a capture whose peak never
-          crosses it is discarded as empty, so the bar to clear has to be on screen
-          (§11.9). These four controls existed in the kit and the first build replaced all
-          of them with bare text fields.
-        </p>
+
+        <Card
+          title="Level"
+          description="The threshold mark is the component — a capture below it is discarded as empty."
+        >
+          <div className="ws-stack ws-gap4">
+            <LevelMeter
+              peak={62}
+              hold={74}
+              threshold={34}
+              state="ok"
+              verdict="Good — peak −13 dBFS."
+            />
+            <LevelMeter
+              peak={18}
+              hold={22}
+              threshold={34}
+              state="quiet"
+              verdict="Too quiet — peak −34 dBFS is below the −26 dBFS needed to register as speech."
+            />
+            <LevelMeter
+              peak={97}
+              hold={99}
+              threshold={34}
+              state="hot"
+              verdict="Very hot — peak −1 dBFS. Lower the input level to avoid distortion."
+            />
+          </div>
+        </Card>
+
+        <Card title="Status">
+          <div className="ws-states">
+            <State label="success">
+              <StatusBadge tone="success">Ready</StatusBadge>
+            </State>
+            <State label="warning">
+              <StatusBadge tone="warning">Fallback</StatusBadge>
+            </State>
+            <State label="danger">
+              <StatusBadge tone="danger">Failed</StatusBadge>
+            </State>
+            <State label="accent">
+              <StatusBadge tone="accent">Active</StatusBadge>
+            </State>
+            <State label="planned">
+              <StatusBadge tone="plan">Phase 8</StatusBadge>
+            </State>
+            <State label="dot">
+              <span className="ws-rowflex">
+                <StatusDot tone="success" />
+                <span className="ws-muted">Direct paste available</span>
+              </span>
+            </State>
+            {/* THE LIVE COMPONENT, NOT A STILL OF IT — the prototype's own note.
+                This swatch used to be a row of bars from a sine, drawn once,
+                which is a picture of a waveform standing in a gallery of working
+                controls. */}
+            <State label="waveform">
+              <Waveform ariaLabel="Live input level" />
+            </State>
+          </div>
+        </Card>
+
+        <Card
+          title="New in this plan"
+          description="Each replaces an ad-hoc pattern that exists in more than one place today."
+        >
+          <div className="ws-stack ws-gap3">
+            <LaneCard label="Provider lane" options={LANES} value={lane} onChange={setLane} />
+
+            <SubTabs
+              label="Design system"
+              value={sub}
+              onChange={setSub}
+              items={[
+                { id: "Defaults", label: "Defaults" },
+                { id: "Context", label: "Context" },
+                { id: "Words", label: "Words" },
+                { id: "Replacements", label: "Replacements" },
+                { id: "Snippets", label: "Snippets" },
+              ]}
+            />
+
+            <PreviewBanner>Planned: Phase 8.</PreviewBanner>
+
+            <Card>
+              <CardRows>
+                <Row
+                  label="Reset all settings"
+                  hint="Restores every setting to its default. History and profiles are untouched."
+                  danger
+                  control={<Button variant="danger">Reset</Button>}
+                />
+              </CardRows>
+            </Card>
+
+            <EmptyState
+              icon={<HistoryIcon aria-hidden />}
+              action={<Button variant="ghost">Press Ctrl+Super to start</Button>}
+            >
+              No transcriptions yet.
+            </EmptyState>
+
+            <TermChips
+              items={terms}
+              onRemove={(term) => setTerms((list) => list.filter((t) => t.term !== term))}
+            />
+
+            <ActionStrip
+              icon={<TriangleAlertIcon aria-hidden />}
+              title="Action strip"
+              actions={
+                <>
+                  <Button icon={<ArrowRightIcon aria-hidden />}>Review</Button>
+                  <Button variant="ghost">Dismiss</Button>
+                </>
+              }
+            >
+              Home only, and only when something is owed.
+            </ActionStrip>
+
+            <Toolbar label="Filters">
+              <ToolbarSearch>
+                <Field placeholder="Toolbar — filters belong above the list, not in a card" />
+              </ToolbarSearch>
+              <Select defaultValue="All statuses" aria-label="Status">
+                <option>All statuses</option>
+                <option>Completed</option>
+                <option>Empty</option>
+                <option>Failed</option>
+              </Select>
+            </Toolbar>
+
+            <Card>
+              <CardRows>
+                <Row
+                  label="Scope tag"
+                  hint="On any row whose value belongs to the active profile rather than to this machine."
+                  control={<ScopeTag />}
+                />
+                <Row
+                  label="Action strip"
+                  hint="Ground plus icon tile. Never a coloured edge bar."
+                  control={<StatusBadge tone="success">no edge rule</StatusBadge>}
+                />
+                <Row
+                  label="Source list"
+                  hint="Under an assistant turn: which of your own rows the answer was read from."
+                  control={<Sources items={["Support reply · Words & names"]} />}
+                />
+                <Row
+                  label="Transcript line"
+                  hint="Time, speaker, what was said. The time is how a note points at a moment."
+                  control={<StatusBadge tone="plan">tline</StatusBadge>}
+                />
+              </CardRows>
+              <Disclosure
+                summary="Disclosure — states what is inside, never “Advanced”"
+                count={2}
+              >
+                <Row
+                  label="Beam size"
+                  hint="Folded because the recommended value is right for almost everyone."
+                  control={
+                    <Stepper
+                      value={beam}
+                      onChange={setBeam}
+                      min={1}
+                      max={10}
+                      aria-label="Beam size"
+                    />
+                  }
+                />
+                <Row
+                  label="Best of"
+                  hint="Same. Visible in one click, absent from the first read."
+                  control={
+                    <Stepper
+                      value={bestOf}
+                      onChange={setBestOf}
+                      min={1}
+                      max={10}
+                      aria-label="Best of"
+                    />
+                  }
+                />
+              </Disclosure>
+            </Card>
+          </div>
+        </Card>
       </SectionHeader>
 
       <SectionHeader
-        title="Card grammar"
-        description="The card owns its inset; the item carries the horizontal half so the separator reaches the group edge."
+        title="Layout primitives"
+        description="Three ways a view can be built. Picking the wrong one is what made the first build of Profiles, Notes and Chat hard to read."
       >
-        <Card
-          title="Recording"
-          description="What a capture may cost, and when it stops on its own."
-          footer={
-            <button
-              type="button"
-              className="inline-flex h-7 items-center rounded-control border border-border bg-bg-elevated px-[11px] text-[length:var(--t-label)] font-[550]"
-            >
-              Restore defaults
-            </button>
-          }
-        >
+        <Card>
           <CardRows>
             <Row
-              label="Processing limit"
-              hint="The runtime's number. It follows your account plan."
-              control={<span className="ws-mono ws-muted">25 MB</span>}
+              label="Column"
+              hint="Sections of cards down one centred column. Every settings section, History, Home."
+              control={<StatusBadge tone="plan">default</StatusBadge>}
             />
             <Row
-              label="Auto-stop"
-              hint="Ends a capture that has run past its limit."
-              control={
-                <Stepper
-                  value={minutes}
-                  onChange={setMinutes}
-                  min={0}
-                  max={60}
-                  suffix="min"
-                  aria-label="Auto-stop minutes"
-                />
-              }
+              label="Pane"
+              hint="A list column and its detail as ONE surface — the list is borderless, sits on the sidebar plane and is separated by a hairline. Profiles, Notes, Chat."
+              control={<StatusBadge tone="plan">list + detail</StatusBadge>}
             />
-            <DisclosureRow title="Decoding">
-              <Row
-                label="Beam size"
-                hint="Folded because the recommended value is right for almost everyone."
-                control={<Stepper value={5} onChange={() => undefined} aria-label="Beam size" />}
-              />
-            </DisclosureRow>
+            <Row
+              label="Split column"
+              hint="Two columns INSIDE a pane detail, when reading and writing have to happen at once. Notes: the transcript on the left, your notes and the summary on the right."
+              control={<StatusBadge tone="plan">read + work</StatusBadge>}
+            />
+            <Row
+              label="Solo — removed"
+              hint="One centred 460 px column. It existed for Upload, which is a band over a full-width queue now, and nothing else has one job and nothing to show. A primitive with no user is not part of the system."
+              control={<StatusBadge tone="danger">no user</StatusBadge>}
+            />
           </CardRows>
         </Card>
-        <p className="text-[length:var(--t-label)] text-fg-dim">
-          The action sits at the card's foot as a component, not as a flex row with a
-          padding guessed per screen. Three different inline paddings had grown in the
-          prototype before this rule existed (§11.17, ADR 0052).
-        </p>
+        <Note tone="alert">
+          Two cards side by side is not a pane. It reads as two unrelated boxes, because
+          nothing on screen states that the left one governs the right one.
+        </Note>
+        <Note tone="alert">
+          A tab row is not a layout. Three sub-tabs put the transcript, the notes and the
+          summary in three places you cannot see at once — which is the one thing a meeting
+          note exists to do.
+        </Note>
+      </SectionHeader>
+
+      <SectionHeader
+        title="Motion"
+        description="One authored moment per interaction, on transform and opacity only."
+      >
+        <Card>
+          <CardRows>
+            <Row
+              label="Control state"
+              hint="Toggle knob, radio fill, segment thumb."
+              control={<span className="ws-mono ws-muted">120ms</span>}
+            />
+            <Row
+              label="Disclosure, sheet"
+              hint="Anything that changes layout height."
+              control={<span className="ws-mono ws-muted">180ms</span>}
+            />
+            <Row
+              label="Tab and navigation change"
+              hint="Immediate. A crossfade here regressed WebKitGTK scrolling once already."
+              control={<span className="ws-mono ws-muted">0ms</span>}
+            />
+            <Row
+              label="Card hover"
+              hint="None. Cards do not respond to pointer transit."
+              control={<StatusBadge tone="success">none</StatusBadge>}
+            />
+            <Row
+              label="prefers-reduced-motion"
+              hint="Every duration collapses to 1 ms."
+              control={<StatusBadge tone="success">respected</StatusBadge>}
+            />
+          </CardRows>
+        </Card>
       </SectionHeader>
     </div>
   );

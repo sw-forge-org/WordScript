@@ -16,9 +16,19 @@ interface StatTilesProps {
 }
 
 /**
- * A compact row of "info tiles" — the small at-a-glance summary blocks macOS
- * uses at the top of a settings pane (lane / model / status). Elevated like a
- * card, calm sentence-case label, one strong value, optional hint.
+ * PRE-PORT. Six shipped areas render this and none of them should: a stat tile
+ * carries a NUMBER THAT CHANGES and summarises more rows than fit on screen —
+ * otherwise it is a row. Every caller below holds a model name, a lane or a
+ * profile, which is a row that has been given a box, and six of those together
+ * are a dashboard for a product that has no dashboard. The prototype's eleventh
+ * pass removed nine of them for exactly that and left one honest use, above the
+ * upload queue.
+ *
+ * `.ws-stats` in shell.css is the ported drawing and is what the Context ·
+ * intake screen will use. This component is not re-ported onto it here, because
+ * the Design System screen does not render a stat tile and porting a primitive
+ * no ported screen asks for is the same guess the gallery pages were. It goes
+ * with the last caller that reads it, which is Leg 3's business.
  */
 export function StatTiles({ items, columns = 3, className }: StatTilesProps) {
   return (
