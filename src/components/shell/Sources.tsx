@@ -1,7 +1,7 @@
 import * as React from "react";
 /* The prototype's `inspect` glyph — a magnifier with a bar through it. Lucide's
    export name is about zooming; the geometry is the one the prototype drew. */
-import { ZoomOutIcon } from "lucide-react";
+import { Icon } from "./Icon";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,7 +20,7 @@ export function Sources({
 }) {
   return (
     <span className={cn("ws-sources", className)}>
-      <ZoomOutIcon aria-hidden />
+      <Icon name="inspect" />
       {items.map((item, index) => (
         <React.Fragment key={index}>
           {index > 0 && <span className="ws-sep">·</span>}

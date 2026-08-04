@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "tauri": "tauri",
-    "clean:dev": "rm -rf src-tauri/target/debug && rm -rf node_modules/.vite"
+    "clean:dev": "rm -rf src-tauri/target/debug && rm -rf node_modules/.vite",
+    "port:diff": "node scripts/gallery-port-diff.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

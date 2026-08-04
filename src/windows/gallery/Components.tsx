@@ -248,7 +248,9 @@ export function Components() {
                 which is a picture of a waveform standing in a gallery of working
                 controls. */}
             <State label="waveform">
-              <Waveform ariaLabel="Live input level" />
+              {/* Swatch scale. `.ws-state` sizes the width; the height is an
+                  inline style on the instrument, so it is passed here. */}
+              <Waveform height={24} ariaLabel="Live input level" />
             </State>
           </div>
         </Card>

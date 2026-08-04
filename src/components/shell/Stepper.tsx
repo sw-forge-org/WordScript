@@ -1,5 +1,5 @@
 import * as React from "react";
-import { MinusIcon, PlusIcon } from "lucide-react";
+import { Icon } from "./Icon";
 import { cn } from "@/lib/utils";
 
 interface StepperProps {
@@ -55,16 +55,16 @@ export function Stepper({
         disabled={atMin}
         onClick={() => onChange?.(clamp(value - step))}
       >
-        <MinusIcon aria-hidden />
+        <Icon name="minus" />
       </button>
-      <span className="ws-stepper-val">{value}</span>
+      <span className="ws-stepper-val ws-num">{value}</span>
       <button
         type="button"
         aria-label="Increase"
         disabled={atMax}
         onClick={() => onChange?.(clamp(value + step))}
       >
-        <PlusIcon aria-hidden />
+        <Icon name="plus" />
       </button>
       {suffix && <span className="ws-stepper-unit">{suffix}</span>}
     </span>

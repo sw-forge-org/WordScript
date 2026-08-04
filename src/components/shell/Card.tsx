@@ -124,10 +124,11 @@ export function Row({
   children,
 }: RowProps) {
   const trailing = control ?? children;
+  const stacked = layout === "stack";
   return (
     <div
       className={cn("ws-row", className)}
-      data-layout={layout === "stack" ? "stack" : undefined}
+      data-layout={stacked ? "stack" : undefined}
       data-danger={danger ? "" : undefined}
     >
       {(label || hint) && (
@@ -136,12 +137,26 @@ export function Row({
           {hint && <span className="ws-row-hint">{hint}</span>}
         </div>
       )}
-      {(trailing || scope) && (
-        <div className="ws-row-ctl">
-          {scope}
-          {trailing}
-        </div>
-      )}
+      {/* A STACKED ROW HAS NO CONTROL SLOT. `.ws-row-ctl` is `flex: none` and
+          exists to hold a control at the trailing edge of an inline row; the
+          stacked row IS its body, and the prototype's `stackRow()` puts that
+          body as a direct child. Wrapping it here gave the row an extra flex
+          item that neither stretched nor grew, so a full-width block inside
+          one — the input meter, a textarea, a button run — sat at its
+          content width instead of the row's. */}
+      {stacked
+        ? (scope || trailing) && (
+            <>
+              {scope}
+              {trailing}
+            </>
+          )
+        : (trailing || scope) && (
+            <div className="ws-row-ctl">
+              {scope}
+              {trailing}
+            </div>
+          )}
     </div>
   );
 }

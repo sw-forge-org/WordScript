@@ -1,5 +1,5 @@
 import * as React from "react";
-import { EyeIcon, OctagonAlertIcon } from "lucide-react";
+import { Icon } from "./Icon";
 import { cn } from "@/lib/utils";
 
 interface PreviewBannerProps {
@@ -38,7 +38,7 @@ export function PreviewBanner({
 }: PreviewBannerProps) {
   const withdrawn = tone === "withdrawn";
   const glyph =
-    icon ?? (withdrawn ? <OctagonAlertIcon aria-hidden /> : <EyeIcon aria-hidden />);
+    icon ?? <Icon name={withdrawn ? "about" : "eye"} />;
 
   return (
     <div

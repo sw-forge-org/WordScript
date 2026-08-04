@@ -21,12 +21,17 @@ import { cn } from "@/lib/utils";
  */
 export function Waveform({
   active = false,
-  height = 24,
+  /** The prototype's geometry: full width of its row, 40 px tall. The gallery's
+   *  component page overrides it to swatch scale through `.ws-state`. */
+  height = 40,
+  tone,
   className,
   ariaLabel,
 }: {
   active?: boolean;
   height?: number;
+  /** Colours the drawing without the drawing knowing about palettes. */
+  tone?: "voice" | "quiet" | "hot";
   className?: string;
   ariaLabel?: string;
 }) {
@@ -34,11 +39,12 @@ export function Waveform({
     <LiveWaveform
       active={active}
       height={height}
-      barColor="var(--fg-dim)"
+      barColor="var(--wave-fg)"
       fadeEdges={false}
       mode="scrolling"
       role="img"
-      aria-label={ariaLabel ?? "Live input level"}
+      data-tone={tone}
+      aria-label={ariaLabel ?? "Live input level over the last few seconds"}
       className={cn("ws-wave-live", className)}
     />
   );

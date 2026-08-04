@@ -1,6 +1,6 @@
 import * as React from "react";
-import { CheckIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Icon } from "./Icon";
 
 export type CheckState = "ok" | "fail" | "todo";
 
@@ -38,8 +38,8 @@ export function CheckList({
       {items.map((item, index) => (
         <div key={index} className="ws-check" data-state={item.state}>
           <span className="ws-check-mark">
-            {item.state === "ok" && <CheckIcon aria-hidden />}
-            {item.state === "fail" && <XIcon aria-hidden />}
+            {item.state === "ok" && <Icon name="check" />}
+            {item.state === "fail" && <Icon name="x" />}
           </span>
           <span className="ws-check-text">
             <b>{item.label}</b>

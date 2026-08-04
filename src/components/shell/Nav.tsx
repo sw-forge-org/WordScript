@@ -1,5 +1,5 @@
 import * as React from "react";
-import { SearchIcon } from "lucide-react";
+import { Icon } from "./Icon";
 import wordmarkDark from "../../../assets/logos/wordscipt-logo-transparent.png";
 import wordmarkLight from "../../../assets/logos/wordscipt-logo-light-transparent.png";
 import { cn } from "@/lib/utils";
@@ -78,7 +78,7 @@ export function NavSearch({
 }) {
   return (
     <button type="button" className={cn("ws-nav-search", className)} onClick={onOpen}>
-      <SearchIcon aria-hidden />
+      <Icon name="search" />
       <span>Search</span>
       <kbd>{shortcut}</kbd>
     </button>

@@ -61,7 +61,11 @@ export function Screens() {
           diff to root itself at, and it must not be a box. The prototype's
           screen blocks are direct children of `.content-inner`; a real wrapper
           here would make every measurement compare a different box tree. */}
-      <div className="ws-screen-stage" data-screen={active || "ledger"}>
+      <div
+        className="ws-screen-stage"
+        data-screen={active || "ledger"}
+        data-surface={screen?.surface}
+      >
         {screen?.render ? screen.render() : <Ledger done={done} total={total} />}
       </div>
     </div>

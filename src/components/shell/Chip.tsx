@@ -1,5 +1,5 @@
 import * as React from "react";
-import { XIcon } from "lucide-react";
+import { Icon } from "./Icon";
 import { cn } from "@/lib/utils";
 
 /** A label on the inset plane. Not a badge: a badge reports a status, a chip
@@ -55,7 +55,7 @@ export function TermChips({
               aria-label={`Remove ${item.term}`}
               onClick={() => onRemove(item.term)}
             >
-              <XIcon aria-hidden />
+              <Icon name="x" />
             </button>
           )}
         </span>

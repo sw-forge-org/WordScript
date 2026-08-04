@@ -1,6 +1,6 @@
 import * as React from "react";
-import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Icon } from "./Icon";
 
 /**
  * THE SUMMARY STATES WHAT IS INSIDE, NEVER "ADVANCED".
@@ -33,7 +33,7 @@ export function Disclosure({
   return (
     <details className={cn("ws-disc", className)} open={defaultOpen}>
       <summary>
-        <ChevronRightIcon aria-hidden />
+        <Icon name="chevron" />
         {summary}
         {count !== undefined && <span className="ws-disc-n">{count}</span>}
       </summary>

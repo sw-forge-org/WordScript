@@ -748,6 +748,32 @@
      the prototype property by property. */
   .ws-screen-stage { display: contents; }
 
+  /* ── THE SETTINGS SHEET'S OWN SCALE — §11.22 ──────────────────────────────
+     Not a media query and not a density: a SCOPE. Everything inside the sheet
+     reads these instead of the workspace values, so one surface is
+     demonstrably drawn at a different size from the other without either of
+     them being wrong. Type does not scale — 13 px body in a sheet and 13 px
+     body in a window is the same reading task. Structure scales.
+
+     Leg 3 builds the sheet and puts this on `.ws-modal-win`, where the
+     prototype has it. Until then the gallery applies it to the content column
+     around a settings screen, because a settings screen measured at the
+     workspace's 20 px inset is not the screen the prototype draws — and
+     because a scale that can be moved from one container to another without a
+     single component changing is exactly what ADR 0052 claimed these tokens
+     would buy. */
+  .ws-sheet-scale,
+  .ws-content-inner:has(.ws-screen-stage[data-surface="settings"]) {
+    --nav-w: 196px;
+    --nav-row-h: 28px;
+    --content-max: 640px;
+    --content-pad: var(--s6);
+    --pad-card: var(--s4);
+    --row-py: 11px;
+    --gap-block: var(--s6);
+    --gap-row: 10px;
+  }
+
   /* THE TITLE, THE PREVIEW BANNER AND THE SUB-TAB ROW ARE ONE MASTHEAD, not
      three sections. They used to be siblings of the content blocks and
      inherited the 32 px block rhythm, so a one-line banner floated in the
@@ -1473,6 +1499,29 @@
   }
   .ws-link:hover { border-bottom-color: var(--accent); }
 
+  /* ── The labelled group ───────────────────────────────────────────────────
+     A heading over a block INSIDE a card, for the one screen that has stages
+     rather than settings: Delivery & Insert builds its two driver chains as
+     groups. This is the one place a separated stack is nested rather than
+     being a direct child of the card, so the item must not pay the inset a
+     second time — without the rule below a check sat 40 px in while every row
+     on the same screen sat at 20. */
+  .ws-grp { display: flex; flex-direction: column; }
+  .ws-grp > .ws-check-list > .ws-check,
+  .ws-grp > .ws-list > .ws-list-item,
+  .ws-grp > .ws-lane > .ws-lane-row { padding-left: 0; padding-right: 0; }
+  .ws-grp > label {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 600;
+    letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--fg-muted);
+    padding: 0 0 var(--s2);
+  }
+  /* The card's own edge padding already indents the rows, so a group inside one
+     contributes spacing between groups and nothing on the sides. */
+  .ws-card .ws-grp + .ws-grp { padding-top: var(--s3); }
+  .ws-card .ws-grp > label { padding-left: var(--s4); padding-right: var(--s4); }
+  .ws-card .ws-grp > .ws-rows { margin: 0; }
+
   .ws-rowflex { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
   .ws-stack { display: flex; flex-direction: column; }
   .ws-gap2 { gap: var(--s2); }
@@ -1630,7 +1679,28 @@
     font-size: var(--t-micro);
     color: var(--fg-muted);
   }
-  /* The live waveform, sized down to swatch scale for the gallery. */
+  /* ── The live waveform ────────────────────────────────────────────────────
+     Sits BESIDE the level bar, not instead of it. They answer different
+     questions and the answers are not interchangeable: the bar carries the
+     threshold mark, which is a decision boundary the runtime actually applies,
+     and the waveform carries shape over time, which is what tells you whether
+     the signal is worth the threshold.
+
+     The drawing colours come from these two properties, so a palette change
+     moves the drawing without the drawing knowing about palettes. */
+  .ws-wave-live {
+    display: block;
+    width: 100%;
+    height: 40px;
+    --wave-fg: var(--fg-dim);
+    --wave-bg: color-mix(in srgb, var(--fg-muted) 26%, transparent);
+  }
+  .ws-wave-live[data-tone="voice"] { --wave-fg: var(--accent); }
+  .ws-wave-live[data-tone="quiet"] { --wave-fg: var(--fg-muted); }
+  .ws-wave-live[data-tone="hot"]   { --wave-fg: var(--danger); }
+  [data-theme="light"] .ws-wave-live { --wave-fg: var(--fg-dim); }
+
+  /* Sized down to swatch scale for the gallery's component page. */
   .ws-state .ws-wave-live { width: 132px; height: 24px; }
 
   /* ═════════════════════════════════════════════════════════════════════════

@@ -54,7 +54,6 @@ export function SegmentControl<T extends string>({
             aria-pressed={active}
             disabled={opt.disabled}
             onClick={() => !opt.disabled && onChange(opt.value)}
-            className="inline-flex items-center justify-center gap-1.5 disabled:pointer-events-none disabled:opacity-40"
           >
             {opt.icon}
             {opt.label}

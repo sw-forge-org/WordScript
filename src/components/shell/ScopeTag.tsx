@@ -1,7 +1,7 @@
 import * as React from "react";
 /* The prototype's `profiles` glyph — a bound notebook, the same mark the nav
    row for Profiles carries, so the tag and the place it links to agree. */
-import { NotebookIcon } from "lucide-react";
+import { Icon } from "./Icon";
 import { cn } from "@/lib/utils";
 
 interface ScopeTagProps {
@@ -35,7 +35,7 @@ export function ScopeTag({ profile, onOpen, className }: ScopeTagProps) {
   if (!onOpen) {
     return (
       <span className={cn("ws-scope", className)}>
-        <NotebookIcon aria-hidden />
+        <Icon name="profiles" />
         {text}
       </span>
     );
@@ -43,7 +43,7 @@ export function ScopeTag({ profile, onOpen, className }: ScopeTagProps) {
 
   return (
     <button type="button" className={cn("ws-scope", className)} onClick={onOpen}>
-      <NotebookIcon aria-hidden />
+      <Icon name="profiles" />
       {text}
     </button>
   );

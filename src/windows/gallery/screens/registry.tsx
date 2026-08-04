@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import { HomeScreen } from "./Home";
 import { HistoryScreen } from "./History";
+import { GeneralScreen } from "./General";
+import { HotkeysScreen } from "./Hotkeys";
+import { DeliveryScreen } from "./Delivery";
+import { PrivacyScreen } from "./Privacy";
 
 /**
  * THE SCREEN REGISTRY — the prototype's `NAV`, minus its rig.
@@ -27,6 +31,9 @@ export type ScreenEntry = {
   withdrawn?: boolean;
   /** An entry that is the same place as one listed above it. */
   alias?: string;
+  /** Which surface the prototype draws this screen on. `settings` is a sheet
+   *  over the workspace and carries the sheet's own scale (§11.22). */
+  surface?: "workspace" | "settings" | "standalone" | "system";
 };
 
 export type ScreenGroup = { group: string; lead: string; screens: ScreenEntry[] };
@@ -35,48 +42,48 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
   {
     group: "System",
     lead: "The system on one page — read out of SCREENS.ds, not composed. It is Foundations plus Components plus Motion, so it has no entry of its own here.",
-    screens: [{ id: "ds", label: "Design System", alias: "Foundations · Components · Motion" }],
+    screens: [{ id: "ds", surface: "system", label: "Design System", alias: "Foundations · Components · Motion" }],
   },
   {
     group: "Workspace",
     lead: "Four views. The window behind the settings sheet.",
     screens: [
-      { id: "home", label: "Home", render: () => <HomeScreen /> },
-      { id: "history", label: "History", render: () => <HistoryScreen /> },
-      { id: "profiles", label: "Profiles" },
-      { id: "context", label: "Context", preview: true },
+      { id: "home", surface: "workspace", label: "Home", render: () => <HomeScreen /> },
+      { id: "history", surface: "workspace", label: "History", render: () => <HistoryScreen /> },
+      { id: "profiles", surface: "workspace", label: "Profiles" },
+      { id: "context", surface: "workspace", label: "Context", preview: true },
     ],
   },
   {
     group: "Settings",
     lead: "Eleven sections in three groups, in a sheet at its own scale (§11.22).",
     screens: [
-      { id: "general", label: "General" },
-      { id: "hotkeys", label: "Hotkeys" },
-      { id: "notesettings", label: "Notes & Meetings", preview: true },
-      { id: "models", label: "AI Models" },
-      { id: "agents", label: "Agents", preview: true },
-      { id: "integrations", label: "Integrations", preview: true },
-      { id: "delivery", label: "Delivery & Insert" },
-      { id: "privacy", label: "Privacy & Data" },
-      { id: "diagnostics", label: "Diagnostics" },
-      { id: "about", label: "About & Updates" },
+      { id: "general", surface: "settings", label: "General", render: () => <GeneralScreen /> },
+      { id: "hotkeys", surface: "settings", label: "Hotkeys", render: () => <HotkeysScreen /> },
+      { id: "notesettings", surface: "settings", label: "Notes & Meetings", preview: true },
+      { id: "models", surface: "settings", label: "AI Models" },
+      { id: "agents", surface: "settings", label: "Agents", preview: true },
+      { id: "integrations", surface: "settings", label: "Integrations", preview: true },
+      { id: "delivery", surface: "settings", label: "Delivery & Insert", render: () => <DeliveryScreen /> },
+      { id: "privacy", surface: "settings", label: "Privacy & Data", render: () => <PrivacyScreen /> },
+      { id: "diagnostics", surface: "settings", label: "Diagnostics" },
+      { id: "about", surface: "settings", label: "About & Updates" },
     ],
   },
   {
     group: "Previews",
     lead: "Layout only, each carrying its PreviewBanner. Four more are previews of a screen already listed above.",
     screens: [
-      { id: "onboarding", label: "Onboarding" },
-      { id: "translate", label: "Translation" },
-      { id: "subtitles", label: "Live subtitles" },
-      { id: "meeting", label: "Meeting capture" },
-      { id: "conversation", label: "Client conversations" },
-      { id: "agentoverlay", label: "Agent overlay" },
-      { id: "handoff", label: "Handoff" },
-      { id: "commit", label: "Live preview & commit", withdrawn: true },
-      { id: "contextintake", label: "Context · intake" },
-      { id: "contextactions", label: "Actions & templates" },
+      { id: "onboarding", surface: "standalone", label: "Onboarding" },
+      { id: "translate", surface: "standalone", label: "Translation" },
+      { id: "subtitles", surface: "standalone", label: "Live subtitles" },
+      { id: "meeting", surface: "standalone", label: "Meeting capture" },
+      { id: "conversation", surface: "standalone", label: "Client conversations" },
+      { id: "agentoverlay", surface: "standalone", label: "Agent overlay" },
+      { id: "handoff", surface: "standalone", label: "Handoff" },
+      { id: "commit", surface: "standalone", label: "Live preview & commit", withdrawn: true },
+      { id: "contextintake", surface: "workspace", label: "Context · intake" },
+      { id: "contextactions", surface: "workspace", label: "Actions & templates" },
     ],
   },
 ];
