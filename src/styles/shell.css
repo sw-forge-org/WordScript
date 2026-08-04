@@ -1578,6 +1578,242 @@
   .ws-state .ws-wave-live { width: 132px; height: 24px; }
 
   /* ═════════════════════════════════════════════════════════════════════════
+     THE ORB — ADR 0043. The orchestrator's voice, drawn as one object.
+
+     WHY A SPHERE AND NOT BARS. The dictation overlay already draws a voice as
+     bars, and that voice is yours. Repeating the drawing for the machine's
+     voice would make the two read as the same signal on two surfaces. More
+     importantly, bars are plural: eleven of them beside three named targets is
+     what made the agent window read as three agents talking, which is the
+     exact opposite of what ADR 0030 decided. One sphere is singular by
+     construction.
+
+     THE LIGHT COMES FROM BELOW LEFT, in both states, which is what makes it
+     read as a sphere rather than as a disc with a gradient on it.
+
+     `--orb-level` is 0..1, the envelope of the speaking voice. It drives size
+     and glow together, because a voice getting louder does both.
+
+     THE GLOW IS A box-shadow, NOT A BLURRED ELEMENT. `filter: blur()` promotes
+     the element to its own compositor layer, and a compositor layer that
+     outlives a surface swap is the WebKitGTK ghosting mechanism
+     `overlay-pill.css` documents at length.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-orb {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: var(--orb-size, 96px);
+    height: var(--orb-size, 96px);
+  }
+  .ws-orb-body,
+  .ws-orb-glow {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .ws-orb-body {
+    background: radial-gradient(circle at 30% 80%,
+      #ffffff 0%, #fff6e2 20%, #ffd394 40%, #ffa348 60%, #f57d10 80%, #d95a08 100%);
+  }
+  /* Sits under the body and is what the surrounding surface sees. Scaled past
+     the body so the falloff is outside it, never over it. */
+  .ws-orb-glow {
+    box-shadow:
+      0 0 calc(var(--orb-size, 96px) * 0.34) calc(var(--orb-size, 96px) * 0.06)
+        rgba(255, 156, 48, calc(0.22 + 0.36 * var(--orb-level, 0))),
+      0 0 calc(var(--orb-size, 96px) * 0.90) calc(var(--orb-size, 96px) * 0.18)
+        rgba(255, 118, 16, calc(0.11 + 0.26 * var(--orb-level, 0)));
+    transform: scale(calc(0.92 + 0.10 * var(--orb-level, 0)));
+  }
+  /* Idle is not a dimmed version of speaking. It is a different material:
+     unlit, neutral, and with no glow at all — a glow that is merely fainter
+     still reads as "it is saying something quietly", which is a lie. */
+  .ws-orb[data-state="idle"] .ws-orb-body {
+    background: radial-gradient(circle at 38% 74%,
+      #ffffff 0%, #f6f5f3 46%, #d9d7d2 78%, #b9b6b0 100%);
+  }
+  .ws-orb[data-state="idle"] .ws-orb-glow {
+    box-shadow: 0 0 calc(var(--orb-size, 96px) * 0.22) rgba(255, 255, 255, 0.10);
+    transform: none;
+  }
+
+  /* FOUR STATES, AND EACH ONE MOVES THE WAY THAT STATE BEHAVES.
+       idle       nothing moves. The process exists.
+       listening  follows YOUR input level. Cool material — it is receiving.
+       thinking   no size change at all, because there is no amplitude to show
+                  and inventing one is the lie a fixed-period pulse was telling.
+                  The light source drifts instead.
+       speaking   follows the voice envelope.
+
+     A STATIC orb gets a transition, because its level is set once and the eye
+     should see it arrive rather than jump. A DRIVEN orb gets none: `data-drive`
+     means the level is written every frame with attack and release already
+     applied, and a CSS transition on top of a per-frame write is two smoothers
+     fighting. */
+  .ws-orb[data-state="speaking"] .ws-orb-body,
+  .ws-orb[data-state="listening"] .ws-orb-body {
+    transform: scale(calc(0.93 + 0.09 * var(--orb-level, 0)));
+    transition: transform 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .ws-orb[data-drive] .ws-orb-body,
+  .ws-orb[data-drive] .ws-orb-glow { transition: none; }
+
+  /* Listening is receiving, so it is not the speaking material at lower
+     volume. Cooler, less saturated, and the glow stays close to the body: the
+     sphere is lit from inside when it speaks and from outside when it
+     listens. */
+  .ws-orb[data-state="listening"] .ws-orb-body {
+    background: radial-gradient(circle at 32% 78%,
+      #ffffff 0%, #f2f4f6 22%, #cfd8de 46%, #9fb2c0 72%, #6f8798 100%);
+  }
+  .ws-orb[data-state="listening"] .ws-orb-glow {
+    box-shadow:
+      0 0 calc(var(--orb-size, 96px) * 0.26) calc(var(--orb-size, 96px) * 0.04)
+        rgba(180, 205, 225, calc(0.14 + 0.30 * var(--orb-level, 0)));
+    transform: scale(calc(0.94 + 0.06 * var(--orb-level, 0)));
+  }
+
+  /* Thinking: the sphere holds its size and the light walks around it. The
+     swing is a pendulum rather than a full turn, because a full turn is a
+     spinner and a spinner means "waiting for a network", not "working". */
+  .ws-orb[data-state="thinking"] .ws-orb-body {
+    background: radial-gradient(circle at 30% 80%,
+      #fff2dd 0%, #ffdba8 18%, #f3b163 42%, #cf8433 68%, #9c5f22 100%);
+    animation: ws-orb-consider 3.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+  .ws-orb[data-state="thinking"] .ws-orb-glow {
+    box-shadow:
+      0 0 calc(var(--orb-size, 96px) * 0.30) calc(var(--orb-size, 96px) * 0.05)
+        rgba(255, 176, 92, 0.20);
+    transform: scale(0.96);
+  }
+  @keyframes ws-orb-consider {
+    0%   { transform: rotate(-38deg); }
+    50%  { transform: rotate(38deg); }
+    100% { transform: rotate(-38deg); }
+  }
+
+  .ws-orb[data-still] .ws-orb-body { animation: none; transition: none; }
+
+  /* Reduced motion keeps every state and drops every movement. The orb still
+     says which of the four it is in — material and glow carry that, and those
+     are information — it just stops moving. */
+  @media (prefers-reduced-motion: reduce) {
+    .ws-orb .ws-orb-body { animation: none !important; transition: none !important; transform: none !important; }
+    .ws-orb .ws-orb-glow { transition: none !important; }
+  }
+
+  /* The pair of drawings in Agents → Voice. Dark stages because a glow is only
+     legible against something dark, and this is the one place in settings that
+     shows the object at rest and speaking side by side. */
+  .ws-orb-demo {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: var(--s3);
+    padding: var(--s3) var(--s4) var(--s2);
+  }
+  /* Four states side by side, because the point of the set is the comparison:
+     each one has to be wrong-looking in the other three's place. */
+  .ws-orb-demo[data-four] { grid-template-columns: repeat(4, 1fr); gap: var(--s2); }
+  .ws-orb-demo figure { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+  /* Hardcoded, and it stays hardcoded in light mode too. A glow is legible only
+     against something dark — that is physics, not styling — so the stage is a
+     dark viewing box in both themes, the way a colour swatch sits on a neutral
+     card regardless of the page around it. */
+  .ws-orb-stage {
+    height: 132px;
+    display: grid; place-items: center;
+    border-radius: var(--r-card);
+    background: #0d0d0f;
+    border: 1px solid var(--border);
+  }
+  .ws-orb-demo figcaption { display: flex; flex-direction: column; gap: 3px; }
+  .ws-orb-demo figcaption b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); font-weight: 600;
+  }
+  .ws-orb-demo figcaption span {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); color: var(--fg-muted); line-height: 1.5;
+  }
+  @media (max-width: 640px) { .ws-orb-demo { grid-template-columns: 1fr; } }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     PROVIDER MARKS — `@lobehub/icons-static-svg` v1.94.0, MIT, by LobeHub.
+
+     IN COLOUR, AND THE COLOUR IS THE IDENTIFICATION. §11.20's rule against
+     colour charts is about STATUS colour — a hue the interface assigns to mean
+     something, competing with the one hue that means "look here". A brand mark
+     is not status: its colour is part of the mark, and stripping it makes the
+     marks harder to tell apart while freeing no attention at all.
+
+     `.ws-pmark`, not `.ws-brand`: `.ws-brand` is the wordmark block at §5,
+     which is a flex column with padding and a qualifier child. An SVG
+     inheriting that renders 16 × 32 with the artwork letterboxed inside it.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-pmark {
+    width: 14px; height: 14px;
+    flex: none;
+    color: inherit;
+  }
+  /* The sprite host: present, addressable by `<use>`, and occupying nothing.
+     `display:none` would make the symbols unreferenceable in some engines, so
+     it is collapsed rather than hidden. */
+  .ws-pmark-sprite {
+    position: absolute;
+    width: 0; height: 0;
+    overflow: hidden;
+  }
+
+  /* ── The provider chips ───────────────────────────────────────────────────
+     A CHIP ROW, not a grid: a chip is a mark and a name at row height, four or
+     five to a line, wrapping when the lane has more. One to two rows instead of
+     three, and unlike the select it had in between, the list answers "who can I
+     pick" without being opened.
+
+     THE CHOSEN ONE CARRIES THE ACCENT AND THE OTHERS CARRY NOTHING. An accent
+     ring on every chip would make the row a decoration; the accent means active
+     selection here exactly as it does on a sidebar row. `data-custom` is the
+     door to a self-operated OpenAI-compatible endpoint and is deliberately
+     last: it is not a brand, so it takes the neutral glyph and never the
+     tint. */
+  .ws-provrow {
+    display: flex; flex-wrap: wrap;
+    gap: var(--s2);
+    padding-top: var(--s1);
+  }
+  .ws-provchip {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 32px; padding: 0 11px 0 8px;
+    border-radius: var(--r-control);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease),
+                border-color var(--dur-fast) var(--ease),
+                color var(--dur-fast) var(--ease);
+  }
+  .ws-provchip:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-provchip[data-on] {
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  /* The mark keeps its own colour in every state. The chip's ground changes
+     around it; a brand that restyles itself on selection is a different
+     brand. */
+  .ws-provchip-mark { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
+  .ws-provchip-mark .ws-pmark, .ws-provchip-mark svg { width: 16px; height: 16px; }
+  .ws-provchip[data-custom] .ws-provchip-mark { color: var(--fg-muted); }
+
+  /* ═════════════════════════════════════════════════════════════════════════
      FROST — ADR 0051. A pair: the panel catches the light, the layer behind it
      recedes. Never `backdrop-filter`, which is inert in the shipped WebKitGTK
      while @supports reports it as available.

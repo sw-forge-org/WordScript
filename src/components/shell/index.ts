@@ -70,6 +70,11 @@ export { Matrix, MATRIX_FRAMES, vu } from "./Matrix";
 export type { Frame } from "./Matrix";
 export { Waveform } from "./Waveform";
 
+/* ── The orchestrator's body, and the provider marks — ported by Leg 2b ── */
+export { Orb, OrbDemo, OrbFigure } from "./Orb";
+export type { OrbState } from "./Orb";
+export { ProviderMark, ProviderSprite, ProviderChips, brandSymbolId } from "./ProviderMark";
+
 export { StatusBadge } from "./StatusBadge";
 export type { StatusTone } from "./StatusBadge";
 export { StatusDot } from "./StatusDot";

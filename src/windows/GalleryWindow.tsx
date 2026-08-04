@@ -13,6 +13,7 @@ import {
   NavFoot,
   NavGroup,
   NavRow,
+  ProviderSprite,
   SegmentControl,
   ViewTop,
 } from "@/components/shell";
@@ -104,6 +105,13 @@ export default function GalleryWindow() {
 
   return (
     <div className="flex h-full w-full bg-bg-base text-fg" style={{ fontFamily: "var(--font)" }}>
+      {/* The provider marks are a sprite and the sprite is a per-window
+          resource: every `<use href="#pm-…">` below resolves against this one
+          host. Mounted here rather than inside the mark, because fifteen
+          symbols repeated per row is the duplicate-id defect the sprite
+          exists to avoid. */}
+      <ProviderSprite />
+
       <Nav label="Gallery sections">
         <BrandMark scheme={resolved} qualifier="Gallery · design time" />
 
