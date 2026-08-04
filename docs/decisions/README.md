@@ -351,6 +351,13 @@ Status: Proposed | Accepted | Superseded by NNNN
   measurement and nothing had taken it; the other five light foregrounds are
   confirmed by the same pass. A contrast figure that is stored rather than
   computed stops being true when the colour moves.
+- [0057](0057-the-prototype-has-an-expiry-date-and-the-gallery-has-two-halves.md):
+  the four surfaces the port runs at once are a state of the port, not the
+  steady state. The prototype turns from source into provenance at the end of
+  Leg 2 — it is read-only and already overtaken by ADR 0056, so a reader
+  treating it as current is reading a document that grows wrong. The gallery's
+  Foundations, Components, Motion and Overlay are permanent; its Screens section
+  is scaffolding and retires per screen as Leg 4 wires them.
 
 ## Resolved: the number 0011 was used twice
 
@@ -378,8 +385,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-04 the filed range runs through 0056; the next
-decision takes 0057.)
+takes 0021. (As of 2026-08-04 the filed range runs through 0057; the next
+decision takes 0058.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

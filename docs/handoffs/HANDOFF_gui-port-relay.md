@@ -77,13 +77,24 @@ decision rather than a liberty:
 Everything else is 1:1, and where the prototype and this repo's shipped surface
 disagree, the prototype wins.
 
+**And the four surfaces are a state of the port, not the steady state**
+([ADR 0057](../decisions/0057-the-prototype-has-an-expiry-date-and-the-gallery-has-two-halves.md)).
+The prototype turns from source into provenance at the end of Leg 2: it is
+read-only, ADR 0056 has already overtaken it by one hex, and every further leg
+widens that gap, so after the last screen stands in the gallery **the gallery is
+the source** and a disagreement with the prototype is either an ADR or a bug.
+The gallery's Foundations, Components, Motion and Overlay are permanent; its
+**Screens section is scaffolding** and retires per screen in the commit that
+wires it, during Leg 4. The steady state is the library, the product, and a
+gallery of four sections.
+
 ## Rules every leg obeys
 
 1. **Commit and push to `main`.** No branch, no PR. Push only when the leg is
    green.
 2. **Never `--no-verify`.** The Husky hooks are the secret gate.
 3. **ADRs are append-only.** New file, never an edit to an existing one. Next
-   free number is **0057**; update `docs/decisions/README.md` when you file one.
+   free number is **0058**; update `docs/decisions/README.md` when you file one.
 4. **The prototype is read-only from here on** (ADR 0055). It is the reference
    the gallery is diffed against. If you ever must edit `demo.css` or `demo.js`,
    use **exact-match string replacement only** — never line numbers, never a
@@ -122,7 +133,7 @@ disagree, the prototype wins.
 | **1** | Foundations, primitives, gallery shell | `/gallery` renders Foundations and Components in three schemes; the eight primitives exist with tests; dead code gone |
 | **2** | Every prototype screen into the gallery, 1:1 | All 25 screens stand in `/gallery` → Screens at the prototype's fidelity, on the real components |
 | **3** | The shell overwrite | One window; settings is a sheet over the workspace at its own scale (§11.22); the new IA replaces the 14 flat areas; `Cmd+,`; old areas deleted |
-| **4** | Wiring, section by section | Each section either reads the runtime truthfully or carries a `PreviewBanner`; P1 and P2 fixed at the seam; the list of what the runtime cannot answer is written down |
+| **4** | Wiring, section by section | Each section either reads the runtime truthfully or carries a `PreviewBanner`; P1 and P2 fixed at the seam; the list of what the runtime cannot answer is written down; **each wired screen's Gallery → Screens entry is deleted in the commit that wires it** (ADR 0057) |
 | **5** | Runtime contracts | §11.36 and §11.52, prioritised by what Leg 4 found blocking |
 | **6** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
 
@@ -232,6 +243,10 @@ window under this compositor. A human with a mouse can.
   `docs/decisions/README.md` when you file one.
 - `CHANGELOG.md` under `[Unreleased]`, your record in the leg log, and the
   **Leg 3 prompt**.
+- **Flip the prototype's status** (ADR 0057). When the last screen stands in the
+  gallery, say so in this document and in `SETTINGS_REWORK_PLAN.md` §0, which
+  still calls the prototype mandatory reading with no horizon. Rule 4b applies
+  to screens not yet ported and expires with them.
 
 ### Leg 2 is done when
 
@@ -397,58 +412,101 @@ Copied to a fresh agent verbatim.
 
 You are picking up the WordScript GUI port. Work in
 `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
-on the `main` branch. Do not create a branch.
+on the `main` branch. Do not create a branch. **Leg 2 is yours and you finish it
+completely.**
 
-Read `docs/handoffs/HANDOFF_gui-port-relay.md` first and in full. It is the
-chain document: it names the two decisions this work rests on (ADR 0054 and ADR
-0055), the rules every leg obeys, the record of what Leg 1 landed and got wrong,
-and the full specification of **Leg 2**, which is yours. Then read what its
-"Read before starting Leg 2" table lists.
+**Read this first**
 
-**The one rule this leg is judged on: the prototype is the UI source of truth,
-and you read it per screen.** For every screen and every section you build,
-`grep -n "SCREENS\.<id>" docs/prototypes/settings-rework/demo.js`, read the
-builder whole, and read the rules it uses in `demo.css`. Do not reconstruct a
-screen from what `docs/DESIGN_SYSTEM.md` implies — that document describes the
-system, it is not the design. Leg 1 ported the design system correctly and then
-wrote the four files that display it from scratch; the owner saw the difference
-in one glance, and repairing it is §2.1, which comes before anything else.
+`docs/handoffs/HANDOFF_gui-port-relay.md`, in full. It is the chain document: it
+names the decisions this rests on (ADR 0054, 0055, 0056, 0057), the rules every
+leg obeys, what Leg 1 landed and got wrong, and the full specification of Leg 2.
+Then read what its "Read before starting Leg 2" table lists — and read
+`CLAUDE.md`, which outranks any default you carry.
 
-Serve the prototype and keep it open beside the app:
-`python3 -m http.server 8791 --directory docs/prototypes/settings-rework`
+**The one rule this leg is judged on**
 
-Do Leg 2 completely — §2.1 (re-port the gallery's own four pages and add the
-button/chip/icon-button primitives the prototype's component cards need), then
-§2.2 (all 25 screens into `/gallery` → Screens, 1:1). Follow the acceptance list
-at the end of the leg specification; do not declare it done while any item is
-open. If it runs long, split into 2a/2b, say so in your record, and write the
-prompt for 2b.
+**The demo GUI is the UI source of truth, and you read it per screen. You do not
+design anything.**
 
-The short version of what governs this work, so you can spot it if you drift:
+The design is finished. It lives in `docs/prototypes/settings-rework/` as 25
+screens of vanilla HTML/CSS/JS, fourteen passes deep and accepted. Your job is to
+carry it across 1:1 — the same structure, the same spacing, the same radii, the
+same states, the same copy — onto React components. Nothing on your screen should
+be a decision you made.
 
-- The prototype is the accepted design and is read-only. The port is 1:1, down
-  to spacing, radii, states and copy. Where it and this repo's shipped surface
-  disagree, the prototype wins — that is the point of the port.
-- The design-system rules live in `src/components/shell/` and
-  `src/styles/shell.css`, never in a screen. If a screen needs a rule, the
-  primitive grows it. No screen carries an inline spacing value.
-- The gallery imports the product's components and never copies them. If a
-  primitive looks right in the gallery and wrong in the product, the gallery is
-  what lied.
-- The overlay does not change. `src-tauri/` does not change.
-- A gallery screen carries sample data and asserts nothing; every preview screen
-  carries its `PreviewBanner`, and the withdrawn one carries the withdrawn
-  variant.
-- End green: `npm test`, `npm run build`. Look at the result in the native host,
-  not only in a browser — and read Leg 1's record first, because reaching
-  `/gallery` there needs a temporary frontend route and the reason is written
-  down.
+For every screen and every section, in this order:
 
-When Leg 2 is green: commit it, push it to `main`, append your leg record to the
-leg log in the relay document, and write the **Leg 3 prompt** into that same
-document — Leg 3 is the shell overwrite: one window, settings as a sheet over
-the workspace at its own scale (§11.22), the new IA replacing the 14 flat areas,
-`Cmd+,`, and the old areas deleted. Then report what you did, what you found,
-and anything the next leg needs to know that is not already written down.
+1. `grep -n "SCREENS\.<id>" docs/prototypes/settings-rework/demo.js` and read the
+   whole builder function. It carries the structure, the copy and the sample data.
+2. Read the CSS rules it uses in `demo.css`. If a rule is not yet in
+   `src/styles/shell.css`, add it **there** — never at the call site.
+3. Serve the prototype and put it side by side with the app:
+   `python3 -m http.server 8791 --directory docs/prototypes/settings-rework`
+4. Compare them. If you cannot point at the prototype and say "this line, this
+   value", you invented it — go back to step 1.
+
+**Do not build a screen from `docs/DESIGN_SYSTEM.md`.** That document describes
+the system; it is not the design. This is exactly how Leg 1 failed: it ported the
+tokens and the component grammar correctly out of `demo.css`, then wrote the four
+gallery pages that display them from scratch, and the owner saw the difference in
+one glance. Repairing that is §2.1 and it comes before anything else.
+
+**What you are building**
+
+**The library is the deliverable.** `src/components/shell/` plus
+`src/styles/shell.css` is the productive component library — that is where the
+design components live and what the product renders. The gallery **displays**
+that library and never defines it: a component that exists only under
+`src/windows/gallery/` has made the gallery a second product, which is the one
+thing ADR 0055 forbids. So when a screen needs a control the kit does not have —
+starting with `.btn`, which Leg 1 did not build — **grow the library, not the
+gallery.**
+
+Then do Leg 2's two halves in order:
+
+- **§2.1 — re-port the four gallery pages** (`Foundations`, `Components`,
+  `Motion`, `GalleryWindow`) out of `SCREENS.ds` in `demo.js`, which is 350 lines
+  of decided content. Keep Leg 1's one addition: contrast and L* are measured at
+  render time, never printed as literals.
+- **§2.2 — every one of the 25 screens** into `/gallery` → Screens, at the
+  prototype's fidelity, on the real components.
+
+Follow the acceptance list at the end of the leg specification. Do not declare it
+done while any item is open. If it runs long, split into 2a/2b, say so in your
+record, and write the prompt for 2b.
+
+**The rest of what governs this**
+
+- Where the prototype and this repo's shipped surface disagree, **the prototype
+  wins.** That is the point of the port.
+- Three things are deliberately not 1:1 and each is already a decision, not a
+  liberty: the prototype's own rig, the light `--fg-muted` (ADR 0056), and
+  measured-instead-of-printed contrast. They are listed in the relay document.
+- The design-system rules live in the primitives, never in a screen. **No screen
+  carries an inline spacing value.** If one seems to need it, a primitive is
+  missing a rule.
+- A gallery screen carries sample data and asserts nothing. Every preview screen
+  carries its `PreviewBanner`; the withdrawn one carries the withdrawn variant.
+- **The overlay does not change. `src-tauri/` does not change.**
+- End green: `npm test`, `npm run build`. New screens carry tests — under ADR
+  0054 there is no old surface to fall back on.
+- **Look at the frost pair in the native host.** Leg 1 could not deliver a
+  pointer event to the window under this compositor and left it owed; it is at
+  the foot of `/gallery` → Foundations with a button that takes the blur off the
+  layer behind. Reaching `/gallery` there needs a temporary frontend route — Leg
+  1's record says how, and says to revert it before committing.
+
+**When it is green**
+
+Commit it, push it to `main`, append your record to the leg log, flip the
+prototype's status per ADR 0057 (at the end of Leg 2 it stops being the source
+and becomes provenance — say so in the relay document and in
+`SETTINGS_REWORK_PLAN.md` §0), and write the **Leg 3 prompt** into the relay
+document. Leg 3 is the shell overwrite: one window, settings as a sheet over the
+workspace at its own scale (§11.22), the new IA replacing the 14 flat areas,
+`Cmd+,`, and the old areas deleted.
+
+Then report what you did, what you found, and anything the next leg needs to know
+that is not already written down.
 
 ---
