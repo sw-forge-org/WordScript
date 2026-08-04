@@ -711,26 +711,31 @@ Copied to a fresh agent verbatim.
 You are picking up the WordScript GUI port. Work in
 `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 on the `main` branch. Do not create a branch. **Leg 2c is yours: the last 14
-screens.**
+screens, and the paperwork that closes Leg 2.**
+
+Eleven of the prototype's 25 screens already stand in `/gallery` → Screens, each
+measured exact. You are finishing the port.
 
 **Read this first**
 
 `docs/handoffs/HANDOFF_gui-port-relay.md`, in full — especially Leg 2b's record
 directly above this prompt. It lists nine library defects it already fixed, four
-measurement false positives, and one place where the prototype disagrees with
-itself. Then the "Read before starting Leg 2" table, and `CLAUDE.md`, which
-outranks any default you carry.
+measurement false positives you will otherwise rediscover, three deliberate
+divergences, and the one place where the prototype disagrees with itself. Then
+the "Read before starting Leg 2" table, and `CLAUDE.md`, which outranks any
+default you carry.
 
 **The one rule this leg is judged on**
 
 **The demo GUI is the UI source of truth, and you read it per screen. You do not
 design anything.** For every screen, in this order:
 
-1. `grep -n "SCREENS\.<id>" docs/prototypes/settings-rework/demo.js` and read
-   the whole builder function. It carries the structure, the copy and the
-   sample data.
+1. Read the whole builder function in `demo.js`. Line spans are in the table
+   below, so you do not have to hunt for them. It carries the structure, the
+   copy and the sample data — including which rows exist and why.
 2. Read the CSS rules it uses in `demo.css`. If a rule is not yet in
-   `src/styles/shell.css`, add it **there** — never at the call site.
+   `src/styles/shell.css`, add it **there**, with the prototype's comment for
+   why it exists — never at the call site (ADR 0052).
 3. Compare by **measuring**. Leg 2b committed the check:
 
    ```
@@ -739,59 +744,121 @@ design anything.** For every screen, in this order:
    npm run port:diff context models agents          # add --text for copy
    ```
 
-   It reports `structural 0 | style 0 | text 0` when a screen is ported. Do not
-   declare a screen done on any weaker evidence.
+   It reports `structural 0 | style 0 | text 0` when a screen is ported. **Do
+   not call a screen done on any weaker evidence.** If you cannot point at the
+   prototype and say "this line, this value", you invented it.
 
-**What to build**
+**The fourteen, in the order that costs least**
 
-The 14 screens listed in Leg 2b's record, into `/gallery` → Screens. Order
-suggestion: `context` and its two states first, because they are the largest
-and the pane grammar they need is already in the library; then `models`,
-`agents` and `notesettings`; then the seven standalone previews. Add each to
-`src/windows/gallery/screens/registry.tsx` — the ledger reads that file, so
-there is no count to keep in step by hand.
+The order is not arbitrary and following it will save you a day. Screens share
+CSS families; doing a sharer before its sharee means the second one is nearly
+free. The last column is how many of the screen's classes are **not yet** in
+`shell.css`, counted mechanically — it is the real size of each job.
 
-**Where a screen needs something the kit does not have — the meeting HUD, the
-transcript line, the speaker chips, the thread, the model download row, the
-onboarding rail — grow `components/shell/`, not the gallery.** Read
-`src/components/shell/index.ts` first: it now carries the card grammar, the
-eight primitives, every control of `demo.css` §6, the nav and content column,
-the icon set, the orb, the provider marks and their sprite, the list row and its
-raw panel, the decision inbox, the pane, the connection block, the runtime log
-and the diff.
+| # | Screen | `demo.js` | New classes | Why here |
+| --- | --- | --- | --- | --- |
+| 1 | `notesettings` | 3842–3974 | **0** | Pure card and row grammar. A warm-up that proves your loop works before you spend anything. |
+| 2 | `models` | 4300–4875 | 15 | The biggest settings screen. Brings `job*`, `jobmodel*`, `mdl-list`, `selmark`. Its 4 lanes × 8 jobs are data, not markup — port `LANES` as data. |
+| 3 | `onboarding` | 5696–6115 | 12 | Reuses `jobmodel`, `mdl-list`, `selmark` from (2); adds only the `obrail*`/`obstep*` family. Its step 3 renders the SAME provider picker as AI Models — share the component, do not draw a twin. |
+| 4 | `agents` | 4892–5221 | 9 | Brings `thread`, `msg*`, `mcp*`. Uses the orb, which is already in the library. |
+| 5 | `context` | 2881–2900 + `contextScreen` 2944–3189 | 42 | The largest. Three entry points: `SCREENS.context`, `contextactions`, `contextintake`. Pane grammar is already ported; this adds folders, note tabs, the transcript line, speaker chips, the float bar and the two panels. |
+| 6 | `contextintake` | `contextIntake` 3191–3415 | ↑ | A state of (5), not a screen beside it. Adds `dropzone`, `intake*`. |
+| 7 | `contextactions` | `actionsPanel` 3417–3547 | ↑ | The other panel over the same object. Adds `action*`, `actionswin`. |
+| 8 | `meeting` | 7392–7769 | 28 | Reuses `tscript`, `enh`, `note-tabs`, `readout`, `mic-btn` from (5). Adds the HUD. **Draw it at rest** (ADR 0058). |
+| 9 | `handoff` | 6480–6808 | 34 | Brings `ovp*` — the shipped overlay pill drawn at its real geometry — and `hoff*` and `cross*`. Three later screens read those back. |
+| 10 | `subtitles` | 7048–7249 | 24 | Almost all of it is `ovp*` and `hoff*` from (9). Adds only `cap*` and `echo*`. |
+| 11 | `translate` | 6810–7046 | 31 | Reuses `hoff*` from (9); adds the `trw*` family. |
+| 12 | `conversation` | 7251–7390 | 19 | Reuses `cross*` from (9); adds `clnt*` and `doct*`. |
+| 13 | `agentoverlay` | 6117–6204 + `agentWindow` 6206–6478 | 54 | Last on purpose: the biggest CSS block, and `ovp*` already exists by now. Adds the `agw*` and `agpop*` families. |
+
+`SCREENS.notes`, `SCREENS.noteactions`, `SCREENS.upload`, `SCREENS.stt` and
+`SCREENS.llm` are aliases of screens in this table. They are not extra work.
+
+**Leg 2b's throughput, so you can pace yourself.** It ported ten screens in one
+session, and roughly half that session went on the first two plus the library
+they needed; the last eight went four times faster. Yours are the expensive
+ones. **If you run out before the fourteenth, split into 2d exactly as 2a and 2b
+did** — say so in your record, list what is left with these same line spans, and
+write the 2d prompt. A leg that overruns and reports fourteen done when nine are
+done is worse than a leg that splits.
+
+**What you must NOT touch, so you do not wander**
+
+These look like defects and are Leg 3's by decision, not by oversight:
+
+- `body` reads `--text-body` (13 px) where the prototype's window declares
+  `--t-body` (14 px). Fixed on `.ws-content` for now; `body` belongs to the leg
+  that owns the window root.
+- `svg { flex: none }` is fenced to `.ws-content` / `.ws-nav` rather than
+  global, because the thirteen pre-port areas still render lucide icons.
+- `.ws-sheet-scale` (§11.22) is applied by the gallery around a settings screen.
+  Leg 3 moves it onto the sheet.
+- `FormCard`, `FormRow`, `Sidebar` and `StatTiles` are pre-port and are what the
+  shipped areas still render. Nothing new may use them; they are deleted with
+  the last screen that reads them, which is Leg 3.
+- `src-tauri/` does not change (rule 6), including the stale `OverlayGallery.tsx`
+  reference at `core/mode_router.rs:7`.
+- **The overlay does not change.** Rule 5. Drawing it — which `ovp*` does, at
+  the real geometry from `tauri.conf.json` — is allowed and is what the
+  prototype does; changing `overlay*.css` or `OverlayPill.tsx` is not.
 
 **The rest of what governs this**
 
 - Where the prototype and this repo's shipped surface disagree, **the prototype
   wins.**
 - **No screen carries an inline spacing value.** If one seems to need it, a
-  primitive is missing a rule (ADR 0052).
+  primitive is missing a rule.
 - A gallery screen carries sample data and asserts nothing. Every preview screen
   carries its `PreviewBanner`.
 - **A live instrument is drawn at rest** (ADR 0058). Never pass `active` to a
   capture component from a gallery page. This governs the meeting HUD, the agent
-  overlay, Live subtitles and Client conversations — four of your fourteen.
+  overlay, Live subtitles and Client conversations — four of your fourteen, and
+  the prototype animates all four from a synthetic envelope because it has no
+  microphone. The product has one, which is exactly why the gallery must not
+  touch it.
 - **No screen imports a Tauri API.** `GalleryWindow.test.tsx` asserts that by
   mocking `invoke` to throw.
-- **The overlay does not change. `src-tauri/` does not change.**
-- End green: `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
-  you touch the shell. New screens carry tests — and read what Leg 2b's tests
-  assert before writing yours: a unit test cannot see a pixel, so it holds the
-  things the measurement would accept because both sides changed together.
-- Looking in the native host: the recipe is finding 6 in Leg 2b's record, and it
-  works. Revert the hoists before committing.
+- **Grow `components/shell/`, not the gallery.** Read
+  `src/components/shell/index.ts` before you write anything: it carries the card
+  grammar, the eight primitives, every control of `demo.css` §6, the nav and
+  content column, the icon set, the orb, the provider marks and their sprite,
+  the list row and its raw panel, the decision inbox, the pane, the connection
+  block, the runtime log and the diff. The thing you are about to need probably
+  exists.
+- Add each screen to `src/windows/gallery/screens/registry.tsx`. The ledger and
+  its counts read that file, so there is nothing to keep in step by hand. Set
+  `surface` and, for a pane view, `layout: "pane"`.
+- End green: `npm test`, `npm run build`, and `cd src-tauri && cargo test` if you
+  touch the shell. New screens carry tests — read what Leg 2b's assert before
+  writing yours: a unit test cannot see a pixel, so it holds what the
+  measurement would accept because both sides changed together.
+- Look at it in the native host. The recipe is finding 6 in Leg 2b's record and
+  it works; synthetic input still cannot be delivered, so hoist what you need to
+  see and revert the hoist before committing.
 
-**When it is green**
+**When every screen stands — the paperwork that closes Leg 2**
 
-Commit, push to `main`, append your record to the leg log, and then — because
-the last screen will be standing in the gallery — **flip the prototype's status
-per ADR 0057**: it stops being the source and becomes provenance. Say so in this
-document and in `SETTINGS_REWORK_PLAN.md` §0, which still calls it mandatory
-reading with no horizon. Then write the **Leg 3 prompt** into this document.
-Leg 3 is the shell overwrite: one window, settings as a sheet over the workspace
-at its own scale (§11.22 — the scale itself is already ported as
-`.ws-sheet-scale`; Leg 3 moves it onto the sheet), the new IA replacing the 14
-flat areas, `Cmd+,`, and the old areas deleted.
+1. **Flip the prototype's status (ADR 0057).** It stops being the source and
+   becomes provenance. Say so in this document *and* in
+   `SETTINGS_REWORK_PLAN.md` §0, which still calls it mandatory reading with no
+   horizon. Rule 4b expires with the last unported screen — note that too.
+2. **Update the docs that now describe something that changed.** `CHANGELOG.md`
+   under `[Unreleased]`, `docs/STATUS.md` for what works today, and
+   `docs/DESIGN_SYSTEM.md` where the library grew past what it describes. Run
+   the `spec-sync` skill rather than doing the drift check by hand.
+3. **File an ADR only if a design decision departed from the prototype.** Never
+   an edit to an existing record. The next free number is **0059**; update
+   `docs/decisions/README.md` when you file one.
+4. **Write down what Leg 2 owes Legs 4 and 5** (§2.5): every place a screen
+   could not be drawn without inventing a control, and every place the prototype
+   and the runtime disagree on a *fact* rather than on presentation — a label
+   the runtime does not use, a status that does not exist. §11.11 found three;
+   a 25-screen port will have found more.
+5. Commit, push to `main`, append your record to the leg log, and **write the
+   Leg 3 prompt** into this document. Leg 3 is the shell overwrite: one window,
+   settings as a sheet over the workspace at its own scale (§11.22 — the scale
+   is already ported as `.ws-sheet-scale`; Leg 3 moves it onto the sheet), the
+   new IA replacing the 14 flat areas, `Cmd+,`, and the old areas deleted.
 
 Then report what you did, what you found, and anything the next leg needs to
 know that is not already written down.
