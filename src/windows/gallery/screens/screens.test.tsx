@@ -10,6 +10,7 @@ import { DiagnosticsScreen } from "./Diagnostics";
 import { AboutScreen } from "./About";
 import { ProfilesScreen } from "./Profiles";
 import { CommitScreen } from "./Commit";
+import { IntegrationsScreen } from "./Integrations";
 import { ALL_SCREENS, SCREEN_GROUPS } from "./registry";
 import { HISTORY, RECENT } from "./data";
 
@@ -316,6 +317,42 @@ describe("Live preview & commit — the withdrawn screen", () => {
     expect(container.querySelector(".ws-scale-box")).not.toBeNull();
     expect(screen.getByText("440 × 60")).toBeInTheDocument();
     expect(screen.getByText("false")).toBeInTheDocument();
+  });
+});
+
+describe("Integrations", () => {
+  it("sorts every entry with one question: does it write anywhere?", () => {
+    const { container } = render(<IntegrationsScreen />);
+    const rows = [...container.querySelectorAll(".ws-klass-row")];
+    expect(rows.map((r) => r.getAttribute("data-k"))).toEqual(["intake", "bridge", "reach"]);
+    /* Only `reach` writes, and only `reach` takes the accent. */
+    expect(screen.getByText("Writes something, somewhere, for you.")).toBeInTheDocument();
+  });
+
+  it("draws a connection as a block that grows its accounts, not as rows", () => {
+    const { container } = render(<IntegrationsScreen />);
+    const connected = container.querySelector(".ws-conn[data-on]")!;
+    expect(connected.querySelectorAll(".ws-conn-account")).toHaveLength(2);
+    /* Unconnected providers carry one sentence and one button, and no account
+       list at all. */
+    expect(container.querySelectorAll(".ws-conn")).toHaveLength(3);
+    expect(container.querySelectorAll(".ws-conn-accounts")).toHaveLength(1);
+  });
+
+  it("puts the two bridge surfaces side by side, with the difference in one place", () => {
+    const { container } = render(<IntegrationsScreen />);
+    const panels = container.querySelectorAll(".ws-srv-row");
+    expect(panels).toHaveLength(2);
+    expect(screen.getByText("can speak to you")).toBeInTheDocument();
+    expect(screen.getByText("cannot speak to you")).toBeInTheDocument();
+  });
+
+  it("offers no way to add a connector the desk owns", () => {
+    render(<IntegrationsScreen />);
+    /* A connector configured in two places is a connector that disagrees with
+       itself. */
+    expect(screen.getByText(/No way to add one here/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Agents" })).toBeInTheDocument();
   });
 });
 

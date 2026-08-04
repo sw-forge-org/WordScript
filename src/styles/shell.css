@@ -1795,6 +1795,129 @@
   .ws-diff mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 2px; }
   .ws-diff del { color: var(--fg-muted); text-decoration-color: var(--danger); }
 
+  /* ── The connection block ─────────────────────────────────────────────────
+     A connectable provider: identity, what it does, and the state of the
+     connection — which is either a button or the accounts it produced.
+
+     NOT A CARD OF ROWS. A row is a label and a control, and the control here
+     changes what the block contains: connected, it grows a list; unconnected,
+     it is one sentence and one button. Connected accounts are children of the
+     provider, indented to the tile's right edge, because they are instances of
+     it and not three more providers. */
+  .ws-conn-list { display: flex; flex-direction: column; gap: var(--gap-row); }
+  .ws-conn {
+    background: var(--bg-surface);
+    /* The card's border, written out: `--card-border` is the prototype's own
+       token and resolves to a transparent hairline on the proposed palette,
+       which is what `.ws-card` also declares. */
+    border: 1px solid transparent;
+    border-radius: var(--r-card);
+    padding: var(--pad-card);
+    display: flex; flex-direction: column;
+  }
+  .ws-conn-top { display: flex; align-items: flex-start; gap: var(--s3); }
+  .ws-conn-tile {
+    width: 34px; height: 34px; flex: none;
+    display: grid; place-items: center;
+    border-radius: var(--r-control);
+    background: var(--bg-inset);
+    color: var(--fg-dim);
+  }
+  .ws-conn-tile svg { width: 17px; height: 17px; }
+  .ws-conn[data-on] .ws-conn-tile { color: var(--fg); }
+  .ws-conn-text {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 2px;
+    padding-top: 1px;
+  }
+  .ws-conn-text b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 600;
+  }
+  .ws-conn-text > span {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim); max-width: 56ch; line-height: 1.55;
+  }
+  .ws-conn-ctl { flex: none; display: flex; align-items: center; gap: var(--s2); padding-top: 2px; }
+  .ws-conn-accounts {
+    margin-top: var(--s3);
+    padding-top: var(--s3);
+    padding-left: calc(34px + var(--s3));
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  .ws-conn-account {
+    display: flex; align-items: center; gap: var(--s2);
+    height: 30px;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+  .ws-conn-account > svg { width: 13px; height: 13px; color: var(--fg-muted); flex: none; }
+  .ws-conn-account > span {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-conn-account .ws-ibtn { opacity: 0; visibility: hidden; }
+  .ws-conn-account:hover .ws-ibtn,
+  .ws-conn-account:focus-within .ws-ibtn { opacity: 1; visibility: visible; }
+  .ws-conn-add { margin-top: 5px; }
+
+  /* ── One question sorts every integration: does it write anywhere? ──────── */
+  .ws-klass { display: flex; flex-direction: column; }
+  .ws-klass-row {
+    display: grid; grid-template-columns: 66px minmax(0, 1fr) 96px;
+    gap: var(--s3); align-items: baseline;
+    padding: 10px var(--s4);
+    border-top: 1px solid var(--border);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-klass-row:first-child { border-top: 0; }
+  .ws-klass-name {
+    font-family: var(--font-mono);
+    font-stretch: var(--w-micro); font-size: var(--t-micro);
+    font-weight: 600; letter-spacing: 0.02em;
+    color: var(--fg);
+  }
+  .ws-klass-row[data-k="reach"] .ws-klass-name { color: var(--accent); }
+  .ws-klass-what { color: var(--fg-dim); line-height: 1.45; }
+  .ws-klass-who { color: var(--fg-muted); }
+
+  /* ── The two bridge surfaces, side by side (§11.49) ───────────────────────
+     They were two sections of rows, each spending its first line introducing
+     itself. As two panels the comparison IS the layout: same three slots, and
+     the one difference that matters — whether this surface can reach your ears
+     — sits in the same place on both. */
+  .ws-srvl { display: grid; grid-template-columns: 1fr 1fr; }
+  .ws-srv-row { display: flex; flex-direction: column; gap: 6px; padding: var(--s3) var(--s4); }
+  .ws-srv-row + .ws-srv-row { border-left: 1px solid var(--border); }
+  .ws-srv-head { display: flex; flex-direction: column; gap: 2px; }
+  .ws-srv-head b {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 600; color: var(--fg);
+  }
+  .ws-srv-head .ws-mono { font-size: 10px; color: var(--fg-muted); }
+  .ws-srv-row > p {
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    line-height: 1.5; color: var(--fg-dim);
+  }
+  .ws-srv-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; }
+
+  /* A command you copy, not a code block you read. */
+  .ws-cmd {
+    display: flex; align-items: center; gap: var(--s2);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 7px 7px 10px;
+  }
+  .ws-cmd code {
+    flex: 1; min-width: 0;
+    font-family: var(--font-mono);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+    overflow-x: auto; white-space: nowrap;
+  }
+
   /* ── The withdrawn screen's two exhibits ──────────────────────────────────
      The overlay drawn at its real size, and the layout that was proposed for
      it held below a rule so it reads as an exhibit rather than a proposal

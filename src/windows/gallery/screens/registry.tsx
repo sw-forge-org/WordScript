@@ -9,6 +9,7 @@ import { DiagnosticsScreen } from "./Diagnostics";
 import { AboutScreen } from "./About";
 import { ProfilesScreen } from "./Profiles";
 import { CommitScreen } from "./Commit";
+import { IntegrationsScreen } from "./Integrations";
 
 /**
  * THE SCREEN REGISTRY — the prototype's `NAV`, minus its rig.
@@ -70,7 +71,7 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "notesettings", surface: "settings", label: "Notes & Meetings", preview: true },
       { id: "models", surface: "settings", label: "AI Models" },
       { id: "agents", surface: "settings", label: "Agents", preview: true },
-      { id: "integrations", surface: "settings", label: "Integrations", preview: true },
+      { id: "integrations", surface: "settings", label: "Integrations", preview: true, render: () => <IntegrationsScreen /> },
       { id: "delivery", surface: "settings", label: "Delivery & Insert", render: () => <DeliveryScreen /> },
       { id: "privacy", surface: "settings", label: "Privacy & Data", render: () => <PrivacyScreen /> },
       { id: "diagnostics", surface: "settings", label: "Diagnostics", render: () => <DiagnosticsScreen /> },

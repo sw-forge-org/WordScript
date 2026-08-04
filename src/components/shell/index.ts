@@ -88,6 +88,9 @@ export {
   Pane, PaneListHead, PaneSearch, PaneScroll, PaneGroup, PaneRow, PaneListFoot,
   PanePath, PaneDetailHead, PaneDetailMain, Legend, LegendRow, Flag,
 } from "./Pane";
+export {
+  ConnectionList, Connection, Command, KindTable, KindRow, ServerPanels, ServerPanel,
+} from "./Connection";
 export type { LogLevel, LogLine } from "./Log";
 
 export { StatusBadge } from "./StatusBadge";

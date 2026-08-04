@@ -14,6 +14,7 @@ import type { ListItemBadge, RawTranscript } from "@/components/shell";
  * cannot drift apart.
  */
 
+export const DESK = "the desk";
 export const DESK_CAP = "The desk";
 
 export type Transcript = {

@@ -155,6 +155,13 @@ function diff(A, B, showText) {
     for (const p in A[k]) {
       if (A[k][p] === B[k][p]) continue;
       if (p === "#text") { soft++; if (showText) console.log("  TEXT " + k + "\n    proto: " + A[k][p] + "\n    app:   " + B[k][p]); continue; }
+      // FALSE POSITIVE THE FOURTH. The prototype ships no CSS reset, so a
+      // <button> keeps the UA's `letter-spacing: normal`; Tailwind's preflight
+      // makes it inherit. It shows only on elements that draw no text of their
+      // own — an icon button inside a letter-spaced container and the SVG in
+      // it — where the property cannot change what is on screen. A
+      // letter-spacing difference on anything with text still reports.
+      if (p === "letterSpacing" && !A[k]["#text"] && !B[k]["#text"]) { soft++; continue; }
       console.log("  " + k + "\n      ." + p + ": proto=" + A[k][p] + "  app=" + B[k][p]); style++;
     }
   }
