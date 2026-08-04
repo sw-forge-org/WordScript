@@ -8,6 +8,7 @@ import { PrivacyScreen } from "./Privacy";
 import { DiagnosticsScreen } from "./Diagnostics";
 import { AboutScreen } from "./About";
 import { ProfilesScreen } from "./Profiles";
+import { CommitScreen } from "./Commit";
 
 /**
  * THE SCREEN REGISTRY — the prototype's `NAV`, minus its rig.
@@ -87,7 +88,7 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "conversation", surface: "standalone", label: "Client conversations" },
       { id: "agentoverlay", surface: "standalone", label: "Agent overlay" },
       { id: "handoff", surface: "standalone", label: "Handoff" },
-      { id: "commit", surface: "standalone", label: "Live preview & commit", withdrawn: true },
+      { id: "commit", surface: "standalone", label: "Live preview & commit", withdrawn: true, render: () => <CommitScreen /> },
       { id: "contextintake", surface: "workspace", label: "Context · intake" },
       { id: "contextactions", surface: "workspace", label: "Actions & templates" },
     ],

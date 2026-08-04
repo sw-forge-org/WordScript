@@ -1795,6 +1795,39 @@
   .ws-diff mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 2px; }
   .ws-diff del { color: var(--fg-muted); text-decoration-color: var(--danger); }
 
+  /* ── The withdrawn screen's two exhibits ──────────────────────────────────
+     The overlay drawn at its real size, and the layout that was proposed for
+     it held below a rule so it reads as an exhibit rather than a proposal
+     (§§10.3, 11.15). The box is the real window size from `tauri.conf.json`,
+     so the conflict is something you look at instead of something you take on
+     faith. */
+  .ws-scale-cap {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 650;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-muted);
+  }
+  .ws-scale-box {
+    width: 440px; max-width: 100%; height: 60px;
+    display: flex; align-items: center; gap: var(--s2);
+    padding: 0 var(--s3);
+    border: 1px dashed var(--danger); border-radius: 999px;
+    background: var(--bg-inset); overflow: hidden;
+  }
+  .ws-scale-box > .ws-mono {
+    flex: 1; min-width: 0;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ws-scale-box .ws-btn { flex: none; }
+  /* Dimmed, and it brightens on hover: readable when you go looking, quiet
+     when you are reading the argument above it. */
+  .ws-withdrawn-body {
+    display: flex; flex-direction: column; gap: var(--gap-block);
+    padding-top: var(--s6); border-top: 1px solid var(--border);
+    opacity: 0.62;
+  }
+  .ws-withdrawn-body:hover { opacity: 1; }
+
   /* ── The labelled group ───────────────────────────────────────────────────
      A heading over a block INSIDE a card, for the one screen that has stages
      rather than settings: Delivery & Insert builds its two driver chains as

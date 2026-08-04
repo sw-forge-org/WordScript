@@ -9,6 +9,7 @@ import { PrivacyScreen } from "./Privacy";
 import { DiagnosticsScreen } from "./Diagnostics";
 import { AboutScreen } from "./About";
 import { ProfilesScreen } from "./Profiles";
+import { CommitScreen } from "./Commit";
 import { ALL_SCREENS, SCREEN_GROUPS } from "./registry";
 import { HISTORY, RECENT } from "./data";
 
@@ -272,6 +273,49 @@ describe("Profiles", () => {
     /* Rows with hover actions imply a record with fields; a term has none. */
     expect(container.querySelectorAll(".ws-chip-x")).toHaveLength(8);
     expect(container.querySelector(".ws-list-item")).toBeNull();
+  });
+});
+
+describe("Live preview & commit — the withdrawn screen", () => {
+  it("carries the withdrawn banner, not the preview one", () => {
+    const { container } = render(<CommitScreen />);
+    const banner = container.querySelector(".ws-banner")!;
+    expect(banner.getAttribute("data-tone")).toBe("withdrawn");
+    expect(screen.getByText("Withdrawn")).toBeInTheDocument();
+    expect(screen.getByText(/do not build Phase 3 from this screen/)).toBeInTheDocument();
+  });
+
+  it("argues in rows, not in a check list", () => {
+    const { container } = render(<CommitScreen />);
+    /* A check reports a probe the runtime ran. A checkmark next to a paragraph
+       of argument claims something was measured that was not — so the three
+       reasons are rows. The one check list on the screen is inside the
+       withdrawn exhibit, where it names runtime rules. */
+    const reasons = container.querySelector(".ws-card")!;
+    expect(reasons.querySelector(".ws-check-list")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Why it is withdrawn" })).toBeInTheDocument();
+  });
+
+  it("holds the proposed layout below a rule, as an exhibit", () => {
+    const { container } = render(<CommitScreen />);
+    const exhibit = container.querySelector(".ws-withdrawn-body")!;
+    expect(exhibit).not.toBeNull();
+    /* The proposed action row is inside the exhibit; the only Commit above it
+       is the one drawn INSIDE the 440 × 60 overlay, which is what ships today
+       rather than what was proposed. */
+    expect(exhibit.querySelector(".ws-rowflex")).not.toBeNull();
+    const commits = screen.getAllByRole("button", { name: "Commit" });
+    expect(commits).toHaveLength(2);
+    const outside = commits.filter((b) => !exhibit.contains(b));
+    expect(outside).toHaveLength(1);
+    expect(outside[0].closest(".ws-scale-box")).not.toBeNull();
+  });
+
+  it("draws the real window size rather than asserting it", () => {
+    const { container } = render(<CommitScreen />);
+    expect(container.querySelector(".ws-scale-box")).not.toBeNull();
+    expect(screen.getByText("440 × 60")).toBeInTheDocument();
+    expect(screen.getByText("false")).toBeInTheDocument();
   });
 });
 

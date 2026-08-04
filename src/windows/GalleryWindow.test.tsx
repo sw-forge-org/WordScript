@@ -95,7 +95,10 @@ describe("GalleryWindow", () => {
     await user.click(screen.getByRole("button", { name: "Screens" }));
 
     expect(screen.getByRole("heading", { name: "Workspace" })).toBeInTheDocument();
-    expect(screen.getByText("Live preview & commit")).toBeInTheDocument();
+    /* The withdrawn screen is named twice on purpose: once in the picker that
+       reaches it, once in the ledger row that says not to build from it. */
+    expect(screen.getAllByText("Live preview & commit")).toHaveLength(2);
+    expect(screen.getByLabelText("Jump to any screen")).toBeInTheDocument();
   });
 
   /* The scheme switch belongs to the gallery so the three schemes are judged in
