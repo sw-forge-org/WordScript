@@ -669,6 +669,24 @@ the runtime. Planned: Phase N."* That is what makes previews compatible with
 *"never render fake readiness"*: the readiness claim is explicitly false on the
 surface.
 
+**A drawn layout is not a decided behaviour, and for six surfaces the second
+one is still missing.** Raised by the owner on 2026-08-05 against the finished
+port. This section settles WHAT a preview shows; it does not settle how the
+surface is entered, what holds its state, what dismisses it, or what happens to
+it when the thing it is about ends. For a settings section the shell answers
+that once for all of them. For **Onboarding, Meeting capture, Live subtitles,
+Translation, the Agent overlay and the Handoff** it is unanswered, because none
+of the six is a section in a window — they are separate windows, an overlay
+tab, a strip over somebody else's video, and a flow that runs before the
+product does. Several of them already carry an *Open decision* badge on the
+drawn surface, which is the prototype saying so itself.
+
+That work is **Leg 4a** of the relay, it runs before wiring, and it produces
+ADRs and roadmap entries rather than code — deciding it inside a wiring leg
+means deciding it by implementing one answer. The per-surface breakdown of what
+is drawn against what is undecided is §2.6 of
+[`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md).
+
 ---
 
 ## 8. Execution

@@ -144,6 +144,7 @@ gallery of four sections.
 | **2c** | Four screens, and the check taught to reach a screen's other states | *Done.* Fifteen of 25 stand, each measured exact |
 | **2d** | The last 10 screens | *Done.* All 25 stand in `/gallery` → Screens at the prototype's fidelity, on the real components, each measured exact in every state |
 | **3** | The shell overwrite | One window; settings is a sheet over the workspace at its own scale (§11.22); the new IA replaces the 14 flat areas; `Cmd+,`; old areas deleted |
+| **4a** | **The interaction model the demo GUI never settled** | Six surfaces have a drawn layout and no decided behaviour: how each is entered, what holds its state, what dismisses it, and what happens to it when the thing it is about ends. Produces ADRs and roadmap entries, no code. §2.6 |
 | **4** | Wiring, section by section | Each section either reads the runtime truthfully or carries a `PreviewBanner`; P1 and P2 fixed at the seam; the list of what the runtime cannot answer is written down; **each wired screen's Gallery → Screens entry is deleted in the commit that wires it** (ADR 0057) |
 | **5** | Runtime contracts | §11.36 and §11.52, prioritised by what Leg 4 found blocking |
 | **6** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
@@ -258,6 +259,56 @@ window under this compositor. A human with a mouse can.
   gallery, say so in this document and in `SETTINGS_REWORK_PLAN.md` §0, which
   still calls the prototype mandatory reading with no horizon. Rule 4b applies
   to screens not yet ported and expires with them.
+
+### 2.6 What the demo GUI did NOT settle, and it is not the same gap as §2.5
+
+Raised by the owner on 2026-08-05, against the finished port, and it is a
+correction to how §2.5 was framed rather than an addition to it.
+
+**§2.5 lists FACTS the runtime does not have** — a field, a status, a
+measurement. That list is complete and it is what Legs 4 and 5 cost.
+
+**This lists BEHAVIOUR nobody has decided.** The prototype is static HTML: it
+draws states, and drawing a state is not deciding how you arrive at it, what
+keeps it, or what takes it away. For most of the 25 screens that gap does not
+exist — a settings section is entered from a nav row and left by leaving it,
+and the shell answers it once for all of them. **For six surfaces it does
+exist, because none of them is a section in a window**: they are separate
+windows, an overlay tab, a strip over somebody else's video, and a flow that
+runs before the product does.
+
+A screen with a decided layout and an undecided lifecycle is the one thing that
+looks finished and is not. It cannot be caught by measuring — the port measures
+exact against a prototype that is equally silent about it.
+
+| Surface | Drawn | Undecided |
+| --- | --- | --- |
+| **Onboarding** | Seven steps, the rail, the foot, the preflights | **When it runs.** First launch only, or re-runnable, and from where. What a skipped setup leaves behind and whether skipping is offered at all. What quitting at step 4 does to steps 1–3. Which window it is — its own, or the main one before the workspace exists |
+| **Meeting capture** | The HUD in three states, the bar, the copilot lane | **How a capture starts and what ends it.** The meeting hotkey is drawn `not set`; call detection is drawn as an *Open decision* with three answers; the audio afterwards is drawn as an *Open decision*. What the HUD does when the meeting ends is prose — "it stops being the way you look at it" — not a transition. §10.4 is the window question and is only part of this |
+| **Live subtitles** | The caption strip on three grounds, the echo under the pill | **What turns either on, and where the placement lives.** A strip "you place once" needs a stored position and a per-source or global answer. The echo is a settings toggle, and what makes it appear under the pill for THIS dictation and not that one is undrawn |
+| **Translation** | The window, both tabs, the per-language routing | **How the window is opened.** No entry point for it exists anywhere in the 25 screens. Whether it is one window or one per conversation, what a swapped pair does to a running conversation, and where the two device routings are persisted |
+| **Agent overlay** | The pill, the tab, the window, the notification | **The state machine between the three surfaces.** That the tab appears and never retracts is stated; what fires the notification INSTEAD of the tab is only implied by "if the window is closed". What a dictation starting while an agent waits does to the tab is drawn as a settings row, not as a transition |
+| **Handoff** | The card, both keys, the timeout, what crosses | **What detects the effect verb, and where it runs.** The card is the most complete of the six — Rust owns the key grab (ADR 0006) and Enter/Escape/timeout are all drawn. What is undecided is the stage that produces the offer at all, and how its refusal rate is measured, which is the card's entire budget |
+
+**Why this is its own leg (4a) and not part of Leg 4.** Wiring is "make this
+control read the runtime truthfully". These are product decisions with an owner
+in the loop — several of them are already marked *Open decision* on the drawn
+surface, which is the prototype admitting it. Deciding them inside a wiring leg
+means deciding them by implementing one answer, which is how a placeholder
+becomes the product.
+
+**What 4a produces:** an ADR per surface where the answer is a decision, a
+roadmap entry where the answer is "not yet", and nothing else. No code. Three
+of the six (translation, meeting capture, subtitles) are also **not on the
+roadmap at all** — §7 records translation and meeting capture as candidates
+needing their own entry before anything is built, and that is still true.
+
+**Leg 3 does not decide any of this, and must not.** It owns the main window,
+and five of the six live outside it. What Leg 3 owes is narrower and is in its
+prompt: **where the entry points would go**, recorded as a list of holes rather
+than filled with invented controls. A nav row that opens nothing is the fake
+affordance rule 7 forbids — the same reason the gallery's sidebar has no search
+box (Leg 2a, finding 10).
 
 ### Leg 2 is done when
 
@@ -1712,7 +1763,19 @@ needed a prop and you are about to make the gallery a second product.
    catches the light, `.ws-frost-scrim` darkens. The nesting is the part to get
    right — `shell` is the application receding behind a sheet, `stack` is the
    application *plus* the sheet receding behind the palette. Read the comment.
-4. **`/gallery` has no door in the native host**, and four legs have now owed
+4. **FIVE OF THE SIX UNDECIDED SURFACES LIVE OUTSIDE YOUR WINDOW, and you must
+   not invent their doors.** §2.6 of this document lists what the demo GUI drew
+   without deciding: Onboarding, Meeting capture, Live subtitles, Translation,
+   the Agent overlay and the Handoff. Those are **Leg 4a's** decisions, taken
+   with the owner, before wiring. What you owe is narrower and you owe it
+   explicitly: **as you build the IA, write down where each entry point WOULD
+   go and leave the hole.** A nav row that opens nothing is the fake affordance
+   rule 7 forbids — the same reason the gallery's sidebar carries no search box
+   (Leg 2a, finding 10). Onboarding is the one that may bite you directly,
+   because it is a full-window flow and you own the windows: if the shell needs
+   to know whether onboarding precedes the workspace, **record the question,
+   ship the workspace, and hand it to 4a.**
+5. **`/gallery` has no door in the native host**, and four legs have now owed
    it. Every window's URL is pinned in `src-tauri/tauri.conf.json` and rule 6
    put that file out of scope for Legs 1–4 — but you are rewriting `App.tsx`
    and the routes anyway, so **decide explicitly** whether the gallery gets a
@@ -1759,7 +1822,11 @@ translate subtitles meeting conversation agentoverlay handoff commit`
 **When it is green**
 
 Commit it, push it to `main`, append your record to the leg log, and write the
-**Leg 4 prompt** into this document. Leg 4 is the wiring, section by section:
+**Leg 4a prompt** into this document — 4a comes before the wiring and is the
+leg that decides the behaviour the demo GUI never settled (§2.6): an ADR per
+surface where the answer is a decision, a roadmap entry where it is "not yet",
+and no code. Your own list of entry-point holes is its first input, so write
+that list where 4a will find it. **Leg 4** then wires, section by section:
 each section either reads the runtime truthfully or keeps its `PreviewBanner`;
 P1 and P2 are fixed at the seam; and **each wired screen's Gallery → Screens
 entry is deleted in the commit that wires it** (ADR 0057). The list of what the
