@@ -18,10 +18,13 @@
    screen by screen, and porting the patches instead of the rules is how the
    port fails (ADR 0052).
 
-   `FormCard`, `FormRow`, `Sidebar` and `StatTiles` at the foot are the PRE-PORT
-   shell: what the shipped settings areas still render. Legs 2b and 3 move their
-   callers onto the ported grammar and delete them with the last screen that
-   reads them. Nothing new may use them. */
+   THE PRE-PORT SHELL IS GONE. `FormCard`, `FormRow`, `Sidebar` and `StatTiles`
+   stood at the foot of this file for three legs, marked as what the shipped
+   settings areas still rendered. Leg 3 deleted their last caller — the fourteen
+   flat areas — and deleted them in the same commit, which is ADR 0054's rule
+   about a replaced surface. Their `bodyClassName="py-4"` patches went with
+   them; the ported card owns its own vertical inset (§11.17, ADR 0052) and the
+   patches were the defect that rule exists to prevent. */
 
 export { Card, CardFooter, CardRows, Row } from "./Card";
 export type { RowProps } from "./Card";
@@ -39,6 +42,12 @@ export { ScopeTag } from "./ScopeTag";
 /* ── The shell itself — demo.css §3 and §4, ported by Leg 2 ── */
 export { Nav, NavFoot, NavGroup, NavRow, NavSearch, BrandMark } from "./Nav";
 export { ViewTop } from "./ViewTop";
+
+/* ── The window and the sheet over it — demo.css §2 and §2b, Leg 3 ── */
+export { WindowShell, WindowBody, StatusStrip } from "./Window";
+export {
+  Sheet, SheetHead, SheetProfile, SheetBody, SheetNav, SheetContent, SheetFoot,
+} from "./Sheet";
 
 /* ── Controls — demo.css §6, ported by Leg 2 ── */
 export { Button, IconButton } from "./Button";
@@ -153,11 +162,3 @@ export { StatusDot } from "./StatusDot";
 export type { StatusDotTone } from "./StatusDot";
 export { Inspector } from "./Inspector";
 export { ProfileSwitcher } from "./ProfileSwitcher";
-
-/* Pre-port. */
-export { Sidebar } from "./Sidebar";
-export type { SidebarItem, SidebarGroup } from "./Sidebar";
-export { FormCard } from "./FormCard";
-export { FormRow } from "./FormRow";
-export { StatTiles } from "./StatTile";
-export type { StatTileItem } from "./StatTile";

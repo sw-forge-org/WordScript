@@ -16,6 +16,8 @@ import {
   ProviderSprite,
   SegmentControl,
   ViewTop,
+  WindowBody,
+  WindowShell,
 } from "@/components/shell";
 import { Foundations } from "./gallery/Foundations";
 import { Components } from "./gallery/Components";
@@ -105,7 +107,14 @@ export default function GalleryWindow() {
   const section = SECTIONS.find((entry) => entry.id === active) ?? SECTIONS[0];
 
   return (
-    <div className="flex h-full w-full bg-bg-base text-fg" style={{ fontFamily: "var(--font)" }}>
+    /* THE GALLERY IS A WINDOW TOO, and `.ws-win` is what says so. `demo.css`'s
+       two unscoped base rules — `svg { flex: none }` and the 16 px default icon
+       size — sat on `.ws-content` / `.ws-nav` while the pre-port areas still
+       rendered lucide icons under their own assumptions. Leg 3 deleted those
+       areas and moved both onto the window root, where the prototype has them;
+       this is how the gallery keeps them, and it is why `npm run port:diff`
+       still measures what it measured before. */
+    <WindowShell>
       {/* The provider marks are a sprite and the sprite is a per-window
           resource: every `<use href="#pm-…">` below resolves against this one
           host. Mounted here rather than inside the mark, because fifteen
@@ -113,61 +122,63 @@ export default function GalleryWindow() {
           exists to avoid. */}
       <ProviderSprite />
 
-      <Nav label="Gallery sections">
-        <BrandMark scheme={resolved} qualifier="Gallery · design time" />
+      <WindowBody>
+        <Nav label="Gallery sections">
+          <BrandMark scheme={resolved} qualifier="Gallery · design time" />
 
-        <NavGroup title="The library">
-          {SECTIONS.map((entry) => (
-            <NavRow
-              key={entry.id}
-              icon={entry.icon}
-              label={entry.label}
-              current={entry.id === active}
-              onClick={() => setActive(entry.id)}
+          <NavGroup title="The library">
+            {SECTIONS.map((entry) => (
+              <NavRow
+                key={entry.id}
+                icon={entry.icon}
+                label={entry.label}
+                current={entry.id === active}
+                onClick={() => setActive(entry.id)}
+              />
+            ))}
+          </NavGroup>
+
+          {/* The scheme switch is the rig's one survivor. `System` is a deferral
+              resolved against prefers-color-scheme, not a third palette
+              (ADR 0048). */}
+          <NavFoot>
+            <h3 className="px-[var(--s2)] pb-[var(--s2)] text-[length:var(--t-micro)] font-semibold uppercase tracking-[0.07em] text-fg-muted">
+              Scheme
+            </h3>
+            <SegmentControl<ColorScheme>
+              aria-label="Colour scheme"
+              className="mx-[var(--s2)]"
+              value={scheme}
+              onChange={setScheme}
+              options={[
+                { value: "light", label: "Light" },
+                { value: "dark", label: "Dark" },
+                { value: "system", label: "System" },
+              ]}
             />
-          ))}
-        </NavGroup>
+            {scheme === "system" && (
+              <span className="mt-[var(--s2)] block px-[var(--s2)] text-[length:var(--t-micro)] text-fg-muted">
+                Following the OS — resolved to {resolved}.
+              </span>
+            )}
+          </NavFoot>
+        </Nav>
 
-        {/* The scheme switch is the rig's one survivor. `System` is a deferral
-            resolved against prefers-color-scheme, not a third palette
-            (ADR 0048). */}
-        <NavFoot>
-          <h3 className="px-[var(--s2)] pb-[var(--s2)] text-[length:var(--t-micro)] font-semibold uppercase tracking-[0.07em] text-fg-muted">
-            Scheme
-          </h3>
-          <SegmentControl<ColorScheme>
-            aria-label="Colour scheme"
-            className="mx-[var(--s2)]"
-            value={scheme}
-            onChange={setScheme}
-            options={[
-              { value: "light", label: "Light" },
-              { value: "dark", label: "Dark" },
-              { value: "system", label: "System" },
-            ]}
-          />
-          {scheme === "system" && (
-            <span className="mt-[var(--s2)] block px-[var(--s2)] text-[length:var(--t-micro)] text-fg-muted">
-              Following the OS — resolved to {resolved}.
-            </span>
-          )}
-        </NavFoot>
-      </Nav>
+        <main className="ws-content" data-layout={active === "screens" ? screenLayout : undefined}>
+          <div
+            className="ws-content-inner"
+            data-layout={active === "screens" ? screenLayout : section.wide ? "wide" : undefined}
+          >
+            <ViewTop title={section.label} lead={section.lead} />
 
-      <main className="ws-content" data-layout={active === "screens" ? screenLayout : undefined}>
-        <div
-          className="ws-content-inner"
-          data-layout={active === "screens" ? screenLayout : section.wide ? "wide" : undefined}
-        >
-          <ViewTop title={section.label} lead={section.lead} />
-
-          {active === "foundations" && <Foundations resolved={resolved} />}
-          {active === "components" && <Components />}
-          {active === "motion" && <Motion />}
-          {active === "overlay" && <OverlayStates />}
-          {active === "screens" && <Screens onLayout={setScreenLayout} />}
-        </div>
-      </main>
-    </div>
+            {active === "foundations" && <Foundations resolved={resolved} />}
+            {active === "components" && <Components />}
+            {active === "motion" && <Motion />}
+            {active === "overlay" && <OverlayStates />}
+            {active === "screens" && <Screens onLayout={setScreenLayout} />}
+          </div>
+        </main>
+      </WindowBody>
+    </WindowShell>
   );
 }

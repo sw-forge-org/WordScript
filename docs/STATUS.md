@@ -12,39 +12,47 @@ Status: 2026-08-04
 - Release line: `0.2.2-alpha`
 - Active product path: Tauri/React UI plus native Rust core
 - Usable today: dev build from the repo via `npm run tauri dev`
-- Active windows: overlay, settings and the diagnostics pop-out
-- UI state: settings surface is a native-macOS-inspired **WordScript shell**
-  (grouped 232px sidebar, shadcn/ui + Tailwind v4 on v2 tokens, native title
-  bar on every OS, immediate area changes and automatic settings persistence).
-- Active areas: WORKSPACE (Home, History, Profiles) -- ENGINE (Speech & AI,
-  Modes, Capture, Overlay) -- SYSTEM (Insert & Recovery, Diagnostics, About)
-  -- MORE (Chat, Upload, Notes, Account). The first three groups are
-  runtime-backed product surfaces. MORE contains visible, explicitly labeled
-  layout previews with sample or component-local state only.
-- Settings IA restructuring (2026-06-21): the tab structure was audited for
-  redundancy and findability and re-ordered. Insert/Recovery/Diagnostics data
-  was duplicated up to 4x and is now consolidated: **Insert & Recovery** is
-  the only recovery surface; **Overlay** was extracted from Input;
-  **About** was slimmed to version + release path; History is now the only
-  history surface; Diagnostics got internal sub-tabs. Profile work-mode
-  defaults are editable in Profiles; Modes shows an effective-mode
-  precedence indicator. Storybook and Glass prototypes were removed; the
-  MORE areas are built in the settings kit, not the isolated Glass kit.
-- **The settings rework is a port in progress, and it is design-time only.**
-  The shipped surface above is unchanged: nothing in this section is wired to
-  the runtime and nothing in it replaces an area yet. What exists is the
-  productive component library (`src/components/shell/`, `src/styles/shell.css`)
-  ported 1:1 from the settings-rework prototype, and one design-time route
-  `/gallery` where it is displayed and judged (ADR 0055). A screen is *ported*
-  when it stands in the gallery and *shipped* when it is wired; **all 25 of the
-  prototype's screens are ported** as of 2026-08-04, each verified by
-  computed-style diff against the running prototype in every state it has
-  (`npm run port:diff`). With the last one standing, the prototype turned from
-  source into provenance (ADR 0057) and the gallery is the source. **Nothing is
-  shipped.** The shell overwrite, the wiring and the runtime contracts are later
-  legs — see `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what
-  is next, including the list of facts the drawn screens state that the runtime
-  cannot yet answer.
+- Active windows: overlay, the workspace and the diagnostics pop-out
+- UI state: **one window** as of 2026-08-05 (Leg 3). The main window is the
+  workspace -- four views, Home / History / Profiles / Context -- and settings
+  is a modal sheet laid over it at its own scale (plan §11.22), opened with
+  `Cmd+,` / `Ctrl+,` and closed with Escape, the scrim or its close control.
+  The ported shell grammar throughout: `.ws-nav` sidebar, native title bar on
+  every OS, the status strip along the bottom edge.
+- Active views and sections: WORKSPACE (Home, History, Profiles, Context) and,
+  in the sheet, APP (General, Hotkeys, Notes & Meetings) -- AI (AI Models,
+  Agents, Integrations) -- SYSTEM (Delivery & Insert, Privacy & Data,
+  Diagnostics, About & Updates). Fourteen flat areas became four views and ten
+  sections; the longest list anybody scans dropped from 14 to 4.
+- **What is wired, and it is the shell only.** The status strip reads the
+  session status, the lane and the delivery target off the runtime; the profile
+  row switches the active profile and refuses during a session because the
+  runtime does; the overlay's deep link resolves. **Every view and every section
+  is the ported drawing carrying sample data, and each says so on itself** until
+  Leg 4 wires it. The fourteen pre-port areas were deleted in the commit that
+  replaced them (ADR 0054), and the runtime behaviour they carried -- provider
+  configuration, hotkey registration, history, the diagnostics runs -- is Leg
+  4's to restore onto the ported screens.
+- Settings IA restructuring (2026-06-21, superseded 2026-08-05): the pre-port
+  tab structure was audited for redundancy and findability and re-ordered.
+  Recorded here because the consolidations survived the port -- one recovery
+  surface, one history surface, Overlay extracted from Input, About slimmed to
+  version plus release path -- while the areas that carried them did not.
+- **The settings rework is a port in progress. The shell has landed; the wiring
+  has not.** What exists is the productive component library
+  (`src/components/shell/`, `src/styles/shell.css`) ported 1:1 from the
+  settings-rework prototype, the 25 screens built on it in `src/screens/`, one
+  design-time route `/gallery` where they are displayed and judged (ADR 0055),
+  and — as of 2026-08-05 — the product shell that mounts fourteen of them. A
+  screen is *ported* when it stands in the gallery and *shipped* when it is
+  wired; **all 25 are ported** as of 2026-08-04, each verified by computed-style
+  diff against the running prototype in every state it has (`npm run
+  port:diff`), and **none is wired** yet. With the last one standing, the
+  prototype turned from source into provenance (ADR 0057) and the gallery is the
+  source. The wiring and the runtime contracts are later legs — see
+  `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what is next,
+  including the list of facts the drawn screens state that the runtime cannot
+  yet answer, and the six surfaces whose behaviour nobody has decided.
 
 ## Implemented core features
 

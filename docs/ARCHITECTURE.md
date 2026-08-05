@@ -57,23 +57,28 @@ Three windows in the Tauri config:
   commit that ends the session. Idle is parked offscreen natively; placement
   comes from a remembered manual position or a preset display anchor.
 - `settings`: native-decorated shell with grouped Workspace, Engine, System
-  and More areas, persistent profile dock, compact toolbar, one dominant
-  content surface, immediate auto-save and a footer status bar. Chat, Upload,
-  Notes and Account are explicitly labeled layout previews without native
-  runtime ownership.
-- `rebuild-lab`: native-decorated diagnostics pop-out reusing the same Rebuild
-  Lab panel.
+  the workspace: four views (Home, History, Profiles, Context) in a `.ws-nav`
+  sidebar, the active-profile row at its foot, a status strip along the bottom
+  edge, and **settings as a modal sheet laid over it at its own scale**
+  (`Cmd+,`, Escape to close). Restructured 2026-08-05 by Leg 3 of the port
+  relay; the fourteen flat areas it replaced were deleted in the same commit
+  (ADR 0054). Every view and section is the ported drawing and says so on
+  itself — the shell reads the runtime, the content does not, until Leg 4.
+- `rebuild-lab`: native-decorated diagnostics pop-out mounting the **same**
+  Diagnostics section the sheet does, rather than a second implementation of it.
 
 Key frontend building blocks:
 
 - `src/windows/OverlayWindow.tsx`
-- `src/windows/SettingsWindow.tsx`
+- `src/windows/WorkspaceWindow.tsx` and `src/windows/workspace/`
 - `src/windows/RebuildLabWindow.tsx`
+- `src/screens/` — the 25 ported screens, mounted by the product and displayed
+  by the gallery. One implementation, two sets of props (ADR 0055)
+- `src/components/shell/` and `src/styles/shell.css` — the productive library
 - `src/hooks/useRuntime.ts`
 - `src/hooks/useProvider.ts`
 - `src/hooks/useNativeInsertion.ts`
 - `src/hooks/useRuntimeLogs.ts`
-- `src/components/settings/*`
 
 The UI is responsible for: displaying runtime status, waveform and errors;
 the guarded in-pill action state after a run; config maintenance; the global

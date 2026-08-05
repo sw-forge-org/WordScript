@@ -110,29 +110,62 @@ completion itself.
 
 ### Settings
 
-Settings are the primary product surface. Runtime-backed areas are Home,
-History, Profiles, Speech & AI, Modes, Capture, Overlay, Insert & Recovery,
-Diagnostics and About. Chat, Upload, Notes and Account are visible preview
-layouts without native runtime behavior. Every area must state that boundary
-honestly and keep one dominant content surface.
+**One window.** The main window is the workspace and settings is a modal sheet
+laid over it at its own scale — built 2026-08-05 by Leg 3 of the port relay. A
+second top-level window was a lie about the task: configuring something is a
+detour from what you were doing and you come back, and a window says the
+opposite. The workspace stays visible behind the sheet, dimmed and pushed back,
+which is the whole difference between a detour and a departure.
 
-The surface model above is what ships today. The port replaces it with a
-**workspace window and a settings sheet over it at its own scale** — the sheet
-is 1000 × 680 with `--nav-w` 196, `--nav-row-h` 28, `--content-max` 640,
-`--pad-card` 16 and `--row-py` 11, over a scrim, closing on Escape, on the scrim
-and on its close control. Type does not scale: 13 px body in a sheet and 13 px
-body in a window is the same reading task; structure scales, type does not. That
-is Leg 3 of the port relay and is not built yet; every value it moves is already
-a token here, which is why no component has to change for it.
+The workspace has four views — Home, History, Profiles, Context. The sheet has
+ten sections in three groups: APP (General, Hotkeys, Notes & Meetings), AI (AI
+Models, Agents, Integrations), SYSTEM (Delivery & Insert, Privacy & Data,
+Diagnostics, About & Updates). **One verb per surface:** if a user *does* it, it
+is a view; if a user *sets* it, it is a section.
+
+**The sheet is 1000 × 680** with `--nav-w` 196, `--nav-row-h` 28,
+`--content-max` 640, `--content-pad` 24, `--pad-card` 16, `--row-py` 11,
+`--gap-block` 24 and `--gap-row` 10, over a scrim at 50 % black, opened with
+`Cmd+,` / `Ctrl+,` and closed on Escape, on the scrim and on its close control.
+**Type does not scale**: 13 px body in a sheet and 13 px body in a window is the
+same reading task. Structure scales, type does not.
+
+**The scale is a scope, and no component knows about it.** `.ws-modal-win`
+redeclares those eight tokens and everything inside reads them. The proof is
+that the same screens stand in the gallery at the workspace's scale and measure
+exact against the prototype there — a primitive that hardcoded 20 px could not
+have made the journey. This is the rule below about spacing values, stated as a
+consequence.
+
+**Three things the sheet drops**, each because the window behind it still has
+them: the wordmark (the brand stated twice on one screen), a "Back to workspace"
+row (closing *is* going back), and the status strip. The profile switcher
+survives, promoted into the sheet's header — the context every scope tag on
+these screens refers to, stated once and readable from every section.
+
+**The status strip is the window's bottom edge and it reads the runtime.** One
+quiet line where macOS puts standing state: session status, lane and delivery
+target. It replaces a permanently green "Auto-saved" badge and a footer that
+said the same thing in words — two statements of one fact is one too many, and a
+badge that never changes is furniture. Because it is never scrolled away, it is
+the one place on the surface where a readiness nobody measured would do the most
+damage; everything on it is read rather than asserted.
 
 Use native window decorations on every platform. Do not add fake traffic lights,
 frameless main-window chrome, or custom title-bar controls. Diagnostics uses the
-same rule when opened as a pop-out.
+same rule when opened as a pop-out, and the pop-out renders the same section the
+sheet does rather than a second implementation of it.
 
-The shell uses grouped sidebar navigation, a concise header for runtime and
-auto-save state, and card-based content. A sidebar is for orientation, not a
-second application. The active profile can be globally visible, while deep
-editing remains in Profiles.
+The shell uses grouped sidebar navigation and card-based content. A sidebar is
+for orientation, not a second application. **A nav row must open something**: the
+sidebar's search field and its Help row are both ported and neither is mounted,
+because the command palette does not exist and Help has nothing behind it. An
+affordance that opens nothing is the fake state rule applied to navigation.
+
+**Every view and section is drawn and not yet wired**, and each says so on
+itself with a `PreviewBanner` until the commit that wires it. A gallery screen
+may carry sample data and assert nothing; the same screen on a product surface
+may not imply a state the runtime did not reach.
 
 ### Frost
 
@@ -321,10 +354,10 @@ implementation with two sets of props, and a component that exists only under
   `SubTabs`, `SectionHeader`, `PreviewBanner`, `EmptyState`, `DangerRow`,
   `Toolbar` and `ScopeTag`, plus `Stepper`, `VolumeSlider`, `InputLevelMeter`,
   `DisclosureRow`, `SegmentControl`, `StatusBadge`, `StatusDot`, `Select`,
-  `Toggle`, `Inspector` and `ProfileSwitcher`. `FormCard`, `FormRow` and
-  `Sidebar` are the **pre-port** shell that the shipped settings areas still
-  render; nothing new may use them, and they are deleted with the last screen
-  that reads them.
+  `Toggle`, `Inspector` and `ProfileSwitcher`. The **pre-port** shell —
+  `FormCard`, `FormRow`, `Sidebar` and `StatTiles` — was deleted on 2026-08-05
+  with the fourteen areas that were its last caller, and their
+  `bodyClassName="py-4"` patches went with them.
 - The kit has since grown by what the ported screens actually needed, and the
   authority is `src/components/shell/index.ts` rather than this list: every
   control of `demo.css` §6, the nav and content column, the icon set, the orb,

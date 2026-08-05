@@ -114,6 +114,9 @@ export interface RowProps {
    *  machine. Rendered between the text and the control. */
   scope?: React.ReactNode;
   danger?: boolean;
+  /** A deep-link target. `settingsAnchors.ts` is the only thing that sets one
+   *  — a native caller names the CONTROL and the row is where it lands. */
+  id?: string;
   className?: string;
   children?: React.ReactNode;
 }
@@ -132,6 +135,7 @@ export function Row({
   layout = "inline",
   scope,
   danger,
+  id,
   className,
   children,
 }: RowProps) {
@@ -139,6 +143,7 @@ export function Row({
   const stacked = layout === "stack";
   return (
     <div
+      id={id}
       className={cn("ws-row", className)}
       data-layout={stacked ? "stack" : undefined}
       data-danger={danger ? "" : undefined}

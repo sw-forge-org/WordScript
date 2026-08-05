@@ -37,15 +37,16 @@
      prototype's `0 0 auto` and could be squeezed below its declared 13 px in a
      tight row.
 
-     IT IS FENCED TO THE PORTED SURFACE rather than written globally, because
-     the thirteen pre-port areas still render lucide icons under their own
-     layout assumptions and this port does not touch them (ADR 0054 replaces an
-     area in the commit that replaces it, and none of these is that commit).
-     Leg 3 owns the window root and can unfence it there.
+     LEG 2b FENCED IT to `.ws-content` / `.ws-nav`, because the thirteen
+     pre-port areas still rendered lucide icons under their own layout
+     assumptions. Leg 3 deleted those areas, so the fence came off and the rule
+     sits where the prototype has it: on the window root, reaching the nav, the
+     content column and the settings sheet alike. It is still not global —
+     `body` is shared with the overlay window and rule 5 puts the overlay out
+     of scope.
      ═════════════════════════════════════════════════════════════════════════ */
 
-  .ws-content svg,
-  .ws-nav svg { flex: none; }
+  .ws-win svg { flex: none; }
 
   /* THE DEFAULT ICON SIZE — `demo.css`'s `.win svg`, its own second base rule.
      Every icon in the surface is 24-grid at one stroke weight; components that
@@ -59,9 +60,8 @@
      BEATS `.ws-pmark`'s own 14 px on specificity, in the prototype exactly as
      here, which is why a mark measures 16 in both and 14 in neither.
 
-     Fenced to the same two roots and for the same reason as the rule above. */
-  .ws-content svg,
-  .ws-nav svg { width: 16px; height: 16px; }
+     On the same root and for the same reason as the rule above. */
+  .ws-win svg { width: 16px; height: 16px; }
 
   /* ═════════════════════════════════════════════════════════════════════════
      SECTION — title plus one line, outside the card
@@ -556,6 +556,213 @@
   .ws-scope svg { width: 10px; height: 10px; }
 
   /* ═════════════════════════════════════════════════════════════════════════
+     THE WINDOW — demo.css §2, minus the mock.
+
+     The prototype's `.win` is a mock: a rounded, shadowed rectangle inside a
+     stage, capped at 1180 px, with a `.win-deco` strip standing in for what the
+     window manager draws. NONE OF THAT COMES ACROSS. ADR 0003 gives the real
+     window native decorations on every OS, so the product's window root has no
+     radius, no shadow, no measure and no fake title bar — it is the viewport.
+     What does come across is everything the mock was a frame around: the ground,
+     the typographic base, the body split and the status strip.
+
+     THE TYPOGRAPHIC BASE MOVED HERE, WHICH IS WHAT LEG 2b PARKED. `body` reads
+     `--text-body`, the pre-port alias for `--t-note` at 13 px; the prototype
+     declares `--t-body` at 14 on `.win`, the element that wraps the nav and the
+     content. Leg 2b set it on `.ws-content` because the thirteen pre-port areas
+     still inherited from `body` and this is where it belongs — on the window
+     root, exactly as the prototype has it. `body` itself is left alone: the
+     overlay window shares it and rule 5 puts the overlay out of scope.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-win {
+    height: 100%;
+    display: flex; flex-direction: column;
+    position: relative;
+    background-color: var(--bg-base);
+    background-image: var(--window-bg-image);
+    background-attachment: var(--window-bg-attach);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: var(--t-body);
+  }
+
+  .ws-win-body { flex: 1; min-height: 0; display: flex; }
+
+  /* ── The status strip ───────────────────────────────────────────────────────
+     The shipped surface saved every change immediately and said so twice: an
+     "Auto-saved" badge in the header and "Changes are saved automatically." in
+     the footer. Two statements of one fact is one too many, and a badge that is
+     permanently green is furniture. It survives as one quiet line, in the place
+     macOS puts standing state — the bottom edge — carrying the readiness the
+     settings surface would otherwise lose sight of. */
+  .ws-win-foot {
+    flex: none;
+    display: flex; align-items: center; gap: var(--s2);
+    padding: 0 var(--s4);
+    height: 30px;
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--border);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-win-foot .ws-sep { opacity: 0.45; }
+  .ws-win-foot b { font-weight: 550; color: var(--fg-dim); }
+  .ws-win-foot .ws-right { margin-left: auto; }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE SETTINGS SHEET — demo.css §2b, and §11.22 is its derivation.
+
+     Settings was a second top-level window with its own sidebar, its own
+     wordmark and the workspace's exact metrics. Two faults, and the second is
+     the one that made the surface feel wrong without being nameable:
+
+     1. THE WINDOW WAS A LIE ABOUT THE TASK. Configuring something is a detour
+        from what you were doing, and you come back. A second top-level window
+        says the opposite — that this is a place you go and stay — and it leaves
+        the workspace behind with no indication it is still there.
+     2. THE SCALE WAS IDENTICAL. Same 232 px sidebar, same 32 px rows, same
+        760 px column. Two surfaces drawn at exactly one scale do not read as
+        two surfaces; they read as one surface whose content changed.
+
+     So: a modal, laid over the workspace, at its own scale. The workspace stays
+     visible behind it, dimmed and pushed back — you can see what you will
+     return to, which is the whole difference between a detour and a departure.
+
+     ADR 0003 is unaffected. The sheet is not OS-decorated because it is not an
+     OS window; it is a layer inside one.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* The scrim darkens; the receding is done by `.ws-frost-shell` behind it. It
+     asked for `backdrop-filter: blur(2px) saturate(0.8)` until ADR 0051 — a
+     declaration that renders in a browser preview and is inert in WebKitGTK, so
+     the sheet shipped a plain black scrim on Linux and no preview could show
+     it. The blur moved onto the layer behind at the same strength. */
+  .ws-modal-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    padding: var(--s6);
+    background: var(--frost-scrim);
+  }
+  /* ONLY ON ARRIVAL. The prototype rebuilds its whole surface on every render,
+     so an unconditional animation replayed the entrance on every click inside
+     the sheet's own sidebar — the sheet announcing itself to somebody already
+     in it. React keeps the node across a section change, so `data-enter` is set
+     once when the sheet mounts and the same rule holds for the same reason. */
+  .ws-modal-scrim[data-enter] { animation: ws-scrim-in var(--dur-base) var(--ease) both; }
+  .ws-modal-scrim[data-enter] .ws-modal-win { animation: ws-modal-in 220ms var(--ease) both; }
+  @keyframes ws-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* The one authored moment in the surface: the sheet arrives from slightly
+     below and slightly back, which is the direction a layer coming forward
+     travels. Nothing else on any screen animates its entrance. */
+  .ws-modal-win {
+    width: 100%;
+    max-width: 1000px;
+    height: 100%;
+    max-height: 680px;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--r-window);
+    overflow: hidden;
+    background: var(--bg-base);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--elev-sheet);
+  }
+  @keyframes ws-modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.985); }
+    to   { opacity: 1; transform: none; }
+  }
+  /* An entrance that is rasterised on every intermediate frame is the one kind
+     of motion reduced motion is actually about. */
+  @media (prefers-reduced-motion: reduce) {
+    .ws-modal-scrim[data-enter],
+    .ws-modal-scrim[data-enter] .ws-modal-win { animation: none; }
+  }
+
+  .ws-modal-head {
+    flex: none;
+    display: flex; align-items: center; gap: var(--s3);
+    height: 46px;
+    padding: 0 var(--s3) 0 var(--s5);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-sidebar);
+  }
+  .ws-modal-head h2 {
+    flex: 1; min-width: 0;
+    font-family: var(--font-display);
+    font-stretch: var(--w-lead);
+    letter-spacing: var(--ls-lead);
+    font-size: var(--t-lead);
+    font-weight: 600;
+  }
+  /* The profile the whole sheet is read in. Every value carrying a scope tag on
+     these screens belongs to it, so it belongs in the sheet's own header rather
+     than at the foot of a sidebar the settings surface no longer owns. */
+  .ws-modal-profile {
+    display: flex; align-items: center; gap: 7px;
+    height: 26px; padding: 0 var(--s2) 0 5px;
+    border-radius: var(--r-control);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  .ws-modal-profile:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-modal-profile .ws-av {
+    width: 18px; height: 18px; border-radius: 5px;
+    display: grid; place-items: center;
+    background: var(--bg-elevated);
+    font-size: 9px; font-weight: 650; letter-spacing: 0.02em; color: var(--fg-dim);
+  }
+  .ws-modal-profile svg { width: 12px; height: 12px; color: var(--fg-muted); }
+  .ws-modal-close {
+    width: 28px; height: 28px; flex: none;
+    display: grid; place-items: center;
+    border-radius: var(--r-control); color: var(--fg-muted);
+    transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .ws-modal-close:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-modal-close svg { width: 15px; height: 15px; }
+
+  .ws-modal-body { flex: 1; min-height: 0; display: flex; }
+
+  /* The sheet's sidebar carries no wordmark. The window behind it is already
+     WordScript and is still visible; branding the sheet on top of it is the
+     brand stated twice on one screen. */
+  .ws-modal-nav {
+    flex: none;
+    width: var(--nav-w);
+    display: flex; flex-direction: column;
+    padding: var(--s3) var(--s2);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .ws-modal-nav .ws-nav-group { margin-bottom: var(--s4); }
+  .ws-modal-nav .ws-nav-group:last-child { margin-bottom: 0; }
+  .ws-modal-nav .ws-nav-group > h3 { padding: 0 var(--s2) 5px; }
+
+  .ws-modal-content { flex: 1; min-width: 0; overflow-y: auto; }
+  .ws-modal-content > .ws-content-inner { padding: var(--content-pad); }
+
+  /* The status strip belongs to the workspace behind, so the sheet does not
+     repeat it. What the sheet owes instead is the one fact its own surface
+     creates. Stated once, at the foot. */
+  .ws-modal-foot {
+    flex: none;
+    display: flex; align-items: center; gap: var(--s2);
+    height: 34px; padding: 0 var(--s5);
+    border-top: 1px solid var(--border);
+    background: var(--bg-sidebar);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-modal-foot .ws-right { margin-left: auto; }
+
+  /* ═════════════════════════════════════════════════════════════════════════
      NAVIGATION — demo.css §3, and the content column of §4.
 
      The gallery's own shell is drawn on this grammar, which is the half of the
@@ -718,24 +925,82 @@
     border-top: 1px solid var(--border);
   }
 
+  /* ── The active profile ─────────────────────────────────────────────────────
+     THE ROW IS THE CONTROL. The shipped footer is an avatar, a label and a
+     separate select underneath — two controls for one decision. Here it is one
+     macOS popup button, which is what the double chevron announces.
+
+     The active profile decides the recognizer, so the runtime refuses to swap
+     it mid-session (`sessions::PROFILE_LOCKED_DURING_SESSION`). `[data-locked]`
+     states that before the attempt rather than failing after it. */
+  .ws-nav-profile {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    padding: var(--s2);
+    margin-top: var(--s1);
+    border-radius: var(--r-control);
+    text-align: left;
+  }
+  .ws-nav-profile:hover { background: var(--bg-elevated); }
+  /* THE ONE RULE THE PROTOTYPE DOES NOT HAVE, and it is here because a drawing
+     of a popup button does not have to open. The native `<select>` lies over
+     the whole row, transparent: it keeps the keyboard, the screen reader and
+     the platform menu, and the row keeps the drawing. Nothing about the layout
+     above depends on it. */
+  .ws-nav-profile { position: relative; }
+  .ws-nav-profile-select {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .ws-nav-profile-select:disabled { cursor: default; }
+  /* Same rule as the pane row: muted does not survive the elevated plane. */
+  .ws-nav-profile:hover .ws-who span { color: var(--fg-dim); }
+  .ws-nav-profile .ws-av {
+    width: 22px; height: 22px; flex: none;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: grid; place-items: center;
+    font-size: 10px; font-weight: 700;
+  }
+  .ws-nav-profile .ws-who { min-width: 0; flex: 1; }
+  .ws-nav-profile .ws-who b {
+    display: block;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    font-weight: 550; color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-nav-profile .ws-who span {
+    display: block;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-nav-profile .ws-caret {
+    flex: none; width: 14px; height: 14px;
+    display: grid; place-items: center;
+    color: var(--fg-muted);
+  }
+  .ws-nav-profile .ws-caret svg { width: 11px; height: 11px; }
+  .ws-nav-profile[data-locked] { opacity: 0.55; }
+  .ws-nav-lock {
+    display: flex; gap: 6px;
+    padding: 2px var(--s2) 0;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    line-height: 1.45;
+  }
+  .ws-nav-lock svg { width: 11px; height: 11px; flex: none; margin-top: 3px; }
+
   /* ── The content column ─────────────────────────────────────────────────── */
 
   .ws-content {
     flex: 1; min-width: 0;
     overflow-y: auto;
     display: flex; flex-direction: column;
-    /* THE WINDOW'S TYPOGRAPHIC BASE, and it is here rather than on `body`
-       because `body` is not this port's to set yet. The prototype declares
-       `font-size: var(--t-body)` on `.win`, the element that wraps the nav and
-       the content; this repo's `body` reads `--text-body`, which is the
-       pre-port alias for `--t-note` at 13 px, and the thirteen shipped areas
-       still inherit from it. Measured against the running prototype on Home:
-       every element that sets no size of its own — the hero's key row, the
-       card foot, the owed list — came out one step small.
-
-       It moves to the window root in Leg 3, which is the leg that owns
-       `body`. */
-    font-size: var(--t-body);
   }
   /* A pane view scrolls inside its own columns. Letting the content area scroll
      as well produces two bars for one gesture and a header that drifts away
@@ -812,13 +1077,17 @@
      them being wrong. Type does not scale — 13 px body in a sheet and 13 px
      body in a window is the same reading task. Structure scales.
 
-     Leg 3 builds the sheet and puts this on `.ws-modal-win`, where the
-     prototype has it. Until then the gallery applies it to the content column
-     around a settings screen, because a settings screen measured at the
-     workspace's 20 px inset is not the screen the prototype draws — and
-     because a scale that can be moved from one container to another without a
-     single component changing is exactly what ADR 0052 claimed these tokens
-     would buy. */
+     IT IS ON THE SHEET NOW, where the prototype has it. Leg 2b applied it to
+     the gallery's content column around a settings screen, because a settings
+     screen measured at the workspace's 20 px inset is not the screen the
+     prototype draws; Leg 3 added `.ws-modal-win` to this list and changed
+     nothing else, and NOT ONE COMPONENT MOVED WITH IT. That is exactly what
+     ADR 0052 claimed these tokens would buy, and it is the only way the claim
+     could be tested: a primitive that hardcoded 20 px could not have made the
+     journey. The gallery keeps its own spelling because the gallery still
+     draws a settings screen outside a sheet, and `npm run port:diff` measures
+     it there. */
+  .ws-modal-win,
   .ws-sheet-scale,
   .ws-content-inner:has(.ws-screen-stage[data-surface="settings"]) {
     --nav-w: 196px;

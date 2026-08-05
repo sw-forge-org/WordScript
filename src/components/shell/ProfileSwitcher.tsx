@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight } from "lucide-react";
+import type { ReactNode } from "react";
 import type { AppConfig } from "@/types/ipc";
 import {
   buildTextProfilesPatch,
@@ -8,12 +8,14 @@ import {
   resolveActiveTextProfile,
   textProfileInitials,
 } from "@/lib/textProfiles";
-import { Select } from "./Select";
+import { Icon } from "./Icon";
 
 interface ProfileSwitcherProps {
   config: AppConfig;
   onChange: (patch: Partial<AppConfig>) => void;
-  onEdit: () => void;
+  /** One line under the name. The caller states what the profile is doing —
+   *  facts it reads from the runtime, never facts this component invents. */
+  subtitle?: ReactNode;
   /** True while a capture or its pipeline is running. */
   sessionActive?: boolean;
 }
@@ -23,8 +25,29 @@ interface ProfileSwitcherProps {
 const LOCKED_HINT =
   "Locked while recording — the profile sets the recognizer, which is fixed once a recording starts. The processing mode can still be changed.";
 
-/** Compact active-profile switcher for the sidebar footer. Deep edits live in Profiles. */
-export function ProfileSwitcher({ config, onChange, onEdit, sessionActive = false }: ProfileSwitcherProps) {
+/**
+ * THE ACTIVE PROFILE — `demo.css`'s `.nav-profile`, ported by Leg 3.
+ *
+ * THE ROW IS THE CONTROL. What shipped was an avatar row, a label and a
+ * separate `<select>` underneath it — two controls for one decision, plus a
+ * chevron button that went somewhere else. The prototype answers with one macOS
+ * popup button, which is what the double chevron announces, and it is the same
+ * control in the workspace sidebar and in the settings sheet's header.
+ *
+ * THE PROTOTYPE DRAWS A `<button>` AND THIS IS A `<select>`, because the
+ * prototype is static HTML and a drawing of a popup button does not have to
+ * open. A real one does, and the native control is the one that already answers
+ * the keyboard, the screen reader and the platform's own menu behaviour —
+ * building a listbox to look identical would be a worse answer to a solved
+ * problem. It is the same divergence the ported slider already carries, and
+ * `.ws-nav-profile` is what makes the two look alike.
+ */
+export function ProfileSwitcher({
+  config,
+  onChange,
+  subtitle,
+  sessionActive = false,
+}: ProfileSwitcherProps) {
   const profiles = config.text_profiles?.length
     ? config.text_profiles.map((profile) => cloneTextProfile(profile))
     : [resolveActiveTextProfile(config)];
@@ -41,48 +64,42 @@ export function ProfileSwitcher({ config, onChange, onEdit, sessionActive = fals
   };
 
   return (
-    <div className="flex flex-col gap-2.5 p-3.5">
-      <div className="flex items-center gap-2.5">
-        <div
-          aria-hidden
-          className="flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-soft text-[11px] font-semibold text-brand-strong"
-        >
-          {textProfileInitials(active)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-muted">
-            Profile
-          </div>
-          <div className="truncate text-[12.5px] font-medium leading-tight text-foreground">
-            {active.label}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label="Edit profiles"
-          className="shrink-0 rounded-md p-1 text-fg-muted transition-colors hover:bg-[var(--surface-2)] hover:text-foreground"
-        >
-          <ChevronRight className="size-3.5" />
-        </button>
-      </div>
-      <Select
-        value={active.id}
-        onChange={(e) => handleSwitch(e.target.value)}
-        aria-label="Switch active profile"
-        className="text-[12px]"
-        disabled={sessionActive}
+    <>
+      <div
+        className="ws-nav-profile"
+        data-locked={sessionActive ? "" : undefined}
         title={sessionActive ? LOCKED_HINT : undefined}
       >
-        {profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {displayTextProfileLabel(profile)}
-          </option>
-        ))}
-      </Select>
+        <span className="ws-av" aria-hidden>
+          {textProfileInitials(active)}
+        </span>
+        <span className="ws-who">
+          <b>{active.label}</b>
+          {subtitle && <span>{subtitle}</span>}
+        </span>
+        <span className="ws-caret" aria-hidden>
+          <Icon name="updown" />
+        </span>
+        <select
+          className="ws-nav-profile-select"
+          value={active.id}
+          onChange={(event) => handleSwitch(event.target.value)}
+          aria-label="Switch active profile"
+          disabled={sessionActive}
+        >
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {displayTextProfileLabel(profile)}
+            </option>
+          ))}
+        </select>
+      </div>
       {sessionActive && (
-        <p className="text-[11px] leading-snug text-fg-muted">{LOCKED_HINT}</p>
+        <p className="ws-nav-lock">
+          <Icon name="lock" />
+          <span>{LOCKED_HINT}</span>
+        </p>
       )}
-    </div>
+    </>
   );
 }

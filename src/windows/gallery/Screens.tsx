@@ -9,7 +9,7 @@ import {
   StatusBadge,
   Toolbar,
 } from "@/components/shell";
-import { ALL_SCREENS, SCREEN_GROUPS, findScreen } from "./screens/registry";
+import { ALL_SCREENS, SCREEN_GROUPS, findScreen } from "./registry";
 
 /**
  * A screen is PORTED when it stands here and SHIPPED when it is wired

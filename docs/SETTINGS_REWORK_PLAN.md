@@ -419,11 +419,23 @@ Sidebar footer: `Settings` · `Help` · active-profile row (today's `ProfileSwit
 | | **Diagnostics** | `RebuildLabTab` unchanged in content, keeps its existing sub-tabs and pop-out. One layout note (§11.15): its *Diagnostics preview* panel stacks raw above transformed; side by side is the better pairing, and it is the single idea worth keeping from the withdrawn commit screen. A layout line, not a feature — no commit action follows it here |
 | | **About & Updates** | `AboutTab` |
 
-Result: **14 flat entries → 5 workspace views + 11 settings sections in 3
-groups.** The longest single list a user scans drops from 14 to 5. (Seven and
+Result: **14 flat entries → 4 workspace views + 10 settings sections in 3
+groups.** The longest single list a user scans drops from 14 to 4. (Seven and
 ten when this section was written; §11.16 moved Integrations into settings and
 §11.19 turned Chat into a panel.) (Nine
 sections when this section was written; Account & Sync was added by §11.5.)
+
+**Corrected 2026-08-05 by Leg 3, and it is an arithmetic correction rather than
+a decision.** The headline said *5 views + 11 sections* and the table under it
+no longer supports either number. Notes and Upload became one entry, Context, on
+2026-08-03 (ADR 0045, §11.41), which is four views; **Account & Sync was removed
+with its screen on 2026-08-04** — an entry in a sidebar promises that a decision
+lives behind it, and there is no WordScript account to decide anything about —
+which is ten sections. The Account & Sync row above is kept so that nothing is
+deleted without a destination, and its destination is §7's documented-pending
+list. Counted off `demo.js`'s `settingsNav` groups, which is what the port is
+measured against. ADR 0050 and the prototype's own README still say eleven; both
+are append-only or read-only, and the drift is logged for Leg 6.
 
 **Corrected 2026-08-02 by §11.7.** The table above sorts by where a control is
 *found*; it has to sort by what a value *belongs to*. Settings means this

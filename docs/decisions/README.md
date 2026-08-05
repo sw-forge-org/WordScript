@@ -358,6 +358,18 @@ Status: Proposed | Accepted | Superseded by NNNN
   treating it as current is reading a document that grows wrong. The gallery's
   Foundations, Components, Motion and Overlay are permanent; its Screens section
   is scaffolding and retires per screen as Leg 4 wires them.
+- [0058](0058-a-display-surface-does-not-open-a-device.md): a moving instrument
+  is a claimed measurement. A gallery screen draws a waveform, a VU meter or a
+  level readout at rest or on one frame of sample data, and never passes
+  `active` to a component that would open a microphone. Listed here on
+  2026-08-05 by Leg 3; it was filed by Leg 2a and this index missed it.
+- [0059](0059-the-gallery-gets-a-chord-because-four-legs-paid-for-a-rebuild-instead.md):
+  the gallery is reachable in a built application by
+  `Ctrl`/`Cmd`+`Shift`+`Alt`+`G`. ADR 0055's *"one `npm run tauri build` and a
+  walk"* does not hold — no window opens `#/gallery` and `tauri.conf.json` is out
+  of scope — so four legs paid for a temporary route edit and a full rebuild
+  instead. The chord is not a link: nothing names it and no affordance leads to
+  it. It is deleted when the gallery gets a window of its own.
 
 ## Resolved: the number 0011 was used twice
 
@@ -385,8 +397,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-04 the filed range runs through 0058; the next
-decision takes 0059.)
+takes 0021. (As of 2026-08-05 the filed range runs through 0059; the next
+decision takes 0060.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

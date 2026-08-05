@@ -652,97 +652,14 @@ body.overlay-window {
   box-shadow: 0 0 0 3.5px var(--focus-halo);
 }
 
-/* ── Pre-port utility classes ─────────────────────────────────────────────────
-   `.ws-card` and `.ws-card-title` were deleted here on 2026-08-04 by Leg 1 of
-   the GUI port. Nothing referenced either; the card is a component now
-   (`shell/Card.tsx` over `.ws-card` in shell.css), and the old declaration
-   carried three values the port reverses — a 10 px radius, a permanent
-   hairline, and a 150 ms border-color transition on hover that §6 P7 removes.
-   The three below are equally unreferenced but belong to the sidebar and the
-   button, which Leg 3 replaces; they are left for that leg to delete with the
-   surface that would have used them. */
-.ws-sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-button);
-  font-size: var(--text-label);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-  color: var(--fg-dim);
-  cursor: pointer;
-  transition: background 100ms ease-out, color 100ms ease-out;
-  position: relative;
-}
-
-.ws-sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--fg);
-}
-
-.ws-sidebar-item.active {
-  color: var(--fg);
-}
-
-.ws-sidebar-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 4px;
-  height: 20px;
-  background: var(--accent);
-  border-radius: 0 2px 2px 0;
-}
-
-.ws-sidebar-item.preview {
-  opacity: 0.35;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.ws-btn-primary {
-  background: var(--btn-primary-bg);
-  color: var(--btn-primary-fg);
-  border: none;
-  border-radius: var(--radius-button);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-body);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 100ms ease-out, transform 50ms ease-out;
-}
-
-.ws-btn-primary:hover {
-  background: var(--accent-hover);
-}
-
-.ws-btn-primary:active {
-  transform: scale(0.97);
-}
-
-.ws-btn-secondary {
-  background: var(--btn-bg);
-  color: var(--fg);
-  border: none;
-  border-radius: var(--radius-button);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-body);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 100ms ease-out, transform 50ms ease-out;
-}
-
-.ws-btn-secondary:hover {
-  background: var(--surface-strong);
-}
-
-.ws-btn-secondary:active {
-  transform: scale(0.97);
-}
+/* ── The pre-port sidebar and button utilities are gone ────────────────────
+   `.ws-card` and `.ws-card-title` went on 2026-08-04 with Leg 1;
+   `.ws-sidebar-item`, `.ws-btn-primary` and `.ws-btn-secondary` went on
+   2026-08-05 with Leg 3, which deleted the surface that would have used them.
+   All five were unreferenced by any markup for the whole of the port, and each
+   carried values the ported grammar reverses — an uppercase sidebar label, a
+   4 px accent bar down the active row's leading edge, a `scale(0.97)` press.
+   `.ws-nav-row` and `.ws-btn` in shell.css are what the product draws. */
 
 /* ── The glass utilities are gone ─────────────────────────────────────────────
    `.glass`, `.glass-elevated`, `.glass-strong`, `.glass-subtle`, `.glass-panel`

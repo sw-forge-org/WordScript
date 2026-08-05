@@ -53,6 +53,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The product is one window.** The settings window with fourteen flat areas is
+  gone; the main window is the workspace — Home, History, Profiles, Context —
+  and settings is a modal sheet laid over it at its own scale (plan §11.22),
+  opened with `Cmd+,` / `Ctrl+,` and closed with Escape, the scrim or its close
+  control. Ten sections in three groups, APP · AI · SYSTEM. The longest list
+  anybody scans drops from 14 to 4. The fourteen areas were deleted in the same
+  commit that replaced them, and nothing is aliased (ADR 0054).
+- **The settings sheet carries its own scale, and not one component moved with
+  it.** `.ws-modal-win` redeclares `--nav-w`, `--nav-row-h`, `--content-max`,
+  `--content-pad`, `--pad-card`, `--row-py`, `--gap-block` and `--gap-row`;
+  every screen inside reads them without knowing it has moved. The same screens
+  stand in the gallery at the workspace's scale and still measure exact against
+  the prototype there. That was ADR 0052's claim and this is the test of it.
+- **The screens moved out of the gallery into `src/screens/`.** A screen in the
+  gallery and the same screen in the product are one implementation with two
+  sets of props (ADR 0055); leaving them under `windows/gallery/` would have
+  made the gallery a dependency of the product, which is that rule inverted.
+- **The pre-port shell is deleted.** `FormCard`, `FormRow`, `Sidebar` and
+  `StatTiles` went with their last caller, and the `bodyClassName="py-4"`
+  patches went with them — the ported card owns its own vertical inset (§11.17,
+  ADR 0052) and the patches are the defect that rule exists to prevent. The
+  unreferenced `.ws-sidebar-item`, `.ws-btn-primary` and `.ws-btn-secondary`
+  utilities in `globals.css` went in the same commit.
+- **The two base rules moved to the window root**, where the prototype has them.
+  `svg { flex: none }` and the 16 px default icon size were fenced to
+  `.ws-content` / `.ws-nav` while the pre-port areas still rendered lucide icons
+  under their own assumptions; those areas are gone, so the fence came off onto
+  `.ws-win` — which is now also the gallery's root.
+- **The diagnostics pop-out mounts the same section the sheet does.**
+  `RebuildLabTab` was the pre-port area and could not stay beside its
+  replacement (ADR 0054), so the pop-out renders the ported Diagnostics screen.
+  `WindowChrome` went with it: ADR 0003 leaves the title to the OS.
+
+### Fixed
+
+- **The overlay's deep link into settings had been resolving to nothing.**
+  `SETTINGS_ANCHOR_AREAS` mapped `capture.auto_stop` to the area `input`, which
+  had been renamed to `capture` — so the auto-stop tab opened the window onto a
+  header with a blank pane under it. The mapping now names a surface as well as
+  an id, resolves to Profiles → Defaults where §11.7 put the control, and
+  `settingsAnchors.test.ts` fails if it ever stops naming something the
+  workspace mounts.
+
+### Added
+
+- **The gallery is reachable in a built application** by
+  `Ctrl`/`Cmd`+`Shift`+`Alt`+`G` (ADR 0059). Nothing names it and no affordance
+  leads to it — ADR 0055's terms are unchanged. It replaces the temporary route
+  edit and full rebuild that four legs paid for instead.
+
 ### Added
 
 - **All 25 of the prototype's screens stand in `/gallery` → Screens, each

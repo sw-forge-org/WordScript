@@ -14,47 +14,46 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const TWO_PROFILES = createAppConfig({
+  active_text_profile_id: "support",
+  text_profiles: [
+    {
+      id: "general",
+      label: "General writing",
+      prompt: "",
+      stt_hints: "",
+      vocabulary_hints: [],
+      schema_version: 2,
+      curation: createEmptyTextProfileCuration(),
+      dictionary_entries: [],
+      snippet_entries: [],
+    },
+    {
+      id: "support",
+      label: "Support reply",
+      prompt: "Escalation contacts",
+      stt_hints: "",
+      vocabulary_hints: [],
+      schema_version: 2,
+      curation: createEmptyTextProfileCuration(),
+      dictionary_entries: [],
+      snippet_entries: [],
+    },
+  ],
+});
+
 describe("ProfileSwitcher", () => {
   it("shows the active profile and switches to another one", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
 
-    render(
-      <ProfileSwitcher
-        config={createAppConfig({
-          active_text_profile_id: "support",
-          text_profiles: [
-            {
-              id: "general",
-              label: "General writing",
-              prompt: "",
-              stt_hints: "",
-              vocabulary_hints: [],
-              schema_version: 2,
-              curation: createEmptyTextProfileCuration(),
-              dictionary_entries: [],
-              snippet_entries: [],
-            },
-            {
-              id: "support",
-              label: "Support reply",
-              prompt: "Escalation contacts",
-              stt_hints: "",
-              vocabulary_hints: [],
-              schema_version: 2,
-              curation: createEmptyTextProfileCuration(),
-              dictionary_entries: [],
-              snippet_entries: [],
-            },
-          ],
-        })}
-        onChange={onChange}
-        onEdit={vi.fn()}
-      />,
-    );
+    render(<ProfileSwitcher config={TWO_PROFILES} onChange={onChange} />);
 
     const combobox = screen.getByRole("combobox", { name: /switch active profile/i });
     expect(combobox).toHaveValue("support");
+    // The row states the active one; the options are the select's own, so the
+    // name appears twice and only the drawn one is this assertion's subject.
+    expect(document.querySelector(".ws-who b")).toHaveTextContent("Support reply");
 
     await user.selectOptions(combobox, "general");
 
@@ -66,6 +65,34 @@ describe("ProfileSwitcher", () => {
     );
   });
 
+  // THE ROW IS THE CONTROL — one popup button rather than the shipped avatar
+  // row plus a separate select underneath it. The prototype draws a `<button>`
+  // because a drawing does not have to open; this is the native control lying
+  // over the same row, which is what keeps the keyboard and the screen reader.
+  it("draws the ported row and lets the whole of it be operated", () => {
+    const { container } = render(<ProfileSwitcher config={TWO_PROFILES} onChange={vi.fn()} />);
+
+    const row = container.querySelector(".ws-nav-profile");
+    expect(row).not.toBeNull();
+    expect(row!.querySelector(".ws-av")).toHaveTextContent("SR");
+    expect(row!.querySelector(".ws-nav-profile-select")).toBe(
+      screen.getByRole("combobox", { name: /switch active profile/i }),
+    );
+  });
+
+  // The caller states what the profile is doing, from facts it read off the
+  // runtime. The component never derives one.
+  it("prints the subtitle the caller passed and nothing else", () => {
+    render(
+      <ProfileSwitcher
+        config={TWO_PROFILES}
+        onChange={vi.fn()}
+        subtitle="Cleanup · Insert at cursor"
+      />,
+    );
+    expect(screen.getByText("Cleanup · Insert at cursor")).toBeInTheDocument();
+  });
+
   // The profile decides the recognizer settings, and those are fixed the moment
   // recording starts — a switch mid-session left the pipeline reading half of
   // one profile and half of the other. The runtime rejects it; this surface
@@ -74,17 +101,13 @@ describe("ProfileSwitcher", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
 
-    render(
-      <ProfileSwitcher
-        config={createAppConfig()}
-        onChange={onChange}
-        onEdit={vi.fn()}
-        sessionActive
-      />,
+    const { container } = render(
+      <ProfileSwitcher config={createAppConfig()} onChange={onChange} sessionActive />,
     );
 
     const combobox = screen.getByRole("combobox", { name: /switch active profile/i });
     expect(combobox).toBeDisabled();
+    expect(container.querySelector(".ws-nav-profile")).toHaveAttribute("data-locked");
     expect(screen.getByText(/locked while recording/i)).toBeInTheDocument();
     expect(screen.getByText(/processing mode can still be changed/i)).toBeInTheDocument();
 
@@ -99,9 +122,7 @@ describe("ProfileSwitcher", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
 
-    render(
-      <ProfileSwitcher config={createAppConfig()} onChange={onChange} onEdit={vi.fn()} />,
-    );
+    render(<ProfileSwitcher config={createAppConfig()} onChange={onChange} />);
 
     const combobox = screen.getByRole("combobox", { name: /switch active profile/i });
     const other = Array.from(combobox.querySelectorAll("option"))
@@ -111,17 +132,5 @@ describe("ProfileSwitcher", () => {
 
     expect(invoke).toHaveBeenCalledWith("switch_active_text_profile", { profileId: other });
     expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("invokes the edit callback", async () => {
-    const user = userEvent.setup();
-    const onEdit = vi.fn();
-
-    render(
-      <ProfileSwitcher config={createAppConfig()} onChange={vi.fn()} onEdit={onEdit} />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /edit profiles/i }));
-    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 });
