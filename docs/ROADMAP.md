@@ -1,6 +1,6 @@
 # WordScript Roadmap
 
-Status: 2026-07-25
+Status: 2026-08-05
 
 > This is the canonical phase detail. [STATUS.md](STATUS.md) reports the
 > current state; [VISION.md](VISION.md) defines the product direction.
@@ -39,7 +39,10 @@ spoken, only the prompt argument is dictated, and a visible keyed confirmation
 precedes the start (ADR 0030).
 
 Unscheduled work with an open decision gate is filed below the phases, not
-inside them — currently one item, a second paste mechanism on Wayland.
+inside them — currently four items: a second paste mechanism on Wayland,
+meeting capture, live subtitles, and the live-translation window. The last two
+were added on 2026-08-05 by relay Leg 4a, which decided the lifecycle of six
+drawn surfaces and found that three of them had no roadmap home at all.
 
 ## Phase 1 - Transcription Bias, Profile Health, Corpus
 
@@ -156,7 +159,9 @@ stronger local model rather than by a new provider.
   is a mode in the full sense -- cycle, picker, profile default, overlay chip --
   and it is the first with no default hotkey, because the shipped defaults
   occupy `Alt+1` through `Alt+6`. Auto never selects it: **Auto may choose how
-  text reads, never what language it is in.**
+  text reads, never what language it is in.** The *live-translation window* is a
+  different surface of the same capability, is **not** part of this phase, and
+  is a candidate below.
 
 **Out of scope:** runtime provider switching without save, account binding, or
 a WordScript proxy.
@@ -507,21 +512,37 @@ obligations.
   voice arrives twice. A real component, not a flag.
 - **Content protection on the meeting window.** It floats over a call that is
   often being screen-shared and must not appear in the share or the recording.
-- A **dedicated hotkey**, separate from the dictation trigger, and a decision
-  about detection (see the gate).
+- A **dedicated hotkey**, separate from the dictation trigger, plus the three
+  other ways in that ADR 0063 decided (see the gate).
 - Notes gains the states a session has — recording, transcribing, ready — and
   the note detail becomes transcript-and-notes side by side.
 
 **Decision gate — answer before writing code:**
 
-1. Does capture start from a hotkey, from detecting a call, or both? A detection
-   prompt cannot be an OS notification (invisible in Focus mode, visible in a
-   screen share), which makes it a third surface to own.
+1. ~~Does capture start from a hotkey, from detecting a call, or both?~~
+   **Closed 2026-08-05 by [ADR 0063](decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md).**
+   Four ways in: its own hotkey, a calendar offer shortly before the start, a
+   detected call, and `Context → New → Record`. **Detection watches which
+   process holds the microphone, not which applications are running** — read
+   off the donor, whose own process detector is deliberately context-only
+   because a meeting app idling in the background is a false positive. That
+   means noticing a call needs no system-audio capture at all; the expensive
+   capability blocks recording, not noticing. The prompt is ADR 0043's
+   notification window carrying a different payload, so it is **not** a third
+   surface to own — which is what this gate had assumed. Only an explicit stop
+   ends a capture; nothing infers that a call is over.
 2. What happens to the audio of a meeting nobody keeps? ADR 0038 and ADR 0039
    bound a dictation's audio; an hour of meeting is a different size of promise
-   and the sweep that covers one may not cover the other.
+   and the sweep that covers one may not cover the other. **Still open**, and
+   two drawn surfaces carry it as an `Open decision`.
 3. Does system-audio capture work without a per-session authorization prompt on
    the target platforms? Same gate, same reason, as the libei candidate above.
+   **Still open.**
+
+**The detection half is separable, and do not build it early on that ground.**
+A microphone watch, a calendar read and a prompt window need none of the capture
+work — and are useless without it, because accepting the offer would have
+nothing to start.
 
 **Out of scope:** joining a call as a participant or a bot — WordScript is
 local-first and has no server to send one from; and any cloud-hosted meeting
@@ -530,6 +551,128 @@ record.
 **Success measure:** a one-hour meeting produces a note whose transcript can be
 read beside the notes taken during it, with no prompt after the recording
 started and nothing of the window visible in a screen share.
+
+## Candidate - Live subtitles
+
+**Status:** candidate, not scheduled. Added 2026-08-05 by relay Leg 4a. Needs
+both gates below before it becomes scope, and it is the one of the six drawn
+surfaces whose lifecycle is **still undecided** — deliberately, because its
+entry point cannot be settled before the capability that would fill it exists.
+
+**It is two features with one name, and they are built apart.** The screen says
+so first and then treats them as the two things they are:
+
+| | Captions | Echo |
+| --- | --- | --- |
+| Reads | the room — system audio | you — the open microphone |
+| Lives | its own strip over somebody else's video | bare text under the dictation pill |
+| You are | the audience | the speaker |
+| Waits on | system-audio capture | streaming recognition |
+
+**Why it is written down at all.** It was drawn as part of the settings rework
+and has never had a roadmap home. Captions share their whole dependency with
+meeting capture, so a reader finding one entry and not the other would price the
+audio work twice or not at all.
+
+**Two lifecycle answers this entry can already give**, because both reuse a
+mechanism the product has rather than inventing one:
+
+- **The echo belongs to the profile.** What makes it appear under the pill for
+  *this* dictation and not that one is the active profile at capture start —
+  the same rule every other per-profile capture setting follows (§11.7). A
+  long-form profile wants it; a quick-reply profile does not. It is off by
+  default.
+- **The caption strip's placement is the overlay's placement grammar, per
+  display, global to the application** — placement mode, display, anchor,
+  exactly as `Settings → General` already carries for the dictation overlay. Not
+  per source: a strip you place once is a property of your desk, and a
+  per-source memory would move it when you switch from a player to a call,
+  which breaks the one promise the feature makes.
+
+**Decision gate — answer before writing code:**
+
+1. **What turns captions on?** Their own hotkey, a control on the surface that
+   is already capturing system audio, or nothing until a meeting is running.
+   Undecided, and it cannot be decided honestly before the capture exists.
+2. Does system-audio capture work without a per-session authorization prompt on
+   the target platforms? Shared verbatim with meeting capture — the same gate,
+   answered once.
+3. **Does the recognition path emit partial results?** The pipeline transcribes
+   a finished recording. An echo needs the recogniser to emit as it goes, and
+   the local and cloud lanes expose streaming differently — so this is a
+   provider-contract question, not a UI one.
+
+**Scope, if it goes ahead:** the caption strip as its own always-on-top,
+content-protected, click-through window carrying its own opaque ground (never
+frosted — ADR 0051 excludes exactly this case, and blurring a moving picture
+costs a filter pass per frame of somebody else's video); the echo as two text
+weights under the pill with its colour measured against whatever is behind it
+rather than taken from a token; and the translated strip reading its language
+pair from the same place the translation window does.
+
+**Out of scope:** a scrolling caption history. A strip that scrolls is a
+transcript window, and a transcript is what the recording is for.
+
+**Success measure:** a sentence being said right now is readable over somebody
+else's video on a frame that changes brightness mid-sentence, and the strip
+appears in no screen share.
+
+## Candidate - The live-translation window
+
+**Status:** candidate, not scheduled. Added 2026-08-05 by relay Leg 4a. Its
+lifecycle is decided —
+[ADR 0064](decisions/0064-the-translation-window-is-a-view-with-a-pop-out-and-a-conversation-is-kept-only-if-you-say-so.md)
+— and its capability is not.
+
+**This is not `ProcessingMode::Translate`.** That is decided (ADR 0041), it
+lands with Phase 4, and nothing here touches it. One capability, two surfaces,
+one name: the mode is one person writing into somebody else's document; this is
+two people at a table who do not share a language. The dictation contract breaks
+in three places the moment there are two of them — there is no insert target, no
+end, and it has to be heard.
+
+**What ADR 0064 decided:** it is a workspace **view** whose pop-out is the drawn
+window; a conversation is a context object **only if the session opts in**, and
+opt-in and consent are one field; opting out leaves no file; several pop-outs may
+stand but exactly one live conversation may run, because there is one
+microphone; the two output routings are per machine and edited in the view; the
+voice is a model row in AI Models like every other model choice (ADR 0042).
+
+**Scope, if it goes ahead:**
+
+- **Speech recognition per direction, streaming, with a detected switch between
+  the two languages.** The switch is the one interaction that decides whether
+  this works at a table or only in a demo — a button per turn is a demo.
+- **Text-to-speech with per-language output-device routing.** Their language out
+  loud to the room, yours in your ear. Routing per language is the whole design
+  and is the reason this is a desktop product: a phone has one speaker and one
+  screen, so both people share both.
+- **A mute of the recogniser for the length of each spoken utterance.** Out loud
+  plus an open microphone is the machine transcribing itself.
+- **`Silent` as a real setting**, not a broken one — somebody translating a menu
+  at the next table wants no sound at all, and it is the same window.
+- The consent field on a conversation object, and a fifth workspace view.
+
+**Decision gate — answer before writing code:**
+
+1. Is a view plus a pop-out enough interaction for a conversation held at a
+   table, where nobody is looking at a workspace? Named as open by the owner
+   when the lifecycle was decided.
+2. Does this need a processing mode of its own beyond ADR 0041's? Also named as
+   open by the owner, and it must not be settled quietly by an implementation.
+3. Does the language switch detect reliably enough to take no button per turn?
+   A measurement, and the feature's real gate.
+
+**Out of scope:** practice or language drilling. Evaluated on the drawn screen
+and argued down there — VISION names what this product is not, and a drill
+built beside a dictation tool competes on an axis that is not ours. The one form
+that would not be a copy — the words your own translations kept getting wrong,
+offered where the vocabulary already lives — is recorded as a candidate inside
+the candidate and nothing is built for it.
+
+**Success measure:** two people hold a five-minute conversation in two languages
+with no button pressed per turn, each hearing their own language on their own
+device, and nothing is written to disk unless the session said so.
 
 ## Dependencies
 

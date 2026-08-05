@@ -663,7 +663,7 @@ data, and a standing label — never a fake readiness state.
 | **Upload** | V2 (existing) | Existing `UploadArea`, restyled. Band over a full-width queue, not a 460 px `solo` |
 | **Chat** | V2 (existing) | Existing `ChatArea`, **as a panel inside Notes** (§11.19). Assistant turns name the rows they read |
 | **Integrations** | Phase 8 | MCP server endpoint, token, port file; CLI install; all marked planned. **In Settings**, not the workspace (§11.16) |
-| **Meeting capture** | *not on the roadmap* | Added 2026-08-03. A second capture type in a second window — resizable, content-protected, ends as a note. Sketched so the direction is written down; the open questions are in §10.4, and it needs its own ADR and roadmap entry before anything is built |
+| **Meeting capture** | ~~*not on the roadmap*~~ **Candidate, since 2026-08-03** | Added 2026-08-03. A second capture type in a second window — resizable, content-protected, ends as a note. Sketched so the direction is written down; the open questions are in §10.4. It got its ADR on 2026-08-05 ([0063](decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)) and its roadmap candidate the same day it was drawn — the *"not on the roadmap"* in this cell was true for a few hours and has been repeated since |
 
 ### Documented as pending, not rendered
 
@@ -671,7 +671,7 @@ data, and a standing label — never a fake readiness state.
 | --- | --- | --- |
 | ~~Account, sign-in, sync~~ | ~~ROADMAP: V2 or later. No decided data model to lay out.~~ | **Overruled 2026-08-02 — see §11.5. It is a built preview.** |
 | Live preview & commit | Phase 3, moved here 2026-08-03 (§11.15). Its content already exists on the shipped surface — Diagnostics' *Diagnostics preview* panel runs raw text through the runtime and names every applied rule — and its home is a 440 × 60 window that must not take focus, which is not a shape this rework can draw. | §10.3, plus the one layout idea kept in §4.2's Diagnostics row |
-| Translation mode | **Not in the roadmap.** The donor has `Dictation Translation`; WordScript has not decided it. | New roadmap candidate entry, with an open decision gate — not a promise |
+| Translation mode | ~~**Not in the roadmap.**~~ **Stale since 2026-08-03.** ADR 0041 decided the mode and Phase 4 carries it. The *window* is the part that had no roadmap home, and it got a candidate entry on 2026-08-05 with ADR 0064 behind it | ROADMAP Phase 4 for the mode; *Candidate — the live-translation window* for the window |
 | Meeting mode / diarization | V2, and diarization has no native path | ROADMAP |
 | Voice Nudge | Phase 9, ADR 0031 — enters through the existing `clipboard_only` preview, so it needs no new surface yet | ROADMAP |
 | Provider stack expansion | Phase 4 — `LaneCard` is built to take more rows; rows are not invented before the providers exist | ROADMAP |
@@ -840,10 +840,10 @@ this rework, despite the prototype still carrying the screen.
 | 3 | Profiles: one view with a detail pane, or list-then-detail navigation? | **Closed 2026-08-02: one view with a detail pane** — the `pane` primitive. Held with three profiles in the prototype; revisit only if the Phase 7 catalogue ships more than roughly a dozen. |
 | 4 | Does Diagnostics stay in Settings, or become a workspace view? | **Closed: Settings** — it is inspection, not authoring; the pop-out already covers heavy use. |
 | 5 | Search (`Cmd+K`) across settings, as the donor has | **Open, out of scope here.** Follow-up once the IA is stable. The donor puts it at the top of the sidebar; the prototype leaves that space free. |
-| 6 | Is Translation mode wanted at all? | **Open.** A roadmap candidate with a gate, not a preview. |
+| 6 | Is Translation mode wanted at all? | **Closed, in two halves, and the row was stale.** The *mode* was decided on 2026-08-03 by ADR 0041 and lands with Phase 4 — it has not been open since. The *window* was decided on 2026-08-05 by ADR 0064: a workspace view with a pop-out, a conversation kept only if the session opts in, and a roadmap candidate with its own gate. |
 | 7 | Keep `UI_UX_OVERHAUL_PLAN.md` or retire it | **Open.** Decide at Stage 6. |
 | 8 | How many MCP servers, and who may call them | **Open — see §10.1.** Needs its own ADR; do not settle it inside this rework. |
-| 9 | Is meeting capture wanted, and does it start from a hotkey or from detecting a call? | **Open — see §10.4.** Added 2026-08-03. A roadmap candidate with a gate, not a promise; sketched as a preview so the direction is arguable. Needs system-audio capture and echo cancellation, neither of which exists in the runtime. |
+| 9 | Is meeting capture wanted, and does it start from a hotkey or from detecting a call? | **The start is closed 2026-08-05 by ADR 0063; the capability is not.** Four ways in — its own hotkey, a calendar offer shortly before, a detected call, and `Context → New → Record` — and detection watches which process holds the *microphone* rather than which applications run, so noticing a call needs no system-audio capture. Only an explicit stop ends one. It stays a roadmap candidate: system-audio capture and echo cancellation still do not exist, and gates 2 and 3 there are still open. |
 
 ---
 
@@ -989,6 +989,16 @@ diarization that re-clusters at the end.
 **Do not settle this inside the settings rework.** It wants its own ADR and a
 roadmap entry. The prototype's screen exists so the direction is written down
 and argued with, not so it is built from.
+
+**Both arrived on 2026-08-05, from relay Leg 4a rather than from this rework.**
+[ADR 0063](decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)
+answers the first open question above with four ways in, and corrects the
+assumption inside it: the detection prompt is **not** a third surface to own,
+because it is ADR 0043's notification window carrying a different payload — and
+detection itself watches which process holds the microphone, which needs none of
+the system-audio work. The second question (the audio of a meeting nobody keeps)
+and the third (a per-session authorization prompt) are still open and still
+belong to whoever takes this. The roadmap candidate carries all three.
 
 ## 11. Corrections to this plan
 
@@ -2607,6 +2617,51 @@ path for the desk that survives the process being gone.
 object.** Transcripts are capped and pruned as they are today. Context objects
 are files the user can see and are not pruned. Meeting audio is undecided and
 the surface says so rather than defaulting to a promise nobody made.
+
+### 11.53 Six drawn surfaces got a lifecycle, and it corrects four things here
+
+Added 2026-08-05 by relay Leg 4a, which is the leg §7 predicted: it decided how
+each of the six surfaces is entered, what holds its state, what dismisses it,
+and what happens to it when the thing it is about ends. It wrote no code. Five
+ADRs and three roadmap entries are the output —
+[0060](decisions/0060-onboarding-runs-when-the-runtime-cannot-answer-and-it-is-re-runnable.md)
+onboarding,
+[0061](decisions/0061-the-tab-is-a-state-the-notification-is-the-question-and-neither-replaces-the-other.md)
+the agent overlay,
+[0062](decisions/0062-the-effect-verb-stage-runs-before-the-mode-router-and-a-refusal-is-counted-against-the-verb-that-caused-it.md)
+the handoff,
+[0063](decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)
+meeting capture,
+[0064](decisions/0064-the-translation-window-is-a-view-with-a-pop-out-and-a-conversation-is-kept-only-if-you-say-so.md)
+the translation window; live subtitles is the one that did **not** earn an ADR
+and got a candidate entry instead.
+
+**Four corrections this plan owes:**
+
+1. **§7's "not on the roadmap" was wrong about meeting capture and stale about
+   translation.** Meeting capture got its candidate entry the day it was drawn;
+   the translation *mode* has been ADR 0041 and Phase 4 since 2026-08-03. What
+   genuinely had no roadmap home was the translation **window** and live
+   subtitles, and both have one now. Corrected in both §7 tables.
+2. **§9's decisions 6 and 9 are closed** and were re-worded rather than
+   deleted, because the reason each was open is the record of what the
+   prototype could and could not settle.
+3. **§10.4's own framing was too expensive by one surface.** It assumed a
+   detection prompt "makes it a third surface to own"; it is ADR 0043's
+   notification window with a different payload, and detection watches which
+   process holds the microphone rather than which applications run — so
+   noticing a call needs none of the system-audio capability that blocks
+   recording it. Appended to §10.4 rather than edited into it.
+4. **§4.2's four workspace views become five the day the translation window
+   ships**, and not before. ADR 0064 makes it a view; nothing is mounted, so
+   the count in §4.2 is correct today and will be wrong exactly once.
+
+**One thing this section adds to §11.52's list rather than to §2.5's:** the
+tray/dock presence state. ADR 0030 decided it — three levels, the third with a
+counter — and nothing has ever drawn it. ADR 0061 makes it load-bearing: it is
+where a dismissed agent question rests when no pill and no window are on screen,
+and without it dismissing makes an open question invisible. It is a Leg 5
+contract **and** a 26th drawing.
 
 ## 12. Handover
 

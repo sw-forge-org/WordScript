@@ -1,7 +1,7 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Leg 3 is CLOSED. The shell is overwritten and the
-product is one window. Leg 4a is next.**
+Opened 2026-08-04. **Active — Leg 4a is CLOSED. All six undecided surfaces have
+an answer on the record and none of them is mounted. Leg 4 — wiring — is next.**
 
 Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 Work happens on `main`. There is no feature branch; `gui-rework-second-pass` was
@@ -145,7 +145,7 @@ gallery of four sections.
 | **2c** | Four screens, and the check taught to reach a screen's other states | *Done.* Fifteen of 25 stand, each measured exact |
 | **2d** | The last 10 screens | *Done.* All 25 stand in `/gallery` → Screens at the prototype's fidelity, on the real components, each measured exact in every state |
 | **3** | The shell overwrite | *Done.* One window; settings is a sheet over the workspace at its own scale (§11.22); four views and ten sections replace the 14 flat areas; `Cmd+,`; the pre-port shell and every replaced area deleted |
-| **4a** | **The interaction model the demo GUI never settled** | Six surfaces have a drawn layout and no decided behaviour: how each is entered, what holds its state, what dismisses it, and what happens to it when the thing it is about ends. Produces ADRs and roadmap entries, no code. §2.6 |
+| **4a** | The interaction model the demo GUI never settled | *Done.* Five ADRs (0060–0064) and three roadmap entries; no code, and the six are still mounted nowhere. Five surfaces got a lifecycle; live subtitles got a candidate entry and stays undecided on purpose. §2.6 |
 | **4** | Wiring, section by section | Each section either reads the runtime truthfully or carries a `PreviewBanner`; P1 and P2 fixed at the seam; the list of what the runtime cannot answer is written down; **each wired screen's Gallery → Screens entry is deleted in the commit that wires it** (ADR 0057) |
 | **5** | Runtime contracts | §11.36 and §11.52, prioritised by what Leg 4 found blocking |
 | **6** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
@@ -299,10 +299,18 @@ means deciding them by implementing one answer, which is how a placeholder
 becomes the product.
 
 **What 4a produces:** an ADR per surface where the answer is a decision, a
-roadmap entry where the answer is "not yet", and nothing else. No code. Three
+roadmap entry where the answer is "not yet", and nothing else. No code. ~~Three
 of the six (translation, meeting capture, subtitles) are also **not on the
 roadmap at all** — §7 records translation and meeting capture as candidates
-needing their own entry before anything is built, and that is still true.
+needing their own entry before anything is built, and that is still true.~~
+
+**CORRECTED 2026-08-05 by Leg 4a, and it was wrong in both halves.** Meeting
+capture has been a roadmap **candidate with a gate since 2026-08-03**, added the
+same day §7's sentence was written; the sentence was repeated into §2.6 and into
+the Leg 4a prompt without being re-checked. And the translation **mode** has
+been ADR 0041 and Phase 4 since the same day, so the thing with no roadmap home
+was the translation *window*, not translation. Two of the six were homeless, not
+three: the window and live subtitles. Both have a candidate entry now.
 
 **Leg 3 did not decide any of this, and paid its debt on 2026-08-05.** It owned
 the main window and five of the six live outside it, so what it owed was
@@ -322,6 +330,25 @@ Leg 3 owned the windows. It did not: the workspace is what the window renders,
 and putting a flow ahead of it is a routing decision in `App.tsx` or in the
 window's own first branch, neither of which anything Leg 3 built depends on. The
 question is recorded and unanswered.
+
+**ANSWERED 2026-08-05 BY LEG 4a. This table is now history, and the answers are
+ADRs.** Read the ADR before the row: the row states what was undecided, and the
+ADR states what was decided.
+
+| Surface | Answer | Leg 4 does |
+| --- | --- | --- |
+| **Onboarding** | [ADR 0060](../decisions/0060-onboarding-runs-when-the-runtime-cannot-answer-and-it-is-re-runnable.md) — a routing branch in this window; auto-runs on no usable connection until completed or closed; re-runnable from `Settings → General`; the resume point is **derived** from the first unsatisfied step, never stored | nothing — Phase 6 |
+| **Meeting capture** | [ADR 0063](../decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md) — four ways in; detection watches which process holds the **microphone**; the prompt is ADR 0043's window; only an explicit stop ends it | **skip** — blocked on system audio |
+| **Live subtitles** | Roadmap candidate. The echo belongs to the **profile**; the strip reuses the overlay's placement grammar per display. What turns captions on is **still undecided** and cannot honestly be decided before the capture exists | **skip** — blocked on system audio and streaming recognition |
+| **Translation** | [ADR 0064](../decisions/0064-the-translation-window-is-a-view-with-a-pop-out-and-a-conversation-is-kept-only-if-you-say-so.md) — a workspace **view** whose pop-out is the drawn window; a conversation is a context object only if the session opts in; one live conversation at a time | **skip** — candidate, not scheduled |
+| **Agent overlay** | [ADR 0061](../decisions/0061-the-tab-is-a-state-the-notification-is-the-question-and-neither-replaces-the-other.md) — the tab is a state, the notification is the question, both may stand at once; dismissing is *not now*, never *no* | nothing — Phase 8 |
+| **Handoff** | [ADR 0062](../decisions/0062-the-effect-verb-stage-runs-before-the-mode-router-and-a-refusal-is-counted-against-the-verb-that-caused-it.md) — the stage is Rust, lexical first, before the mode router, skipped with no desk; refusals are counted **per verb** and shown on Diagnostics | nothing — Phase 8 |
+
+**`ENTRY_POINT_HOLES` in `ia.tsx` still reads as though nothing is decided, and
+that is deliberate.** Leg 4a wrote no code, including no comment. Whoever mounts
+a surface updates its entry in the commit that mounts it; until then the holes
+are correct about the product and stale about the paperwork, and the table above
+is the reconciliation.
 
 ### Leg 2 is done when
 
@@ -368,6 +395,7 @@ Serve the prototype for comparison:
 | **2b** | 2026-08-04 | Opus 5 | `d0f4baa` | **Ten screens ported, eleven of 25 now stand, every one measured exact.** Home, History, Profiles, General, Hotkeys, Delivery & Insert, Privacy & Data, Diagnostics, About & Updates, Integrations and the withdrawn Live preview & commit. The icon set, the orb, the provider marks, the list row, the decision inbox, the pane, the connection block and the log are in the library; `src/lab/` is deleted. **The port's check is committed** as `npm run port:diff`, and it found nine library defects no single screen showed. 244 → 282 frontend tests, `cargo test` 623, both builds green. Home looked at in the native host. **The prototype's status is NOT flipped — 14 screens remain.** Full account below. |
 | **2c** | 2026-08-04 | Opus 5 | `0fbddce`…`cd320f5` | **Four screens ported, fifteen of 25 now stand — and the leg SPLIT rather than overrun.** Notes & Meetings, AI Models, Onboarding and Agents, every tab and every one of onboarding's seven steps measured exact. The job list, the model badge, the downloadable model row, the onboarding rail, the desk's MCP readout and the agent thread are in the library. **The verifier can now reach a screen's other states** — `npm run port:diff models#1 onboarding#4` drives both surfaces into them — which turned up a fifth measurement false positive and a library defect Leg 2b could not have seen: the prototype's SECOND base rule, a 16 px default icon size, was never ported. 282 → 298 frontend tests, `cargo test` 623, both builds green. AI Models and its job list looked at in the native host. **The prototype's status is NOT flipped — 10 screens remain.** Full account below. |
 | **3** | 2026-08-05 | Opus 5 | `8f9077e` | **The shell is overwritten. The product is ONE WINDOW.** A workspace with four views, settings as a modal sheet over it at its own scale, `Cmd+,` to open and Escape to close. Fourteen flat areas deleted in the commit that replaced them; `FormCard`, `FormRow`, `Sidebar` and `StatTiles` deleted with their last caller; the 25 screens moved out of the gallery into `src/screens/` so the product mounts what the gallery displays. **All 33 `port:diff` measurements are structural 0 | style 0 after the shell change** — the regression check earned its keep. 289 frontend tests (335 minus the 67 that belonged to the deleted areas, plus 21 new), `cargo test` 623, both builds green. The workspace, the sheet and the agent overlay all looked at in the native host — **Leg 2d's three owed agent-overlay checks all pass.** ADR 0059 filed: the gallery gets a chord. **One live defect found and fixed: the overlay's deep link had been resolving to nothing.** Full account below.
+| **4a** | 2026-08-05 | Opus 5 | *(this leg)* | **Six drawn surfaces got a lifecycle, and no code was written.** Five ADRs — 0060 onboarding, 0061 the agent overlay, 0062 the handoff, 0063 meeting capture, 0064 the translation window — plus three roadmap entries: meeting capture's gate 1 closed, and two new candidates (live subtitles, the live-translation window) for the two surfaces that genuinely had no roadmap home. **Live subtitles is deliberately the one without an ADR**: what turns captions on cannot be decided honestly before the capture exists, and saying so is the answer. The owner decided three of them; the rest are derived and each ADR says which it was. **Two things were nearly decided wrong and the drawn surface caught both** — the notification does not retract when a dictation starts, it offsets above the pill, and §7's "meeting capture is not on the roadmap" has been false since the day it was written. 289 frontend tests, `cargo test` 623, `npm run build` green — untouched, as a doc leg should leave them. Full account below. |
 | **2d** | 2026-08-04 | Opus 5 | `ae5af81`… | **The last ten screens ported. ALL 25 STAND, every one measured exact in every state it has.** Context with its four note tabs and both windows over it, the intake's three ways in, Actions & templates, meeting capture, the handoff, live subtitles, translation, client conversations and the agent overlay. The note grammar, the five-member window family, the intake, the shipped overlay pill drawn at its real geometry, the caption strip and the echo, the translation window and the client record are in the library. Three library defects no earlier screen could show: the wide layout had no measure, the 16 px icon base rule was shrinking the dot-matrix readout to a square, and `Card` now owns the head/rows/body/foot order that three legs had got wrong at a call site. 298 → 335 frontend tests, `cargo test` 623, both builds green. Context looked at in the native host; the agent overlay is owed there. **The prototype's status IS flipped — Leg 2 is closed.** Full account below. |
 
 ### Leg 1 — what landed, and the one thing it got wrong
@@ -979,6 +1007,46 @@ be drawn without inventing a control is a **Leg 4 wiring problem**.
   Five fields, each stating where its value came from, and the rule that an
   empty field says empty rather than being filled by a model.
 
+**Leg 4a's additions to the same list.** Every one of these falls out of a
+lifecycle decision rather than out of a drawing, which is why Leg 2 could not
+have found them: they are things the runtime has to be able to answer *because
+of how a surface is entered or left*, not because a label states them.
+
+- **The runtime cannot say whether it has a usable connection.** ADR 0060's
+  auto-run condition is exactly that question, and so is every step's resume
+  test. `Registration: Accepted` and the insert preflight already exist; the
+  connection, the microphone permission and "has a transcription ever completed"
+  do not exist as one readable readiness answer. **Leg 5 contract**, and the
+  cheapest of them — it is a read over state the runtime already holds.
+- **One config field: when onboarding was completed or closed.** Without it the
+  flow re-runs on every launch for anybody who deliberately runs unconfigured.
+  **Leg 5 contract**, one timestamp.
+- **The tray/dock presence state is decided and drawn nowhere.** ADR 0030 named
+  it — three levels, the third with a counter — and ADR 0061 makes it
+  load-bearing: it is where a dismissed agent question rests when no pill and no
+  window is on screen. **Leg 5 contract *and* a 26th drawing.** It is the only
+  surface this port has found that is decided, needed, and has never been drawn.
+- **Whether the agent window is focused is an input to the surface selector.**
+  ADR 0061 routes a question by what is already on screen, and "focused" is the
+  only checkable proxy for "seen". **Leg 5 contract.**
+- **Three counters keyed by the verb that fired, persisted like history.**
+  ADR 0062 makes them the handoff's grade rather than an optional metric, and
+  keyed by trigger rather than totalled, because the fix is removing one entry
+  from a list. Diagnostics has to grow a block for them. **Leg 5 contract, plus
+  a small drawing owed.**
+- **Which processes hold the microphone.** ADR 0063's detection is this read and
+  nothing more, per platform (`pactl list source-outputs` on Linux). It is
+  independent of system-audio capture, which is what makes noticing a call cheap
+  and recording one expensive. **Leg 5 contract.**
+- **The consent field on a conversation, which is also its opt-in.** Leg 2d
+  listed consent as a field with nowhere to put it; ADR 0064 makes it the thing
+  that decides whether an object is written at all. That promotes it from a
+  label to a gate: opting out has to leave no file, not a file marked private.
+  **Leg 5 contract.**
+- **A per-language output-device routing, and a mute of the recogniser for the
+  length of each spoken utterance.** ADR 0064. Both are new runtime capability
+  and neither is a setting on top of something that exists.
+
 **THE PROTOTYPE'S STATUS IS FLIPPED.** All 25 screens stand, so ADR 0057's
 condition is met: the prototype is provenance, the gallery is the source, and
 rule 4b has expired. Said here, in the rules section above, and in
@@ -1353,7 +1421,277 @@ the overlay out of scope.
   the pill and the notification were both checked without a fourth build.
 - The AppImage step still fails on `linuxdeploy`; the binary is built and runs.
 
-## The prompt for Leg 4a
+### Leg 4a — six lifecycles, no code, and the two things the drawing caught
+
+**FIVE ADRs AND THREE ROADMAP ENTRIES. NOTHING ELSE CHANGED.** `git diff` touches
+`docs/` only: five new ADRs, the decisions index, `ROADMAP.md`,
+`SETTINGS_REWORK_PLAN.md`, this file and `CHANGELOG.md`. No component, no route,
+no token, and **no edit to `ia.tsx`** — including no comment, because a leg that
+writes no code writes no code. 289 frontend tests and `npm run build` green,
+both untouched.
+
+| Surface | Shape of the answer | Where |
+| --- | --- | --- |
+| Onboarding | **Decision** | ADR 0060 |
+| Agent overlay | **Decision** | ADR 0061 |
+| Handoff | **Decision** | ADR 0062 |
+| Meeting capture | **Decision, blocked on a capability** | ADR 0063 + the existing candidate, gate 1 closed |
+| Translation window | **Decision, not scheduled** | ADR 0064 + a new candidate |
+| Live subtitles | **Not yet, and deliberately no ADR** | a new candidate |
+
+**THE ONE THING TO TAKE FROM THIS LEG: two answers were nearly written wrong,
+and looking at the drawn surface is what caught both.**
+
+1. **The notification does not retract when a dictation starts.** The draft of
+   ADR 0061 had it fall back to the tab, with a decent argument — the
+   microphone belongs to the user, so *answer out loud* is unavailable for the
+   length of the capture, and a surface whose primary control cannot be used
+   should not be standing. `Settings → Agents` already says otherwise, in a row
+   nobody had read for this question: *"Remembered per monitor. It never covers
+   the dictation overlay — it offsets above it while one is on screen."* The
+   gallery is the source (ADR 0057), so the drawing wins and the ADR says the
+   opposite of what it was about to say. **This is rule 4b's failure in its new
+   form: deciding a lifecycle from a description when the drawing already
+   answered it.**
+2. **"Meeting capture is not on the roadmap" has been false since the day it was
+   written.** §7 says it, §2.6 repeated it, and the Leg 4a prompt repeated it
+   again — three documents deep. The candidate entry was added 2026-08-03,
+   hours after the sentence. The two surfaces that genuinely had no roadmap home
+   are the translation **window** (the mode has been Phase 4 since ADR 0041) and
+   live subtitles.
+
+**THE DONOR ANSWERED THE MEETING QUESTION AND MADE IT CHEAPER.** The owner
+pointed at `donors/app/desktop-shells/openwhispr`, which is in this repo and had
+not been read for this. Read for mechanism, not copied:
+
+- `meetingProcessDetector` exists and its events are **deliberately
+  context-only** — a running meeting app never triggers a prompt, because an app
+  idling in the background is a false positive. **The detector that looks most
+  obviously right is the one the donor disabled.**
+- The trigger is `audioActivityDetector`, and it watches **another process
+  holding the microphone** (`pactl list source-outputs` on Linux). Sustained
+  over ~6 s polled, 2 s event-driven, 5-minute cooldown after a dismissal,
+  queued rather than dropped while the user dictates.
+- **So noticing a call needs no system-audio capture at all.** The expensive
+  capability blocks recording, not noticing. §10.4's gate had assumed the
+  detection prompt would be "a third surface to own"; it is ADR 0043's
+  notification window with a different payload.
+- Calendar reminders enter the same pipeline, 60 s before the start, with a
+  five-minute imminence threshold deciding whether the prompt reads *starting*
+  or *underway*.
+- One rule was read and **not** taken: the donor's prompt auto-dismisses after
+  30 s. WordScript's agent notification may not, because an unanswered question
+  is still blocking somebody — but a *detection* prompt is an offer about
+  something already happening, so it expires, and expiring is not a decline.
+  Two windows, one family, two dismissal rules, and the difference is stated in
+  ADR 0063 rather than left to whoever builds them.
+
+**WHAT THE OWNER DECIDED AND WHAT WAS DERIVED.** Three questions were asked, in
+one call, on the three where a wrong guess was expensive. Each ADR says which of
+its clauses came from which.
+
+- **Onboarding** — first launch, re-runnable from Settings. Everything else in
+  ADR 0060 is derived: the window (there is only one), the writes (instant-save
+  is the product's rule), the absence of a Skip (every step 1–5 is a
+  precondition and the title bar already closes windows), and the derived resume
+  point, which is the part that makes the flow idempotent.
+- **Meeting capture** — the owner's answer was four ways in, not one of the
+  three drawn: hotkey, calendar offering shortly before with a notification
+  button, call detection with a notification button, and `Context → New →
+  Meeting`. The fourth was **already drawn** and had not been counted as a way
+  in: `Context → intake → Record` carries *Start recording*, the pane foot
+  carries *Record meeting*, and a scheduled meeting carries *Record this*.
+- **Translation** — the owner's answer moved the surface: it is a workspace
+  **view** with a compact pop-out, not a standalone window, and a conversation
+  is a context object **opt-in per session**. That connects to a §2.5 entry Leg
+  2d had filed separately — *"consent is a field on a conversation and there is
+  nowhere to put it"* — and makes it the same field. The owner named two open
+  points himself (is a view enough interaction at a table, and does it need a
+  processing mode of its own); both are in the ADR and in the roadmap gate,
+  unsettled, because an implementation must not settle them quietly.
+
+**WHY LIVE SUBTITLES GOT NO ADR, AND THAT IS THE ANSWER RATHER THAN A GAP.** An
+ADR here is four questions — entered, held, dismissed, and what happens when the
+thing it is about ends — and the rule the prompt set is *all four, or the surface
+is still undecided*. Two of the four are answerable and are answered in the
+roadmap entry: the echo belongs to **the profile** (the active profile at
+capture start is what makes it appear for this dictation and not that one — the
+same rule every other per-profile capture setting follows), and the strip's
+placement reuses **the overlay's own placement grammar** per display, globally
+rather than per source, because a strip you place once is a property of your desk
+and a per-source memory would move it when you switch from a player to a call.
+What turns captions on is not answerable: it is a control on a capture that does
+not exist, and inventing its door now would be deciding the feature by naming its
+entry point.
+
+**Findings for Leg 4 and Leg 5.**
+
+1. **`ENTRY_POINT_HOLES` was not edited and Leg 4 will meet it stale.** It still
+   reads as though nothing is decided. The reconciliation table is in §2.6 above,
+   under Leg 3's record; whoever mounts a surface updates its entry in the commit
+   that mounts it. `ia.test.tsx` asserts all six are named and none is mounted,
+   and that assertion is still exactly right.
+2. **`Settings → Agents`'s `Show it` toggle is drawn as neutral and is not.**
+   Off leaves the tab and the window as the only signals, which means a question
+   raised while nothing is on screen is invisible until the budget expires —
+   the failure ADR 0043 exists to prevent. **Do not wire that row without
+   stating the consequence on it**, and changing the copy on a drawn row is a
+   design change that needs its own record.
+3. **The tray/dock presence state is the only decided-and-never-drawn surface
+   this port has found.** ADR 0030 named it, ADR 0061 makes it load-bearing, and
+   there is no 26th screen. It is both a Leg 5 contract and a drawing.
+4. **Five of the six are Phase 6/8/V2 and Leg 4 wires none of them.** What Leg 4
+   inherits from this leg is a list of what to skip and why, not new work.
+5. **Nothing was mounted, nothing in `src-tauri/` was opened, and no overlay
+   rule moved.** Rules 5 and 6 held; ADR 0061 needs the pill to change in no
+   way, and it says so.
+6. `docs/STATUS.md` was **not** touched. Nothing shipped, and product state is
+   Leg 6's drift check. Same for `VISION.md`: two roadmap candidates are not a
+   scope move — the roadmap already carries candidates outside the phases.
+7. **Playwright screenshots DO work, and Leg 2a's record is wrong about it.**
+   2a concluded *"screenshots could not be written to disk from the Playwright
+   MCP server"* and measured computed styles instead, which is why three legs
+   verified by numbers alone. They write fine — to the **process's working
+   directory**, not to the `.playwright-mcp/` path the tool reports back, which
+   is why the file looks missing if you go looking where it says. Pass a plain
+   relative filename, then read it from the repo root. `.playwright-mcp/` is
+   gitignored; a screenshot at the root is not, so delete it when you are done.
+   The accessibility snapshot is still the cheaper instrument for copy and
+   structure, but a leg that wants to *see* a screen now can.
+
+## The prompt for Leg 4
+
+Copied to a fresh agent verbatim.
+
+---
+
+You are picking up the WordScript GUI port. Work in
+`/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
+on the `main` branch. Do not create a branch. **Leg 4 is yours: wiring, section
+by section.**
+
+**What is already true**
+
+Leg 2 ported all 25 screens, Leg 3 overwrote the shell, and Leg 4a decided the
+six lifecycles that were open. The product is one window — a workspace with four
+views and settings as a sheet over it — and **fourteen of the 25 screens are
+mounted in it, every one carrying a banner that says it is drawn rather than
+wired.** The shell reads the runtime; the content does not. That is what you are
+here to change.
+
+**Read this first**
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`, in full. Leg 3's record is the shell
+you are wiring into, Leg 4a's record directly above this prompt is what you may
+skip and why, and **§2.5 — the twenty-odd entries under Leg 2c's, Leg 2d's and
+Leg 4a's headings — is the list of what the runtime cannot answer.** Add to it;
+do not start a second one. Then `CLAUDE.md`, which outranks any default you
+carry, and `docs/ARCHITECTURE.md` for the UI/runtime seam.
+
+**What wiring looks like, exactly**
+
+`src/windows/workspace/ia.tsx` carries fourteen rows, each with a `banner`.
+**Deleting a row's `banner` is what wiring that section looks like**, and that
+table is therefore the list of what is left. A section is wired when every fact
+on it is read from the runtime or is visibly absent — never when it merely stops
+saying it is a preview.
+
+In the same commit that wires a screen: **delete that screen's entry from
+`/gallery` → Screens** (ADR 0057 — the Screens section is scaffolding and
+retires per screen). `registry.tsx` is where it comes out. `ia.test.tsx` asserts
+that every screen the product mounts is the same `render` the registry lists, so
+the two cannot drift while both exist.
+
+**The rule you will be judged on**
+
+**Never render fake readiness** (rule 7). A screen that reads three of its eight
+facts and invents the other five is worse than the banner it replaced, because
+the banner was honest. If a fact has no source, the row says so or the section
+keeps its banner — and the fact goes on the §2.5 list for Leg 5. A partial
+wiring is fine; a partial wiring that stops admitting it is not.
+
+**The big one, and do it early**
+
+**`RebuildLabTab` is the largest single thing Leg 3 gave up** — about 1000 lines
+of real checks against the native runtime, deleted because the ported
+Diagnostics screen replaced it in the sheet and ADR 0054 forbids the old and the
+new coexisting. `RebuildLabWindow` now mounts the ported `DiagnosticsScreen`,
+which is a drawing. **Restoring those checks onto the drawing is yours**, and it
+is the one place where wiring means recovering deleted behaviour rather than
+reading a value. Its code is in the history; `diagnosticsPolling.test.tsx` still
+exercises two of the hooks it used.
+
+**Six modules were deliberately kept unreferenced for you**:
+`useNativeInsertion`, `useRuntimeLogs`, `useTranscriptionHistory`, `useV1Slice`,
+`lib/appMeta` and `HotkeyRecorder`. Each lost its only caller with a deleted
+area and each is the runtime-facing half of a drawing you are about to wire.
+Deleting them would mean re-deriving the IPC shapes from Rust.
+
+**Two more things that land in the commit that makes the first section write**
+
+- **The sheet's foot goes back to the prototype's line.** It reads *"No section
+  here writes to the runtime yet — each one says so at its head."* and that stops
+  being true the moment one does. The prototype's line is *"Every change applies
+  as you make it."*
+- **P1 and P2 are fixed at the seam**, not inside a screen.
+
+**What you must NOT do**
+
+- **Do not mount any of the six undecided surfaces.** They are decided now —
+  ADRs 0060–0064 and one roadmap candidate — and every one of them is Phase 6,
+  Phase 8 or a V2 candidate. `ia.test.tsx`'s last case asserts none is mounted
+  and it stays that way. Leg 4a's record has the per-surface *skip* column.
+- **Do not touch `src-tauri/`.** Rule 6 stands through Leg 4. Everything you
+  find that the runtime cannot answer goes on the §2.5 list for Leg 5, which is
+  prioritised by what you find blocking.
+- **Do not touch the overlay.** Rule 5. No token, size or rule in `overlay*.css`
+  or `OverlayPill.tsx`.
+- **Do not re-open anything §0 of the plan lists as settled**, and do not
+  re-decide a lifecycle ADRs 0060–0064 just decided.
+- **Do not change a drawn screen's copy or layout to make wiring easier.** The
+  gallery is the source (ADR 0057); a disagreement is an ADR or a bug in the
+  gallery, never a quiet edit.
+
+**How to check yourself**
+
+- `npm run port:diff` after any change that could move a screen. All 33
+  measurements were structural 0 | style 0 after Leg 3, which moved two base
+  rules and every settings screen into a container it had never been in. A
+  wired screen that no longer measures is a wired screen that got redrawn.
+  **A screen you delete from the gallery leaves the diff — say so in your
+  record, with the count, so the drop is a decision rather than a regression.**
+- `npm test`, `npm run build`, and `cd src-tauri && cargo test` — you are
+  touching the seam, so run all three.
+- **Look at it in the browser first — screenshots work.** Leg 2a's *"screenshots
+  could not be written to disk"* is wrong: they land in the working directory,
+  not in the `.playwright-mcp/` path the tool reports. Pass a plain relative
+  filename and read it from the repo root, then delete it. That is minutes
+  instead of a full `tauri build`, and it catches everything except the things
+  only WebKitGTK does.
+- **Then look at it in the native host**, which is still where anything
+  shell-, window- or Tauri-bound is judged. `npm run tauri build` (the AppImage
+  step fails on `linuxdeploy`; the binary is built), run
+  `src-tauri/target/release/wordscript`, `xdotool search --name "WordScript –
+  Settings"`, `import -window <id>`. Synthetic input still cannot be delivered,
+  so hoist what is below the fold for one build, or use Leg 3's trick: a
+  temporary `useEffect` that sets `.ws-content`'s `scrollTop` on a timer lets
+  one build be captured twice. **Do not interrupt `npm run tauri build`** —
+  killing cargo mid-link costs a full dependency rebuild.
+
+**Split if you run long.** Leg 2 split three times and each split was right.
+Fourteen sections plus the rebuild lab is more than one session; say so in your
+record, list what is left, and write the 4b prompt. A leg that reports fourteen
+wired when six are wired is worse than a leg that splits.
+
+**When it is done**
+
+Commit, push to `main`, append your record to the leg log, and write the next
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+---
+
+## The prompt for Leg 4a (spent — kept for the chain's record)
 
 Copied to a fresh agent verbatim.
 

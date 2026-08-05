@@ -370,6 +370,45 @@ Status: Proposed | Accepted | Superseded by NNNN
   of scope — so four legs paid for a temporary route edit and a full rebuild
   instead. The chord is not a link: nothing names it and no affordance leads to
   it. It is deleted when the gallery gets a window of its own.
+- [0060](0060-onboarding-runs-when-the-runtime-cannot-answer-and-it-is-re-runnable.md):
+  onboarding is a routing branch in the one window, ahead of the workspace. It
+  runs automatically when the runtime reports no usable connection and the flow
+  has not been completed or closed, and it is re-runnable from `Settings →
+  General`. It stores nothing but that one timestamp: the resume point is
+  **derived** from the first step whose precondition the runtime does not
+  satisfy, which is what makes it idempotent against a half-configured machine.
+  No Skip on steps 1–5; the window's own close is the exit, and a quit at step 4
+  leaves steps 1–3 applied because they applied when they were made.
+- [0061](0061-the-tab-is-a-state-the-notification-is-the-question-and-neither-replaces-the-other.md):
+  the agent overlay's three surfaces are not alternatives. The tab is a state —
+  *something is waiting* — and appears whenever a pill exists and a question is
+  open; the notification is the question itself and appears when it is not
+  already on a focused surface; both may stand at once, and the notification
+  offsets above the pill rather than replacing it. Dismissing is *not now*,
+  never *no*: nothing is sent to the agent. The resting place a dismissal falls
+  to is ADR 0030's tray state, which is decided and drawn nowhere.
+- [0062](0062-the-effect-verb-stage-runs-before-the-mode-router-and-a-refusal-is-counted-against-the-verb-that-caused-it.md):
+  the handoff's effect-verb stage is Rust, on the transcript, after
+  transcription and before the mode router, lexical before it is ever a model
+  call, skipped entirely when no desk is configured. Its refusals are counted
+  locally and **keyed by the verb that fired**, because "the fix is fewer
+  offers" means removing an entry and a single ratio does not say which. Shown
+  on Diagnostics, sent nowhere, and the product counts while a person cuts the
+  list.
+- [0063](0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md):
+  meeting capture has four ways in — its own hotkey, a calendar offer shortly
+  before, a detected call, and `Context → New → Record`. Detection watches
+  **which process holds the microphone**, not which applications are running,
+  and therefore needs no system-audio capture; the prompt is ADR 0043's
+  notification window with a different payload, so it is not a third surface.
+  Only an explicit stop ends a capture. Blocked on system audio and echo
+  cancellation: Leg 4 skips it.
+- [0064](0064-the-translation-window-is-a-view-with-a-pop-out-and-a-conversation-is-kept-only-if-you-say-so.md):
+  the live-translation surface is a workspace **view** whose pop-out is the
+  drawn window, and a conversation is a context object only if the session opts
+  in — opt-in and consent are one field, and opting out leaves no file. One live
+  conversation at a time, because there is one microphone. ADR 0041's mode is
+  untouched; the workspace grows a fifth view the day this ships and not before.
 
 ## Resolved: the number 0011 was used twice
 
@@ -397,8 +436,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-05 the filed range runs through 0059; the next
-decision takes 0060.)
+takes 0021. (As of 2026-08-05 the filed range runs through 0064; the next
+decision takes 0065.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

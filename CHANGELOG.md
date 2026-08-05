@@ -53,6 +53,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Six drawn surfaces got a decided lifecycle, and nothing was built for
+  them.** Relay Leg 4a: how each is entered, what holds its state, what
+  dismisses it, and what happens to it when the thing it is about ends —
+  onboarding (ADR 0060), the agent overlay's three surfaces (ADR 0061), the
+  handoff's effect-verb stage and its refusal counters (ADR 0062), meeting
+  capture's four ways in (ADR 0063), and the live-translation window (ADR 0064).
+  All six are still mounted nowhere, which is correct: five are Phase 6, Phase 8
+  or a V2 candidate.
+- **Three roadmap entries.** Meeting capture's first decision gate is closed;
+  live subtitles and the live-translation window are new candidates, for the two
+  surfaces that genuinely had no roadmap home. Live subtitles is the one of the
+  six without an ADR — what turns captions on cannot be decided honestly before
+  the capture that would carry the control exists, and saying so is the answer.
+- **Detecting that a call is happening turns out to be cheap.** Read off the
+  donor: watch which process holds the *microphone*, not which applications are
+  running — the donor's own process detector is deliberately inert because an
+  idle meeting app is a false positive. Noticing a call therefore needs none of
+  the system-audio capture that blocks recording one (ADR 0063).
+
 ### Changed
 
 - **The product is one window.** The settings window with fourteen flat areas is
