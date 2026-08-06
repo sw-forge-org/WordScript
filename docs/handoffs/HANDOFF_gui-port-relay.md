@@ -1655,6 +1655,15 @@ Do not.
   `Inspector` and `RawPanel` look like Diagnostics' business, which is yours.
   If you do remove one, say so in your record with what you checked.
 
+**Make that guard mechanical, in your first commit.** A paragraph in a prompt is
+the weakest form of this rule and it is what protects ~700 lines of ported CSS
+today. `registry.test.tsx` should fail when the registry loses an entry whose
+screen the product does not mount — the two lists are already in the same test's
+reach (`ALL_SCREENS` and `VIEWS` / `SECTIONS`), so the assertion is small: the
+only ids that may leave the registry are ids the product now mounts without a
+banner. Replace the bare `toHaveLength(25)` with it rather than decrementing a
+literal fourteen times.
+
 **The rule you will be judged on**
 
 **Never render fake readiness** (rule 7). A screen that reads three of its eight
