@@ -1548,7 +1548,21 @@ entry point.
 6. `docs/STATUS.md` was **not** touched. Nothing shipped, and product state is
    Leg 6's drift check. Same for `VISION.md`: two roadmap candidates are not a
    scope move — the roadmap already carries candidates outside the phases.
-7. **Playwright screenshots DO work, and Leg 2a's record is wrong about it.**
+7. **THE PREVIEWS ARE ONE `git rm` FROM GONE, AND NOTHING GUARDS THEM.** Raised
+   by the owner against this leg's own Leg 4 prompt, and he was right: the
+   prompt said what to delete when wiring and never said what may not be
+   deleted. Measured afterwards — **84 components in `components/shell/` are
+   reachable only through the nine screens that are mounted nowhere**, and a
+   screen's gallery entry is the only thing that references its family. One
+   deleted preview entry orphans the whole family; the next "nothing imports
+   this" pass takes ~700 lines of ported CSS with it. `registry.test.tsx`
+   asserts exactly 25 screens, which **breaks on the first wired screen** — so
+   the one commit where the count must be edited is also the commit where five
+   more entries could go with it and every test would still pass. The guard is
+   now a block in the Leg 4 prompt rather than a test, and a test would be
+   better: an assertion that the registry never loses an entry whose screen the
+   product does not mount would make this mechanical. **Leg 4 should write it.**
+8. **Playwright screenshots DO work, and Leg 2a's record is wrong about it.**
    2a concluded *"screenshots could not be written to disk from the Playwright
    MCP server"* and measured computed styles instead, which is why three legs
    verified by numbers alone. They write fine — to the **process's working
@@ -1601,6 +1615,45 @@ In the same commit that wires a screen: **delete that screen's entry from
 retires per screen). `registry.tsx` is where it comes out. `ia.test.tsx` asserts
 that every screen the product mounts is the same `render` the registry lists, so
 the two cannot drift while both exist.
+
+**THE GALLERY SHRINKS BY WIRING AND BY NOTHING ELSE. READ THIS BEFORE YOU DELETE
+ANY ENTRY.**
+
+`registry.test.tsx` asserts `ALL_SCREENS` has exactly **25**. That number breaks
+on your first wired screen and you will have to edit it — which is the one
+moment in this leg where deleting five more entries costs nothing and passes.
+Do not.
+
+- **An unwired screen's entry is never deleted.** Not "it will never be wired",
+  not "the previews are scaffolding too", not tidiness. ADR 0057 retires an
+  entry *in the commit that wires that screen* and says nothing else.
+- **Nine screens are mounted nowhere and all nine stay in the gallery.** Six are
+  Leg 4a's decided-but-unbuilt surfaces; `conversation` is Phase 8; `commit` is
+  the **withdrawn** screen and keeps its withdrawn banner, because §11.15 exists
+  so nobody builds Phase 3 out of it; `contextintake` and `contextactions` are
+  states of a screen you *are* wiring and are not covered by its retirement.
+- **Four mounted sections cannot be wired at all** — Context, Notes & Meetings,
+  Agents, Integrations are V2 or Phase 8. They keep their banners *and* their
+  gallery entries. For those, deleting the banner is the error, not the goal.
+- **84 components in `components/shell/` are reachable only through screens that
+  are mounted nowhere.** Measured, not estimated: the whole `Hud*` family, every
+  `Translate*`, every `Agent*` plus `AgentPopup`, `Caption*`, `Echo*`,
+  `Handoff*`, `Cross*`, `LineCompare*`, `Onboarding*`, `OverlayPillDrawing` /
+  `OverlayStage` / `OverlayTab`, `Matrix`, `ModeCycle`, `StageList`, `Readout`,
+  `Client*`, `Doc*`. **Deleting one preview's gallery entry orphans its entire
+  family in a single move**, and the next "nothing imports this" pass removes
+  ~700 lines of ported CSS with it.
+- **"Unreferenced" is not the test; "is it the library" is.** Everything in
+  `components/shell/` is the library, ported 1:1 from the prototype, and the
+  library is the deliverable. `src/lab/` was deleted correctly (Leg 2b) because
+  it was a *gallery-only duplicate* of components the library already needed —
+  the opposite case. Leg 3 kept six unreferenced runtime hooks for exactly this
+  reason and said so.
+- **Six exports are genuinely orphaned today**: `DangerRow`, `InputLevelMeter`,
+  `Inspector`, `PaneGroup`, `RawPanel`, `VolumeSlider` — no screen, no window,
+  no gallery page. This is information, **not a delete list**: at least
+  `Inspector` and `RawPanel` look like Diagnostics' business, which is yours.
+  If you do remove one, say so in your record with what you checked.
 
 **The rule you will be judged on**
 
