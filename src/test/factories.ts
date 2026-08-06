@@ -1,4 +1,5 @@
-import type { AppConfig } from "../types/ipc";
+import type { AppConfig, RuntimeState } from "../types/ipc";
+import type { WorkspaceRuntime } from "../screens/props";
 import { buildCuratedTextProfiles } from "../lib/textProfileTemplates";
 import {
   createDefaultProfileCaptureSettings,
@@ -98,6 +99,46 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     mode_rewrite_hotkey: "",
     mode_agent_hotkey: "",
     mode_prompt_enhance_hotkey: "",
+    ...overrides,
+  };
+}
+/**
+ * WHAT A WIRED SCREEN IS HANDED, for a test that is not the workspace.
+ *
+ * A wired screen takes `WorkspaceRuntime` because there is exactly one reader
+ * per window (`src/screens/props.ts`). The default here is inert — `patch` and
+ * `patchText` record nothing and `active` is false — so a test opts INTO the
+ * behaviour it is about rather than inheriting a surface that writes.
+ */
+export function createWorkspaceRuntime(
+  overrides: Partial<WorkspaceRuntime> = {},
+): WorkspaceRuntime {
+  return {
+    config: createAppConfig(),
+    state: createRuntimeState(),
+    patch: () => undefined,
+    patchText: () => undefined,
+    flushText: () => undefined,
+    active: false,
+    ...overrides,
+  };
+}
+
+export function createRuntimeState(overrides: Partial<RuntimeState> = {}): RuntimeState {
+  return {
+    status: "idle",
+    config: null,
+    muted: false,
+    paused: false,
+    lastTranscription: null,
+    pendingResult: null,
+    lastResult: null,
+    error: null,
+    errorAudioRetained: false,
+    recordingStartMs: null,
+    previewStaged: false,
+    resultSurfaceOpen: false,
+    nativeSyncMirror: null,
     ...overrides,
   };
 }

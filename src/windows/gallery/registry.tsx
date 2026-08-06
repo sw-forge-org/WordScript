@@ -6,7 +6,6 @@ import { HotkeysScreen } from "@/screens/Hotkeys";
 import { DeliveryScreen } from "@/screens/Delivery";
 import { PrivacyScreen } from "@/screens/Privacy";
 import { DiagnosticsScreen } from "@/screens/Diagnostics";
-import { AboutScreen } from "@/screens/About";
 import { ProfilesScreen } from "@/screens/Profiles";
 import { CommitScreen } from "@/screens/Commit";
 import { IntegrationsScreen } from "@/screens/Integrations";
@@ -34,6 +33,15 @@ import { AgentOverlayScreen } from "@/screens/AgentOverlay";
  * than a hand-kept count — a tally maintained beside the thing it counts is a
  * tally that goes stale. This section is scaffolding and retires per screen in
  * the commit that wires it (ADR 0057).
+ *
+ * AN ENTRY LEAVES HERE ONLY WHEN ITS SCREEN IS WIRED, and `registry.test.tsx`
+ * is what holds that: the set of the prototype's 25 that is missing from this
+ * file must equal the set of screens `windows/workspace/ia.tsx` mounts without
+ * a banner. Eighty-four components in `components/shell/` are reachable only
+ * through the screens the product mounts nowhere, so an entry deleted for
+ * tidiness orphans a whole family in one move. Wiring also makes it mechanical:
+ * a wired screen takes `WiredScreenProps`, which the `render: () => <X />` here
+ * cannot satisfy, so the compiler asks for the deletion the ADR asks for.
  */
 
 export type ScreenEntry = {
@@ -86,7 +94,6 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "delivery", surface: "settings", label: "Delivery & Insert", render: () => <DeliveryScreen /> },
       { id: "privacy", surface: "settings", label: "Privacy & Data", render: () => <PrivacyScreen /> },
       { id: "diagnostics", surface: "settings", label: "Diagnostics", render: () => <DiagnosticsScreen /> },
-      { id: "about", surface: "settings", label: "About & Updates", render: () => <AboutScreen /> },
     ],
   },
   {

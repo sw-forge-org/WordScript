@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Icon,
   NavGroup,
@@ -10,6 +11,7 @@ import {
   SheetNav,
   SheetProfile,
 } from "@/components/shell";
+import type { WorkspaceRuntime } from "@/screens/props";
 import { SECTIONS, SECTION_GROUPS, findSection, type SectionId } from "./ia";
 
 /**
@@ -33,18 +35,29 @@ import { SECTIONS, SECTION_GROUPS, findSection, type SectionId } from "./ia";
  */
 export function SettingsSheet({
   section,
+  runtime,
   onSection,
   onClose,
   profile,
   onOpenProfiles,
 }: {
   section: SectionId;
+  runtime: Omit<WorkspaceRuntime, "active">;
   onSection: (id: SectionId) => void;
   onClose: () => void;
   profile: { initials: string; name: string };
   onOpenProfiles: () => void;
 }) {
-  const current = findSection(section) ?? SECTIONS[0];
+  // P2, the sheet's half: a section the user comes back to is not rebuilt.
+  // Bounded to what was actually opened, so a sheet opened on General costs one
+  // section rather than ten.
+  const [visited, setVisited] = useState<SectionId[]>([section]);
+  useEffect(() => {
+    setVisited((seen) => (seen.includes(section) ? seen : [...seen, section]));
+  }, [section]);
+
+  /* Derived, so the foot cannot disagree with the sections above it. */
+  const writes = SECTIONS.some((entry) => !entry.banner);
 
   return (
     <Sheet onClose={onClose} label="WordScript Settings">
@@ -86,23 +99,33 @@ export function SettingsSheet({
           ))}
         </SheetNav>
 
-        <SheetContent layout={current.layout}>
-          {current.render({ banner: current.banner })}
-        </SheetContent>
+        {SECTIONS.filter((entry) => visited.includes(entry.id)).map((entry) => (
+          <SheetContent key={entry.id} layout={entry.layout} hidden={entry.id !== section}>
+            {entry.render({
+              banner: entry.banner,
+              runtime: { ...runtime, active: entry.id === section },
+            })}
+          </SheetContent>
+        ))}
       </SheetBody>
 
       {/* The status strip belongs to the workspace behind, so the sheet does
           not repeat it. What it owes instead is the one fact its own surface
           creates, and the way out.
 
-          THE PROTOTYPE'S LINE IS "Every change applies as you make it." and it
-          is not true here yet: instant save is the shipped behaviour and no
-          section in this sheet is wired to it. Stating it anyway would be the
-          fake-readiness defect at the one place in the sheet that is never
-          scrolled away. Leg 4 puts the prototype's line back in the commit that
-          makes the first section write. */}
+          THE PROTOTYPE'S LINE IS BACK, and it went back in the commit that made
+          the first section write. Leg 3 could not state it — instant save is the
+          shipped behaviour, but no section in this sheet reached it, so the line
+          would have been the fake-readiness defect at the one place in the sheet
+          that is never scrolled away. It is derived rather than hardcoded: the
+          moment `ia.tsx` has a section without a banner, the sheet writes, and a
+          leg that somehow un-wired all ten would get the honest line back
+          without having to remember to. Sections that are still drawn keep
+          saying so at their own head. */}
       <SheetFoot trailing="Esc to close">
-        No section here writes to the runtime yet — each one says so at its head.
+        {writes
+          ? "Every change applies as you make it."
+          : "No section here writes to the runtime yet — each one says so at its head."}
       </SheetFoot>
     </Sheet>
   );

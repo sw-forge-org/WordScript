@@ -143,13 +143,18 @@ export function SheetNav({ label, children }: { label?: string; children: React.
 
 export function SheetContent({
   layout,
+  hidden,
   children,
 }: {
   layout?: "pane" | "wide";
+  /** One scroll box per section the sheet has shown, only one of them visible
+   *  (plan P2). Its own box, because each section keeps its own scroll position
+   *  and its own layout. */
+  hidden?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="ws-modal-content" data-layout={layout}>
+    <div className="ws-modal-content" data-layout={layout} hidden={hidden}>
       <div className="ws-content-inner" data-layout={layout}>
         {children}
       </div>

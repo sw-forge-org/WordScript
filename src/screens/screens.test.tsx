@@ -7,7 +7,6 @@ import { HotkeysScreen } from "./Hotkeys";
 import { DeliveryScreen } from "./Delivery";
 import { PrivacyScreen } from "./Privacy";
 import { DiagnosticsScreen } from "./Diagnostics";
-import { AboutScreen } from "./About";
 import { ProfilesScreen } from "./Profiles";
 import { CommitScreen } from "./Commit";
 import { IntegrationsScreen } from "./Integrations";
@@ -217,30 +216,6 @@ describe("Diagnostics", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
     const levels = [...container.querySelectorAll(".ws-lv")].map((el) => el.getAttribute("data-l"));
     expect(new Set(levels)).toEqual(new Set(["INFO", "WARN", "ERROR"]));
-  });
-});
-
-describe("About & Updates", () => {
-  it("does not read as though installers or in-app updates already work", () => {
-    render(<AboutScreen />);
-    expect(screen.getByText("In progress")).toBeInTheDocument();
-    expect(screen.getByText(/There is no installer yet/)).toBeInTheDocument();
-    expect(screen.getByText(/the cross-platform release path is still being assembled/)).toBeInTheDocument();
-  });
-
-  it("separates not-yet from never", () => {
-    render(<AboutScreen />);
-    /* "not built yet" and "not going to be built" are not the same answer, and
-       only the second belongs in a list read to decide whether to keep
-       waiting. */
-    expect(screen.getByText("Candidate")).toBeInTheDocument();
-    expect(screen.getByText("Never")).toBeInTheDocument();
-  });
-
-  it("carries no stat tile — a version string is not a metric", () => {
-    const { container } = render(<AboutScreen />);
-    expect(container.querySelector(".ws-stats")).toBeNull();
-    expect(screen.getByText("0.2.2-alpha")).toBeInTheDocument();
   });
 });
 

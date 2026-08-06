@@ -747,6 +747,8 @@
 
   .ws-modal-content { flex: 1; min-width: 0; overflow-y: auto; }
   .ws-modal-content > .ws-content-inner { padding: var(--content-pad); }
+  /* The sheet's half of the same rule — see `.ws-content[hidden]` above. */
+  .ws-modal-content[hidden] { display: none; }
 
   /* The status strip belongs to the workspace behind, so the sheet does not
      repeat it. What the sheet owes instead is the one fact its own surface
@@ -1006,6 +1008,15 @@
      as well produces two bars for one gesture and a header that drifts away
      from the list it labels. */
   .ws-content[data-layout="pane"] { overflow: hidden; }
+  /* NOT FROM THE PROTOTYPE, and it is here rather than at a call site because a
+     rule belongs in the stylesheet (ADR 0052). The prototype rebuilds its whole
+     surface on every render and never has two content columns at once; the
+     product keeps every view the user has come back to mounted instead of
+     rebuilding it (plan P2), so exactly one of them is shown. Tailwind's
+     preflight declares `[hidden] { display: none }` in @layer base and this file
+     is @layer components, so the layer — not the specificity — is why the
+     display above would otherwise win. */
+  .ws-content[hidden] { display: none; }
   /* The column is a container: blocks inside it that reflow measure against the
      column they actually sit in, not against the viewport. The window is one of
      two widths and the column one of three, so a viewport media query would be

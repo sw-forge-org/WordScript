@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { PreviewBanner } from "@/components/shell";
 import type { IconName } from "@/components/shell";
+import type { ScreenSlot } from "@/screens/props";
 import { HomeScreen } from "@/screens/Home";
 import { HistoryScreen } from "@/screens/History";
 import { ProfilesScreen } from "@/screens/Profiles";
@@ -73,9 +74,14 @@ export interface SurfaceEntry<Id extends string> {
   layout?: "pane" | "wide";
   /** The prototype's `tag: "prev"` — the feature itself is not built yet. */
   preview?: boolean;
-  /** Stated on the surface until Leg 4 wires the section. */
+  /** Stated on the surface until Leg 4 wires the section. Its ABSENCE is what
+   *  "wired" means — `registry.test.tsx` reads exactly this to decide which
+   *  gallery entries were allowed to retire (ADR 0057). */
   banner?: ReactNode;
-  render: (props: { banner?: ReactNode }) => ReactNode;
+  /** Every row gets the same slot whether it uses it or not, so that fourteen
+   *  rows cannot have fourteen shapes. A screen that is still drawn ignores
+   *  `runtime`; a wired screen takes it and no longer compiles in the gallery. */
+  render: (props: ScreenSlot) => ReactNode;
 }
 
 /** Said once, so that fourteen rows cannot disagree about what they are. */
@@ -200,7 +206,6 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "about",
     label: "About & Updates",
     icon: "about",
-    banner: notWired("Drawn, not wired — the version and the update state are sample data."),
     render: (props) => <AboutScreen {...props} />,
   },
 ];

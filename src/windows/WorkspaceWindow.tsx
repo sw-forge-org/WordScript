@@ -22,9 +22,10 @@ import {
   settingsAnchorElementId,
   type SettingsAnchor,
 } from "@/lib/settingsAnchors";
+import type { WorkspaceRuntime } from "@/screens/props";
 import type { AppConfig } from "@/types/ipc";
 import { SettingsSheet } from "./workspace/SettingsSheet";
-import { VIEWS, findView, type SectionId, type ViewId } from "./workspace/ia";
+import { VIEWS, type SectionId, type ViewId } from "./workspace/ia";
 
 /**
  * THE WORKSPACE — one window, four views, and settings as a sheet over it.
@@ -53,12 +54,26 @@ import { VIEWS, findView, type SectionId, type ViewId } from "./workspace/ia";
  * scrolled away, and a permanently green "Ready" that nobody measured would be
  * the fake-readiness defect at the one place on the surface that is always
  * visible. Everything it states is a fact this window already had in hand.
+ *
+ * THIS WINDOW IS ALSO WHERE P1 AND P2 ARE FIXED, and they are fixed here rather
+ * than in a screen because both are properties of the seam. P1: `patch` writes
+ * on the keystroke, which for a text field is an IPC round trip and a JSON write
+ * per character — so a text field calls `patchText`, whose draft lands in the
+ * form immediately and whose write is debounced. P2: a navigation used to
+ * discard and rebuild the whole area, so every view a user comes back to is kept
+ * mounted and hidden rather than rebuilt. Neither is visible in a screen, which
+ * is the test that they are in the right place.
  */
 
 const MAC = /Mac|iPhone|iPad/.test(
   typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
 );
 const SETTINGS_SHORTCUT = MAC ? "⌘," : "Ctrl+,";
+
+/* P1. Long enough that ordinary typing produces one write per pause rather than
+   five a second, short enough that a user who types and immediately closes the
+   window does not out-run it — and the close path flushes anyway. */
+const TEXT_COMMIT_MS = 400;
 
 export default function WorkspaceWindow() {
   const { state, saveConfig } = useRuntime();
@@ -169,30 +184,111 @@ export default function WorkspaceWindow() {
 
   /* Instant save: every patch is persisted immediately. There is no "unsaved
      changes" state, which is the fact the sheet's foot states once. */
-  const patch = useCallback((partial: Partial<AppConfig>) => {
+  const commit = useCallback((next: AppConfig, revertTo: AppConfig) => {
+    inFlightSaveCountRef.current += 1;
+    const settle = () => {
+      inFlightSaveCountRef.current = Math.max(0, inFlightSaveCountRef.current - 1);
+      if (inFlightSaveCountRef.current === 0) {
+        if (latestConfigRef.current) setForm({ ...latestConfigRef.current });
+        setFormResyncNonce((n) => n + 1);
+      }
+    };
+
+    void saveConfig(next).then(settle).catch(() => {
+      // The runtime refused it, so the form goes back to what the runtime
+      // still holds rather than showing a value it rejected.
+      setForm(revertTo);
+      settle();
+    });
+  }, [saveConfig]);
+
+  /* P1 — DRAFT-THEN-COMMIT FOR TEXT, and only for text.
+     `patch()` above is one `invoke("save_config")`, one Rust config lock and one
+     JSON write. Bound straight to an <input>, that is roughly five of them a
+     second at ordinary typing speed, and it was the single largest interaction
+     cost in the pre-port surface (plan §2.4 P1). The draft still lands in the
+     form on the keystroke — what you typed is never behind the cursor — and only
+     the write waits. A discrete control keeps instant save, because there is no
+     such thing as a half-pressed toggle.
+
+     A discrete patch FLUSHES a pending text commit first. Without that, a
+     debounced keystroke could land after a later toggle and reinstate the config
+     the toggle was computed from, quietly reverting it. */
+  const pendingTextRef = useRef<AppConfig | null>(null);
+  const textRevertRef = useRef<AppConfig | null>(null);
+  const textTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushText = useCallback(() => {
+    if (textTimerRef.current !== null) {
+      clearTimeout(textTimerRef.current);
+      textTimerRef.current = null;
+    }
+    const next = pendingTextRef.current;
+    const revertTo = textRevertRef.current;
+    pendingTextRef.current = null;
+    textRevertRef.current = null;
+    if (next && revertTo) commit(next, revertTo);
+  }, [commit]);
+
+  const flushTextRef = useRef(flushText);
+  useEffect(() => {
+    flushTextRef.current = flushText;
+  }, [flushText]);
+
+  // Nothing typed may be lost to a close, a reload or a hot update.
+  useEffect(() => () => flushTextRef.current(), []);
+
+  const patchText = useCallback((partial: Partial<AppConfig>) => {
     setForm((prev) => {
       if (!prev) return prev;
       const next = { ...prev, ...partial };
-
-      inFlightSaveCountRef.current += 1;
-      const settle = () => {
-        inFlightSaveCountRef.current = Math.max(0, inFlightSaveCountRef.current - 1);
-        if (inFlightSaveCountRef.current === 0) {
-          if (latestConfigRef.current) setForm({ ...latestConfigRef.current });
-          setFormResyncNonce((n) => n + 1);
-        }
-      };
-
-      void saveConfig(next).then(settle).catch(() => {
-        // The runtime refused it, so the form goes back to what the runtime
-        // still holds rather than showing a value it rejected.
-        setForm(prev);
-        settle();
-      });
-
+      // Idempotent: React may run an updater twice, and twice with the same
+      // `prev` produces the same `next`.
+      pendingTextRef.current = next;
+      if (textRevertRef.current === null) textRevertRef.current = prev;
       return next;
     });
-  }, [saveConfig]);
+    if (textTimerRef.current !== null) clearTimeout(textTimerRef.current);
+    textTimerRef.current = setTimeout(() => {
+      textTimerRef.current = null;
+      flushTextRef.current();
+    }, TEXT_COMMIT_MS);
+  }, []);
+
+  const patch = useCallback((partial: Partial<AppConfig>) => {
+    flushText();
+    setForm((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...partial };
+      commit(next, prev);
+      return next;
+    });
+  }, [commit, flushText]);
+
+  // Leaving a screen commits what was typed on it, so a draft cannot outlive
+  // the surface it was typed on.
+  useEffect(() => {
+    flushTextRef.current();
+  }, [view, section]);
+
+  /* P2 — A VIEW A USER COMES BACK TO IS NOT REBUILT.
+     The pre-port window wrapped its area in `<div key={active}>`, which forced
+     React to discard and rebuild the subtree on every sidebar click. Leg 3
+     dropped the key, but a rendered element of a different type unmounts the old
+     one just the same, so the remount survived the rewrite. Every view the user
+     has actually opened stays mounted and the inactive ones are `hidden`: each
+     keeps its own scroll box and its own `data-layout`, which is why they are
+     siblings rather than one container with a swapped child, and a view nobody
+     opened costs nothing. `active` is passed down so a screen that polls the
+     runtime idles while it is off screen.
+
+     Tracked by an effect rather than by a navigate() helper because `view` is
+     also set from outside this window — the settings anchor — and a helper only
+     the sidebar calls would leave a deep-linked view out of the set. */
+  const [visitedViews, setVisitedViews] = useState<ViewId[]>([view]);
+  useEffect(() => {
+    setVisitedViews((seen) => (seen.includes(view) ? seen : [...seen, view]));
+  }, [view]);
 
   const sessionActive = state.status === "recording" || state.status === "processing";
 
@@ -235,7 +331,17 @@ export default function WorkspaceWindow() {
   }
 
   const activeProfile = resolveActiveTextProfile(form);
-  const current = findView(view) ?? VIEWS[0];
+  /* THE RUNTIME, AS A WIRED SCREEN SEES IT. One reader per window: `useRuntime`
+     opens two event channels and loads the config, so a screen that called it
+     for itself would double every listener and hold a second opinion of one
+     config. `active` is per surface and is filled in at the call site below. */
+  const runtime: Omit<WorkspaceRuntime, "active"> = {
+    config: form,
+    state,
+    patch,
+    patchText,
+    flushText,
+  };
   const lane =
     selectedProvider === "local_preview"
       ? `Local runtime · ${form.local_model}`
@@ -302,11 +408,22 @@ export default function WorkspaceWindow() {
             </NavFoot>
           </Nav>
 
-          <main className="ws-content" data-layout={current.layout}>
-            <div className="ws-content-inner" data-layout={current.layout}>
-              {current.render({ banner: current.banner })}
-            </div>
-          </main>
+          {/* P2. One scroll box per visited view, only one of them shown. */}
+          {VIEWS.filter((entry) => visitedViews.includes(entry.id)).map((entry) => (
+            <main
+              key={entry.id}
+              className="ws-content"
+              data-layout={entry.layout}
+              hidden={entry.id !== view}
+            >
+              <div className="ws-content-inner" data-layout={entry.layout}>
+                {entry.render({
+                  banner: entry.banner,
+                  runtime: { ...runtime, active: entry.id === view && section === null },
+                })}
+              </div>
+            </main>
+          ))}
         </WindowBody>
 
         <StatusStrip
@@ -320,6 +437,7 @@ export default function WorkspaceWindow() {
       {section && (
         <SettingsSheet
           section={section}
+          runtime={runtime}
           onSection={setSection}
           onClose={() => setSection(null)}
           profile={{ initials: textProfileInitials(activeProfile), name: activeProfile.label }}

@@ -1,7 +1,12 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENTRY_POINT_HOLES, SECTIONS, SECTION_GROUPS, VIEWS } from "./ia";
 import { ALL_SCREENS } from "@/windows/gallery/registry";
+import { createWorkspaceRuntime } from "@/test/factories";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
 
 afterEach(cleanup);
 
@@ -29,26 +34,37 @@ describe("the information architecture", () => {
 
   // ADR 0055: a screen in the gallery and the same screen in the product are
   // ONE implementation with two sets of props. Same function, not same output.
-  it("mounts the very same screen the gallery displays", () => {
-    const mounted = [...VIEWS, ...SECTIONS];
-    for (const entry of mounted) {
+  // It holds while both exist; a wired screen has left the gallery in the
+  // commit that wired it (ADR 0057), and `registry.test.tsx` holds that half.
+  it("mounts the very same screen the gallery displays, for as long as both exist", () => {
+    for (const entry of [...VIEWS, ...SECTIONS]) {
       const listed = ALL_SCREENS.find((screenEntry) => screenEntry.id === entry.id);
-      expect(listed, `${entry.id} is not in the gallery registry`).toBeDefined();
-      expect(listed!.render, `${entry.id} has no gallery render`).toBeDefined();
+      if (!listed) {
+        expect(entry.banner, `${entry.id} left the gallery without being wired`).toBeUndefined();
+        continue;
+      }
+      expect(listed.render, `${entry.id} has no gallery render`).toBeDefined();
     }
   });
 
   // Leg 4 deletes a banner in the commit that wires its section. Until then
-  // every mounted screen states on itself that it is drawn rather than wired.
-  it("gives every mounted screen a banner until Leg 4 takes it off", () => {
-    for (const entry of [...VIEWS, ...SECTIONS]) {
+  // every screen that is still a drawing states on itself that it is drawn
+  // rather than wired — and a screen that has stopped saying so has to have
+  // stopped being a drawing, which is the assertion above.
+  it("gives every screen that is still a drawing a banner", () => {
+    const drawn = [...VIEWS, ...SECTIONS].filter((entry) =>
+      ALL_SCREENS.some((screenEntry) => screenEntry.id === entry.id),
+    );
+    expect(drawn.length, "every screen is wired — this test has done its job").toBeGreaterThan(0);
+    for (const entry of drawn) {
       expect(entry.banner, `${entry.id} would imply a runtime state`).toBeTruthy();
     }
   });
 
   it("renders the banner it carries, on the screen it carries it for", () => {
     for (const entry of [...VIEWS, ...SECTIONS]) {
-      render(<>{entry.render({ banner: entry.banner })}</>);
+      if (!entry.banner) continue;
+      render(<>{entry.render({ banner: entry.banner, runtime: createWorkspaceRuntime() })}</>);
       expect(screen.getAllByText(/Preview/i).length, entry.id).toBeGreaterThan(0);
       cleanup();
     }
