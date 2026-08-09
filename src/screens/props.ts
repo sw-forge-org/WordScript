@@ -55,6 +55,22 @@ export interface WorkspaceRuntime {
   /** False while the surface is mounted but hidden (plan P2 keeps a visited view
    *  mounted rather than rebuilding it). A screen that polls idles on false. */
   active: boolean;
+  /**
+   * Go to another surface of the workspace — the `Open Home`, `Open Context`
+   * and `Change in profile` doors several screens draw.
+   *
+   * OPTIONAL, AND ITS ABSENCE IS LOAD-BEARING. The Diagnostics pop-out is its
+   * own window with one section in it and nowhere to navigate to, so it does
+   * not pass one, and a screen that draws such a door renders it only when
+   * there is somewhere for it to go. A button that opens nothing is the fake
+   * affordance rule 7 forbids — the same rule that keeps the sidebar's search
+   * field unmounted while there is no command palette.
+   *
+   * Untyped ids for the same reason `SETTINGS_ANCHOR_TARGETS` carries them
+   * untyped: the workspace is the authority on what exists, and it opens
+   * nothing rather than guessing when it does not recognise one.
+   */
+  open?: (target: { view: string } | { section: string }) => void;
 }
 
 export interface WiredScreenProps extends ScreenProps {

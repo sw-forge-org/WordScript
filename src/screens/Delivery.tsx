@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Button,
   Card,
@@ -10,11 +11,20 @@ import {
   SectionHeader,
   StatusBadge,
   ViewTop,
+  type CheckItem,
+  type StatusTone,
 } from "@/components/shell";
-import type { ScreenProps } from "./props";
+import { useNativeInsertion } from "@/hooks/useNativeInsertion";
+import { resolveActiveTextProfile, resolveTextProfileWorkMode } from "@/lib/textProfiles";
+import type {
+  NativeInsertDriverStatus,
+  NativeInsertReadiness,
+  NativeSupportTier,
+} from "@/types/nativeInsertion";
+import type { WiredScreenProps } from "./props";
 
 /**
- * DELIVERY & INSERT — `SCREENS.delivery`.
+ * DELIVERY & INSERT — `SCREENS.delivery`, wired.
  *
  * Delivery is its own axis (ADR 0011a), but the choice on that axis is
  * per-profile in the runtime — the same value ADR 0024 was written about for
@@ -31,8 +41,105 @@ import type { ScreenProps } from "./props";
  * of the eight drivers went unnoticed. And wtype and ydotool are excluded BY
  * DECISION rather than by an absent binary — the difference between "install a
  * package" and "this will never work here".
+ *
+ * THE DRAWING TURNED OUT TO BE A SCREENSHOT OF `native_insertion_status`, which
+ * is why wiring it is a mapping rather than a rebuild. The platform label, the
+ * tier, the readiness sentence, the strategy, the active driver, all three
+ * groups of the chain with their detail lines, the scratchpad's path and its
+ * entry count, and the caveats behind the disclosure are that one command's
+ * fields. Every driver row's `ok` / `todo` / `fail` is the runtime's
+ * `available` and its role, never a guess: `available: false` with a
+ * `paste_disabled_reason` is `fail` — excluded by decision — and `available:
+ * false` without one is `todo`, which is a package away.
+ *
+ * WHAT IS NOT READ, AND SAYS SO. The Agent bridge is Phase 8 and states that
+ * rather than a readiness. The three doors — the profile's scope tag, Open Home
+ * — render only when the workspace passed an `open`, which the Diagnostics
+ * pop-out does not; a button that opens nothing is the fake affordance rule 7
+ * forbids.
  */
-export function DeliveryScreen({ banner }: ScreenProps = {}) {
+
+function tierLabel(tier: NativeSupportTier | undefined): string {
+  switch (tier) {
+    case "tier1":
+      return "tier 1";
+    case "preview":
+      return "preview";
+    case "experimental":
+      return "experimental";
+    default:
+      return "not read";
+  }
+}
+
+function tierTone(tier: NativeSupportTier | undefined): StatusTone {
+  return tier === "tier1" ? "success" : tier === undefined ? "plan" : "warning";
+}
+
+function readinessLabel(readiness: NativeInsertReadiness | undefined): string {
+  switch (readiness) {
+    case "ready":
+      return "Ready";
+    case "recovery_only":
+      return "Recovery only";
+    default:
+      return "Not read";
+  }
+}
+
+/**
+ * A driver's state is the runtime's `available` plus WHY it is not available.
+ * `paste_disabled_reason` is the runtime saying a driver was ruled out by
+ * decision — that is `fail`, the crossed mark. An unavailable driver with no
+ * reason is `todo`, the empty ring: nothing is wrong with it, this session just
+ * is not the one it serves.
+ */
+function driverCheck(driver: NativeInsertDriverStatus, excludedByDecision: boolean): CheckItem {
+  return {
+    state: driver.available ? "ok" : excludedByDecision ? "fail" : "todo",
+    label: driver.label,
+    detail: driver.detail,
+    trailing: driver.active ? <StatusBadge tone="accent">in use</StatusBadge> : undefined,
+  };
+}
+
+export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
+  const { config, active, open } = runtime;
+  const { status, error, isLoading, refresh, clearScratchpad } = useNativeInsertion();
+
+  /* `useNativeInsertion` reads once on mount, which is what a section the user
+     just opened wants. It is re-read when the section comes back into view,
+     because a driver can be installed and a session can change while the sheet
+     is closed. */
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setSeen(false);
+      return;
+    }
+    if (seen) return;
+    setSeen(true);
+    void refresh();
+  }, [active, seen, refresh]);
+
+  const platform = status?.platform ?? null;
+  const workMode = resolveTextProfileWorkMode(resolveActiveTextProfile(config));
+  const profileLabel = resolveActiveTextProfile(config).label;
+  const clipboardOnly = workMode.insert_behavior === "clipboard_only";
+
+  const chain = platform?.driver_chain ?? [];
+  const excluded = new Set(
+    platform?.paste_disabled_reason
+      ? chain.filter((driver) => !driver.available && driver.role === "paste").map((d) => d.driver)
+      : [],
+  );
+  const clipboardStage = chain.filter((driver) => driver.role === "clipboard");
+  const pasteStage = chain.filter((driver) => driver.role === "paste");
+  const recovery = chain.find((driver) => driver.role === "recovery") ?? null;
+
+  const caveats = platform?.caveats ?? [];
+  const scratchpadCount = status?.scratchpad_entries.length ?? 0;
+
   return (
     <>
       <ViewTop
@@ -45,12 +152,20 @@ export function DeliveryScreen({ banner }: ScreenProps = {}) {
         <Card>
           <CardRows>
             <Row
-              label="General writing delivers"
-              hint="Pastes at the cursor, then restores your clipboard."
+              label={`${profileLabel} delivers`}
+              hint={
+                clipboardOnly
+                  ? "Puts the transcript on the clipboard and leaves it to you to paste."
+                  : "Pastes at the cursor, then restores your clipboard."
+              }
               control={
                 <span className="ws-rowflex">
-                  <StatusBadge tone="accent">Insert at cursor</StatusBadge>
-                  <ScopeTag profile="Change in profile" onOpen={() => undefined} />
+                  <StatusBadge tone="accent">
+                    {clipboardOnly ? "Clipboard only" : "Insert at cursor"}
+                  </StatusBadge>
+                  {open && (
+                    <ScopeTag profile="Change in profile" onOpen={() => open({ view: "profiles" })} />
+                  )}
                 </span>
               }
             />
@@ -70,19 +185,41 @@ export function DeliveryScreen({ banner }: ScreenProps = {}) {
               label="Platform"
               control={
                 <span className="ws-rowflex">
-                  <StatusBadge tone="success">tier 1</StatusBadge>
-                  <span className="ws-mono ws-muted">Linux · X11</span>
+                  <StatusBadge tone={tierTone(platform?.support_tier)}>
+                    {tierLabel(platform?.support_tier)}
+                  </StatusBadge>
+                  <span className="ws-mono ws-muted">
+                    {platform?.platform_label ?? (isLoading ? "reading…" : "not read")}
+                  </span>
                 </span>
               }
             />
             <Row
               label="Readiness"
-              hint="Direct paste available. The previous clipboard is restored after every insert."
-              control={<StatusBadge tone="success">Ready</StatusBadge>}
+              hint={error ?? platform?.readiness_message ?? undefined}
+              control={
+                <StatusBadge
+                  tone={
+                    error
+                      ? "danger"
+                      : platform?.readiness === "ready"
+                        ? "success"
+                        : platform
+                          ? "warning"
+                          : "plan"
+                  }
+                >
+                  {error ? "Could not read" : readinessLabel(platform?.readiness)}
+                </StatusBadge>
+              }
             />
             <Row
               label="Strategy"
-              control={<span className="ws-mono ws-muted">auto_paste · xdotool</span>}
+              control={
+                <span className="ws-mono ws-muted">
+                  {platform ? `${platform.insert_strategy} · ${platform.active_driver}` : "not read"}
+                </span>
+              }
             />
           </CardRows>
         </Card>
@@ -94,48 +231,22 @@ export function DeliveryScreen({ banner }: ScreenProps = {}) {
             <div className="ws-grp">
               <label>1 · Put it on the clipboard</label>
               <CheckList
-                items={[
-                  {
-                    state: "todo",
-                    label: "wl-copy",
-                    detail: "Wayland clipboard. This session is X11, so it is not a candidate.",
-                  },
-                  {
-                    state: "ok",
-                    label: "arboard clipboard",
-                    detail: "Cross-platform, always last, always available.",
-                    trailing: <StatusBadge tone="accent">in use</StatusBadge>,
-                  },
-                ]}
+                items={
+                  clipboardStage.length
+                    ? clipboardStage.map((driver) => driverCheck(driver, false))
+                    : [{ state: "todo", label: "Not read", detail: "The runtime has not reported a driver chain." }]
+                }
               />
             </div>
 
             <div className="ws-grp">
               <label>2 · Make the target take it</label>
               <CheckList
-                items={[
-                  {
-                    state: "ok",
-                    label: "xdotool type",
-                    detail: "Types the text directly, before either chain, for up to 800 characters.",
-                    trailing: <StatusBadge tone="accent">in use</StatusBadge>,
-                  },
-                  {
-                    state: "ok",
-                    label: "xdotool",
-                    detail: "Sends ctrl+v. The previous clipboard is restored afterwards.",
-                  },
-                  {
-                    state: "todo",
-                    label: "enigo",
-                    detail: "The only paste driver on Windows and macOS. On Linux, hybrid sessions without xdotool.",
-                  },
-                  {
-                    state: "fail",
-                    label: "wtype · ydotool",
-                    detail: "Excluded by design, not missing: both trigger a compositor privilege prompt per paste, which is what clipboard-only avoids.",
-                  },
-                ]}
+                items={
+                  pasteStage.length
+                    ? pasteStage.map((driver) => driverCheck(driver, excluded.has(driver.driver)))
+                    : [{ state: "todo", label: "Not read", detail: "The runtime has not reported a driver chain." }]
+                }
               />
             </div>
 
@@ -144,8 +255,11 @@ export function DeliveryScreen({ banner }: ScreenProps = {}) {
               <Card>
                 <CardRows>
                   <Row
-                    label="Recovery scratchpad"
-                    hint="Not a driver and not in either chain — it is where a transcript waits when nothing could place it."
+                    label={recovery?.label ?? "Recovery scratchpad"}
+                    hint={
+                      recovery?.detail ??
+                      "Not a driver and not in either chain — it is where a transcript waits when nothing could place it."
+                    }
                     control={<StatusBadge tone="success">Always</StatusBadge>}
                   />
                 </CardRows>
@@ -165,50 +279,63 @@ export function DeliveryScreen({ banner }: ScreenProps = {}) {
           <CardRows>
             <Row
               label="Scratchpad"
-              hint="~/.local/state/wordscript/scratchpad.jsonl"
+              hint={status?.scratchpad_path ?? "The runtime has not reported a path."}
               control={
                 <span className="ws-rowflex">
-                  <StatusBadge tone="success">3 entries</StatusBadge>
-                  <Button variant="ghost" icon={<Icon name="trash" />}>
+                  <StatusBadge tone={scratchpadCount > 0 ? "success" : "plan"}>
+                    {status ? `${scratchpadCount} ${scratchpadCount === 1 ? "entry" : "entries"}` : "not read"}
+                  </StatusBadge>
+                  <Button
+                    variant="ghost"
+                    icon={<Icon name="trash" />}
+                    disabled={isLoading || scratchpadCount === 0}
+                    onClick={() => void clearScratchpad()}
+                  >
                     Clear
                   </Button>
                 </span>
               }
             />
-            <Row
-              label="Something waiting right now"
-              hint="A failed insert is reported once, on Home, where the action that clears it lives. It is a record in History afterwards either way."
-              control={
-                <Button variant="ghost" icon={<Icon name="arrow" />}>
-                  Open Home
-                </Button>
-              }
-            />
+            {open && (
+              <Row
+                label="Something waiting right now"
+                hint="A failed insert is reported once, on Home, where the action that clears it lives. It is a record in History afterwards either way."
+                control={
+                  <Button variant="ghost" icon={<Icon name="arrow" />} onClick={() => open({ view: "home" })}>
+                    Open Home
+                  </Button>
+                }
+              />
+            )}
           </CardRows>
         </Card>
       </SectionHeader>
 
       {/* Three rows, one badge, repeated three times: every one said "Not this
           session", which is the only thing they had in common and therefore the
-          one thing worth saying once. */}
-      <SectionHeader title="Limits on other platforms" description="None of these apply to this session.">
-        <Card>
-          <Disclosure summary="Wayland, elevated Windows targets, macOS permissions" count={3}>
-            <Row
-              label="Wayland"
-              hint="The portal does not grant synthetic input to every compositor; those sessions fall back to clipboard-only. Here: compositor mutter, xdg-desktop-portal present, RemoteDesktop not reachable."
-            />
-            <Row
-              label="Elevated Windows targets"
-              hint="A non-elevated WordScript cannot paste into an elevated window."
-            />
-            <Row
-              label="macOS permissions"
-              hint="Accessibility and Input Monitoring are required for development builds."
-            />
-          </Disclosure>
-        </Card>
-      </SectionHeader>
+          one thing worth saying once. The list is the runtime's `caveats` now,
+          so a session where one of them DOES apply says so. */}
+      {caveats.length > 0 && (
+        <SectionHeader
+          title="Limits on other platforms"
+          description={
+            platform?.readiness === "ready"
+              ? "None of these apply to this session."
+              : "One of these is why this session cannot paste."
+          }
+        >
+          <Card>
+            <Disclosure
+              summary={caveats.length === 1 ? "One limit" : `${caveats.length} limits`}
+              count={caveats.length}
+            >
+              {caveats.map((caveat) => (
+                <Row key={caveat} label={caveat} />
+              ))}
+            </Disclosure>
+          </Card>
+        </SectionHeader>
+      )}
     </>
   );
 }

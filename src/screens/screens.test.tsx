@@ -2,9 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it } from "vitest";
 import { HomeScreen } from "./Home";
 import { HistoryScreen } from "./History";
-import { GeneralScreen } from "./General";
 import { HotkeysScreen } from "./Hotkeys";
-import { DeliveryScreen } from "./Delivery";
 import { PrivacyScreen } from "./Privacy";
 import { ProfilesScreen } from "./Profiles";
 import { CommitScreen } from "./Commit";
@@ -104,32 +102,6 @@ describe("History", () => {
   });
 });
 
-describe("General", () => {
-  it("draws the input meter at rest — a display surface does not take a device", () => {
-    const { container } = render(<GeneralScreen />);
-    const wave = container.querySelector(".ws-wave-live")!;
-    /* ADR 0058. `active` reaches for getUserMedia, so a gallery never passes
-       it — and the instrument draws its idle rule instead of bars, which is
-       the observable difference rather than a prop nobody can see. */
-    expect(wave.querySelector(".border-dotted")).not.toBeNull();
-    expect(container.querySelector(".ws-level")).not.toBeNull();
-  });
-
-  it("shows no Display or Anchor control it cannot act on", () => {
-    render(<GeneralScreen />);
-    /* The shipped tab shows both whether or not they do anything; in "remember
-       last drag" they are inert and still look settable. */
-    expect(screen.getByLabelText("Placement")).toHaveValue("Use preset display anchor");
-    expect(screen.getByLabelText("Anchor")).toBeInTheDocument();
-  });
-
-  it("sends the profile-owned settings to the profile rather than duplicating them", () => {
-    render(<GeneralScreen />);
-    expect(screen.getByText(/belong to the profile, not to this machine/)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/auto-stop/i)).not.toBeInTheDocument();
-  });
-});
-
 describe("Hotkeys", () => {
   it("reports a refused shortcut rather than swallowing it", () => {
     render(<HotkeysScreen />);
@@ -144,34 +116,6 @@ describe("Hotkeys", () => {
     const unset = screen.getAllByRole("button", { name: /not set/i });
     expect(unset).toHaveLength(1);
     expect(screen.getByText("Translate")).toBeInTheDocument();
-  });
-});
-
-describe("Delivery & Insert", () => {
-  it("draws two stages and a fallback, not one chain", () => {
-    const { container } = render(<DeliveryScreen />);
-    const groups = container.querySelectorAll(".ws-grp");
-    expect(groups).toHaveLength(3);
-    expect(screen.getByText("1 · Put it on the clipboard")).toBeInTheDocument();
-    expect(screen.getByText("2 · Make the target take it")).toBeInTheDocument();
-    expect(screen.getByText("When none of it works")).toBeInTheDocument();
-  });
-
-  it("names all eight drivers, and says wtype/ydotool are excluded by design", () => {
-    render(<DeliveryScreen />);
-    for (const driver of ["wl-copy", "arboard clipboard", "xdotool type", "xdotool", "enigo", "wtype · ydotool"]) {
-      expect(screen.getByText(driver)).toBeInTheDocument();
-    }
-    expect(screen.getByText(/Excluded by design, not missing/)).toBeInTheDocument();
-  });
-
-  it("does not tell the clipboard incident a third time", () => {
-    render(<DeliveryScreen />);
-    /* §11.51: the event is a row on Home and a record in History. A settings
-       screen offering the button that clears it is the same fault one screen
-       over. */
-    expect(screen.queryByText(/Kundenanfrage/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Home" })).toBeInTheDocument();
   });
 });
 

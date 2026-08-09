@@ -140,7 +140,6 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "general",
     label: "General",
     icon: "general",
-    banner: notWired("Drawn, not wired — no control here reaches the runtime yet."),
     render: (props) => <GeneralScreen {...props} />,
   },
   {
@@ -185,7 +184,6 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "delivery",
     label: "Delivery & Insert",
     icon: "delivery",
-    banner: notWired("Drawn, not wired — the driver chain and the readiness checks are sample data."),
     render: (props) => <DeliveryScreen {...props} />,
   },
   {

@@ -25,7 +25,7 @@ import {
 } from "@/lib/settingsAnchors";
 import type { WorkspaceRuntime } from "@/screens/props";
 import { SettingsSheet } from "./workspace/SettingsSheet";
-import { VIEWS, type SectionId, type ViewId } from "./workspace/ia";
+import { VIEWS, findSection, findView, type SectionId, type ViewId } from "./workspace/ia";
 
 /**
  * THE WORKSPACE — one window, four views, and settings as a sheet over it.
@@ -231,6 +231,22 @@ export default function WorkspaceWindow() {
     patch,
     patchText,
     flushText,
+    /* A door from one surface to another. A view closes the sheet and a section
+       opens it, for the reason the settings anchor has to: a row scrolled to
+       behind a scrim is a row nobody can read. An id neither list knows opens
+       nothing rather than guessing, which is the same rule the anchor follows. */
+    open: (target) => {
+      if ("section" in target) {
+        if (!findSection(target.section)) return;
+        startTransition(() => setSection(target.section as SectionId));
+        return;
+      }
+      if (!findView(target.view)) return;
+      startTransition(() => {
+        setSection(null);
+        setView(target.view as ViewId);
+      });
+    },
   };
   const lane =
     selectedProvider === "local_preview"
