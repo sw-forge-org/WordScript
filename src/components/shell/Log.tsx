@@ -13,7 +13,17 @@ import type { ReactNode } from "react";
  */
 
 export type LogLevel = "INFO" | "WARN" | "ERROR";
-export type LogLine = { at: string; level: LogLevel; message: string };
+/**
+ * `level` IS OPTIONAL, AND ITS ABSENCE IS A FACT RATHER THAN A DEFAULT.
+ *
+ * `runtime_log::record` takes one string and carries no severity, so a line
+ * read out of the real buffer has no level to state. Defaulting to INFO would
+ * print a claim nobody measured on the one screen people open because something
+ * is wrong, and deriving one from whether the text contains "error" would be a
+ * guess in the same place. A line with no level draws with an empty gutter and
+ * no hue. The three levels stay here for the day the runtime emits one.
+ */
+export type LogLine = { at: string; level?: LogLevel; message: string };
 
 export function Log({ lines }: { lines: LogLine[] }) {
   return (

@@ -5,7 +5,6 @@ import { GeneralScreen } from "@/screens/General";
 import { HotkeysScreen } from "@/screens/Hotkeys";
 import { DeliveryScreen } from "@/screens/Delivery";
 import { PrivacyScreen } from "@/screens/Privacy";
-import { DiagnosticsScreen } from "@/screens/Diagnostics";
 import { ProfilesScreen } from "@/screens/Profiles";
 import { CommitScreen } from "@/screens/Commit";
 import { IntegrationsScreen } from "@/screens/Integrations";
@@ -93,7 +92,6 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "integrations", surface: "settings", label: "Integrations", preview: true, render: () => <IntegrationsScreen /> },
       { id: "delivery", surface: "settings", label: "Delivery & Insert", render: () => <DeliveryScreen /> },
       { id: "privacy", surface: "settings", label: "Privacy & Data", render: () => <PrivacyScreen /> },
-      { id: "diagnostics", surface: "settings", label: "Diagnostics", render: () => <DiagnosticsScreen /> },
     ],
   },
   {

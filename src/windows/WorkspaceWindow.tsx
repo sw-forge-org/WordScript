@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   BrandMark,
@@ -14,6 +14,7 @@ import {
   WindowShell,
 } from "@/components/shell";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useProvider } from "@/hooks/useProvider";
 import { useRuntime } from "@/hooks/useRuntime";
 import { resolveActiveTextProfile, textProfileInitials } from "@/lib/textProfiles";
@@ -23,7 +24,6 @@ import {
   type SettingsAnchor,
 } from "@/lib/settingsAnchors";
 import type { WorkspaceRuntime } from "@/screens/props";
-import type { AppConfig } from "@/types/ipc";
 import { SettingsSheet } from "./workspace/SettingsSheet";
 import { VIEWS, type SectionId, type ViewId } from "./workspace/ia";
 
@@ -55,14 +55,12 @@ import { VIEWS, type SectionId, type ViewId } from "./workspace/ia";
  * the fake-readiness defect at the one place on the surface that is always
  * visible. Everything it states is a fact this window already had in hand.
  *
- * THIS WINDOW IS ALSO WHERE P1 AND P2 ARE FIXED, and they are fixed here rather
- * than in a screen because both are properties of the seam. P1: `patch` writes
- * on the keystroke, which for a text field is an IPC round trip and a JSON write
- * per character — so a text field calls `patchText`, whose draft lands in the
- * form immediately and whose write is debounced. P2: a navigation used to
- * discard and rebuild the whole area, so every view a user comes back to is kept
- * mounted and hidden rather than rebuilt. Neither is visible in a screen, which
- * is the test that they are in the right place.
+ * P1 AND P2 ARE FIXED AT THIS SEAM, not in a screen, because both are
+ * properties of the seam rather than of anything drawn. P1 is `useConfigDraft`,
+ * which every window that holds a config draft shares. P2 is below: a
+ * navigation used to discard and rebuild the whole area, so every view a user
+ * comes back to is kept mounted and hidden rather than rebuilt. Neither is
+ * visible in a screen, which is the test that they are in the right place.
  */
 
 const MAC = /Mac|iPhone|iPad/.test(
@@ -70,30 +68,13 @@ const MAC = /Mac|iPhone|iPad/.test(
 );
 const SETTINGS_SHORTCUT = MAC ? "⌘," : "Ctrl+,";
 
-/* P1. Long enough that ordinary typing produces one write per pause rather than
-   five a second, short enough that a user who types and immediately closes the
-   window does not out-run it — and the close path flushes anyway. */
-const TEXT_COMMIT_MS = 400;
-
 export default function WorkspaceWindow() {
   const { state, saveConfig } = useRuntime();
   const { resolved } = useColorScheme("dark");
-  const [form, setForm] = useState<AppConfig | null>(null);
+  const { form, patch, patchText, flushText } = useConfigDraft(state.config, saveConfig);
   const [view, setView] = useState<ViewId>("home");
   const [section, setSection] = useState<SectionId | null>(null);
   const [, startTransition] = useTransition();
-
-  // Guards the form against a stale `ready` event clobbering an in-flight user
-  // edit. `save_config` emits a `ready` carrying the SAVED config; under the
-  // Rust config lock overlapping saves resolve in call order (A then B), so
-  // ready(A) can land AFTER the user already edited further to B. The
-  // unconditional sync would then revert the form A→B→A→B. (plan P1, root C1)
-  const inFlightSaveCountRef = useRef(0);
-  const [formResyncNonce, setFormResyncNonce] = useState(0);
-  const latestConfigRef = useRef<AppConfig | null>(null);
-  useEffect(() => {
-    latestConfigRef.current = state.config;
-  }, [state.config]);
 
   const selectedProvider = (form?.provider ?? state.config?.provider) === "local_preview"
     ? "local_preview"
@@ -170,105 +151,14 @@ export default function WorkspaceWindow() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Populate the form when the runtime provides config.
+  /* Leaving a screen commits what was typed on it, so a draft cannot outlive
+     the surface it was typed on. `flushText` is stable for a given `saveConfig`
+     and is deliberately not in the dependency list: this effect exists to fire
+     on a NAVIGATION, and re-running it because the writer identity changed
+     would commit a draft the user is still typing. */
   useEffect(() => {
-    if (state.config && !form) setForm({ ...state.config });
-  }, [state.config, form]);
-
-  // Keep the form in sync if config reloads externally — but NEVER clobber an
-  // in-flight user edit. (plan P1, root C1)
-  useEffect(() => {
-    if (inFlightSaveCountRef.current > 0) return;
-    if (state.config) setForm({ ...state.config });
-  }, [state.config, formResyncNonce]);
-
-  /* Instant save: every patch is persisted immediately. There is no "unsaved
-     changes" state, which is the fact the sheet's foot states once. */
-  const commit = useCallback((next: AppConfig, revertTo: AppConfig) => {
-    inFlightSaveCountRef.current += 1;
-    const settle = () => {
-      inFlightSaveCountRef.current = Math.max(0, inFlightSaveCountRef.current - 1);
-      if (inFlightSaveCountRef.current === 0) {
-        if (latestConfigRef.current) setForm({ ...latestConfigRef.current });
-        setFormResyncNonce((n) => n + 1);
-      }
-    };
-
-    void saveConfig(next).then(settle).catch(() => {
-      // The runtime refused it, so the form goes back to what the runtime
-      // still holds rather than showing a value it rejected.
-      setForm(revertTo);
-      settle();
-    });
-  }, [saveConfig]);
-
-  /* P1 — DRAFT-THEN-COMMIT FOR TEXT, and only for text.
-     `patch()` above is one `invoke("save_config")`, one Rust config lock and one
-     JSON write. Bound straight to an <input>, that is roughly five of them a
-     second at ordinary typing speed, and it was the single largest interaction
-     cost in the pre-port surface (plan §2.4 P1). The draft still lands in the
-     form on the keystroke — what you typed is never behind the cursor — and only
-     the write waits. A discrete control keeps instant save, because there is no
-     such thing as a half-pressed toggle.
-
-     A discrete patch FLUSHES a pending text commit first. Without that, a
-     debounced keystroke could land after a later toggle and reinstate the config
-     the toggle was computed from, quietly reverting it. */
-  const pendingTextRef = useRef<AppConfig | null>(null);
-  const textRevertRef = useRef<AppConfig | null>(null);
-  const textTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const flushText = useCallback(() => {
-    if (textTimerRef.current !== null) {
-      clearTimeout(textTimerRef.current);
-      textTimerRef.current = null;
-    }
-    const next = pendingTextRef.current;
-    const revertTo = textRevertRef.current;
-    pendingTextRef.current = null;
-    textRevertRef.current = null;
-    if (next && revertTo) commit(next, revertTo);
-  }, [commit]);
-
-  const flushTextRef = useRef(flushText);
-  useEffect(() => {
-    flushTextRef.current = flushText;
-  }, [flushText]);
-
-  // Nothing typed may be lost to a close, a reload or a hot update.
-  useEffect(() => () => flushTextRef.current(), []);
-
-  const patchText = useCallback((partial: Partial<AppConfig>) => {
-    setForm((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, ...partial };
-      // Idempotent: React may run an updater twice, and twice with the same
-      // `prev` produces the same `next`.
-      pendingTextRef.current = next;
-      if (textRevertRef.current === null) textRevertRef.current = prev;
-      return next;
-    });
-    if (textTimerRef.current !== null) clearTimeout(textTimerRef.current);
-    textTimerRef.current = setTimeout(() => {
-      textTimerRef.current = null;
-      flushTextRef.current();
-    }, TEXT_COMMIT_MS);
-  }, []);
-
-  const patch = useCallback((partial: Partial<AppConfig>) => {
     flushText();
-    setForm((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, ...partial };
-      commit(next, prev);
-      return next;
-    });
-  }, [commit, flushText]);
-
-  // Leaving a screen commits what was typed on it, so a draft cannot outlive
-  // the surface it was typed on.
-  useEffect(() => {
-    flushTextRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, section]);
 
   /* P2 — A VIEW A USER COMES BACK TO IS NOT REBUILT.

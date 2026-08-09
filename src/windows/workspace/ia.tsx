@@ -199,7 +199,6 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "diagnostics",
     label: "Diagnostics",
     icon: "diagnostics",
-    banner: notWired("Drawn, not wired — the checks, the preview and the log are sample data."),
     render: (props) => <DiagnosticsScreen {...props} />,
   },
   {
