@@ -36,6 +36,15 @@ status change. Resolved bugs remain as references for the same failure class.
   silently disabled both overlay layout effects and therefore the only native
   repaint trigger for a mode change. Reported as mode-picker overlay stacking;
   not a compositor problem (2026-07-27).
+- [stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md):
+  **open, measured, not fixed** — the initial prompt WordScript sends to Whisper
+  is echoed back as if it had been spoken, at the start, the end or mid-text,
+  displacing real speech. 15 % of raw transcripts carry it and 9 % are delivered
+  still carrying it, because cleanup keeps a well-formed German sentence. Both
+  prompt forms leak, so removing the ADR 0036 floor alone would not close it.
+  The uncomfortable part: ADR 0036's mitigation for the subtitle attractor is
+  this defect's cause, and ADR 0036's own "visible damage became invisible
+  damage" argument is what decides the direction of the fix.
 - [transcription-accuracy.md](transcription-accuracy.md): **open, unmeasured** —
   dictated words come back as different words, often enough that a dictated
   brief has to be re-read before it is trusted (owner, 2026-08-10). Distinct

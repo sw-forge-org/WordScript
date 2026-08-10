@@ -38,17 +38,19 @@ mishearing is the damage.
 The owner dictates requirements into WordScript and pastes them into agent
 briefs, so **the relay itself carries dated samples of this defect**:
 
-- **2026-08-10, and it was verified against the stored raw transcript.** A brief
-  about where the communication style belongs contained the sentence *"Normale
-  Sätze mit Satzzeichen und Kleinschreibung."* Nothing of the sort was said or
-  meant. It could not be placed against any surface, feature or file, had to be
-  queried, and the owner confirmed it as an artifact — it cost one round trip.
+- **2026-08-10, traced to its source the same day, and it turned out to be
+  ours.** A brief contained the sentence *"Normale Sätze mit Satzzeichen und
+  Kleinschreibung."* It could not be placed against any surface, feature or
+  file, had to be queried, and the owner confirmed it as an artifact.
 
-  **The record proves where it came from.** The same sentence appears verbatim
-  in that entry's `raw_transcript`, which is the provider's `response.text`
-  captured before any transform. **The recognizer produced it.** It is not
-  something the AI stage invented, which rules out the neighbouring records and
-  places this one squarely at the speech-to-text stage.
+  It appears verbatim in that entry's `raw_transcript`, so the recognizer
+  produced it — and it is **WordScript's own initial prompt**, echoed back by
+  the decoder. That has its own record now, with the measurement:
+  [stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md).
+  **15 % of raw transcripts carry prompt text and 9 % are delivered still
+  carrying it.** It is the first identified, measured cause under this record —
+  and it is not the whole of it, because it does not explain a substitution that
+  looks nothing like the prompt.
 - Earlier legs of the same relay record the general shape: a feature name in a
   brief that matches nothing in the repository is worth suspecting as a
   mishearing before it is worth searching for.
@@ -118,7 +120,14 @@ had run on every one of them. Equal outputs are not evidence that nothing ran.
 
 ## Consequence for anyone reading a brief
 
-Until there is a measurement: **a sentence in a dictated brief that matches
-nothing in the repository, the plan or the drawing is a candidate mishearing and
-is worth one direct question rather than an hour of searching.** That has now
-happened often enough to be a working rule rather than an anecdote.
+Two rules, and the first is now sharper than "ask":
+
+1. **A sentence matching WordScript's own initial prompt is WordScript's own.**
+   It is never something the speaker said and can be deleted on sight without
+   asking. The two constants are in
+   [stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md);
+   roughly one dictation in ten is delivered carrying one of them.
+2. **Anything else that matches nothing in the repository, the plan or the
+   drawing is a candidate mishearing** and is worth one direct question rather
+   than an hour of searching. That has happened often enough to be a working
+   rule rather than an anecdote.

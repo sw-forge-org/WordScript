@@ -118,6 +118,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile carrying a non-default register cannot be seen or changed in the
   product. Recorded in the relay's §2.5 and first on Leg 4d; where it goes is
   settled by ADR 0068 — a sixth profile tab, `Style`.
+- **WordScript's own initial prompt is transcribed into the output.** The
+  prefix sent to Whisper is echoed back as if spoken — at the start, the end or
+  mid-text — displacing real speech, and cleanup keeps it because it is a
+  well-formed sentence. Measured on 141 records: 15 % of raw transcripts carry
+  it, 9 % are delivered still carrying it. Both prompt forms leak, so the
+  ADR 0036 floor is not the only source. See
+  `docs/known-issues/stt-prompt-leaks-into-the-transcript.md`.
 - **Raw transcription accuracy is poor and unmeasured.** Dictated words come
   back as different words often enough that a dictated brief has to be re-read
   before it is trusted. Distinct from the hallucination record: a mishearing is
