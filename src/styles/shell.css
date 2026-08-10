@@ -1327,6 +1327,22 @@
     font-weight: 550;
   }
 
+  /* ── A CONTROL THAT CANNOT ACT (ADR 0065) ──────────────────────────────────
+     The ADR says the vocabulary for "drawn and inert" already exists, and for
+     `Button`, `IconButton`, `Toggle` and `Stepper` it did — every one of them
+     had a `[disabled]` rule. FIVE CONTROLS DID NOT, and Leg 4c found it the
+     only way it can be found: in the native host, looking at three greyed-out
+     provider lanes that were not greyed out. A segment, a provider chip, a
+     select, a text field, a hotkey target and a flag all took the attribute,
+     refused the click, and looked exactly as operable as their neighbours —
+     which is the defect the ADR is about, one step quieter.
+
+     The opacities follow the ones already here: 0.4 for a control that is the
+     row's answer, 0.3 for a bare icon, and `pointer-events: none` throughout so
+     a disabled control does not even light up under the cursor. The prototype
+     draws none of these states, so nothing measured moves. */
+  .ws-seg button[disabled] { opacity: 0.4; pointer-events: none; }
+
   /* ── Select and text field — a border means "you can put something in it" ── */
 
   .ws-sel, .ws-field {
@@ -1395,6 +1411,14 @@
   .ws-row[data-layout="stack"] .ws-sel,
   .ws-sel[data-wide] { width: 100%; }
   .ws-sel:hover, .ws-field:hover { border-color: var(--border-strong); }
+  .ws-sel[disabled], .ws-field[disabled] {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  /* The well is part of the control, so it dims with it rather than staying
+     the one bright thing on a row nobody can operate. */
+  .ws-sel-wrap:has(.ws-sel[disabled])::before,
+  .ws-sel-wrap:has(.ws-sel[disabled])::after { opacity: 0.4; }
   textarea.ws-field {
     height: auto; padding: 8px 9px;
     line-height: 1.5; resize: vertical; width: 100%;
@@ -1582,6 +1606,7 @@
     background: var(--bg-inset);
   }
   .ws-kbd-btn:hover { border-color: var(--border-strong); }
+  .ws-kbd-btn[disabled] { opacity: 0.4; pointer-events: none; }
   .ws-kbd-btn .ws-kbd-edit {
     font-stretch: var(--w-micro);
     letter-spacing: var(--ls-micro);
@@ -2043,6 +2068,7 @@
   }
   .ws-flag svg { width: 12px; height: 12px; }
   .ws-flag:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+  .ws-flag[disabled] { pointer-events: none; }
 
   /* ── The runtime log ──────────────────────────────────────────────────────
      Buffered while the runtime is active. The level column is fixed-width so
@@ -2680,6 +2706,7 @@
                 color var(--dur-fast) var(--ease);
   }
   .ws-provchip:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-provchip[disabled] { opacity: 0.4; pointer-events: none; }
   .ws-provchip[data-on] {
     background: var(--accent-soft);
     border-color: color-mix(in srgb, var(--accent) 46%, transparent);
