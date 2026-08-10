@@ -107,6 +107,18 @@ export function useTranscriptionHistory(isActive: boolean) {
     }
   }, []);
 
+  /** Mark a fallen-back delivery as dealt with, so Home stops asking for it
+   *  (ADR 0076). Restoring the text does it too — the question is answered
+   *  either way. */
+  const acknowledgeFallback = useCallback(async (id: string) => {
+    try {
+      await invoke("acknowledge_transcription_fallback", { request: { id } });
+      await refresh(undefined, { background: true });
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }, [refresh]);
+
   const clear = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -194,6 +206,7 @@ export function useTranscriptionHistory(isActive: boolean) {
     storagePath,
     transcriptRoot,
     reveal,
+    acknowledgeFallback,
     error,
     isLoading,
     refresh,

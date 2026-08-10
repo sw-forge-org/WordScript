@@ -2680,6 +2680,7 @@ pub fn run() {
             core::history::export_transcription_history,
             core::history::clear_transcription_history_entries,
             core::history::delete_transcription_history_entry,
+            core::history::acknowledge_transcription_fallback,
             core::history::retry_transcription_history_entry,
             core::updates::check_app_update,
             core::runtime_log::runtime_log_entries,

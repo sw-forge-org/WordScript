@@ -90,6 +90,15 @@ pub struct TranscriptionHistoryEntry {
     /// unrecoverable failure.
     #[serde(default)]
     pub audio_path: Option<String>,
+    /// The delivery fell back and somebody has since dealt with it — restored
+    /// the text, or said it did not matter (ADR 0076).
+    ///
+    /// A fact about the RECORD rather than about a window, which is why it is
+    /// here: a question that came back every time the workspace was reopened
+    /// would be the standing nag ADR 0044 exists against. Only ever set on an
+    /// entry whose delivery fell back; meaningless and unread on any other.
+    #[serde(default)]
+    pub fallback_acknowledged: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +142,11 @@ pub struct DeleteTranscriptionHistoryEntryRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RetryTranscriptionHistoryEntryRequest {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AcknowledgeFallbackRequest {
     pub id: String,
 }
 
@@ -335,6 +349,7 @@ fn record_entry_with_work_mode(
         clipboard_restore: request.clipboard_restore,
         error: request.error,
         audio_path: request.audio_path,
+        fallback_acknowledged: false,
     };
 
     store.entries.push_front(entry.clone());
@@ -387,6 +402,26 @@ pub fn transcription_history_storage_status() -> Result<TranscriptionHistoryStor
     Ok(TranscriptionHistoryStorageStatus {
         path: resolved_history_file_path().to_string_lossy().to_string(),
     })
+}
+
+/// Mark a fallen-back delivery as dealt with, so Home stops asking (ADR 0076).
+///
+/// Idempotent, and silent about an id it does not hold: the record may have
+/// been pruned between the surface reading it and somebody pressing Dismiss,
+/// and an error there would report a problem that has already resolved itself.
+#[tauri::command]
+pub fn acknowledge_transcription_fallback(
+    request: AcknowledgeFallbackRequest,
+) -> Result<Vec<TranscriptionHistoryEntry>, String> {
+    let mut store = history_store().lock().map_err(|error| error.to_string())?;
+    ensure_loaded(&mut store);
+    for entry in store.entries.iter_mut() {
+        if entry.id == request.id {
+            entry.fallback_acknowledged = true;
+        }
+    }
+    save_history_entries(&store.entries)?;
+    Ok(store.entries.iter().cloned().collect())
 }
 
 #[tauri::command]
@@ -1571,6 +1606,7 @@ mod tests {
                 clipboard_restore: None,
                 error: None,
                 audio_path: None,
+                fallback_acknowledged: false,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-a".to_string(),
@@ -1605,6 +1641,7 @@ mod tests {
                 clipboard_restore: None,
                 error: None,
                 audio_path: None,
+                fallback_acknowledged: false,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-b".to_string(),
@@ -1639,6 +1676,7 @@ mod tests {
                 clipboard_restore: None,
                 error: None,
                 audio_path: None,
+                fallback_acknowledged: false,
             },
         ]);
 
@@ -1934,6 +1972,7 @@ mod tests {
             clipboard_restore: None,
             error: None,
             audio_path: None,
+            fallback_acknowledged: false,
         }
     }
 }

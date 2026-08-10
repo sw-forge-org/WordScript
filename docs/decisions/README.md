@@ -499,6 +499,14 @@ Status: Proposed | Accepted | Superseded by NNNN
   what actually ran, because the stored work mode keeps `auto` for an Auto record
   and could not answer. An Auto record has its Auto resolved again rather than
   repeated.
+- [0076](0076-the-decision-inbox-receives-the-one-question-the-runtime-can-already-ask.md):
+  Home's decision inbox receives the one of ADR 0044's three sources the runtime
+  can already ask about -- a delivery that fell back to the clipboard or to the
+  scratchpad -- and draws nothing when none is standing, which is the drawing's
+  own rule. Dismissing is recorded on the RECORD rather than in the window, so a
+  question answered once does not come back with the next launch. The desk
+  (Phase 8) and a meeting's open questions (V2) still have no receiver and the
+  banner says so.
 
 ## Resolved: the number 0011 was used twice
 
@@ -526,8 +534,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0075; the next
-decision takes 0076.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0076; the next
+decision takes 0077.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

@@ -46,6 +46,7 @@ function createHistoryEntry(overrides: Partial<TranscriptionHistoryEntry> = {}):
     },
     effective_mode: null,
     transcript_path: null,
+    fallback_acknowledged: false,
     provider_profile: null,
     local_prompt_strength: null,
     local_prompt_carry: null,

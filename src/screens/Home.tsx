@@ -49,15 +49,20 @@ import type { PartlyWiredScreenProps } from "./props";
  * — the same shape as General's device hint. The keys are the runtime's
  * resolved display of `config.hotkey`, never the raw token (T9).
  *
- * THE DECISION INBOX IS ABSENT ON THE PRODUCT, AND THAT IS THE DRAWING'S OWN
- * RULE. ADR 0044's inbox has three sources and no receiver — the desk does not
- * exist (Phase 8), no meeting produces an open question (V2), and the insert
- * fallback has no queue. Rendering three invented pending decisions would be
- * the worst instance of rule 7 on the whole surface: an invented QUESTION, not
- * an invented label. The drawing already says what to do when nothing is owed —
- * *"Nothing is drawn here when nothing is owed; a standing all-clear is
- * furniture"* — so nothing is drawn. It is why this screen keeps its banner,
- * and the three sources stay on the relay's §2.5 list.
+ * THE DECISION INBOX HAS ONE OF ITS THREE SOURCES (ADR 0076). A delivery that
+ * fell back to the clipboard or to the scratchpad is a question the record
+ * already answers every part of — what was said, when, why the paste did not
+ * land, and whether the text can still be placed — so the product draws it, and
+ * draws NOTHING when no such record is standing. That is the drawing's own
+ * rule: *"Nothing is drawn here when nothing is owed; a standing all-clear is
+ * furniture."* On a machine that has not had a failed insert this section is
+ * simply not there, which is the rule working rather than a screen half-built.
+ *
+ * The other two sources have no receiver and cannot get one here: the desk does
+ * not exist (Phase 8) and no meeting produces an open question (V2). That is
+ * what this screen's banner still states, and why it keeps its gallery entry.
+ * Inventing either would be the worst instance of rule 7 on the whole surface —
+ * an invented QUESTION rather than an invented label.
  */
 
 const RECENT_LIMIT = 5;
@@ -101,7 +106,9 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   const [openRaw, setOpenRaw] = useState<string | null>(null);
   const [trigger, setTrigger] = useState<string | null>(null);
   const [effectiveMode, setEffectiveMode] = useState<ProcessingMode | null>(null);
-  const { entries, remove, retry, reveal } = useTranscriptionHistory(Boolean(runtime?.active));
+  const { entries, remove, retry, reveal, acknowledgeFallback } = useTranscriptionHistory(
+    Boolean(runtime?.active),
+  );
 
   useEffect(() => {
     if (!runtime?.active) return;
@@ -134,6 +141,25 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   const profile = runtime ? resolveActiveTextProfile(runtime.config) : null;
   const profileMode = profile ? resolveTextProfileWorkMode(profile).processing_mode : undefined;
   const copy = heroCopy(runtime?.config.activation_mode ?? "hold");
+
+  /* THE ONE SOURCE OF ADR 0044'S THREE THAT HAS A RECEIVER (ADR 0076). A
+     delivery that fell back to the clipboard or to the scratchpad is a
+     question — the text did not go where it was meant to and something has to
+     be done about it — and the record already carries every fact the card
+     needs. The other two sources are the desk (Phase 8) and a meeting's open
+     questions (V2), and neither exists to be received.
+
+     Ordered newest first, which is also ADR 0044's own order: the cost column
+     is "what happens if you do nothing", and for this source that cost grows
+     with every clipboard write, so the most recent is the most recoverable. */
+  const owed = runtime
+    ? entries.filter(
+        (entry) =>
+          !entry.fallback_acknowledged &&
+          (entry.insert_mode === "clipboard_fallback" ||
+            entry.insert_mode === "scratchpad_fallback"),
+      )
+    : [];
 
   const rows = runtime
     ? entries.slice(0, RECENT_LIMIT).map((entry) => {
@@ -240,9 +266,70 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
       {/* THE DECISION INBOX — ADR 0044. Three sources, one list, and the reason
           they can share a list is not that they are alike: it is that all three
           are the same question to the user, something is stopped until you say
-          something. Nothing is drawn here when nothing is owed; a standing
-          "all clear" is furniture — which is exactly why the product draws none
-          of it: there is no receiver for any of the three (see the header). */}
+          something. Nothing is drawn when nothing is owed; a standing "all
+          clear" is furniture. The product draws the ONE source it can receive
+          (ADR 0076) and nothing when that source is quiet, which is most of
+          the time and is the rule working rather than a screen half-built. */}
+      {runtime && owed.length > 0 && (
+        <SectionHeader title={`Waiting for you · ${owed.length}`}>
+          <Card>
+            <OwedList>
+              {owed.map((entry) => {
+                const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
+                const scratchpad = entry.insert_mode === "scratchpad_fallback";
+                return (
+                  <Owed
+                    key={entry.id}
+                    icon="alert"
+                    title={
+                      scratchpad
+                        ? "One insert reached neither the cursor nor the clipboard"
+                        : "One insert fell back to the clipboard"
+                    }
+                    from={[
+                      relativeTime(entry.created_at_ms),
+                      entry.active_profile ?? "No profile recorded",
+                      entry.fallback_reason ?? "the target app did not take the paste",
+                    ].join(" · ")}
+                    /* The cost column, and the two fallbacks do not have the
+                       same one. Clipboard text survives until the next copy;
+                       scratchpad text survives until the runtime is restarted,
+                       and saying "lost when you copy" about it would be wrong
+                       in the direction that makes somebody act too late. */
+                    cost={
+                      scratchpad
+                        ? "It is in the scratchpad and goes when the runtime restarts."
+                        : "The text is lost the next time you copy anything."
+                    }
+                    actions={
+                      <>
+                        <Button
+                          icon={<Icon name="restore" />}
+                          onClick={() => {
+                            void invoke("insert_text_native", {
+                              request: { text, source: "home_owed", corrected: entry.corrected },
+                            });
+                            void acknowledgeFallback(entry.id);
+                          }}
+                        >
+                          Restore
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => void acknowledgeFallback(entry.id)}
+                        >
+                          Dismiss
+                        </Button>
+                      </>
+                    }
+                  />
+                );
+              })}
+            </OwedList>
+          </Card>
+        </SectionHeader>
+      )}
+
       {!runtime && (
         <SectionHeader title="Waiting for you · 3">
           <Card>

@@ -78,4 +78,8 @@ export interface TranscriptionHistoryEntry {
    *  kept it for a retry. `null` on every entry with nothing to retry from — a
    *  successful run deletes its audio, and so does an unrecoverable failure. */
   audio_path: string | null;
+  /** The delivery fell back and somebody has since dealt with it — restored the
+   *  text, or said it did not matter (ADR 0076). Only ever set on an entry
+   *  whose delivery fell back. */
+  fallback_acknowledged: boolean;
 }

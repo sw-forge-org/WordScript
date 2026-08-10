@@ -102,7 +102,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     id: "home",
     label: "Home",
     icon: "home",
-    banner: saysSo("Wired in part — the decision inbox has no receiver for any of its three sources, so nothing is drawn there."),
+    banner: saysSo("Wired in part — the decision inbox receives a fallen-back delivery and nothing else; the desk (Phase 8) and a meeting's open questions (V2) have no receiver."),
     render: (props) => <HomeScreen {...props} />,
   },
   {
