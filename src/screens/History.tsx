@@ -332,12 +332,7 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
       <Toolbar
         label="Filters"
         right={
-          <Button
-            variant="ghost"
-            icon={<Icon name="download" />}
-            disabled={!runtime}
-            onClick={() => void onExport()}
-          >
+          <Button variant="ghost" icon={<Icon name="download" />} onClick={() => void onExport()}>
             Export
           </Button>
         }

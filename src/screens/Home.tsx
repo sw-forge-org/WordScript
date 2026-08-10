@@ -219,14 +219,19 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
             </Button>
           }
         >
+          {/* ONE TEXT NODE EITHER SIDE OF THE `<b>`, exactly as the prototype
+              writes it. A JSX `{" "}` is a SECOND text node, and three of this
+              row's spans measured 0.015px wide of the prototype because of it —
+              the only style divergence this leg introduced, and it took a
+              `port:diff` run to see. */}
           <span>
-            Next dictation runs as{" "}
+            {"Next dictation runs as "}
             <b>{runtime ? (effectiveMode ? PROCESSING_MODE_LABELS[effectiveMode] : "—") : "Cleanup"}</b>
           </span>
           <span className="ws-sep">·</span>
           <span>
-            <b>{runtime ? displayTextProfileLabel(profile!) : "General writing"}</b> on{" "}
-            {runtime ? PROCESSING_MODE_LABELS[profileMode ?? "auto"] : "Auto"}
+            <b>{runtime ? displayTextProfileLabel(profile!) : "General writing"}</b>
+            {` on ${runtime ? PROCESSING_MODE_LABELS[profileMode ?? "auto"] : "Auto"}`}
           </span>
         </HeroFacts>
       </HomeOpen>
