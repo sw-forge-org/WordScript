@@ -652,6 +652,24 @@ body.overlay-window {
   box-shadow: 0 0 0 3.5px var(--focus-halo);
 }
 
+/* THE ONE EXEMPTION, AND IT HAS TO LIVE HERE. The command palette's field is
+   the whole top of its panel, so a ring around the field is a ring around the
+   panel — and the field is focused the instant the palette opens and cannot
+   lose focus while it is up, so the ring states something that was never in
+   doubt and outlines the panel in the attention colour for the entire time it
+   is on screen. A focus ring says WHERE YOU ARE; here there is nowhere else to
+   be.
+
+   It is unlayered rather than sitting in `shell.css` with the rest of the
+   palette, and that is the point: `shell.css` is `@layer components` and the
+   rule above is not, so a layered exception loses to it no matter how specific
+   it is. That is the same trap `shell.css` records for `[hidden]`, in the other
+   direction. Anything that has to beat an unlayered rule belongs beside it. */
+.ws-cmdk-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 /* ── The pre-port sidebar and button utilities are gone ────────────────────
    `.ws-card` and `.ws-card-title` went on 2026-08-04 with Leg 1;
    `.ws-sidebar-item`, `.ws-btn-primary` and `.ws-btn-secondary` went on

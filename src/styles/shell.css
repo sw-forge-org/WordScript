@@ -5522,10 +5522,12 @@
     background: none; border: none;
   }
   .ws-cmdk-input::placeholder { color: var(--fg-muted); }
-  /* The field is the whole top of the panel, so a ring around it would be a
-     ring around the panel. It is focused on open and cannot lose focus while
-     the palette is up; a ring would state something never in doubt. */
-  .ws-cmdk-input:focus-visible { outline: none; box-shadow: none; }
+  /* The field takes no focus ring, and that rule is NOT here — it is unlayered
+     in `globals.css` beside the `:focus-visible` it exempts. It stood in this
+     block first and did nothing at all: this file is `@layer components` and
+     the focus ring is unlayered, so the layer beat it and the palette shipped
+     outlined in the accent colour for as long as it was open. Do not move it
+     back. */
 
   .ws-cmdk-list {
     min-height: 0; overflow-y: auto;
