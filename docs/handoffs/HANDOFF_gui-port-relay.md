@@ -1219,6 +1219,56 @@ anybody can wire it (ADR 0057).
   the Markdown-file promise are now three statements about where user data
   lives, and one of them is being read by two screens.
 
+**Raised by the owner on 2026-08-10, against Leg 4c's report, and it is the
+first hole this port has found in the PROTOTYPE rather than in the runtime.**
+
+- **THE COMMUNICATION STYLE HAS NO SURFACE ANYWHERE, AND IT IS STILL RUNNING.**
+  The owner asked whether the old UI's rewriting-style options — how formal,
+  which vocabulary, shorter or longer — have an equivalent today. They do not,
+  and the shape of the gap is unlike every other entry on this list.
+
+  **The runtime has all of it and uses all of it.** `core::communication_style`
+  is intact: `CommunicationRegister` (`off`, `authority`, `client`, `colleague`,
+  `friend`, `quick`), `CommunicationLength` (`terse`, `normal`, `full`), the two
+  bounded free-text fields with `MAX_STYLE_RULE_CHARS` / `MAX_STYLE_SAMPLE_CHARS`
+  and the fixed precedence between preset, rules and sample that ADR 0023 sets.
+  `AppConfig::active_text_profile_communication_style` assembles it per profile
+  and `transform`, `agent` and `capture` all consume it. **It is live capability,
+  not dead code.**
+
+  **The pre-port surface had the controls.** `8f9077e^:src/components/settings/
+  ModesTab.tsx` renders the register select with its six descriptions, the
+  length select, both textareas and a budget meter on each.
+
+  **The prototype points at the profile for it three times and never draws it.**
+  AI Models' Rewrite row: *"How this writes — register, length, style rules,
+  writing sample — is the profile's communication style, shared with the
+  assistant"*, with an `Open the profile` link. Its Cleanup row: *"No
+  communication style here. It applies to Rewrite and the assistant only."*
+  Onboarding: *"Communication style — Register, length and writing sample …
+  In the profile."* And the profile's five tabs are Defaults, Context, Words,
+  Replacements, Snippets. **There is no sixth.** The profile list even displays
+  a register in its subline — `Rewrite · Client register` — for a value nothing
+  on the surface can set.
+
+  **So the port carried the absence faithfully and Leg 4c had nothing to wire.**
+  This is not a screen that lost a control; it is three pointers to a surface
+  that was never drawn. `SETTINGS_REWORK_PLAN.md` §11.4 required the card to
+  stand on two tabs under the old IA and the prototype relocated it into the
+  profile without following it there.
+
+  **It is worse than a missing feature, and this is the part to act on.** On
+  this machine one of six profiles — *Product and engineering* — carries
+  `register: quick` with 256 characters of style rules and an 88-character
+  writing sample, set in the old UI, still being applied to every Rewrite and
+  every assistant run under that profile, **and invisible and unchangeable in
+  the product.** That is exactly the defect ADR 0023 was written against, quoted
+  in the plan: *a setting whose cause is nowhere on screen.*
+
+  **Leg 4d owns it, and it is a drawing job before it is a wiring job**
+  (ADR 0057): the gallery grows the surface, the product follows. The runtime
+  contract is already met, so the wiring afterwards is one card.
+
 **THE PROTOTYPE'S STATUS IS FLIPPED.** All 25 screens stand, so ADR 0057's
 condition is met: the prototype is provenance, the gallery is the source, and
 rule 4b has expired. Said here, in the rules section above, and in
@@ -2194,8 +2244,9 @@ entry point.
 
 You are picking up the WordScript GUI port. Work in the repo root on `main`.
 Do not create a branch. Leg 4d is yours, and it is **not a wiring leg**: every
-wireable screen is wired. Leg 4d is the two surfaces the port never carried and
-the two derivations nobody has decided.
+wireable screen is wired. Leg 4d is the three surfaces the port never carried
+and the two derivations nobody has decided — and the third surface was found
+after Leg 4c closed, by the owner, which is why it is item 0 rather than item 4.
 
 ### What is already true
 
@@ -2221,7 +2272,39 @@ runtime cannot answer. Add to it; do not start a second one. Then `CLAUDE.md`,
 and `src/screens/props.ts`, which is the seam in about a hundred and ten lines
 and now has three shapes rather than two.
 
-### The order, and the first two are the ones that were carried three times
+### The order, and the first one was raised by the owner after Leg 4c closed
+
+0. **THE COMMUNICATION STYLE, AND IT OUTRANKS EVERYTHING BELOW IT.** Raised by
+   the owner on 2026-08-10: the old UI let you choose, for Rewrite and the
+   assistant, how formal the result is, which vocabulary it may use, and whether
+   it comes out shorter, longer or the same. **There is no equivalent on any
+   surface today**, and the full §2.5 entry above is worth reading before you
+   start, because the shape is unlike anything else on this list.
+
+   The short version: `core::communication_style` is intact and RUNNING —
+   register, length, style rules, writing sample, with ADR 0023's precedence
+   between them — and `transform`, `agent` and `capture` all consume it. The
+   pre-port `ModesTab.tsx` had every control. **The prototype points at the
+   profile for it three times and never draws it**, and the profile's five tabs
+   have no sixth. So the port carried a faithful absence.
+
+   **It is a live setting nobody can see.** One of the six profiles on the
+   owner's machine carries `register: quick` with 256 characters of style rules
+   and an 88-character sample, set in the old UI, applied to every Rewrite under
+   that profile, invisible and unchangeable. That is the defect ADR 0023 exists
+   against.
+
+   **Draw it first, wire it second** (ADR 0057). Ask the owner where it goes
+   before you draw: the prototype's three pointers say "the profile", the plan's
+   §11.4 put it on two mode tabs under the old IA, and those are different
+   answers. The runtime contract is already met, so once there is a drawing the
+   wiring is one card — and `patchText` is the right writer for both textareas,
+   with `MAX_STYLE_RULE_CHARS` / `MAX_STYLE_SAMPLE_CHARS` as the budget meters
+   the pre-port surface drew.
+
+   **The profile-list subline already displays a register** (`Rewrite · Client
+   register` in the drawing) for a value nothing can set, so item 3's subline
+   derivation and this are the same piece of work — do them together.
 
 1. **THE SEARCH BAR AND THE COMMAND PALETTE.** This is the one to do first and
    the owner has raised it once already, in as many words: *the searchbar 1:1

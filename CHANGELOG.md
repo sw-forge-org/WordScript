@@ -108,6 +108,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Diagnostics screen read because something is wrong does not print runtime
   identifiers at the person reading it.
 
+### Known gaps
+
+- **The communication style has no surface and is still applied.** Register,
+  length, style rules and a writing sample are per profile in the runtime
+  (`core::communication_style`, ADR 0023) and every Rewrite and assistant run
+  reads them — the pre-port surface had the controls, the prototype points at
+  the profile for them three times, and the profile screen never drew them. A
+  profile carrying a non-default register cannot be seen or changed in the
+  product. Recorded in the relay's §2.5 and first on Leg 4d.
+
 ### Fixed
 
 - **Six controls could be disabled and did not look it.** A segment, a provider
