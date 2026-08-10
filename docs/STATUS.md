@@ -29,24 +29,46 @@ Status: 2026-08-10
   lane and the delivery target; the profile row switches the active profile and
   refuses during a session because the runtime does; the overlay's deep link
   resolves. **Fully wired:** About & Updates, Diagnostics, General, Delivery &
-  Insert, Hotkeys. **Wired in part, each stating on itself exactly what it
-  cannot read:** History, Profiles, AI Models, Home, Privacy & Data. **Not
-  wireable at all**, and carrying a banner for that reason rather than for a
-  missing commit: Context (V2), Notes & Meetings (V2), Agents (Phase 8,
-  ADR 0030), Integrations (Phase 8).
+  Insert, Hotkeys, History, Privacy & Data. **Wired in part, each stating on
+  itself exactly what it cannot read:** Profiles (no drawn editor behind Add,
+  Edit and New profile), AI Models (one integrated lane of four), Home (two of
+  the decision inbox's three sources have no receiver). **Not wireable at all**,
+  and carrying a banner for that reason rather than for a missing commit:
+  Context (V2), Notes & Meetings (V2), Agents (Phase 8, ADR 0030), Integrations
+  (Phase 8).
+- **Every transcript is a Markdown file** under `~/WordScript/transcripts`
+  (ADR 0074), written at the moment its record is, with the frontmatter §11.23
+  specifies. `history.json` stays the index and carries the path; Delete, Clear
+  and the retention sweep take the file with the entry, and the runtime removes
+  only paths an entry named. The filename is a title the chat model writes
+  (ADR 0077), falling back to the first words when no model answers.
+  `Show transcripts in file manager` acts on History, on Home and in the
+  palette.
+- **Full export, Full import and Reset all settings act** (`core::backup`). The
+  archive is the config, the history index and the transcript files; import and
+  reset copy the config aside first and answer with where it went. The API key
+  is never in an archive — it is in the OS secret store.
+- **Home's decision inbox receives a fallen-back delivery** and draws nothing
+  when nothing is owed (ADR 0076). The desk and a meeting's open questions still
+  have no receiver.
 - **The colour scheme survives a restart** (`AppConfig.color_scheme`, light /
   dark / system). It is machine-wide rather than per profile, and `system` is a
   deferral resolved at render time, so `<html data-theme>` always carries
-  `light` or `dark` (ADR 0048). The command palette's three theme rows write it;
+  `light` or `dark` (ADR 0048). Since Leg 6 the HOST answers `system` and the
+  native window chrome follows the choice (§15.3). The command palette's three
+  theme rows write it;
   before 2026-08-10 they changed the window and persisted nothing.
 - **A control the runtime cannot answer for is drawn and inert rather than
   deleted** (ADR 0065, ADR 0067): three of four provider lanes, seven of eight
-  provider chips, the profile-list editors, `Show in file manager`, the full
-  export/import/reset trio. Every one carries its reason. **The seventh
-  processing mode left that list on 2026-08-10**: Translate is a mode you can
-  select, bind and run (ADR 0041, ADR 0071), so the two controls that had been
-  naming its absence act, and their reasons were deleted in the commit that made
-  them false. The fourteen pre-port areas were deleted in the commit that
+  provider chips, the profile-list editors, and every per-job model override.
+  Every one carries its reason. **Four things left that list on 2026-08-10.**
+  Translate is a mode you can select, bind and run (ADR 0041, ADR 0071), so the
+  two controls naming its absence act. `Show transcripts in file manager` acts,
+  on all three surfaces it is drawn on, because the file it reveals now exists
+  (ADR 0074). Full export, Full import and Reset all settings act
+  (`core::backup`). In every case the reason was deleted in the commit that made
+  it false. The one reveal that stays inert is on a record that produced no
+  text: there is no file, and the control says so. The fourteen pre-port areas were deleted in the commit that
   replaced them (ADR 0054), and the runtime behaviour they carried is now back
   on the ported screens.
 - Settings IA restructuring (2026-06-21, superseded 2026-08-05): the pre-port

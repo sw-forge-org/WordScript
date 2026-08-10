@@ -1,8 +1,10 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Leg 4b is CLOSED. The seam is open, P1 and P2 are
-fixed on it, the rebuild lab is restored, and four of the fourteen mounted
-screens are wired. Leg 4c — the remaining six wireable screens — is next.**
+Opened 2026-08-04. **Active — Leg 6 is CLOSED. Every transcript is a file,
+every drawn door on History and Privacy & Data acts, the retry runs the mode its
+record ran, and the decision inbox receives the one question the runtime can
+ask. Leg 7 — the five missing SURFACES, which are design rather than runtime —
+is next.**
 
 Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 Work happens on `main`. There is no feature branch; `gui-rework-second-pass` was
@@ -150,7 +152,9 @@ gallery of four sections.
 | **4b** | The seam, P1, P2, the rebuild lab, and the first four sections | *Done.* `WorkspaceRuntime` is the seam and a wired screen's `runtime` prop is REQUIRED, so ADR 0057 is enforced by the compiler; About, Diagnostics (and its pop-out), General and Delivery & Insert read the runtime; 21 gallery entries left |
 | **4c** | The remaining six wireable sections | Hotkeys, History, Profiles, AI Models wired; Home and Privacy & Data wired in part and still saying so. Context, Notes & Meetings, Agents and Integrations keep their banners — they are V2 or Phase 8 |
 | **5** | Runtime contracts | *Done.* The seventh `ProcessingMode` with its own prompt module (ADR 0041, 0071, 0072, 0073), `analyze_communication_style` over IPC, and `AppConfig.color_scheme`. Three §2.5 entries closed, three added. The native-host check is owed |
-| **6** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
+| **6** | Runtime contracts, the second pass | *Done.* The Markdown transcript store with model-written filenames (ADR 0074, 0077), the reveal command on three surfaces, the retry routed by mode through one shared dispatch (ADR 0075), `core::backup`'s export/import/reset, Home's decision inbox (ADR 0076), and §15.3's native half. History and Privacy & Data are fully wired and left the gallery |
+| **7** | The five missing SURFACES | Add and Edit for replacements and snippets, New profile's rename, and where an `analyze_text_rules` answer goes. The gallery grows them first (ADR 0057) |
+| **8** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
 
 Legs 2 and 4 are large and may split into sub-legs (2a, 2b, …). A leg that
 splits says so in its record and writes the prompt for the next sub-leg.
@@ -399,6 +403,7 @@ Serve the prototype for comparison:
 | **3** | 2026-08-05 | Opus 5 | `8f9077e` | **The shell is overwritten. The product is ONE WINDOW.** A workspace with four views, settings as a modal sheet over it at its own scale, `Cmd+,` to open and Escape to close. Fourteen flat areas deleted in the commit that replaced them; `FormCard`, `FormRow`, `Sidebar` and `StatTiles` deleted with their last caller; the 25 screens moved out of the gallery into `src/screens/` so the product mounts what the gallery displays. **All 33 `port:diff` measurements are structural 0 | style 0 after the shell change** — the regression check earned its keep. 289 frontend tests (335 minus the 67 that belonged to the deleted areas, plus 21 new), `cargo test` 623, both builds green. The workspace, the sheet and the agent overlay all looked at in the native host — **Leg 2d's three owed agent-overlay checks all pass.** ADR 0059 filed: the gallery gets a chord. **One live defect found and fixed: the overlay's deep link had been resolving to nothing.** Full account below.
 | **4a** | 2026-08-05 | Opus 5 | `67bd0f9` | **Six drawn surfaces got a lifecycle, and no code was written.** Five ADRs — 0060 onboarding, 0061 the agent overlay, 0062 the handoff, 0063 meeting capture, 0064 the translation window — plus three roadmap entries: meeting capture's gate 1 closed, and two new candidates (live subtitles, the live-translation window) for the two surfaces that genuinely had no roadmap home. **Live subtitles is deliberately the one without an ADR**: what turns captions on cannot be decided honestly before the capture exists, and saying so is the answer. The owner decided three of them; the rest are derived and each ADR says which it was. **Two things were nearly decided wrong and the drawn surface caught both** — the notification does not retract when a dictation starts, it offsets above the pill, and §7's "meeting capture is not on the roadmap" has been false since the day it was written. 289 frontend tests, `cargo test` 623, `npm run build` green — untouched, as a doc leg should leave them. Full account below. |
 | **4b** | 2026-08-10 | Opus 5 | `a8dc617`…`88bf75a` | **The seam is open, P1 and P2 are fixed on it, the rebuild lab is back, and four of fourteen sections are wired — so the leg SPLIT rather than overrun.** About & Updates, Diagnostics (with its pop-out), General and Delivery & Insert read the runtime; the other ten keep their banners and four of those can never lose one. **ADR 0057 is mechanical now**: a wired screen takes a REQUIRED `runtime` prop, so its gallery entry stops compiling, and `registry.test.tsx` asserts the set that left the registry EQUALS the set the product mounts without a banner — both directions fail. `RebuildLabTab`'s ~1000 lines came back onto the drawing, and cost less than budgeted because the drawing had been read off the surface it replaces. 289 → 316 frontend tests, `cargo test` 623, both builds green. Gallery 25 → 21 entries; `port:diff` 33 → 29 measurements, **every one structural 0 \| style 0**. Full account below. |
+| **6** | 2026-08-10 | Opus 5 | `6608131`…`6ee471b` | **The drawn promise turned out to be a folder, so the folder exists — and the retry stopped running the wrong job.** `core::transcript_store` writes every transcript as a Markdown file whose NAME the chat model writes (ADR 0074, ADR 0077), from the one funnel every history record passes through; delete, clear and retention take the file with the entry, and the runtime removes only paths an entry named. `Show transcripts in file manager` acts on all three surfaces. The mode dispatch left the pipeline's closure for `core::mode_router::apply_mode_transform`, so a retried Agent, Prompt Enhance or Translate record re-runs its own mode (ADR 0075) — a defect that had been live for two of them since they shipped. `core::backup` answers Full export, Full import and Reset all settings, both destructive ones snapshotting first. Home's decision inbox receives a fallen-back delivery and nothing else (ADR 0076). §15.3's native half is closed for the shell. **History and Privacy & Data are fully wired and left the gallery**; `port:diff` 28 → 26 measurements, 25 at structural 0 \| style 0. 427 → 437 frontend tests, `cargo test` 645 → 670, both builds green. **Four ADRs, and two of them were the owner's corrections mid-leg.** Full account below. |
 | **2d** | 2026-08-04 | Opus 5 | `ae5af81`… | **The last ten screens ported. ALL 25 STAND, every one measured exact in every state it has.** Context with its four note tabs and both windows over it, the intake's three ways in, Actions & templates, meeting capture, the handoff, live subtitles, translation, client conversations and the agent overlay. The note grammar, the five-member window family, the intake, the shipped overlay pill drawn at its real geometry, the caption strip and the echo, the translation window and the client record are in the library. Three library defects no earlier screen could show: the wide layout had no measure, the 16 px icon base rule was shrinking the dot-matrix readout to a square, and `Card` now owns the head/rows/body/foot order that three legs had got wrong at a call site. 298 → 335 frontend tests, `cargo test` 623, both builds green. Context looked at in the native host; the agent overlay is owed there. **The prototype's status IS flipped — Leg 2 is closed.** Full account below. |
 
 ### Leg 1 — what landed, and the one thing it got wrong
@@ -1824,6 +1829,172 @@ declined lines would be a second place for style rules to live.
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.
 
+### Leg 6 — the promise that turned out to be a folder, and the retry that had been running the wrong job
+
+**ALL SEVEN ENTRIES ARE DONE, AND AN EIGHTH THE OWNER RAISED MID-LEG.** Six
+commits, four ADRs (0074, 0075, 0076, 0077). Entry 8 — the five missing
+surfaces — is untouched and is Leg 7's, by name, at the top of its prompt.
+
+**THE THING TO TAKE FROM THIS LEG: A COST ARGUMENT CAN BE VOIDED BY ONE
+SENTENCE, AND THEN THE DECISION HAS TO BE RE-MADE ON ITS OWN GROUNDS.** The
+Markdown-file promise was put to the owner as keep-or-retire with a
+recommendation to retire, and the recommendation rested on two costs: the
+backfill of 174 records, and two stores that drift. The owner voided the first
+in a sentence — *"auf die vorhandenen Einträge kannst du komplett scheißen, wir
+sind im Development-Modus"* — and asked for it to be reconsidered. Reading
+§11.23 then settled it the other way: it is not a label on a drawing, it is a
+designed requirement with a module name, a path scheme, a frontmatter schema, a
+`## Heard` rule and a stated reason, and it even names `reveal_item_in_dir` as
+the implementation. **A recommendation made without reading the section that
+designed the thing is not a recommendation.** ADR 0074 records the case for
+retiring in full, including the one argument that survives, because the next
+person to ask deserves the real reasons rather than the outcome.
+
+**AND THE SECOND ONE: THE OWNER ANSWERED THE OBJECTION THE ADR RAISED AGAINST
+ITSELF, AN HOUR AFTER IT LANDED.** ADR 0074 named its own weak point — a slug
+from the first words gives a thing with no title a filename, and
+`ja-genau-mach-das-mal-so.md` is a file nobody will find — and accepted it on
+the grounds that the clutter is honest. The owner asked why the model already in
+the pipeline does not just write the title. It should, it does now (ADR 0077),
+and the three properties that make it safe are worth carrying forward: the call
+is made AFTER the text has reached the cursor, any failure falls back to the
+deterministic slug, and it arrives at the history funnel as an ARGUMENT rather
+than as a call inside it — because that funnel is synchronous and is the one
+place a file comes into existence.
+
+**WHAT THE TRANSCRIPT STORE ACTUALLY COST**, against "a reveal command" in the
+prompt. `core::transcript_store` is a new module; the history entry grew three
+fields (`transcript_path`, `effective_mode`, `fallback_acknowledged`); every
+entry constructor and every one of its eleven call sites moved; `chrono` became
+a direct dependency (already in the lock file, not in any target's graph, so it
+is a real compile); retention, delete and clear each grew a second thing to
+remove; and `paths.rs` grew a root that lives OUTSIDE the user data directory
+and still has to divert under test. Entry 2 and entry 3 of the prompt were one
+job and the prompt said so.
+
+**THE RETRY HAD BEEN RUNNING THE WRONG JOB FOR TWO MODES SINCE THEY SHIPPED**
+(ADR 0075), and it was invisible for the ordinary reason: a conservative cleanup
+of an instruction looks like a plausible answer rather than like the wrong
+transform having run. It could not be fixed where it was — the only
+implementation of "which transform does this mode run" was fifteen lines of
+`match` inside the native pipeline's async closure, holding four of its locals.
+It is `core::mode_router::apply_mode_transform` now and both callers use it.
+**The record also could not answer the question**: `work_mode.processing_mode`
+is the profile's STORED mode and keeps `auto` for an Auto record, so
+`effective_mode` had to exist before the routing could be right.
+
+**WHAT LEG 6 REMOVES FROM §2.5.**
+
+- **The Markdown-file promise** — kept rather than retired (ADR 0074).
+- **`Show transcripts in file manager` has no command** — closed, on all three
+  surfaces, and the three reasons were deleted in the commit that made them
+  false.
+- **`retry_transcription_history_entry` does not route by mode** — closed
+  (ADR 0075). It was Leg 5's own addition to the list.
+- **Full export, Full import and Reset all settings have no command** — closed
+  (`core::backup`).
+- **§15.3's native half** — closed for the shell. The OVERLAY half is not a
+  wiring gap and is recorded as such below.
+- **ADR 0044's three sources have no receiver** — shrinks to two. The insert
+  fallback has one (ADR 0076); the desk and a meeting's open questions do not.
+
+**WHAT LEG 6 ADDS TO §2.5.**
+
+- **`duration_ms` is in §11.23's frontmatter and the record has no source for
+  it.** The field is deliberately not written rather than invented, and a test
+  asserts its absence so a later leg adds it on purpose. One measurement, on the
+  pipeline that already times itself.
+- **The transcript root is not configurable.** §11.23 puts it beside the notes
+  root on `Settings → Notes & Meetings`, which is a V2 screen with a banner.
+  Until that screen exists the root is `~/WordScript/transcripts` and History's
+  foot states the resolved path.
+- **The title costs a model call per dictation and nothing states it.** It is in
+  ADR 0077 and in the changelog; it is not on any surface. Whether it should be
+  — a row on AI Models' job list, which is where every other model choice lives
+  — is drawn design work and belongs with the five missing surfaces.
+
+**WHAT IS DRAWN AND INERT, WITH THE REASON WHERE A READER CAN REACH IT.**
+
+1. **`Show in file manager` on a record that produced no text.** The one
+   remaining case, and it is the same shape Retry already had on a record whose
+   audio was swept: drawn, disabled, reason as the tooltip (ADR 0065).
+2. **Everything Leg 4c and Leg 5 left inert is still inert**, minus the five
+   controls this leg gave a command to.
+
+**Findings for Leg 7.**
+
+1. **SYNTHETIC KEYS REACH WEBKITGTK; SYNTHETIC CLICKS DO NOT — AND LEG 4D'S
+   NOTE WAS ABOUT THE WRONG MECHANISM.** `xdotool key --window <id>` sends
+   XSendEvent and is ignored, which is what Leg 4d measured. **`xdotool key`
+   with no `--window` goes through XTEST and works**: `ctrl+k` opened the
+   palette, `xdotool type` filled it, `Return` navigated. Clicks stay dead
+   either way, and scroll works only downward. **This makes the command palette
+   the instrument for driving the product surface** — three of this leg's four
+   native-host checks were reached without touching the source. Where the
+   palette cannot reach (a sub-tab, a collapsed job row), the temporary mount
+   effect is still the answer.
+2. **`pkill -f <pattern>` MATCHES THE AGENT SHELL'S OWN COMMAND LINE, and the
+   relay's warning is narrower than the trap.** The rule is written as "no
+   `pkill -f vite`"; it cost this leg a killed shell (exit 144) on
+   `pkill -f "chromium-1237.*wordscript-port-diff"`, because the pattern was in
+   the `bash -c` line running it. **Kill by PID, always, whatever the pattern.**
+3. **THE STORE WAS VERIFIED ON REAL DICTATIONS IN THE RUNNING HOST**, which is
+   better than any screenshot. The owner dictated through the leg, `tauri dev`
+   hot-reloaded, and `~/WordScript/transcripts/2026/08/` filled with their own
+   sentences — correct local time with the `+02:00` offset (so `chrono`'s
+   `Local` works in the packaged environment), `mode: cleanup` from the new
+   `effective_mode` on a record dictated under Auto, `delivery: clipboard`, and
+   German slugs with their umlauts intact.
+4. **ALL FOUR OWED SURFACES ARE ANSWERED, AND THE FOURTH FOUND A BUG.**
+   `Profiles → Defaults` under Translate draws both rows between the mode select
+   and Delivery, nothing clipped, and the list subline moves with it. The Style
+   meter reads **247 / 400** where the field holds **256** characters — the
+   runtime's number, not the textarea's, which is exactly what Leg 5 built it
+   for. AI Models draws `Into` with its `Per profile` tag and a visibly dimmed
+   select beside it, with the two machine-scope rows below it bright. **The
+   pill's language chip could not be reached from here** — the overlay window is
+   `visible: false` until a session runs, so seeing it means running a Translate
+   dictation on the owner's microphone, which is not something to do unasked —
+   **and the owner answered it directly: the chip works and steps through the
+   languages, and changing the language GHOSTS at the pill's edges.** That is
+   recorded in `docs/known-issues/overlay-ghosting.md` as the 2026-08-10
+   addendum, with the reason it matters: the chip's width is fixed by design
+   (ADR 0073 chose two-letter codes for exactly that), so it is the first case
+   in that file that the standing 27px pill-width hypothesis cannot explain. No
+   workaround, on the owner's instruction — documented, with a fifth row for the
+   measurement table.
+5. **THE STYLE METER IS HONEST ABOUT DROPS AND SILENT ABOUT TRUNCATION.** Both
+   of the owner's two style rules are 124 and 131 characters and both are cut at
+   120 with `...` appended — which is where 256 becomes 247. The meter reads
+   black, `dropped` is empty, and two of two rules are losing their tails.
+   Leg 5's record says "a meter in the black is a guarantee that nothing was
+   dropped"; that is true and it is not the same as nothing being lost. Not
+   fixed here — it is the Style card and not on this leg's list — but it is a
+   real gap between what the meter implies and what happened.
+6. **A BANNER CAN GO STALE IN A LEG THAT NEVER OPENED THE SCREEN.** Profiles was
+   still saying *"Translate is not a mode the runtime carries"* — false since
+   Leg 5, which deleted four control-level reasons and left the banner. It was
+   caught in the first native-host screenshot of this leg, before any code was
+   written. **When a leg deletes a reason, grep the banners too.**
+7. **`npm test` IS NOT `npm run build`.** The suite was green with a mock whose
+   signature `tsc` rejects, and only the build caught it. Run both; the relay
+   says so and this is the leg that paid for it.
+8. **Four orphans, still four.** `DangerRow`, `Inspector`, `PaneGroup`,
+   `VolumeSlider`. Nothing was deleted.
+9. **`tauri.conf.json` still names the wrong thing twice** and `mode_router.rs:7`
+   still cites `OverlayGallery.tsx`. Nine legs have carried these; `src-tauri/`
+   has been open for two of them, so they are a choice rather than a rule.
+10. **`port:diff` is 26 measurements now, was 28.** `history` and `privacy` left
+    the gallery with their screens. Every one is **structural 0 | style 0**
+    except `profiles`, which is ADR 0068's recorded departure. **`history`'s
+    recorded departure (ADR 0070) is gone with the screen** — the segment is
+    still on the product, there is simply nothing left to measure it against.
+
+**Checks at the close.** 437 frontend tests across 39 files (from 427),
+`cargo test` 670 (from 645), `npm run build` green, `port:diff` 25 of 26 at
+structural 0 | style 0. The suite was run after every commit and twice at the
+end.
+
 ### Leg 4d — the surface nobody could see, the surface nobody had ported, and one decision the owner handed back
 
 **ALL FOUR POINTS ARE DONE, AND A FIFTH THAT WAS ONLY "TO BE DISCUSSED".** The
@@ -2579,7 +2750,127 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 6
+## The prompt for Leg 7
+
+You are picking up WordScript after Leg 6. Work in the repo root on `main`. Do
+not create a branch. `src-tauri/` is open.
+
+### What is already true
+
+**Every screen the prototype drew stands, twelve of the fourteen mounted ones
+are wired or wired in part, and the runtime contracts Leg 5 and Leg 6 named are
+closed.** Every transcript is a Markdown file whose name a model writes
+(ADR 0074, 0077); the reveal acts on three surfaces; a retry re-runs the mode
+its record ran (ADR 0075); export, import and reset act with a snapshot first;
+Home's decision inbox receives a fallen-back delivery (ADR 0076); the window
+chrome follows the colour scheme. `npm run port:diff` is **26 measurements**,
+25 at structural 0 | style 0 with `profiles` (ADR 0068) the one recorded
+departure — `history` and `privacy` left the gallery with their screens.
+
+**Nothing you find is a surprise.** §2.5 is the list of what the runtime cannot
+answer, and Leg 6's record says which six entries it closed and which three it
+added.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 6's record is your starting
+state, and its finding 1 changes how you look at anything** — synthetic KEYS
+reach the WebKitGTK window through XTEST, so the command palette drives the
+product surface without touching the source. Leg 4c's record carries the
+disabled-state rule you are still held to. Then `CLAUDE.md`,
+`docs/spec/SPEC.md`, and `src/screens/props.ts`.
+
+### The order, and this leg is design rather than runtime
+
+1. **THE FIVE MISSING SURFACES, AND THE GALLERY GROWS THEM FIRST** (ADR 0057).
+   Add and Edit for replacements and snippets, New profile's rename, and where
+   an `analyze_text_rules` answer goes. Every one of them is a control that is
+   drawn, disabled and carrying its reason today, and every one of those reasons
+   is *"there is no drawn editor behind this"* — a design gap, not a runtime
+   one. `analyze_text_rules` is a real command with nowhere to put its answer.
+   **This is bigger than it looks and it is the whole leg.** The prototype has
+   no editor for any of them, so this is the first new DESIGN the port has had
+   to do rather than carry across; read `demo.css` for the grammar and
+   `docs/DESIGN_SYSTEM.md` for what the system already claims, and file an ADR
+   for the shape you choose.
+2. **If you have room: `duration_ms` in the transcript frontmatter.** §11.23
+   asks for it, the record has no source, and `transcript_store` has a test
+   asserting its absence so that adding it is deliberate. The pipeline already
+   times itself.
+3. **If you still have room: whether the title's model call belongs on a
+   surface.** ADR 0077 spends a model call per dictation and no screen says so.
+   Every other model choice lives on AI Models' job list. A row there is drawn
+   design work, which is why it is in this leg's neighbourhood rather than in
+   Leg 6's.
+
+### The rules you will be judged on
+
+**NEVER RENDER FAKE READINESS (rule 7),** in both directions: when you give a
+control its command, DELETE the reason it was carrying — **and grep the BANNERS
+too.** Leg 5 deleted four control-level reasons and left a banner on Profiles
+saying Translate was not a runtime mode; Leg 6 found it in its first screenshot.
+
+**A CONTROL THAT CANNOT ACT IS DISABLED WITH ITS REASON, AND THE DESIGN SYSTEM
+HAS TO DRAW THAT STATE** (ADR 0065, ADR 0067). Outside `shell.css`'s known list,
+look in the native host before you believe it. The one recorded exception stands:
+a setting that is IRRELEVANT under the current state is hidden rather than
+disabled (ADR 0072).
+
+**A BANNER COMES OFF IN THE COMMIT THAT MAKES IT FALSE, AND THE GALLERY ENTRY
+GOES WITH IT** (ADR 0057), and `WiredScreenProps` makes the compiler hold it.
+Two screens retired this way in Leg 6; expect the drawn branch inside the screen
+to go with them, and its fidelity cases to move to the wired suite rather than
+be dropped.
+
+**CHECK WHETHER A LATER ADR HAS ALREADY ANSWERED THE QUESTION THE DRAWING IS
+ANSWERING** (Leg 5's defect), **and whether the PLAN designed the thing you are
+about to recommend against** (Leg 6's). §11.23 is four hundred words of decided
+design that a keep-or-retire recommendation was very nearly made without.
+
+### What you must NOT do
+
+- **Do not touch Context**, in any direction. The owner said on 2026-08-10 it is
+  going to be done differently and deliberately did not say how.
+- **Do not mount any of the six undecided surfaces.** ADRs 0060–0064 and one
+  roadmap candidate; `ia.test.tsx`'s last case asserts none is mounted. The
+  translation VIEW is one of them (ADR 0064) and is not the Translate mode.
+- **Do not change a drawn screen's copy or layout to make a contract easier.**
+  Where the drawing and the runtime disagree on a FACT, wire the fact and leave
+  the copy — unless the drawing designed something the runtime should grow, in
+  which case grow it and say so in an ADR.
+- **Do not migrate a config without a backup path.** `core::backup` is the
+  pattern now: snapshot the file, then act, then answer with where the snapshot
+  went.
+- **The overlay is still rule 5.** Its pill owns a token capsule with ONE
+  palette by design; a light one is a decision the owner has not made. The
+  ghosting on a language change is documented and is not yours to work around.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the test
+  TOTAL, not the colour**, and **run `npm run build` even when the suite is
+  green** — Leg 6 shipped a mock signature `vitest run` does not typecheck and
+  only the build caught it. Run the suite twice before believing a failure.
+- `npm run port:diff` after anything that could move a screen. The 26-screen
+  command is in Leg 6's record; the expected result is 25 zeros plus `profiles`.
+- **The native host is the only instrument for a drawn state, and you can drive
+  it.** `xdotool key ctrl+k` (no `--window`) opens the palette, `xdotool type`
+  fills it, `Return` navigates. Clicks are still dead and scroll works only
+  downward; where the palette cannot reach, use a temporary mount effect and
+  take it out before the commit. `spectacle -f -b -n -e -o <file>` shoots, and a
+  crop to an `xdotool` geometry multiplies by the 1.6 device-pixel scale.
+- **Do not raise the window past somebody working at the machine — ask.** The
+  owner works in that session while you run.
+- **Never `pkill -f`.** The pattern matches the agent shell's own command line,
+  whatever the pattern is. Kill by PID.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 8
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 6 (spent — kept for the chain's record)
 
 You are picking up WordScript after Leg 5. Work in the repo root on `main`. Do
 not create a branch. **`src-tauri/` is open** — Leg 5 opened it and the rule that

@@ -7,7 +7,9 @@ class have been closed (ADR 0019), the third one — the edit surface leaving it
 own hold mid-fade — found by measurement on 2026-07-30. The instrumented run also
 DISPROVED a stalled-leave hypothesis and showed the trace itself had been the
 unreliable part. The screenshot's exact stacking is still not reproduced, and the
-mode axis is still open.**
+mode axis is still open. The target-language chip ghosts on a language change
+with a fixed-width chip (2026-08-10), which is the first case here that cannot
+be explained by pill width.**
 
 First reported: Phase 2 follow-up after extended real-world use
 Affected area: Linux WebKitGTK overlay surface transitions
@@ -271,6 +273,53 @@ visibility modifier; diverging sequences mean a separate cause.
 A geometry change is out of scope by product decision. If a residual remains
 after the gap fix, it is measured and recorded here, not bought back
 cosmetically.
+
+## Addendum 2026-08-10: the language chip, and why it narrows the mode axis
+
+Reported by the owner during Leg 6, on the running `tauri dev` build.
+
+**The chip works.** ADR 0073's two-letter target-language chip is on the pill in
+the native host and pressing it steps through the offered languages. That is the
+one native-host check Leg 5 owed and could not take, and it is answered.
+
+**Changing the language in Translate mode ghosts, visibly at the EDGES.** Same
+failure class as everything else in this file: pixels of the previous pill
+surviving the transition, seen along the rounded ends.
+
+**Why this is a better datapoint than the ones above it.** The section "Still
+open: the mode axis" carries the standing hypothesis that the mode is a
+VISIBILITY modifier rather than a cause — the ModeChip label is the only
+mode-dependent geometry, worth roughly 27px of pill width between the shortest
+and longest mode names, and a wider pill simply shows more of a repaint that was
+always there.
+
+The language chip does not fit that shape. **Its width is fixed by design**:
+ADR 0073 chose two-letter codes precisely so the chip does not resize with its
+content, and every offered language has one. Stepping from `EN` to `DE` changes
+what the pill SAYS and leaves its geometry within a glyph's width of where it
+was. So here is a repaint that ghosts without a width change to blame it on.
+
+That does not overturn the 27px hypothesis — a mode switch and a language switch
+are different commits and may fail for different reasons — but it does mean the
+mode axis cannot be closed by explaining the width alone. **Whatever repaints
+the pill on a content change is worth measuring on its own**, independently of
+how wide the result is.
+
+**No workaround was applied and none is wanted.** The owner's instruction was to
+document it. A geometry change remains out of scope by product decision (see
+above), and this addendum exists so the next measurement run has the case in its
+table rather than rediscovering it.
+
+Add to the measurement table in the section above:
+
+| # | Processing mode | Delivery | Action under test |
+| --- | --- | --- | --- |
+| 5 | `translate` | `clipboard_only` | press the language chip mid-session |
+
+The question this run answers: does a `[ov-repaint]` accompany the language
+change, and does `pillW` move at all between the two frames? A repaint with a
+static `pillW` is the cleanest evidence in this file that the failure is not
+about width.
 
 ## Regression Checks
 

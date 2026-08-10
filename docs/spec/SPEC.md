@@ -87,6 +87,13 @@ Rust core modules in `src-tauri/src/core/`:
   `text` replaces the preview text for an overlay edit before delivery)
 - `native_insertion_status` (platform support contract)
 - `check_app_update` (restricted to published GitHub releases)
+- `transcript_store_status`, `reveal_transcript_in_file_manager` (the Markdown
+  transcript store; the reveal refuses any path outside the store's root)
+- `acknowledge_transcription_fallback` (Home's decision inbox, ADR 0076)
+- `export_full_backup`, `import_full_backup`, `reset_all_settings` (both
+  destructive ones snapshot the config first and answer with its path)
+- `system_color_scheme`, `set_window_color_scheme` (the native half of the
+  colour scheme; the overlay window is deliberately not a caller)
 
 ### Events (Rust -> UI)
 
@@ -253,6 +260,16 @@ one.
 No Tenant/User/Profile (multi-tenant) split. WordScript is local-first with
 no account. Entities:
 
+- **Transcript file** (`transcript_store.rs`, ADR 0074): every record that
+  produced text is also a Markdown file at
+  `~/WordScript/transcripts/<YYYY>/<MM>/<DD-HHMM>-<slug>.md`, with frontmatter
+  (`id`, `created`, `profile`, `mode`, `provider`, `model`, `delivery`, and
+  `audio` while a capture is kept) and the written text as the body; the heard
+  text follows under `## Heard` only where the two differ. The slug comes from a
+  title the chat model writes, falling back to the first words (ADR 0077).
+  Written from `record_entry_with_work_mode`, which is the one place a history
+  record comes into existence, so no path can skip it. **The runtime creates a
+  file once, never edits one, and deletes only paths a history entry named.**
 - **AppConfig** (`config.rs`): persisted app config. Holds global settings,
   the text-profile collection, active mirrors for profile-bound settings,
   provider selection, seven mode shortcuts (picker plus six direct modes),
@@ -312,11 +329,16 @@ no account. Entities:
   results are guarded to the active `processing` session id; stale results
   after abort or new capture are discarded and logged.
 - **TranscriptionHistoryEntry** (`history.rs`): persisted entry with raw vs
-  transformed transcript, active profile name, effective `ProcessingMode`,
-  insert outcome, server-side filters, and `audio_path` for a capture the
-  runtime kept. Retry re-processes from the stored raw transcript, or
-  re-transcribes from the kept capture when there is no transcript -- the
-  timeout case, where the audio is the only surviving artifact (ADR 0039).
+  transformed transcript, active profile name, the profile's stored work mode,
+  `effective_mode` (what actually ran, which the work mode is not -- it keeps
+  `auto` for an Auto record), `transcript_path` (the Markdown file this record
+  was written to), `fallback_acknowledged`, insert outcome, server-side filters,
+  and `audio_path` for a capture the runtime kept. Retry re-processes from the
+  stored raw transcript, or re-transcribes from the kept capture when there is
+  no transcript -- the timeout case, where the audio is the only surviving
+  artifact (ADR 0039) -- and it re-runs `effective_mode` rather than the cleanup
+  transform, through the one dispatch the native pipeline also uses
+  (`mode_router::apply_mode_transform`, ADR 0075).
 - **CaptureBudget** (`capture_budget.rs`): the resolved recording limits. A
   failure that could survive a second attempt keeps its capture in the temp
   directory until the retry or the seven-day / twenty-file sweep; every other
