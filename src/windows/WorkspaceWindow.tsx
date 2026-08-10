@@ -248,9 +248,14 @@ export default function WorkspaceWindow() {
       });
     },
   };
+  /* ADR 0067. `local_preview` is a real runtime provider and the product does
+     not offer it: the owner's instruction on 2026-08-10 was to treat it like
+     every other unpublished provider EVERYWHERE it comes up, because it is not
+     finished. So the strip keeps stating it — a config that says local_preview
+     is what is running and hiding that would be the lie — and marks it. */
   const lane =
     selectedProvider === "local_preview"
-      ? `Local runtime · ${form.local_model}`
+      ? `Local runtime · ${form.local_model} · preview`
       : `Groq cloud · ${form.model}`;
   const work = activeProfile.work_mode;
   const target = work?.insert_behavior === "clipboard_only" ? "Clipboard only" : "Insert at cursor";

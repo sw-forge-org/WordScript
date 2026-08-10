@@ -1,4 +1,13 @@
-import { type ReactNode, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Button,
   Card,
@@ -33,7 +42,10 @@ import {
   type JobKey,
   type LaneName,
 } from "./data";
-import type { ScreenProps } from "./props";
+import { formatBudgetDuration, useCaptureBudget } from "@/hooks/useCaptureBudget";
+import type { ProviderTier } from "@/types/ipc";
+import type { ProviderStatus } from "@/types/providers";
+import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
 
 /**
  * AI MODELS — `SCREENS.models`, and `SCREENS.stt` / `SCREENS.llm` are the same
@@ -52,7 +64,83 @@ import type { ScreenProps } from "./props";
  * whose combined content is one screen's worth. The division is by JOB instead,
  * grouped by what each does to sound and text: listening, writing, speaking.
  */
-export function ModelsScreen({ banner }: ScreenProps = {}) {
+/**
+ * THE PRODUCT SURFACE, AS EVERY DRAWN CONTROL ON THIS SCREEN SEES IT.
+ *
+ * ADR 0065: Groq is the only lane WordScript integrates, the UI does not
+ * change, and everything else is inert and SAYS SO. This screen has ~40 drawn
+ * controls across eight job rows and two tabs, and passing a flag to each one
+ * by hand is a list nobody keeps correct. So the surface declares itself once
+ * and the drawn controls read it — in the gallery there is no provider and
+ * every control is the drawing, live and writing nowhere in particular; on the
+ * product they are disabled with the reason as their tooltip.
+ *
+ * The Connection card does NOT read it. Its rows are the ones that are really
+ * wired, and they use the plain components.
+ */
+const Wired = createContext<{ on: boolean; open?: WorkspaceRuntime["open"] }>({ on: false });
+
+function useWired() {
+  return useContext(Wired).on;
+}
+
+/** The `Per profile` tag's door. It is `runtime.open` and it is real now — a
+ *  tag that names an owner and cannot reach it makes the reader search for what
+ *  it just told them about. In the gallery there is nowhere to go, and
+ *  `ScopeTag` renders a span rather than a button when `onOpen` is absent. */
+function useOpenProfiles(): (() => void) | undefined {
+  const { open } = useContext(Wired);
+  return useCallback(() => open?.({ view: "profiles" }), [open]);
+}
+
+const NOT_INTEGRATED = "Not integrated yet — Groq is the lane WordScript runs (ADR 0065)";
+
+/**
+ * THE LONGEST RECORDING THIS LANE ACCEPTS. Drawn as `~26 min`, which was a
+ * plausible number; `resolve_capture_budget` has the real one and it moves with
+ * the provider, the account plan and the model (ADR 0034). Reading it here is
+ * also what makes this row agree with the identical statement on
+ * Profiles → Defaults, which reads the same command — a second derivation in
+ * TypeScript is how the two would drift.
+ */
+function CeilingBadge() {
+  const wired = useWired();
+  /* Two components rather than one with a conditional hook, and the split is
+     load-bearing: the gallery asserts NO runtime state, so it must not reach
+     for `resolve_capture_budget` at all. */
+  return wired ? <WiredCeilingBadge /> : <StatusBadge tone="plan">~26 min</StatusBadge>;
+}
+
+function WiredCeilingBadge() {
+  const { budget } = useCaptureBudget();
+  return (
+    <StatusBadge tone="plan">
+      {budget ? formatBudgetDuration(budget.ceiling_seconds) : "Not read"}
+    </StatusBadge>
+  );
+}
+
+function DrawnSelect(props: ComponentProps<typeof Select>) {
+  const wired = useWired();
+  return <Select {...props} disabled={wired || props.disabled} title={wired ? NOT_INTEGRATED : props.title} />;
+}
+
+function DrawnField(props: ComponentProps<typeof Field>) {
+  const wired = useWired();
+  return <Field {...props} disabled={wired || props.disabled} title={wired ? NOT_INTEGRATED : props.title} />;
+}
+
+function DrawnButton(props: ComponentProps<typeof Button>) {
+  const wired = useWired();
+  return <Button {...props} disabled={wired || props.disabled} title={wired ? NOT_INTEGRATED : props.title} />;
+}
+
+function DrawnToggle(props: ComponentProps<typeof Toggle>) {
+  const wired = useWired();
+  return <Toggle {...props} disabled={wired || props.disabled} />;
+}
+
+export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   const [tab, setTab] = useState("Models");
   /* THE ONE SEGMENT IN THIS SCREEN THAT IS NOT INERT. A lane decides what a
      provider even IS, so a lane switch that leaves the card identical is not an
@@ -61,7 +149,7 @@ export function ModelsScreen({ banner }: ScreenProps = {}) {
   const [lane, setLane] = useState<LaneName>("Cloud");
 
   return (
-    <>
+    <Wired.Provider value={{ on: Boolean(runtime), open: runtime?.open }}>
       <ViewTop
         title="AI Models"
         lead="One connection, and what each job runs on it."
@@ -78,13 +166,17 @@ export function ModelsScreen({ banner }: ScreenProps = {}) {
         }
       />
 
-      {tab === "Models" ? <ModelsTab lane={lane} onLane={setLane} /> : <MachineTab />}
+      {tab === "Models" ? (
+        <ModelsTab lane={lane} onLane={setLane} runtime={runtime} />
+      ) : (
+        <MachineTab />
+      )}
 
       <Note>
         Which mode is effective right now is runtime truth and lives on Home. Which mode a
         profile defaults to lives in that profile. Neither is set here.
       </Note>
-    </>
+    </Wired.Provider>
   );
 }
 
@@ -98,7 +190,7 @@ export function ModelsScreen({ banner }: ScreenProps = {}) {
      Local        a runtime, installed models, and no credential at all
      Self-hosted  a URL you operate, a typed model id, an optional token
      Enterprise   an account and a region, with three credential shapes */
-function LaneRows({ lane }: { lane: LaneName }) {
+function LaneRows({ lane, runtime }: { lane: LaneName; runtime?: WorkspaceRuntime }) {
   if (lane === "Local") {
     return (
       <>
@@ -128,9 +220,9 @@ function LaneRows({ lane }: { lane: LaneName }) {
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">4 models · 6.7 GB</StatusBadge>
-              <Button variant="ghost" icon={<Icon name="arrow" />}>
+              <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
                 Manage
-              </Button>
+              </DrawnButton>
             </span>
           }
         />
@@ -159,14 +251,14 @@ function LaneRows({ lane }: { lane: LaneName }) {
         <Row
           label="URL"
           hint="An OpenAI-compatible server you operate, on another machine. Not the on-device lane."
-          control={<Field defaultValue="http://10.0.0.2:8080/v1" w="230px" aria-label="URL" />}
+          control={<DrawnField defaultValue="http://10.0.0.2:8080/v1" w="230px" aria-label="URL" />}
         />
         <Row
           label="Reachability"
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="success">Answering</StatusBadge>
-              <Button variant="ghost">Test</Button>
+              <DrawnButton variant="ghost">Test</DrawnButton>
             </span>
           }
         />
@@ -176,9 +268,9 @@ function LaneRows({ lane }: { lane: LaneName }) {
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">None</StatusBadge>
-              <Button variant="ghost" icon={<Icon name="key" />}>
+              <DrawnButton variant="ghost" icon={<Icon name="key" />}>
                 Add
-              </Button>
+              </DrawnButton>
             </span>
           }
         />
@@ -206,20 +298,20 @@ function LaneRows({ lane }: { lane: LaneName }) {
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">Not configured</StatusBadge>
-              <Button variant="ghost" icon={<Icon name="key" />}>
+              <DrawnButton variant="ghost" icon={<Icon name="key" />}>
                 Configure
-              </Button>
+              </DrawnButton>
             </span>
           }
         />
         <Row
           label="Region"
           control={
-            <Select defaultValue="eu-central-1" aria-label="Region">
+            <DrawnSelect defaultValue="eu-central-1" aria-label="Region">
               <option>eu-central-1</option>
               <option>us-east-1</option>
               <option>us-west-2</option>
-            </Select>
+            </DrawnSelect>
           }
         />
         <Row
@@ -240,25 +332,201 @@ function LaneRows({ lane }: { lane: LaneName }) {
   return (
     <>
       <ProviderPick lane="Cloud" selected="Groq" />
+      <CloudCredentialRows runtime={runtime} />
+    </>
+  );
+}
+
+/**
+ * THE TWO ROWS THAT ARE REALLY WIRED (ADR 0065, part 2). Everything else on
+ * this screen is drawn; these read `provider_status` and write the OS secret
+ * store and the account plan.
+ *
+ * THE KEY FIELD IS A PORT, NOT A DESIGN. The drawing gives this row a badge and
+ * a Replace button and no field, so where the key is TYPED had to come from
+ * somewhere — and it already exists in the prototype: Onboarding draws exactly
+ * this fact as `field("gsk_••••…", { w: "190px" })`. Replace swaps the badge
+ * pair for that field, which is the same decision Hotkeys took for its
+ * recording state: the resting state is the drawing, and the state the drawing
+ * does not have is the one the prototype draws elsewhere for the same fact.
+ *
+ * A KEY IS NEVER PUT BACK IN THE FIELD. `key_preview` is what the runtime will
+ * show and it is a preview; the field opens empty, because a masked value that
+ * looks editable invites somebody to append to a secret they cannot see.
+ */
+function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
+  const [status, setStatus] = useState<ProviderStatus | null>(null);
+  const [tiers, setTiers] = useState<ProviderTier[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const read = useCallback(async () => {
+    if (!runtime) return;
+    const [statusResult, tierResult] = await Promise.allSettled([
+      invoke<ProviderStatus>("provider_status", {
+        request: { provider: "groq", model: runtime.config.model, correction_model: null },
+      }),
+      invoke<ProviderTier[]>("resolve_provider_tiers", { provider: "groq" }),
+    ]);
+    if (statusResult.status === "fulfilled" && statusResult.value) setStatus(statusResult.value);
+    /* Not an array is a runtime that did not answer, not a provider with no
+       plans — the row then states the stored value rather than an empty list. */
+    if (tierResult.status === "fulfilled" && Array.isArray(tierResult.value)) {
+      setTiers(tierResult.value);
+    }
+  }, [runtime]);
+
+  useEffect(() => {
+    if (!runtime?.active) return;
+    void read();
+  }, [runtime?.active, read]);
+
+  const configured = status?.credential.configured ?? false;
+  const preview = status?.credential.key_preview;
+  const storage = status?.credential.storage;
+
+  const save = async () => {
+    if (!draft.trim()) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await invoke("save_provider_api_key", {
+        request: { provider: "groq", api_key: draft.trim() },
+      });
+      const validation = await invoke<{ ok: boolean }>("validate_provider_api_key", {
+        request: { provider: "groq", api_key: null },
+      });
+      if (!validation?.ok) setProblem("The key was saved and the provider did not accept it.");
+      setDraft("");
+      setEditing(false);
+      await read();
+    } catch (cause) {
+      setProblem(String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      await invoke("clear_provider_api_key", { request: { provider: "groq" } });
+      await read();
+    } catch (cause) {
+      setProblem(String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!runtime) {
+    return (
+      <>
+        <Row
+          label="API key"
+          hint="In the OS secret store. Never written to the config file."
+          control={
+            <span className="ws-rowflex">
+              <StatusBadge tone="success">Set</StatusBadge>
+              <DrawnButton variant="ghost" icon={<Icon name="key" />}>
+                Replace
+              </DrawnButton>
+            </span>
+          }
+        />
+        <Row
+          label="Account plan"
+          hint="Sets the largest upload, and with it the longest recording. Stated again where it is spent."
+          control={
+            <DrawnSelect defaultValue="Free — 25 MiB per request" aria-label="Account plan">
+              <option>Free — 25 MiB per request</option>
+              <option>Developer — 100 MiB per request</option>
+            </DrawnSelect>
+          }
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
       <Row
         label="API key"
-        hint="In the OS secret store. Never written to the config file."
+        hint={
+          problem ??
+          (storage
+            ? `In ${storage}. Never written to the config file.`
+            : "In the OS secret store. Never written to the config file.")
+        }
         control={
-          <span className="ws-rowflex">
-            <StatusBadge tone="success">Set</StatusBadge>
-            <Button variant="ghost" icon={<Icon name="key" />}>
-              Replace
-            </Button>
-          </span>
+          editing ? (
+            <span className="ws-rowflex">
+              <Field
+                autoFocus
+                type="password"
+                w="190px"
+                aria-label="API key"
+                placeholder="gsk_…"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void save();
+                  if (event.key === "Escape") {
+                    setDraft("");
+                    setEditing(false);
+                  }
+                }}
+              />
+              <Button busy={busy} disabled={busy || !draft.trim()} onClick={() => void save()}>
+                Save
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setDraft("");
+                  setEditing(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </span>
+          ) : (
+            <span className="ws-rowflex">
+              <StatusBadge tone={configured ? "success" : "warning"}>
+                {configured ? (preview ?? "Set") : "Not set"}
+              </StatusBadge>
+              <Button variant="ghost" icon={<Icon name="key" />} onClick={() => setEditing(true)}>
+                {configured ? "Replace" : "Add"}
+              </Button>
+              {configured && (
+                <Button variant="ghost" disabled={busy} onClick={() => void clear()}>
+                  Remove
+                </Button>
+              )}
+            </span>
+          )
         }
       />
       <Row
         label="Account plan"
         hint="Sets the largest upload, and with it the longest recording. Stated again where it is spent."
         control={
-          <Select defaultValue="Free — 25 MiB per request" aria-label="Account plan">
-            <option>Free — 25 MiB per request</option>
-            <option>Developer — 100 MiB per request</option>
+          <Select
+            value={runtime.config.provider_tier}
+            onChange={(event) => runtime.patch({ provider_tier: event.target.value })}
+            aria-label="Account plan"
+            disabled={tiers.length === 0}
+          >
+            {tiers.length === 0 && (
+              <option value={runtime.config.provider_tier}>Reading the provider plans…</option>
+            )}
+            {tiers.map((tier) => (
+              <option key={tier.id} value={tier.default ? "" : tier.id}>
+                {tier.label}
+              </option>
+            ))}
           </Select>
         }
       />
@@ -293,6 +561,7 @@ export function ProviderPick({
   hint?: ReactNode;
   custom?: boolean;
 }) {
+  const wired = useWired();
   const here = PROVIDERS.filter((p) => p.lane === lane);
   const cur = here.find((p) => p.name === selected) ?? here[0];
   const [value, setValue] = useState(cur.name);
@@ -317,6 +586,9 @@ export function ProviderPick({
         custom={custom}
         customIcon={<Icon name="settings" />}
         fallbackIcon={<Icon name="cloud" />}
+        /* The chip row is the single worst place on the surface to imply a
+           provider works: the next thing it asks for is an API key. */
+        selectable={wired ? ["Groq"] : undefined}
       />
     </Row>
   );
@@ -362,22 +634,22 @@ function Follows({
             override ? (
               <span className="ws-rowflex">
                 <SelectMark name={override} />
-                <Select defaultValue={override} aria-label="Provider">
+                <DrawnSelect defaultValue={override} aria-label="Provider">
                   {providerNames(cap, lane).map((name) => (
                     <option key={name}>{name}</option>
                   ))}
-                </Select>
-                <Button variant="ghost">Use the default</Button>
+                </DrawnSelect>
+                <DrawnButton variant="ghost">Use the default</DrawnButton>
               </span>
             ) : (
               <span className="ws-rowflex">
                 <SelectMark name={conn} />
-                <Select defaultValue={`Follow the connection · ${conn}`} aria-label="Provider">
+                <DrawnSelect defaultValue={`Follow the connection · ${conn}`} aria-label="Provider">
                   <option>{`Follow the connection · ${conn}`}</option>
                   {providerNames(cap, lane).map((name) => (
                     <option key={name}>{name}</option>
                   ))}
-                </Select>
+                </DrawnSelect>
               </span>
             )
           }
@@ -389,9 +661,9 @@ function Follows({
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="success">Local runtime</StatusBadge>
-              <Button variant="ghost" icon={<Icon name="arrow" />}>
+              <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
                 Installed models
-              </Button>
+              </DrawnButton>
             </span>
           }
         />
@@ -407,17 +679,17 @@ function Follows({
         <Row
           label="Model id"
           hint="Not discoverable on every server, so it is typed rather than picked."
-          control={<Field placeholder="llama-3.3-70b" w="190px" aria-label="Model id" />}
+          control={<DrawnField placeholder="llama-3.3-70b" w="190px" aria-label="Model id" />}
         />
       ) : (
         <Row
           label="Model"
           control={
-            <Select defaultValue={model} aria-label="Model">
+            <DrawnSelect defaultValue={model} aria-label="Model">
               {models.map((name) => (
                 <option key={name}>{name}</option>
               ))}
-            </Select>
+            </DrawnSelect>
           }
         />
       )}
@@ -429,9 +701,9 @@ function Follows({
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="success">Set</StatusBadge>
-              <Button variant="ghost" icon={<Icon name="key" />}>
+              <DrawnButton variant="ghost" icon={<Icon name="key" />}>
                 Replace
-              </Button>
+              </DrawnButton>
             </span>
           }
         />
@@ -500,7 +772,15 @@ function LaneJobRow({
   );
 }
 
-function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => void }) {
+function ModelsTab({
+  lane,
+  onLane,
+  runtime,
+}: {
+  lane: LaneName;
+  onLane: (lane: LaneName) => void;
+  runtime?: WorkspaceRuntime;
+}) {
   return (
     <>
       {/* ONE CONNECTION. This is the card that makes the rest of the screen
@@ -522,7 +802,16 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
               control={
                 <SegmentControl
                   options={(["Cloud", "Local", "Self-hosted", "Enterprise"] as LaneName[]).map(
-                    (value) => ({ value, label: value }),
+                    (value) => ({
+                      value,
+                      label: value,
+                      /* ADR 0065 and ADR 0067. Three lanes are drawn in full
+                         and none of them is integrated — including Local,
+                         which the runtime DOES carry as `local_preview` and
+                         which the owner ruled is treated like the other two
+                         everywhere it comes up, because it is not finished. */
+                      disabled: Boolean(runtime) && value !== "Cloud",
+                    }),
                   )}
                   value={lane}
                   onChange={onLane}
@@ -530,7 +819,7 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                 />
               }
             />
-            <LaneRows lane={lane} />
+            <LaneRows lane={lane} runtime={runtime} />
           </CardRows>
         </Card>
       </SectionHeader>
@@ -559,12 +848,12 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                     hint="Auto-detect reads it from the audio, per dictation."
                     control={
                       <span className="ws-rowflex">
-                        <ScopeTag onOpen={() => undefined} />
-                        <Select defaultValue="Auto-detect" aria-label="Language">
+                        <ScopeTag onOpen={useOpenProfiles()} />
+                        <DrawnSelect defaultValue="Auto-detect" aria-label="Language">
                           <option>Auto-detect</option>
                           <option>German</option>
                           <option>English</option>
-                        </Select>
+                        </DrawnSelect>
                       </span>
                     }
                   />
@@ -578,8 +867,8 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                     hint="Follows from the account plan on the connection. The ceiling Profiles → Defaults sets a recording limit under."
                     control={
                       <span className="ws-rowflex">
-                        <StatusBadge tone="plan">~26 min</StatusBadge>
-                        <ScopeTag profile="Limit in profile" onOpen={() => undefined} />
+                        <CeilingBadge />
+                        <ScopeTag profile="Limit in profile" onOpen={useOpenProfiles()} />
                       </span>
                     }
                   />
@@ -588,7 +877,7 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                     hint="The active profile's terms steer the recognizer before the AI sees anything. The terms themselves live in the profile."
                     control={
                       <span className="ws-rowflex">
-                        <ScopeTag onOpen={() => undefined} />
+                        <ScopeTag onOpen={useOpenProfiles()} />
                         <InertSegment
                           options={["Off", "Light", "Standard"]}
                           active="Standard"
@@ -621,9 +910,9 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                     label="What a meeting records"
                     hint="Microphone, system audio and echo cancellation are a capture question, not a model one."
                     control={
-                      <Button variant="ghost" icon={<Icon name="arrow" />}>
+                      <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
                         Notes & Meetings
-                      </Button>
+                      </DrawnButton>
                     }
                   />
                 </LaneJobRow>
@@ -699,8 +988,8 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                     hint="One target, fixed. Reading it from the focused window is a guess, and a guess that silently changes the language you are writing in is worse than a wrong keystroke."
                     control={
                       <span className="ws-rowflex">
-                        <ScopeTag onOpen={() => undefined} />
-                        <Select defaultValue="English" aria-label="Into">
+                        <ScopeTag onOpen={useOpenProfiles()} />
+                        <DrawnSelect defaultValue="English" aria-label="Into">
                           <option>English</option>
                           <option>German</option>
                           <option>French</option>
@@ -709,7 +998,7 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                           <option>Portuguese</option>
                           <option>Dutch</option>
                           <option>Polish</option>
-                        </Select>
+                        </DrawnSelect>
                       </span>
                     }
                   />
@@ -741,7 +1030,7 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                     control={
                       <span className="ws-rowflex">
                         <InertToggle label="Keep the profile's words" on />
-                        <ScopeTag onOpen={() => undefined} />
+                        <ScopeTag onOpen={useOpenProfiles()} />
                       </span>
                     }
                   />
@@ -768,13 +1057,13 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                     label="Prompt target"
                     hint="Optimizes prompt syntax for the chosen AI tool."
                     control={
-                      <Select defaultValue="Claude Code" aria-label="Prompt target">
+                      <DrawnSelect defaultValue="Claude Code" aria-label="Prompt target">
                         <option>General</option>
                         <option>Claude Code</option>
                         <option>Cursor</option>
                         <option>ChatGPT</option>
                         <option>Copilot</option>
-                      </Select>
+                      </DrawnSelect>
                     }
                   />
                 </LaneJobRow>
@@ -847,10 +1136,10 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                         label="Preset"
                         hint="Chosen by time to first byte, not by price."
                         control={
-                          <Select defaultValue="Cartesia Sonic-3" aria-label="Preset">
+                          <DrawnSelect defaultValue="Cartesia Sonic-3" aria-label="Preset">
                             <option>Cartesia Sonic-3</option>
                             <option>Kokoro-82M (local)</option>
-                          </Select>
+                          </DrawnSelect>
                         }
                       />
                       <Row
@@ -862,9 +1151,9 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                         label="Everything else about agents"
                         hint="Targets, the answer budget, the notification and its sound are the agent surface, not a model setting."
                         control={
-                          <Button variant="ghost" icon={<Icon name="arrow" />}>
+                          <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
                             Agents
-                          </Button>
+                          </DrawnButton>
                         }
                       />
                     </CardRows>
@@ -895,9 +1184,9 @@ function ModelsTab({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) 
                   control={
                     <span className="ws-rowflex">
                       <StatusBadge tone="plan">delivery axis</StatusBadge>
-                      <Button variant="ghost" icon={<Icon name="arrow" />}>
+                      <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
                         Delivery
-                      </Button>
+                      </DrawnButton>
                     </span>
                   }
                 />
@@ -955,9 +1244,9 @@ function MachineTab() {
           footer={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">2 installed · 6.4 GB</StatusBadge>
-              <Button variant="ghost" icon={<Icon name="folder" />}>
+              <DrawnButton variant="ghost" icon={<Icon name="folder" />}>
                 Open the model folder
-              </Button>
+              </DrawnButton>
             </span>
           }
         >
@@ -991,7 +1280,7 @@ function MachineTab() {
               label="Endpoint"
               control={
                 <span className="ws-rowflex">
-                  <Field defaultValue="http://127.0.0.1:11434/v1" w="210px" aria-label="Endpoint" />
+                  <DrawnField defaultValue="http://127.0.0.1:11434/v1" w="210px" aria-label="Endpoint" />
                   <StatusBadge tone="success">Answering</StatusBadge>
                 </span>
               }
@@ -1002,7 +1291,7 @@ function MachineTab() {
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="success">Running · 1 job</StatusBadge>
-                  <Button variant="ghost">Restart</Button>
+                  <DrawnButton variant="ghost">Restart</DrawnButton>
                 </span>
               }
             />
@@ -1063,5 +1352,5 @@ export function InertSegment({
 
 export function InertToggle({ label, on = false }: { label: string; on?: boolean }) {
   const [checked, setChecked] = useState(on);
-  return <Toggle checked={checked} onCheckedChange={setChecked} aria-label={label} />;
+  return <DrawnToggle checked={checked} onCheckedChange={setChecked} aria-label={label} />;
 }

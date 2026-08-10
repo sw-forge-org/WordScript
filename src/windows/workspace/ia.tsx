@@ -168,7 +168,7 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "models",
     label: "AI Models",
     icon: "models",
-    banner: saysSo("Drawn, not wired — the connection, the jobs and the installed models are sample data."),
+    banner: saysSo("Wired in part — the Groq connection is real; the other three lanes, every job override and On this machine are drawn and inert (ADR 0065, ADR 0067)."),
     render: (props) => <ModelsScreen {...props} />,
   },
   {

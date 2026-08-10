@@ -107,6 +107,7 @@ export function ProviderChips({
   customIcon,
   fallbackIcon,
   label = "Provider",
+  selectable,
 }: {
   providers: string[];
   value: string;
@@ -115,7 +116,14 @@ export function ProviderChips({
   customIcon?: ReactNode;
   fallbackIcon?: ReactNode;
   label?: string;
+  /** The names that can actually be chosen. Undefined is the drawing, where
+   *  every provider is offered; a wired caller passes the ones the product
+   *  integrates and the rest stay DRAWN and inert (ADR 0065) — a provider chip
+   *  that accepts a click and then a key is the worst place on the surface to
+   *  imply something works. */
+  selectable?: string[];
 }) {
+  const canPick = (name: string) => !selectable || selectable.includes(name);
   return (
     <div className="ws-provrow" role="radiogroup" aria-label={label}>
       {providers.map((name) => {
@@ -128,6 +136,8 @@ export function ProviderChips({
             role="radio"
             aria-checked={on}
             data-on={on ? "" : undefined}
+            disabled={!canPick(name)}
+            title={canPick(name) ? undefined : `${name} is not integrated yet`}
             onClick={() => onChange?.(name)}
           >
             <span className="ws-provchip-mark">
@@ -139,6 +149,7 @@ export function ProviderChips({
       })}
       {custom && (
         <button
+          disabled={Boolean(selectable)}
           type="button"
           className="ws-provchip"
           role="radio"

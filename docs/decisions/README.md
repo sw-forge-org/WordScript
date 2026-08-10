@@ -424,6 +424,14 @@ Status: Proposed | Accepted | Superseded by NNNN
   to mount it because there was nothing behind it; this is that something. The
   search field beside it stays unmounted — the prototype's `Cmd`+`K` palette was
   never ported and that is separate work.
+- [0067](0067-local-preview-is-treated-as-an-unpublished-provider-everywhere-it-is-offered.md):
+  answers the point 0065 left open, asked of the owner before anything was
+  greyed out. `local_preview` is treated like every other unpublished provider
+  **everywhere it comes up**, because it is not finished — so a surface that
+  OFFERS it makes it inoperable (the lane segment, the provider chips), a
+  surface that REPORTS what is running states it and marks it (`Local runtime ·
+  <model> · preview`), and a diagnostic prints the runtime identifier unchanged.
+  Nothing is removed from the runtime.
 
 ## Resolved: the number 0011 was used twice
 
@@ -451,8 +459,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0066; the next
-decision takes 0067.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0067; the next
+decision takes 0068.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"
