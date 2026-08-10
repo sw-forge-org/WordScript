@@ -439,6 +439,16 @@ pub async fn commit_pending_transcription_preview(
     }
 
     let final_text = preview.transformed.text.trim().to_string();
+    /* Titled from what is BEING COMMITTED, not from what was staged: the
+       overlay can edit a preview before it lands, and a file named after the
+       text somebody just corrected would be named after the mistake
+       (ADR 0077). */
+    let title = super::transcript_store::title_for(
+        &final_text,
+        &preview.app_config.provider,
+        &preview.app_config.chat_model_for_provider(),
+    )
+    .await;
     if final_text.is_empty() {
         return Err(
             "Pending transcription preview does not contain any text to commit.".to_string(),
@@ -469,6 +479,7 @@ pub async fn commit_pending_transcription_preview(
                 preview.transformed.clone(),
                 &result,
                 preview.effective_mode.clone(),
+                title.clone(),
             )
             .ok();
 
@@ -567,6 +578,7 @@ pub async fn commit_pending_transcription_preview(
                 preview.transformed.clone(),
                 &result,
                 preview.effective_mode.clone(),
+                title.clone(),
             );
             let error = result
                 .error
@@ -597,6 +609,7 @@ pub async fn commit_pending_transcription_preview(
                 preview.transformed,
                 error.clone(),
                 preview.effective_mode,
+                title,
             );
             let _ = fail_processing_session_from_native_error(&app, &session_id, &error);
             let _ = app.emit(

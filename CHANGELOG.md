@@ -55,6 +55,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every transcript is a Markdown file, which is what the surface always said**
+  (§11.23, ADR 0074). `core::transcript_store` writes one per record that
+  produced text, under `~/WordScript/transcripts/<YYYY>/<MM>/<DD-HHMM>-<slug>.md`
+  with the frontmatter the drawing specifies, from the one funnel every history
+  record already passes through — so "on every path, including the timeout
+  fallback" is structural rather than a rule five callers have to remember.
+  `history.json` stays the index and carries the path. Delete, Clear and the
+  retention sweep take the file with the entry, and the runtime removes only
+  paths an entry named: a file you moved or added yourself is not its to delete.
+  One file per transcript rather than one per day, so the runtime creates a file
+  once and never edits one. Its **filename is a title the model writes**
+  (ADR 0077) — two to six words in the transcript's own language, from the chat
+  model already configured, so the folder can be scanned rather than only
+  walked. The call is made after the text has reached the cursor, once, with a
+  four-second timeout, and any failure falls back to the first words: the title
+  decides what a file is called, never whether it exists.
+- **`Show transcripts in file manager` acts, on all three surfaces it is drawn
+  on** — History's row, Home's row and the command palette. The row reveals the
+  record's own file; the palette reveals the folder, because that entry is about
+  the collection. The only record that cannot is one that produced no text, and
+  it says so on the control (ADR 0065).
+- **Full export, Full import and Reset all settings** (`core::backup`). The
+  export is the config, the history index and the transcript files as one
+  archive — "everything local", which is a different thing from History's own
+  Export of the index as JSON. Import and Reset copy the config aside before
+  they replace anything and answer with where it went. The API key is not in an
+  archive and the import says so: it lives in the OS secret store, which is the
+  one thing about a machine that does not travel.
+- **Home's decision inbox receives a fallen-back delivery** (ADR 0044,
+  ADR 0076). The one of its three sources the runtime can already ask about, and
+  it draws nothing when nothing is owed — which is the drawing's own rule and
+  the common case. Dismissing is recorded on the record, so a question answered
+  once does not come back with the next launch. The desk (Phase 8) and a
+  meeting's open questions (V2) still have no receiver and the banner says so.
+- **The window follows the colour scheme** (§15.3). `window.theme()` answers
+  `system` from the host rather than second-hand through the media query, and
+  the window chrome moves with the choice — picking Light on a dark desktop was
+  leaving a light workspace inside a dark title bar. The overlay is untouched:
+  its pill owns a token capsule with one palette by design.
+
 - **Translate is a processing mode you can select** (ADR 0041, ADR 0071).
   `ProcessingMode` gains a seventh value with its own prompt in
   `core::translate`, its own hotkey slot and its own place in the mode cycle. It
@@ -130,6 +170,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every row with the recogniser's own words, so the screen you go to in order to
   judge transcription accuracy can be scanned rather than opened fold by fold.
   It narrows nothing and moves no count.
+
+### Fixed
+
+- **A retried Agent, Prompt Enhance or Translate record re-runs its own mode**
+  (ADR 0075). `retry_transcription_history_entry` called the cleanup family's
+  transform for every entry, so three of the seven modes came back conservatively
+  tidied instead of re-run — a defect that had been there for two of them since
+  they shipped, invisible because a tidied instruction looks like a plausible
+  answer. The mode dispatch moved out of the native pipeline's closure into
+  `core::mode_router::apply_mode_transform`, where the retry can reach it, and
+  the record grows `effective_mode` — what actually ran — because the stored work
+  mode keeps `auto` for an Auto record and could not answer.
 
 ### Changed
 

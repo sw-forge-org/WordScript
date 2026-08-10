@@ -113,6 +113,10 @@ pub struct RecordHistoryEntryRequest {
     /// The mode the transform actually ran in, where the caller knows it. The
     /// paths that never reached a transform pass `None`.
     pub effective_mode: Option<ProcessingMode>,
+    /// What the model called this (ADR 0077), produced by the caller because
+    /// the call is async and this funnel is not. `None` names the file from the
+    /// first words instead.
+    pub title: Option<String>,
     pub provider_profile: Option<String>,
     pub local_prompt_strength: Option<String>,
     pub local_prompt_carry: Option<bool>,
@@ -313,6 +317,7 @@ fn record_entry_with_work_mode(
             model: request.model.clone(),
             insert_mode: request.insert_mode.clone(),
             audio_path: request.audio_path.clone(),
+            title: request.title.clone(),
         },
     );
 
@@ -629,6 +634,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 language: optional_non_empty(&app_config.language),
                 active_profile: app_config.active_text_profile_label(),
                 effective_mode: Some(retry_mode.clone()),
+                title: None,
                 provider_profile: local_history.provider_profile,
                 local_prompt_strength: local_history.local_prompt_strength,
                 local_prompt_carry: local_history.local_prompt_carry,
@@ -661,6 +667,16 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
         )
         .map_err(|error| error.to_string())?;
 
+        /* A retry produces a new record and therefore a new file, so it is
+           titled like any other (ADR 0077). From the retried text, because that
+           is what the file will hold. */
+        let title = super::transcript_store::title_for(
+            &transformed_text,
+            &app_config.provider,
+            &app_config.chat_model_for_provider(),
+        )
+        .await;
+
         let entry = history_entry_from_insert_result(
             &app_config,
             Some(existing.id.as_str()),
@@ -668,6 +684,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             transformed,
             &insert_result,
             Some(retry_mode.clone()),
+            title,
         )?;
 
         if insert_result.ok {
@@ -720,6 +737,8 @@ pub fn history_entry_from_insert_result(
     // The mode the transform ran in, where the caller resolved one. `None` on
     // the paths that never consulted the mode router.
     effective_mode: Option<ProcessingMode>,
+    // What the model called it (ADR 0077), or `None` for the first words.
+    title: Option<String>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -741,6 +760,7 @@ pub fn history_entry_from_insert_result(
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
+            title,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -773,6 +793,7 @@ pub fn record_insert_failure(
     transformed: NativeTransformResult,
     error: String,
     effective_mode: Option<ProcessingMode>,
+    title: Option<String>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -786,6 +807,7 @@ pub fn record_insert_failure(
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
+            title,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -838,6 +860,8 @@ pub fn record_transcription_failure(
             active_profile: app_config.active_text_profile_label(),
             // Nothing was transcribed, so no mode ever ran over anything.
             effective_mode: None,
+            // …and nothing to title.
+            title: None,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -869,6 +893,8 @@ pub fn record_empty_result(
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
 ) -> Result<TranscriptionHistoryEntry, String> {
+    // An empty result has no text, so no file and nothing to name.
+    let title: Option<String> = None;
     let local_history = local_history_context(app_config);
 
     record_entry_with_work_mode(
@@ -881,6 +907,7 @@ pub fn record_empty_result(
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
+            title,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -1271,6 +1298,7 @@ mod tests {
                 language: Some("de".to_string()),
                 active_profile: None,
                 effective_mode: None,
+                title: None,
                 provider_profile: None,
                 local_prompt_strength: None,
                 local_prompt_carry: None,
@@ -1323,6 +1351,7 @@ mod tests {
             language: None,
             active_profile: None,
             effective_mode: None,
+            title: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1354,6 +1383,7 @@ mod tests {
             language: None,
             active_profile: None,
             effective_mode: None,
+            title: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1403,6 +1433,7 @@ mod tests {
             language: Some("de".to_string()),
             active_profile: Some("developer".to_string()),
             effective_mode: None,
+            title: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1435,6 +1466,7 @@ mod tests {
             language: Some("en".to_string()),
             active_profile: Some("support".to_string()),
             effective_mode: None,
+            title: None,
             provider_profile: Some("local-preview-base-quality".to_string()),
             local_prompt_strength: Some("profile_and_terms".to_string()),
             local_prompt_carry: Some(true),
@@ -1495,6 +1527,7 @@ mod tests {
             language: Some("de".to_string()),
             active_profile: Some("developer".to_string()),
             effective_mode: None,
+            title: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1526,6 +1559,7 @@ mod tests {
             language: Some("en".to_string()),
             active_profile: Some("support".to_string()),
             effective_mode: None,
+            title: None,
             provider_profile: Some("local-preview-base-fast".to_string()),
             local_prompt_strength: Some("profile".to_string()),
             local_prompt_carry: Some(false),
@@ -1738,6 +1772,7 @@ mod tests {
                 clipboard_restore: NativeClipboardRestoreStatus::NotAttempted,
             },
             None,
+            None,
         )
         .expect("history entry from insert result");
 
@@ -1774,6 +1809,7 @@ mod tests {
             language: Some("de".to_string()),
             active_profile: Some("General writing".to_string()),
             effective_mode: Some(ProcessingMode::Cleanup),
+            title: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,

@@ -507,6 +507,14 @@ Status: Proposed | Accepted | Superseded by NNNN
   question answered once does not come back with the next launch. The desk
   (Phase 8) and a meeting's open questions (V2) still have no receiver and the
   banner says so.
+- [0077](0077-a-transcripts-filename-is-a-title-the-model-writes.md):
+  answers the objection 0074 raised against itself. The chat model already
+  configured writes a two-to-six word title for each transcript and that becomes
+  the filename, so the folder can be scanned rather than only walked. The call
+  is made after delivery, once, with a four-second timeout, and any failure
+  falls back to the first-words slug -- the title decides what a file is called,
+  never whether it exists. Passed into the history funnel as an argument, so the
+  one synchronous place a file is created stays the only writer.
 
 ## Resolved: the number 0011 was used twice
 
@@ -534,8 +542,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0076; the next
-decision takes 0077.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0077; the next
+decision takes 0078.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

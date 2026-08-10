@@ -1761,6 +1761,22 @@ fn handle_audio_ready<R: Runtime + 'static>(
                 }
 
                 let text = transformed.text.trim().to_string();
+                /* THE FILE'S NAME, ASKED OF THE MODEL (ADR 0077). After the
+                   transform and before the record, which is also after the
+                   text has reached the cursor on every path that reaches one —
+                   so nothing the user is waiting for is behind this call. It
+                   answers `None` on any failure and the first words are used
+                   instead. */
+                let transcript_title = if text.is_empty() {
+                    None
+                } else {
+                    core::transcript_store::title_for(
+                        &text,
+                        &app_config.provider,
+                        &app_config.chat_model_for_provider(),
+                    )
+                    .await
+                };
                 if text.is_empty() {
                     let _ = core::history::record_empty_result(
                         &app_config,
@@ -1869,6 +1885,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
+                                transcript_title.clone(),
                             )
                             .ok();
 
@@ -1972,6 +1989,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
+                                transcript_title.clone(),
                             );
                             let error = result
                                 .error
@@ -2042,6 +2060,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transformed.clone(),
                                 error.clone(),
                                 Some(effective_mode.clone()),
+                                transcript_title.clone(),
                             );
                             core::runtime_log::record(format!(
                                 "[WordScript] Native pipeline insertion failed session_id={} elapsed_ms={} error={}",

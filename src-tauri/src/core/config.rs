@@ -1273,6 +1273,17 @@ impl AppConfig {
         self.active_text_profile().work_mode.normalized()
     }
 
+    /// The chat model this machine runs instruction-following jobs on — the
+    /// agent, the translation, the prompt enhancer, and the transcript titles
+    /// (ADR 0077). One resolution, so a lane switch moves all of them together.
+    pub(crate) fn chat_model_for_provider(&self) -> String {
+        if self.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+            self.local_agent_model.clone()
+        } else {
+            self.agent_model.clone()
+        }
+    }
+
     pub(crate) fn resolved_active_text_profile_work_mode(&self) -> TextProfileWorkMode {
         let work_mode = self.active_text_profile_work_mode();
         TextProfileWorkMode {
