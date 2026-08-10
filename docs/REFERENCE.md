@@ -165,8 +165,12 @@ describes the correction step only.
   No communication style applies -- a register on top of a translation changes
   the text twice (ADR 0023). Four settings, resolved by
   `AppConfig::active_text_profile_translate_settings` and snapshotted at capture
-  start: target language and `keep the profile's words` per profile, the
-  same-language behaviour and the address form per machine. It runs on the chat
+  start: target language and `keep this profile's words` per profile, set on
+  `Profiles → Defaults` under the mode select and only stated on AI Models
+  (ADR 0072); the same-language behaviour and the address form per machine, set
+  on AI Models. The two profile rows are hidden rather than disabled under
+  another mode -- a target language under Cleanup is not un-ready, it is
+  irrelevant. It runs on the chat
   model rather than the correction model, and ships ahead of its roadmap phase
   (ADR 0071). Preset as for `agent`, used only by the history re-transform,
   which does not route by mode -- a retried translation comes back cleaned up.

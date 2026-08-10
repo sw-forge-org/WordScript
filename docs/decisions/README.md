@@ -464,6 +464,14 @@ Status: Proposed | Accepted | Superseded by NNNN
   model, not for no mode. The four settings take the scope the drawing gives
   them literally: target language and the profile-words switch are the profile's,
   the same-language behaviour and the address form are the machine's.
+- [0072](0072-the-target-language-is-set-in-the-profile-and-only-stated-on-ai-models.md):
+  corrects 0071's placement. The two per-profile Translate settings are edited on
+  `Profiles -> Defaults`, under the mode select that makes them apply, and only
+  stated on AI Models with the `Per profile` tag as the door -- which is the rule
+  0068 had already set for the communication style and 0071 followed the drawing
+  past. They are hidden rather than disabled under another mode: a target
+  language under Cleanup is not un-ready, it is irrelevant, and that is the one
+  place ADR 0065 does not apply.
 
 ## Resolved: the number 0011 was used twice
 
@@ -491,8 +499,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0071; the next
-decision takes 0072.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0072; the next
+decision takes 0073.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

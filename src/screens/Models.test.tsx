@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ModelsScreen } from "./Models";
-import { createWorkspaceRuntime } from "@/test/factories";
+import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
@@ -167,22 +167,33 @@ describe("AI Models, wired", () => {
     expect(screen.getByLabelText("Pin this language")).toBeDisabled();
   });
 
-  /* The four exceptions to the rule above, and they are exceptions because
-     they are not model choices: they are the Translate mode's own settings and
-     they have had a config home since the commit that added the mode
-     (ADR 0041). Everything else here waits on the connection shape ADR 0042
-     describes. */
-  it("writes the two Translate settings the drawing scopes to the profile", async () => {
+  /* The Translate job row, which is where the rule above splits. Its four rows
+     are not model choices — they are the mode's own settings and have had a
+     config home since the commit that added the mode (ADR 0041) — so two of
+     them act. The other two are the profile's and are stated rather than
+     edited, per ADR 0068. */
+  it("states the two Translate settings the drawing scopes to the profile, and edits neither", async () => {
+    /* ADR 0068 already ruled that a per-profile value does not belong on this
+       machine-scope screen. These two are stated here, showing what the active
+       profile holds, and the `Per profile` tag beside each is the door to where
+       they are set. */
+    const config = createAppConfig();
+    config.text_profiles[0].modes = {
+      ...config.text_profiles[0].modes!,
+      translate_target_language: "de",
+      translate_keep_profile_words: false,
+    };
     const patch = vi.fn();
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+    render(
+      <ModelsScreen runtime={createWorkspaceRuntime({ active: true, config, patch })} />,
+    );
 
-    const into = await screen.findByLabelText("Into");
-    expect(into).not.toBeDisabled();
-    await userEvent.selectOptions(into, "de");
-    expect(patch.mock.calls[0][0].text_profiles[0].modes.translate_target_language).toBe("de");
-
-    await userEvent.click(screen.getByLabelText("Keep the profile's words"));
-    expect(patch.mock.calls[1][0].text_profiles[0].modes.translate_keep_profile_words).toBe(false);
+    const into = (await screen.findByLabelText("Into")) as HTMLSelectElement;
+    expect(into).toBeDisabled();
+    expect(into.value).toBe("de");
+    expect(screen.getByLabelText("Keep the profile's words")).toBeDisabled();
+    expect(screen.getByLabelText("Keep the profile's words")).not.toBeChecked();
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("writes the two the drawing leaves unscoped straight into the config", async () => {

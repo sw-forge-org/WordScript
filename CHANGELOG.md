@@ -67,7 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the port and inert; they are live now, in the scope the drawing gives them.
   It ships ahead of its roadmap phase and therefore on the chat model the
   product already runs, which ADR 0071 records rather than leaves to be
-  discovered.
+  discovered. The target language and the profile-words switch are set on
+  `Profiles → Defaults`, under the mode select that makes them apply, and only
+  stated on AI Models with the `Per profile` tag as the door (ADR 0072) — the
+  rule ADR 0068 had already set for the communication style.
 - **The colour scheme survives a restart.** `AppConfig.color_scheme` is the
   config field the palette's three theme rows had been missing: they switched
   the window and persisted nothing, so every launch came back dark. `system`

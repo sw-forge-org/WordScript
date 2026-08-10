@@ -200,6 +200,35 @@ describe("Profiles, wired", () => {
     expect(screen.getByRole("button", { name: "Delete" })).not.toBeDisabled();
   });
 
+  /* Hidden rather than disabled under another mode, and that is the one place
+     ADR 0065 does not apply: a target language under Cleanup is not inert, it
+     is irrelevant, and a disabled control claims the first. */
+  it("draws no target language under a mode that has none", () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    expect(screen.queryByLabelText("Into")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Keep this profile's words")).not.toBeInTheDocument();
+  });
+
+  it("writes the target language and the profile-words switch into the profile", async () => {
+    const translating = config();
+    translating.text_profiles[0].work_mode = {
+      ...translating.text_profiles[0].work_mode!,
+      processing_mode: "translate",
+    };
+    const patch = vi.fn();
+    render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: translating, patch })} />,
+    );
+
+    await userEvent.selectOptions(await screen.findByLabelText("Into"), "de");
+    expect(patch.mock.calls[0][0].text_profiles[0].modes.translate_target_language).toBe("de");
+
+    await userEvent.click(screen.getByLabelText("Keep this profile's words"));
+    const afterToggle = patch.mock.calls[patch.mock.calls.length - 1][0];
+    expect(afterToggle.text_profiles[0].modes.translate_keep_profile_words).toBe(false);
+  });
+
   it("shows what the prompt costs rather than what was typed into the field", async () => {
     /* The whole point of the command. What is in the field normalizes down —
        the whitespace collapses and the repeated line goes — and the runtime is

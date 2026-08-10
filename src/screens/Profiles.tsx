@@ -46,6 +46,7 @@ import {
   resolveTextProfileWorkMode,
 } from "@/lib/textProfiles";
 import { SETTINGS_ANCHOR_AUTO_STOP, settingsAnchorElementId } from "@/lib/settingsAnchors";
+import { TRANSLATE_LANGUAGES } from "@/types/ipc";
 import type {
   AppConfig,
   CommunicationLength,
@@ -286,6 +287,13 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   const [drawnLength, setDrawnLength] = useState<CommunicationLength>("normal");
   const [drawnRules, setDrawnRules] = useState("");
   const [drawnSample, setDrawnSample] = useState("");
+  /* The two Translate rows are drawn on their runtime defaults, which is what
+     the AI Models drawing shows for the same pair. They are only reachable in
+     the gallery by switching the mode select to Translate, which is how both
+     halves of the card stay measurable. */
+  const [drawnTargetLanguage, setDrawnTargetLanguage] = useState("en");
+  const [drawnKeepWords, setDrawnKeepWords] = useState(true);
+  const [drawnMode, setDrawnMode] = useState<ProcessingMode>("auto");
 
   const profiles = config?.text_profiles ?? [];
   const profile =
@@ -402,6 +410,13 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   const styleRules = runtime ? (modes?.style_instructions ?? "") : drawnRules;
   const styleSample = runtime ? (modes?.style_sample ?? "") : drawnSample;
   const styleActive = register !== "off";
+  const mode = runtime ? (work?.processing_mode ?? "auto") : drawnMode;
+  const targetLanguage = runtime
+    ? (modes?.translate_target_language ?? "en")
+    : drawnTargetLanguage;
+  const keepProfileWords = runtime
+    ? (modes?.translate_keep_profile_words ?? true)
+    : drawnKeepWords;
 
   const writeModes = (next: Partial<ProfileModesSettings>, kind: "discrete" | "text" = "discrete") =>
     write(
@@ -518,16 +533,21 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                         hint="Auto never picks Verbatim or Rewrite — those stay your call."
                         control={
                           <Select
-                            value={work?.processing_mode ?? "auto"}
-                            onChange={(event) =>
+                            value={mode}
+                            onChange={(event) => {
+                              const next = event.target.value as ProcessingMode;
+                              if (!runtime) {
+                                setDrawnMode(next);
+                                return;
+                              }
                               write((current) => ({
                                 ...current,
                                 work_mode: {
                                   ...resolveTextProfileWorkMode(current),
-                                  processing_mode: event.target.value as ProcessingMode,
+                                  processing_mode: next,
                                 },
-                              }))
-                            }
+                              }));
+                            }}
                             aria-label="Processing mode"
                           >
                             {MODE_OPTIONS.map((option) => (
@@ -538,6 +558,64 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                           </Select>
                         }
                       />
+                      {/* The two rows that only exist for one mode, and only
+                          while that mode is chosen. They are the profile's own
+                          values — ADR 0068 already ruled that a per-profile
+                          value does not belong on the machine-scope AI Models
+                          screen, and these two were the last ones sitting
+                          there. AI Models keeps them drawn with the `Per
+                          profile` tag that points here, which is what a scope
+                          tag is for.
+
+                          Hidden rather than disabled when the mode is something
+                          else, and that is the one place ADR 0065 does not
+                          apply: a disabled control states "this cannot act
+                          right now", and a target language under Cleanup is not
+                          inert, it is irrelevant. */}
+                      {mode === "translate" && (
+                        <>
+                          <Row
+                            label="Into"
+                            hint="One target, fixed. Reading it from the focused window is a guess, and a guess that silently changes the language you are writing in is worse than a wrong keystroke."
+                            control={
+                              <Select
+                                value={targetLanguage}
+                                onChange={(event) => {
+                                  if (!runtime) {
+                                    setDrawnTargetLanguage(event.target.value);
+                                    return;
+                                  }
+                                  writeModes({ translate_target_language: event.target.value });
+                                }}
+                                aria-label="Into"
+                              >
+                                {TRANSLATE_LANGUAGES.map((language) => (
+                                  <option key={language.code} value={language.code}>
+                                    {language.label}
+                                  </option>
+                                ))}
+                              </Select>
+                            }
+                          />
+                          <Row
+                            label="Keep this profile's words"
+                            hint="The names, products and terms on Words &amp; names stay in their own spelling. They are what a translator must leave alone and a model will localize."
+                            control={
+                              <Toggle
+                                checked={keepProfileWords}
+                                onCheckedChange={(next) => {
+                                  if (!runtime) {
+                                    setDrawnKeepWords(next);
+                                    return;
+                                  }
+                                  writeModes({ translate_keep_profile_words: next });
+                                }}
+                                aria-label="Keep this profile's words"
+                              />
+                            }
+                          />
+                        </>
+                      )}
                       <Row
                         label="Delivery"
                         hint="Where a finished transcript goes."

@@ -49,11 +49,7 @@ import {
   type TranslateAddressForm,
   type TranslateSameLanguage,
 } from "@/types/ipc";
-import {
-  buildProfileModesPatch,
-  resolveActiveTextProfile,
-  resolveProfileModesSettings,
-} from "@/lib/textProfiles";
+import { resolveActiveTextProfile, resolveProfileModesSettings } from "@/lib/textProfiles";
 import type { ProviderStatus } from "@/types/providers";
 import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
 
@@ -91,10 +87,10 @@ import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
 const Wired = createContext<{
   on: boolean;
   open?: WorkspaceRuntime["open"];
-  /* Carried so the four Translate rows can read and write. Every other control
-     on this screen is a model choice, and a model choice has no config shape to
-     write into yet (ADR 0042, plan §11.36) — these four are the mode's own
-     settings and do. */
+  /* Carried so the Translate job row can read the profile it states and write
+     the two settings that are the machine's. Every other control on this screen
+     is a model choice, and a model choice has no config shape to write into yet
+     (ADR 0042, plan §11.36). */
   runtime?: WorkspaceRuntime;
 }>({ on: false });
 
@@ -756,18 +752,23 @@ function jobBadge(lane: LaneName, jobKey?: JobKey, fallback?: { model: string; m
  *  that can — an empty picker would be worse than the sentence. */
 /**
  * The four rows that make Translate a mode rather than a flag (ADR 0041), and
- * the only live controls in this job list.
+ * the two of them that are the only live controls in this job list.
  *
- * They are live and their neighbours are not, and the split is the same one the
- * drawing already makes: every other row here picks a model, and a per-job model
- * needs the connection shape ADR 0042 describes and the config does not have
- * yet. These four are the mode's own settings and have had a config home since
- * the commit that added the mode.
+ * The split follows the scope tags the drawing puts on them, and it is the split
+ * ADR 0068 already ruled on: a per-profile value does not belong on a
+ * machine-scope surface. `Into` and `Keep the profile's words` carry a `Per
+ * profile` tag, so they are EDITED on Profiles → Defaults and only STATED here,
+ * disabled, showing what the active profile holds. The tag beside each one is
+ * the door to where it is set, which is what a scope tag is for — a disabled
+ * control cannot carry a tooltip, and this one does not need to.
  *
- * The scope tags are the drawing's and they are literal. `Into` and `Keep the
- * profile's words` carry one and are written into the ACTIVE profile — this
- * screen has no profile selector, so the profile it means is the one running.
- * The other two carry none and are the machine's.
+ * The two that carry no tag are the machine's, in the same shape
+ * `enhance_sub_mode` and `enhance_target` already have, and they are live.
+ *
+ * They are live while roughly thirty-six controls around them are not, and that
+ * is not an inconsistency: every other row here picks a model, which needs the
+ * connection shape ADR 0042 describes and the config does not have yet. These
+ * are the mode's own settings.
  *
  * With no runtime this is the gallery: every control keeps the drawn default and
  * changes nothing outside itself, which is what keeps the screen measurable.
@@ -778,11 +779,6 @@ function TranslateJobSettings() {
   const config = runtime?.config;
   const modes = config ? resolveProfileModesSettings(resolveActiveTextProfile(config)) : null;
 
-  const writeModes = (next: Parameters<typeof buildProfileModesPatch>[1]) => {
-    if (!runtime || !config) return;
-    runtime.patch(buildProfileModesPatch(config, next));
-  };
-
   return (
     <>
       <Row
@@ -791,27 +787,18 @@ function TranslateJobSettings() {
         control={
           <span className="ws-rowflex">
             <ScopeTag onOpen={openProfiles} />
-            {runtime ? (
-              <Select
-                value={modes?.translate_target_language ?? "en"}
-                onChange={(event) => writeModes({ translate_target_language: event.target.value })}
-                aria-label="Into"
-              >
-                {TRANSLATE_LANGUAGES.map((language) => (
-                  <option key={language.code} value={language.code}>
-                    {language.label}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Select defaultValue="en" aria-label="Into">
-                {TRANSLATE_LANGUAGES.map((language) => (
-                  <option key={language.code} value={language.code}>
-                    {language.label}
-                  </option>
-                ))}
-              </Select>
-            )}
+            <Select
+              value={modes?.translate_target_language ?? "en"}
+              onChange={() => undefined}
+              disabled={Boolean(runtime)}
+              aria-label="Into"
+            >
+              {TRANSLATE_LANGUAGES.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.label}
+                </option>
+              ))}
+            </Select>
           </span>
         }
       />
@@ -860,15 +847,12 @@ function TranslateJobSettings() {
         hint="Names, products and technical terms are what a translator must leave alone and a model will localize."
         control={
           <span className="ws-rowflex">
-            {runtime ? (
-              <Toggle
-                checked={modes?.translate_keep_profile_words ?? true}
-                onCheckedChange={(next) => writeModes({ translate_keep_profile_words: next })}
-                aria-label="Keep the profile's words"
-              />
-            ) : (
-              <InertToggle label="Keep the profile's words" on />
-            )}
+            <Toggle
+              checked={modes?.translate_keep_profile_words ?? true}
+              onCheckedChange={() => undefined}
+              disabled={Boolean(runtime)}
+              aria-label="Keep the profile's words"
+            />
             <ScopeTag onOpen={openProfiles} />
           </span>
         }
