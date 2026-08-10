@@ -25,7 +25,7 @@ import {
   resolveTextProfileWorkMode,
 } from "@/lib/textProfiles";
 import type { ProcessingMode } from "@/types/ipc";
-import { badgesFor, rawOf as rawOfEntry, retryDisabledReason } from "./History";
+import { badgesFor, rawOf as rawOfEntry, retryDisabledReason, titleOf } from "./History";
 import { DESK_CAP, RECENT, rawOf } from "./data";
 import type { PartlyWiredScreenProps } from "./props";
 
@@ -166,7 +166,18 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
         const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
         return {
           id: entry.id,
-          title: text.trim() || (entry.error ?? "Nothing was heard in this capture."),
+          /* HISTORY'S DERIVATION, NOT A SECOND ONE (ADR 0078). Home lists the
+             same records on the same builder, so a row here opens with what the
+             record is CALLED, exactly as it does one screen over — a recent
+             list whose five rows each start mid-sentence is the same unscannable
+             thing as a long one, at a size where it is more obvious.
+
+             No segment, and that is the difference rather than an omission:
+             History's `Written` / `Heard` exists for scanning many records to
+             judge transcription accuracy, and five rows of the last few minutes
+             is not that surface. What Home shows is the one reading a record
+             answers to. */
+          title: titleOf(entry, "title"),
           meta: [
             relativeTime(entry.created_at_ms),
             PROCESSING_MODE_LABELS[entry.work_mode?.processing_mode ?? "auto"],

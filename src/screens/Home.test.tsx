@@ -238,3 +238,35 @@ describe("Home · the decision inbox", () => {
     });
   });
 });
+
+/**
+ * ONE DERIVATION FOR BOTH LISTS (ADR 0078). Home draws the same records on the
+ * same builder, so what a row is called cannot differ between the two screens.
+ */
+describe("Home · what a row is called", () => {
+  it("opens a row with what the model named the record", async () => {
+    mockRuntimeHistory([historyEntry({ title: "Der Rebuild und seine Freigabe" })]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findByText("Der Rebuild und seine Freigabe")).toBeInTheDocument();
+    expect(screen.queryByText("Der Satz, der nicht ankam.")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the record's own words where the model never named it", async () => {
+    mockRuntimeHistory([historyEntry({ title: null })]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findByText("Der Satz, der nicht ankam.")).toBeInTheDocument();
+  });
+
+  /* The segment is History's, and its absence here is the decision rather than
+     an omission: five rows of the last few minutes is not the surface anybody
+     scans for recogniser errors. */
+  it("draws no reading segment, because Home is not the scanning surface", async () => {
+    mockRuntimeHistory([historyEntry()]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByRole("heading", { name: /Recent/ });
+    expect(screen.queryByRole("button", { name: "Heard" })).not.toBeInTheDocument();
+  });
+});

@@ -192,7 +192,7 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
 }
 
 /** Which of a record's three readings the row titles carry (ADR 0070, 0078). */
-type ShownText = "title" | "written" | "heard";
+export type ShownText = "title" | "written" | "heard";
 
 const SHOWN_TEXT_OPTIONS = [
   { value: "title", label: "Title" },
@@ -232,7 +232,7 @@ const SHOWN_TEXT_OPTIONS = [
  * put the AI's sentence behind a label promising the opposite, which is the
  * fake-readiness rule applied to a word instead of a state.
  */
-function titleOf(entry: TranscriptionHistoryEntry, shows: ShownText): string {
+export function titleOf(entry: TranscriptionHistoryEntry, shows: ShownText): string {
   if (shows === "title") {
     const named = (entry.title ?? "").trim();
     if (named) return named;

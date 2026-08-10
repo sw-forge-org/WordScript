@@ -83,13 +83,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they replace anything and answer with where it went. The API key is not in an
   archive and the import says so: it lives in the OS secret store, which is the
   one thing about a machine that does not travel.
-- **History's rows open with what the record is called** (ADR 0078). ADR 0070's
-  `Written` / `Heard` segment gains a third reading, `Title`, and it is the
-  default: a list of rows each opening with the first sentence of a dictation
-  starts every line mid-thought and cannot be scanned. `Heard` stays, because
-  the job it was added for — judging transcription accuracy across many records
-  — has not gone away. A record the model never named falls back to its own
-  words.
+- **History's and Home's rows open with what the record is called** (ADR 0078).
+  ADR 0070's `Written` / `Heard` segment gains a third reading, `Title`, and it
+  is the default: a list of rows each opening with the first sentence of a
+  dictation starts every line mid-thought and cannot be scanned. `Heard` stays,
+  because the job it was added for — judging transcription accuracy across many
+  records — has not gone away. Home draws the same records on the same builder
+  and takes the same derivation, without the segment: five rows of the last few
+  minutes is not the surface anybody scans. A record the model never named falls
+  back to its own words.
 - **Home's decision inbox receives a fallen-back delivery** (ADR 0044,
   ADR 0076). The one of its three sources the runtime can already ask about, and
   it draws nothing when nothing is owed — which is the drawing's own rule and
