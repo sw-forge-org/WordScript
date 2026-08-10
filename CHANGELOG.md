@@ -55,6 +55,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A capture reports the cadence of its own input stream** (ADR 0083). ADR 0079
+  made a short capture say so; this says *how* it went short. `CallbackCadence`
+  counts every cpal callback and every stretch over 200 ms in which the stream
+  delivered nothing, and the stop writes one line per capture — healthy ones
+  included, because 345 healthy captures are what made eight broken ones legible
+  in the first place. Each gap carries **the number of samples the callback that
+  ended it delivered**, which is what separates the three hypotheses in
+  `capture-loses-half-the-recording.md`: an ordinary period on resume means the
+  audio is gone (`stream_suspended`), a catch-up-sized one means it only arrived
+  late (`late_delivery`), and **no gap at all on a capture that is still short**
+  (`no_gaps_but_audio_missing`) means starvation — a positive finding the line
+  names rather than reporting nothing unusual. Nothing is logged from the audio
+  callback: the gaps accumulate in memory and flush at the stop, because writing
+  a file from a realtime audio thread to report a dropout is a good way to cause
+  the next one. A pause and a rebuild reset the cadence so an explained outage is
+  not counted as the unexplained defect. **No real gap has been observed yet** —
+  this instruments a hypothesis, it does not confirm one.
+- **The input level is kept per transcription** (ADR 0083). Peak and mean were
+  computed on every capture and kept only when the capture came back empty,
+  which is the one case that already explains itself. `InputLevelSummary` gains
+  `rms` / `rms_dbfs` and is persisted on the history record as `input_level`,
+  and written to the runtime log on every capture. **The mean is the part that
+  was missing**: a peak is set by one sample, so a cough sets it as well as
+  speech does, and a dictation too quiet to transcribe can still report a
+  healthy peak. It is what separates "the recogniser is wrong" from "the
+  microphone is quiet", and the text cannot be asked. Reported and not acted on
+  — `too_quiet` still reads the peak, whose thresholds were derived against it.
+  `None` on older records and on a retry, which never touched a microphone.
+- **The first genuine mishearing is in the regression corpus.**
+  `recognizer_mishears_a_technical_term`: the owner said `tmux`, the recogniser
+  produced `D-Max`, and `applied_rules` carries `overlay_edit` — so the ground
+  truth is his own retyped word rather than a guess. It is neither of the two
+  identified causes, which is the gap `transcription-accuracy.md` names as its
+  open headline. The entry asserts that all three stages which could touch it
+  decline: the echo strip, the address repair, and vocabulary learning — the
+  last because `tmux` is four characters and `MIN_CANDIDATE_CHARS` is five, so
+  the one mechanism that would stop this recurring cannot reach a term this
+  short. Recorded as a measured limit with a named cost, not lowered on one case.
 - **A capture states how much of its own clock it kept** (ADR 0079). Between
   12 % and 55 % of the audio of some recordings is never captured and nothing
   said so: re-measured 2026-08-10 over 634 paired captures, **11 are short and
@@ -216,6 +254,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The cleanup invention rate was counting three things that were not cleanup.**
+  `measure_invented_tokens_in_shipped_corrections` excluded `agent` mode on the
+  argument that it writes an artifact from an instruction, so every word of its
+  output is new by construction — and that argument covers `translate` and
+  `prompt_enhance` word for word, but neither was excluded. Snippet expansions
+  were not on the deterministic allowlist although the harness's own doc comment
+  claims they are. And a record the user had retyped in the overlay
+  (`overlay_edit`) was credited to cleanup, which is the same false claim
+  `apply_edited_preview_text` explicitly refuses to make about history. Together
+  they reported **11 of 138 flagged (8.0 %)** where the corrected harness reports
+  **7 of 135 (5.2 %)**; hand-read, 6 are real, so **4.4 % against the 6.1 % of
+  2026-08-02 — which on 6 events against 12 is not a movement and is not
+  reported as one.**
 - **`shortfall_ratio` was unreadable on any paused capture** (ADR 0079). Pausing
   calls `Stream::pause`, which stops the cpal callback outright, so a paused
   capture emitted nothing and recorded nothing while its clock kept running —

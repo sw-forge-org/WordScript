@@ -494,8 +494,15 @@ Additional rules:
   runtime log on every capture, an `Audio missing` badge and a sentence on the
   history record, and a tab beside the result pill at delivery time. Verified in
   the native host the same evening — five records carry `intact` verdicts in the
-  0.1–3.0% band. The next step is now the callback-cadence log, which a
-  `verdict=short` line makes cheap to target:
+  0.1–3.0% band. **Since ADR 0083 every capture also reports the cadence of its
+  own input stream**: the number of cpal callbacks, every stretch over 200 ms in
+  which none arrived, and the sample count of the callback that ended it — which
+  is what separates a suspended stream from callback starvation from a late
+  delivery, and the line names which. Re-run 2026-08-11: still exactly 11 short
+  captures, nothing moved, and **no real gap has been recorded yet**, so the
+  instrumentation has a hypothesis rather than a cause. The journal carries no
+  PipeWire line inside the worst window and memory pressure there was inside the
+  healthy band, both on n = 1:
   [known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)
 - **the recogniser echoes WordScript's own initial prompt into the transcript**,
   and one such sentence reached an agent as an instruction on 2026-08-10.
@@ -505,13 +512,27 @@ Additional rules:
   the displaced words are still gone, and `raw_transcript` deliberately keeps
   the leak so the rate stays measurable:
   [known-issues/stt-prompt-leaks-into-the-transcript.md](known-issues/stt-prompt-leaks-into-the-transcript.md)
-- **the correlation that would join the transcription cluster together is not
-  answerable on today's data.** Whether a short capture also produces more
-  mishearings needs the capture numbers and the transcript in one place; the
-  join works (136 of 136 records paired) but 9 of the 11 short captures had
-  outlived their transcripts, because the runtime log and `history.json` have
-  different retentions. That is a retention artifact, not a result. ADR 0079
-  puts the verdict on the record so the next run needs no join:
+- **the correlation that would join the transcription cluster together is still
+  not answerable, and the reason has changed.** Whether a short capture also
+  produces more mishearings needs the capture numbers and the transcript in one
+  place. On 2026-08-10 the join worked (136 of 136 paired) but 9 of the 11 short
+  captures had outlived their transcripts — a retention artifact. ADR 0079 put
+  the verdict on the record so no join is needed; on 2026-08-11 **7 of 138
+  records answer for themselves and every one is `intact`**, so the blocker is
+  now simply that no short capture has been recorded since. Both are population
+  facts, neither is a result, and an empty group is not evidence that short
+  captures are clean. The same holds for the cleanup invention rate split by
+  `capture_integrity`, implemented 2026-08-11 and equally empty on one side:
+  [known-issues/transcription-accuracy.md](known-issues/transcription-accuracy.md)
+- **the input level is on the record since ADR 0083**, peak and mean, which is
+  what separates "the recogniser is wrong" from "the microphone is quiet". The
+  mean is the half that was missing: a peak is set by one sample, so a cough
+  sets it as well as speech does. Reported, not acted on — the `too_quiet`
+  verdict still reads the peak its thresholds were derived against
+- **the first genuine mishearing is in the corpus** (2026-08-11): the owner said
+  `tmux`, the recogniser produced `D-Max`, and `overlay_edit` on the record makes
+  his own retyped word the ground truth. Neither of the two identified causes,
+  which is what the accuracy record had been missing. One instance is not a rate:
   [known-issues/transcription-accuracy.md](known-issues/transcription-accuracy.md)
 - the recording overlay is reported to freeze mid-capture at irregular
   intervals — pill, seconds timer and all input at once. As of 2026-08-03 the

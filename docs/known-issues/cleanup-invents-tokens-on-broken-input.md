@@ -1,10 +1,10 @@
 # Cleanup invents plausible tokens where the transcript is already broken
 
-Status: measured 2026-08-02, partially addressed. One of three observed
-categories has a deterministic guardrail; the other two still do not. Two of
-the damage sources that feed it were removed upstream on 2026-08-10, and the
-invention rate is now **splittable by whether the capture behind the transcript
-was intact** — neither has been re-measured.
+Status: measured 2026-08-02, re-measured 2026-08-11, partially addressed. One of
+three observed categories has a deterministic guardrail; the other two still do
+not. **The rate has not moved measurably, three metric defects were found and
+fixed while re-measuring it, and the capture-integrity split is not answerable
+yet.**
 
 Found as a side observation while measuring profile-context width for ADR 0021.
 It is **unrelated to that decision**: every case below occurred identically in
@@ -108,6 +108,77 @@ Two facts about this distribution decided what got built:
    (an invention) without knowing what was said. Groups A and C are out of reach
    of any rule that only sees the transcript.
 
+## Re-measured 2026-08-11, and the metric was wrong in three ways first
+
+A rotated population: 136 records in history against the 197 of 2026-08-02, most
+of them different records. The first run of the harness reported **11 of 138
+flagged (8.0 %) with 44 `no_source` tokens**, which would have read as a rise.
+It was not one. Three of the harness's own defects were inflating it, and each
+is the same mistake in a different place: **counting a stage that was not
+cleanup.**
+
+1. **Two of the three rewriting modes were being counted.** Only `agent` was
+   excluded, on the argument that it writes an artifact from an instruction so
+   every word in its output is new by construction (ADR 0026). That argument
+   covers `translate` and `prompt_enhance` word for word —
+   `ProcessingMode::Translate` says so in its own doc comment, "the opposite of
+   a correction that has to stay near its input" — and neither was excluded. One
+   `prompt_enhance` record in this history contributed **21 of the 44 tokens**
+   with an output opening `Role: … Task: … Constraints: …`, none of which was
+   spoken.
+2. **Snippet expansions were not on the allowlist**, although the harness's own
+   doc comment claims they are: *"the output has been through vocabulary repair,
+   the replacement dictionary and the snippets … so
+   `deterministic_rewrite_allowlist` has to neutralize what those introduce."*
+   It neutralized the first two. A `QA handoff` trigger expanded into twelve
+   English words and every one of them was flagged.
+3. **A record the user had edited by hand was credited to cleanup.**
+   `apply_edited_preview_text` sets `corrected = false` and says why —
+   "the text is now the user's, not the transform's", and reporting it as
+   machine-corrected "would make history and the diagnostics claim a rewrite
+   that never ran over this wording". The metric was making exactly that claim:
+   the user replaced the misheard `D-Max` with `tmux` in the overlay, and the
+   harness recorded cleanup as having invented `tmux`.
+
+**Corrected result: 7 of 135 flagged, 5.2 %, with 9 `no_source` tokens.** Read
+by hand, **6 are real and 1 is a false positive** — `ausbauen` → `ausgebaut`, a
+separable-prefix participle the derivation rules do not reach, the same class as
+the `making` → `make` and `leg` → `lege` misses of 2026-08-02. No morphology
+rule was added for it: the tight version would also admit `danken` → `Gedanken`,
+and a rule that hides a real invention is worse here than one hand-read false
+positive.
+
+**Verified rate: 6 / 135 = 4.4 %, against 6.1 % on 2026-08-02.** On 6 events
+against 12 that is not a movement, and it must not be reported as one. The
+honest reading is that **the rate is unchanged within the noise of these
+counts**, and that removing two upstream damage sources (ADR 0080, ADR 0081) has
+not produced a visible drop in cleanup inventions.
+
+The three category counts did move in a way worth noting: **zero letter-run
+merges and zero aborted completions again**, in a third consecutive population.
+The category that started this record still does not appear in any corpus drawn
+from real use.
+
+### The split by capture integrity: implemented, and not answerable
+
+`measure_invented_tokens_in_shipped_corrections` now reports the rate split by
+`capture_integrity`, which is what this record asked for on 2026-08-10:
+
+```text
+--- split by capture integrity (ADR 0079) ---
+  intact                   0 of 9 flagged (0.0 %)
+  short                    0 records
+  not_measured             0 records
+  no verdict (pre-0079)    7 of 126 flagged (5.6 %)
+```
+
+**The short group is empty, so there is nothing to compare.** The harness says
+so in the output rather than printing a `0.0 %` a reader could mistake for a
+finding, and `answerable` is a field in the written JSON. Nine records carry a
+verdict and every one of them is `intact` — that is how many captures the
+product has recorded since ADR 0079 shipped, not evidence that short captures
+invent nothing.
+
 ## What was done
 
 `spelled_letter_merge_reverted`, the fifth guardrail in `normalize_correction`
@@ -160,7 +231,9 @@ landing on the fix that borrowed it.
   definition* what the corrector does with damage. Whether removing two damage
   sources lowers the 6.1 % invention rate is **an open question with a way to
   answer it** — `measure_invented_tokens_in_shipped_corrections` re-run over a
-  post-fix population — and not a claim.
+  post-fix population — and not a claim. **Answered on 2026-08-11 as far as it
+  can be: 4.4 %, which on 6 events against 12 is not a movement.** Still not a
+  claim, in either direction.
 - **A short capture is now marked on the record**
   ([ADR 0079](../decisions/0079-a-capture-states-how-much-of-its-own-clock-it-kept.md)).
   This is the link that put this record in the cluster: *broken input is what a
@@ -168,9 +241,10 @@ landing on the fix that borrowed it.
   across all records at once; `capture_integrity` makes it splittable by whether
   the audio behind the transcript was intact. If group A concentrates on short
   captures, its cause is upstream of the corrector and no cleanup-side guardrail
-  was ever going to reach it. **That split is not measured yet** — on 2026-08-10
-  only 2 of 11 short captures still had transcripts, and only 5 records carried
-  a verdict at all.
+  was ever going to reach it. **The split is implemented since 2026-08-11 and
+  still not answerable** — 9 records carry a verdict and all 9 are `intact`, so
+  the short group has no members to compare against. See above; the harness
+  refuses to print a rate for an empty group.
 
 The honest summary is unchanged: **one of three observed categories has a
 guardrail, and the plan that produced it worked because the measurement came

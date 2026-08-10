@@ -1,9 +1,11 @@
 # Bug: A capture silently keeps half the recording
 
-Status: **Open — cause not located. Re-measured 2026-08-10 and it is ongoing:
-11 affected captures rather than 8, and the worst one is the most recent. The
-capture now REPORTS the gap (ADR 0079), which is the first step the plan below
-asked for and is independent of the fix.**
+Status: **Open — cause not located, and now instrumented for the next
+occurrence. Re-measured 2026-08-10 and 2026-08-11: 11 affected captures rather
+than 8, unchanged between the two runs, and the worst one is still the most
+recent. The capture REPORTS the gap (ADR 0079) and now also reports the CADENCE
+of its own input stream (ADR 0083), which is step 2 below. No real gap has been
+recorded yet.**
 
 This is the defect the overlay freeze reports have been describing; the frozen
 pill is the symptom, the lost audio is the damage.
@@ -156,6 +158,76 @@ running dev build carry verdicts — `intact` at 0.1 %, 0.1 %, 0.2 %, 0.5 % and
 
 **None of this locates the cause.** Steps 2 and 3 below are untouched.
 
+## Re-run 2026-08-11: nothing moved, and step 2 shipped
+
+The same harness over both runtime logs: **636 paired captures, r = 0.9986 over
+340 captures of at least 20 s, and still exactly 11 past the threshold.** No new
+short capture since 08-10 22:57. The baseline is unchanged — median 0.23 %
+missing, p95 1.96 % — and the gap the threshold sits in is still 7.0 % to
+12.0 %.
+
+Records that answer for themselves went from 5 to 7 of 138. All 7 are `intact`,
+so **the correlation is still not answerable**, for the same reason and not a
+new one: the population has not yet produced a short capture under ADR 0079.
+That is a fact about how many captures have been recorded, not a finding that
+short captures are rare now.
+
+### What shipped: the callback says whether it was called
+
+[ADR 0083](../decisions/0083-a-capture-reports-the-cadence-of-its-own-input-stream-and-the-level-it-was-given.md),
+which is **step 2 of this plan**. `CallbackCadence` counts every cpal callback
+and every stretch over 200 ms in which the stream delivered nothing, and
+`stop_native_capture` writes it:
+
+```text
+[WordScript] Capture callback cadence callbacks=… nominal_samples=… nominal_interval_ms=…
+  longest_gap_ms=… gaps_over_200ms=… oversized_resumes=… lost_in_gaps_seconds=…
+  share_of_missing=… signature=…
+[WordScript] Capture callback gap at_ms=… gap_ms=… resumed_with_samples=… nominal_samples=…
+```
+
+**`resumed_with_samples` is what separates the three hypotheses below**, and it
+is the number this record has been missing:
+
+| `signature` | Reading | Hypothesis |
+|---|---|---|
+| `stream_suspended` | gaps exist, every resume carries an ordinary period — the audio in the gap was never delivered | 1 |
+| `no_gaps_but_audio_missing` | no stretch long enough to name, and the audio is still short — the loss is spread across the capture | 2 |
+| `late_delivery` | the resuming callback carries the gap's worth of audio — the samples arrived, the clock disagreed | 3 |
+| `no_gaps` | the baseline | — |
+
+The line is written on **every** capture, healthy ones included, for the reason
+this record's own measurement worked: 345 healthy captures are what made eight
+broken ones legible. A pause resets the cadence so a deliberate pause is not
+read as a dropout; a rebuild resets it too, because its outage is already named
+by the rebuild line.
+
+Nothing is logged from the audio callback itself — the gaps accumulate in memory
+and are flushed at the stop. Writing a file from a realtime audio thread to
+report a dropout is a good way to cause the next one.
+
+**No real gap has been observed.** The instrumentation is asserted against a
+synthetic timeline only. The first real one belongs in the corpus.
+
+### Step 3, taken retrospectively, and both halves came back negative
+
+The journal reaches back to 2026-08-06, which covers the 08-10 22:54–22:57
+window — the worst capture ever measured.
+
+- **No PipeWire or WirePlumber line inside the window at all.** Weak evidence
+  rather than a refutation: a suspend-on-idle or a session-manager reroute would
+  appear at debug level, and the journal was at default. Hypothesis 1 is neither
+  supported nor excluded by this.
+- **Memory pressure does not distinguish it.** `earlyoom` samples once a minute,
+  and the window's tightest reading is **18.3 % memory available** — inside the
+  healthy band of 11.8–51.6 % across 28 healthy long captures, **six of which
+  ran tighter than it**. On n = 1 that distinguishes nothing. It is not a
+  refutation of starvation and it is not support for it.
+
+Only one of the 11 short captures falls inside the journal's reach, which is why
+this is a coincidence check and not a measurement. Watching PipeWire live during
+a long capture is still worth doing and is still step 3.
+
 ## Environment
 
 - `host=Alsa device=default sample_rate=44100 channels=2 sample_format=f32` —
@@ -190,16 +262,24 @@ Untested, ordered by what the evidence supports.
 ## Next steps
 
 1. ~~**Report the gap.**~~ **Done 2026-08-10, ADR 0079.** See above.
-2. Log the cpal callback cadence: the gap between callbacks and their sample
-   counts, with a line whenever a gap exceeds a threshold. That separates
-   hypothesis 1 from 2 directly. **This is now the first step**, and the
-   reporting above makes it cheap to target: a `verdict=short` line in the
-   runtime log names a capture window to look at.
+2. ~~Log the cpal callback cadence.~~ **Done 2026-08-11, ADR 0083.** See above.
+   **The next step is to wait for it to fire**, which costs nothing and needs no
+   code: the next `verdict=short` capture writes a cadence line beside it, and
+   its `signature` names the hypothesis. Until then the three below remain
+   untested rather than eliminated.
 3. Watch PipeWire from the other side during a long capture
-   (`pw-cli` / `pw-top`, and `journalctl --user -u pipewire`) and correlate a
-   suspend against a capture window.
+   (`pw-cli` / `pw-top`, and `journalctl --user -u pipewire`, ideally with
+   `PIPEWIRE_DEBUG=3`) and correlate a suspend against a capture window. The
+   retrospective half of this was taken on 2026-08-11 and found nothing at
+   default log level — see above. **Live, at debug level, it is still open**,
+   and it is the one thing that would confirm hypothesis 1 outright rather than
+   inferring it from the resume size.
 4. ~~Fix the pause interaction in `shortfall_ratio`.~~ **Done 2026-08-10,
    ADR 0079** — `LevelEmitSummary` measures against `effective_elapsed`.
+5. **Put the first real gap in the corpus.** Nothing in
+   `regression_transcripts.json` describes an observed dropout, because none has
+   been recorded. The cadence assertions run over a synthetic timeline, which
+   pins the arithmetic and not the phenomenon.
 
 ## Why this was filed separately
 

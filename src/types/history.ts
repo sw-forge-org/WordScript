@@ -4,9 +4,14 @@ import type {
   NativeInsertMode,
   NativeInsertRecoveryAction,
 } from "./nativeInsertion";
-import type { CaptureIntegrity, ProcessingMode, TextProfileWorkMode } from "./ipc";
+import type {
+  CaptureIntegrity,
+  InputLevelSummary,
+  ProcessingMode,
+  TextProfileWorkMode,
+} from "./ipc";
 
-export type { CaptureIntegrity, CaptureIntegrityVerdict } from "./ipc";
+export type { CaptureIntegrity, CaptureIntegrityVerdict, InputLevelSummary } from "./ipc";
 
 export type TranscriptionHistoryStatus = "completed" | "empty" | "failed";
 export type TranscriptionHistorySource = "native_pipeline" | "retry";
@@ -92,4 +97,12 @@ export interface TranscriptionHistoryEntry {
    *  `null` on entries older than the measurement and on a retry, which has no
    *  capture of its own. */
   capture_integrity: CaptureIntegrity | null;
+  /** What the microphone delivered into this transcription — peak, mean and the
+   *  speech threshold they are read against. `null` on entries older than the
+   *  measurement and on a retry, which never touched a microphone.
+   *
+   *  It is what separates "the recogniser is wrong" from "the microphone is
+   *  quiet", and neither can be told from the text
+   *  (`docs/known-issues/transcription-accuracy.md`). */
+  input_level: InputLevelSummary | null;
 }

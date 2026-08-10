@@ -383,17 +383,24 @@ const FUNCTION_WORDS: &[&str] = &[
 
 /// Everything the deterministic stages are allowed to introduce.
 ///
-/// Vocabulary repair and the replacement dictionary both put words into the
-/// output that the raw transcript never contained — that is their job. Counting
-/// them would measure the feature, not the defect.
+/// Vocabulary repair, the replacement dictionary and snippet expansion all put
+/// words into the output that the raw transcript never contained — that is their
+/// job. Counting them would measure the feature, not the defect.
+///
+/// **Snippet expansions were missing from this list**, which cost the metric one
+/// record on 2026-08-11: a `QA handoff` trigger expanded into twelve English
+/// words and every one of them was flagged as an invention. An expansion is a
+/// whole sentence, so it outvotes the real findings in the token count.
 pub(super) fn deterministic_rewrite_allowlist(
     dictionary: &[DictionaryEntry],
     vocabulary: &[String],
+    snippets: &[String],
 ) -> Vec<String> {
     dictionary
         .iter()
         .map(|entry| entry.replace_with.clone())
         .chain(vocabulary.iter().cloned())
+        .chain(snippets.iter().cloned())
         .collect()
 }
 
@@ -591,6 +598,200 @@ fn edit_distance_at_most_one(left: &str, right: &str) -> bool {
     true
 }
 
+/// The modes that are not the cleanup family, and whose output therefore holds
+/// words the input never did **by construction** rather than by invention.
+///
+/// Agent writes an artifact from an instruction (ADR 0026, ADR 0029). Translate
+/// replaces every word — `ProcessingMode::Translate` says so in its own doc
+/// comment: "the opposite of a correction that has to stay near its input".
+/// Prompt Enhance rewrites a dictation into a structured prompt, and the live
+/// history carries one whose output opens `Role: … Task: … Constraints: …`,
+/// none of which was spoken.
+///
+/// Only `agent` was excluded before, so the other two were being counted as
+/// inventions. Running the classifier over them measures the feature working.
+const REWRITING_MODES: [&str; 3] = ["agent", "translate", "prompt_enhance"];
+
+/// Names why a record cannot answer the question, or `None` if it is a
+/// cleanup-lane record the metric is about. The applied rule is checked beside
+/// the work mode because the rule is what the run actually did.
+///
+/// `overlay_edit` is the second reason and it is not a mode: it means the user
+/// typed over the preview before delivery, and `apply_edited_preview_text` says
+/// why that ends the measurement — "the text is now the user's, not the
+/// transform's", and reporting it as machine-corrected "would make history and
+/// the diagnostics claim a rewrite that never ran over this wording". Counting
+/// the diff as an invention makes the metric claim it too. The live history
+/// carries one: the user replaced the misheard `D-Max` with `tmux`, and the
+/// harness credited cleanup with inventing `tmux`.
+fn not_a_cleanup_measurement(entry: &serde_json::Value) -> Option<&'static str> {
+    let rules = entry["applied_rules"].as_array();
+    let has_rule = |name: &str| {
+        rules
+            .map(|rules| rules.iter().any(|rule| rule == name))
+            .unwrap_or(false)
+    };
+
+    if let Some(mode) = REWRITING_MODES.into_iter().find(|mode| {
+        entry["work_mode"]["processing_mode"] == *mode
+            || has_rule(mode)
+            || has_rule(&format!("{mode}_mode"))
+    }) {
+        return Some(mode);
+    }
+    has_rule("overlay_edit").then_some("overlay_edit")
+}
+
+/// The invention rate split by whether the capture behind the transcript kept
+/// its audio (ADR 0079).
+///
+/// `cleanup-invents-tokens-on-broken-input.md` names the question this answers:
+/// broken input is what a short capture produces, so if the inventions
+/// concentrate on short captures their cause is upstream of the corrector and no
+/// cleanup-side guardrail was ever going to reach them.
+///
+/// **It reports the population before it reports a rate, and it declines to
+/// compare when a group is empty.** A verdict only exists on records written
+/// after ADR 0079 shipped, so for a while the short group is empty because the
+/// product has not recorded one yet — which is a population fact, not a finding
+/// that short captures are clean.
+#[derive(Default)]
+struct CaptureIntegritySplit {
+    intact: (usize, usize),
+    short: (usize, usize),
+    not_measured: (usize, usize),
+    absent: (usize, usize),
+}
+
+impl CaptureIntegritySplit {
+    fn count(&mut self, capture_integrity: &serde_json::Value, flagged: bool) {
+        let slot = match capture_integrity["verdict"].as_str() {
+            Some("intact") => &mut self.intact,
+            Some("short") => &mut self.short,
+            Some("not_measured") => &mut self.not_measured,
+            Some(_) | None => &mut self.absent,
+        };
+        slot.0 += 1;
+        if flagged {
+            slot.1 += 1;
+        }
+    }
+
+    fn line(label: &str, (total, flagged): (usize, usize)) -> String {
+        if total == 0 {
+            return format!("  {label:<24} 0 records");
+        }
+        format!(
+            "  {label:<24} {flagged} of {total} flagged ({:.1} %)",
+            flagged as f64 * 100.0 / total as f64
+        )
+    }
+
+    fn report(&self) {
+        eprintln!("\n--- split by capture integrity (ADR 0079) ---");
+        eprintln!("{}", Self::line("intact", self.intact));
+        eprintln!("{}", Self::line("short", self.short));
+        eprintln!("{}", Self::line("not_measured", self.not_measured));
+        eprintln!(
+            "{}",
+            Self::line("no verdict (pre-0079)", self.absent)
+        );
+
+        if self.short.0 == 0 || self.intact.0 == 0 {
+            eprintln!(
+                "\n*** The split is NOT ANSWERABLE yet: {} records carry a verdict and {} of\n\
+                 *** them are short. That is the population, not a result — do not read an\n\
+                 *** empty group as evidence that short captures invent no tokens.",
+                self.intact.0 + self.short.0 + self.not_measured.0,
+                self.short.0
+            );
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        let group = |(total, flagged): (usize, usize)| {
+            serde_json::json!({ "records": total, "flagged": flagged })
+        };
+        serde_json::json!({
+            "intact": group(self.intact),
+            "short": group(self.short),
+            "not_measured": group(self.not_measured),
+            "no_verdict": group(self.absent),
+            "answerable": self.short.0 > 0 && self.intact.0 > 0,
+        })
+    }
+}
+
+/// Both directions: the three rewriting modes and a user's own overlay edit are
+/// excluded whether the record names them as a work mode or as an applied rule,
+/// and the cleanup lane the metric is about is not.
+#[test]
+fn only_a_record_the_cleanup_lane_did_not_write_is_excluded_from_the_invention_rate() {
+    for (entry, reason) in [
+        (serde_json::json!({ "work_mode": { "processing_mode": "agent" } }), "agent"),
+        (serde_json::json!({ "applied_rules": ["agent_mode"] }), "agent"),
+        (serde_json::json!({ "work_mode": { "processing_mode": "translate" } }), "translate"),
+        (
+            serde_json::json!({ "work_mode": { "processing_mode": "prompt_enhance" } }),
+            "prompt_enhance",
+        ),
+        (serde_json::json!({ "applied_rules": ["prompt_enhance"] }), "prompt_enhance"),
+        (
+            serde_json::json!({
+                "work_mode": { "processing_mode": "auto" },
+                "applied_rules": ["post_corrected", "overlay_edit"]
+            }),
+            "overlay_edit",
+        ),
+    ] {
+        assert_eq!(
+            not_a_cleanup_measurement(&entry),
+            Some(reason),
+            "not excluded, or excluded for the wrong reason: {entry}"
+        );
+    }
+
+    for entry in [
+        serde_json::json!({ "work_mode": { "processing_mode": "auto" }, "applied_rules": ["post_corrected"] }),
+        serde_json::json!({ "work_mode": { "processing_mode": "cleanup" } }),
+        serde_json::json!({ "work_mode": { "processing_mode": "rewrite" } }),
+        serde_json::json!({ "work_mode": { "processing_mode": "verbatim" } }),
+        serde_json::json!({ "applied_rules": ["post_corrected", "prompt_echo_stripped"] }),
+    ] {
+        assert_eq!(
+            not_a_cleanup_measurement(&entry),
+            None,
+            "excluded from its own metric: {entry}"
+        );
+    }
+}
+
+/// A record from before ADR 0079 carries no verdict, and counting it as
+/// `intact` would answer the question with records that never measured
+/// themselves.
+#[test]
+fn a_record_without_a_verdict_is_not_counted_as_intact() {
+    let mut split = CaptureIntegritySplit::default();
+    split.count(&serde_json::json!(null), true);
+    split.count(&serde_json::json!({ "verdict": "intact" }), false);
+
+    assert_eq!(split.absent, (1, 1));
+    assert_eq!(split.intact, (1, 0));
+    assert_eq!(split.json()["answerable"], serde_json::json!(false));
+}
+
+/// The split becomes a comparison only when both sides exist.
+#[test]
+fn the_split_is_answerable_only_with_a_short_capture_on_the_record() {
+    let mut split = CaptureIntegritySplit::default();
+    split.count(&serde_json::json!({ "verdict": "intact" }), false);
+    assert_eq!(split.json()["answerable"], serde_json::json!(false));
+
+    split.count(&serde_json::json!({ "verdict": "short" }), true);
+    assert_eq!(split.json()["answerable"], serde_json::json!(true));
+    assert_eq!(split.json()["short"]["flagged"], serde_json::json!(1));
+}
+
 /// The count the record has been waiting for, over what actually shipped.
 ///
 /// No provider call: `history.json` already holds the raw transcript beside the
@@ -621,11 +822,22 @@ fn measure_invented_tokens_in_shipped_corrections() {
                 .collect()
         })
         .unwrap_or_default();
-    let allowlist = deterministic_rewrite_allowlist(&dictionary, &vocabulary);
+    let snippets: Vec<String> = profile["snippet_entries"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry["expansion"].as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let allowlist = deterministic_rewrite_allowlist(&dictionary, &vocabulary, &snippets);
 
     eprintln!("profile      = {PROFILE_ID}");
     eprintln!("profile ctx  = {profile_prompt:?}");
     eprintln!("vocabulary   = {vocabulary:?}");
+    eprintln!("snippets     = {} expansions", snippets.len());
     eprintln!(
         "dictionary   = {:?}",
         dictionary
@@ -638,7 +850,7 @@ fn measure_invented_tokens_in_shipped_corrections() {
         app_config["correction_model"].as_str().unwrap_or("?")
     );
 
-    let entries: Vec<&serde_json::Value> = history
+    let all: Vec<&serde_json::Value> = history
         .as_array()
         .expect("history array")
         .iter()
@@ -651,17 +863,38 @@ fn measure_invented_tokens_in_shipped_corrections() {
                 .as_str()
                 .map(|text| !text.trim().is_empty())
                 .unwrap_or(false);
-            // The agent mode writes an artifact from an instruction (ADR 0026,
-            // ADR 0029). Every word in its output is new by construction, so
-            // running the classifier over it measures the feature working.
-            let agent = entry["work_mode"]["processing_mode"] == "agent"
-                || entry["applied_rules"]
-                    .as_array()
-                    .map(|rules| rules.iter().any(|rule| rule == "agent_mode"))
-                    .unwrap_or(false);
-            has_raw && has_output && !agent
+            has_raw && has_output
         })
         .collect();
+
+    let mut excluded: Vec<(&str, usize)> = Vec::new();
+    for reason in REWRITING_MODES.into_iter().chain(["overlay_edit"]) {
+        let count = all
+            .iter()
+            .filter(|entry| not_a_cleanup_measurement(entry) == Some(reason))
+            .count();
+        if count > 0 {
+            excluded.push((reason, count));
+        }
+    }
+    let entries: Vec<&serde_json::Value> = all
+        .iter()
+        .copied()
+        .filter(|entry| not_a_cleanup_measurement(entry).is_none())
+        .collect();
+
+    if !excluded.is_empty() {
+        eprintln!(
+            "excluded     = {} of {} records the cleanup lane did not write: {}",
+            all.len() - entries.len(),
+            all.len(),
+            excluded
+                .iter()
+                .map(|(reason, count)| format!("{reason} {count}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
 
     let mut flagged = 0usize;
     let mut by_kind: Vec<(InventedTokenKind, usize)> = vec![
@@ -670,11 +903,13 @@ fn measure_invented_tokens_in_shipped_corrections() {
         (InventedTokenKind::NoSource, 0),
     ];
     let mut records: Vec<serde_json::Value> = Vec::new();
+    let mut split = CaptureIntegritySplit::default();
 
     for entry in &entries {
         let raw = entry["raw_transcript"].as_str().unwrap().trim();
         let output = entry["transformed_transcript"].as_str().unwrap().trim();
         let found = classify_invented_tokens(raw, output, &allowlist);
+        split.count(&entry["capture_integrity"], !found.is_empty());
         if found.is_empty() {
             continue;
         }
@@ -726,6 +961,7 @@ fn measure_invented_tokens_in_shipped_corrections() {
     for (kind, count) in &by_kind {
         eprintln!("  {:<20} {count}", kind.label());
     }
+    split.report();
 
     let out = std::env::var("WORDSCRIPT_INVENTED_TOKEN_OUT")
         .map(PathBuf::from)
@@ -738,8 +974,13 @@ fn measure_invented_tokens_in_shipped_corrections() {
             "vocabulary": vocabulary,
             "model": app_config["correction_model"],
             "entries": entries.len(),
+            "excluded_rewriting_modes": excluded
+                .iter()
+                .map(|(mode, count)| serde_json::json!({ "mode": mode, "records": count }))
+                .collect::<Vec<_>>(),
             "flagged": flagged,
             "rate_percent": rate,
+            "capture_integrity_split": split.json(),
             "records": records,
         }))
         .unwrap(),
@@ -831,11 +1072,36 @@ fn a_deterministic_rewrite_is_not_counted_as_an_invention() {
         phrase: "KA".to_string(),
         replace_with: "Kundenanfrage".to_string(),
     }];
-    let allowlist = deterministic_rewrite_allowlist(&dictionary, &["WordScript".to_string()]);
+    let allowlist =
+        deterministic_rewrite_allowlist(&dictionary, &["WordScript".to_string()], &[]);
 
     let found = classify_invented_tokens(
         "die KA von gestern in wordscribt eintragen",
         "die Kundenanfrage von gestern in WordScript eintragen",
+        &allowlist,
+    );
+
+    assert_eq!(found, Vec::new(), "{found:?}");
+}
+
+/// A snippet expansion is a whole sentence the trigger phrase stands for, and
+/// every word of it is the feature working. This is the case that was being
+/// counted: a `QA handoff` trigger in the owner's live history expanded into
+/// twelve English words, all of them flagged.
+#[test]
+fn a_snippet_expansion_is_not_counted_as_an_invention() {
+    let expansion =
+        "please verify the main happy path, the known edge case and the regression check \
+         noted here before sign-off.";
+    let allowlist = deterministic_rewrite_allowlist(
+        &[],
+        &["qa handoff".to_string()],
+        &[expansion.to_string()],
+    );
+
+    let found = classify_invented_tokens(
+        "und dann machen wir den qa handoff",
+        &format!("und dann machen wir den {expansion}"),
         &allowlist,
     );
 

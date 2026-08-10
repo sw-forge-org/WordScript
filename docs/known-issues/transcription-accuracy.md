@@ -2,10 +2,11 @@
 
 Status: **Open. Partly measured 2026-08-10: two identified causes now have rates
 and deterministic fixes, and the one question that would tie this record to the
-capture defect was attempted and is NOT ANSWERABLE on today's data — for a
-reason that is itself now fixed.** Reported by the owner on 2026-08-10 against
-daily use: *"Aktuell ist die Transkription sehr ungenau und es kommen sehr viele
-solche Artefakte vor."*
+capture defect is still NOT ANSWERABLE — re-run 2026-08-11 and unchanged, for
+the same reason. What 2026-08-11 added: the input level is persisted per
+transcription (ADR 0083), and the first genuine mishearing is in the corpus.**
+Reported by the owner on 2026-08-10 against daily use: *"Aktuell ist die
+Transkription sehr ungenau und es kommen sehr viele solche Artefakte vor."*
 
 There is still no WER and no general accuracy rate, so the headline complaint
 stays open.
@@ -114,6 +115,57 @@ many records answer for themselves. Five did on the evening it shipped.
   characters per *wall-clock* second — the signature the capture record
   describes, seen again.
 
+## Re-run 2026-08-11: the join is still empty, and a real substitution is finally on record
+
+Same harness, two days later. 636 captures paired, 138 history records, **138 of
+138 joined**, and **7 records now carry their own verdict against 5**. Every one
+of the 7 is `intact`.
+
+**The correlation remains unanswerable, and the reason has changed.** On
+2026-08-10 it was a retention artifact — the short captures had outlived their
+transcripts. Today the join is not needed at all, and the blocker is simply that
+**no short capture has been recorded since ADR 0079 shipped**. Both are
+population facts and neither is a result. An empty group is not evidence that
+short captures are clean.
+
+### The first genuine mishearing, and it came with its own ground truth
+
+`recognizer_mishears_a_technical_term` in
+`src-tauri/tests/fixtures/regression_transcripts.json`. Record
+`history-1786387983612-133`, `whisper-large-v3` on the Groq lane:
+
+```
+spoken:  Installiere tmux auf dieser Maschine …
+raw:     Installiere D-Max auf dieser Maschine …
+```
+
+This is the entry step 1 below has been asking for: **neither identified cause**
+— not the prompt leak, not the pluralized address — and therefore the first
+measurement the headline complaint has of its own.
+
+**The truth is not inferred.** `applied_rules` carries `overlay_edit`, so the
+owner retyped the word in the overlay before delivery: `tmux` is his own
+wording, not a guess about what he meant. That makes the whole class of
+`overlay_edit` records worth mining — **each one is a human-labelled correction
+of the recogniser**, and this history holds exactly one so far.
+
+It is also ADR 0036's argument at full strength. `D-Max` is capitalized and
+hyphenated, the shape of a real product name — it is an Isuzu pickup — so the
+damage is invisible and ships.
+
+**Three stages decline it, and the corpus asserts all three.** The echo strip
+has no prompt text to match; the address repair finds no plural imperative; and
+`vocabulary_learning::detect_candidates` returns nothing.
+
+**The third decline is the finding.** Promoting `tmux` into the profile
+vocabulary is the one mechanism the product has that would stop this recurring —
+the recogniser bias would then carry the term. It cannot reach this case:
+`tmux` is four characters and `MIN_CANDIDATE_CHARS` is five. That floor is
+deliberate, because a close match on a four-letter word is not evidence of
+anything. **Recorded as a measured limit with a named cost rather than lowered
+on the strength of one case** — the population that would justify moving it is
+more `overlay_edit` records, and there is one.
+
 ## What is not known
 
 Everything that would make this actionable:
@@ -123,9 +175,12 @@ Everything that would make this actionable:
   another. "Very inaccurate" is the whole of the measurement today.
 - **Which lane.** Groq `whisper-large-v3` and the local `whisper-cli` path are
   both in use and the report does not separate them.
-- **Whether the input is the cause.** Microphone, level, room, and the
-  ~-26 dBFS speech threshold the level meter draws are all upstream of the
-  recognizer and none of them is recorded per transcription.
+- ~~**Whether the input is the cause.**~~ **Half answered 2026-08-11, ADR 0083.**
+  Peak, mean and the speech threshold they are read against are now on every
+  record as `input_level`, and in the runtime log on every capture. Room and
+  microphone model are still unrecorded, and the *rate* — how often a fluent
+  transcript came off a too-quiet microphone — needs a population that only
+  exists from today onward.
 - **Whether the profile's vocabulary is reaching the recognizer.** Terms exist
   per profile (`vocabulary_hints`) and the runtime decides how many reach the
   bias; `stt-hints-bypass-the-vocabulary-opt-in.md` is an open record in that
@@ -163,26 +218,32 @@ had run on every one of them. Equal outputs are not evidence that nothing ran.
 
 ## Next steps, cheapest first
 
-1. ~~**Capture instances instead of describing them.**~~ **Started 2026-08-10.**
-   The corpus went from 26 entries to 44: eighteen new ones under
-   `stt_prompt_leak`, `recognizer_pluralized_address` and `capture_lost_audio`,
-   every one drawn from a dated record on this machine, and each with its
-   negative counterpart. **The negatives are the point** — a rule that removes a
-   leak must not remove the sentence in which the owner *complains about* the
-   leak, and the corpus carries both.
-   Still to add: mishearings that are neither of the two identified causes. The
-   *"Normale Sätze…"* sample this record opened with turned out to be the prompt
-   leak; a genuine substitution has not yet been captured as an entry.
-2. **Record what the audio looked like.** Half done. The capture's own integrity
-   is now on the record (ADR 0079), which separates "the recogniser is wrong"
-   from "half the audio never arrived". The **input level** summary — peak and
-   mean, emitted on the `empty` event and kept nowhere — is still not persisted,
-   and it is what would separate "the recogniser is wrong" from "the microphone
-   is quiet". Cheapest remaining step.
-3. **Re-run the correlation once records carry their own verdicts.** The join
-   above is no longer needed; the harness reports how many records answer for
-   themselves, and the question becomes answerable as soon as enough short
-   captures have been recorded under ADR 0079. Nothing else has to be built.
+1. ~~**Capture instances instead of describing them.**~~ **Started 2026-08-10,
+   and the gap it named is closed 2026-08-11.** The corpus went from 26 entries
+   to 45: eighteen under `stt_prompt_leak`, `recognizer_pluralized_address` and
+   `capture_lost_audio` on 2026-08-10, and the first `recognizer_mishearing`
+   today. Every one is drawn from a dated record on this machine, and each has
+   its negative counterpart. **The negatives are the point** — a rule that
+   removes a leak must not remove the sentence in which the owner *complains
+   about* the leak, and the corpus carries both.
+   Still open: **one instance is not a rate.** A second and third substitution
+   would say whether `D-Max` is representative or a one-off, and the cheapest
+   source is more `overlay_edit` records.
+2. ~~**Record what the audio looked like.**~~ **Done 2026-08-11, ADR 0083.**
+   The capture's integrity (ADR 0079) separates "the recogniser is wrong" from
+   "half the audio never arrived"; `input_level` now separates it from "the
+   microphone is quiet". The mean is the part that was missing — a peak is set
+   by one sample, so a cough sets it as well as speech does, and a dictation too
+   quiet to transcribe could report a healthy peak.
+   The mean is **reported and not acted on**: `too_quiet` still reads the peak,
+   because the thresholds were derived against the peak and re-deriving them
+   needs its own measurement.
+3. **Re-run the correlation once records carry their own verdicts.** Nothing
+   has to be built and nothing has to be re-run by hand: the harness reports how
+   many records answer for themselves (7 of 138 on 2026-08-11, all `intact`),
+   and the question becomes answerable the first time a short capture is
+   recorded under ADR 0079. That capture will also carry a cadence line
+   (ADR 0083), so it answers two questions at once.
 4. **Separate the lanes in the report.** A per-lane count is a filter over data
    the history already holds, once instances are being marked at all.
 5. **Then, and only then, the model question.** Whether

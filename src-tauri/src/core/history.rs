@@ -5,7 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
-use super::capture::CaptureIntegrity;
+use super::capture::{CaptureIntegrity, InputLevelSummary};
 use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::insertion::{
     insert_transcription_from_legacy, NativeClipboardRestoreStatus, NativeInsertDriver,
@@ -120,6 +120,22 @@ pub struct TranscriptionHistoryEntry {
     /// the 10 affected captures had outlived their transcripts.
     #[serde(default)]
     pub capture_integrity: Option<CaptureIntegrity>,
+    /// What the microphone delivered into this transcription: peak, mean and
+    /// the speech threshold they are read against.
+    ///
+    /// `transcription-accuracy.md` lists this as the cheapest step it was still
+    /// missing. The numbers were already computed on every capture and thrown
+    /// away unless the capture came back empty, which is the one case where
+    /// they are least needed — an empty result already says something is wrong,
+    /// while a fluent transcript from a too-quiet microphone says nothing at
+    /// all. It is what separates "the recogniser is wrong" from "the microphone
+    /// is quiet", and neither can be told from the text.
+    ///
+    /// `None` on records written before this existed, and on a retry: like the
+    /// capture verdict, the measurement belongs to a capture and not to a
+    /// transcription.
+    #[serde(default)]
+    pub input_level: Option<InputLevelSummary>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +177,9 @@ pub struct RecordHistoryEntryRequest {
     /// What the capture measured about itself (ADR 0079). `None` on the paths
     /// that have no capture of their own to report — a retry above all.
     pub capture_integrity: Option<CaptureIntegrity>,
+    /// What the microphone delivered, from the same capture and on the same
+    /// terms.
+    pub input_level: Option<InputLevelSummary>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -381,6 +400,7 @@ fn record_entry_with_work_mode(
         audio_path: request.audio_path,
         fallback_acknowledged: false,
         capture_integrity: request.capture_integrity,
+        input_level: request.input_level,
     };
 
     store.entries.push_front(entry.clone());
@@ -712,6 +732,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 // it has no capture of its own to report. The original record
                 // keeps the verdict that belongs to it.
                 capture_integrity: None,
+                input_level: None,
             },
             Some(app_config.resolved_active_text_profile_work_mode()),
         )?
@@ -745,6 +766,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             // A retry re-transcribes audio an earlier session captured. The
             // capture measurement belongs to that session's record and is not
             // copied forward onto a run that never made a capture.
+            None,
             None,
         )?;
 
@@ -803,6 +825,9 @@ pub fn history_entry_from_insert_result(
     // What the capture measured about itself (ADR 0079). `None` on a retry,
     // which has no capture of its own.
     capture_integrity: Option<CaptureIntegrity>,
+    // What the microphone delivered during that same capture, and `None` in the
+    // same places for the same reason.
+    input_level: Option<InputLevelSummary>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -846,6 +871,7 @@ pub fn history_entry_from_insert_result(
             error: insert_result.error.clone(),
             audio_path: None,
             capture_integrity,
+            input_level,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -860,6 +886,9 @@ pub fn record_insert_failure(
     effective_mode: Option<ProcessingMode>,
     title: Option<String>,
     capture_integrity: Option<CaptureIntegrity>,
+    // What the microphone delivered during that same capture, and `None` in the
+    // same places for the same reason.
+    input_level: Option<InputLevelSummary>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -895,6 +924,7 @@ pub fn record_insert_failure(
             error: Some(error),
             audio_path: None,
             capture_integrity,
+            input_level,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -914,6 +944,9 @@ pub fn record_transcription_failure(
     error: String,
     audio_path: Option<String>,
     capture_integrity: Option<CaptureIntegrity>,
+    // What the microphone delivered during that same capture, and `None` in the
+    // same places for the same reason.
+    input_level: Option<InputLevelSummary>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -951,6 +984,7 @@ pub fn record_transcription_failure(
             error: Some(error),
             audio_path,
             capture_integrity,
+            input_level,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -962,6 +996,9 @@ pub fn record_empty_result(
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
     capture_integrity: Option<CaptureIntegrity>,
+    // What the microphone delivered during that same capture, and `None` in the
+    // same places for the same reason.
+    input_level: Option<InputLevelSummary>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     // An empty result has no text, so no file and nothing to name.
     let title: Option<String> = None;
@@ -1002,6 +1039,7 @@ pub fn record_empty_result(
             // capture that recorded nothing look identical on the record, and
             // only this number tells them apart.
             capture_integrity,
+            input_level,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -1394,6 +1432,7 @@ mod tests {
                 error: None,
                 audio_path: None,
                 capture_integrity: None,
+                input_level: None,
             })
             .expect("record history entry");
         }
@@ -1448,6 +1487,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            input_level: None,
         })
         .expect("first history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1481,6 +1521,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            input_level: None,
         })
         .expect("second history entry");
 
@@ -1532,6 +1573,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            input_level: None,
         })
         .expect("groq history entry");
 
@@ -1566,6 +1608,7 @@ mod tests {
             error: Some("Model missing".to_string()),
             audio_path: None,
             capture_integrity: None,
+            input_level: None,
         })
         .expect("local preview history entry");
 
@@ -1628,6 +1671,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            input_level: None,
         })
         .expect("first export history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1661,6 +1705,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            input_level: None,
         })
         .expect("second export history entry");
 
@@ -1724,6 +1769,7 @@ mod tests {
                 audio_path: None,
                 fallback_acknowledged: false,
                 capture_integrity: None,
+                input_level: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-a".to_string(),
@@ -1761,6 +1807,7 @@ mod tests {
                 audio_path: None,
                 fallback_acknowledged: false,
                 capture_integrity: None,
+                input_level: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-b".to_string(),
@@ -1798,6 +1845,7 @@ mod tests {
                 audio_path: None,
                 fallback_acknowledged: false,
                 capture_integrity: None,
+                input_level: None,
             },
         ]);
 
@@ -1861,6 +1909,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .expect("history entry from insert result");
 
@@ -1887,6 +1936,13 @@ mod tests {
 
     /// The worst capture in the 2026-08-03 measurement, as a verdict: 405.7 s
     /// on the clock, 194.3 s of audio.
+    /// A microphone that never got near the speech threshold: the case the
+    /// level exists to make visible, because the transcript it produces reads
+    /// like any other.
+    fn quiet_input() -> InputLevelSummary {
+        InputLevelSummary::quiet_for_tests()
+    }
+
     fn short_capture() -> CaptureIntegrity {
         CaptureIntegrity {
             wall_seconds: 405.7,
@@ -1930,6 +1986,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            input_level: None,
         }
     }
 
@@ -2021,6 +2078,62 @@ mod tests {
             serde_json::from_value(json).expect("a pre-ADR-0079 record");
 
         assert!(entry.capture_integrity.is_none());
+        assert!(entry.input_level.is_none());
+    }
+
+    /// The input level has to survive the write for the same reason the verdict
+    /// does: it is read weeks later, against a transcript nobody can ask what
+    /// the microphone was doing.
+    #[test]
+    fn the_input_level_is_still_on_the_record_when_it_is_read_back() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("input-level");
+
+        let mut request = completed_request("Das Mikrofon war leise.");
+        request.input_level = Some(quiet_input());
+        let recorded = record_entry(request).expect("history entry");
+
+        let read_back = transcription_history_entries(None)
+            .expect("history entries")
+            .into_iter()
+            .find(|entry| entry.id == recorded.id)
+            .expect("the entry we just wrote");
+        let level = read_back.input_level.expect("a level on the record");
+
+        assert!((level.rms_dbfs - quiet_input().rms_dbfs).abs() < 0.001);
+        assert!((level.peak_dbfs - quiet_input().peak_dbfs).abs() < 0.001);
+        assert!(level.rms_dbfs < level.voice_threshold_dbfs);
+
+        if let Some(path) = read_back.transcript_path.as_deref() {
+            super::super::transcript_store::remove_transcript(path);
+        }
+    }
+
+    /// A retry re-transcribes an earlier session's audio and makes no capture
+    /// of its own. Copying the level forward would attribute a microphone
+    /// measurement to a run that never touched a microphone — the same argument
+    /// ADR 0079 makes for the verdict.
+    #[test]
+    fn a_retry_carries_neither_a_verdict_nor_a_level() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("retry-carries-nothing");
+
+        let mut request = completed_request("Noch einmal.");
+        request.source = TranscriptionHistorySource::Retry;
+        request.capture_integrity = None;
+        request.input_level = None;
+        let entry = record_entry(request).expect("history entry");
+
+        assert!(entry.capture_integrity.is_none());
+        assert!(entry.input_level.is_none());
+
+        if let Some(path) = entry.transcript_path.as_deref() {
+            super::super::transcript_store::remove_transcript(path);
+        }
     }
 
     /// The `Empty` and `Failed` paths reach the same funnel and must not leave
@@ -2181,6 +2294,7 @@ mod tests {
             audio_path: None,
             fallback_acknowledged: false,
             capture_integrity: None,
+            input_level: None,
         }
     }
 }

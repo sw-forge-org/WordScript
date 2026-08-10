@@ -1517,6 +1517,12 @@ fn handle_audio_ready<R: Runtime + 'static>(
     // dropped it would leave exactly the transcript that needs the number most
     // — a short one — with nothing on it.
     let capture_integrity = Some(payload.capture_integrity);
+    // What the microphone delivered, carried the same way and for the reason
+    // `transcription-accuracy.md` gives: peak and mean were computed on every
+    // capture and kept only when the capture came back empty, which is the one
+    // case that already explains itself. A fluent transcript from a too-quiet
+    // microphone explains nothing, and the text cannot be asked.
+    let input_level = Some(payload.input_level);
     // The initial prompt this request will actually send. Held here rather than
     // rebuilt after the response, because a rebuild can drift from what went
     // out and the whole point of the echo strip is that we know the exact
@@ -1857,6 +1863,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         transformed,
                         Some(effective_mode.clone()),
                         capture_integrity,
+                        input_level,
                     );
                     core::runtime_log::record(format!(
                         "[WordScript] Native pipeline empty result elapsed_ms={}",
@@ -1895,6 +1902,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             transformed.clone(),
                             Some(effective_mode.clone()),
                             capture_integrity,
+                            input_level,
                         ) {
                             Ok(preview) => {
                                 core::runtime_log::record(format!(
@@ -1963,6 +1971,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
                                 capture_integrity,
+                                input_level,
                             )
                             .ok();
 
@@ -2078,6 +2087,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
                                 capture_integrity,
+                                input_level,
                             );
                             let error = result
                                 .error
@@ -2150,6 +2160,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
                                 capture_integrity,
+                                input_level,
                             );
                             core::runtime_log::record(format!(
                                 "[WordScript] Native pipeline insertion failed session_id={} elapsed_ms={} error={}",
@@ -2217,6 +2228,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     error.message.clone(),
                     keep_audio.then(|| cleanup_path.clone()),
                     capture_integrity,
+                    input_level,
                 );
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transcription failed session_id={} elapsed_ms={} kind={:?} message={}",

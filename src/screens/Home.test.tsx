@@ -87,6 +87,7 @@ function historyEntry(
     audio_path: null,
     fallback_acknowledged: false,
     capture_integrity: null,
+    input_level: null,
     ...overrides,
   };
 }

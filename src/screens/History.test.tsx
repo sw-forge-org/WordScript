@@ -41,6 +41,7 @@ function entry(overrides: Partial<TranscriptionHistoryEntry> = {}): Transcriptio
     transcript_path: "/tmp/transcripts/2026/08/10-0942-e1.md",
     fallback_acknowledged: false,
     capture_integrity: null,
+    input_level: null,
     provider_profile: null,
     local_prompt_strength: null,
     local_prompt_carry: null,

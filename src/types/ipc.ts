@@ -52,6 +52,12 @@ export type InputLevelVerdict =
 export interface InputLevelSummary {
   peak:                 number;
   peak_dbfs:            number;
+  /** The mean level over the whole capture, and the half of this summary that
+   *  says what the microphone was doing rather than what its loudest instant
+   *  was. A cough sets the peak as well as speech does, so a dictation too
+   *  quiet to transcribe can still report a healthy `peak_dbfs`. */
+  rms:                  number;
+  rms_dbfs:             number;
   clipped_ratio:        number;
   verdict:              InputLevelVerdict;
   voice_threshold_dbfs: number;

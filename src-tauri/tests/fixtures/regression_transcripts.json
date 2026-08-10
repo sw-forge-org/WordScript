@@ -924,6 +924,32 @@
       "expected_post_correction": "Maakt het uit, stuur het maar.",
       "expected_guardrail": null,
       "notes": "Dutch and the Scandinavian languages are the near neighbours — close enough that a rule reading only the suffix could plausibly fire on them. The gate is a closed list of tags naming German, so everything else is simply not German, including a language nobody named."
+    },
+    {
+      "id": "recognizer_mishears_a_technical_term",
+      "failure_mode": "recognizer_mishearing",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Installiere D-Max auf dieser Maschine und mache das initiale Setup komplett fertig für AI-Coding. Recherchiere gegebenenfalls dafür im Internet.",
+      "language": "de",
+      "expected_prompt_echo": {
+        "prompt": "Dictated notes. Normal sentences with punctuation and capitalization. Diktierte Notizen. Normale Sätze mit Satzzeichen und Groß- und Kleinschreibung.",
+        "text": "Installiere D-Max auf dieser Maschine und mache das initiale Setup komplett fertig für AI-Coding. Recherchiere gegebenenfalls dafür im Internet.",
+        "stripped": false
+      },
+      "expected_address_repair": {
+        "text": "Installiere D-Max auf dieser Maschine und mache das initiale Setup komplett fertig für AI-Coding. Recherchiere gegebenenfalls dafür im Internet.",
+        "restored": false
+      },
+      "expected_post_correction": "Installiere tmux auf dieser Maschine und mache das initiale Setup komplett fertig für AI-Coding, recherchiere gegebenenfalls dafür im Internet.",
+      "expected_vocabulary_candidates": [],
+      "expected_guardrail": null,
+      "notes": "Record history-1786387983612-133, 2026-08-11, whisper-large-v3 on the Groq lane, profile General writing. THE FIRST GENUINE MISHEARING IN THIS CORPUS: the speaker said 'tmux' and the recogniser produced 'D-Max'. It is neither of the two identified causes — not the prompt leak, not the pluralized address — which is the gap docs/known-issues/transcription-accuracy.md names as its open headline. The ground truth is not inferred: applied_rules carries 'overlay_edit', so the user retyped the word in the overlay before delivery and 'tmux' is his own wording, not a guess about what he meant. It is also ADR 0036's argument at full strength — 'D-Max' is capitalized and hyphenated, the shape of a real product name (it is an Isuzu pickup), so the damage is invisible and ships. Three stages decline it and all three are asserted here: the echo strip has no prompt text to match, the address repair finds no plural imperative, and learning returns nothing. The last decline is the interesting one and it is deliberate rather than broken: 'tmux' is four characters and MIN_CANDIDATE_CHARS is five, so the one mechanism that could stop this recurring — promoting the term into the profile vocabulary, where the recogniser bias would carry it — cannot reach a term this short. That floor exists because a close match on a four-letter word is not evidence. Recorded as a measured limit with a named cost, not lowered on the strength of one case."
     }
   ]
 }

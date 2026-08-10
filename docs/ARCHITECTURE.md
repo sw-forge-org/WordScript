@@ -266,7 +266,8 @@ state and active device.
 8. `insertion.rs` chooses and runs the insert mode.
 9. `history.rs` writes raw vs transformed transcript, active text profile,
    effective `ProcessingMode`, insert outcome, errors, and what the capture
-   measured about itself (`capture_integrity`, ADR 0079).
+   measured about itself -- `capture_integrity` (ADR 0079) and `input_level`
+   (ADR 0083). Both are `None` on a retry, which makes no capture of its own.
 10. `sessions.rs` finalizes exactly once (`completed`/`aborted`/`error`) and
     accepts async pipeline results only for the active `processing`
     session id.

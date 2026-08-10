@@ -64,6 +64,17 @@ const CAPTURE_GAP_THRESHOLD: f64 = 0.10;
 /// second, a single late callback is already several percent.
 const CAPTURE_INTEGRITY_MIN_WALL_SECONDS: f64 = 2.0;
 
+/// How long the input stream may deliver nothing before the stretch is worth
+/// naming. An ALSA period at 44.1 kHz is on the order of 10–25 ms, so 200 ms is
+/// roughly ten missed periods — far outside ordinary scheduling jitter and far
+/// below the multi-second stretches
+/// `capture-loses-half-the-recording.md` implies.
+const CALLBACK_GAP_THRESHOLD_MS: u128 = 200;
+/// How many gaps one capture keeps. The realtime callback must not grow a
+/// buffer without bound, and a capture that has already produced 64 of these
+/// has answered the question the log is being read for.
+const MAX_RECORDED_CALLBACK_GAPS: usize = 64;
+
 /// What the measured input level says about the microphone setup.
 ///
 /// This is diagnosis only. WordScript never writes the operating system's
@@ -89,6 +100,19 @@ pub enum InputLevelVerdict {
 pub struct InputLevelSummary {
     pub peak: f32,
     pub peak_dbfs: f32,
+    /// The root mean square over every measured sample of the capture, and the
+    /// half of this summary that says what the microphone was doing rather than
+    /// what its loudest instant was.
+    ///
+    /// A peak is set by one sample. A cough, a keyboard or a chair sets it just
+    /// as well as speech does, so a capture dictated too quietly to transcribe
+    /// can still report a healthy peak — which is exactly the case
+    /// `transcription-accuracy.md` needs separated from "the recogniser is
+    /// wrong". Defaulted so a payload written before it existed still loads.
+    #[serde(default)]
+    pub rms: f32,
+    #[serde(default = "silent_dbfs")]
+    pub rms_dbfs: f32,
     pub clipped_ratio: f32,
     pub verdict: InputLevelVerdict,
     /// The threshold speech detection had to clear, so the UI can state the
@@ -96,12 +120,21 @@ pub struct InputLevelSummary {
     pub voice_threshold_dbfs: f32,
 }
 
+fn silent_dbfs() -> f32 {
+    -120.0
+}
+
 impl InputLevelSummary {
-    fn new(peak: f32, clipped_samples: u64, total_samples: u64) -> Self {
+    fn new(peak: f32, clipped_samples: u64, total_samples: u64, sum_squares: f64) -> Self {
         let clipped_ratio = if total_samples == 0 {
             0.0
         } else {
             clipped_samples as f32 / total_samples as f32
+        };
+        let rms = if total_samples == 0 {
+            0.0
+        } else {
+            (sum_squares / total_samples as f64).sqrt() as f32
         };
         let verdict = if clipped_ratio > CLIPPING_RATIO_THRESHOLD {
             InputLevelVerdict::Clipping
@@ -116,6 +149,8 @@ impl InputLevelSummary {
         Self {
             peak,
             peak_dbfs: to_dbfs(peak),
+            rms,
+            rms_dbfs: to_dbfs(rms),
             clipped_ratio,
             verdict,
             voice_threshold_dbfs: to_dbfs(DEFAULT_VOICE_THRESHOLD),
@@ -151,6 +186,17 @@ impl InputLevelSummary {
             verdict: InputLevelVerdict::TooShort,
             ..self
         }
+    }
+
+    /// A capture whose loudest instant cleared the speech threshold while its
+    /// mean stayed far below it — a microphone that is simply too quiet. It
+    /// goes through `new` so a fixture and the runtime cannot disagree about
+    /// what the numbers mean.
+    #[cfg(test)]
+    pub(crate) fn quiet_for_tests() -> Self {
+        let total = 48_000;
+        let typical = 0.004_f64;
+        Self::new(0.03, 0, total, typical * typical * total as f64)
     }
 }
 
@@ -463,6 +509,11 @@ struct SharedCaptureData {
     peak_observed: f32,
     clipped_samples: u64,
     measured_samples: u64,
+    /// Summed squares over the same samples `measured_samples` counts, so the
+    /// capture can state a mean level and not only its loudest instant. `f64`
+    /// because a ten-minute capture at 44.1 kHz stereo sums 52 million terms
+    /// and an `f32` accumulator stops growing long before that.
+    sum_squares: f64,
     samples: Vec<i16>,
     max_samples: usize,
     rebuild_in_progress: bool,
@@ -474,6 +525,222 @@ struct SharedCaptureData {
     level_emits_attempted: u64,
     level_emits_failed: u64,
     slowest_level_emit: Duration,
+    // Callback cadence (capture-loses-half-the-recording, step 2). The emit
+    // accounting above measures the path OUT of the callback; this measures
+    // whether the callback was called at all, which is the layer the loss was
+    // finally traced to.
+    cadence: CallbackCadence,
+}
+
+/// One stretch in which the input stream delivered no samples at all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CallbackGap {
+    /// Milliseconds from the start of the capture to the callback that ENDED
+    /// the gap, so a `verdict=short` line and this one name the same window.
+    at_ms: u128,
+    gap_ms: u128,
+    /// Samples the resuming callback carried. **This is the discriminator.**
+    /// A resuming callback of ordinary size means the audio for the gap was
+    /// never delivered and is gone (hypothesis 1, a suspended stream); a
+    /// callback carrying roughly a gap's worth of samples means the audio
+    /// arrived late in one block and only the clock disagreed (hypothesis 3).
+    samples: usize,
+}
+
+/// Whether the input stream kept being called, and what it delivered when it
+/// was.
+///
+/// `capture-loses-half-the-recording.md` measured the loss twice and located it
+/// nowhere: no stream error, no rebuild, no device change, and every emit that
+/// was attempted succeeded immediately. The one thing nothing observed is the
+/// cadence of the cpal callback itself, which is where the samples either
+/// arrive or do not.
+///
+/// **Nothing here writes to the log from the audio callback.** The gaps are
+/// accumulated in memory under the lock the callback already takes and flushed
+/// at `stop_native_capture`. Writing a file from a realtime audio thread to
+/// report a dropout is a good way to cause the next one — the observer would
+/// become the effect — and the forensic value is identical, because the record
+/// is read after the capture ends. The cost is that a capture that never stops
+/// reports nothing, which is acceptable: this defect always ends with a
+/// transcript.
+#[derive(Debug, Clone)]
+struct CallbackCadence {
+    /// Interleaved samples the device produces per second — `sample_rate ×
+    /// channels`. It converts a callback's size into the audio time it carries,
+    /// which is what makes a late callback distinguishable from a lost one.
+    samples_per_second: f64,
+    /// `None` before the first callback and after every resume, so a paused
+    /// stretch is not counted as a gap. Pausing calls `Stream::pause`, which
+    /// stops the callback outright — the same construction artifact ADR 0079
+    /// removed from `shortfall_ratio`, one layer down.
+    last_callback_at: Option<Instant>,
+    callbacks: u64,
+    samples_total: u64,
+    /// The first callback's size, which ALSA holds constant for the life of a
+    /// stream. It is what a resuming callback is compared against.
+    nominal_samples: usize,
+    longest_gap: Duration,
+    /// Summed audio time the gaps past the threshold did not deliver: each
+    /// gap's length minus the audio the resuming callback actually carried.
+    /// Compared against the missing audio it says whether the named gaps
+    /// account for the loss or only part of it.
+    lost_in_gaps: Duration,
+    gaps_over_threshold: u64,
+    gaps: Vec<CallbackGap>,
+}
+
+impl CallbackCadence {
+    fn new(sample_rate: u32, channels: u16) -> Self {
+        Self {
+            samples_per_second: f64::from(sample_rate.max(1)) * f64::from(channels.max(1)),
+            last_callback_at: None,
+            callbacks: 0,
+            samples_total: 0,
+            nominal_samples: 0,
+            longest_gap: Duration::ZERO,
+            lost_in_gaps: Duration::ZERO,
+            gaps_over_threshold: 0,
+            gaps: Vec::new(),
+        }
+    }
+
+    /// Called from the realtime audio callback, under the shared lock. Cheap by
+    /// construction: arithmetic, and at most `MAX_RECORDED_CALLBACK_GAPS`
+    /// pushes for the whole capture.
+    ///
+    /// `now` is passed in rather than read here so the cadence can be driven
+    /// over a synthetic timeline in a test. A dropout instrumentation asserted
+    /// with `thread::sleep` would be measuring the test runner's scheduler.
+    fn observe(&mut self, started_at: Instant, now: Instant, samples: usize) {
+        self.callbacks += 1;
+        self.samples_total += samples as u64;
+        if self.nominal_samples == 0 {
+            self.nominal_samples = samples;
+        }
+
+        if let Some(previous) = self.last_callback_at {
+            let gap = now.saturating_duration_since(previous);
+            self.longest_gap = self.longest_gap.max(gap);
+            if gap.as_millis() >= CALLBACK_GAP_THRESHOLD_MS {
+                self.gaps_over_threshold += 1;
+                self.lost_in_gaps += gap.saturating_sub(self.audio_time(samples));
+                if self.gaps.len() < MAX_RECORDED_CALLBACK_GAPS {
+                    self.gaps.push(CallbackGap {
+                        at_ms: now.saturating_duration_since(started_at).as_millis(),
+                        gap_ms: gap.as_millis(),
+                        samples,
+                    });
+                }
+            }
+        }
+
+        self.last_callback_at = Some(now);
+    }
+
+    /// How much recorded time a callback of this many samples carries.
+    fn audio_time(&self, samples: usize) -> Duration {
+        Duration::from_secs_f64(samples as f64 / self.samples_per_second)
+    }
+
+    /// Cleared on resume so the paused stretch is not read as a dropout.
+    fn resumed(&mut self) {
+        self.last_callback_at = None;
+    }
+
+    /// The interval the stream is supposed to keep, derived from the callback
+    /// size the device chose rather than assumed.
+    fn nominal_interval(&self) -> Duration {
+        self.audio_time(self.nominal_samples)
+    }
+
+    /// A callback carrying more than twice its nominal size arrived late with
+    /// the audio still in it — the stream did not stop, the delivery did.
+    fn oversized_resumes(&self) -> usize {
+        self.gaps
+            .iter()
+            .filter(|gap| gap.samples > self.nominal_samples.saturating_mul(2))
+            .count()
+    }
+
+    /// Which of the record's three hypotheses the cadence supports.
+    ///
+    /// This is the whole reason the instrumentation exists, so it names a
+    /// hypothesis rather than leaving three numbers for a reader to combine —
+    /// but only ever from what was observed, and `no_gaps` on a short capture
+    /// is a positive finding, not an absence of one: it means the loss is
+    /// spread across the whole capture rather than concentrated in stretches,
+    /// which is starvation and not a suspend.
+    fn signature(&self, integrity: &CaptureIntegrity) -> &'static str {
+        if self.gaps_over_threshold == 0 {
+            return if integrity.is_short() {
+                "no_gaps_but_audio_missing"
+            } else {
+                "no_gaps"
+            };
+        }
+
+        let oversized = self.oversized_resumes();
+        match (oversized, self.gaps.len()) {
+            (0, _) => "stream_suspended",
+            (over, total) if over == total => "late_delivery",
+            _ => "mixed",
+        }
+    }
+
+    /// What fraction of the capture's missing audio the named gaps account for.
+    /// `None` when nothing is missing, because the ratio has no denominator.
+    fn share_of_missing_audio(&self, integrity: &CaptureIntegrity) -> Option<f64> {
+        let missing_seconds = integrity.wall_seconds - integrity.recorded_seconds;
+        (missing_seconds > 0.0).then(|| self.lost_in_gaps.as_secs_f64() / missing_seconds)
+    }
+}
+
+/// What the cadence writes to the runtime log at the end of a capture.
+///
+/// The summary line is written on **every** capture, healthy ones included. The
+/// 2026-08-03 measurement only became readable because 345 healthy captures
+/// stood next to the eight broken ones; a cadence line that only appeared on
+/// failures would have no baseline to be read against, and the first question
+/// asked of the first gap would be whether gaps are normal.
+fn cadence_log_lines(cadence: &CallbackCadence, integrity: &CaptureIntegrity) -> Vec<String> {
+    let share = cadence
+        .share_of_missing_audio(integrity)
+        .map(|share| format!("{share:.3}"))
+        .unwrap_or_else(|| "n/a".to_string());
+
+    let mut lines = vec![format!(
+        "[WordScript] Capture callback cadence callbacks={} nominal_samples={} nominal_interval_ms={:.1} longest_gap_ms={} gaps_over_{}ms={} oversized_resumes={} lost_in_gaps_seconds={:.3} share_of_missing={} signature={}",
+        cadence.callbacks,
+        cadence.nominal_samples,
+        cadence.nominal_interval().as_secs_f64() * 1000.0,
+        cadence.longest_gap.as_millis(),
+        CALLBACK_GAP_THRESHOLD_MS,
+        cadence.gaps_over_threshold,
+        cadence.oversized_resumes(),
+        cadence.lost_in_gaps.as_secs_f64(),
+        share,
+        cadence.signature(integrity),
+    )];
+
+    for gap in &cadence.gaps {
+        lines.push(format!(
+            "[WordScript] Capture callback gap at_ms={} gap_ms={} resumed_with_samples={} nominal_samples={}",
+            gap.at_ms, gap.gap_ms, gap.samples, cadence.nominal_samples,
+        ));
+    }
+
+    // The list is bounded and the count is not, so a truncated list says so
+    // rather than letting the log imply the capture had 64 gaps exactly.
+    let recorded = cadence.gaps.len() as u64;
+    if cadence.gaps_over_threshold > recorded {
+        lines.push(format!(
+            "[WordScript] Capture callback gap list truncated recorded={} total={}",
+            recorded, cadence.gaps_over_threshold,
+        ));
+    }
+
+    lines
 }
 
 /// Accounting for the `audio_level` events of one capture.
@@ -845,6 +1112,11 @@ fn toggle_native_capture_pause_inner<R: Runtime>(
             shared.last_voice_at = Instant::now();
             shared.last_level_emit_at =
                 Instant::now() - Duration::from_millis(AUDIO_LEVEL_INTERVAL_MS);
+            // `Stream::pause` stopped the callback outright, so the first one
+            // after `play()` is a gap the length of the pause. Forgetting the
+            // last callback here is what keeps a deliberate pause out of the
+            // dropout accounting.
+            shared.cadence.resumed();
         } else {
             shared.paused = true;
             shared.paused_at = Some(Instant::now());
@@ -923,12 +1195,14 @@ pub fn start_native_capture<R: Runtime + 'static>(
         peak_observed: 0.0,
         clipped_samples: 0,
         measured_samples: 0,
+        sum_squares: 0.0,
         samples: Vec::new(),
         max_samples,
         rebuild_in_progress: false,
         level_emits_attempted: 0,
         level_emits_failed: 0,
         slowest_level_emit: Duration::ZERO,
+        cadence: CallbackCadence::new(stream_config.sample_rate, stream_config.channels),
     }));
 
     let stream = build_stream(
@@ -981,7 +1255,7 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         let _ = active.stream.pause();
     }
 
-    let (has_voice_activity, samples, level, level_emits, effective_wall) = active
+    let (has_voice_activity, samples, level, level_emits, effective_wall, cadence) = active
         .shared
         .lock()
         .map_err(|error| error.to_string())
@@ -998,6 +1272,7 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
                     shared.peak_observed,
                     shared.clipped_samples,
                     shared.measured_samples,
+                    shared.sum_squares,
                 ),
                 LevelEmitSummary::new(
                     effective_wall,
@@ -1006,6 +1281,7 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
                     shared.slowest_level_emit,
                 ),
                 effective_wall,
+                shared.cadence.clone(),
             )
         })?;
 
@@ -1039,6 +1315,23 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         integrity.recorded_seconds,
         integrity.missing_ratio,
         integrity.verdict,
+    ));
+
+    for line in cadence_log_lines(&cadence, &integrity) {
+        runtime_log::record(line);
+    }
+
+    // On every capture, kept or discarded, for the same reason the two lines
+    // above are: the level of a capture that produced a fluent transcript is
+    // the interesting one, and until now it was only ever reported on the
+    // captures that produced nothing at all.
+    runtime_log::record(format!(
+        "[WordScript] Capture input level peak_dbfs={:.1} rms_dbfs={:.1} voice_threshold_dbfs={:.1} clipped_ratio={:.4} verdict={:?}",
+        level.peak_dbfs,
+        level.rms_dbfs,
+        level.voice_threshold_dbfs,
+        level.clipped_ratio,
+        level.verdict,
     ));
 
     if samples.is_empty() || !has_voice_activity {
@@ -1300,6 +1593,11 @@ pub fn rebuild_stream_after_error<R: Runtime + 'static>(
         shared_guard.last_voice_at = Instant::now();
         shared_guard.last_level_emit_at =
             Instant::now() - Duration::from_millis(AUDIO_LEVEL_INTERVAL_MS);
+        // The rebuild's own stretch is already named by the
+        // `Native capture stream rebuilt` line above; carrying it into the gap
+        // list a second time would attribute an explained outage to the
+        // unexplained defect this instrumentation is hunting.
+        shared_guard.cadence.resumed();
     }
 
     runtime_log::record(format!(
@@ -1322,6 +1620,7 @@ fn rollback_rebuild_pause(shared: &Arc<Mutex<SharedCaptureData>>) {
             shared_guard.paused = false;
             shared_guard.paused_at = None;
         }
+        shared_guard.cadence.resumed();
     }
 }
 
@@ -1463,6 +1762,21 @@ fn process_samples<R: Runtime>(
             })
             .collect::<Vec<_>>();
 
+        // Before anything else the callback does with the data, and on every
+        // callback including the muted and paused ones: the question this
+        // answers is whether the callback ran at all, and skipping it under a
+        // condition would put a hole in the very measurement that exists to
+        // find holes. A paused stretch is excluded at the resume instead, where
+        // the cause is known.
+        if paused {
+            shared.cadence.resumed();
+        } else {
+            let started_at = shared.started_at;
+            shared
+                .cadence
+                .observe(started_at, Instant::now(), normalized_samples.len());
+        }
+
         for sample in &normalized_samples {
             peak = peak.max(sample.abs());
             rms += sample.powi(2);
@@ -1478,6 +1792,7 @@ fn process_samples<R: Runtime>(
                 if sample.abs() >= CLIPPING_SAMPLE_THRESHOLD {
                     shared.clipped_samples += 1;
                 }
+                shared.sum_squares += f64::from(*sample) * f64::from(*sample);
             }
             shared.measured_samples += normalized_samples.len() as u64;
             shared.peak_observed = shared.peak_observed.max(peak);
@@ -1925,10 +2240,29 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// A level summary for the tests that are about the verdict rather than
+    /// the mean. The sum of squares is derived from the peak so the fixture is
+    /// at least physically possible: a capture cannot peak at 0.4 and have an
+    /// RMS of zero, and a fixture that says so would be the only place in this
+    /// file where the numbers do not agree with each other.
+    fn level_summary_for_tests(
+        peak: f32,
+        clipped_samples: u64,
+        total_samples: u64,
+    ) -> InputLevelSummary {
+        let typical = f64::from(peak) * 0.25;
+        InputLevelSummary::new(
+            peak,
+            clipped_samples,
+            total_samples,
+            typical * typical * total_samples as f64,
+        )
+    }
+
     fn round_trip(config: &NativeCaptureConfig) -> NativeCaptureConfig {
         let event = AudioReadyEvent {
             event: "audio_ready".to_string(),
-            input_level: InputLevelSummary::new(0.4, 0, 16_000),
+            input_level: level_summary_for_tests(0.4, 0, 16_000),
             capture_integrity: CaptureIntegrity::unmeasured(),
             audio_path: "/tmp/capture.wav".to_string(),
             audio_duration_seconds: 3.0,
@@ -2236,7 +2570,7 @@ mod tests {
 
     #[test]
     fn too_short_captures_explain_themselves() {
-        let level = InputLevelSummary::new(0.4, 0, 16_000).too_short();
+        let level = level_summary_for_tests(0.4, 0, 16_000).too_short();
 
         assert_eq!(level.verdict, InputLevelVerdict::TooShort);
         assert!(level.message().contains("No speech detected"));
@@ -2303,13 +2637,240 @@ mod tests {
             peak_observed: 0.0,
             clipped_samples: 0,
             measured_samples: 0,
+            sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
             slowest_level_emit: Duration::ZERO,
+            cadence: CallbackCadence::new(44_100, 2),
         }
+    }
+
+    // ── Callback cadence ────────────────────────────────────────────────────
+    //
+    // The environment these describe: `host=Alsa sample_rate=44100 channels=2`,
+    // identical across all 497 capture starts in the runtime log. At a 1024
+    // frame period that is 2048 interleaved samples every ~23 ms.
+
+    const PERIOD_SAMPLES: usize = 2_048;
+    const PERIOD_MS: u64 = 23;
+
+    /// Drives a cadence over a synthetic timeline: `gaps` names the callbacks
+    /// after which an extra stretch of silence is inserted, and the size the
+    /// resuming callback then carries.
+    fn cadence_over(
+        callbacks: usize,
+        gaps: &[(usize, u64, usize)],
+    ) -> (CallbackCadence, Duration) {
+        let mut cadence = CallbackCadence::new(44_100, 2);
+        let started_at = Instant::now();
+        let mut clock = started_at;
+
+        for index in 0..callbacks {
+            let gap = gaps.iter().find(|(after, _, _)| *after == index);
+            let (step_ms, samples) = match gap {
+                Some((_, gap_ms, samples)) => (*gap_ms, *samples),
+                None => (PERIOD_MS, PERIOD_SAMPLES),
+            };
+            clock += Duration::from_millis(step_ms);
+            cadence.observe(started_at, clock, samples);
+        }
+
+        let elapsed = clock.saturating_duration_since(started_at);
+        (cadence, elapsed)
+    }
+
+    /// An integrity verdict for a capture that ran `wall` and kept `recorded`.
+    fn integrity_for(wall: Duration, recorded_seconds: f64) -> CaptureIntegrity {
+        CaptureIntegrity::new(
+            wall,
+            samples_for(recorded_seconds, 44_100, 2),
+            44_100,
+            2,
+        )
+    }
+
+    /// The baseline. 345 of the 353 measured captures look like this, and
+    /// without it a gap on a broken capture would have nothing to be unusual
+    /// against.
+    #[test]
+    fn a_steady_stream_reports_no_callback_gaps() {
+        let (cadence, elapsed) = cadence_over(400, &[]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64());
+
+        assert_eq!(cadence.callbacks, 400);
+        assert_eq!(cadence.gaps_over_threshold, 0);
+        assert!(cadence.longest_gap < Duration::from_millis(CALLBACK_GAP_THRESHOLD_MS as u64));
+        assert_eq!(cadence.signature(&integrity), "no_gaps");
+        assert_eq!(cadence.nominal_samples, PERIOD_SAMPLES);
+    }
+
+    /// Hypothesis 1: the stream is suspended and resumed without an error. The
+    /// callback stops arriving, and when it comes back it carries an ordinary
+    /// period — the audio for the gap was never delivered and is gone.
+    #[test]
+    fn a_suspended_stream_is_named_and_its_lost_audio_counted() {
+        // 400 callbacks with one 8 s outage in the middle.
+        let (cadence, elapsed) = cadence_over(400, &[(200, 8_000, PERIOD_SAMPLES)]);
+        let recorded = elapsed.as_secs_f64() - 8.0;
+        let integrity = integrity_for(elapsed, recorded);
+
+        assert_eq!(cadence.gaps_over_threshold, 1);
+        assert_eq!(cadence.oversized_resumes(), 0);
+        assert_eq!(cadence.signature(&integrity), "stream_suspended");
+        assert_eq!(cadence.gaps.len(), 1);
+        assert_eq!(cadence.gaps[0].gap_ms, 8_000);
+        assert_eq!(cadence.gaps[0].samples, PERIOD_SAMPLES);
+
+        // The gap accounts for the loss, which is the finding that would
+        // separate this from a metric artifact.
+        let share = cadence.share_of_missing_audio(&integrity).expect("audio is missing");
+        assert!(
+            (share - 1.0).abs() < 0.05,
+            "the 8 s gap should account for the 8 s of missing audio, got {share}"
+        );
+    }
+
+    /// Hypothesis 3: the samples arrived late in one block rather than being
+    /// lost. The gap is the same length, and the resuming callback carries the
+    /// audio for it — so nothing is missing and the instrumentation must not
+    /// report a suspend.
+    #[test]
+    fn a_late_delivery_is_not_reported_as_a_suspended_stream() {
+        let catch_up = samples_for(8.0, 44_100, 2);
+        let (cadence, elapsed) = cadence_over(400, &[(200, 8_000, catch_up)]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64());
+
+        assert_eq!(cadence.gaps_over_threshold, 1);
+        assert_eq!(cadence.oversized_resumes(), 1);
+        assert_eq!(cadence.signature(&integrity), "late_delivery");
+        assert_eq!(cadence.lost_in_gaps, Duration::ZERO);
+    }
+
+    /// Hypothesis 2: callback starvation. No single stretch is long enough to
+    /// name, and yet the audio is short — which is a positive finding about
+    /// where to look, not an absence of one.
+    #[test]
+    fn audio_missing_without_a_single_gap_is_its_own_signature() {
+        let (cadence, elapsed) = cadence_over(400, &[]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64() * 0.5);
+
+        assert!(integrity.is_short());
+        assert_eq!(cadence.gaps_over_threshold, 0);
+        assert_eq!(cadence.signature(&integrity), "no_gaps_but_audio_missing");
+        assert_eq!(
+            cadence.share_of_missing_audio(&integrity),
+            Some(0.0),
+            "no gap can account for any of the loss"
+        );
+    }
+
+    /// A deliberate pause stops the cpal callback outright, so the first
+    /// callback after it is a gap the length of the pause. Counting it would
+    /// reproduce, one layer down, exactly the artifact ADR 0079 removed from
+    /// `shortfall_ratio`.
+    #[test]
+    fn a_pause_is_not_counted_as_a_callback_gap() {
+        let mut cadence = CallbackCadence::new(44_100, 2);
+        let started_at = Instant::now();
+        let mut clock = started_at;
+
+        for _ in 0..10 {
+            clock += Duration::from_millis(PERIOD_MS);
+            cadence.observe(started_at, clock, PERIOD_SAMPLES);
+        }
+
+        // Paused for two minutes, then resumed.
+        cadence.resumed();
+        clock += Duration::from_secs(120);
+        cadence.observe(started_at, clock, PERIOD_SAMPLES);
+
+        assert_eq!(cadence.gaps_over_threshold, 0);
+        assert_eq!(cadence.gaps, Vec::new());
+        assert!(cadence.longest_gap < Duration::from_millis(CALLBACK_GAP_THRESHOLD_MS as u64));
+    }
+
+    /// The gap list is bounded because it lives in a realtime audio callback.
+    /// A truncated list has to say so, or the log implies the capture had
+    /// exactly `MAX_RECORDED_CALLBACK_GAPS` gaps.
+    #[test]
+    fn a_truncated_gap_list_says_it_was_truncated() {
+        // From the second callback onwards, so every one of them has a
+        // predecessor to be a gap against.
+        let gaps: Vec<(usize, u64, usize)> = (0..MAX_RECORDED_CALLBACK_GAPS + 5)
+            .map(|index| (index * 2 + 1, 500, PERIOD_SAMPLES))
+            .collect();
+        let (cadence, elapsed) = cadence_over(200, &gaps);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64() * 0.5);
+
+        assert_eq!(cadence.gaps.len(), MAX_RECORDED_CALLBACK_GAPS);
+        assert_eq!(
+            cadence.gaps_over_threshold,
+            MAX_RECORDED_CALLBACK_GAPS as u64 + 5
+        );
+
+        let lines = cadence_log_lines(&cadence, &integrity);
+        assert!(
+            lines.iter().any(|line| line.contains("gap list truncated recorded=64 total=69")),
+            "{lines:#?}"
+        );
+    }
+
+    /// A healthy capture writes the line too. The measurement that found this
+    /// defect only worked because the healthy captures were in the same log.
+    #[test]
+    fn the_cadence_line_is_written_on_a_healthy_capture_too() {
+        let (cadence, elapsed) = cadence_over(400, &[]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64());
+        let lines = cadence_log_lines(&cadence, &integrity);
+
+        assert_eq!(lines.len(), 1, "{lines:#?}");
+        assert!(lines[0].contains("Capture callback cadence callbacks=400"), "{}", lines[0]);
+        assert!(lines[0].contains("signature=no_gaps"), "{}", lines[0]);
+        assert!(lines[0].contains("gaps_over_200ms=0"), "{}", lines[0]);
+        assert!(lines[0].contains("share_of_missing=0.000"), "{}", lines[0]);
+    }
+
+    /// A share with no denominator is printed as `n/a` rather than as zero.
+    /// Zero would read as "the gaps explain none of the loss", which is a
+    /// finding, and there is no loss to have a finding about.
+    #[test]
+    fn a_capture_that_lost_nothing_reports_no_share_rather_than_zero() {
+        let (cadence, _) = cadence_over(400, &[]);
+        let integrity = CaptureIntegrity::new(
+            Duration::from_secs(10),
+            samples_for(10.0, 44_100, 2),
+            44_100,
+            2,
+        );
+
+        assert_eq!(cadence.share_of_missing_audio(&integrity), None);
+        assert!(
+            cadence_log_lines(&cadence, &integrity)[0].contains("share_of_missing=n/a"),
+            "{:?}",
+            cadence_log_lines(&cadence, &integrity)[0]
+        );
+    }
+
+    /// The gap line names the window a `verdict=short` line points at, and the
+    /// size of the callback that ended it — which is what separates the three
+    /// hypotheses when the log is read.
+    #[test]
+    fn a_gap_line_carries_the_window_and_the_resuming_callback_size() {
+        let (cadence, elapsed) = cadence_over(400, &[(200, 8_000, PERIOD_SAMPLES)]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64() - 8.0);
+        let lines = cadence_log_lines(&cadence, &integrity);
+
+        assert_eq!(lines.len(), 2, "{lines:#?}");
+        assert!(lines[0].contains("signature=stream_suspended"), "{}", lines[0]);
+        assert!(lines[0].contains("gaps_over_200ms=1"), "{}", lines[0]);
+        assert!(
+            lines[1].contains("gap_ms=8000") && lines[1].contains("resumed_with_samples=2048"),
+            "{}",
+            lines[1]
+        );
     }
 
     #[test]
@@ -2388,7 +2949,7 @@ mod tests {
     fn an_audio_ready_payload_without_integrity_is_not_measured() {
         let event = AudioReadyEvent {
             event: "audio_ready".to_string(),
-            input_level: InputLevelSummary::new(0.4, 0, 16_000),
+            input_level: level_summary_for_tests(0.4, 0, 16_000),
             capture_integrity: CaptureIntegrity::new(
                 Duration::from_secs(60),
                 samples_for(30.0, 16_000, 1),
@@ -2484,7 +3045,7 @@ mod tests {
         // This is the case that used to vanish: the capture is discarded and
         // the user is told nothing, so a microphone at a low input level looks
         // exactly like a broken app.
-        let summary = InputLevelSummary::new(0.01, 0, 48_000);
+        let summary = level_summary_for_tests(0.01, 0, 48_000);
         assert_eq!(summary.verdict, InputLevelVerdict::TooQuiet);
         assert!(summary.peak_dbfs < summary.voice_threshold_dbfs);
         assert!(summary.message().contains("dBFS"));
@@ -2493,7 +3054,7 @@ mod tests {
 
     #[test]
     fn a_dead_input_is_reported_as_silent_not_merely_quiet() {
-        let summary = InputLevelSummary::new(0.0, 0, 48_000);
+        let summary = level_summary_for_tests(0.0, 0, 48_000);
         assert_eq!(summary.verdict, InputLevelVerdict::Silent);
         assert_eq!(summary.peak_dbfs, -120.0);
         assert!(summary.message().contains("muted"));
@@ -2501,9 +3062,77 @@ mod tests {
 
     #[test]
     fn sustained_full_scale_samples_are_reported_as_clipping() {
-        let summary = InputLevelSummary::new(1.0, 1_000, 48_000);
+        let summary = level_summary_for_tests(1.0, 1_000, 48_000);
         assert_eq!(summary.verdict, InputLevelVerdict::Clipping);
         assert!(summary.message().contains("clipping"));
+    }
+
+    /// The case the mean exists for, and the reason the peak alone was not
+    /// enough: a capture whose loudest instant clears the speech threshold
+    /// while everything else sits far below it. The verdict is `Ok`, the
+    /// transcript reads like any other, and only the mean says the microphone
+    /// was too quiet.
+    #[test]
+    fn a_quiet_capture_with_one_loud_instant_is_only_visible_in_the_mean() {
+        let total = 48_000;
+        let typical = 0.004_f64;
+        let summary =
+            InputLevelSummary::new(0.30, 0, total, typical * typical * total as f64);
+
+        assert_eq!(summary.verdict, InputLevelVerdict::Ok);
+        assert!(
+            summary.peak_dbfs > summary.voice_threshold_dbfs,
+            "the peak clears the bar: {} vs {}",
+            summary.peak_dbfs,
+            summary.voice_threshold_dbfs
+        );
+        assert!(
+            summary.rms_dbfs < summary.voice_threshold_dbfs,
+            "the mean does not: {} vs {}",
+            summary.rms_dbfs,
+            summary.voice_threshold_dbfs
+        );
+    }
+
+    /// A capture at a healthy level has a mean above the threshold too, so the
+    /// number above is a signal rather than something every capture reports.
+    #[test]
+    fn a_healthy_capture_has_a_mean_above_the_speech_threshold() {
+        let total = 48_000;
+        let typical = 0.08_f64;
+        let summary =
+            InputLevelSummary::new(0.45, 0, total, typical * typical * total as f64);
+
+        assert_eq!(summary.verdict, InputLevelVerdict::Ok);
+        assert!((summary.rms - 0.08).abs() < 0.001, "rms {}", summary.rms);
+        assert!(summary.rms_dbfs > summary.voice_threshold_dbfs);
+    }
+
+    /// A capture that measured nothing reports silence rather than a division
+    /// by zero.
+    #[test]
+    fn a_capture_with_no_measured_samples_reports_a_silent_mean() {
+        let summary = InputLevelSummary::new(0.0, 0, 0, 0.0);
+
+        assert_eq!(summary.rms, 0.0);
+        assert_eq!(summary.rms_dbfs, -120.0);
+    }
+
+    /// An older payload has no mean in it, and must deserialize to silence
+    /// rather than fail the whole capture (ADR 0015).
+    #[test]
+    fn a_level_payload_without_a_mean_still_loads() {
+        let summary: InputLevelSummary = serde_json::from_value(serde_json::json!({
+            "peak": 0.4,
+            "peak_dbfs": -8.0,
+            "clipped_ratio": 0.0,
+            "verdict": "ok",
+            "voice_threshold_dbfs": -34.0,
+        }))
+        .expect("a pre-mean payload");
+
+        assert_eq!(summary.rms, 0.0);
+        assert_eq!(summary.rms_dbfs, -120.0);
     }
 
     #[test]
@@ -2511,13 +3140,13 @@ mod tests {
         // A handful of full-scale samples in a long capture is a transient,
         // not a badly set input level. Flagging it would train the user to
         // ignore the warning.
-        let summary = InputLevelSummary::new(1.0, 10, 48_000);
+        let summary = level_summary_for_tests(1.0, 10, 48_000);
         assert_eq!(summary.verdict, InputLevelVerdict::Ok);
     }
 
     #[test]
     fn a_healthy_speech_peak_is_reported_as_ok() {
-        let summary = InputLevelSummary::new(0.4, 0, 48_000);
+        let summary = level_summary_for_tests(0.4, 0, 48_000);
         assert_eq!(summary.verdict, InputLevelVerdict::Ok);
         assert!(summary.peak_dbfs > summary.voice_threshold_dbfs);
     }
@@ -2526,13 +3155,13 @@ mod tests {
     fn clipping_outranks_a_quiet_peak() {
         // Both cannot be acted on at once; the distorting one is the problem
         // worth naming.
-        let summary = InputLevelSummary::new(0.005, 5_000, 48_000);
+        let summary = level_summary_for_tests(0.005, 5_000, 48_000);
         assert_eq!(summary.verdict, InputLevelVerdict::Clipping);
     }
 
     #[test]
     fn an_empty_measurement_does_not_divide_by_zero() {
-        let summary = InputLevelSummary::new(0.0, 0, 0);
+        let summary = level_summary_for_tests(0.0, 0, 0);
         assert_eq!(summary.clipped_ratio, 0.0);
         assert_eq!(summary.verdict, InputLevelVerdict::Silent);
     }
@@ -2646,12 +3275,14 @@ mod tests {
             peak_observed: 0.0,
             clipped_samples: 0,
             measured_samples: 0,
+            sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
             slowest_level_emit: Duration::ZERO,
+            cadence: CallbackCadence::new(44_100, 2),
         }));
 
         let reason = capture_stop_reason(
@@ -2680,12 +3311,14 @@ mod tests {
             peak_observed: 0.0,
             clipped_samples: 0,
             measured_samples: 0,
+            sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
             slowest_level_emit: Duration::ZERO,
+            cadence: CallbackCadence::new(44_100, 2),
         }));
 
         let reason = capture_stop_reason(
@@ -2714,12 +3347,14 @@ mod tests {
             peak_observed: 0.0,
             clipped_samples: 0,
             measured_samples: 0,
+            sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
             slowest_level_emit: Duration::ZERO,
+            cadence: CallbackCadence::new(44_100, 2),
         };
 
         let reason = capture_stop_reason(
@@ -2810,12 +3445,14 @@ mod tests {
             peak_observed: 0.0,
             clipped_samples: 0,
             measured_samples: 0,
+            sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
             level_emits_attempted: 0,
             level_emits_failed: 0,
             slowest_level_emit: Duration::ZERO,
+            cadence: CallbackCadence::new(44_100, 2),
         };
 
         let reason = capture_stop_reason(
@@ -2844,12 +3481,14 @@ mod tests {
             peak_observed: 0.0,
             clipped_samples: 0,
             measured_samples: 0,
+            sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
             level_emits_attempted: 0,
             level_emits_failed: 0,
             slowest_level_emit: Duration::ZERO,
+            cadence: CallbackCadence::new(44_100, 2),
         }));
 
         rollback_rebuild_pause(&shared);
@@ -2874,12 +3513,14 @@ mod tests {
             peak_observed: 0.0,
             clipped_samples: 0,
             measured_samples: 0,
+            sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
             rebuild_in_progress: true,
             level_emits_attempted: 0,
             level_emits_failed: 0,
             slowest_level_emit: Duration::ZERO,
+            cadence: CallbackCadence::new(44_100, 2),
         }));
 
         rollback_rebuild_pause(&shared);
