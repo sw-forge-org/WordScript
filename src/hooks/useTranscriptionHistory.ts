@@ -64,6 +64,13 @@ export function useTranscriptionHistory(isActive: boolean) {
       const next = await invoke<TranscriptionHistoryEntry[]>("transcription_history_entries", {
         query: nextQuery,
       });
+      /* A RUNTIME THAT ANSWERS WITH ANYTHING BUT A LIST HAS NOT ANSWERED, and
+         it is not a machine with no history. A command the host does not know
+         resolves `undefined` — which is exactly what `WorkspaceWindow.test.tsx`
+         mocks — and the comparison below then reads `.length` off it and takes
+         the whole window down with it. Leg 4b filed this as finding 4 against
+         the enumeration commands; the same rule reaches every list read. */
+      if (!Array.isArray(next)) return null;
       setEntries((current) => (areHistoryEntriesEqual(current, next) ? current : next));
       setError((current) => (current === null ? current : null));
       return next;

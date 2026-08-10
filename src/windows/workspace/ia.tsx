@@ -102,7 +102,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     id: "home",
     label: "Home",
     icon: "home",
-    banner: saysSo("Drawn, not wired — the hero, the decision inbox and the record are sample data."),
+    banner: saysSo("Wired in part — the decision inbox has no receiver for any of its three sources, so nothing is drawn there."),
     render: (props) => <HomeScreen {...props} />,
   },
   {
@@ -197,7 +197,7 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "privacy",
     label: "Privacy & Data",
     icon: "privacy",
-    banner: saysSo("Drawn, not wired — retention and export do not act on this machine's data yet."),
+    banner: saysSo("Wired in part — Full export, Full import and Reset all settings have no command in the runtime."),
     render: (props) => <PrivacyScreen {...props} />,
   },
   {
