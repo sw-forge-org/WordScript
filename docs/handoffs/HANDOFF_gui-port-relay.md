@@ -1969,6 +1969,23 @@ orders are frequently that area's own, verbatim. `git show
 8f9077e^:src/components/settings/InputTab.tsx` and so on — the file list is `git
 ls-tree -r 8f9077e^ --name-only src/components/settings/`.
 
+**The order, and it is not arbitrary**
+
+1. **Hotkeys.** `HotkeyRecorder` was kept unreferenced for exactly this, and
+   `InputTab.tsx` plus `ShortcutField.tsx` in `8f9077e^` are this screen's
+   trigger half almost verbatim. Cheapest real one.
+2. **History.** `useTranscriptionHistory` was kept for it and `RawPanel` stops
+   being orphaned. Bigger than it looks — six per-row controls — and two of its
+   facts have no runtime at all, so it ends the leg wired in part.
+3. **Profiles, and do it BEFORE Models.** It is the first screen in the whole
+   product with text fields, which makes it the first caller `patchText` has
+   ever had. P1 is built and has never been exercised; a debounce nobody has run
+   is a debounce nobody has tested.
+4. **AI Models.** Small now under ADR 0065 — one lane wired, three disabled —
+   but ask that ADR's open question first.
+5. **Home and Privacy & Data.** Both partial, both keep their banners, both
+   cheap. Good work to end a leg on rather than to start one.
+
 **The rule you will be judged on**
 
 **Never render fake readiness** (rule 7). A screen that reads three of its eight
@@ -2065,6 +2082,14 @@ you do remove one, say so with what you checked.
   build** — killing cargo mid-link costs a full dependency rebuild.
 - **Do not `pkill -f vite`.** It matches the agent shell's own command line and
   kills the shell. Kill by PID.
+
+**Two things beside the ten, and they are yours if you have room.** The `Help`
+modal (ADR 0066) and the search bar with the command palette behind it — see the
+foot of Leg 4b's record. The search bar is a VISIBLE ABSENCE in the shipped
+sidebar rather than a deferred feature: `NavSearch` is ported 1:1 and mounted
+nowhere, and the palette is a port (`demo.js:8031–8366`) rather than a design.
+Three legs carried it as a principle when it was a gap. If you cannot fit them,
+carry them into the 4d prompt by name.
 
 **Split again if you run long.** Leg 2 split three times and Leg 4 has split
 once; each split was right. Six wireable screens is more than one session if
