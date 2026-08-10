@@ -24,22 +24,30 @@ Status: 2026-08-04
   Agents, Integrations) -- SYSTEM (Delivery & Insert, Privacy & Data,
   Diagnostics, About & Updates). Fourteen flat areas became four views and ten
   sections; the longest list anybody scans dropped from 14 to 4.
-- **What is wired, and it is the shell only.** The status strip reads the
-  session status, the lane and the delivery target off the runtime; the profile
-  row switches the active profile and refuses during a session because the
-  runtime does; the overlay's deep link resolves. **Every view and every section
-  is the ported drawing carrying sample data, and each says so on itself** until
-  Leg 4 wires it. The fourteen pre-port areas were deleted in the commit that
-  replaced them (ADR 0054), and the runtime behaviour they carried -- provider
-  configuration, hotkey registration, history, the diagnostics runs -- is Leg
-  4's to restore onto the ported screens.
+- **What is wired, as of 2026-08-10: ten of the fourteen mounted surfaces.**
+  The shell reads the runtime — the status strip states the session status, the
+  lane and the delivery target; the profile row switches the active profile and
+  refuses during a session because the runtime does; the overlay's deep link
+  resolves. **Fully wired:** About & Updates, Diagnostics, General, Delivery &
+  Insert, Hotkeys. **Wired in part, each stating on itself exactly what it
+  cannot read:** History, Profiles, AI Models, Home, Privacy & Data. **Not
+  wireable at all**, and carrying a banner for that reason rather than for a
+  missing commit: Context (V2), Notes & Meetings (V2), Agents (Phase 8,
+  ADR 0030), Integrations (Phase 8).
+- **A control the runtime cannot answer for is drawn and inert rather than
+  deleted** (ADR 0065, ADR 0067): three of four provider lanes, seven of eight
+  provider chips, the profile-list editors, `Show in file manager`, the full
+  export/import/reset trio, and the seventh processing mode. Every one carries
+  its reason. The fourteen pre-port areas were deleted in the commit that
+  replaced them (ADR 0054), and the runtime behaviour they carried is now back
+  on the ported screens.
 - Settings IA restructuring (2026-06-21, superseded 2026-08-05): the pre-port
   tab structure was audited for redundancy and findability and re-ordered.
   Recorded here because the consolidations survived the port -- one recovery
   surface, one history surface, Overlay extracted from Input, About slimmed to
   version plus release path -- while the areas that carried them did not.
-- **The settings rework is a port in progress. The shell has landed; the wiring
-  has not.** What exists is the productive component library
+- **The settings rework is a port in progress. The shell and the wiring have
+  landed; two surfaces and the runtime contracts have not.** What exists is the productive component library
   (`src/components/shell/`, `src/styles/shell.css`) ported 1:1 from the
   settings-rework prototype, the 25 screens built on it in `src/screens/`, one
   design-time route `/gallery` where they are displayed and judged (ADR 0055),
@@ -47,7 +55,10 @@ Status: 2026-08-04
   screen is *ported* when it stands in the gallery and *shipped* when it is
   wired; **all 25 are ported** as of 2026-08-04, each verified by computed-style
   diff against the running prototype in every state it has (`npm run
-  port:diff`), and **none is wired** yet. With the last one standing, the
+  port:diff`), and as of 2026-08-10 **every screen that can be wired is** —
+  what is left is not wiring but two surfaces the port never carried (the
+  command palette and the Help modal) and four features that do not exist yet.
+  With the last one standing, the
   prototype turned from source into provenance (ADR 0057) and the gallery is the
   source. The wiring and the runtime contracts are later legs — see
   `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what is next,

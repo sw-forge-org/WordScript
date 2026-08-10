@@ -1163,6 +1163,62 @@ rather than from the code. Two became ADRs; the rest are contracts.
   three entries in the gallery. **Nothing about Context is Leg 4c's**, and
   nobody should start deriving a design from the drawing in the meantime.
 
+**Leg 4c's additions to the same list.** Every one was found by trying to make
+a drawn control act, which is why neither Leg 2 nor Leg 4b could have found
+them: the drawing offers the control and the runtime turns out to have nothing
+behind it. Two of them are the same shape and it is worth naming — **a control
+whose destination was never drawn**. That is not a missing capability and not a
+missing command; it is a missing SURFACE, and the gallery has to grow it before
+anybody can wire it (ADR 0057).
+
+- **There is no seventh mode, and two screens now say so.** ADR 0041 gave
+  Translate a mode slot; `ProcessingMode` is six values and `ModeHotkeys` six
+  fields plus the picker. Hotkeys' seventh key and Profiles' seventh option are
+  both drawn and disabled for it. **Leg 5 contract**, and it is one variant on
+  an enum plus one config field — the cheapest thing on this list and the most
+  visible.
+- **The trigger-status badge has no cause, only a sentence.** `BindingInfo`
+  answers `registered` plus an error string, so the drawn `Taken by the desktop`
+  cannot be produced: the badge says `Registered` / `Not registered` /
+  `Disabled` / `Not checked` and the sentence goes in the hint. **A drawing that
+  is more specific than the runtime**, not a gap to fill — unless somebody wants
+  the runtime to classify a refusal, which would be a real contract.
+- **Nothing clears a mode hotkey.** `ShortcutField`'s manual-entry field was the
+  pre-port way to empty a slot, and the ported `HotkeyButton` has no clear
+  affordance. The recorder can only set. **A missing control**, and it needs the
+  gallery first.
+- **The profile lists have no editor.** `dictionary_entries` and
+  `snippet_entries` render and delete; Add and Edit have no form, no dialog and
+  no inline field anywhere in the drawing. So does New profile — `createTextProfile`
+  works and nothing on the surface can rename what it produces. **Three missing
+  surfaces**, and they are the largest single hole this leg found.
+- **`analyze_text_rules` has no answer surface.** It is a real command and two
+  drawn buttons call for it — *Check against a sample* and *Show the effective
+  transcription bias* — and there is nowhere drawn to put what it returns. **A
+  missing surface**, and the command is already built, which makes it the
+  cheapest of the five to finish once something is drawn.
+- **`describeTextProfileWorkMode` is not the profile list's subline.** The
+  drawing gives each row a discriminating pair — `Auto · Insert at cursor`,
+  `Rewrite · Client register` — and the runtime's describe function returned the
+  identical string for all six profiles on this machine, so the column stopped
+  telling them apart. **A UI derivation nobody has decided**, the same shape as
+  History's badges, and Leg 4d should decide it the same way.
+- **The decision inbox has no receiver for any of its three sources**, which
+  Leg 2b filed as a drawing and Leg 2d as two gestures. Wiring Home turned it
+  into a measurement: all three are absent, so on the product nothing is drawn
+  there at all. **Leg 5 contract ×3** — the desk (Phase 8), an open question on
+  a note (V2), and a queue of insert fallbacks, which is the only one of the
+  three that could exist today.
+- **`useTranscriptionHistory` crashed the window on a runtime that did not
+  answer.** Not a contract — a defect, fixed in this leg, and recorded because
+  it is Leg 4b's finding 4 reaching a second read: `Array.isArray` before
+  `setState`, and "not an array" is "did not answer" rather than "none". It only
+  became reachable when a second view mounted the hook.
+- **The Delivery & Insert screen's history claim is the third of its kind.**
+  Not new; noted because History's foot, Leg 2d's *folders are directories* and
+  the Markdown-file promise are now three statements about where user data
+  lives, and one of them is being read by two screens.
+
 **THE PROTOTYPE'S STATUS IS FLIPPED.** All 25 screens stand, so ADR 0057's
 condition is met: the prototype is provenance, the gallery is the source, and
 rule 4b has expired. Said here, in the rules section above, and in
@@ -1536,6 +1592,217 @@ the overlay out of scope.
   lets ONE build be captured twice, at the top and at the bottom. That is how
   the pill and the notification were both checked without a fourth build.
 - The AppImage step still fails on `linuxdeploy`; the binary is built and runs.
+
+### Leg 4c — the last six wireable screens, and the rule that had no styling
+
+**EVERY WIREABLE SCREEN IS WIRED. TEN ROWS BECAME FOUR.** The six the Leg 4c
+prompt named — Hotkeys, History, Profiles, AI Models, Home, Privacy & Data —
+are all done, in that order, and the four that remain are the four that were
+never Leg 4's: Context, Notes & Meetings, Agents and Integrations. Every one of
+those keeps its banner and its gallery entries, and deleting one would be the
+error rather than the goal.
+
+**One of the six lost its banner outright: Hotkeys.** Every fact on it has a
+source, so it left the gallery in the commit that wired it and its assertions
+moved out of the fidelity suite — a retired screen has no measurement left.
+**The other five are wired IN PART and still say so**, which is
+what the prompt asked for and what `registry.test.tsx` enforces: History, Home,
+Profiles, AI Models and Privacy & Data all read the runtime for most of what
+they draw, keep a banner naming exactly what they cannot read, and keep their
+gallery entry with it.
+
+**THE ONE THING TO TAKE FROM THIS LEG: A RULE WITH NO STYLING IS NOT A RULE.**
+ADR 0065 says a control that cannot act is disabled rather than deleted, and
+that the vocabulary for it already exists. It half did. `Button`, `IconButton`,
+`Toggle` and `Stepper` each had a `[disabled]` rule in `shell.css`; **a segment,
+a provider chip, a select, a text field, a hotkey target and a flag did not.**
+So three greyed-out provider lanes were not greyed out, seven inert provider
+chips looked exactly like the one that works, and every unit test asserting
+`toBeDisabled()` passed the whole time. It was found in WebKitGTK, by looking.
+Five rules and one `:has()` later it is true. **If a leg adds a state, it checks
+that the design system draws that state** — jsdom cannot, and the gallery cannot
+either, because the prototype draws no disabled control anywhere.
+
+**THE SEAM GREW A THIRD SHAPE AND IT WAS FORCED BY THE GUARD, not chosen.**
+`WiredScreenProps.runtime` is required, which is what retires a gallery entry
+(ADR 0057). But `registry.test.tsx` also holds the other direction: a screen
+with a banner must KEEP its entry — and an entry renders `() => <X />` with no
+props. A partly wired screen is therefore both things at once, and the only
+shape that satisfies both is `PartlyWiredScreenProps`, whose `runtime` is
+optional and whose absence means "you are standing in the gallery".
+
+It is still ONE implementation, and that is the whole discipline of it: **what
+branches is where a row comes FROM, not how it is drawn.** History computes a
+`HistoryRow[]` from `transcription_history_entries` or from `data.ts` and
+renders one list; Home does the same; Profiles branches per control and meets on
+the same card. When the last unreadable fact on such a screen gets a source, it
+moves to `WiredScreenProps` and loses banner and entry in one commit.
+
+**P1 HAS BEEN RUN, AND IT HOLDS.** Leg 4b built the debounce and said plainly
+that nothing called it. Profiles' Context tab is the first text field in the
+product, so `patchText` finally has a caller — and `useConfigDraft.test.tsx` now
+exercises the mechanism rather than the screen: the draft is in the form on the
+keystroke, one write per burst instead of five a second, an explicit flush
+cancels the pending timer, an unmount loses nothing, a refused save puts the
+form back, and **a discrete patch flushes the pending text commit first**, so a
+keystroke typed before a toggle cannot land after it and revert it. That last
+one is the reason the hook is shaped the way it is and it had never been tested.
+
+Adding a word on the Words tab takes `patch` and not `patchText`, and the
+distinction is the seam rather than an oversight: it is one word and one write.
+
+**WHAT WAS DELIBERATELY LEFT ABSENT OR INERT RATHER THAN INVENTED.** This is
+what the leg was to be judged on, so here is every place it bit, and they are
+not six different ways this time — they are three kinds.
+
+*Inert with the reason on it (ADR 0065), which is most of them.*
+
+1. **Translate has no runtime mode**, on both Hotkeys and Profiles. ADR 0041
+   gave it a slot; `ProcessingMode` has six values.
+2. **`Show in file manager` has no path and no command**, on History and on
+   Home. The reason IS the button's label, because `IconButton`'s label is its
+   tooltip — a disabled control with no explanation is the same defect quieter.
+3. **Add, Edit and New profile have no drawn editor.** Delete needs none, so
+   Delete acts.
+4. **`Check against a sample` and `Show the effective bias`** are
+   `analyze_text_rules`, a real command with nowhere drawn to put its answer.
+5. **Three lanes, seven provider chips and ~40 job-row controls on AI Models.**
+6. **Full export, Full import and Reset all settings** have no command at all.
+7. **The profile health flag's click.** The count is read and the flag
+   sentences are the button's `title`, because that is the only place on the
+   drawing they fit.
+
+*Absent, because the drawing's own rule says absent.*
+
+8. **Home's decision inbox is not drawn on the product.** ADR 0044's three
+   sources have no receiver, and the drawing already states the rule: *"Nothing
+   is drawn here when nothing is owed; a standing all clear is furniture."*
+   This is the one place on the surface where inventing content would invent a
+   QUESTION rather than a label, and it is why Home keeps its banner.
+
+*Stated as the runtime's, where the drawing drew one member of a family.*
+
+9. **History's foot no longer promises a folder of Markdown files.** The
+   runtime keeps one `history.json` and no per-transcript file exists, so the
+   sentence states `transcription_history_storage_status`'s answer and both
+   retention numbers from the config. `RawTranscript.path` is optional now and
+   the wired path passes none. The Markdown-file PROMISE stays a Leg 5 contract;
+   what may not stand is the product sending somebody to a folder that is not
+   there.
+10. **Home's hero says what the activation mode does.** "Hold in any app to
+    dictate / Release to stop" is true of one of the three modes
+    `activation_mode` takes, and the shipped default is not it. The drawing is
+    kept verbatim as the `hold` member.
+11. **Hotkeys' activation hint and closing note** are the runtime's timing
+    constants and this session's platform summary.
+
+**THE BADGE DERIVATION IS DECIDED AND WRITTEN DOWN**, because §2.5 recorded it
+as nobody's decision. It is in `badgesFor` in `History.tsx` with the reasoning,
+and in tests. `Failed` / `Empty` from `status`; ONE delivery badge from
+`insert_mode` and never two; `Retried once` says *once* because `retry_of` links
+exactly one level and the runtime keeps no count, so a second retry is a third
+record rather than a "twice".
+
+**And one place the derivation departs from the drawing's sample, on purpose.**
+`Audio swept` is not drawn on every record whose audio is gone. A successful run
+deletes its audio, so keying it off `audio_path` alone would put that badge on
+nearly every row — which is exactly the defect §11.20 names, two thirds of a
+list reporting that things went as expected. "The audio is gone" already lives
+on the control it affects: Retry disables itself and says why. The badge appears
+only where the fact is unexpected — a record that FAILED, which you would
+reasonably retry, and cannot.
+
+**ADR 0065's OPEN POINT WAS ASKED BEFORE ANYTHING WAS GREYED OUT, and it is
+ADR 0067.** The owner's answer on 2026-08-10: *treat `local_preview` just like
+the other unpublished AI model providers everywhere they come up — preview
+badge, etc. — because it's not fully implemented yet.* So the governing property
+is CONSISTENCY rather than location, and it splits three ways: a surface that
+OFFERS a lane makes it inoperable; a surface that REPORTS what is running states
+it and marks it (`Local runtime · <model> · preview` in the status strip); a
+diagnostic prints the runtime identifier unchanged, because a diagnostic that
+prettifies a value cannot be used to diagnose anything. Nothing leaves the
+runtime.
+
+**Findings for Leg 4d.**
+
+1. **THE NATIVE HOST IS THE ONLY INSTRUMENT FOR A DISABLED STATE.** Leg 4b said
+   a wired screen cannot be looked at in a browser; the sharper version is that
+   `toBeDisabled()` in jsdom asserts the attribute and says nothing about
+   whether a reader can see it. Every one of the five missing CSS rules passed
+   its test.
+2. **This machine disagrees with the drawing on more than Delivery did.** The
+   config's trigger is a bare `Shift` with `double_tap`, pause is `Space`, abort
+   is `Alt`; the drawing draws `Ctrl+Super` / `Ctrl+Space` / `Ctrl+Alt` on
+   `Tap`. Retention is 7 days and 200 entries against the drawn 90 and 500.
+   There are 174 transcriptions and 6 profiles against the drawn 7 and 3. Six
+   screens, and every one of them caught something.
+3. **`describeTextProfileWorkMode` returned the same string for all six
+   profiles**, so the profile list's discriminating subline stopped
+   discriminating. The drawing's `Auto · Insert at cursor` / `Rewrite · Client
+   register` is a different derivation from the runtime's sentence. On §2.5,
+   and it is History's-badges-shaped: decide it, do not guess it.
+4. **A JSX `{" "}` is a second text node and `port:diff` sees it.** Three spans
+   in Home's hero measured 0.015 px wide of the prototype until the space moved
+   inside the string. Two style regressions were introduced this leg and both
+   were caught only by running the script; neither is visible to a person.
+5. **`port:diff` is 28 measurements now, was 29.** `hotkeys` left the gallery
+   with its screen. Every remaining one is **structural 0 | style 0** and the 34
+   text differences are Leg 2b's recorded soft divergences, unchanged. The list
+   is in the 4d prompt so the number stays reproducible.
+6. **Four orphans left**, not five. `RawPanel` is History's and is in use.
+   `DangerRow`, `Inspector`, `PaneGroup` and `VolumeSlider` are still referenced
+   by nothing and nothing was deleted.
+7. **The AppImage step still fails on linuxdeploy** and the binary is still
+   built; two builds were spent this leg, 3m 35s each, and batching the screens
+   into one walk is what kept it to two.
+8. **`tauri.conf.json` still names the wrong thing twice**, `mode_router.rs:7`
+   still cites `OverlayGallery.tsx`, and the gallery still has no door in the
+   native host. Six legs have carried these; all three are one file Leg 4 may
+   not open (rule 6).
+
+**The native host, and it is where this leg paid for itself twice.** Two builds,
+each walking the surfaces on a timer, `import -window` at the marks.
+
+- **Hotkeys states this machine and the drawing is wrong about all four facts.**
+  `Shift`, `Space`, `Alt`, all three `Registered`, and `Double tap` selected
+  with the runtime's own sentence carrying its `400 ms` window.
+- **History reads 174 transcriptions**, real German dictations from 02:46, every
+  one carrying `Clipboard only` derived from `insert_mode` and nothing else —
+  the expected case carries no badge, which is the derivation working.
+- **Profiles reads six profiles** with the active one badged, `New profile`
+  visibly inert, and the six sublines identically worded, which is finding 3.
+- **Privacy reads 200 entries and 7 days**, against the drawn 500 and 90.
+- **Home says "Double tap in any app to dictate" over a single `Shift` cap**,
+  states `Auto` from the mode router, lists five real records, and draws no
+  decision inbox at all.
+- **AI Models shows the ADR working**: four lanes drawn with three dimmed, eight
+  provider chips drawn with seven dimmed, and the banner naming both ADRs. It
+  is also the screenshot that found the missing CSS, because the first build
+  showed the same screen with nothing dimmed.
+
+**What is left. Four rows, and none of them is wiring.**
+
+| Screen | State | Why |
+| --- | --- | --- |
+| `context` | **must not be touched** | The owner said on 2026-08-10 it is going to be done differently and deliberately did not say how. Mounted, V2 banner, three gallery entries, no design derived from the drawing |
+| `notesettings` | **cannot** | V2 |
+| `agents` | **cannot** | Phase 8, ADR 0030 |
+| `integrations` | **cannot** | Phase 8 |
+
+**Two things beside the ten are still owed and this leg did not fit them.** Said
+plainly rather than quietly dropped, because three legs already carried the
+second one as a principle when it was a gap:
+
+- **The Help modal (ADR 0066)** — three links, two of which do not exist yet,
+  and a link that opens a 404 must not be drawn. It is the first new UI this
+  port would draw.
+- **The search bar and the command palette behind it.** `NavSearch` is ported
+  1:1 and mounted nowhere; the palette is `demo.js:8031–8366` and is the only
+  prototype surface the port never carried. It is a PORT, not a design, and
+  `runtime.open` now answers twelve of its twenty-six entries — the seam grew
+  the door it needed in Leg 4b and used it on four screens in this one.
+
+They are Leg 4d's, by name, at the top of its prompt.
 
 ### Leg 4b — the seam, the rebuild lab, and four sections of fourteen
 
@@ -1923,7 +2190,197 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 4c
+## The prompt for Leg 4d
+
+You are picking up the WordScript GUI port. Work in the repo root on `main`.
+Do not create a branch. Leg 4d is yours, and it is **not a wiring leg**: every
+wireable screen is wired. Leg 4d is the two surfaces the port never carried and
+the two derivations nobody has decided.
+
+### What is already true
+
+Leg 4c wired the last six — Hotkeys, History, Profiles, AI Models, Home,
+Privacy & Data. Ten rows in `src/windows/workspace/ia.tsx` became four, and all
+four of those are rows Leg 4 was never allowed to touch: **Context, Notes &
+Meetings, Agents, Integrations.** Deleting one of their banners is the error,
+not the goal, and `registry.test.tsx` will fail you for it either way.
+
+**Nothing about Context is yours**, in any direction, for the same reason it was
+not Leg 4c's: the owner said on 2026-08-10 that it is going to be done
+differently and deliberately did not say how. It stays mounted with its V2
+banner and its three gallery entries, and nobody derives a design from the
+drawing in the meantime.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. Leg 4c's record directly above Leg
+4b's is your starting state and carries eight findings you will otherwise
+rediscover — finding 1 is the one that will bite you. §2.5 — the entries under
+Leg 2c's, 2d's, 4a's, 4b's and now Leg 4c's headings — is the list of what the
+runtime cannot answer. Add to it; do not start a second one. Then `CLAUDE.md`,
+and `src/screens/props.ts`, which is the seam in about a hundred and ten lines
+and now has three shapes rather than two.
+
+### The order, and the first two are the ones that were carried three times
+
+1. **THE SEARCH BAR AND THE COMMAND PALETTE.** This is the one to do first and
+   the owner has raised it once already, in as many words: *the searchbar 1:1
+   from the demo GUI was also forgotten.* `NavSearch` is ported exactly — the
+   glyph, the word `Search`, the `⌘K` / `Ctrl K` keycap — and is mounted in no
+   window, so the shipped sidebar simply has no search bar where the
+   prototype's has one. **It is a VISIBLE ABSENCE rather than a deferred
+   feature.**
+
+   The palette behind it is `demo.js:8031–8366` and is **the only prototype
+   surface the port never carried**: a 26-entry `CMDK_INDEX` in three groups,
+   prefix/word-start/substring scoring, match highlighting, keyboard selection
+   and `Cmd`/`Ctrl`+`K`. It is a PORT — read the builder whole, read its rules
+   in `demo.css`, put the rules in `shell.css` and not at a call site, the same
+   method Leg 2 used twenty-five times — and **not a design job**.
+
+   Most of its index is answerable today. Twelve entries are `go:` navigations
+   and `runtime.open` does exactly that; another eleven are `go:` under a
+   settings-row label; the theme actions have `useColorScheme`; *Copy last
+   transcript* has `state.lastResult`. **One entry has no source** — *Show
+   transcripts in file manager* — and it is the same hole History's row has, so
+   it is drawn disabled with the reason on it (ADR 0065) rather than left out.
+
+   `.ws-frost-stack` already exists in `shell.css` for exactly this: ADR 0051
+   carries the nesting and `WorkspaceWindow` has a comment saying the layer is
+   not drawn because there is no palette. Draw it.
+
+2. **THE HELP MODAL (ADR 0066).** Three links — Discord, GitHub, the
+   documentation — and its row is mounted in the commit that builds it. Two of
+   the three URLs do not exist yet and **a link that opens a 404 must not be
+   drawn**, so decide per link: ship the one that resolves, and disable the
+   others with the reason on them. It is the first new UI this port has drawn —
+   the prototype draws the row and not what it opens — so it is judged by eye
+   against `DESIGN_SYSTEM.md` rather than measured.
+
+3. **TWO DERIVATIONS, DECIDED AND WRITTEN DOWN.** Both are the shape Leg 4c
+   settled History's badges in: the runtime has the fields, and which fact
+   follows from which field is nobody's decision yet. Taking it inside a commit
+   without writing it down is how a placeholder becomes the product.
+
+   - **The profile list's subline.** `describeTextProfileWorkMode` returned the
+     identical string for all six profiles on this machine, so the column that
+     is supposed to tell them apart stopped doing it. The drawing's pairs are
+     `Auto · Insert at cursor` and `Rewrite · Client register` — a mode and a
+     delivery, not a sentence. Decide it, write it in the function, test it.
+   - **`Not checked` versus `Not registered` is settled** and is the model to
+     copy: four answers and no fifth, and "the runtime has not answered" is not
+     the same as "the runtime said no".
+
+4. **If you have room: the missing surfaces on §2.5, in the gallery first.**
+   Leg 4c found five controls whose DESTINATION was never drawn — Add and Edit
+   for replacements and snippets, New profile's rename, and
+   `analyze_text_rules`' answer. Every one is a missing surface rather than a
+   missing command, and ADR 0057 puts the gallery in charge of what a screen
+   looks like, so the gallery grows it first and the product follows. **Do not
+   start this without saying so in your record**; it is a design job and it is
+   bigger than it looks.
+
+### The rules you will be judged on
+
+**NEVER RENDER FAKE READINESS (rule 7).** A screen that reads three of its eight
+facts and invents the other five is worse than the banner it replaced. If a fact
+has no source the row says so, and the fact goes on §2.5.
+
+**A CONTROL THAT CANNOT ACT IS DISABLED, NOT DELETED AND NOT LEFT LOOKING
+SETTABLE** (ADR 0065, and ADR 0067 for the provider lanes). And Leg 4c's finding
+1 sharpens it: **check that the design system DRAWS the state you set.** Five
+controls took `disabled`, refused the click and looked entirely operable, and
+every unit test asserting `toBeDisabled()` passed. `shell.css` now has rules for
+`.ws-seg button`, `.ws-provchip`, `.ws-sel`, `.ws-field`, `.ws-kbd-btn` and
+`.ws-flag`; if you disable a control that is not one of those, look at it in the
+native host before you believe it.
+
+**THE GALLERY SHRINKS BY WIRING AND BY NOTHING ELSE.** Twenty entries now, and
+the eleven mounted nowhere stay whatever else happens: 84 components in
+`components/shell/` are reachable only through them. It is a test rather than a
+paragraph — do not argue with it. **Neither the palette nor the Help modal is
+one of the prototype's 25**, so neither adds an entry and neither removes one;
+`registry.test.tsx` freezes the 25 as provenance and will reject an id it does
+not know.
+
+**FOUR EXPORTS ARE STILL ORPHANED** — `DangerRow`, `Inspector`, `PaneGroup`,
+`VolumeSlider`. `RawPanel` stopped being one in Leg 4c. This is information, not
+a delete list; if you do remove one, say so with what you checked.
+
+### What you must NOT do
+
+- **Do not mount any of the six undecided surfaces.** ADRs 0060–0064 and one
+  roadmap candidate; every one is Phase 6, Phase 8 or a V2 candidate.
+  `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not delete a banner from Context, Notes & Meetings, Agents or
+  Integrations.** They are V2 or Phase 8 and cannot be wired at all.
+- **Do not touch Context at all, in any direction.** See above.
+- **Do not touch `src-tauri/`.** Rule 6 stands through Leg 4. What you find goes
+  on §2.5 for Leg 5.
+- **Do not touch the overlay.** Rule 5. `overlay*.css` and `OverlayPill.tsx` do
+  not move.
+- **Do not change a drawn screen's copy or layout to make anything easier.** The
+  gallery is the source (ADR 0057). Where the drawing and the runtime disagree
+  on a FACT, wire the fact, leave the copy, and file it in §2.5 — Leg 4b did it
+  with About's build lanes and Leg 4c did it with History's foot.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. Run the suite twice
+  before believing a failure — Leg 4b saw eight unrelated files fail once under
+  machine load and pass on a clean re-run.
+- `npm run port:diff` after anything that could move a screen. Serve the
+  prototype (`python3 -m http.server 8791 --directory
+  docs/prototypes/settings-rework`), run `npm run dev`, and point the script at
+  the browser this machine has:
+
+```
+CHROME=/home/felixontv/.cache/ms-playwright/chromium-1237/chrome-linux64/chrome \
+npm run port:diff -- home history profiles context notesettings models \
+  agents integrations privacy onboarding translate subtitles meeting conversation \
+  agentoverlay handoff commit contextintake contextactions \
+  models#1 agents#1 agents#2 onboarding#1 onboarding#2 onboarding#3 onboarding#4 \
+  onboarding#5 onboarding#6
+```
+
+- That is the 28. Every one is **structural 0 | style 0** today and the 34 text
+  differences are Leg 2b's recorded soft divergences. **The palette is not in
+  that list and cannot be**, because the script measures a gallery screen
+  against a prototype screen and the palette is neither — measure it by opening
+  both and comparing the built rules, and say in your record how you checked.
+- **A wired screen cannot be looked at in a browser.** The workspace needs
+  `invoke`; without the host it renders "Connecting to runtime…". The browser is
+  still right for the twenty screens in the gallery. For the product surfaces:
+  `npm run tauri build` (the AppImage step fails on linuxdeploy; the binary is
+  built), run `src-tauri/target/release/wordscript`, `xdotool search --name
+  "WordScript – Settings"`, `import -window <id>`. Synthetic input cannot be
+  delivered, so use Leg 4c's trick — a temporary `useEffect` in
+  `WorkspaceWindow` walking the surfaces on a timer, removed before the commit.
+  **Batch and build once**: 3m 35s each, and do not interrupt it — killing cargo
+  mid-link costs a full dependency rebuild.
+- **The palette needs the host too**, because `Cmd`+`K` over a workspace that
+  says "Connecting to runtime…" tells you nothing.
+- **Do not `pkill -f vite`.** It matches the agent shell's own command line and
+  kills the shell. Kill by PID.
+
+### Split if you run long
+
+Leg 2 split three times and Leg 4 has split twice; every split was right. The
+palette is a 335-line builder with its own scoring and its own CSS, and it is
+the only prototype surface nobody has read yet — if it takes the session, say
+so, list what is left, and write the 4e prompt.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the next
+prompt. **If the palette, the Help modal and both derivations are done, write
+the Leg 5 prompt instead** — the runtime contracts, prioritised by what §2.5 now
+says is blocking. §2.5 currently names the cheapest one on the whole list: a
+seventh `ProcessingMode` variant and one config field, which two screens are
+already drawing a disabled control for. Then report what you did, what you
+found, and anything the next leg needs that is not already written down.
+
+## The prompt for Leg 4c (spent — kept for the chain's record)
 
 Copied to a fresh agent verbatim.
 

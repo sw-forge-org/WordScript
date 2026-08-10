@@ -55,6 +55,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every wireable surface now reads the runtime.** Relay Leg 4c, six more:
+  **Hotkeys** is `native_trigger_status` per slot — the caps, the registration
+  badge, the refusal sentence, the activation timings and this session's
+  platform summary; the recorder that sets a shortcut releases and restores the
+  OS grabs. **History** lists this machine's transcriptions with both filters
+  going to the runtime's own query, and View raw, Retry, Restore to cursor,
+  Copy, Delete and Export all act. **Profiles** reads and writes the selected
+  profile end to end — mode, delivery, workspace context, both recording limits
+  against the runtime's ceiling, the word list, the replacements and the
+  snippets — and its Context tab is the first text field in the product.
+  **AI Models** wires the Groq connection: the credential in the OS secret
+  store with its preview, the account plan from `resolve_provider_tiers`, and
+  the recording ceiling from the same command Profiles reads. **Home** states
+  the trigger, what the activation mode actually does, which mode is effective
+  now, and the last five records. **Privacy & Data** writes both retention rules
+  and clears the history.
+- **Anything the runtime cannot answer is inert and says why.** Not deleted and
+  not left looking settable (ADR 0065): the three provider lanes and seven
+  provider chips, `Show in file manager`, Add and Edit on the profile lists, the
+  two `analyze_text_rules` doors, Full export, Full import, Reset all settings,
+  and the seventh mode `ProcessingMode` does not have. Home's decision inbox is
+  absent rather than inert, because its three sources have no receiver and the
+  drawing's own rule is that nothing is drawn when nothing is owed.
+- **ADR 0067** answers the point ADR 0065 left open: `local_preview` is treated
+  like every other unpublished provider everywhere it comes up. A surface that
+  offers it makes it inoperable, a surface that reports what is running states
+  it and marks it, and a diagnostic prints the runtime identifier unchanged.
 - **The first four settings surfaces read the runtime.** Relay Leg 4b:
   **About & Updates** states the running binary's version, copies it, and runs
   `check_app_update` — badge, the runtime's own summary and a Check now that
@@ -80,6 +107,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forty-odd entries that know what `phrase_repetition_collapsed` means, so a
   Diagnostics screen read because something is wrong does not print runtime
   identifiers at the person reading it.
+
+### Fixed
+
+- **Six controls could be disabled and did not look it.** A segment, a provider
+  chip, a select, a text field, a hotkey target and a flag all took the
+  attribute, refused the click, and rendered exactly as operable as their
+  neighbours — so ADR 0065's inert lanes were not visibly inert. Found in the
+  native host; every unit test asserting it had passed.
+- **A history read could take the window down.** A runtime that answers
+  `transcription_history_entries` with anything but a list has not answered, and
+  is not a machine with no history.
 
 ### Changed
 
