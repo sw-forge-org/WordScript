@@ -38,7 +38,10 @@ export function rawOf(entry: Transcript): RawTranscript {
     heard: entry.heard ?? entry.text,
     written: entry.text,
     same: !entry.heard,
-    note: entry.rawNote ?? "The AI stage rewrote it.",
+    /* Absent unless the entry has something of its own to say. `RawPanel`
+       carries the two default sentences; defaulting here meant the caller
+       always won and the panel's "Identical" branch was unreachable. */
+    note: entry.rawNote,
     path: entry.path,
   };
 }

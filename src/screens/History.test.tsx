@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { HistoryScreen, badgesFor, historyTime } from "./History";
+import { HistoryScreen, badgesFor, historyTime, rawOf } from "./History";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 import type { TranscriptionHistoryEntry } from "@/types/history";
 
@@ -228,6 +228,55 @@ describe("the badge derivation", () => {
     expect(
       badgesFor(entry({ status: "failed", audio_path: "/tmp/a.wav", insert_mode: null })),
     ).toEqual([{ text: "Failed", tone: "danger" }]);
+  });
+});
+
+describe("the raw panel's foot", () => {
+  /* Measured against the owner's machine on 2026-08-10: 50 of 142 records have
+     identical texts and an AI stage ran on ALL 50, so a foot keyed off string
+     equality claimed "no AI stage ran on this one" 50 times and was wrong every
+     time. Equal texts are not evidence that nothing ran. */
+  it("does not claim nothing ran just because the two texts match", () => {
+    const unchanged = rawOf(
+      entry({
+        raw_transcript: "same text",
+        transformed_transcript: "same text",
+        corrected: true,
+        applied_rules: ["post_corrected"],
+      }),
+    );
+    expect(unchanged.same).toBe(false);
+    expect(unchanged.note).toBe("The AI stage ran and changed nothing.");
+  });
+
+  it("keeps the Identical sentence for a record nothing ran on", () => {
+    const untouched = rawOf(
+      entry({
+        raw_transcript: "same text",
+        transformed_transcript: "same text",
+        corrected: false,
+        applied_rules: [],
+      }),
+    );
+    /* `same` is the panel's own sentence and it is true here, so no note. */
+    expect(untouched.same).toBe(true);
+    expect(untouched.note).toBeUndefined();
+  });
+
+  it("lets a transform warning outrank both sentences", () => {
+    const warned = rawOf(
+      entry({ transform_warning: "The correction was rejected as over-shortened." }),
+    );
+    expect(warned.note).toBe("The correction was rejected as over-shortened.");
+  });
+
+  it("shows the recogniser's own text as Heard, never the rewritten one", () => {
+    const pair = rawOf(
+      entry({ raw_transcript: "lets ship it", transformed_transcript: "Let's ship it." }),
+    );
+    expect(pair.heard).toBe("lets ship it");
+    expect(pair.written).toBe("Let's ship it.");
+    expect(pair.same).toBe(false);
   });
 });
 

@@ -38,11 +38,17 @@ mishearing is the damage.
 The owner dictates requirements into WordScript and pastes them into agent
 briefs, so **the relay itself carries dated samples of this defect**:
 
-- **2026-08-10.** A brief about where the communication style belongs contained
-  the sentence *"Normale Sätze mit Satzzeichen und Kleinschreibung."* Nothing of
-  the sort was said or meant. It was carried into the conversation, could not be
-  placed against any surface, feature or file, and had to be queried and
-  withdrawn as an artifact. It cost one round trip.
+- **2026-08-10, and it was verified against the stored raw transcript.** A brief
+  about where the communication style belongs contained the sentence *"Normale
+  Sätze mit Satzzeichen und Kleinschreibung."* Nothing of the sort was said or
+  meant. It could not be placed against any surface, feature or file, had to be
+  queried, and the owner confirmed it as an artifact — it cost one round trip.
+
+  **The record proves where it came from.** The same sentence appears verbatim
+  in that entry's `raw_transcript`, which is the provider's `response.text`
+  captured before any transform. **The recognizer produced it.** It is not
+  something the AI stage invented, which rules out the neighbouring records and
+  places this one squarely at the speech-to-text stage.
 - Earlier legs of the same relay record the general shape: a feature name in a
   brief that matches nothing in the repository is worth suspecting as a
   mishearing before it is worth searching for.
@@ -70,6 +76,23 @@ Everything that would make this actionable:
 - **Whether language mix is a factor.** The samples are German dictated by a
   speaker who also writes English, which is the condition
   `transcription-hallucination.md` already identifies as adverse.
+
+## The surface you would check it on shows the wrong text first
+
+History's row title is the **written** text — what the AI produced — and the
+recogniser's own words are one click away behind *View raw*. That is right for
+a record of what you got and wrong for judging what was heard, which is the job
+this record needs the screen to do. The data is correct and complete
+(`raw_transcript` is the provider's response before any transform, and 92 of 142
+records differ from their transformed text); it is the default view that is
+unhelpful. Recorded in the relay's §2.5 as a decision for Leg 4d rather than
+changed unilaterally, because the title is drawn and the gallery is the source
+(ADR 0057).
+
+One defect found while checking this and already fixed: the raw panel's foot
+claimed *"Identical — no AI stage ran on this one"* whenever the two texts
+matched, which was false on all 50 such records on this machine — an AI stage
+had run on every one of them. Equal outputs are not evidence that nothing ran.
 
 ## Next steps, cheapest first
 

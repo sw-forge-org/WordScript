@@ -1222,6 +1222,36 @@ anybody can wire it (ADR 0057).
 **Raised by the owner on 2026-08-10, against Leg 4c's report, and it is the
 first hole this port has found in the PROTOTYPE rather than in the runtime.**
 
+- **HISTORY SHOWS THE REWRITTEN TEXT WHERE THE ACCURACY QUESTION NEEDS THE
+  HEARD ONE.** Raised by the owner the same day, against the transcription
+  record above, and it splits into a defect that is fixed and a design question
+  that is not.
+
+  **The defect, and it was Leg 4c's.** `RawPanel`'s default foot reads
+  *"Identical — no AI stage ran on this one"*, which is a claim about whether a
+  STAGE RAN, and the wiring keyed it off string equality. Measured against the
+  owner's `history.json` on 2026-08-10: **50 of 142 records have identical texts
+  and an AI stage ran on all 50** — so the sentence was false every time it
+  appeared. The runtime holds the evidence (`corrected`, `applied_rules`), so
+  `rawOf` reads it and the third state gets its own sentence, *"The AI stage ran
+  and changed nothing."* Fixed, tested, gallery unmoved. **Equal outputs are not
+  evidence that nothing ran**, and that generalises past this row.
+
+  **What is NOT a defect: the stored data.** Traced through
+  `stage_pending_transcription_preview` — `raw_transcript` is the provider's
+  `response.text`, captured before any transform. `Heard` shows the recogniser's
+  own words. 92 of 142 records differ from their transformed text, so the pair
+  is carrying real signal.
+
+  **The open question is the LIST.** A row's title is the written text, so the
+  surface a reader goes to in order to judge transcription accuracy shows the
+  AI's version first and the recogniser's one click away behind *View raw*. That
+  is the drawing's design and it is right for a record of *what you got*; it is
+  wrong for the job the owner now needs this screen to do. **Not changed
+  unilaterally** — the gallery is the source (ADR 0057) and the title is drawn.
+  Leg 4d decides it with the owner, and the cheapest honest options are a filter
+  or a toggle over which text the list shows, not a re-titled row.
+
 - **THE COMMUNICATION STYLE HAS NO SURFACE ANYWHERE, AND IT IS STILL RUNNING.**
   The owner asked whether the old UI's rewriting-style options — how formal,
   which vocabulary, shorter or longer — have an equivalent today. They do not,

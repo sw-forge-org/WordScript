@@ -153,17 +153,33 @@ export function badgesFor(entry: TranscriptionHistoryEntry): ListItemBadge[] {
   return badges;
 }
 
-/** The record's two texts. `heard` is what the recogniser returned and
- *  `written` is what was delivered; `same` is the only fact that decides
- *  whether the pair is worth reading, and the runtime answers it exactly. */
-function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
+/**
+ * The record's two texts. `heard` is what the recogniser returned — the
+ * provider's `response.text`, before any transform — and `written` is what was
+ * delivered.
+ *
+ * THE FOOT'S SENTENCE IS NOT A STRING COMPARISON, and getting that wrong was a
+ * real defect. `RawPanel`'s default reads "Identical — no AI stage ran on this
+ * one", which is a claim about whether a STAGE RAN; equal texts are not
+ * evidence for it. Measured against the owner's machine on 2026-08-10: 50 of
+ * 142 records have identical texts and **an AI stage ran on all 50**, so the
+ * default sentence would have been false on every one of them. The runtime
+ * holds the evidence — `corrected` and `applied_rules` — so it is read here and
+ * the third state gets its own sentence.
+ */
+export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
   const heard = entry.raw_transcript ?? "";
   const written = entry.transformed_transcript ?? entry.raw_transcript ?? "";
+  const identical = heard === written;
+  const stageRan = entry.corrected || entry.applied_rules.length > 0;
+
   return {
     heard,
     written,
-    same: heard === written,
-    note: entry.transform_warning ?? undefined,
+    same: identical && !stageRan,
+    note:
+      entry.transform_warning ??
+      (identical && stageRan ? "The AI stage ran and changed nothing." : undefined),
   };
 }
 

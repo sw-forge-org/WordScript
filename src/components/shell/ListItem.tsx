@@ -123,7 +123,12 @@ export function RawPanel({ raw }: { raw: RawTranscript }) {
         <p>{raw.written}</p>
       </div>
       <div className="ws-raw-foot">
-        {raw.same ? "Identical — no AI stage ran on this one." : (raw.note ?? "The AI stage rewrote it.")}
+        {/* THE CALLER'S SENTENCE WINS OVER BOTH DEFAULTS, and it has to: the
+            panel can compare two strings and cannot know whether a stage RAN.
+            Equal texts and no stage is "Identical"; equal texts and a stage
+            that changed nothing is a different fact, and only the caller holds
+            the evidence for it. */}
+        {raw.note ?? (raw.same ? "Identical — no AI stage ran on this one." : "The AI stage rewrote it.")}
         {raw.path && <span className="ws-raw-path ws-mono">{raw.path}</span>}
       </div>
     </div>
