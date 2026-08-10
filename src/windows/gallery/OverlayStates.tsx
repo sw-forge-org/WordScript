@@ -22,7 +22,23 @@ import { OverlayPill, type OverlayProcessingMode } from "../../components/overla
    commands, no window resize.
    ════════════════════════════════════════════════════════════════════════════ */
 
-const MODE_CYCLE: OverlayProcessingMode[] = ["auto", "verbatim", "cleanup", "rewrite", "agent", "prompt_enhance"];
+/* Mirrors `MODE_CYCLE_ORDER` in `core::mode_router`, which is the authority.
+   `translate` is in it because the gallery is where a state is looked at
+   (ADR 0055) — and Translate is the one mode that adds a chip, so a cycle that
+   skipped it would leave that chip reachable only by making a recording. */
+const MODE_CYCLE: OverlayProcessingMode[] = [
+  "auto",
+  "verbatim",
+  "cleanup",
+  "rewrite",
+  "translate",
+  "agent",
+  "prompt_enhance",
+];
+
+/* The gallery's own language cycle, in the runtime's declared order. Sample
+   data, asserting nothing, which is what a gallery screen carries. */
+const LANGUAGE_CYCLE = ["en", "de", "fr", "es", "it", "pt", "nl", "pl"];
 
 const SAMPLE_RESULT = "The quarter closed strong with revenue up twelve percent year over year.";
 const SAMPLE_PREVIEW = "Ship the release notes by Friday.";
@@ -58,6 +74,7 @@ export function OverlayStates() {
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
   const [mode, setMode] = useState<OverlayProcessingMode>("agent");
+  const [targetLanguage, setTargetLanguage] = useState("en");
   const [editText, setEditText] = useState("Edit the transcription before inserting it.");
 
   const cycleMode = () => {
@@ -65,7 +82,14 @@ export function OverlayStates() {
     setMode(MODE_CYCLE[(i + 1) % MODE_CYCLE.length] ?? "agent");
   };
 
+  const cycleLanguage = () => {
+    const i = LANGUAGE_CYCLE.indexOf(targetLanguage);
+    setTargetLanguage(LANGUAGE_CYCLE[(i + 1) % LANGUAGE_CYCLE.length] ?? "en");
+  };
+
   const recordingHandlers = {
+    targetLanguage,
+    onCycleLanguage: cycleLanguage,
     onMuteToggle: () => setMuted((m) => !m),
     onPauseToggle: () => setPaused((p) => !p),
     onCycleMode: cycleMode,

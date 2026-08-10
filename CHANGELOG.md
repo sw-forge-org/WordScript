@@ -87,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "maybe". It now means the runtime really did drop something. The list of what
   was dropped is not drawn: the field's hint states the two rules a reader can
   act on and `REFERENCE.md` carries the rest.
+- **The overlay names the target language** (ADR 0073). `Translate` is the one
+  mode name that is half an instruction; the other half is two letters, drawn as
+  their own chip beside the mode chip and only while that mode is running. A
+  press steps through the languages and persists the step. It is inside the
+  pill rather than a third side tab, because every offered language has a
+  two-letter code — the width is fixed rather than content-dependent, which is
+  what makes it affordable in a window whose rounded ends clip past 480px. The
+  gallery's overlay cycle grew Translate with it, so the chip is reachable
+  without making a recording.
 - **The seventh mode ships with no hotkey**, and that is stated rather than
   papered over with `Alt+7`: the shipped defaults occupy `Alt+1` through
   `Alt+6`. The row on Hotkeys is settable like the other six and empty until

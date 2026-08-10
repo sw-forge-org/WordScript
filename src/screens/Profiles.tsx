@@ -269,6 +269,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   const config = runtime?.config;
   const [tab, setTab] = useState(TABS[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const [health, setHealth] = useState<ProfileHealthStatus | null>(null);
   const [styleAnalysis, setStyleAnalysis] = useState<CommunicationStyleAnalysis | null>(null);
   const [term, setTerm] = useState("");

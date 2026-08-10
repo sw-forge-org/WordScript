@@ -81,6 +81,7 @@ export default function WorkspaceWindow() {
   const [palette, setPalette] = useState(false);
   const [, startTransition] = useTransition();
 
+
   /* The stored scheme, adopted when the runtime answers and whenever it changes
      underneath — another window, or a config edited on disk. Keyed on the
      runtime's config rather than on the draft, so the window follows what was

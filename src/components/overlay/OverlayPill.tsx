@@ -50,6 +50,9 @@ export type OverlayPillState =
   | {
       kind: "recording";
       mode: OverlayProcessingMode;
+      /** ISO 639-1, and only meaningful while the mode is `translate`. */
+      targetLanguage?: string;
+      onCycleLanguage?: () => void;
       muted: boolean;
       paused: boolean;
       level: number;
@@ -61,6 +64,9 @@ export type OverlayPillState =
   | {
       kind: "processing";
       mode: OverlayProcessingMode;
+      /** ISO 639-1, and only meaningful while the mode is `translate`. */
+      targetLanguage?: string;
+      onCycleLanguage?: () => void;
       elapsedSec: number;
       preview?: { text: string; clipboardOnly: boolean };
       pending?: OverlayPendingPreview;
@@ -97,6 +103,9 @@ export type OverlayPillState =
   | {
       kind: "mode-picker";
       mode: OverlayProcessingMode;
+      /** ISO 639-1, and only meaningful while the mode is `translate`. */
+      targetLanguage?: string;
+      onCycleLanguage?: () => void;
       onCycleMode?: () => void;
     }
   | {
@@ -177,7 +186,12 @@ function RecordingPill({ state }: { state: Extract<OverlayPillState, { kind: "re
       <MicButton muted={state.muted} onClick={state.onMuteToggle} />
       <Bars heights={levelToBars(state.level)} muted={state.muted} />
       <span className="pill__divider" aria-hidden="true" />
-      <ModeChip mode={state.mode} onClick={state.onCycleMode} />
+      <ModeChip
+        mode={state.mode}
+        onClick={state.onCycleMode}
+        targetLanguage={state.targetLanguage}
+        onCycleLanguage={state.onCycleLanguage}
+      />
       <span className="pill__divider" aria-hidden="true" />
       <Timer
         seconds={state.elapsedSec}
@@ -220,7 +234,12 @@ function ProcessingPill({ state }: { state: Extract<OverlayPillState, { kind: "p
       <MicButton muted={false} disabled />
       <Bars heights={IDLE_BARS} muted={false} />
       <span className="pill__divider" aria-hidden="true" />
-      <ModeChip mode={state.mode} onClick={state.onCycleMode} />
+      <ModeChip
+        mode={state.mode}
+        onClick={state.onCycleMode}
+        targetLanguage={state.targetLanguage}
+        onCycleLanguage={state.onCycleLanguage}
+      />
       <span className="pill__divider" aria-hidden="true" />
       <Timer seconds={state.elapsedSec} />
       <span className="pill__divider" aria-hidden="true" />
@@ -334,7 +353,12 @@ function ModePickerPill({ state }: { state: Extract<OverlayPillState, { kind: "m
     <div className="pill pill--compact pill--mode-picker">
       <Bars heights={IDLE_BARS} muted={false} />
       <span className="pill__divider" aria-hidden="true" />
-      <ModeChip mode={state.mode} onClick={state.onCycleMode} />
+      <ModeChip
+        mode={state.mode}
+        onClick={state.onCycleMode}
+        targetLanguage={state.targetLanguage}
+        onCycleLanguage={state.onCycleLanguage}
+      />
     </div>
   );
 }
@@ -397,18 +421,63 @@ function Timer({
   );
 }
 
-function ModeChip({ mode, onClick }: { mode: OverlayProcessingMode; onClick?: () => void }) {
+function ModeChip({
+  mode,
+  onClick,
+  targetLanguage,
+  onCycleLanguage,
+}: {
+  mode: OverlayProcessingMode;
+  onClick?: () => void;
+  targetLanguage?: string;
+  onCycleLanguage?: () => void;
+}) {
   const label = modeShortLabel(mode);
+  return (
+    <>
+      <button
+        type="button"
+        className="pill__mode"
+        onClick={onClick}
+        aria-label={`Mode ${label}, tap to cycle`}
+        title={`Mode: ${label} \u00b7 tap to cycle`}
+      >
+        <span className="pill__mode-dot" aria-hidden="true" />
+        <span className="pill__mode-label">{label}</span>
+      </button>
+      {mode === "translate" && targetLanguage ? (
+        <LanguageChip code={targetLanguage} onClick={onCycleLanguage} />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The target language, beside the mode and only under the mode that has one.
+ *
+ * Translate is the one mode whose name does not say what will happen. `Cleanup`
+ * is the whole instruction; `Translate` is half of it, and the other half is
+ * two letters. Every language the runtime offers has a two-letter code, so this
+ * chip has a fixed width budget rather than a variable one — which is what
+ * makes it affordable inside the pill at all, where `Prompt Enhance` already
+ * had to become `Enhance` to fit.
+ *
+ * Its own button rather than a longer mode label, and the reason is the press.
+ * The mode chip already cycles the MODE; putting the language on the same
+ * control would give one press two meanings depending on where in it you
+ * landed. Two chips, two cycles, one each.
+ */
+function LanguageChip({ code, onClick }: { code: string; onClick?: () => void }) {
+  const shown = code.trim().toUpperCase();
   return (
     <button
       type="button"
-      className="pill__mode"
+      className="pill__lang"
       onClick={onClick}
-      aria-label={`Mode ${label}, tap to cycle`}
-      title={`Mode: ${label} · tap to cycle`}
+      aria-label={`Translating into ${shown}, tap to change`}
+      title={`Into ${shown} \u00b7 tap to change`}
     >
-      <span className="pill__mode-dot" aria-hidden="true" />
-      <span className="pill__mode-label">{label}</span>
+      {shown}
     </button>
   );
 }

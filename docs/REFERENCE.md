@@ -174,6 +174,10 @@ describes the correction step only.
   model rather than the correction model, and ships ahead of its roadmap phase
   (ADR 0071). Preset as for `agent`, used only by the history re-transform,
   which does not route by mode -- a retried translation comes back cleaned up.
+  The overlay states the target language as a two-letter chip beside the mode
+  chip and steps it on press through `cycle_active_profile_translate_language`
+  (ADR 0073); on the processing surface the chip is drawn and inert, because by
+  then the language is already spent.
 - `agent`: dictation is executed as an instruction to the agent. Reaching this
   mode is itself the decision — there is no second intent check that can fall
   back to a cleanup. The output is the artifact the instruction asks for, never

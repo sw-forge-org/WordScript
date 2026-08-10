@@ -11,7 +11,11 @@ import { listen } from "@tauri-apps/api/event";
 import { useRuntime } from "../hooks/useRuntime";
 import { useCaptureBudget } from "../hooks/useCaptureBudget";
 import { SETTINGS_ANCHOR_AUTO_STOP } from "../lib/settingsAnchors";
-import { resolveActiveTextProfile, resolveTextProfileWorkMode } from "../lib/textProfiles";
+import {
+  resolveActiveTextProfile,
+  resolveProfileModesSettings,
+  resolveTextProfileWorkMode,
+} from "../lib/textProfiles";
 import type { AppConfig, ProcessingMode } from "../types/ipc";
 import type { NativeInsertResult } from "../types/nativeInsertion";
 import {
@@ -945,6 +949,20 @@ export default function OverlayWindow() {
   // Fallback from local config for the very first render before the Tauri
   // command resolves. Once effectiveMode is populated it becomes the sole
   // source of truth.
+  /* The active profile's target language, and it is read from the config
+     rather than from a command of its own: unlike the mode, nothing else can
+     change it mid-session, so there is no resolved value to fetch. `ready`
+     carries the config back after the cycle writes it, which is what closes
+     the loop. */
+  const targetLanguage = useMemo(
+    () =>
+      state.config
+        ? (resolveProfileModesSettings(resolveActiveTextProfile(state.config))
+            .translate_target_language ?? "en")
+        : "en",
+    [state.config],
+  );
+
   const configFallbackMode = useMemo(
     () => (state.config ? resolveOverlayProcessingMode(state.config) : null),
     [state.config],
@@ -1362,6 +1380,17 @@ export default function OverlayWindow() {
   // `wordscript-mode-event` listener (for external changes like settings save
   // or auto-resolution) stays purely async — only the user-driven paths use
   // the optimistic update.
+  /* The language cycle, and it is deliberately NOT optimistic where the mode
+     cycle is. The mode's eager `setEffectiveMode` exists because `pillMode`
+     drives `pillVisualEpoch`, and a stale mode for one to three renders paints
+     into a backing store WebKitGTK has not invalidated (RC2). The language
+     changes no surface geometry beyond two letters that are already there and
+     drives no epoch, so there is nothing to coalesce and nothing to roll back —
+     the config event that follows the write is the whole update path. */
+  const handleCycleLanguage = () => {
+    void invoke("cycle_active_profile_translate_language").catch(() => {});
+  };
+
   const handleCycleMode = () => {
     const current = effectiveMode ?? configFallbackMode;
     if (!current) return;
@@ -1642,6 +1671,8 @@ export default function OverlayWindow() {
         onEdit: showProcessingPreview ? handleEditOpen : undefined,
         onAbort: showProcessingPreview ? () => void handleAbortPreview() : undefined,
         onCycleMode: showProcessingPreview ? handleCycleMode : undefined,
+        targetLanguage,
+        onCycleLanguage: showProcessingPreview ? handleCycleLanguage : undefined,
       };
     }
     if (isRecording) {
@@ -1655,6 +1686,8 @@ export default function OverlayWindow() {
         onMuteToggle: () => toggleMute(),
         onPauseToggle: () => togglePause(),
         onCycleMode: handleCycleMode,
+        targetLanguage,
+        onCycleLanguage: handleCycleLanguage,
       };
     }
     if (isProcessing) {
@@ -1663,6 +1696,11 @@ export default function OverlayWindow() {
         mode: pillMode,
         elapsedSec: elapsed,
         onCycleMode: handleCycleMode,
+        targetLanguage,
+        /* Absent on purpose: the transform is already running under the
+           language it started with, so a press here would change the next
+           session while the pill states this one. The chip stays as a
+           statement. */
       };
     }
     // Idle-phase surfaces. Each is gated on `status === "idle"` via the
@@ -1690,6 +1728,8 @@ export default function OverlayWindow() {
         kind: "mode-picker",
         mode: pillMode,
         onCycleMode: handleCycleMode,
+        targetLanguage,
+        onCycleLanguage: handleCycleLanguage,
       };
     }
     if (renderResultPreview && activePreviewResult) {

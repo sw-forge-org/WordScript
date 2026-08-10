@@ -472,6 +472,16 @@ Status: Proposed | Accepted | Superseded by NNNN
   past. They are hidden rather than disabled under another mode: a target
   language under Cleanup is not un-ready, it is irrelevant, and that is the one
   place ADR 0065 does not apply.
+- [0073](0073-the-overlay-names-the-target-language-in-two-letters-beside-the-mode.md):
+  the overlay states the Translate target language as a two-letter chip beside
+  the mode chip, pressable to step through the languages. `Translate` is the one
+  mode name that is half an instruction, and two letters are the other half.
+  Inside the pill's flex flow rather than as a third side tab -- the left slot is
+  the one-shot learned-word tab and the right is the auto-stop, and the rule
+  those two were built on is one per side so neither yields. Affordable in the
+  flow because every offered language has a two-letter code, which makes the
+  width fixed rather than content-dependent; the width itself is a native-host
+  measurement. A deliberate, owner-directed exception to relay rule 5.
 
 ## Resolved: the number 0011 was used twice
 
@@ -499,8 +509,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0072; the next
-decision takes 0073.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0073; the next
+decision takes 0074.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

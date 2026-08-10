@@ -618,6 +618,53 @@
   white-space: nowrap;
 }
 
+/* ── The Translate target language ─────────────────────────────────────────
+   Two letters beside the mode, and the only chip in the pill that appears for
+   one mode alone. `Translate` is the one mode name that does not say what will
+   happen; this is the rest of the sentence.
+
+   It sits INSIDE the flex flow, which every other addition to this window
+   deliberately avoids — the two side tabs are `position: absolute` precisely
+   because a pill wider than the 480px window has its rounded ends clipped. It
+   is affordable here for one reason and it is worth stating: every language the
+   runtime offers has a TWO-LETTER code, so this chip has a fixed width rather
+   than a content-dependent one, and it is on screen only in Translate mode. The
+   budget it spends is measured in the native host, not assumed.
+
+   No dot, and no divider before it. The dot on `.pill__mode` marks where the
+   mode group starts; a second dot would read as a second group, and this is the
+   same statement continued. The two sit close enough to read as one unit and
+   far enough apart to be two press targets.
+
+   `font-variant-numeric` is deliberately absent: these are letters. The
+   monospace-ish alignment the timer needs would only make `EN` and `PL` look
+   like a readout of something counted. */
+.ov-scope .pill__lang {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-left: -2px;
+  padding: 0 6px;
+  border: 1px solid var(--ov-border);
+  border-radius: var(--ov-radius-compact);
+  background: transparent;
+  font-family: var(--ov-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--ov-text-dim);
+  cursor: pointer;
+  transition: background 140ms ease-out, color 140ms ease-out;
+  white-space: nowrap;
+}
+
+.ov-scope .pill__lang:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ov-text);
+}
+
 /* ── Timer (mono elapsed time, information only) ──────────────────────────── */
 
 .ov-scope .pill__timer {

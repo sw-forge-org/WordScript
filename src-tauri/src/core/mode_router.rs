@@ -204,6 +204,59 @@ pub fn set_active_profile_processing_mode<R: tauri::Runtime>(
     Ok(config.without_secrets())
 }
 
+/// Cycles the active profile's Translate target language, and persists it.
+///
+/// Its own command rather than a `save_config` from the overlay, for the reason
+/// the mode cycle has one: the overlay holds no config draft, so a
+/// read-modify-write from there would send back whatever snapshot it happened
+/// to be holding and clobber a concurrent settings save. Under the file lock,
+/// this reads and writes one field.
+///
+/// The step is `+1` through `TRANSLATE_LANGUAGES` in its declared order, which
+/// is the order the two selects draw. An unknown stored value lands on the
+/// first entry rather than refusing, which is the same permissive rule the rest
+/// of the translate settings follow.
+#[tauri::command]
+pub fn cycle_active_profile_translate_language<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<super::config::AppConfig, String> {
+    let config = super::config::with_config_file_lock(|| {
+        let mut config = super::config::AppConfig::load_from_disk_within_lock();
+        let active_id = config.active_text_profile_id.clone();
+
+        let Some(profile) = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+        else {
+            return Err("No active text profile found.".to_string());
+        };
+
+        let modes = profile.modes.get_or_insert_with(Default::default);
+        modes.translate_target_language = next_translate_language(&modes.translate_target_language);
+
+        config.save_to_disk()?;
+        Ok::<super::config::AppConfig, String>(config)
+    })??;
+
+    // The config event only. There is no mode event to emit: the mode did not
+    // change, and a mode event that says the same mode twice is a signal every
+    // listener has to learn to ignore.
+    super::config::emit_ready_event(&app, &config);
+
+    Ok(config.without_secrets())
+}
+
+fn next_translate_language(current: &str) -> String {
+    let languages = super::config::TRANSLATE_LANGUAGES;
+    let normalized = super::config::normalize_translate_language(current);
+    let index = languages
+        .iter()
+        .position(|(code, _)| *code == normalized)
+        .unwrap_or(0);
+    languages[(index + 1) % languages.len()].0.to_string()
+}
+
 /// The active profile's mode as a resolved `ProcessingContext`. This is the seam
 /// the frontend uses to know which mode a dictation will actually run in.
 ///
@@ -408,6 +461,26 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The cycle is `+1` through the declared order and it wraps. Its whole
+    /// job is being predictable from the surface that draws the same order.
+    #[test]
+    fn the_translate_language_cycle_steps_and_wraps() {
+        assert_eq!(next_translate_language("en"), "de");
+        assert_eq!(next_translate_language("de"), "fr");
+        assert_eq!(
+            next_translate_language(super::super::config::TRANSLATE_LANGUAGES.last().unwrap().0),
+            "en"
+        );
+    }
+
+    /// A stored value nothing recognises must still step rather than refuse,
+    /// which is the rule the rest of the translate settings follow.
+    #[test]
+    fn an_unknown_stored_language_still_steps() {
+        assert_eq!(next_translate_language("klingon"), "de");
+        assert_eq!(next_translate_language(""), "de");
     }
 
     #[test]

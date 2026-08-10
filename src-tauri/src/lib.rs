@@ -2779,6 +2779,7 @@ pub fn run() {
             core::workspace_context::get_workspace_context,
             core::mode_router::resolve_current_processing_mode,
             core::mode_router::set_active_profile_processing_mode,
+            core::mode_router::cycle_active_profile_translate_language,
             core::prompt_enhance::preview_prompt_enhance,
             v1_slice::v1_slice_status,
             v1_slice::start_v1_slice_capture,
