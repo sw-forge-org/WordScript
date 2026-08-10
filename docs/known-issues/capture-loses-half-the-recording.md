@@ -1,8 +1,12 @@
 # Bug: A capture silently keeps half the recording
 
-Status: **Open — measured 2026-08-03, cause not located. This is the defect the
-overlay freeze reports have been describing; the frozen pill is the symptom, the
-lost audio is the damage.**
+Status: **Open — cause not located. Re-measured 2026-08-10 and it is ongoing:
+11 affected captures rather than 8, and the worst one is the most recent. The
+capture now REPORTS the gap (ADR 0079), which is the first step the plan below
+asked for and is independent of the fix.**
+
+This is the defect the overlay freeze reports have been describing; the frozen
+pill is the symptom, the lost audio is the damage.
 
 First reported: 2026-08-03, as "the overlay still freezes"
 Affected area: `core::capture`, the cpal input stream on Linux/ALSA
@@ -101,6 +105,57 @@ lines: `Native capture start`, then `Capture level emits`, then
 The cpal callback simply stopped being called for long stretches, and the two
 counters that could have revealed it were never compared.
 
+## Re-measured 2026-08-10: it did not stop, and it got worse
+
+The same pairing over both runtime logs, now covering 2026-07-30 to 2026-08-10.
+**634 paired captures; r = 0.9986 between `shortfall_ratio` and the missing
+wall-clock fraction across 338 captures of at least 20 s.** The correlation is
+the same measurement it was; the population is larger.
+
+**Eleven captures now exceed 12 % missing, not eight.** Three are new since this
+record was written, and they are the reason its status changed rather than its
+numbers:
+
+| Stop | Wall clock | Audio recorded | Missing |
+|---|---|---|---|
+| 08-10 22:57 | 214.3 s | 97.3 s | **54.6 %** |
+| 08-03 18:02 | 644.6 s | 433.3 s | 32.8 % |
+| 08-04 02:35 | 3.6 s | 2.4 s | 34.4 % |
+
+The 08-10 case is the worst ever measured **and it happened while this record
+was being worked on**, forty minutes before the reporting shipped. Its transcript
+is 669 characters of fluent, correctly punctuated German ending in a question,
+and it reads as a finished dictation. Density against the recorded audio is 6.9
+characters per second, which is ordinary; against the wall clock it is **3.1
+against a median of 8.4**. That is the corroborating signal this record
+described, observed again at full strength.
+
+Baseline over all 634: median **0.23 %** missing, p95 **1.92 %**, worst healthy
+capture **7.0 %**. There is still no continuum — the gap between the healthiest
+worst case and the smallest real failure runs from 7.0 % to 12.0 %.
+
+### What shipped: the capture says so now
+
+[ADR 0079](../decisions/0079-a-capture-states-how-much-of-its-own-clock-it-kept.md).
+`CaptureIntegrity` is computed at `stop_native_capture` from the untrimmed
+buffer against the effective wall clock, and reported in three places: the
+runtime log on every capture including discarded ones, the history record
+(`capture_integrity`, an `Audio missing` badge, and a sentence in the raw
+panel), and the overlay at delivery time as a tab beside the result pill.
+Threshold 10 %, derived from the gap above; nothing under two seconds is judged.
+
+**It also fixed the pause artifact** this record's fourth next-step names.
+`LevelEmitSummary` now measures against `effective_elapsed`, so a paused capture
+no longer reports a shortfall by construction and `shortfall_ratio` stays
+readable on the long dictations it exists for. A stream rebuild is deliberately
+*not* excused: those samples are genuinely lost.
+
+**Verified in the native host the same evening.** Five records written by the
+running dev build carry verdicts — `intact` at 0.1 %, 0.1 %, 0.2 %, 0.5 % and
+3.0 % missing — which is the baseline band, correctly not flagged.
+
+**None of this locates the cause.** Steps 2 and 3 below are untouched.
+
 ## Environment
 
 - `host=Alsa device=default sample_rate=44100 channels=2 sample_format=f32` —
@@ -134,20 +189,17 @@ Untested, ordered by what the evidence supports.
 
 ## Next steps
 
-1. **Report the gap.** Whatever the cause, a capture that recorded half of what
-   the clock says has to say so — in the runtime log at minimum, and to the user
-   before a transcript that is missing half its content is delivered as if
-   complete. `wall_seconds` versus recorded duration is already available at
-   export time; the comparison costs nothing. This is independent of the fix and
-   should not wait for it.
+1. ~~**Report the gap.**~~ **Done 2026-08-10, ADR 0079.** See above.
 2. Log the cpal callback cadence: the gap between callbacks and their sample
    counts, with a line whenever a gap exceeds a threshold. That separates
-   hypothesis 1 from 2 directly.
+   hypothesis 1 from 2 directly. **This is now the first step**, and the
+   reporting above makes it cheap to target: a `verdict=short` line in the
+   runtime log names a capture window to look at.
 3. Watch PipeWire from the other side during a long capture
    (`pw-cli` / `pw-top`, and `journalctl --user -u pipewire`) and correlate a
    suspend against a capture window.
-4. Fix the pause interaction in `shortfall_ratio` so the metric stays readable —
-   subtract `accumulated_paused` from the expected count.
+4. ~~Fix the pause interaction in `shortfall_ratio`.~~ **Done 2026-08-10,
+   ADR 0079** — `LevelEmitSummary` measures against `effective_elapsed`.
 
 ## Why this was filed separately
 

@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-10
+Status: 2026-08-11
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -484,16 +484,35 @@ Additional rules:
   (`WORDSCRIPT_NATIVE_WAYLAND=1`) global shortcuts are unavailable and are named
   as unavailable rather than silently failing. Both points are tracked in
   [known-issues/capture-shortcut-recording.md](known-issues/capture-shortcut-recording.md)
-- **a capture can silently record only part of what was said.** 8 of 782
-  captures kept between 48% and 88% of their wall-clock duration, with no stream
-  error, no rebuild and no device change in the log — the user receives a
-  transcript of what was recorded, presented as complete. Measured 2026-08-03 by
-  comparing two counters the runtime already wrote: across 353 captures of at
-  least 20 s, the level-emit `shortfall_ratio` and the missing audio fraction
-  correlate at r = 0.9999. Ruled out as a pause artifact and as a webview stall;
-  cause not located. The first step is independent of the cause — a capture that
-  is short against its own clock has to say so:
+- **a capture can record only part of what was said, and the cause is still not
+  located.** Re-measured 2026-08-10 over 634 paired captures: **11 kept between
+  45% and 88% of their wall-clock duration**, three of them new since the first
+  measurement, and the worst — 54.6% of a 214 s dictation — is the most recent.
+  No stream error, no rebuild and no device change in the log. Ruled out as a
+  pause artifact and as a webview stall. **Since ADR 0079 the capture says so**
+  rather than delivering a transcript of what was recorded as if complete: the
+  runtime log on every capture, an `Audio missing` badge and a sentence on the
+  history record, and a tab beside the result pill at delivery time. Verified in
+  the native host the same evening — five records carry `intact` verdicts in the
+  0.1–3.0% band. The next step is now the callback-cadence log, which a
+  `verdict=short` line makes cheap to target:
   [known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)
+- **the recogniser echoes WordScript's own initial prompt into the transcript**,
+  and one such sentence reached an agent as an instruction on 2026-08-10.
+  12.5% of raw transcripts carried prompt text and 6.6% were delivered still
+  carrying it. Removed from the delivery since ADR 0080 by a deterministic strip
+  against the prompt the request itself sent; the recogniser still produces it,
+  the displaced words are still gone, and `raw_transcript` deliberately keeps
+  the leak so the rate stays measurable:
+  [known-issues/stt-prompt-leaks-into-the-transcript.md](known-issues/stt-prompt-leaks-into-the-transcript.md)
+- **the correlation that would join the transcription cluster together is not
+  answerable on today's data.** Whether a short capture also produces more
+  mishearings needs the capture numbers and the transcript in one place; the
+  join works (136 of 136 records paired) but 9 of the 11 short captures had
+  outlived their transcripts, because the runtime log and `history.json` have
+  different retentions. That is a retention artifact, not a result. ADR 0079
+  puts the verdict on the record so the next run needs no join:
+  [known-issues/transcription-accuracy.md](known-issues/transcription-accuracy.md)
 - the recording overlay is reported to freeze mid-capture at irregular
   intervals — pill, seconds timer and all input at once. As of 2026-08-03 the
   freeze is attributed: the pill stops because the capture stream stopped

@@ -43,6 +43,22 @@ export type OverlayRecordingLimit = {
   label: string;
 };
 
+/**
+ * A capture that kept less audio than its own clock says (ADR 0079).
+ *
+ * Shares the right strip with `OverlayRecordingLimit` and never shares a moment
+ * with it: the limit tab exists only while recording, this one only once a
+ * result is on screen. It carries no tone, because it has only one state — a
+ * capture reported here is always damaged, and a second severity would invite
+ * the reader to treat the milder one as acceptable.
+ */
+export type OverlayCaptureGap = {
+  /** The quantity, short enough for the side strip: "−52% audio". */
+  text: string;
+  /** The full sentence, for the tooltip and the screen reader. */
+  label: string;
+};
+
 export type OverlayPendingPreview = { action: "commit" | "abort"; label: string };
 export type OverlayPendingResult = { action: "copy" | "edit" | "insert"; label: string };
 

@@ -147,6 +147,13 @@ The active product core lives in `src-tauri/src/core/`.
   (`InputLevelSummary`, `InputLevelVerdict`) so a discarded capture can name
   its own cause. Read-only -- the OS input volume is per device, not per app,
   and is never written (see PLATFORMS.md).
+- `capture.rs`: and measures whether the capture kept the audio its own clock
+  says it ran for (`CaptureIntegrity`, ADR 0079). Untrimmed samples against the
+  effective wall clock -- paused stretches subtracted, a stream rebuild
+  deliberately not -- with a `short` verdict past 10 % missing and no verdict at
+  all under two seconds. It travels on `AudioReadyEvent` to the history record
+  and to the overlay's result surface. It reports the defect in
+  `known-issues/capture-loses-half-the-recording.md`; it does not fix it.
 - `sound/`: startup signature plus listen/handoff/done/abort/error cues.
   `cue.rs` owns the score, `pack.rs` the timbre, `synth.rs` renders at the
   device sample rate, `engine.rs` owns the one persistent output stream
@@ -173,6 +180,14 @@ The active product core lives in `src-tauri/src/core/`.
   sentence, so inline code-switching is structurally out of reach, and a strip
   requires independent corroboration from the confidence gate, the artifact
   filter or a repetition collapse (ADR 0016).
+- `recognizer_repair.rs`: deterministic repairs to what the recogniser returned,
+  run **before the mode branch** so Agent, Translate and Prompt Enhance receive
+  them too (ADR 0081). Removes an echo of the initial prompt this request sent
+  (ADR 0080) and restores a pluralized German form of address. The raw
+  transcript is cloned before the stage, so the record keeps what the recogniser
+  produced and the defects stay measurable. The echo strip is language-agnostic
+  by construction; the address repair is German morphology and runs only over
+  text whose language is established as German.
 - `transform.rs`: runs `hallucination_detect` ahead of the exact-string
   hallucination filter, then optional AI cleanup (correction guardrail stack),
   dictionary and snippet resolution.
@@ -234,6 +249,9 @@ lane and missing helpers.
    `providers/groq.rs` or `providers/local_preview.rs`.
 6b. `confidence_gate.rs` drops segments the provider's own metrics mark as
    invented, before any downstream stage sees the text (cloud lane only).
+6c. `recognizer_repair.rs` strips an echo of the prompt this request sent and
+   restores a pluralized German address, **before the mode branch** so every
+   mode receives the repaired text. The unrepaired text is kept for the record.
 7. `hallucination_detect.rs` collapses repetition and filters artifact patterns,
    then `transform.rs` checks and cleans the transcription output using the same
    provider contract for AI cleanup; for `prompt_enhance` mode the cleaned
@@ -247,7 +265,8 @@ state and active device.
 
 8. `insertion.rs` chooses and runs the insert mode.
 9. `history.rs` writes raw vs transformed transcript, active text profile,
-   effective `ProcessingMode`, insert outcome and errors.
+   effective `ProcessingMode`, insert outcome, errors, and what the capture
+   measured about itself (`capture_integrity`, ADR 0079).
 10. `sessions.rs` finalizes exactly once (`completed`/`aborted`/`error`) and
     accepts async pipeline results only for the active `processing`
     session id.

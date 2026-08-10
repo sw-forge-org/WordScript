@@ -66,6 +66,10 @@ function buildFallbackTranscriptionResult(
     corrected: mirror.corrected,
     transform: null,
     delivery: null,
+    // The mirror channel carries a transcript and nothing about the capture, so
+    // there is no verdict here to report — and reporting `intact` would be the
+    // guess this whole function exists to avoid.
+    capture_integrity: null,
     insertion: null,
     history: null,
     occurred_at_ms: Date.now(),
@@ -94,6 +98,7 @@ function buildRuntimeTranscriptionResult(
     delivery: payload.delivery ?? null,
     insertion: payload.insertion ?? null,
     history: payload.history ?? null,
+    capture_integrity: payload.capture_integrity ?? null,
     occurred_at_ms: Date.now(),
   };
 }

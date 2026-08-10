@@ -14,6 +14,7 @@ pub mod portal;
 pub mod profile_context;
 pub mod prompt_enhance;
 pub mod providers;
+pub mod recognizer_repair;
 pub mod runtime_log;
 pub mod sessions;
 pub mod shortcut;

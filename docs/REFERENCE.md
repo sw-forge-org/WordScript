@@ -39,13 +39,19 @@ Status: 2026-07-25
   unreliable on GTK and was removed
 - The fixed sizes must stay consistent between `OverlaySurface::dimensions()`
   and both invoke paths (base surface sync and `useLayoutEffect`)
-- Two side tabs, one per side, so neither has to yield to the other:
-  `.ov-learned-tab` on the **left** (one-shot, retracts, nothing to click) and
-  `.ov-limit-tab` on the **right** (the auto-stop, open for the whole recording,
-  clickable). Both stay out of the pill's flex flow — a wider pill has its
-  rounded ends clipped by the 480px window — and both animate `width`, never
-  `transform`/`opacity`, which is what keeps them clear of the WebKitGTK
-  ghosting in `docs/known-issues/overlay-ghosting.md`
+- Side tabs, and never two on the same side at the same moment:
+  `.ov-learned-tab` on the **left** (one-shot, retracts, nothing to click); on
+  the **right**, `.ov-limit-tab` while recording (the auto-stop, open for the
+  whole recording, clickable) and `.ov-gap-tab` at result time (a short capture,
+  ADR 0079, **not** clickable — audio that was never captured cannot be
+  recovered, so a control there would be an offer the runtime cannot keep). The
+  two right-hand tabs belong to different phases of a session and so never
+  contest the strip. All three stay out of the pill's flex flow — a wider pill
+  has its rounded ends clipped by the 480px window — all three animate `width`,
+  never `transform`/`opacity`, which is what keeps them clear of the WebKitGTK
+  ghosting in `docs/known-issues/overlay-ghosting.md`, and all three are sized
+  by the same measure-then-open shutter: a tab that does not fit the side strip
+  stays at width 0, paints nothing and is not announced
 - The limit tab is **absent** for most of a recording, then shows a stop mark
   and a bare `m:ss` countdown until the end: `data-tone` warning, turning danger
   with a pulsing mark near zero. There is no quiet state — a tab with nothing

@@ -40,6 +40,7 @@ function entry(overrides: Partial<TranscriptionHistoryEntry> = {}): Transcriptio
     title: "Die Umstrukturierung der Einstellungen",
     transcript_path: "/tmp/transcripts/2026/08/10-0942-e1.md",
     fallback_acknowledged: false,
+    capture_integrity: null,
     provider_profile: null,
     local_prompt_strength: null,
     local_prompt_carry: null,
@@ -330,6 +331,93 @@ describe("the raw panel's foot", () => {
       entry({ transform_warning: "The correction was rejected as over-shortened." }),
     );
     expect(warned.note).toBe("The correction was rejected as over-shortened.");
+  });
+
+  /**
+   * ADR 0079. A short capture outranks the transform warning because it is the
+   * larger fact: one says the AI stage did something questionable to the text,
+   * the other says the text is missing content that was never recorded.
+   */
+  it("lets a short capture outrank even a transform warning", () => {
+    const short = rawOf(
+      entry({
+        transform_warning: "The correction was rejected as over-shortened.",
+        capture_integrity: {
+          wall_seconds: 405.7,
+          recorded_seconds: 194.3,
+          missing_ratio: 0.521,
+          verdict: "short",
+        },
+      }),
+    );
+
+    expect(short.note).toContain("194 s of the 406 s it ran");
+    expect(short.note).toContain("52 % of the audio was never captured");
+    expect(short.note).toContain("not of what was said");
+  });
+
+  it("says nothing about a capture that kept its audio", () => {
+    const intact = rawOf(
+      entry({
+        transform_warning: null,
+        corrected: false,
+        applied_rules: [],
+        raw_transcript: "same text",
+        transformed_transcript: "same text",
+        capture_integrity: {
+          wall_seconds: 100,
+          recorded_seconds: 99.8,
+          missing_ratio: 0.002,
+          verdict: "intact",
+        },
+      }),
+    );
+
+    // A note on every healthy record is the noise §11.20 rejects badges for.
+    expect(intact.note).toBeUndefined();
+  });
+
+  it("marks a short capture in the list, so the fold does not have to be opened", () => {
+    const badges = badgesFor(
+      entry({
+        capture_integrity: {
+          wall_seconds: 405.7,
+          recorded_seconds: 194.3,
+          missing_ratio: 0.521,
+          verdict: "short",
+        },
+      }),
+    );
+
+    // It leads: every other badge here says the DELIVERY went sideways, this
+    // one says the text itself is missing content.
+    expect(badges[0]).toEqual({ text: "Audio missing", tone: "danger" });
+  });
+
+  it("draws no badge for a capture that was fine or was never measured", () => {
+    const intact = badgesFor(
+      entry({
+        capture_integrity: {
+          wall_seconds: 100,
+          recorded_seconds: 99.8,
+          missing_ratio: 0.002,
+          verdict: "intact",
+        },
+      }),
+    );
+    const unmeasured = badgesFor(
+      entry({
+        capture_integrity: {
+          wall_seconds: 1.2,
+          recorded_seconds: 0.9,
+          missing_ratio: 0.25,
+          verdict: "not_measured",
+        },
+      }),
+    );
+
+    expect(intact.some((badge) => badge.text === "Audio missing")).toBe(false);
+    expect(unmeasured.some((badge) => badge.text === "Audio missing")).toBe(false);
   });
 
   it("shows the recogniser's own text as Heard, never the rewritten one", () => {

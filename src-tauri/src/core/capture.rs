@@ -53,6 +53,16 @@ const TRIM_PAD_MS: u64 = 150;
 const TRIM_SILENCE_THRESHOLD: f32 = 0.005;
 /// Shortest capture that still gets transcribed, measured after the trim.
 const MIN_SPEECH_MS: u64 = 200;
+/// The fraction of its own wall clock a capture may be missing before it has to
+/// say so. Derived from the 2026-08-03 measurement and re-run on 2026-08-10 over
+/// 608 paired captures: the healthy ones lose a median of 0.1 % and at most
+/// 4.0 %, while the smallest real failure lost 12.0 %. There is no continuum
+/// between the two, so 10 % sits an order of magnitude above the baseline and
+/// below every observed defect (ADR 0079).
+const CAPTURE_GAP_THRESHOLD: f64 = 0.10;
+/// Below this a capture is too short for the ratio to mean anything: at one
+/// second, a single late callback is already several percent.
+const CAPTURE_INTEGRITY_MIN_WALL_SECONDS: f64 = 2.0;
 
 /// What the measured input level says about the microphone setup.
 ///
@@ -361,6 +371,10 @@ fn non_empty(value: &str) -> Option<String> {
 pub struct AudioReadyEvent {
     pub event: String,
     pub input_level: InputLevelSummary,
+    /// Defaulted rather than required, so a payload written before ADR 0079 —
+    /// a retained capture replayed from an older build — still deserializes.
+    #[serde(default = "CaptureIntegrity::unmeasured")]
+    pub capture_integrity: CaptureIntegrity,
     pub audio_path: String,
     pub audio_duration_seconds: f64,
     #[serde(flatten)]
@@ -469,6 +483,15 @@ struct SharedCaptureData {
 /// implies turns "the overlay looked frozen" into a number. A shortfall means
 /// the emit path itself stalled; `slowest_emit_ms` says whether `app.emit`
 /// blocked inside the realtime audio callback while that happened.
+///
+/// **`wall` is the EFFECTIVE elapsed time, with paused stretches removed.**
+/// Pausing calls `Stream::pause`, which stops the cpal callback outright, so a
+/// paused capture emits nothing and records nothing while its clock keeps
+/// running: measured against the raw clock every paused capture reported a
+/// shortfall by construction, and the metric was unreadable on exactly the long
+/// dictations it exists for. A stream REBUILD also sets `paused`, and that one
+/// is deliberately not excused — the samples during a rebuild are genuinely
+/// lost, and a metric that hides real loss is worse than no metric.
 #[derive(Debug, Clone, PartialEq)]
 struct LevelEmitSummary {
     wall_seconds: f64,
@@ -477,6 +500,126 @@ struct LevelEmitSummary {
     failed: u64,
     shortfall_ratio: f64,
     slowest_emit_ms: u128,
+}
+
+/// Whether a capture kept the audio its own clock says it ran for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureIntegrityVerdict {
+    /// The recording matches the clock, within the startup transient.
+    Intact,
+    /// Audio is missing. The transcript is of what was recorded, not of what
+    /// was said, and nothing downstream can tell the difference.
+    Short,
+    /// Too brief for the ratio to carry information.
+    NotMeasured,
+}
+
+/// The comparison nobody had made: how long the capture ran against how much
+/// audio it kept.
+///
+/// Both numbers were already logged — `wall_seconds` on the level-emit line and
+/// the sample count on the export line — and the 2026-08-03 measurement found
+/// them correlated at r = 0.9999 across 353 captures, which means they are one
+/// measurement read off two counters. Eight captures had silently lost between
+/// 12 % and 52 % of a dictation, and the product said nothing at all.
+///
+/// This makes the same comparison at the moment it stops being recoverable, so
+/// a capture that recorded half of what the clock says can say so instead of
+/// delivering a transcript that looks complete (ADR 0079).
+///
+/// `recorded_seconds` is derived from the UNTRIMMED buffer on purpose. The
+/// silence trim (`trim_leading_trailing_silence`) removes a quiet head and tail
+/// deliberately and can account for several seconds of a healthy capture; using
+/// the trimmed length here would report every ordinary dictation as damaged.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CaptureIntegrity {
+    /// Wall clock with paused time removed — see `LevelEmitSummary::new`.
+    pub wall_seconds: f64,
+    pub recorded_seconds: f64,
+    /// The fraction of the clock that produced no audio, clamped to 0..=1.
+    pub missing_ratio: f64,
+    pub verdict: CaptureIntegrityVerdict,
+}
+
+impl CaptureIntegrity {
+    fn new(wall: Duration, sample_count: usize, sample_rate: u32, channels: u16) -> Self {
+        let wall_seconds = wall.as_secs_f64();
+        let recorded_seconds = capture_duration_seconds(sample_count, sample_rate, channels);
+        let missing_ratio = if wall_seconds <= 0.0 {
+            0.0
+        } else {
+            (1.0 - recorded_seconds / wall_seconds).clamp(0.0, 1.0)
+        };
+
+        let verdict = if wall_seconds < CAPTURE_INTEGRITY_MIN_WALL_SECONDS {
+            CaptureIntegrityVerdict::NotMeasured
+        } else if missing_ratio >= CAPTURE_GAP_THRESHOLD {
+            CaptureIntegrityVerdict::Short
+        } else {
+            CaptureIntegrityVerdict::Intact
+        };
+
+        Self {
+            wall_seconds,
+            recorded_seconds,
+            missing_ratio,
+            verdict,
+        }
+    }
+
+    /// The state of a capture nobody measured — an older payload, or a replay.
+    /// Deliberately not `Intact`: "we did not look" and "we looked and it was
+    /// fine" are different facts, and collapsing them would put a clean verdict
+    /// on a capture that never had one.
+    fn unmeasured() -> Self {
+        Self {
+            wall_seconds: 0.0,
+            recorded_seconds: 0.0,
+            missing_ratio: 0.0,
+            verdict: CaptureIntegrityVerdict::NotMeasured,
+        }
+    }
+
+    pub fn is_short(&self) -> bool {
+        self.verdict == CaptureIntegrityVerdict::Short
+    }
+
+    /// The corpus states a capture in seconds, which is how the measurement
+    /// reads it out of the two log lines. It still goes through `new`, so the
+    /// corpus and the runtime cannot disagree about where the threshold sits.
+    #[cfg(test)]
+    pub(crate) fn from_seconds_for_tests(wall_seconds: f64, recorded_seconds: f64) -> Self {
+        Self::new(
+            Duration::from_secs_f64(wall_seconds),
+            (recorded_seconds * f64::from(TRANSCRIPTION_SAMPLE_RATE)) as usize,
+            TRANSCRIPTION_SAMPLE_RATE,
+            TRANSCRIPTION_CHANNELS,
+        )
+    }
+
+    /// The sentence the user reads, on the history record and behind the
+    /// overlay's gap tab.
+    ///
+    /// It states the two numbers and stops. It does not apologise, does not
+    /// guess what was lost, and above all does not offer to recover it — the
+    /// audio was never captured, so there is nothing to recover, and a sentence
+    /// implying otherwise would be the same invisible-damage failure one layer
+    /// up.
+    pub fn message(&self) -> String {
+        format!(
+            "This capture recorded {:.0} s of the {:.0} s it ran. {:.0} % of the audio was never captured, so the text is of what was recorded, not of what was said.",
+            self.recorded_seconds,
+            self.wall_seconds,
+            self.missing_ratio * 100.0,
+        )
+    }
+
+    /// The overlay tab's label. Short enough for the side strip, and it names
+    /// the quantity rather than a mood.
+    pub fn short_label(&self) -> String {
+        format!("−{:.0} % audio", self.missing_ratio * 100.0)
+    }
 }
 
 impl LevelEmitSummary {
@@ -838,11 +981,16 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         let _ = active.stream.pause();
     }
 
-    let (has_voice_activity, samples, level, level_emits) = active
+    let (has_voice_activity, samples, level, level_emits, effective_wall) = active
         .shared
         .lock()
         .map_err(|error| error.to_string())
         .map(|shared| {
+            // One clock for both accountings, and it is the one that excludes
+            // paused stretches — `effective_elapsed` already owns that
+            // arithmetic for the silence timeout, so restating it here would be
+            // a second definition of the same thing.
+            let effective_wall = effective_elapsed(&shared);
             (
                 shared.has_voice_activity,
                 shared.samples.clone(),
@@ -852,13 +1000,21 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
                     shared.measured_samples,
                 ),
                 LevelEmitSummary::new(
-                    shared.started_at.elapsed(),
+                    effective_wall,
                     shared.level_emits_attempted,
                     shared.level_emits_failed,
                     shared.slowest_level_emit,
                 ),
+                effective_wall,
             )
         })?;
+
+    let integrity = CaptureIntegrity::new(
+        effective_wall,
+        samples.len(),
+        active.sample_rate,
+        active.channels,
+    );
 
     // Always recorded, including for discarded captures: the shortfall between
     // expected and attempted level emits is the runtime-side measurement for
@@ -872,6 +1028,17 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         level_emits.failed,
         level_emits.shortfall_ratio,
         level_emits.slowest_emit_ms,
+    ));
+
+    // Recorded on every capture, kept or discarded, and BEFORE the discard
+    // branches below: the comparison is what says whether a capture that is
+    // about to be thrown away as empty was empty or merely unrecorded.
+    runtime_log::record(format!(
+        "[WordScript] Capture integrity wall_seconds={:.3} recorded_seconds={:.3} missing_ratio={:.4} verdict={:?}",
+        integrity.wall_seconds,
+        integrity.recorded_seconds,
+        integrity.missing_ratio,
+        integrity.verdict,
     ));
 
     if samples.is_empty() || !has_voice_activity {
@@ -922,6 +1089,7 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
     let event = AudioReadyEvent {
         event: "audio_ready".to_string(),
         input_level: level,
+        capture_integrity: integrity,
         audio_path: audio_path.to_string_lossy().to_string(),
         audio_duration_seconds,
         config: active.config.clone(),
@@ -1761,6 +1929,7 @@ mod tests {
         let event = AudioReadyEvent {
             event: "audio_ready".to_string(),
             input_level: InputLevelSummary::new(0.4, 0, 16_000),
+            capture_integrity: CaptureIntegrity::unmeasured(),
             audio_path: "/tmp/capture.wav".to_string(),
             audio_duration_seconds: 3.0,
             config: config.clone(),
@@ -2110,6 +2279,197 @@ mod tests {
 
         assert_eq!(summary.expected, 0);
         assert_eq!(summary.shortfall_ratio, 0.0);
+    }
+
+    /// Audio at the capture's own rate, as the shared buffer holds it:
+    /// interleaved, so `channels` samples per frame.
+    fn samples_for(seconds: f64, sample_rate: u32, channels: u16) -> usize {
+        (seconds * f64::from(sample_rate) * f64::from(channels)) as usize
+    }
+
+    /// A freshly started capture with nothing recorded yet. The pause and clock
+    /// tests move `started_at` backwards and set the pause fields, which is the
+    /// only state they are about.
+    fn shared_for_tests() -> SharedCaptureData {
+        SharedCaptureData {
+            started_at: Instant::now(),
+            last_voice_at: Instant::now(),
+            last_level_emit_at: Instant::now(),
+            muted: false,
+            paused: false,
+            paused_at: None,
+            accumulated_paused: Duration::ZERO,
+            has_voice_activity: false,
+            peak_observed: 0.0,
+            clipped_samples: 0,
+            measured_samples: 0,
+            samples: vec![],
+            max_samples: 0,
+            rebuild_in_progress: false,
+            level_emits_attempted: 0,
+            level_emits_failed: 0,
+            slowest_level_emit: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn capture_integrity_calls_a_complete_recording_intact() {
+        let integrity = CaptureIntegrity::new(
+            Duration::from_secs(60),
+            samples_for(59.9, 44_100, 2),
+            44_100,
+            2,
+        );
+
+        assert_eq!(integrity.verdict, CaptureIntegrityVerdict::Intact);
+        assert!(!integrity.is_short());
+        assert!(integrity.missing_ratio < 0.01);
+    }
+
+    /// The worst capture in the 2026-08-03 measurement: 405.7 s on the clock,
+    /// 194.3 s of audio. It was delivered as a finished transcript.
+    #[test]
+    fn capture_integrity_reports_the_worst_observed_capture() {
+        let integrity = CaptureIntegrity::new(
+            Duration::from_millis(405_700),
+            samples_for(194.3, 44_100, 2),
+            44_100,
+            2,
+        );
+
+        assert_eq!(integrity.verdict, CaptureIntegrityVerdict::Short);
+        assert!(
+            (integrity.missing_ratio - 0.521).abs() < 0.005,
+            "expected 52 % missing, got {}",
+            integrity.missing_ratio
+        );
+        assert!(integrity.message().contains("52 %"));
+        assert_eq!(integrity.short_label(), "−52 % audio");
+    }
+
+    /// The baseline's worst healthy capture stays intact, and the smallest real
+    /// failure does not. The threshold has to separate exactly these two, and
+    /// the gap between them is the whole reason it can be a constant.
+    #[test]
+    fn capture_integrity_separates_the_baseline_from_the_smallest_real_failure() {
+        let healthy =
+            CaptureIntegrity::new(Duration::from_secs(100), samples_for(96.0, 16_000, 1), 16_000, 1);
+        let failure =
+            CaptureIntegrity::new(Duration::from_secs(100), samples_for(88.0, 16_000, 1), 16_000, 1);
+
+        assert_eq!(healthy.verdict, CaptureIntegrityVerdict::Intact);
+        assert_eq!(failure.verdict, CaptureIntegrityVerdict::Short);
+    }
+
+    #[test]
+    fn capture_integrity_declines_to_judge_a_capture_too_short_to_measure() {
+        let integrity =
+            CaptureIntegrity::new(Duration::from_millis(900), samples_for(0.4, 16_000, 1), 16_000, 1);
+
+        assert_eq!(integrity.verdict, CaptureIntegrityVerdict::NotMeasured);
+        assert!(!integrity.is_short());
+    }
+
+    /// A capture that recorded MORE than its effective clock — possible by a
+    /// rounding hair once paused time is subtracted — is intact, not negative.
+    #[test]
+    fn capture_integrity_never_reports_a_negative_gap() {
+        let integrity =
+            CaptureIntegrity::new(Duration::from_secs(10), samples_for(10.4, 16_000, 1), 16_000, 1);
+
+        assert_eq!(integrity.missing_ratio, 0.0);
+        assert_eq!(integrity.verdict, CaptureIntegrityVerdict::Intact);
+    }
+
+    /// A payload from before ADR 0079 carries no verdict, and must not be given
+    /// a clean one. Reached in practice by a retained capture written by an
+    /// older build and replayed after an update.
+    #[test]
+    fn an_audio_ready_payload_without_integrity_is_not_measured() {
+        let event = AudioReadyEvent {
+            event: "audio_ready".to_string(),
+            input_level: InputLevelSummary::new(0.4, 0, 16_000),
+            capture_integrity: CaptureIntegrity::new(
+                Duration::from_secs(60),
+                samples_for(30.0, 16_000, 1),
+                16_000,
+                1,
+            ),
+            audio_path: "/tmp/capture.wav".to_string(),
+            audio_duration_seconds: 12.0,
+            config: NativeCaptureConfig::default(),
+        };
+        let mut value = serde_json::to_value(&event).expect("event serializes");
+        value
+            .as_object_mut()
+            .expect("object payload")
+            .remove("capture_integrity")
+            .expect("the field was there to remove");
+
+        let payload: AudioReadyEvent =
+            serde_json::from_value(value).expect("legacy audio_ready payload");
+
+        assert_eq!(
+            payload.capture_integrity.verdict,
+            CaptureIntegrityVerdict::NotMeasured
+        );
+    }
+
+    /// Pausing stops the cpal callback, so a paused capture records nothing
+    /// while the raw clock runs. The effective clock is what both accountings
+    /// are measured against, and against it the capture is intact.
+    #[test]
+    fn paused_time_is_not_counted_as_missing_audio() {
+        let mut shared = shared_for_tests();
+        shared.started_at = Instant::now() - Duration::from_secs(100);
+        shared.accumulated_paused = Duration::from_secs(40);
+
+        let effective = effective_elapsed(&shared);
+        let integrity =
+            CaptureIntegrity::new(effective, samples_for(59.5, 16_000, 1), 16_000, 1);
+        let emits = LevelEmitSummary::new(effective, 1_420, 0, Duration::ZERO);
+
+        assert_eq!(integrity.verdict, CaptureIntegrityVerdict::Intact);
+        assert!(
+            emits.shortfall_ratio < 0.02,
+            "the emit shortfall must be readable on a paused capture, got {}",
+            emits.shortfall_ratio
+        );
+    }
+
+    /// A pause that is still open at stop counts too — the user can stop a
+    /// capture without resuming it first.
+    #[test]
+    fn an_open_pause_is_subtracted_as_well() {
+        let mut shared = shared_for_tests();
+        shared.started_at = Instant::now() - Duration::from_secs(60);
+        shared.paused = true;
+        shared.paused_at = Some(Instant::now() - Duration::from_secs(30));
+
+        let effective = effective_elapsed(&shared);
+
+        assert!(
+            (effective.as_secs_f64() - 30.0).abs() < 1.0,
+            "expected roughly 30 s of effective capture, got {:?}",
+            effective
+        );
+    }
+
+    /// A stream rebuild also sets `paused`, and it is deliberately NOT excused:
+    /// `accumulated_paused` is never advanced for it, so the samples lost to a
+    /// rebuild stay visible as missing audio.
+    #[test]
+    fn a_stream_rebuild_is_not_excused_the_way_a_pause_is() {
+        let mut shared = shared_for_tests();
+        shared.started_at = Instant::now() - Duration::from_secs(100);
+        shared.rebuild_in_progress = true;
+        shared.paused = true;
+
+        let effective = effective_elapsed(&shared);
+        let integrity =
+            CaptureIntegrity::new(effective, samples_for(70.0, 16_000, 1), 16_000, 1);
+
+        assert_eq!(integrity.verdict, CaptureIntegrityVerdict::Short);
     }
 
     #[test]

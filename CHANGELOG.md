@@ -55,6 +55,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A capture states how much of its own clock it kept** (ADR 0079). Between
+  12 % and 55 % of the audio of some recordings is never captured and nothing
+  said so: re-measured 2026-08-10 over 634 paired captures, **11 are short and
+  the worst — 54.6 % of a 214 s dictation — is the most recent**, its transcript
+  reading as a finished piece of German at a third of the expected density.
+  `CaptureIntegrity` compares the untrimmed buffer against the effective wall
+  clock and travels with the capture to three places: the runtime log on every
+  capture including discarded ones, the history record (an `Audio missing` badge
+  and a sentence in the raw panel), and a tab beside the result pill **at
+  delivery time**, while the text is still in hand. The tab is a statement and
+  not a control — audio that was never captured cannot be recovered, and a
+  button there would be an offer the runtime cannot keep. Threshold 10 %,
+  derived from a gap in the data running from 7.0 % to 12.0 %; nothing under two
+  seconds is judged, and `not_measured` is kept distinct from `intact`.
+- **WordScript removes its own initial prompt from the transcript** (ADR 0080).
+  Whisper echoes the prompt it is given back as if it had been spoken —
+  12.5 % of raw transcripts, 6.6 % delivered still carrying it — and on
+  2026-08-10 one such sentence reached an agent **as an instruction and was
+  followed**. The strip removes an echo of the prompt *this request sent*,
+  carried from the request rather than rebuilt. Matching is a normalised
+  in-order subsequence because the echo turned out to be a paraphrase, and the
+  unit is the sentence, which is what separates a leak from the owner quoting
+  the leak. It never restores the displaced words: a wholly-echoed transcript
+  comes back empty, and `raw_transcript` deliberately keeps the leak so the rate
+  stays measurable.
+- **A pluralized form of address is restored to the singular** (ADR 0081).
+  `fix das bitte` shipped as `fixt das bitte`. The obvious suffix rule was
+  measured first and rejected — it flags 45 tokens in 31 of 136 records of which
+  3 are the defect — so the repair reads grammatical **mood**: clause-initial
+  verb from a closed table, not a question, no plural addressee, and a particle
+  or `dir`/`dich` vouching for it. It is **German-only by declaration**, gated
+  on the detected language, because the bare-stem/stem-plus-`-t` pair that is
+  the defect exists in no other language WordScript dictates in.
+
 - **Every transcript is a Markdown file, which is what the surface always said**
   (§11.23, ADR 0074). `core::transcript_store` writes one per record that
   produced text, under `~/WordScript/transcripts/<YYYY>/<MM>/<DD-HHMM>-<slug>.md`
@@ -182,6 +216,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`shortfall_ratio` was unreadable on any paused capture** (ADR 0079). Pausing
+  calls `Stream::pause`, which stops the cpal callback outright, so a paused
+  capture emitted nothing and recorded nothing while its clock kept running —
+  measured against the raw clock, every paused capture reported a shortfall by
+  construction, on exactly the long dictations the metric exists for. Both
+  accountings now measure against `effective_elapsed`. A stream rebuild also
+  sets `paused` and is deliberately *not* excused: those samples are genuinely
+  lost, and a metric that hides real loss is worse than no metric.
 - **Retry was greyed out on every record that had succeeded.** The control
   disabled itself whenever `audio_path` was empty — but that is one of the
   runtime's two retry paths, not both: a record that still holds its raw

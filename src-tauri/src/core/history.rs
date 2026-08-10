@@ -5,6 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
+use super::capture::CaptureIntegrity;
 use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::insertion::{
     insert_transcription_from_legacy, NativeClipboardRestoreStatus, NativeInsertDriver,
@@ -105,6 +106,20 @@ pub struct TranscriptionHistoryEntry {
     /// entry whose delivery fell back; meaningless and unread on any other.
     #[serde(default)]
     pub fallback_acknowledged: bool,
+    /// How much of its own clock the capture behind this record actually kept
+    /// (ADR 0079).
+    ///
+    /// `None` on every record written before the measurement existed, and on a
+    /// retry — the number belongs to a capture, not to a transcription, and
+    /// copying an earlier entry's verdict onto a new one would attribute a
+    /// measurement to a run that never made it.
+    ///
+    /// It is here rather than only in the runtime log because the log rotates.
+    /// The correlation this cluster needs — a short capture against a misheard
+    /// transcript — was untestable on 2026-08-10 for exactly that reason: 9 of
+    /// the 10 affected captures had outlived their transcripts.
+    #[serde(default)]
+    pub capture_integrity: Option<CaptureIntegrity>,
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +158,9 @@ pub struct RecordHistoryEntryRequest {
     pub clipboard_restore: Option<NativeClipboardRestoreStatus>,
     pub error: Option<String>,
     pub audio_path: Option<String>,
+    /// What the capture measured about itself (ADR 0079). `None` on the paths
+    /// that have no capture of their own to report — a retry above all.
+    pub capture_integrity: Option<CaptureIntegrity>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -362,6 +380,7 @@ fn record_entry_with_work_mode(
         error: request.error,
         audio_path: request.audio_path,
         fallback_acknowledged: false,
+        capture_integrity: request.capture_integrity,
     };
 
     store.entries.push_front(entry.clone());
@@ -542,6 +561,10 @@ async fn transcribe_retained_capture(
 
     let capture_config = super::capture::NativeCaptureConfig::load_from_disk();
     let request = capture_config.resolve_transcription_request(&audio_path, timeout_ms);
+    // The prompt THIS request sends, held before the request is consumed. A
+    // retry is a fresh transcription and leaks exactly like any other, so it
+    // gets the same repair the pipeline gives (ADR 0080, ADR 0081).
+    let recognizer_prompt = request.prompt.clone();
 
     runtime_log::record(format!(
         "[WordScript] History retry from audio entry_id={} path={} audio_seconds={:.1} timeout_ms={}",
@@ -552,7 +575,30 @@ async fn transcribe_retained_capture(
         .await
         .map_err(|error| error.message)?;
 
-    let text = response.text.trim().to_string();
+    let (repaired, signals) = super::recognizer_repair::repair_recognizer_output(
+        &response.text,
+        recognizer_prompt.as_deref(),
+        // Detected first, configured second — the same order the pipeline uses,
+        // and for the same reason: the German-only repair may not run over text
+        // whose language nobody established.
+        response
+            .language
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or(capture_config.language.as_str().into())
+            .filter(|value| !value.trim().is_empty()),
+    );
+    if signals.changed_text() {
+        runtime_log::record(format!(
+            "[WordScript] Recognizer repair applied entry_id={} rules={} heard_len={} repaired_len={}",
+            entry.id,
+            signals.applied_rules().join(","),
+            response.text.len(),
+            repaired.len(),
+        ));
+    }
+
+    let text = repaired.trim().to_string();
     if text.is_empty() {
         return Err("The recording was transcribed but produced no text.".to_string());
     }
@@ -662,6 +708,10 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 clipboard_restore: None,
                 error: Some("Retry produced no usable transcript.".to_string()),
                 audio_path: None,
+                // A retry re-transcribes audio an earlier session captured, so
+                // it has no capture of its own to report. The original record
+                // keeps the verdict that belongs to it.
+                capture_integrity: None,
             },
             Some(app_config.resolved_active_text_profile_work_mode()),
         )?
@@ -692,6 +742,10 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             &insert_result,
             Some(retry_mode.clone()),
             title,
+            // A retry re-transcribes audio an earlier session captured. The
+            // capture measurement belongs to that session's record and is not
+            // copied forward onto a run that never made a capture.
+            None,
         )?;
 
         if insert_result.ok {
@@ -746,6 +800,9 @@ pub fn history_entry_from_insert_result(
     effective_mode: Option<ProcessingMode>,
     // What the model called it (ADR 0077), or `None` for the first words.
     title: Option<String>,
+    // What the capture measured about itself (ADR 0079). `None` on a retry,
+    // which has no capture of its own.
+    capture_integrity: Option<CaptureIntegrity>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -788,6 +845,7 @@ pub fn history_entry_from_insert_result(
             clipboard_restore: Some(insert_result.clipboard_restore),
             error: insert_result.error.clone(),
             audio_path: None,
+            capture_integrity,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -801,6 +859,7 @@ pub fn record_insert_failure(
     error: String,
     effective_mode: Option<ProcessingMode>,
     title: Option<String>,
+    capture_integrity: Option<CaptureIntegrity>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -835,6 +894,7 @@ pub fn record_insert_failure(
             clipboard_restore: None,
             error: Some(error),
             audio_path: None,
+            capture_integrity,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -853,6 +913,7 @@ pub fn record_transcription_failure(
     language: Option<String>,
     error: String,
     audio_path: Option<String>,
+    capture_integrity: Option<CaptureIntegrity>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -889,6 +950,7 @@ pub fn record_transcription_failure(
             clipboard_restore: None,
             error: Some(error),
             audio_path,
+            capture_integrity,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -899,6 +961,7 @@ pub fn record_empty_result(
     raw_transcript: String,
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
+    capture_integrity: Option<CaptureIntegrity>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     // An empty result has no text, so no file and nothing to name.
     let title: Option<String> = None;
@@ -935,6 +998,10 @@ pub fn record_empty_result(
             clipboard_restore: None,
             error: Some("Pipeline produced no usable transcript.".to_string()),
             audio_path: None,
+            // The one place the verdict matters most: an empty result and a
+            // capture that recorded nothing look identical on the record, and
+            // only this number tells them apart.
+            capture_integrity,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -1326,6 +1393,7 @@ mod tests {
                 clipboard_restore: None,
                 error: None,
                 audio_path: None,
+                capture_integrity: None,
             })
             .expect("record history entry");
         }
@@ -1379,6 +1447,7 @@ mod tests {
             clipboard_restore: None,
             error: None,
             audio_path: None,
+            capture_integrity: None,
         })
         .expect("first history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1411,6 +1480,7 @@ mod tests {
             clipboard_restore: None,
             error: None,
             audio_path: None,
+            capture_integrity: None,
         })
         .expect("second history entry");
 
@@ -1461,6 +1531,7 @@ mod tests {
             clipboard_restore: None,
             error: None,
             audio_path: None,
+            capture_integrity: None,
         })
         .expect("groq history entry");
 
@@ -1494,6 +1565,7 @@ mod tests {
             clipboard_restore: None,
             error: Some("Model missing".to_string()),
             audio_path: None,
+            capture_integrity: None,
         })
         .expect("local preview history entry");
 
@@ -1555,6 +1627,7 @@ mod tests {
             clipboard_restore: None,
             error: None,
             audio_path: None,
+            capture_integrity: None,
         })
         .expect("first export history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1587,6 +1660,7 @@ mod tests {
             clipboard_restore: None,
             error: None,
             audio_path: None,
+            capture_integrity: None,
         })
         .expect("second export history entry");
 
@@ -1649,6 +1723,7 @@ mod tests {
                 error: None,
                 audio_path: None,
                 fallback_acknowledged: false,
+                capture_integrity: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-a".to_string(),
@@ -1685,6 +1760,7 @@ mod tests {
                 error: None,
                 audio_path: None,
                 fallback_acknowledged: false,
+                capture_integrity: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-b".to_string(),
@@ -1721,6 +1797,7 @@ mod tests {
                 error: None,
                 audio_path: None,
                 fallback_acknowledged: false,
+                capture_integrity: None,
             },
         ]);
 
@@ -1783,6 +1860,7 @@ mod tests {
             },
             None,
             None,
+            None,
         )
         .expect("history entry from insert result");
 
@@ -1805,6 +1883,17 @@ mod tests {
             entry.recovery_message.as_deref(),
             Some("Transcript is on the clipboard. Paste manually.")
         );
+    }
+
+    /// The worst capture in the 2026-08-03 measurement, as a verdict: 405.7 s
+    /// on the clock, 194.3 s of audio.
+    fn short_capture() -> CaptureIntegrity {
+        CaptureIntegrity {
+            wall_seconds: 405.7,
+            recorded_seconds: 194.3,
+            missing_ratio: 0.52,
+            verdict: super::super::capture::CaptureIntegrityVerdict::Short,
+        }
     }
 
     /// A helper shaped like the funnel's happy path, so the ADR 0074 tests read
@@ -1840,6 +1929,7 @@ mod tests {
             clipboard_restore: None,
             error: None,
             audio_path: None,
+            capture_integrity: None,
         }
     }
 
@@ -1861,6 +1951,76 @@ mod tests {
         assert!(body.contains("## Heard"));
 
         super::super::transcript_store::remove_transcript(&path);
+    }
+
+    /// A short capture's verdict has to survive the write, because reading it
+    /// back off the record is the whole point: the runtime log rotates and the
+    /// record is what is still there a week later (ADR 0079).
+    #[test]
+    fn a_short_capture_is_still_short_when_the_record_is_read_back() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("capture-integrity");
+
+        let mut request = completed_request("Die Hälfte fehlt.");
+        request.capture_integrity = Some(short_capture());
+        let recorded = record_entry(request).expect("history entry");
+
+        let read_back = transcription_history_entries(None)
+            .expect("history entries")
+            .into_iter()
+            .find(|entry| entry.id == recorded.id)
+            .expect("the entry we just wrote");
+        let integrity = read_back.capture_integrity.expect("a verdict on the record");
+
+        assert!(integrity.is_short());
+        assert!((integrity.missing_ratio - 0.52).abs() < 0.001);
+
+        if let Some(path) = read_back.transcript_path.as_deref() {
+            super::super::transcript_store::remove_transcript(path);
+        }
+    }
+
+    /// An older record predates the measurement. It must read back as absent,
+    /// never as a clean verdict somebody could mistake for evidence.
+    #[test]
+    fn a_record_written_before_the_measurement_carries_no_verdict() {
+        let json = serde_json::json!({
+            "id": "history-1",
+            "created_at_ms": 1_786_000_000_000u64,
+            "status": "completed",
+            "source": "native_pipeline",
+            "retry_of": null,
+            "provider": "groq",
+            "model": "whisper-large-v3",
+            "language": null,
+            "active_profile": "General writing",
+            "raw_transcript": "Alles da.",
+            "transformed_transcript": "Alles da.",
+            "corrected": true,
+            "applied_rules": [],
+            "transform_warning": null,
+            "insert_mode": null,
+            "active_driver": null,
+            "pasted": null,
+            "fallback_available": null,
+            "fallback_reason": null,
+            "recovery_action": null,
+            "recovery_message": null,
+            "clipboard_restore": null,
+            "error": null,
+            "provider_profile": null,
+            "local_prompt_strength": null,
+            "local_prompt_carry": null,
+            "local_beam_size": null,
+            "local_best_of": null,
+        });
+
+        let entry: TranscriptionHistoryEntry =
+            serde_json::from_value(json).expect("a pre-ADR-0079 record");
+
+        assert!(entry.capture_integrity.is_none());
     }
 
     /// The `Empty` and `Failed` paths reach the same funnel and must not leave
@@ -2020,6 +2180,7 @@ mod tests {
             error: None,
             audio_path: None,
             fallback_acknowledged: false,
+            capture_integrity: None,
         }
     }
 }

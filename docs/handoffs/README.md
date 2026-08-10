@@ -15,6 +15,13 @@ Naming: `HANDOFF_<branch-or-slug>.md`
   and the prompt for the next leg. Each leg works on `main`, ends green, pushes,
   and writes the next prompt into it. Supersedes
   [GUI_REWORK_THIRD_PASS.md](GUI_REWORK_THIRD_PASS.md), whose work is done.
+- [Core Hardening, Second Pass](KICKOFF_core-hardening-2.md): **active, opened
+  2026-08-11.** A different track from the GUI port relay, following the cluster
+  in `docs/known-issues/` where the damage is invisible — output that is fluent,
+  grammatical and wrong. Carries what the first pass shipped (ADRs 0079-0081),
+  the measurement that came back negative and why that is a result rather than
+  an absence, and the order for the next one. The two tracks ran concurrently on
+  2026-08-10 without colliding.
 - [Per-Mode Activation Gestures and Shortcut Defaults](HANDOFF_activation-mode-gestures-and-defaults.md):
   **open — nothing built yet**, written 2026-07-29. The only forward-looking
   document in this folder. Why one set of shortcut defaults cannot serve three

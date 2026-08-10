@@ -1512,6 +1512,16 @@ fn handle_audio_ready<R: Runtime + 'static>(
     let provider = request.provider.clone();
     let requested_model = request.model.clone();
     let requested_language = request.language.clone();
+    // What the capture measured about itself, carried the whole way to the
+    // record (ADR 0079). Every branch below writes one, and a branch that
+    // dropped it would leave exactly the transcript that needs the number most
+    // — a short one — with nothing on it.
+    let capture_integrity = Some(payload.capture_integrity);
+    // The initial prompt this request will actually send. Held here rather than
+    // rebuilt after the response, because a rebuild can drift from what went
+    // out and the whole point of the echo strip is that we know the exact
+    // string we sent (ADR 0080).
+    let recognizer_prompt = request.prompt.clone();
     // Seeded from the profile's stored mode. The effective mode is not known
     // until the transcript exists (an override or Auto resolution can differ),
     // so the pipeline re-applies the preset before transforming — see
@@ -1529,6 +1539,16 @@ fn handle_audio_ready<R: Runtime + 'static>(
         transcription_timeout_ms,
         payload.config.work_mode.processing_mode.as_str(),
     ));
+
+    if payload.capture_integrity.is_short() {
+        core::runtime_log::record(format!(
+            "[WordScript] Native pipeline capture is short session_id={} missing_ratio={:.4} recorded_seconds={:.3} wall_seconds={:.3}",
+            session_id,
+            payload.capture_integrity.missing_ratio,
+            payload.capture_integrity.recorded_seconds,
+            payload.capture_integrity.wall_seconds,
+        ));
+    }
 
     tauri::async_runtime::spawn(async move {
         let cleanup_path = audio_path.clone();
@@ -1590,7 +1610,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     return;
                 }
 
-                let (response, low_confidence_segments) = apply_confidence_gate(response);
+                let (mut response, low_confidence_segments) = apply_confidence_gate(response);
 
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transcription ready elapsed_ms={} text_len={} provider_duration={:?}",
@@ -1598,6 +1618,47 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     response.text.len(),
                     response.duration,
                 ));
+
+                /* THE RECOGNISER-OUTPUT REPAIR STAGE (ADR 0080, ADR 0081).
+                   Ahead of the mode branch, because Agent, Translate and Prompt
+                   Enhance each have their own branch below and the case that
+                   made this urgent was a leaked prompt sentence reaching an
+                   agent AS AN INSTRUCTION.
+
+                   `heard_text` is the recogniser's own output and is what the
+                   record keeps. Repairing the record as well as the delivery
+                   would erase the only evidence these defects leave — the leak
+                   is measurable today precisely because `raw_transcript` has
+                   been carrying it. */
+                let heard_text = response.text.clone();
+                /* The DETECTED language first, the profile's pinned one second.
+                   WordScript dictates in more than one language and one of the
+                   two repairs below is German morphology, so it may only run
+                   over text known to be German. The detection is what makes
+                   that work in practice: the owner's own records carry no
+                   configured language at all, and `verbose_json` reports one on
+                   every Groq response. */
+                let detected_language = response
+                    .language
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_string)
+                    .or_else(|| requested_language.clone());
+                let (repaired_text, repair_signals) = core::recognizer_repair::repair_recognizer_output(
+                    &response.text,
+                    recognizer_prompt.as_deref(),
+                    detected_language.as_deref(),
+                );
+                if repair_signals.changed_text() {
+                    core::runtime_log::record(format!(
+                        "[WordScript] Recognizer repair applied session_id={} rules={} heard_len={} repaired_len={}",
+                        session_id,
+                        repair_signals.applied_rules().join(","),
+                        heard_text.len(),
+                        repaired_text.len(),
+                    ));
+                    response.text = repaired_text;
+                }
                 // The mode leaves this block with the text: the history record
                 // states what ran rather than what the profile was set to, and
                 // the transcript file states the same (ADR 0074, ADR 0075).
@@ -1740,6 +1801,18 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         effective_mode,
                     )
                 };
+                /* Prepended so the record reads in pipeline order: what the
+                   recogniser-output stage did before any mode saw the text, then
+                   what the mode did. Without this the two repairs would act on
+                   every delivery and be reported on none of them, which is the
+                   invisible-damage failure this whole leg is against. */
+                let mut transformed = transformed;
+                if repair_signals.changed_text() {
+                    let mut rules = repair_signals.applied_rules();
+                    rules.append(&mut transformed.applied_rules);
+                    transformed.applied_rules = rules;
+                }
+                let transformed = transformed;
                 let app_config = pipeline_app_config.clone();
                 if let Some(warning) = &transformed.warning {
                     core::runtime_log::record(format!(
@@ -1780,9 +1853,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                 if text.is_empty() {
                     let _ = core::history::record_empty_result(
                         &app_config,
-                        response.text.clone(),
+                        heard_text.clone(),
                         transformed,
                         Some(effective_mode.clone()),
+                        capture_integrity,
                     );
                     core::runtime_log::record(format!(
                         "[WordScript] Native pipeline empty result elapsed_ms={}",
@@ -1817,9 +1891,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             &app,
                             app_config.clone(),
                             provider.clone(),
-                            response.text.clone(),
+                            heard_text.clone(),
                             transformed.clone(),
                             Some(effective_mode.clone()),
+                            capture_integrity,
                         ) {
                             Ok(preview) => {
                                 core::runtime_log::record(format!(
@@ -1840,7 +1915,8 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                         "transform": {
                                             "applied_rules": preview.transform.applied_rules,
                                             "warning": preview.transform.warning,
-                                        }
+                                        },
+                                        "capture_integrity": capture_integrity
                                     }),
                                 );
                             }
@@ -1881,11 +1957,12 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             let history_entry = core::history::history_entry_from_insert_result(
                                 &app_config,
                                 None,
-                                Some(response.text.clone()),
+                                Some(heard_text.clone()),
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
+                                capture_integrity,
                             )
                             .ok();
 
@@ -1899,6 +1976,15 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                     core::vocabulary_learning::LearnFromSessionRequest {
                                         profile_id: app_config.active_text_profile_id.clone(),
                                         observation_id: entry.id.clone(),
+                                        /* The REPAIRED text, deliberately unlike
+                                           the record above. Learning reads the
+                                           raw/final pair as evidence that a
+                                           correction repaired a term; handed the
+                                           unrepaired text it would see the
+                                           stripped prompt words as something the
+                                           correction removed, and could propose
+                                           WordScript's own prompt as profile
+                                           vocabulary. */
                                         raw_transcript: response.text.clone(),
                                         final_text: text.clone(),
                                         known_terms: core::vocabulary_learning::known_terms(
@@ -1937,7 +2023,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                             "provider": provider,
                                             "active_profile": app_config.active_text_profile_label(),
                                             "work_mode": app_config.resolved_active_text_profile_work_mode(),
-                                            "raw_text": response.text,
+                                            "raw_text": heard_text,
                                             "transform": {
                                                 "applied_rules": transformed.applied_rules,
                                                 "warning": transformed.warning,
@@ -1947,7 +2033,8 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                                 "retry_of": entry.retry_of,
                                             })),
                                             "delivery": result.insert_mode.delivery_label(),
-                                            "insertion": result
+                                            "insertion": result,
+                                            "capture_integrity": capture_integrity
                                         }),
                                     );
                                     // The delivery point: the session is
@@ -1985,11 +2072,12 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             let _ = core::history::history_entry_from_insert_result(
                                 &app_config,
                                 None,
-                                Some(response.text.clone()),
+                                Some(heard_text.clone()),
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
+                                capture_integrity,
                             );
                             let error = result
                                 .error
@@ -2055,12 +2143,13 @@ fn handle_audio_ready<R: Runtime + 'static>(
 
                             let _ = core::history::record_insert_failure(
                                 &app_config,
-                                response.text.clone(),
+                                heard_text.clone(),
                                 text.clone(),
                                 transformed.clone(),
                                 error.clone(),
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
+                                capture_integrity,
                             );
                             core::runtime_log::record(format!(
                                 "[WordScript] Native pipeline insertion failed session_id={} elapsed_ms={} error={}",
@@ -2127,6 +2216,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     requested_language.clone(),
                     error.message.clone(),
                     keep_audio.then(|| cleanup_path.clone()),
+                    capture_integrity,
                 );
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transcription failed session_id={} elapsed_ms={} kind={:?} message={}",

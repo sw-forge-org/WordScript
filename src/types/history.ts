@@ -4,7 +4,9 @@ import type {
   NativeInsertMode,
   NativeInsertRecoveryAction,
 } from "./nativeInsertion";
-import type { ProcessingMode, TextProfileWorkMode } from "./ipc";
+import type { CaptureIntegrity, ProcessingMode, TextProfileWorkMode } from "./ipc";
+
+export type { CaptureIntegrity, CaptureIntegrityVerdict } from "./ipc";
 
 export type TranscriptionHistoryStatus = "completed" | "empty" | "failed";
 export type TranscriptionHistorySource = "native_pipeline" | "retry";
@@ -86,4 +88,8 @@ export interface TranscriptionHistoryEntry {
    *  text, or said it did not matter (ADR 0076). Only ever set on an entry
    *  whose delivery fell back. */
   fallback_acknowledged: boolean;
+  /** How much of its own clock the capture behind this record kept (ADR 0079).
+   *  `null` on entries older than the measurement and on a retry, which has no
+   *  capture of its own. */
+  capture_integrity: CaptureIntegrity | null;
 }

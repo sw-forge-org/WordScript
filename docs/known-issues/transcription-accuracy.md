@@ -1,9 +1,14 @@
 # Raw Transcription Accuracy — Frequent Mishearings
 
-Status: **Open, unmeasured.** Reported by the owner on 2026-08-10 against daily
-use: *"Aktuell ist die Transkription sehr ungenau und es kommen sehr viele
-solche Artefakte vor."* No measurement exists yet, which is the first thing this
-record owes.
+Status: **Open. Partly measured 2026-08-10: two identified causes now have rates
+and deterministic fixes, and the one question that would tie this record to the
+capture defect was attempted and is NOT ANSWERABLE on today's data — for a
+reason that is itself now fixed.** Reported by the owner on 2026-08-10 against
+daily use: *"Aktuell ist die Transkription sehr ungenau und es kommen sehr viele
+solche Artefakte vor."*
+
+There is still no WER and no general accuracy rate, so the headline complaint
+stays open.
 
 ## Symptom
 
@@ -59,6 +64,56 @@ That is the failure at full strength: the artifact was **grammatical German in
 the register of the surrounding text**, which is exactly why no filter can catch
 it and why the reader spent effort on it before rejecting it.
 
+## The measurement that would join this cluster together — attempted, and it cannot be taken yet
+
+This record's neighbours describe the same failure class at different stages:
+a capture loses half its audio, the recogniser echoes our own prompt, the
+recogniser pluralizes an address, and cleanup invents tokens where the input is
+already broken. The question that would turn four suspicions into one located
+cause is: **does a capture that lost audio produce a transcript with more
+mishearings in it?**
+
+It was attempted on 2026-08-10. The harness is
+`cargo test measure_capture_integrity_against_transcripts -- --ignored --nocapture`,
+and it spends nothing: it joins `wordscript-runtime.log` to `history.json` by
+timestamp.
+
+**The join works and the data does not overlap.**
+
+- 634 captures paired across both runtime logs; **136 of 136 history records
+  joined to a capture**, gaps of 1.3–12.1 s, which is the pipeline itself.
+- 11 captures are short past the 10 % threshold.
+- **Only 2 of those 11 still have a transcript.** The other 9 outlived them:
+  the runtime log and `history.json` have different retentions, and history's
+  is the shorter one.
+
+So the correlation is not weak — it is untestable, and that is a **retention
+artifact rather than a result**. Reporting it as "no correlation found" would
+have been the worst available outcome, because it would have closed the
+question with an answer nobody measured.
+
+**The reason is fixed rather than the correlation.**
+[ADR 0079](../decisions/0079-a-capture-states-how-much-of-its-own-clock-it-kept.md)
+puts the verdict on the history record itself, so the next run needs no join at
+all: a record carries what its own capture measured, and the harness counts how
+many records answer for themselves. Five did on the evening it shipped.
+
+### What the same run did measure
+
+- **The prompt leak**, on 136 records: **12.5 % of raw transcripts carry prompt
+  text, 6.6 % are delivered still carrying it.** `Likely phrases` is the bigger
+  half at 10 of 17 leaking records. Fixed in the delivery by
+  [ADR 0080](../decisions/0080-wordscript-removes-its-own-prompt-from-the-transcript-and-never-restores-what-it-displaced.md);
+  the raw transcript deliberately keeps it so this rate stays readable.
+- **The pluralized address**: a naive suffix scan flags 45 tokens in 31 of 136
+  records, of which **3 are the defect** — a 15:1 false-positive ratio that is
+  why [ADR 0081](../decisions/0081-the-recogniser-output-is-repaired-before-any-mode-sees-it.md)
+  reads mood rather than suffix.
+- **Transcript density**: a median of 8.4 characters per recorded second across
+  116 records. The one short capture with a surviving transcript ran at 3.1
+  characters per *wall-clock* second — the signature the capture record
+  describes, seen again.
+
 ## What is not known
 
 Everything that would make this actionable:
@@ -108,21 +163,29 @@ had run on every one of them. Equal outputs are not evidence that nothing ran.
 
 ## Next steps, cheapest first
 
-1. **Capture instances instead of describing them.** Every mishearing that
-   costs a round trip goes into
-   `src-tauri/tests/fixtures/regression_transcripts.json` (loader:
-   `core::regression_corpus`, 26 entries today) with a `failure_mode` of its
-   own, plus a matching synthetic test. That turns a complaint into a corpus,
-   and the corpus is the only thing that can show a change is an improvement.
-   The 2026-08-10 sample above is the first candidate.
-2. **Record what the audio looked like.** The history entry already carries the
-   provider, the model and the profile; the input level summary is emitted on
-   the `empty` event and kept nowhere. Persisting a peak/mean per transcription
-   would separate "the recognizer is wrong" from "the microphone is quiet"
-   without any new capability.
-3. **Separate the lanes in the report.** A per-lane count is a filter over data
+1. ~~**Capture instances instead of describing them.**~~ **Started 2026-08-10.**
+   The corpus went from 26 entries to 44: eighteen new ones under
+   `stt_prompt_leak`, `recognizer_pluralized_address` and `capture_lost_audio`,
+   every one drawn from a dated record on this machine, and each with its
+   negative counterpart. **The negatives are the point** — a rule that removes a
+   leak must not remove the sentence in which the owner *complains about* the
+   leak, and the corpus carries both.
+   Still to add: mishearings that are neither of the two identified causes. The
+   *"Normale Sätze…"* sample this record opened with turned out to be the prompt
+   leak; a genuine substitution has not yet been captured as an entry.
+2. **Record what the audio looked like.** Half done. The capture's own integrity
+   is now on the record (ADR 0079), which separates "the recogniser is wrong"
+   from "half the audio never arrived". The **input level** summary — peak and
+   mean, emitted on the `empty` event and kept nowhere — is still not persisted,
+   and it is what would separate "the recogniser is wrong" from "the microphone
+   is quiet". Cheapest remaining step.
+3. **Re-run the correlation once records carry their own verdicts.** The join
+   above is no longer needed; the harness reports how many records answer for
+   themselves, and the question becomes answerable as soon as enough short
+   captures have been recorded under ADR 0079. Nothing else has to be built.
+4. **Separate the lanes in the report.** A per-lane count is a filter over data
    the history already holds, once instances are being marked at all.
-4. **Then, and only then, the model question.** Whether
+5. **Then, and only then, the model question.** Whether
    `whisper-large-v3-turbo` versus `whisper-large-v3` versus a local
    faster-whisper path changes the rate is a real question and it is unanswerable
    without step 1 — every one of them will feel better on the day it is

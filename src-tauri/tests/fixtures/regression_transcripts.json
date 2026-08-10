@@ -1,6 +1,6 @@
 {
   "$schema": "./regression_transcripts.schema.json",
-  "version": 2,
+  "version": 3,
   "description": "Real and synthesized failure-mode transcripts for the Customer Success Replies and similar profiles, plus raw-transcript hallucination cases for the post-STT detection stage. Each entry models a real reproducer. Add new entries by following the schema; keep names snake_case and notes anonymized.",
   "entries": [
     {
@@ -565,6 +565,365 @@
       "expected_post_correction": "Das ist der Text des Lieder und der zweite switcht.",
       "expected_guardrail": null,
       "notes": "The precision half. 'Lieds' -> 'Lieder' and 'switch' -> 'switcht' are correct German morphology and were the two cases that made a naive 'word not in the raw transcript' metric useless. A guardrail that reverts them costs more than the defect it prevents, so the corpus pins the pass-through as hard as it pins the revert."
+    },
+    {
+      "id": "recognizer_echoes_the_blank_state_floor_at_the_start",
+      "failure_mode": "stt_prompt_leak",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Diktierte Notizen. Normale Sätze mit Satzzeichen und Kleinschreibung. Die Task für danach fertig planen.",
+      "expected_prompt_echo": {
+        "prompt": "Dictated notes. Normal sentences with punctuation and capitalization. Diktierte Notizen. Normale Sätze mit Satzzeichen und Groß- und Kleinschreibung.",
+        "text": "Die Task für danach fertig planen.",
+        "stripped": true
+      },
+      "expected_post_correction": "Die Task für danach fertig planen.",
+      "expected_guardrail": null,
+      "notes": "2026-08-10 21:01 from the owner's history. The echo is a PARAPHRASE of what was sent — the constant reads 'und Groß- und Kleinschreibung' and the decoder dropped 'Groß- und' out of the middle — which is why the strip matches an in-order subsequence rather than a literal string. An exact-string rule would have caught none of the seven floor echoes measured that day."
+    },
+    {
+      "id": "recognizer_echoes_the_floor_at_the_end",
+      "failure_mode": "stt_prompt_leak",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Ich würde sagen, der Chip sagt Translate, so wie davor. Normale Sätze mit Satzzeichen und Kleinschreibung.",
+      "expected_prompt_echo": {
+        "prompt": "Dictated notes. Normal sentences with punctuation and capitalization. Diktierte Notizen. Normale Sätze mit Satzzeichen und Groß- und Kleinschreibung.",
+        "text": "Ich würde sagen, der Chip sagt Translate, so wie davor.",
+        "stripped": true
+      },
+      "expected_post_correction": "Ich würde sagen, der Chip sagt Translate, so wie davor.",
+      "expected_guardrail": null,
+      "notes": "2026-08-10 18:50. Five of the nine floor echoes measured on 2026-08-03 sat at the end, and this is the position where the displaced words are least recoverable: the dictation simply stops early and reads as if it had finished."
+    },
+    {
+      "id": "recognizer_echoes_the_floor_mid_text",
+      "failure_mode": "stt_prompt_leak",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Wir fangen gleich an. Normale Sätze mit Satzzeichen und Kleinschreibung. Danach kommt der Rest.",
+      "expected_prompt_echo": {
+        "prompt": "Dictated notes. Normal sentences with punctuation and capitalization. Diktierte Notizen. Normale Sätze mit Satzzeichen und Groß- und Kleinschreibung.",
+        "text": "Wir fangen gleich an. Danach kommt der Rest.",
+        "stripped": true
+      },
+      "expected_post_correction": "Wir fangen gleich an. Danach kommt der Rest.",
+      "expected_guardrail": null,
+      "notes": "Three of the nine measured floor echoes were mid-text, so the rule is about SENTENCE SHAPE and not about edges. A leaked prompt arrives as a complete sentence of its own wherever it lands."
+    },
+    {
+      "id": "recognizer_echoes_likely_phrases_without_its_colon",
+      "failure_mode": "stt_prompt_leak",
+      "profile": {
+        "id": "product-and-engineering",
+        "prompt": "",
+        "stt_hints": "triage summary\nrelease note",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Also... Likely phrases Hmm Likely phrases Hmm Also, ich hab 35 Euro Bitcoin. Likely phrases",
+      "expected_prompt_echo": {
+        "prompt": "Likely phrases: triage summary; release note",
+        "text": "Also... Hmm Hmm Also, ich hab 35 Euro Bitcoin.",
+        "stripped": true
+      },
+      "expected_post_correction": "Also... Hmm Hmm Also, ich hab 35 Euro Bitcoin.",
+      "expected_guardrail": null,
+      "notes": "2026-08-04 02:49. The 'Likely phrases' form leaked MORE often than the floor (12 against 9) and arrives without its colon, without its terms, and up to four times in one transcript. It is an English fragment of a constant we sent, in the middle of German dictation, so it is removed wherever it lands rather than only at the edges."
+    },
+    {
+      "id": "recognizer_echoes_the_whole_transcript",
+      "failure_mode": "stt_prompt_leak",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Normale Sätze mit Satzzeichen und Kleinschreibung.",
+      "expected_prompt_echo": {
+        "prompt": "Dictated notes. Normal sentences with punctuation and capitalization. Diktierte Notizen. Normale Sätze mit Satzzeichen und Groß- und Kleinschreibung.",
+        "text": "",
+        "stripped": true
+      },
+      "expected_post_correction": "",
+      "expected_guardrail": null,
+      "notes": "2026-08-10 17:57, delivered to the user as its whole transcript. The result is EMPTY, and it must stay empty: the decoder emitted prompt tokens instead of transcribing speech, so the displaced words were never written down by anything. A visibly short result is ADR 0036's own principle applied to the side effect ADR 0036 caused."
+    },
+    {
+      "id": "the_speaker_quotes_the_prompt_artifact_aloud",
+      "failure_mode": "stt_prompt_leak_false_positive",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Sorry, diktierte Notizen, normale Sätze mit Kleinschreibung, das war ein Transkriptionsartefakt, genau das, was wir bekämpfen müssen.",
+      "expected_prompt_echo": {
+        "prompt": "Dictated notes. Normal sentences with punctuation and capitalization. Diktierte Notizen. Normale Sätze mit Satzzeichen und Groß- und Kleinschreibung.",
+        "text": "Sorry, diktierte Notizen, normale Sätze mit Kleinschreibung, das war ein Transkriptionsartefakt, genau das, was wir bekämpfen müssen.",
+        "stripped": false
+      },
+      "expected_post_correction": "Sorry, diktierte Notizen, normale Sätze mit Kleinschreibung, das war ein Transkriptionsartefakt, genau das, was wir bekämpfen müssen.",
+      "expected_guardrail": null,
+      "notes": "2026-08-10 21:02, and the entry the whole rule is shaped around: the owner is talking ABOUT the artifact. The words are the prompt's, the SENTENCE is his — a clause spliced into a longer one, surrounded by content the prompt never carried. Sentence granularity is what separates this from a leak, and nothing coarser would."
+    },
+    {
+      "id": "a_floor_shaped_sentence_is_not_stripped_when_the_floor_was_not_sent",
+      "failure_mode": "stt_prompt_leak_false_positive",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Likely phrases sind hier gar kein Thema.",
+      "expected_prompt_echo": {
+        "prompt": "Dictated notes. Normal sentences with punctuation and capitalization. Diktierte Notizen. Normale Sätze mit Satzzeichen und Groß- und Kleinschreibung.",
+        "text": "Likely phrases sind hier gar kein Thema.",
+        "stripped": false
+      },
+      "expected_post_correction": "Likely phrases sind hier gar kein Thema.",
+      "expected_guardrail": null,
+      "notes": "The strip only ever removes an echo of the prompt THIS request sent. A profile with opted-in terms sends 'Likely phrases: …' and never the floor, so a floor-shaped sentence under it is not ours to remove — and the reverse, here: the floor was sent, so the 'Likely phrases' words are the speaker's."
+    },
+    {
+      "id": "recognizer_pluralizes_a_singular_address",
+      "failure_mode": "recognizer_pluralized_address",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Schreibt mir bitte dafür einen Prompt",
+      "language": "de",
+      "expected_address_repair": {
+        "text": "Schreib mir bitte dafür einen Prompt",
+        "restored": true
+      },
+      "expected_post_correction": "Schreib mir bitte dafür einen Prompt",
+      "expected_guardrail": null,
+      "notes": "Record …9749-8 from the owner's live history, and the cleanest evidence of the lane: `applied_rules` was ['assistant_like_correction_rejected'], so cleanup did not run at all and the raw transcript shipped verbatim. The plural is the recogniser's. Clause-initial verb, no plural addressee, and the particle 'bitte' vouching for the mood."
+    },
+    {
+      "id": "recognizer_pluralizes_an_address_whose_pronoun_stayed_singular",
+      "failure_mode": "recognizer_pluralized_address",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Macht dir wirklich mal Gedanken",
+      "language": "de",
+      "expected_address_repair": {
+        "text": "Mach dir wirklich mal Gedanken",
+        "restored": true
+      },
+      "expected_post_correction": "Mach dir wirklich mal Gedanken",
+      "expected_guardrail": null,
+      "notes": "Record …51-121. Both gates fire here — the particle 'mal' and the singular addressee 'dir' — and the sentence is internally inconsistent in a way a reader would never notice, because 'Macht dir' is fluent German at a glance."
+    },
+    {
+      "id": "a_third_person_macht_is_never_an_imperative",
+      "failure_mode": "recognizer_pluralized_address_false_positive",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Macht das Sinn?",
+      "language": "de",
+      "expected_address_repair": {
+        "text": "Macht das Sinn?",
+        "restored": false
+      },
+      "expected_post_correction": "Macht das Sinn?",
+      "expected_guardrail": null,
+      "notes": "THE ENTRY THAT DECIDES THE SHAPE OF THE RULE. A suffix rule — '-t on a weak stem is a pluralized imperative' — rewrites this and every one of its six-plus siblings in the owner's own history into 'Mach das Sinn?'. The question mark and the missing imperative evidence both decline it, and either alone would be enough."
+    },
+    {
+      "id": "a_second_person_plural_address_stays_plural",
+      "failure_mode": "recognizer_pluralized_address_out_of_reach",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Denkt ihr was passendes aus?",
+      "language": "de",
+      "expected_address_repair": {
+        "text": "Denkt ihr was passendes aus?",
+        "restored": false
+      },
+      "expected_post_correction": "Denkt ihr was passendes aus?",
+      "expected_guardrail": null,
+      "notes": "Record …73-161, and it stays OUT OF REACH on purpose. The verb went plural and the pronoun went with it, so the sentence is internally consistent German; nothing in the text says the speaker meant one person. The record says as much, and a rule that guessed here would be guessing about meaning rather than reading grammar."
+    },
+    {
+      "id": "a_clause_initial_verb_without_imperative_evidence_is_left_alone",
+      "failure_mode": "recognizer_pluralized_address_false_positive",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Schreibt der Agent das jetzt selbst.",
+      "language": "de",
+      "expected_address_repair": {
+        "text": "Schreibt der Agent das jetzt selbst.",
+        "restored": false
+      },
+      "expected_post_correction": "Schreibt der Agent das jetzt selbst.",
+      "expected_guardrail": null,
+      "notes": "Positive evidence is REQUIRED rather than merely helpful. Without a particle or a singular addressee, a clause-initial verb is just as likely to be an indicative whose subject arrives a word later — as it does here."
+    },
+    {
+      "id": "a_short_capture_is_reported_and_never_repaired",
+      "failure_mode": "capture_lost_audio",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Das ist der Anfang und dann fehlt der Rest",
+      "expected_capture_integrity": {
+        "wall_seconds": 405.7,
+        "recorded_seconds": 194.3,
+        "verdict": "short"
+      },
+      "expected_post_correction": "Das ist der Anfang und dann fehlt der Rest",
+      "expected_guardrail": null,
+      "notes": "The worst capture in the 2026-08-03 measurement — 405.7 s on the clock, 194.3 s of audio — as a verdict. The text passes through UNTOUCHED: nothing downstream can reconstruct audio that was never captured, and a stage that tried would be inventing the very content this leg exists to stop being invented. The report is the whole fix."
+    },
+    {
+      "id": "a_capture_that_kept_its_audio_says_nothing",
+      "failure_mode": "capture_lost_audio",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Die Aufnahme ist vollständig.",
+      "expected_capture_integrity": {
+        "wall_seconds": 100.0,
+        "recorded_seconds": 99.8,
+        "verdict": "intact"
+      },
+      "expected_post_correction": "Die Aufnahme ist vollständig.",
+      "expected_guardrail": null,
+      "notes": "The baseline half, and it carries as much weight as the entry above: healthy captures lose a median of 0.1 % and at most 4.0 %, and a verdict that fired on them would put a warning on nearly every dictation — the noise that makes a real warning unreadable."
+    },
+    {
+      "id": "a_capture_too_short_to_judge_is_not_judged",
+      "failure_mode": "capture_lost_audio",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Kurz.",
+      "expected_capture_integrity": {
+        "wall_seconds": 1.4,
+        "recorded_seconds": 1.1,
+        "verdict": "not_measured"
+      },
+      "expected_post_correction": "Kurz.",
+      "expected_guardrail": null,
+      "notes": "Under two seconds the startup transient between `started_at` and the first cpal callback is a measurable fraction of the whole capture — the 1–2 s band loses a median of 1.9 % against 0.1 % for long ones. 'We did not look' and 'we looked and it was fine' are different facts and the verdict keeps them apart."
+    },
+    {
+      "id": "the_address_repair_never_runs_outside_german",
+      "failure_mode": "recognizer_pluralized_address_language_gate",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Schreibt mir bitte dafür einen Prompt",
+      "language": "en",
+      "expected_address_repair": {
+        "text": "Schreibt mir bitte dafür einen Prompt",
+        "restored": false
+      },
+      "expected_post_correction": "Schreibt mir bitte dafür einen Prompt",
+      "expected_guardrail": null,
+      "notes": "THE MULTILINGUAL GUARD. Byte for byte the transcript that IS repaired under German, declining because the language says otherwise. The singular imperative of a weak German verb is the bare stem and the plural is the stem plus -t; no other language in reach has that shape, so applying the rule outside German would be rewriting words on the strength of a coincidence."
+    },
+    {
+      "id": "an_unestablished_language_declines_the_address_repair",
+      "failure_mode": "recognizer_pluralized_address_language_gate",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Macht dir wirklich mal Gedanken",
+      "expected_address_repair": {
+        "text": "Macht dir wirklich mal Gedanken",
+        "restored": false
+      },
+      "expected_post_correction": "Macht dir wirklich mal Gedanken",
+      "expected_guardrail": null,
+      "notes": "Unknown language declines, and that is the deliberate trade: a missed repair leaves a readable sentence addressed to the wrong number of people, a wrong one rewrites a word nobody said. The Groq lane requests verbose_json and gets a detected language on every response; the local lane returns json and has none, so there the profile's language is what enables this."
+    },
+    {
+      "id": "a_near_neighbour_language_is_not_german",
+      "failure_mode": "recognizer_pluralized_address_language_gate",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Maakt het uit, stuur het maar.",
+      "language": "nl",
+      "expected_address_repair": {
+        "text": "Maakt het uit, stuur het maar.",
+        "restored": false
+      },
+      "expected_post_correction": "Maakt het uit, stuur het maar.",
+      "expected_guardrail": null,
+      "notes": "Dutch and the Scandinavian languages are the near neighbours — close enough that a rule reading only the suffix could plausibly fire on them. The gate is a closed list of tags naming German, so everything else is simply not German, including a language nobody named."
     }
   ]
 }

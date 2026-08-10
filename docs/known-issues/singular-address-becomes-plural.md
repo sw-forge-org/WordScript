@@ -1,7 +1,9 @@
 # Bug: A singular form of address arrives as a plural one
 
-Status: **Open — reported 2026-08-03, located on the recognizer lane by
-measurement the same day. Not scoped.**
+Status: **Narrowed, not closed. Reported 2026-08-03 and located on the
+recognizer lane by measurement the same day; a mood-gated, German-only repair
+shipped 2026-08-10 (ADR 0081) and reaches two of the three observed shapes. The
+third stays out of reach on purpose.**
 
 First reported: 2026-08-03, extended real-world dictation into an AI coding
 assistant
@@ -102,14 +104,78 @@ suffix.
 
 - No reproduction under controlled dictation. Every case here is an incidental
   find in production history; nobody has said `fix das bitte` into a running
-  build and recorded the result.
+  build and recorded the result. **The repair is asserted against the corpus,
+  not against a live decode.**
 - No local-lane comparison. All three cases are Groq `whisper-large-v3`; whether
-  a local decode shows the same pull is unmeasured.
+  a local decode shows the same pull is unmeasured — and on that lane the repair
+  needs the profile's language set, because `json` carries no detected one.
 - No check of whether an initial prompt or vocabulary bias moves it. All three
   records ran `bias_mode: conservative`.
-- The `agent` and `enhance` modes are untested on this axis. They rewrite by
-  design (ADR 0026), so a pluralized address reaching them could survive or be
-  amplified, and neither has been looked at.
+- ~~The `agent` and `enhance` modes are untested on this axis.~~ The repair now
+  runs ahead of the mode branch, so all seven modes receive the repaired text.
+  Whether those two modes *amplify* a pluralized address that slips past the
+  gates is still untested.
+- **The rate is still a floor, and it is now a floor on a narrower thing.** The
+  scan catches forms in a fixed verb list, and the repair acts on a subset of
+  those. What is not caught is not counted.
+
+## What shipped 2026-08-10, and the measurement that shaped it
+
+[ADR 0081](../decisions/0081-the-recogniser-output-is-repaired-before-any-mode-sees-it.md).
+`core::recognizer_repair::repair_singular_address`, in a stage ahead of the mode
+branch so it reaches Agent and Prompt Enhance too — the two modes this record
+lists as untested and which rewrite by design.
+
+**The obvious rule is unusable, and this record's own corpus is the
+counter-evidence.** A suffix rule — "`stem`+`t` at the start of a sentence is a
+pluralized imperative" — was scanned against the 136 records in history on
+2026-08-10. It flags **45 tokens in 31 records, of which 3 are the defect.**
+Everything else is the third person singular indicative wearing the same suffix:
+
+```
+Macht das Sinn?
+Macht es überhaupt Sinn, dass Translate ein eigener Processing-Mode ist?
+Macht das wirklich Sinn?
+Ja, macht Sinn. Macht absolut Sinn.
+Wahrscheinlich macht dieses Markdown-Ding davor mehr Sinn.
+Weil für mich macht das aktuell keinen Sinn.
+```
+
+Six and more legitimate uses of `macht` alone, against three real defects across
+the whole corpus. A suffix rule rewrites every one of them into `Mach das Sinn?`
+— fluent, wrong, and undetectable downstream, which is this cluster's whole
+failure mode reproduced by its own fix.
+
+**So the rule reads mood, and every gate is a corpus row.** It fires only when
+the verb opens the sentence and is in a *closed table* rather than derived by
+suffix; the sentence is not a question; the next word is not `ihr` / `euch` /
+`Sie`; and the clause carries positive evidence of the imperative — a particle
+(`bitte`, `mal`, `nochmal`, `einfach`, `ruhig`) or a singular addressee (`dir`,
+`dich`). `doch` and `denn` are excluded because both are at home in a question.
+`geht`, `kommt`, `nimmt` and `setzt` are excluded from the table entirely: they
+appear in this history only as indicatives, so a gate would have to fail twice
+before they could be touched.
+
+Against the three records above: `Schreibt mir bitte…` and `Macht dir wirklich
+mal…` are repaired. **`Denkt ihr was passendes aus?` is not, and must not be** —
+the verb went plural and the pronoun went with it, so the sentence is internally
+consistent German and nothing in the text says the speaker meant one person.
+That is this record's own reading, kept.
+
+### It is German-only, and it says so
+
+The product dictates in more than one language. The singular imperative of a
+weak German verb being the bare stem, and the plural being the stem plus `-t`,
+**is** the defect — no other language in reach has that pair, so outside German
+the rule would be rewriting words on the strength of a coincidence. The repair
+runs only over text known to be German: detected language first (Groq's
+`verbose_json` reports one on every response, which matters because the records
+in this corpus carry no *configured* language at all), the profile's setting
+second, and an unestablished language declines.
+
+The local lane returns `json` and carries no detected language, so there the
+profile's language setting is what enables this. Recorded rather than papered
+over.
 
 ## Why a dictionary entry is not the fix
 

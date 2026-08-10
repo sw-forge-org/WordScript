@@ -522,6 +522,32 @@ Status: Proposed | Accepted | Superseded by NNNN
   not gone away. The title is stored on the record rather than read from the
   file, so a list render never touches the disk. `Title` falls back to the
   written text and `Heard` still does not, which is one rule stated twice.
+- [0079](0079-a-capture-states-how-much-of-its-own-clock-it-kept.md):
+  a capture computes how much of its own clock it kept and travels with the
+  answer. Untrimmed audio against the effective wall clock, with paused
+  stretches subtracted and a stream rebuild deliberately not excused; the
+  threshold is 10 %, derived from a gap in 634 measured captures that runs from
+  7.0 % to 12.0 %. Reported in the runtime log, on the history record, and as a
+  tab beside the result pill at delivery time -- a statement, not a control,
+  because audio that was never captured cannot be recovered. `not_measured` is
+  kept distinct from `intact`. It reports the defect; it does not fix it.
+- [0080](0080-wordscript-removes-its-own-prompt-from-the-transcript-and-never-restores-what-it-displaced.md):
+  the one hallucination class that can be removed with certainty, because we
+  know the string we sent. Matching is a normalised in-order subsequence rather
+  than a literal, since the echo turned out to be a paraphrase; the unit is the
+  sentence, which is what separates a leak from the owner quoting the leak. It
+  never restores the displaced words -- a wholly-echoed transcript comes back
+  empty -- and `raw_transcript` keeps the leak so the rate stays measurable.
+  Does not revert ADR 0036's floor, which would trade a measured defect for an
+  argued one.
+- [0081](0081-the-recogniser-output-is-repaired-before-any-mode-sees-it.md):
+  both recogniser-side repairs live in one stage ahead of the MODE BRANCH,
+  because Agent, Translate and Prompt Enhance branch away from the cleanup path
+  and the case that made it urgent reached an agent. The address repair reads
+  grammatical mood against a closed table -- the suffix rule it replaces flags
+  45 tokens of which 3 are the defect -- and is **German-only by declaration**,
+  gated on the detected language, while the echo strip is language-agnostic by
+  construction. An unestablished language declines the repair.
 
 ## Resolved: the number 0011 was used twice
 
@@ -549,8 +575,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0078; the next
-decision takes 0079.)
+takes 0021. (As of 2026-08-11 the filed range runs through 0081; the next
+decision takes 0082.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

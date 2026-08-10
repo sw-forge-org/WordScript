@@ -14,10 +14,12 @@ use super::workspace_context::WorkspaceContext;
 use super::text_rules::{
     analyze_document, get_profile_health, GetProfileHealthRequest, TextRulesDocument,
 };
+use super::capture::{CaptureIntegrity, CaptureIntegrityVerdict};
 use super::hallucination_detect::{detect_advanced_hallucination, DriftCorroboration};
+use super::recognizer_repair::{repair_singular_address, strip_prompt_echo};
 use super::transcription_hints::{analyze_transcription_bias_with_mode, BiasRequestContext};
 
-const CORPUS_VERSION: u32 = 2;
+const CORPUS_VERSION: u32 = 3;
 const TEXT_RULES_SCHEMA_VERSION: u32 = 1;
 const EMBEDDED_CORPUS: &str = include_str!("../../tests/fixtures/regression_transcripts.json");
 
@@ -61,6 +63,23 @@ struct CorpusEntry {
     /// a per-mode assertion cannot catch that class of drift.
     #[serde(default)]
     expected_profile_context: Option<ExpectedProfileContext>,
+    /// What the prompt-echo strip must do to `raw_transcript`, given the prompt
+    /// the request actually sent. Negative entries carry `stripped: false` and
+    /// a `text` equal to the input, and they are the ones that matter: a missed
+    /// echo is a visible artifact somebody deletes by hand, a wrong strip
+    /// deletes something the speaker said (ADR 0080).
+    #[serde(default)]
+    expected_prompt_echo: Option<ExpectedPromptEcho>,
+    /// What the singular-address repair must do to `raw_transcript`. Same
+    /// asymmetry, sharper: this rule rewrites a word, and the corpus's negative
+    /// entries are drawn from real German the owner dictated (ADR 0081).
+    #[serde(default)]
+    expected_address_repair: Option<ExpectedAddressRepair>,
+    /// What the capture behind an entry measured about itself, and what the
+    /// verdict has to be. The text is never touched on this axis — the entry
+    /// asserts that too (ADR 0079).
+    #[serde(default)]
+    expected_capture_integrity: Option<ExpectedCaptureIntegrity>,
     /// What deterministic vocabulary repair must do to `raw_transcript`.
     /// Negative cases carry the same shape with `text` equal to the input, and
     /// they are the ones that matter: a missed repair is readable text, a wrong
@@ -134,6 +153,37 @@ struct ExpectedProfileContext {
     contains: Vec<String>,
     #[serde(default)]
     not_contains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ExpectedPromptEcho {
+    /// The initial prompt the request sent. Stated per entry rather than
+    /// rebuilt, because the strip's whole justification is that it removes an
+    /// echo of a KNOWN string — a corpus that reconstructed the prompt would be
+    /// testing the reconstruction.
+    prompt: String,
+    /// The transcript after the strip. Equal to `raw_transcript` for an entry
+    /// that must not fire; empty where the whole transcript was the echo.
+    text: String,
+    #[serde(default)]
+    stripped: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ExpectedAddressRepair {
+    /// The transcript after the repair, equal to `raw_transcript` where the
+    /// rule must decline.
+    text: String,
+    #[serde(default)]
+    restored: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ExpectedCaptureIntegrity {
+    wall_seconds: f64,
+    recorded_seconds: f64,
+    /// `intact`, `short` or `not_measured`.
+    verdict: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -565,6 +615,186 @@ fn corpus_drives_hallucination_detection_assertions() {
         checked >= 6,
         "the detection corpus must keep covering every mechanism, checked={checked}"
     );
+}
+
+/// The prompt-echo strip, against the prompt each entry says was sent.
+///
+/// Both directions are required, and the negative one is the reason this is a
+/// corpus rather than a unit test: the entries that must NOT fire are real
+/// transcripts from the owner's machine, including the one where he said the
+/// prompt text out loud while complaining about it. A rule that cannot tell
+/// that apart from a leak deletes what the speaker said, which is a worse
+/// defect than the one it fixes (ADR 0080).
+#[test]
+fn corpus_drives_prompt_echo_assertions() {
+    let corpus = load_corpus();
+    let mut stripped = 0;
+    let mut left_alone = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_prompt_echo else {
+            continue;
+        };
+
+        let (text, fired) = strip_prompt_echo(&entry.raw_transcript, Some(&expected.prompt));
+
+        assert_eq!(
+            text, expected.text,
+            "[{}] stripped text mismatch (failure_mode={})",
+            entry.id, entry.failure_mode
+        );
+        assert_eq!(
+            fired, expected.stripped,
+            "[{}] strip fired={} but the corpus expects {} (failure_mode={})",
+            entry.id, fired, expected.stripped, entry.failure_mode
+        );
+
+        if expected.stripped {
+            // It removes; it never restores. A strip that produced MORE text
+            // than it was given would be inventing the displaced words.
+            assert!(
+                text.len() <= entry.raw_transcript.len(),
+                "[{}] the strip may only ever shorten a transcript",
+                entry.id
+            );
+            stripped += 1;
+        } else {
+            assert_eq!(
+                text, entry.raw_transcript,
+                "[{}] a declined strip must leave the transcript byte-identical",
+                entry.id
+            );
+            left_alone += 1;
+        }
+    }
+
+    assert!(
+        stripped >= 4 && left_alone >= 2,
+        "the echo corpus needs both directions, stripped={stripped} left_alone={left_alone}"
+    );
+}
+
+/// The singular-address repair, the German it must not touch, and the languages
+/// it must not run in at all.
+///
+/// The negative entries carry more weight than the positive ones here. A missed
+/// pluralization is a sentence addressed to the wrong number of people; a wrong
+/// repair rewrites correct German into something the speaker never said, and
+/// `Macht das Sinn?` occurs six-plus times in the corpus's source history
+/// against three real defects.
+///
+/// **Driven through the whole stage rather than the rule**, so the language gate
+/// is under test alongside the grammar: the corpus carries the same transcript
+/// under `de` and under `en`, and only one of them may be rewritten (ADR 0081).
+#[test]
+fn corpus_drives_singular_address_assertions() {
+    let corpus = load_corpus();
+    let mut restored = 0;
+    let mut declined = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_address_repair else {
+            continue;
+        };
+
+        let (text, signals) = super::recognizer_repair::repair_recognizer_output(
+            &entry.raw_transcript,
+            None,
+            entry.language.as_deref(),
+        );
+        let fired = signals.singular_address_restored;
+
+        assert_eq!(
+            text, expected.text,
+            "[{}] repaired text mismatch (failure_mode={})",
+            entry.id, entry.failure_mode
+        );
+        assert_eq!(
+            fired, expected.restored,
+            "[{}] repair fired={} but the corpus expects {} (failure_mode={})",
+            entry.id, fired, expected.restored, entry.failure_mode
+        );
+
+        if expected.restored {
+            restored += 1;
+        } else {
+            assert_eq!(
+                text, entry.raw_transcript,
+                "[{}] a declined repair must leave the transcript byte-identical",
+                entry.id
+            );
+            declined += 1;
+        }
+    }
+
+    assert!(
+        restored >= 2 && declined >= 5,
+        "the address corpus needs both directions, restored={restored} declined={declined}"
+    );
+}
+
+/// The capture verdict, and the fact that it changes no text.
+///
+/// A short capture is REPORTED and never repaired: the audio was never
+/// recorded, so there is nothing downstream that could reconstruct it, and a
+/// stage that tried would be inventing exactly the content this cluster exists
+/// to stop being invented (ADR 0079).
+#[test]
+fn corpus_drives_capture_integrity_assertions() {
+    let corpus = load_corpus();
+    let mut short = 0;
+    let mut intact = 0;
+    let mut unmeasured = 0;
+
+    for entry in &corpus.entries {
+        let Some(expected) = &entry.expected_capture_integrity else {
+            continue;
+        };
+
+        let integrity = CaptureIntegrity::from_seconds_for_tests(
+            expected.wall_seconds,
+            expected.recorded_seconds,
+        );
+
+        assert_eq!(
+            verdict_label(&integrity),
+            expected.verdict,
+            "[{}] verdict mismatch: wall={} recorded={} missing={:.4} (failure_mode={})",
+            entry.id,
+            expected.wall_seconds,
+            expected.recorded_seconds,
+            integrity.missing_ratio,
+            entry.failure_mode
+        );
+
+        // The transcript is untouched on this axis, whatever the verdict.
+        let (text, _) = repair_singular_address(&entry.raw_transcript);
+        let (text, _) = strip_prompt_echo(&text, None);
+        assert_eq!(
+            text, entry.raw_transcript,
+            "[{}] a capture verdict must not change the transcript",
+            entry.id
+        );
+
+        match expected.verdict.as_str() {
+            "short" => short += 1,
+            "intact" => intact += 1,
+            _ => unmeasured += 1,
+        }
+    }
+
+    assert!(
+        short >= 1 && intact >= 1 && unmeasured >= 1,
+        "the capture corpus needs all three verdicts, short={short} intact={intact} unmeasured={unmeasured}"
+    );
+}
+
+fn verdict_label(integrity: &CaptureIntegrity) -> &'static str {
+    match integrity.verdict {
+        CaptureIntegrityVerdict::Intact => "intact",
+        CaptureIntegrityVerdict::Short => "short",
+        CaptureIntegrityVerdict::NotMeasured => "not_measured",
+    }
 }
 
 /// Repair is the one stage that rewrites words on similarity rather than on an

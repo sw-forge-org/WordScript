@@ -20,6 +20,7 @@ import type { AppConfig, ProcessingMode } from "../types/ipc";
 import type { NativeInsertResult } from "../types/nativeInsertion";
 import {
   OverlayPill,
+  type OverlayCaptureGap,
   type OverlayPendingPreview,
   type OverlayRecordingLimit,
   type OverlayPendingResult,
@@ -1284,6 +1285,36 @@ export default function OverlayWindow() {
     };
   }, [isRecording, elapsed, captureBudget]);
 
+  /**
+   * THE CAPTURE THAT KEPT LESS AUDIO THAN ITS OWN CLOCK SAYS (ADR 0079).
+   *
+   * It is drawn where the result is, and that is the point: the damage is in
+   * the text about to be used, and every other place it is reported — the
+   * runtime log, the history record — is somewhere the user goes afterwards, if
+   * at all. Eight captures lost between 12 % and 52 % of a dictation and the
+   * product said nothing, so the transcripts were used as if complete.
+   *
+   * Only `short` opens it. `intact` is the expected case and a tab that appears
+   * on every delivery to say things went fine is the permanent element the limit
+   * tab's own comment argues against; `not_measured` has nothing to tell the
+   * user. Both leave the strip empty.
+   */
+  const captureGap = useMemo<OverlayCaptureGap | null>(() => {
+    const integrity = activePreviewResult?.capture_integrity;
+    if (!integrity || integrity.verdict !== "short") return null;
+
+    const missing = Math.round(integrity.missing_ratio * 100);
+    return {
+      // The quantity, not a mood. "Audio lost" would say the same thing in the
+      // same width and tell the reader nothing about how much.
+      text: `−${missing}% audio`,
+      label:
+        `This capture recorded ${Math.round(integrity.recorded_seconds)} s of the ` +
+        `${Math.round(integrity.wall_seconds)} s it ran. ${missing} % of the audio was never ` +
+        `captured, so the text is of what was recorded, not of what was said.`,
+    };
+  }, [activePreviewResult]);
+
 
   const startDrag = async () => {
     await getCurrentWindow().startDragging();
@@ -1896,30 +1927,60 @@ export default function OverlayWindow() {
   const limitTabRef = useRef<HTMLSpanElement | null>(null);
   const [limitTabWidth, setLimitTabWidth] = useState(0);
   const [fontsReadyEpoch, setFontsReadyEpoch] = useState(0);
+
+  // The same shutter arithmetic for both right-strip tabs. Extracted when the
+  // capture-gap tab arrived (ADR 0079): a second copy would be a second place
+  // for the rounded end to get clipped by a pixel, which is how the first one
+  // shipped.
+  const measureSideTab = useCallback(
+    (host: HTMLSpanElement | null, innerSelector: string): number => {
+      const inner = host?.querySelector<HTMLElement>(innerSelector);
+      const shell = shellRef.current?.querySelector<HTMLElement>(".ov-pill-shell");
+      if (!inner) return 0;
+
+      const sideStrip = (window.innerWidth - (shell?.getBoundingClientRect().width ?? 0)) / 2;
+      const layout = inner.offsetWidth;
+      const painted = inner.getBoundingClientRect().width;
+      // The zoom, derived rather than restated — hard-coding 0.87 here would be
+      // a second copy of a number `.ov-pill-shell` owns.
+      const zoom = layout > 0 ? painted / layout : 1;
+      // `offsetWidth` truncates to whole pixels, so a shutter sized at face
+      // value is up to a pixel short — and one pixel short clips the tab's
+      // rounded end against the window edge, which is exactly how this first
+      // shipped.
+      const width = layout > 0 ? Math.ceil(layout) + 2 : 0;
+
+      return painted > 0 && sideStrip >= width * zoom + LEARNED_NUDGE_GAP_PX ? width : 0;
+    },
+    [],
+  );
+
   useLayoutEffect(() => {
     if (!recordingLimit) {
       setLimitTabWidth(0);
       return;
     }
     const inner = limitTabRef.current?.querySelector<HTMLElement>(".ov-limit-tab__inner");
-    const shell = shellRef.current?.querySelector<HTMLElement>(".ov-pill-shell");
     if (!inner) return;
 
-    const sideStrip = (window.innerWidth - (shell?.getBoundingClientRect().width ?? 0)) / 2;
-    const layout = inner.offsetWidth;
-    const painted = inner.getBoundingClientRect().width;
-    // The zoom, derived rather than restated — hard-coding 0.87 here would be a
-    // second copy of a number `.ov-pill-shell` owns.
-    const zoom = layout > 0 ? painted / layout : 1;
-    // `offsetWidth` truncates to whole pixels, so a shutter sized at face value
-    // is up to a pixel short — and one pixel short clips the tab's rounded end
-    // against the window edge, which is exactly how this first shipped.
-    const width = layout > 0 ? Math.ceil(layout) + 2 : 0;
+    setLimitTabWidth(measureSideTab(limitTabRef.current, ".ov-limit-tab__inner"));
+  }, [recordingLimit, pillVisualEpoch, fontsReadyEpoch, measureSideTab]);
 
-    setLimitTabWidth(
-      painted > 0 && sideStrip >= width * zoom + LEARNED_NUDGE_GAP_PX ? width : 0,
-    );
-  }, [recordingLimit, pillVisualEpoch, fontsReadyEpoch]);
+  // The capture-gap tab shares the right strip with the limit tab and never
+  // shares a moment with it: the limit tab exists only while recording, this one
+  // only once a result is on screen. That is why neither has to yield.
+  const gapTabRef = useRef<HTMLSpanElement | null>(null);
+  const [gapTabWidth, setGapTabWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!captureGap) {
+      setGapTabWidth(0);
+      return;
+    }
+    const inner = gapTabRef.current?.querySelector<HTMLElement>(".ov-gap-tab__inner");
+    if (!inner) return;
+
+    setGapTabWidth(measureSideTab(gapTabRef.current, ".ov-gap-tab__inner"));
+  }, [captureGap, pillVisualEpoch, fontsReadyEpoch, measureSideTab]);
 
   // Text metrics depend on the webfont, which is not loaded on the first paint.
   // Measuring before it lands sizes the shutter for the fallback face, and the
@@ -2034,6 +2095,40 @@ export default function OverlayWindow() {
                 </svg>
                 <span className="ov-limit-tab__label">{recordingLimit.text}</span>
               </button>
+            </span>
+          )}
+          {/* The same strip as the limit tab, at the other end of the session:
+              that one is recording-only and this one is result-only, so they
+              never compete for the room. Not a button — there is nothing to act
+              on. The audio was never captured, so nothing can recover it, and a
+              control here would be an offer the runtime cannot keep. */}
+          {captureGap && (
+            <span
+              ref={gapTabRef}
+              className="ov-gap-tab"
+              data-visible={gapTabWidth > 0 ? "true" : "false"}
+              style={{ "--ov-gap-width": `${gapTabWidth}px` } as CSSProperties}
+              role={gapTabWidth > 0 ? "status" : undefined}
+              aria-hidden={gapTabWidth > 0 ? undefined : true}
+              title={gapTabWidth > 0 ? captureGap.label : undefined}
+              aria-label={gapTabWidth > 0 ? captureGap.label : undefined}
+            >
+              <span className="ov-gap-tab__inner">
+                <svg
+                  className="ov-gap-tab__mark"
+                  width="9"
+                  height="9"
+                  viewBox="0 0 12 12"
+                  aria-hidden="true"
+                >
+                  {/* A waveform with a piece missing, which is literally what
+                      happened. The gap is the mark. */}
+                  <rect x="0.5" y="4" width="1.4" height="4" rx="0.7" fill="currentColor" />
+                  <rect x="3" y="1.5" width="1.4" height="9" rx="0.7" fill="currentColor" />
+                  <rect x="9.6" y="2.5" width="1.4" height="7" rx="0.7" fill="currentColor" />
+                </svg>
+                <span className="ov-gap-tab__label">{captureGap.text}</span>
+              </span>
             </span>
           )}
           <OverlayPill key={pillState.kind} state={pillState} />

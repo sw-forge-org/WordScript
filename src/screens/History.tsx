@@ -126,9 +126,18 @@ export function historyTime(ms: number, now = Date.now()): string {
  *    control it affects, and it is already there: Retry disables itself and
  *    says why. The badge appears only where the fact is unexpected — a record
  *    that FAILED, which you would reasonably retry, and cannot.
+ *  - `Audio missing` is the `short` verdict and nothing else (ADR 0079). It
+ *    passes the same test the others do: a healthy capture is the expectation
+ *    and draws nothing, and this badge marks the record whose text is missing
+ *    content no downstream stage can see. It leads, because it is the only
+ *    badge here that says the TEXT is wrong rather than that the delivery was.
  */
 export function badgesFor(entry: TranscriptionHistoryEntry): ListItemBadge[] {
   const badges: ListItemBadge[] = [];
+
+  if (entry.capture_integrity?.verdict === "short") {
+    badges.push({ text: "Audio missing", tone: "danger" });
+  }
 
   if (entry.status === "failed") badges.push({ text: "Failed", tone: "danger" });
   else if (entry.status === "empty") badges.push({ text: "Empty", tone: "warning" });
@@ -171,6 +180,12 @@ export function badgesFor(entry: TranscriptionHistoryEntry): ListItemBadge[] {
  * default sentence would have been false on every one of them. The runtime
  * holds the evidence — `corrected` and `applied_rules` — so it is read here and
  * the third state gets its own sentence.
+ *
+ * A SHORT CAPTURE OUTRANKS BOTH OTHER NOTES (ADR 0079). The other two describe
+ * what the AI stage did to the text; this one says the text is missing content
+ * that was never recorded, which changes how everything above it should be
+ * read. A transform warning about an over-shortened correction is the smaller
+ * fact when half the audio is gone, so it goes second.
  */
 export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
   const heard = entry.raw_transcript ?? "";
@@ -186,9 +201,31 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
        the runtime writes since ADR 0074. Absent on a record with no text. */
     path: entry.transcript_path ?? undefined,
     note:
+      captureGapNote(entry) ??
       entry.transform_warning ??
       (identical && stageRan ? "The AI stage ran and changed nothing." : undefined),
   };
+}
+
+/**
+ * The sentence a short capture puts on its record, or nothing at all.
+ *
+ * Only `short` produces one. `intact` is the expected case and gets no sentence
+ * — a note on every healthy record is the same noise §11.20 rejects badges for
+ * — and `not_measured` gets none either, because "we did not look" is not a
+ * finding to report to the user; it is visible to a measurement reading the
+ * field and that is where it belongs.
+ */
+export function captureGapNote(entry: TranscriptionHistoryEntry): string | undefined {
+  const integrity = entry.capture_integrity;
+  if (!integrity || integrity.verdict !== "short") return undefined;
+
+  const missing = Math.round(integrity.missing_ratio * 100);
+  return (
+    `This capture recorded ${Math.round(integrity.recorded_seconds)} s of the ` +
+    `${Math.round(integrity.wall_seconds)} s it ran. ${missing} % of the audio was never ` +
+    `captured, so the text is of what was recorded, not of what was said.`
+  );
 }
 
 /** Which of a record's three readings the row titles carry (ADR 0070, 0078). */

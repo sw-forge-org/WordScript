@@ -1,7 +1,10 @@
 # Cleanup invents plausible tokens where the transcript is already broken
 
 Status: measured 2026-08-02, partially addressed. One of three observed
-categories now has a deterministic guardrail; the other two do not.
+categories has a deterministic guardrail; the other two still do not. Two of
+the damage sources that feed it were removed upstream on 2026-08-10, and the
+invention rate is now **splittable by whether the capture behind the transcript
+was intact** — neither has been re-measured.
 
 Found as a side observation while measuring profile-context width for ADR 0021.
 It is **unrelated to that decision**: every case below occurred identically in
@@ -135,9 +138,45 @@ model guessed anyway. A more specific rule beside a general one that is already
 ignored buys prompt length, not reliability — and prompt rules are not
 verifiable, since a test can only assert the sentence is in the prompt.
 
+**That is still true on 2026-08-10, and this record did not gain a guardrail
+this leg.** What it gained is upstream work and a way to measure the thing it
+could not.
+
 The upstream answer is the recognizer. `c a u d e` reaching the corrector at all
-is a transcription failure, and ADR 0036 is the first move on that axis: the
-blank-state prompt floor. Whether it helps is not yet measured.
+is a transcription failure, and ADR 0036 was the first move on that axis: the
+blank-state prompt floor. **Whether it helps is still not measured — and it
+turned out to have a cost of its own**, measured on 2026-08-10 at 12.5 % of raw
+transcripts
+([stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md)),
+which is this record's own "visible damage became invisible damage" argument
+landing on the fix that borrowed it.
+
+### Two things upstream changed, and neither is a guardrail here
+
+- **The recogniser's output is repaired before cleanup sees it**
+  ([ADR 0081](../decisions/0081-the-recogniser-output-is-repaired-before-any-mode-sees-it.md)):
+  the prompt echo is removed and a pluralized address is restored. Both are
+  damage that would otherwise arrive at the corrector, and group A is *by
+  definition* what the corrector does with damage. Whether removing two damage
+  sources lowers the 6.1 % invention rate is **an open question with a way to
+  answer it** — `measure_invented_tokens_in_shipped_corrections` re-run over a
+  post-fix population — and not a claim.
+- **A short capture is now marked on the record**
+  ([ADR 0079](../decisions/0079-a-capture-states-how-much-of-its-own-clock-it-kept.md)).
+  This is the link that put this record in the cluster: *broken input is what a
+  short capture produces*. Until now the invention rate could only be measured
+  across all records at once; `capture_integrity` makes it splittable by whether
+  the audio behind the transcript was intact. If group A concentrates on short
+  captures, its cause is upstream of the corrector and no cleanup-side guardrail
+  was ever going to reach it. **That split is not measured yet** — on 2026-08-10
+  only 2 of 11 short captures still had transcripts, and only 5 records carried
+  a verdict at all.
+
+The honest summary is unchanged: **one of three observed categories has a
+guardrail, and the plan that produced it worked because the measurement came
+first.** Groups A and C do not have one, and this leg did not build them a
+speculative one — which is the same discipline, applied to the temptation to
+declare progress.
 
 Group B (translation) is a separate defect with its own existing rule — "keep the
 language and any existing language mix exactly as dictated" — and it is being

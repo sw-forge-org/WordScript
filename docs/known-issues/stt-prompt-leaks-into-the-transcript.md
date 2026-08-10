@@ -1,8 +1,10 @@
 # WordScript's Own Initial Prompt Is Transcribed Into the Output
 
-Status: **Open, measured, not fixed.** Found 2026-08-10 from the owner's report
-that a recurring sentence *"überschreibt oft entweder den Anfang oder das Ende
-oder irgendeinen ganzen Absatz in der Transkription und verschluckt oft viel."*
+Status: **Open — the echo is removed from the delivery since 2026-08-10
+(ADR 0080); the recogniser still produces it and the displaced words are still
+gone.** Found 2026-08-10 from the owner's report that a recurring sentence
+*"überschreibt oft entweder den Anfang oder das Ende oder irgendeinen ganzen
+Absatz in der Transkription und verschluckt oft viel."*
 
 **The recurring sentence is ours.** It is the initial prompt WordScript sends to
 Whisper, echoed back by the decoder as if it had been spoken.
@@ -54,6 +56,86 @@ continues its prefix instead of transcribing the audio.
 - **All observed on the Groq lane, `General writing` profile, status
   `completed`.** The local lane is unmeasured, not exonerated.
 
+## Re-measured 2026-08-10, and two things the first pass did not see
+
+136 records still in history, a rotated population rather than the 141 above.
+
+| | Count | Share |
+|---|---|---|
+| Raw transcript contains prompt text | **17** | **12.5 %** |
+| Delivered text still contains it | **9** | **6.6 %** |
+
+Same order of magnitude, and `Likely phrases` is the bigger half again: 10 of
+the 17 leaking records carry it, against 6 for *"Normale Sätze mit
+Satzzeichen…"* and 3 for *"Diktierte Notizen"*.
+
+**1. The echo is a paraphrase, not a copy.** Every floor echo on this machine
+reads *"Normale Sätze mit Satzzeichen und Kleinschreibung"*. The constant says
+*"…und **Groß- und** Kleinschreibung"* — the decoder dropped two words out of the
+middle. `Likely phrases` arrives **without its colon and without its terms**,
+sometimes as *"Likely phrases in the text"*, and up to four times in one
+transcript:
+
+```
+…Also... Likely phrases Hmm Likely phrases Hmm Also, ich hab 35 Euro Bitcoin…
+```
+
+A strip matching the exact string we sent would have caught almost none of it.
+This is the single most important correction to this record: it is what makes
+the fix a normalised in-order match rather than a `contains`.
+
+**2. The speaker sometimes says the prompt text out loud.** 2026-08-10 21:02:
+
+```
+Sorry, diktierte Notizen, normale Sätze mit Kleinschreibung, das war ein
+Transkriptionsartefakt, genau das, was wir bekämpfen müssen.
+```
+
+He is complaining about the artifact, in the middle of a dictation. Every word
+of the echo is there and **none of it is the recogniser's**. Any rule that
+removes prompt words on sight removes what he said. What separates it is that
+this is a *clause* spliced into a longer sentence surrounded by content the
+prompt never carried, while a leak arrives as a complete sentence of its own —
+so the fix reads sentences, and nothing coarser would have worked.
+
+### What shipped
+
+[ADR 0080](../decisions/0080-wordscript-removes-its-own-prompt-from-the-transcript-and-never-restores-what-it-displaced.md),
+option 1 of the four below. `core::recognizer_repair::strip_prompt_echo` removes
+an echo of the prompt **this request sent**, carried from the request rather
+than rebuilt. It runs in a stage ahead of the mode branch
+([ADR 0081](../decisions/0081-the-recogniser-output-is-repaired-before-any-mode-sees-it.md)),
+because the fresh live case below reached an *agent*, not a cleanup.
+
+It does not recover the swallowed words and does not pretend to: a transcript
+that is nothing but the echo comes back **empty**, and the applied rule
+`prompt_echo_stripped` says so on the record.
+
+**`raw_transcript` deliberately keeps the leak**, so the rate above stays
+measurable and History's `Heard` view still shows what the recogniser produced.
+A rate that falls because the fix hid it is not a rate.
+
+Options 2, 3 and 4 are untouched and still open.
+
+## The fresh live case, 2026-08-10: a leaked sentence was followed as an instruction
+
+It fired twice inside one agent session that day. One of the two is this,
+delivered whole:
+
+```
+Normale Sätze mit Satzzeichen und Kleinschreibung. Eine eigene Task.
+```
+
+The second sentence is the owner's. The first is ours, and it reached an agent
+**as an instruction and was acted on**. That is the failure at full strength:
+the leak does not merely add noise to a brief, it adds a *directive* in the
+register of the surrounding text, and the reader downstream has no way to tell
+it from something the owner asked for.
+
+It is also why the strip runs before the mode branch rather than inside the
+cleanup path — Agent, Translate and Prompt Enhance each branch away from it, and
+a fix in the cleanup path would have missed exactly this case.
+
 ## Why this is its own record
 
 `transcription-hallucination.md` is about the decoder falling into the
@@ -85,16 +167,14 @@ record does not simply propose reverting it.
 
 ## Options, and a recommendation
 
-1. **Strip our own prompt from the STT output, deterministically. Do this
-   first.** It is the one hallucination class that can be removed with
-   certainty rather than heuristically: **we know the exact string we sent.** A
-   post-STT pass that removes an echo of the current request's own prompt —
-   whole or as a leading/trailing fragment — is a string operation on known
-   input, not a guess about meaning. `core::hallucination_detect` is where it
-   goes.
-   **It does not recover the swallowed words**, and it must not pretend to: the
-   result should be visibly short rather than plausibly complete. That is
-   ADR 0036's principle applied to its own side effect.
+1. ~~**Strip our own prompt from the STT output, deterministically.**~~
+   **Done 2026-08-10, ADR 0080.** It landed in `core::recognizer_repair` rather
+   than `core::hallucination_detect` as proposed here, and the reason is the
+   agent case above: the strip has to run before the mode branch, and
+   `hallucination_detect` is reached from `apply_native_transform`, which is the
+   cleanup family's path. It also matches an in-order normalised subsequence
+   rather than a fragment of the exact string, because the echo turned out to be
+   a paraphrase.
 2. **Measure per-form leak rates and shorten what leaks most.** ADR 0017 already
    records that a longer initial prompt causes repetition loops and language
    drift. `Likely phrases: …` leaked more often than the floor here (12 vs 9)
@@ -109,11 +189,12 @@ record does not simply propose reverting it.
    Groq/OpenAI transcription API surface is the place to look before building
    anything.
 
-## Consequence right now, before any fix
+## Consequence for anyone reading a brief, and it outlives the fix
 
 **The owner dictates briefs into WordScript.** Roughly one in ten of his
-dictations is delivered carrying this text, so it reaches agent briefs, issues
-and commit messages.
+dictations *was* delivered carrying this text, so it has already reached agent
+briefs, issues and commit messages — and briefs are pasted from delivered text
+that predates ADR 0080. The rule below therefore stays in force.
 
 The working rule this replaces was "a sentence that matches nothing may be a
 mishearing — ask". It is now sharper: **a sentence matching the prompt text

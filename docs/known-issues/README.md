@@ -37,22 +37,31 @@ status change. Resolved bugs remain as references for the same failure class.
   repaint trigger for a mode change. Reported as mode-picker overlay stacking;
   not a compositor problem (2026-07-27).
 - [stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md):
-  **open, measured, not fixed** — the initial prompt WordScript sends to Whisper
-  is echoed back as if it had been spoken, at the start, the end or mid-text,
-  displacing real speech. 15 % of raw transcripts carry it and 9 % are delivered
-  still carrying it, because cleanup keeps a well-formed German sentence. Both
-  prompt forms leak, so removing the ADR 0036 floor alone would not close it.
-  The uncomfortable part: ADR 0036's mitigation for the subtitle attractor is
-  this defect's cause, and ADR 0036's own "visible damage became invisible
-  damage" argument is what decides the direction of the fix.
-- [transcription-accuracy.md](transcription-accuracy.md): **open, unmeasured** —
-  dictated words come back as different words, often enough that a dictated
-  brief has to be re-read before it is trusted (owner, 2026-08-10). Distinct
-  from the hallucination record below: a mishearing is fluent, grammatical and
-  in register, so no downstream filter can see it. The relay carries dated
-  samples because the owner dictates his briefs. Nothing is measured yet; the
-  first step is capturing instances into the regression corpus rather than
-  describing them.
+  **open; removed from the delivery 2026-08-10 (ADR 0080), still produced by the
+  recogniser** — the initial prompt WordScript sends to Whisper is echoed back as
+  if it had been spoken, at the start, the end or mid-text, displacing real
+  speech. Measured twice: 15 % / 9 % over 141 records, then 12.5 % / 6.6 % over
+  the 136 that remained. Two findings shaped the fix: the echo is a
+  **paraphrase** of what was sent, not a copy, so an exact-string strip would
+  have caught almost none of it; and the owner once said the prompt text out
+  loud while complaining about it, so the rule reads sentences rather than
+  words. A leaked sentence reached an agent **as an instruction and was
+  followed**, which is why the strip runs ahead of the mode branch. It never
+  restores the displaced words — a wholly-echoed transcript comes back empty —
+  and `raw_transcript` deliberately keeps the leak so the rate stays measurable.
+  The uncomfortable part stands: ADR 0036's mitigation for the subtitle
+  attractor is this defect's cause.
+- [transcription-accuracy.md](transcription-accuracy.md): **open, partly
+  measured** — dictated words come back as different words, often enough that a
+  dictated brief has to be re-read before it is trusted (owner, 2026-08-10).
+  Distinct from the hallucination record below: a mishearing is fluent,
+  grammatical and in register, so no downstream filter can see it. Two causes
+  under it now have rates and fixes (the prompt leak, the pluralized address);
+  there is still no WER, so the headline complaint stays open. **The measurement
+  that would join this cluster — shortfall against mishearings — was attempted
+  and is not answerable**: the join works (136 of 136 records paired) but 9 of
+  the 11 short captures had outlived their transcripts. That is a retention
+  artifact rather than a result, and ADR 0079 removes the need for the join.
 - [transcription-hallucination.md](transcription-hallucination.md): mitigated —
   raw transcription language drift and hallucination. The approved slice landed
   on 2026-07-29 (ADR 0015, ADR 0016): the capture config now reaches the runtime
@@ -70,13 +79,18 @@ status change. Resolved bugs remain as references for the same failure class.
   defect rather than a delivery one and was corrected under ADR 0013
   (2026-07-29). One open item: the physical half of the S0 measurement.
 - [capture-loses-half-the-recording.md](capture-loses-half-the-recording.md):
-  **open, and the most damaging entry in this directory** — 8 of 782 captures
-  recorded only 48–88% of their wall-clock duration, and nothing said so. The
-  transcript is of what was recorded, not of what was said. Found by comparing
-  two counters the runtime already logged: over 353 captures of at least 20 s,
-  `shortfall_ratio` and the missing audio fraction correlate at **r = 0.9999**.
-  No stream error, no rebuild, no device change in either affected window; ruled
-  out as a pause artifact and as a webview stall. This is what the overlay
+  **open, cause still not located, and the most damaging entry in this
+  directory** — captures record only part of their wall-clock duration and
+  nothing said so. The transcript is of what was recorded, not of what was said.
+  Found by comparing two counters the runtime already logged: r = 0.9999 across
+  353 captures on 2026-08-03, r = 0.9986 across 338 on 2026-08-10. **It is
+  ongoing: 11 affected captures rather than 8, and the worst — 54.6 % of a
+  214 s dictation — happened on 2026-08-10**, its transcript reading as a
+  finished piece of German at a third of the expected density. Since ADR 0079
+  the capture SAYS SO: runtime log, history record with an `Audio missing`
+  badge, and a tab beside the result pill at delivery time. Threshold 10 %,
+  derived from a gap in the data that runs from 7.0 % to 12.0 %. The pause
+  artifact in `shortfall_ratio` is fixed with it. This is what the overlay
   freeze reports were describing (2026-08-03).
 - [overlay-recording-freeze.md](overlay-recording-freeze.md): largely resolved by
   attribution — the recording overlay freezes mid-capture, timer and input
@@ -172,18 +186,28 @@ status change. Resolved bugs remain as references for the same failure class.
   deterministically detectable category now has a guardrail that repairs the
   token instead of discarding the correction (ADR 0036). The other two
   categories, 10 of 14 observed tokens, stay open — no rule that only sees the
-  transcript can reach them. Also records which look-alikes are legitimate
-  German morphology, so the metric does not count them.
-- [singular-address-becomes-plural.md](singular-address-becomes-plural.md): open,
-  located but not scoped (2026-08-03) — a dictated instruction to one addressee
-  arrives addressed to several: `fix das bitte` ships as `fixt das bitte`. The
-  output is well-formed German, so nothing marks it as damaged. Located on the
-  **recognizer**, not on cleanup: in all 3 cases found across 167 records the
-  plural already stands in `raw_transcript`, cleanup passes it through, and in one
-  of them cleanup did not run at all. Zero cases of cleanup pluralizing a singular.
-  Also qualifies the `switch` → `switcht` classification in the entry above —
-  the same suffix in an imperative is this defect, so a token-level metric cannot
-  separate them.
+  transcript can reach them, and 2026-08-10 did not change that. What changed is
+  upstream: two damage sources that feed this stage were removed before it
+  (ADR 0080, ADR 0081), and `capture_integrity` on the record now makes the
+  invention rate splittable by whether the audio behind the transcript was
+  intact — the link that put this record in the capture cluster. Neither has
+  been re-measured. Also records which look-alikes are legitimate German
+  morphology, so the metric does not count them.
+- [singular-address-becomes-plural.md](singular-address-becomes-plural.md):
+  **narrowed, not closed** (located 2026-08-03, repaired 2026-08-10 under
+  ADR 0081) — a dictated instruction to one addressee arrives addressed to
+  several: `fix das bitte` ships as `fixt das bitte`. The output is well-formed
+  German, so nothing marks it as damaged. Located on the **recognizer**, not on
+  cleanup: in all 3 cases across 167 records the plural already stands in
+  `raw_transcript`. The obvious suffix rule is unusable and the record carries
+  the counter-evidence: it flags **45 tokens in 31 of 136 records, of which 3
+  are the defect** — `Macht das Sinn?` is a third-person indicative and appears
+  six-plus times. So the repair reads **mood** — clause-initial, not a question,
+  no plural addressee, and a particle or `dir`/`dich` vouching for it — and it
+  is **German-only by declaration**, gated on the detected language, because the
+  bare-stem/stem-plus-`-t` pair that IS the defect exists in no other language in
+  reach. `Denkt ihr …?` stays out of reach on purpose. Also qualifies the
+  `switch` → `switcht` classification in the entry above.
 - [style-rules-are-truncated-without-saying-so.md](style-rules-are-truncated-without-saying-so.md):
   open, found by looking (2026-08-10) — a style rule past 120 characters is cut
   with `...` appended and the budget meter stays black, because truncation is

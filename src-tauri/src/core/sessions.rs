@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
+use super::capture::CaptureIntegrity;
 use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::history;
 use super::insertion::{insert_transcription_from_legacy, NativeInsertResult};
@@ -92,6 +93,10 @@ struct PendingTranscriptionPreview {
     /// profile's mode is changed underneath it, and the record has to state
     /// what ran (ADR 0075).
     effective_mode: Option<ProcessingMode>,
+    /// What the capture behind this preview measured about itself (ADR 0079).
+    /// Carried for the same reason `effective_mode` is: the commit writes the
+    /// record, and by then the capture is long over.
+    capture_integrity: Option<CaptureIntegrity>,
     occurred_at_ms: u64,
 }
 
@@ -164,6 +169,7 @@ impl NativeSessionState {
         raw_text: String,
         transformed: NativeTransformResult,
         effective_mode: Option<ProcessingMode>,
+        capture_integrity: Option<CaptureIntegrity>,
     ) -> Result<PendingTranscriptionPreviewEvent, String> {
         if !matches!(self.stage, NativeSessionStage::Processing) || self.active_session.is_none() {
             return Err("No native session is waiting for a preview commit.".to_string());
@@ -175,6 +181,7 @@ impl NativeSessionState {
             raw_text,
             transformed,
             effective_mode,
+            capture_integrity,
             occurred_at_ms: now_ms(),
         };
         let payload = preview.event_payload();
@@ -480,6 +487,7 @@ pub async fn commit_pending_transcription_preview(
                 &result,
                 preview.effective_mode.clone(),
                 title.clone(),
+                preview.capture_integrity,
             )
             .ok();
 
@@ -543,7 +551,8 @@ pub async fn commit_pending_transcription_preview(
                                 "retry_of": entry.retry_of,
                             })),
                             "delivery": result.insert_mode.delivery_label(),
-                            "insertion": result
+                            "insertion": result,
+                            "capture_integrity": preview.capture_integrity
                         }),
                     );
                     // The delivery point for this mode: the user committed and
@@ -579,6 +588,7 @@ pub async fn commit_pending_transcription_preview(
                 &result,
                 preview.effective_mode.clone(),
                 title.clone(),
+                preview.capture_integrity,
             );
             let error = result
                 .error
@@ -610,6 +620,7 @@ pub async fn commit_pending_transcription_preview(
                 error.clone(),
                 preview.effective_mode,
                 title,
+                preview.capture_integrity,
             );
             let _ = fail_processing_session_from_native_error(&app, &session_id, &error);
             let _ = app.emit(
@@ -655,12 +666,20 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
     raw_text: String,
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
+    capture_integrity: Option<CaptureIntegrity>,
 ) -> Result<PendingTranscriptionPreviewEvent, String> {
     let state = app
         .try_state::<Mutex<NativeSessionState>>()
         .ok_or_else(|| "Native session state is not available.".to_string())?;
     let mut state = state.lock().map_err(|error| error.to_string())?;
-    state.stage_pending_preview(app_config, provider, raw_text, transformed, effective_mode)
+    state.stage_pending_preview(
+        app_config,
+        provider,
+        raw_text,
+        transformed,
+        effective_mode,
+        capture_integrity,
+    )
 }
 
 pub fn complete_processing_session_from_transcription<R: Runtime>(
@@ -1032,6 +1051,7 @@ mod tests {
                     applied_rules: vec!["removed_fillers".to_string()],
                     warning: None,
                 },
+                None,
                 None,
             )
             .unwrap();

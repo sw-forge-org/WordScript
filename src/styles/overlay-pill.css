@@ -384,6 +384,75 @@
   50%      { opacity: 0.35; }
 }
 
+/* ── The capture-gap tab (ADR 0079) ────────────────────────────────────────────
+   The limit tab's twin on the same right strip, at the other end of a session:
+   the limit tab is recording-only, this one result-only, so the two never share
+   a moment and neither has to yield.
+
+   Geometry is deliberately identical to `.ov-limit-tab` rather than shared
+   through a common class — the two are measured by the same helper, and their
+   shutters must open the same way — but the states differ: this one has a single
+   tone (a reported capture is always damaged) and no hover or focus, because it
+   is a statement rather than a control. */
+.ov-scope .ov-gap-tab {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 6px);
+  height: 22px;
+  margin-top: -11px;
+  width: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: width 260ms cubic-bezier(0.22, 0.85, 0.28, 1);
+}
+
+.ov-scope .ov-gap-tab[data-visible="true"] {
+  width: var(--ov-gap-width, 0px);
+}
+
+/* Pinned to the shutter's left edge, uncovered from the left — same as the limit
+   tab. Content never moves; it is revealed. */
+.ov-scope .ov-gap-tab__inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: max-content;
+  max-width: 168px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: var(--ov-radius-compact);
+  /* Ground plus mark, never an edge bar: the tone is carried by the border, the
+     icon and the figure together, which is how every other state in this overlay
+     is drawn. */
+  background: var(--ov-surface);
+  border: 1px solid var(--ov-red-border);
+  box-shadow: var(--ov-highlight);
+  font-family: var(--ov-font);
+  font-size: 10.5px;
+  font-weight: 500;
+  /* The percentage changes between captures, never while the tab is open, but
+     tabular figures keep it visually level with the limit tab beside it in the
+     same strip. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--ov-red);
+  white-space: nowrap;
+}
+
+.ov-scope .ov-gap-tab__mark {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.ov-scope .ov-gap-tab__label {
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .ov-scope .pill {
   box-sizing: border-box;
   display: inline-flex;

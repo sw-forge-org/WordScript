@@ -1923,6 +1923,128 @@ describe("OverlayWindow", () => {
     });
   });
 
+  /**
+   * The delivery-time half of ADR 0079. The runtime log and the history record
+   * are both places the user goes afterwards; this is the only one that reaches
+   * them while the text is still in hand.
+   */
+  describe("the capture-gap tab", () => {
+    // Same stand-in geometry as the auto-stop tab: jsdom reports 0 for every
+    // box, and a tab measured at 0 deliberately never opens.
+    let restoreGeometry: (() => void) | null = null;
+
+    beforeEach(() => {
+      const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+      const rect = HTMLElement.prototype.getBoundingClientRect;
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+        configurable: true,
+        get() { return 90; },
+      });
+      HTMLElement.prototype.getBoundingClientRect = function () {
+        return { width: 90, height: 22, top: 0, left: 0, right: 90, bottom: 22, x: 0, y: 0, toJSON() {} } as DOMRect;
+      };
+      restoreGeometry = () => {
+        if (offset) Object.defineProperty(HTMLElement.prototype, "offsetWidth", offset);
+        HTMLElement.prototype.getBoundingClientRect = rect;
+      };
+    });
+
+    afterEach(() => {
+      restoreGeometry?.();
+      restoreGeometry = null;
+    });
+
+    function buildResultWithIntegrity(integrity: unknown) {
+      const base = buildIdleResultState();
+      return {
+        ...base,
+        state: {
+          ...base.state,
+          lastResult: { ...(base.state.lastResult as object), capture_integrity: integrity },
+        },
+      };
+    }
+
+    it("states how much audio the capture never got", async () => {
+      // The worst capture in the 2026-08-03 measurement: 405.7 s on the clock,
+      // 194.3 s recorded, delivered as a finished transcript.
+      useRuntimeMock.mockReturnValue(
+        buildResultWithIntegrity({
+          wall_seconds: 405.7,
+          recorded_seconds: 194.3,
+          missing_ratio: 0.521,
+          verdict: "short",
+        }),
+      );
+      render(<OverlayWindow />);
+
+      const tab = await screen.findByText("−52% audio");
+      const host = tab.closest(".ov-gap-tab");
+      expect(host).toHaveAttribute("data-visible", "true");
+      // The number is the label; the sentence is what a reader actually needs,
+      // and it says the text is short rather than that something went wrong.
+      expect(host).toHaveAccessibleName(/194 s of the 406 s it ran/);
+      expect(host).toHaveAccessibleName(/not of what was said/);
+    });
+
+    it("is a statement, not a control", async () => {
+      useRuntimeMock.mockReturnValue(
+        buildResultWithIntegrity({
+          wall_seconds: 100,
+          recorded_seconds: 60,
+          missing_ratio: 0.4,
+          verdict: "short",
+        }),
+      );
+      render(<OverlayWindow />);
+
+      const host = (await screen.findByText("−40% audio")).closest(".ov-gap-tab");
+      // Nothing here can recover audio that was never captured, so there is
+      // nothing to press. A button would be an offer the runtime cannot keep.
+      expect(host?.querySelector("button")).toBeNull();
+    });
+
+    it("says nothing about a capture that kept its audio", async () => {
+      useRuntimeMock.mockReturnValue(
+        buildResultWithIntegrity({
+          wall_seconds: 100,
+          recorded_seconds: 99.8,
+          missing_ratio: 0.002,
+          verdict: "intact",
+        }),
+      );
+      render(<OverlayWindow />);
+
+      await waitFor(() => expect(screen.getByText("Wir shippen das morgen.")).toBeInTheDocument());
+      expect(document.querySelector(".ov-gap-tab")).toBeNull();
+    });
+
+    /// "We did not look" is not a finding to put in front of the user. It is
+    /// readable on the record, which is where a measurement reads it.
+    it("says nothing about a capture nobody measured", async () => {
+      useRuntimeMock.mockReturnValue(
+        buildResultWithIntegrity({
+          wall_seconds: 1.2,
+          recorded_seconds: 0.9,
+          missing_ratio: 0.25,
+          verdict: "not_measured",
+        }),
+      );
+      render(<OverlayWindow />);
+
+      await waitFor(() => expect(screen.getByText("Wir shippen das morgen.")).toBeInTheDocument());
+      expect(document.querySelector(".ov-gap-tab")).toBeNull();
+    });
+
+    it("says nothing when the runtime reported no verdict at all", async () => {
+      useRuntimeMock.mockReturnValue(buildResultWithIntegrity(null));
+      render(<OverlayWindow />);
+
+      await waitFor(() => expect(screen.getByText("Wir shippen das morgen.")).toBeInTheDocument());
+      expect(document.querySelector(".ov-gap-tab")).toBeNull();
+    });
+  });
+
   describe("a failed recording", () => {
     it("offers a retry only when the runtime kept the audio", async () => {
       const withAudio = buildIdleResultState({

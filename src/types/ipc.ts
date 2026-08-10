@@ -103,6 +103,24 @@ export interface RuntimeHistoryEvent {
   retry_of:                string | null;
 }
 
+/** Whether a capture kept the audio its own clock says it ran for (ADR 0079).
+ *
+ *  `not_measured` is deliberately distinct from `intact`: "we did not look" and
+ *  "we looked and it was fine" are different facts, and a capture shorter than
+ *  two seconds carries too much startup transient for the ratio to mean
+ *  anything. */
+export type CaptureIntegrityVerdict = "intact" | "short" | "not_measured";
+
+export interface CaptureIntegrity {
+  /** Wall clock with paused stretches removed — pausing stops the input stream,
+   *  so the raw clock would report every paused capture as damaged. */
+  wall_seconds: number;
+  recorded_seconds: number;
+  /** The fraction of the clock that produced no audio, 0..=1. */
+  missing_ratio: number;
+  verdict: CaptureIntegrityVerdict;
+}
+
 export interface RuntimeResultEvent {
   text:                    string;
   corrected:               boolean;
@@ -119,6 +137,9 @@ export interface RuntimeResultEvent {
   delivery?:               "inserted" | "clipboard";
   insertion?:              NativeInsertResult;
   history?:                RuntimeHistoryEvent;
+  /** What the capture behind this result measured about itself (ADR 0079).
+   *  Absent on the paths that never had a capture of their own. */
+  capture_integrity?:      CaptureIntegrity | null;
 }
 
 export interface RuntimeTranscriptionResult {
@@ -136,6 +157,9 @@ export interface RuntimeTranscriptionResult {
   delivery:                "inserted" | "clipboard" | null;
   insertion:               NativeInsertResult | null;
   history:                 RuntimeHistoryEvent | null;
+  /** How much of its own clock the capture kept (ADR 0079). `null` where the
+   *  runtime reported none — an older payload, or a path with no capture. */
+  capture_integrity:       CaptureIntegrity | null;
   occurred_at_ms:          number;
 }
 
