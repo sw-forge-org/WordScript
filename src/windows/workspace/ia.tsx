@@ -117,7 +117,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     label: "Profiles",
     icon: "profiles",
     layout: "pane",
-    banner: saysSo("Drawn, not wired — the profile list and every value in it are sample data."),
+    banner: saysSo("Wired in part — Add, Edit and New profile have no drawn editor behind them, and Translate is not a mode the runtime carries."),
     render: (props) => <ProfilesScreen {...props} />,
   },
   {

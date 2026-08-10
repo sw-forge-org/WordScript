@@ -204,9 +204,23 @@ export function LegendRow({
  * The one thing wrong with the selected profile, in its header. A flag is a
  * count AND a way in, so it is one control — not a badge beside a button.
  */
-export function Flag({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+export function Flag({
+  children,
+  onClick,
+  title,
+  disabled,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  /** What the flags actually say. The count is the affordance; the sentences
+   *  are what a reader needs, and there is no drawn surface for them. */
+  title?: string;
+  /** No drawn place for the click to go. It states the count and is inert
+   *  rather than a button that does nothing (ADR 0065). */
+  disabled?: boolean;
+}) {
   return (
-    <button type="button" className="ws-flag" onClick={onClick}>
+    <button type="button" className="ws-flag" onClick={onClick} title={title} disabled={disabled}>
       <Icon name="alert" />
       {children}
     </button>
