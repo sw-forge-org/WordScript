@@ -74,23 +74,6 @@ describe("Home", () => {
   });
 });
 
-describe("Privacy & Data", () => {
-  it("answers whether anything leaves with a fact, not with a door", () => {
-    render(<PrivacyScreen />);
-    expect(screen.getByText("Never")).toBeInTheDocument();
-    expect(screen.getByText(/There is no WordScript account/)).toBeInTheDocument();
-  });
-
-  it("heads the destructive pair with its consequence rather than a neighbourhood", () => {
-    const { container } = render(<PrivacyScreen />);
-    expect(
-      screen.getByRole("heading", { name: "Delete and reset" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/danger zone/i)).not.toBeInTheDocument();
-    expect(container.querySelectorAll(".ws-row[data-danger]")).toHaveLength(2);
-  });
-});
-
 describe("Profiles", () => {
   it("is a pane — one surface, not two cards side by side", () => {
     const { container } = render(<ProfilesScreen />);

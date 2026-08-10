@@ -74,7 +74,9 @@ const SEARCH_SHORTCUT = MAC ? "⌘K" : "Ctrl K";
 
 export default function WorkspaceWindow() {
   const { state, saveConfig } = useRuntime();
-  const { resolved, scheme, setScheme } = useColorScheme("dark");
+  /* `true` is the native half (§15.3): the host answers `system` and the window
+     chrome follows the choice. The gallery's own call leaves it off. */
+  const { resolved, scheme, setScheme } = useColorScheme("dark", true);
   const { form, patch, patchText, flushText } = useConfigDraft(state.config, saveConfig);
   const [view, setView] = useState<ViewId>("home");
   const [section, setSection] = useState<SectionId | null>(null);

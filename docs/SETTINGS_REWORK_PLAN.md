@@ -2814,7 +2814,7 @@ owed by `src-tauri/`:
 | Menu bar (App / File / Edit / View / Window / Help) | `tauri::menu::MenuBuilder` |
 | `Cmd+Q` and `Cmd+W` as OS commands | Menu accelerators, not `keydown` |
 | Native drag and drop for audio and text | Tauri window drag-drop event |
-| System theme following | `window.theme()` and the theme-changed event |
+| ~~System theme following~~ **Done, Leg 6** | `core::theme` — `window.theme()` answers `system`, `set_theme` moves the window chrome with the choice, and Tauri's own `tauri://theme-changed` is what the renderer subscribes to |
 
 `Cmd+K` and `Cmd+,` stay in the renderer because both act on renderer state —
 but the menu bar must mirror them, since a shortcut existing only as a

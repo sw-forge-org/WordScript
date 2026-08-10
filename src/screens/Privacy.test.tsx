@@ -5,6 +5,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { PrivacyScreen } from "./Privacy";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 
+/* The two file dialogs the export and the import open. Answering with a fixed
+   path is what lets the test assert the command's argument rather than the
+   dialog's. */
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  save: vi.fn(async () => "/tmp/chosen-archive.json"),
+  open: vi.fn(async () => "/tmp/chosen-archive.json"),
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
 
@@ -72,16 +80,14 @@ describe("Privacy & Data, wired", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the three doors with no command drawn and inert", () => {
+  it("has no door left that cannot act", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* `export_transcription_history` writes the HISTORY as JSON and is wired on
-       History. "Everything local, as one archive" is a different thing and
-       nothing produces it; import and reset-to-defaults do not exist at all. */
-    for (const name of ["Export", "Import", "Reset"]) {
-      const control = screen.getByRole("button", { name });
-      expect(control, name).toBeDisabled();
-      expect(control, name).toHaveAttribute("title", "No command exists for this yet");
+    /* All four were the reason this screen carried a banner. `core::backup`
+       answers the three that had no command at all, and the banner came off in
+       the commit that made it false (ADR 0057). */
+    for (const name of ["Export", "Import", "Reset", "Clear"]) {
+      expect(screen.getByRole("button", { name }), name).toBeEnabled();
     }
   });
 
@@ -96,13 +102,80 @@ describe("Privacy & Data, wired", () => {
   });
 });
 
-describe("Privacy & Data, in the gallery", () => {
-  it("is the drawing, with every door live and nothing read", async () => {
-    render(<PrivacyScreen />);
+/**
+ * THE THREE DOORS `core::backup` ANSWERS, and the two cases that came off the
+ * fidelity suite when this screen left the gallery.
+ */
+describe("Privacy & Data · export, import and reset", () => {
+  it("writes the archive the row promises and says what went into it", async () => {
+    const runtime = createWorkspaceRuntime({ active: true });
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "export_full_backup") return { history_count: 174, transcript_count: 174 };
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={runtime} />);
 
-    for (const name of ["Export", "Import", "Reset", "Clear"]) {
-      expect(screen.getByRole("button", { name }), name).not.toBeDisabled();
-    }
-    await waitFor(() => expect(invoked).not.toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("export_full_backup", {
+        request: { path: "/tmp/chosen-archive.json" },
+      }),
+    );
+    expect(await screen.findByText(/174 records and 174 transcript files/)).toBeInTheDocument();
+  });
+
+  /* The rule the whole module is arranged around: an import states where the
+     state it replaced went, because that is the way back. */
+  it("names the snapshot an import wrote, and the one thing an archive cannot carry", async () => {
+    const runtime = createWorkspaceRuntime({ active: true });
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "import_full_backup") {
+        return {
+          snapshot_path: "/data/config.backup-import-1.json",
+          history_count: 12,
+          transcript_count: 12,
+        };
+      }
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={runtime} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(
+      await screen.findByText(/went to \/data\/config.backup-import-1.json/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/The API key is not in an archive/)).toBeInTheDocument();
+  });
+
+  it("states what a reset kept, rather than only what it undid", async () => {
+    const runtime = createWorkspaceRuntime({ active: true });
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "reset_all_settings") {
+        return { snapshot_path: "/data/config.backup-reset-1.json", kept_profiles: 6 };
+      }
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={runtime} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(await screen.findByText(/6 profiles and the history stayed/)).toBeInTheDocument();
+  });
+
+  it("answers whether anything leaves with a fact, not with a door", () => {
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    expect(screen.getByText("Never")).toBeInTheDocument();
+    expect(screen.getByText(/There is no WordScript account/)).toBeInTheDocument();
+  });
+
+  it("heads the destructive pair with its consequence rather than a neighbourhood", () => {
+    const { container } = render(
+      <PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />,
+    );
+    expect(screen.getByRole("heading", { name: "Delete and reset" })).toBeInTheDocument();
+    expect(screen.queryByText(/danger zone/i)).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".ws-row[data-danger]")).toHaveLength(2);
   });
 });

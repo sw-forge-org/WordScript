@@ -196,7 +196,6 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "privacy",
     label: "Privacy & Data",
     icon: "privacy",
-    banner: saysSo("Wired in part — Full export, Full import and Reset all settings have no command in the runtime."),
     render: (props) => <PrivacyScreen {...props} />,
   },
   {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import {
   Button,
   Card,
@@ -11,7 +12,7 @@ import {
   StatusBadge,
   ViewTop,
 } from "@/components/shell";
-import type { PartlyWiredScreenProps } from "./props";
+import type { WiredScreenProps } from "./props";
 
 /**
  * PRIVACY & DATA — `SCREENS.privacy`.
@@ -31,28 +32,31 @@ import type { PartlyWiredScreenProps } from "./props";
  * button, and the least useful of the three: it names a neighbourhood rather
  * than a consequence.
  *
- * WIRED IN PART, AND THE PART THAT IS NOT IS THE WHOLE EXPORT SECTION. Two of
- * the retention rules are config (`history_limit`, `history_retention_days`)
- * and Clear is `clear_transcription_history_entries`. The other three doors
- * have no command at all and are DISABLED with the reason on them (ADR 0065):
+ * EVERY DOOR ON THIS SCREEN ACTS. The retention rules are config
+ * (`history_limit`, `history_retention_days`), Clear is
+ * `clear_transcription_history_entries`, and the three that had no command at
+ * all are `core::backup`:
  *
- *   - **Full export.** `export_transcription_history` writes the HISTORY as
- *     JSON — History's own Export button is exactly that, and it is wired
- *     there. This row promises "everything local, as one archive", which is a
- *     different thing and nothing produces it.
- *   - **Full import.** There is no import of anything.
- *   - **Reset all settings.** There is no reset-to-defaults.
+ *   - **Full export** is `export_full_backup` — the config, the history index
+ *     and the transcript files as one archive, which is what "everything
+ *     local" says. It is a different thing from History's own Export, which
+ *     writes the index as JSON for a machine to read.
+ *   - **Full import** is `import_full_backup`, and it writes a snapshot of
+ *     what it replaces before it replaces anything. The row states where that
+ *     snapshot went, because it is the way back.
+ *   - **Reset all settings** is `reset_all_settings`, same snapshot rule, and
+ *     it keeps the profiles and the history the hint promises to keep.
  *
- * Three Leg 5 contracts, already on the relay's §2.5 list, and they are why
- * this section still carries a banner.
+ * THE API KEY IS NOT IN AN ARCHIVE and the import says so. It lives in the OS
+ * secret store, which is the one thing about a machine that does not travel —
+ * a restore that left somebody to discover that would have them debugging a
+ * dead connection instead of typing a key.
  *
  * THE TWO DOORS ARE REAL: `Open Context` and `Open AI Models` are
  * `runtime.open`. `Open Context` still goes to a V2 screen, which is a fact
  * about Context and not about this row — the row's job is to say where the
  * rule about context objects is stated.
  */
-const NO_COMMAND = "No command exists for this yet";
-
 const HISTORY_LIMITS = [50, 100, 200, 500, 1000];
 
 /** The drawn options, with the value each one means. `Keep all` is 0 in the
@@ -65,9 +69,16 @@ const RETENTIONS: { value: number; label: string }[] = [
   { value: 0, label: "Keep all" },
 ];
 
-export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
+export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
+  /* One line per row rather than a shared notice: three destructive doors sit
+     within a screen of each other, and a single message would leave a reader
+     guessing which one it answered. */
+  const [busy, setBusy] = useState<"export" | "import" | "reset" | null>(null);
+  const [exported, setExported] = useState<string | null>(null);
+  const [imported, setImported] = useState<string | null>(null);
+  const [reset, setReset] = useState<string | null>(null);
 
   const clear = async () => {
     setClearing(true);
@@ -76,6 +87,75 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
       setCleared(true);
     } finally {
       setClearing(false);
+    }
+  };
+
+  const runExport = async () => {
+    const path = await saveFileDialog({
+      title: "Export everything local",
+      defaultPath: `wordscript-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "WordScript archive", extensions: ["json"] }],
+    });
+    if (!path) return;
+
+    setBusy("export");
+    try {
+      const answer = await invoke<{ history_count: number; transcript_count: number }>(
+        "export_full_backup",
+        { request: { path } },
+      );
+      setExported(
+        `${answer.history_count} records and ${answer.transcript_count} transcript files written to ${path}.`,
+      );
+    } catch (cause) {
+      setExported(String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runImport = async () => {
+    const path = await openFileDialog({
+      title: "Restore from an archive",
+      multiple: false,
+      filters: [{ name: "WordScript archive", extensions: ["json"] }],
+    });
+    if (typeof path !== "string") return;
+
+    setBusy("import");
+    try {
+      const answer = await invoke<{
+        snapshot_path: string;
+        history_count: number;
+        transcript_count: number;
+      }>("import_full_backup", { request: { path } });
+      /* The snapshot is named because it is the way back, and a restore that
+         did not say where the replaced state went would be asking for trust it
+         has not earned. The key is named because it is the one thing an
+         archive cannot carry. */
+      setImported(
+        `Restored ${answer.history_count} records and ${answer.transcript_count} transcript files. What was here went to ${answer.snapshot_path}. The API key is not in an archive — it stays in this machine's secret store.`,
+      );
+    } catch (cause) {
+      setImported(String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runReset = async () => {
+    setBusy("reset");
+    try {
+      const answer = await invoke<{ snapshot_path: string; kept_profiles: number }>(
+        "reset_all_settings",
+      );
+      setReset(
+        `Every setting is back to its default. ${answer.kept_profiles} profiles and the history stayed. The previous settings went to ${answer.snapshot_path}.`,
+      );
+    } catch (cause) {
+      setReset(String(cause));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -93,8 +173,7 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
               label="Stored transcripts"
               hint="The oldest is dropped when the cap is reached."
               control={
-                runtime ? (
-                  <Select
+                <Select
                     value={String(runtime.config.history_limit)}
                     onChange={(event) =>
                       runtime.patch({ history_limit: Number(event.target.value) })
@@ -113,23 +192,13 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
                       </option>
                     ))}
                   </Select>
-                ) : (
-                  <Select defaultValue="500" aria-label="Stored transcripts">
-                    <option>50</option>
-                    <option>100</option>
-                    <option>200</option>
-                    <option>500</option>
-                    <option>1000</option>
-                  </Select>
-                )
               }
             />
             <Row
               label="Retention"
               hint="Older entries are pruned automatically."
               control={
-                runtime ? (
-                  <Select
+                <Select
                     value={String(runtime.config.history_retention_days)}
                     onChange={(event) =>
                       runtime.patch({ history_retention_days: Number(event.target.value) })
@@ -151,15 +220,6 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
                       </option>
                     ))}
                   </Select>
-                ) : (
-                  <Select defaultValue="90 days" aria-label="Retention">
-                    <option>7 days</option>
-                    <option>30 days</option>
-                    <option>90 days</option>
-                    <option>1 year</option>
-                    <option>Keep all</option>
-                  </Select>
-                )
               }
             />
             <Row
@@ -171,7 +231,7 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
                   <Button
                     variant="ghost"
                     icon={<Icon name="arrow" />}
-                    onClick={runtime ? () => runtime.open?.({ view: "context" }) : undefined}
+                    onClick={() => runtime.open?.({ view: "context" })}
                   >
                     Open Context
                   </Button>
@@ -217,7 +277,7 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
                 <Button
                   variant="ghost"
                   icon={<Icon name="arrow" />}
-                  onClick={runtime ? () => runtime.open?.({ section: "models" }) : undefined}
+                  onClick={() => runtime.open?.({ section: "models" })}
                 >
                   Open AI Models
                 </Button>
@@ -232,12 +292,13 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
           <CardRows>
             <Row
               label="Full export"
-              hint="Everything local, as one archive."
+              hint={exported ?? "Everything local, as one archive."}
               control={
                 <Button
                   icon={<Icon name="download" />}
-                  disabled={Boolean(runtime)}
-                  title={runtime ? NO_COMMAND : undefined}
+                  busy={busy === "export"}
+                  disabled={busy !== null}
+                  onClick={() => void runExport()}
                 >
                   Export
                 </Button>
@@ -245,9 +306,14 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
             />
             <Row
               label="Full import"
-              hint="Restores from a previously exported archive."
+              hint={imported ?? "Restores from a previously exported archive."}
               control={
-                <Button variant="ghost" disabled={Boolean(runtime)} title={runtime ? NO_COMMAND : undefined}>
+                <Button
+                  variant="ghost"
+                  busy={busy === "import"}
+                  disabled={busy !== null}
+                  onClick={() => void runImport()}
+                >
                   Import
                 </Button>
               }
@@ -275,7 +341,7 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
                   variant="danger"
                   busy={clearing}
                   disabled={clearing}
-                  onClick={runtime ? () => void clear() : undefined}
+                  onClick={() => void clear()}
                 >
                   Clear
                 </Button>
@@ -283,13 +349,14 @@ export function PrivacyScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
             />
             <Row
               label="Reset all settings"
-              hint="Restores every setting to its default. History and profiles stay."
+              hint={reset ?? "Restores every setting to its default. History and profiles stay."}
               danger
               control={
                 <Button
                   variant="danger"
-                  disabled={Boolean(runtime)}
-                  title={runtime ? NO_COMMAND : undefined}
+                  busy={busy === "reset"}
+                  disabled={busy !== null}
+                  onClick={() => void runReset()}
                 >
                   Reset
                 </Button>

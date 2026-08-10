@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod backup;
 pub mod capture;
 pub mod capture_budget;
 pub mod communication_style;
@@ -18,6 +19,7 @@ pub mod sessions;
 pub mod shortcut;
 pub mod sound;
 pub mod text_rules;
+pub mod theme;
 pub mod transcript_store;
 pub mod transcription_hints;
 pub mod transform;

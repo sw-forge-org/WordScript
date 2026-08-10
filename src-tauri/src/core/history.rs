@@ -344,6 +344,29 @@ fn record_entry_with_work_mode(
     Ok(entry)
 }
 
+/// Every entry, for an archive (ADR 0074's export half). Unfiltered and
+/// unpruned by the query, because "everything local" is what the row promises.
+pub fn entries_for_backup() -> Result<Vec<TranscriptionHistoryEntry>, String> {
+    entries_snapshot()
+}
+
+/// Replace the index with an archive's. Used only by the import, which has
+/// already written its snapshot — this function does not check that, and the
+/// only caller that may skip it does not exist.
+///
+/// The REPLACED entries' files are deliberately NOT deleted: the import writes
+/// the archive's transcripts beside whatever is there, and a restore that
+/// silently swept the files of the records it replaced would destroy the very
+/// thing the snapshot exists to protect.
+pub fn replace_entries_from_backup(
+    entries: Vec<TranscriptionHistoryEntry>,
+) -> Result<(), String> {
+    let mut store = history_store().lock().map_err(|error| error.to_string())?;
+    ensure_loaded(&mut store);
+    store.entries = entries.into_iter().collect();
+    save_history_entries(&store.entries)
+}
+
 fn entries_snapshot() -> Result<Vec<TranscriptionHistoryEntry>, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);

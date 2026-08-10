@@ -1,6 +1,14 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useColorScheme } from "./useColorScheme";
+
+const { invoked } = vi.hoisted(() => ({
+  invoked: vi.fn(async (_command: string): Promise<unknown> => undefined),
+}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invoked }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+}));
 
 /** A controllable `prefers-color-scheme: dark`, because jsdom's always answers
  *  false and a deferral that is never re-resolved cannot be told from one that
@@ -28,6 +36,8 @@ function mockSystem(dark: boolean) {
 }
 
 beforeEach(() => {
+  invoked.mockReset();
+  invoked.mockResolvedValue(undefined);
   document.documentElement.removeAttribute("data-theme");
 });
 
@@ -96,5 +106,36 @@ describe("useColorScheme", () => {
     unmount();
 
     expect(document.documentElement).not.toHaveAttribute("data-theme");
+  });
+});
+
+/**
+ * THE NATIVE HALF (§15.3), and the reason it is opt-in.
+ */
+describe("useColorScheme · the host", () => {
+  it("calls no Tauri command unless the caller asks for the host", () => {
+    renderHook(() => useColorScheme("system"));
+    expect(invoked).not.toHaveBeenCalled();
+  });
+
+  it("takes the host's answer for System over the media query", async () => {
+    mockSystem(true); // the media query says dark
+    invoked.mockImplementation(async (command: string) =>
+      command === "system_color_scheme" ? "light" : undefined,
+    );
+
+    renderHook(() => useColorScheme("system", true));
+
+    await waitFor(() =>
+      expect(document.documentElement).toHaveAttribute("data-theme", "light"),
+    );
+  });
+
+  /* A title bar does not read `data-theme`, so the choice has to be pushed. */
+  it("pushes the chosen scheme at the window chrome", async () => {
+    renderHook(() => useColorScheme("light", true));
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("set_window_color_scheme", { scheme: "light" }),
+    );
   });
 });

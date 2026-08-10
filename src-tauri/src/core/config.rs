@@ -1464,7 +1464,7 @@ impl AppConfig {
     /// Returns whether normalization rewrote a profile's `work_mode`, so
     /// `load_from_disk_impl` can persist the canonical form instead of
     /// recomputing it on every load. See `normalize_text_profiles`.
-    fn normalize_for_runtime(&mut self) -> bool {
+    pub(crate) fn normalize_for_runtime(&mut self) -> bool {
         let work_mode_rewritten = self.normalize_text_profiles();
         self.provider = normalize_provider_value(&self.provider);
         self.local_model = normalize_local_model_value(&self.local_model);

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export type ColorScheme = "light" | "dark" | "system";
 export type ResolvedScheme = "light" | "dark";
@@ -37,12 +39,25 @@ function systemPrefersDark(): boolean {
  * after this. A passive effect here would paint one frame of the previous
  * scheme first, which on a full-window repaint is visible.
  *
- * The native half of this is still owed by `src-tauri/`: `window.theme()` and
- * the Tauri theme-changed event, so the shell follows the OS the way this
- * follows the media query (§15.3). Until then the media query is the only
- * source, and inside a WebKitGTK host it reports the GTK preference.
+ * THE HOST IS ASKED FIRST, AND THE MEDIA QUERY IS THE FALLBACK (§15.3, closed
+ * by Leg 6). `window.theme()` is the desktop's own answer and the same one the
+ * window decoration follows; `prefers-color-scheme` inside WebKitGTK reports
+ * the GTK preference too, so it is not wrong, it is second-hand — and asking
+ * the host removes the case where the two disagree. Both are subscribed while
+ * `system` is chosen: Tauri emits `tauri://theme-changed` when the desktop
+ * switches, and the media query still answers in a browser, where there is no
+ * host at all.
+ *
+ * The chosen scheme is pushed BACK to the window, because a title bar does not
+ * read a CSS attribute — picking Light on a dark desktop otherwise leaves a
+ * light workspace inside a dark frame.
+ *
+ * BOTH ARE BEHIND `followHost`, AND THE DEFAULT IS OFF. This hook is the design
+ * system's and the gallery uses it too, and the gallery calls no Tauri API at
+ * all — its test asserts that by mocking `invoke` to throw (ADR 0055). So the
+ * product surface opts in and the display surface stays a display surface.
  */
-export function useColorScheme(initial: ColorScheme = "dark") {
+export function useColorScheme(initial: ColorScheme = "dark", followHost = false) {
   const [scheme, setScheme] = useState<ColorScheme>(initial);
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
 
@@ -59,8 +74,42 @@ export function useColorScheme(initial: ColorScheme = "dark") {
     return () => media.removeEventListener("change", follow);
   }, [scheme]);
 
+  /* The host's own answer, and its own event. Both are guarded: outside the
+     native host `invoke` rejects and `listen` never fires, which leaves the
+     media query above as the only source — the state this hook was in before
+     the native half existed. */
+  useEffect(() => {
+    if (!followHost) return;
+    if (scheme !== "system") return;
+    let cancelled = false;
+
+    void invoke<string | null>("system_color_scheme")
+      .then((next) => {
+        if (!cancelled && next) setSystemDark(next !== "light");
+      })
+      .catch(() => {});
+
+    const unlisten = listen<string>("tauri://theme-changed", ({ payload }) => {
+      setSystemDark(String(payload).toLowerCase() !== "light");
+    }).catch(() => () => {});
+
+    return () => {
+      cancelled = true;
+      void unlisten.then((stop) => stop());
+    };
+  }, [scheme, followHost]);
+
   const resolved: ResolvedScheme =
     scheme === "system" ? (systemDark ? "dark" : "light") : scheme;
+
+  /* The window chrome follows the RESOLVED value, which is what a decoration
+     can be: there is no "system" title bar, there is a light one and a dark
+     one. Pushed on every change rather than only on an explicit choice, so a
+     desktop that switches at dusk under `system` moves the frame too. */
+  useEffect(() => {
+    if (!followHost) return;
+    void invoke("set_window_color_scheme", { scheme }).catch(() => {});
+  }, [followHost, scheme, resolved]);
 
   useLayoutEffect(() => {
     const root = document.documentElement;

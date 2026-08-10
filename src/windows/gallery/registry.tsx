@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { HomeScreen } from "@/screens/Home";
-import { PrivacyScreen } from "@/screens/Privacy";
 import { ProfilesScreen } from "@/screens/Profiles";
 import { CommitScreen } from "@/screens/Commit";
 import { IntegrationsScreen } from "@/screens/Integrations";
@@ -83,7 +82,6 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
       { id: "models", surface: "settings", label: "AI Models", render: () => <ModelsScreen /> },
       { id: "agents", surface: "settings", label: "Agents", preview: true, render: () => <AgentsScreen /> },
       { id: "integrations", surface: "settings", label: "Integrations", preview: true, render: () => <IntegrationsScreen /> },
-      { id: "privacy", surface: "settings", label: "Privacy & Data", render: () => <PrivacyScreen /> },
     ],
   },
   {
