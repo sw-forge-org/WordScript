@@ -66,6 +66,14 @@ export function BrandMark({
  * expensive answer to the same question. The shortcut stays and is printed on
  * the control it accelerates — a keyboard shortcut is an accelerator for a
  * thing you can see, not a substitute for it.
+ *
+ * IT GIVES UP FOCUS AS IT OPENS, and that is the whole reason the focus ring
+ * stopped standing around the field. This control hands focus to the palette's
+ * input by design, so keeping it afterwards is holding something it has already
+ * passed on — and WebKitGTK matches `:focus-visible` on a pointer press, so the
+ * global accent ring was left painted around a field the user had just clicked
+ * away from. Blurring here rather than suppressing the ring in CSS keeps the
+ * indicator for the one case it exists for: a keyboard user tabbing to it.
  */
 export function NavSearch({
   onOpen,
@@ -77,7 +85,14 @@ export function NavSearch({
   className?: string;
 }) {
   return (
-    <button type="button" className={cn("ws-nav-search", className)} onClick={onOpen}>
+    <button
+      type="button"
+      className={cn("ws-nav-search", className)}
+      onClick={(event) => {
+        event.currentTarget.blur();
+        onOpen?.();
+      }}
+    >
       <Icon name="search" />
       <span>Search</span>
       <kbd>{shortcut}</kbd>
