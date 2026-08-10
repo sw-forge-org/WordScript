@@ -20,6 +20,7 @@ pub mod sound;
 pub mod text_rules;
 pub mod transcription_hints;
 pub mod transform;
+pub mod translate;
 pub mod trigger;
 pub mod updates;
 pub mod vocabulary_learning;

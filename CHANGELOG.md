@@ -55,6 +55,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Translate is a processing mode you can select** (ADR 0041, ADR 0071).
+  `ProcessingMode` gains a seventh value with its own prompt in
+  `core::translate`, its own hotkey slot and its own place in the mode cycle. It
+  is not a member of the cleanup family: the correction prompt forbids
+  translating, so a translation cannot be that prompt with a flag on it. Auto
+  never selects it and no communication style applies to it, both by decision
+  rather than by omission. Its four settings — the target language, what happens
+  when you already dictated in that language, the address form, and whether the
+  profile's names and terms survive untranslated — were drawn on AI Models since
+  the port and inert; they are live now, in the scope the drawing gives them.
+  It ships ahead of its roadmap phase and therefore on the chat model the
+  product already runs, which ADR 0071 records rather than leaves to be
+  discovered.
+- **The seventh mode ships with no hotkey**, and that is stated rather than
+  papered over with `Alt+7`: the shipped defaults occupy `Alt+1` through
+  `Alt+6`. The row on Hotkeys is settable like the other six and empty until
+  somebody sets it.
 - **The communication style has a surface for the first time.** Relay Leg 4d,
   ADR 0068: a sixth profile tab `Style`, in second position, carrying one card —
   the register with its six levels, the length, your rules and a writing sample,

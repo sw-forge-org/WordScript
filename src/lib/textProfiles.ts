@@ -113,6 +113,8 @@ export function createDefaultProfileModesSettings(): ProfileModesSettings {
     communication_length: "normal",
     style_instructions: "",
     style_sample: "",
+    translate_target_language: "en",
+    translate_keep_profile_words: true,
   };
 }
 
@@ -154,6 +156,13 @@ function cloneProfileModesSettings(settings?: ProfileModesSettings | null): Prof
     communication_length: settings.communication_length ?? defaults.communication_length,
     style_instructions: settings.style_instructions ?? defaults.style_instructions,
     style_sample: settings.style_sample ?? defaults.style_sample,
+    // Absent for the same reason and with the same consequence: a Select bound
+    // to `undefined` renders as uncontrolled, and a Toggle bound to it renders
+    // off while the runtime keeps the terms.
+    translate_target_language:
+      settings.translate_target_language ?? defaults.translate_target_language,
+    translate_keep_profile_words:
+      settings.translate_keep_profile_words ?? defaults.translate_keep_profile_words,
   };
 }
 

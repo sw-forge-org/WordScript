@@ -37,17 +37,17 @@ import type { WiredScreenProps } from "./props";
  * badge beside the caps rather than as a sentence under them — and the badge is
  * `native_trigger_status`'s answer for that slot, not a drawing of one.
  *
- * TRANSLATE TOOK THE SEVENTH SLOT RATHER THAN DISPLACING ONE (ADR 0041). The
- * shipped defaults run Alt+1..6, so a seventh mode is the first that arrives
- * with no default binding — stated on its row rather than papered over with
- * Alt+7, because the number of digits a modifier row can carry is a real limit
- * and the eighth mode will hit it harder.
+ * Translate took the seventh slot rather than displacing one (ADR 0041), and it
+ * ships with no binding. The shipped defaults run Alt+1..6, so a seventh mode
+ * either takes Alt+7 or takes none; it takes none, and this row is where that
+ * is stated. The number of digits a modifier row can carry is a real limit and
+ * the eighth mode will hit it harder than the seventh, so whoever adds it
+ * inherits the question rather than a precedent for extending the row silently.
  *
- * AND THE RUNTIME HAS NO SEVENTH SLOT EITHER. `ProcessingMode` is six values and
- * `mode_hotkeys` is six fields plus the picker; there is no `translate` in
- * either. So the Translate row is drawn and DISABLED with the reason on it
- * (ADR 0065's general rule), never a control that looks settable and writes
- * nowhere. The fact is on the relay's §2.5 list.
+ * The row is settable like the other six: `mode_translate_hotkey` exists and
+ * `ModeHotkeys` registers it. An empty slot here means "nothing is bound", the
+ * same as any other mode the user cleared, which is why it needs no note of its
+ * own.
  *
  * WHY THE MODE ROWS CARRY NO BADGE AND THE CAPTURE ROWS DO. That is the
  * drawing's own split and it is the badge rule (§11.20): a badge is for a
@@ -72,6 +72,7 @@ type ModeField =
   | "mode_verbatim_hotkey"
   | "mode_cleanup_hotkey"
   | "mode_rewrite_hotkey"
+  | "mode_translate_hotkey"
   | "mode_agent_hotkey"
   | "mode_prompt_enhance_hotkey";
 
@@ -97,17 +98,16 @@ const CAPTURE_SLOTS: { field: CaptureField; binding: string; label: string; hint
 ];
 
 /**
- * The drawn seven, in the drawing's order. `field` null is the mode the runtime
- * does not carry — see the header. `Draft` is the surface's name for the
+ * The drawn seven, in the drawing's order. `Draft` is the surface's name for the
  * runtime's `agent`; the mapping is the port's, and the binding label is the
  * runtime's own `ProcessingMode::as_str()`.
  */
-const MODE_SLOTS: { label: string; field: ModeField | null; binding: string | null }[] = [
+const MODE_SLOTS: { label: string; field: ModeField; binding: string }[] = [
   { label: "Auto", field: "mode_auto_hotkey", binding: "auto" },
   { label: "Verbatim", field: "mode_verbatim_hotkey", binding: "verbatim" },
   { label: "Cleanup", field: "mode_cleanup_hotkey", binding: "cleanup" },
   { label: "Rewrite", field: "mode_rewrite_hotkey", binding: "rewrite" },
-  { label: "Translate", field: null, binding: null },
+  { label: "Translate", field: "mode_translate_hotkey", binding: "translate" },
   { label: "Draft", field: "mode_agent_hotkey", binding: "agent" },
   { label: "Prompt Enhance", field: "mode_prompt_enhance_hotkey", binding: "prompt_enhance" },
 ];
@@ -127,6 +127,7 @@ const ALL_FIELDS: (CaptureField | ModeField)[] = [
   "mode_verbatim_hotkey",
   "mode_cleanup_hotkey",
   "mode_rewrite_hotkey",
+  "mode_translate_hotkey",
   "mode_agent_hotkey",
   "mode_prompt_enhance_hotkey",
 ];
@@ -377,16 +378,6 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
               control={control("mode_picker_hotkey", bindingFor("mode_picker"))}
             />
             {MODE_SLOTS.map((slot) => {
-              if (!slot.field) {
-                return (
-                  <Row
-                    key={slot.label}
-                    label={slot.label}
-                    hint="The runtime carries no key for this mode yet, so there is nothing to bind."
-                    control={<HotkeyButton combo={null} disabled />}
-                  />
-                );
-              }
               const binding = bindingFor(slot.binding);
               return (
                 <Row

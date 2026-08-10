@@ -195,14 +195,18 @@ describe("Profiles, wired", () => {
     expect(patch.mock.calls[0][0].text_profiles[0].dictionary_entries).toEqual([]);
   });
 
-  it("offers Translate and cannot select it, because the runtime has no such mode", async () => {
-    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+  it("writes Translate into the profile like any other mode", async () => {
+    const patch = vi.fn();
+    render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config(), patch })} />,
+    );
 
     const select = screen.getByLabelText("Processing mode") as HTMLSelectElement;
     const translate = [...select.options].find((option) => option.textContent === "Translate")!;
-    /* ADR 0041 gave it a slot; `ProcessingMode` has six values. Same hole as
-       the seventh mode key on Hotkeys. */
-    expect(translate.disabled).toBe(true);
+    expect(translate.disabled).toBe(false);
+
+    await userEvent.selectOptions(select, "translate");
+    expect(patch.mock.calls[0][0].text_profiles[0].work_mode.processing_mode).toBe("translate");
   });
 
   it("marks only the active profile active", async () => {

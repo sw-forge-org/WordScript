@@ -1623,6 +1623,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     // dictionary and snippets already followed (ADR 0025).
                     let agent_name = transform_config.agent_name.clone();
                     let communication_style = transform_config.style.clone();
+                    let translate_settings = transform_config.translate.clone();
 
                     // Workspace context is detected at most once per session and
                     // then reused by every branch. It used to be detected twice on
@@ -1745,6 +1746,40 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 text: result.text,
                                 corrected: result.was_agent,
                                 applied_rules: vec!["agent_mode".to_string()],
+                                warning: result.warning,
+                            }
+                        }
+                        core::config::ProcessingMode::Translate => {
+                            // The chat model, not the correction model. The
+                            // drawn model row marks this job as overridden off
+                            // the connection's default for exactly this reason:
+                            // rendering a dictation in another language is a
+                            // harder instruction-following job than tidying one,
+                            // and it is explicitly not on the fastest path
+                            // (ADR 0041, ADR 0042).
+                            let translate_model = if mode_transform_config.provider
+                                == core::providers::LOCAL_PREVIEW_PROVIDER_ID
+                            {
+                                app_config.local_agent_model.clone()
+                            } else {
+                                app_config.agent_model.clone()
+                            };
+                            let translate_config = core::translate::TranslateConfig {
+                                provider: mode_transform_config.provider.clone(),
+                                model: translate_model,
+                                settings: translate_settings.clone(),
+                                profile_prompt: mode_transform_config.profile_prompt.clone(),
+                                vocabulary: mode_transform_config.vocabulary.clone(),
+                            };
+                            let result = core::translate::apply_translate(
+                                &response.text,
+                                &translate_config,
+                            )
+                            .await;
+                            core::transform::NativeTransformResult {
+                                text: result.text,
+                                corrected: result.translated,
+                                applied_rules: vec!["translate_mode".to_string()],
                                 warning: result.warning,
                             }
                         }

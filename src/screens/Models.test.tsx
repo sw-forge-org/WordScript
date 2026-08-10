@@ -166,6 +166,39 @@ describe("AI Models, wired", () => {
     expect(language).toHaveAttribute("title", expect.stringContaining("Not integrated yet"));
     expect(screen.getByLabelText("Pin this language")).toBeDisabled();
   });
+
+  /* The four exceptions to the rule above, and they are exceptions because
+     they are not model choices: they are the Translate mode's own settings and
+     they have had a config home since the commit that added the mode
+     (ADR 0041). Everything else here waits on the connection shape ADR 0042
+     describes. */
+  it("writes the two Translate settings the drawing scopes to the profile", async () => {
+    const patch = vi.fn();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    const into = await screen.findByLabelText("Into");
+    expect(into).not.toBeDisabled();
+    await userEvent.selectOptions(into, "de");
+    expect(patch.mock.calls[0][0].text_profiles[0].modes.translate_target_language).toBe("de");
+
+    await userEvent.click(screen.getByLabelText("Keep the profile's words"));
+    expect(patch.mock.calls[1][0].text_profiles[0].modes.translate_keep_profile_words).toBe(false);
+  });
+
+  it("writes the two the drawing leaves unscoped straight into the config", async () => {
+    const patch = vi.fn();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    const sameLanguage = await screen.findByRole("group", {
+      name: "When you already dictated in that language",
+    });
+    await userEvent.click(within(sameLanguage).getByRole("button", { name: "Pass through" }));
+    expect(patch).toHaveBeenCalledWith({ translate_same_language: "pass_through" });
+
+    const addressForm = screen.getByRole("group", { name: "Address form" });
+    await userEvent.click(within(addressForm).getByRole("button", { name: "Informal" }));
+    expect(patch).toHaveBeenCalledWith({ translate_address_form: "informal" });
+  });
 });
 
 describe("AI Models, in the gallery", () => {

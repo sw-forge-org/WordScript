@@ -204,6 +204,7 @@ export const PROCESSING_MODE_LABELS: Record<ProcessingMode, string> = {
   verbatim: "Verbatim",
   cleanup: "Cleanup",
   rewrite: "Rewrite",
+  translate: "Translate",
   agent: "Draft",
   prompt_enhance: "Prompt Enhance",
 };

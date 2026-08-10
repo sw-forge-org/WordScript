@@ -27,7 +27,18 @@ import "../styles/overlay-shell.css";
 const RUNTIME_EVENT_CHANNEL = "wordscript-event";
 // Order the in-overlay mode cycler rotates through. Mirrors the modes exposed in
 // Settings → Modes.
-const MODE_CYCLE: ProcessingMode[] = ["auto", "verbatim", "cleanup", "rewrite", "agent", "prompt_enhance"];
+/* Mirrors `MODE_CYCLE_ORDER` in `core::mode_router`, which is the authority:
+   the hotkey cycles there and the tap cycles here, and two orders would send
+   the same press to two different modes. */
+const MODE_CYCLE: ProcessingMode[] = [
+  "auto",
+  "verbatim",
+  "cleanup",
+  "rewrite",
+  "translate",
+  "agent",
+  "prompt_enhance",
+];
 const OVERLAY_ENTER_MS = 320;
 const OVERLAY_LEAVE_MS = 240;
 const DRAG_DISTANCE_THRESHOLD = 6;

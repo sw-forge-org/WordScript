@@ -3,7 +3,9 @@ use std::time::Instant;
 use regex::{Captures, NoExpand, Regex, RegexBuilder};
 
 use super::communication_style::CommunicationStyle;
-use super::config::{DictionaryEntry, SnippetEntry, TransformPreset, DEFAULT_CORRECTION_MODEL};
+use super::config::{
+    DictionaryEntry, SnippetEntry, TransformPreset, TranslateSettings, DEFAULT_CORRECTION_MODEL,
+};
 use super::profile_context::{profile_context_line, truncate_line};
 use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
 use super::runtime_log;
@@ -46,6 +48,11 @@ pub struct NativeTransformConfig {
     /// what it is allowed to change. Cleanup must stay near its input and
     /// ignores this (ADR 0023).
     pub style: CommunicationStyle,
+    /// What Translate runs with, carried through from the capture snapshot for
+    /// the Translate branch in the same way `style` is carried for Agent. The
+    /// correction prompt never reads it: a translation is not a correction
+    /// (ADR 0041).
+    pub translate: TranslateSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +101,7 @@ impl NativeTransformConfig {
             low_confidence_segments: false,
             workspace_hint: None,
             style: config.communication_style.clone(),
+            translate: config.translate.clone(),
         }
     }
 

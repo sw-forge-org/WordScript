@@ -117,9 +117,6 @@ import type { PartlyWiredScreenProps } from "./props";
  *   - **Check against a sample** and **Show the effective bias**, which are
  *     `analyze_text_rules` — a real command whose ANSWER has nowhere drawn to
  *     go.
- *   - **Translate** in the mode select, which is ADR 0041's seventh mode and
- *     not a `ProcessingMode` the runtime carries. Same hole as Hotkeys' seventh
- *     key.
  *
  * The health flag count IS read (`get_profile_health`) and its sentences are
  * the button's tooltip, because that is the only place on the drawing they fit.
@@ -206,14 +203,14 @@ const MAX_STYLE_SAMPLE_CHARS = 400;
 const STYLE_IS_OFF =
   "The register is Off, so nothing on this card reaches a prompt. Pick a register to use them.";
 
-/** The drawn order, which is not `ProcessingMode`'s. `Translate` has no runtime
- *  value; `Draft` is the surface's name for `agent` (`PROCESSING_MODE_LABELS`). */
-const MODE_OPTIONS: { value: ProcessingMode | "translate"; label: string }[] = [
+/** The drawn order, which is not `ProcessingMode`'s declaration order. `Draft`
+ *  is the surface's name for `agent` (`PROCESSING_MODE_LABELS`). */
+const MODE_OPTIONS: { value: ProcessingMode; label: string }[] = [
   { value: "auto", label: PROCESSING_MODE_LABELS.auto },
   { value: "verbatim", label: PROCESSING_MODE_LABELS.verbatim },
   { value: "cleanup", label: PROCESSING_MODE_LABELS.cleanup },
   { value: "rewrite", label: PROCESSING_MODE_LABELS.rewrite },
-  { value: "translate", label: "Translate" },
+  { value: "translate", label: PROCESSING_MODE_LABELS.translate },
   { value: "agent", label: PROCESSING_MODE_LABELS.agent },
   { value: "prompt_enhance", label: PROCESSING_MODE_LABELS.prompt_enhance },
 ];
@@ -497,13 +494,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             aria-label="Processing mode"
                           >
                             {MODE_OPTIONS.map((option) => (
-                              <option
-                                key={option.value}
-                                value={option.value}
-                                /* ADR 0041 gave Translate the seventh slot and
-                                   `ProcessingMode` still has six values. */
-                                disabled={Boolean(runtime) && option.value === "translate"}
-                              >
+                              <option key={option.value} value={option.value}>
                                 {option.label}
                               </option>
                             ))}

@@ -23,11 +23,38 @@
 // `.ws-screen-stage` children — so a wrapper on either side shows up as a path
 // that exists on one side only.
 import { spawn } from "node:child_process";
+import { readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-// Any Chromium will do. Playwright's is the one this machine already has.
-const CHROME = process.env.CHROME ??
-  "/home/felixontv/.cache/ms-playwright/chromium-1232/chrome-linux64/chrome";
+// Any Chromium will do. Playwright's is the one this machine already has, and
+// the revision in its path moves whenever Playwright is updated — this used to
+// be pinned to `chromium-1232`, which stopped existing and made the script fail
+// with a bare ENOENT that says nothing about why. The newest installed revision
+// is picked instead, and `CHROME` still overrides it.
+const CHROME = process.env.CHROME ?? newestPlaywrightChromium();
+
+function newestPlaywrightChromium() {
+  const root = join(homedir(), ".cache", "ms-playwright");
+  let revisions = [];
+  try {
+    revisions = readdirSync(root)
+      .filter((entry) => /^chromium-\d+$/.test(entry))
+      .sort((a, b) => Number(a.slice(9)) - Number(b.slice(9)));
+  } catch {
+    // No Playwright cache at all; fall through to the error below.
+  }
+  const newest = revisions.at(-1);
+  if (!newest) {
+    console.error(
+      `No Playwright Chromium found under ${root}.\n` +
+        "Install one with `npx playwright install chromium`, or point CHROME at any Chromium binary.",
+    );
+    process.exit(1);
+  }
+  return join(root, newest, "chrome-linux64", "chrome");
+}
 const PORT = 9333;
 const PROTO = "http://localhost:8791/index.html";
 const APP = "http://localhost:1420/#/gallery";

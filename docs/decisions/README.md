@@ -443,6 +443,27 @@ Status: Proposed | Accepted | Superseded by NNNN
   surface that REPORTS what is running states it and marks it (`Local runtime ·
   <model> · preview`), and a diagnostic prints the runtime identifier unchanged.
   Nothing is removed from the runtime.
+- [0069](0069-help-is-a-popover-over-its-own-row-and-it-carries-four-addresses.md):
+  supersedes the FORM and the COUNT of 0066. Help is a popover anchored to its
+  own sidebar row rather than a modal, and it carries four addresses instead of
+  three. Everything else 0066 decided still holds, including the rule that a URL
+  which does not resolve yet may not be drawn as a working link -- the
+  documentation entry is drawn with `No address yet`, because leaving it out
+  would teach the reader that WordScript has no documentation.
+- [0070](0070-history-switches-which-of-a-records-two-texts-its-rows-carry.md):
+  a history row carries one of the record's two texts and a segment in the
+  toolbar says which. `Written` is the delivered text, `Heard` is the
+  recogniser's own words; 92 of the owner's 174 records differ between the two,
+  so the pair carries signal rather than duplication. It is the second recorded
+  departure in `npm run port:diff`.
+- [0071](0071-translate-ships-ahead-of-its-phase-on-the-lane-the-product-already-runs.md):
+  ADR 0041's Translate mode is built now, before the Phase 4 it is filed under,
+  on the chat model the product already runs. Two screens were shipping a
+  control that could not act, and a mode with a mediocre model beats one that
+  does not exist -- the quality argument in Phase 4 is an argument for a better
+  model, not for no mode. The four settings take the scope the drawing gives
+  them literally: target language and the profile-words switch are the profile's,
+  the same-language behaviour and the address form are the machine's.
 
 ## Resolved: the number 0011 was used twice
 
@@ -470,8 +491,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0070; the next
-decision takes 0071.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0071; the next
+decision takes 0072.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

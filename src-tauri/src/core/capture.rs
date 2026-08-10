@@ -18,7 +18,8 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use super::{
     communication_style::CommunicationStyle,
     config::{
-        AppConfig, DictionaryEntry, SnippetEntry, TextProfileWorkMode, DEFAULT_CORRECTION_MODEL,
+        AppConfig, DictionaryEntry, SnippetEntry, TextProfileWorkMode, TranslateSettings,
+        DEFAULT_CORRECTION_MODEL,
     },
     paths::user_data_dir,
     providers::default_provider_id,
@@ -194,6 +195,11 @@ pub struct NativeCaptureConfig {
     pub agent_name: String,
     #[serde(default)]
     pub communication_style: CommunicationStyle,
+    /// What Translate runs with, snapshotted for the same reason the style is:
+    /// changing the target language during a recording lands on the next
+    /// session, not on half of this one.
+    #[serde(default)]
+    pub translate: TranslateSettings,
     pub audio_device: String,
     pub max_recording_seconds: u64,
     pub silence_timeout_seconds: u64,
@@ -218,6 +224,7 @@ impl Default for NativeCaptureConfig {
             profile_label: String::new(),
             agent_name: super::config::DEFAULT_AGENT_NAME.to_string(),
             communication_style: CommunicationStyle::default(),
+            translate: TranslateSettings::default(),
             work_mode: TextProfileWorkMode::default(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -243,6 +250,7 @@ impl NativeCaptureConfig {
         let profile_label = active_profile.label.clone();
         let agent_name = app_config.active_text_profile_agent_name();
         let communication_style = app_config.active_text_profile_communication_style();
+        let translate = app_config.active_text_profile_translate_settings();
 
         let provider = speech.provider.clone();
         let local_provider_selected = provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
@@ -285,6 +293,7 @@ impl NativeCaptureConfig {
             profile_label: profile_label.clone(),
             agent_name,
             communication_style,
+            translate,
             audio_device: app_config.audio_device,
             max_recording_seconds: capture.max_recording_seconds,
             silence_timeout_seconds: capture.silence_timeout_seconds,

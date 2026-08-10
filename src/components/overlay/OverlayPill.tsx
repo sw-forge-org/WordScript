@@ -23,6 +23,7 @@ export type OverlayProcessingMode =
   | "verbatim"
   | "cleanup"
   | "rewrite"
+  | "translate"
   | "prompt_enhance"
   | "agent";
 
@@ -120,6 +121,7 @@ function modeShortLabel(mode: OverlayProcessingMode): string {
     case "auto": return "Auto";
     case "cleanup": return "Cleanup";
     case "rewrite": return "Rewrite";
+    case "translate": return "Translate";
     case "agent": return "Agent";
     case "verbatim": return "Verbatim";
     case "prompt_enhance": return "Enhance";

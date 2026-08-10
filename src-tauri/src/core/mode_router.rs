@@ -5,12 +5,20 @@ use super::config::ProcessingMode;
 
 /// Cycle order mirrors Settings → Modes and the in-overlay tap cycler
 /// (`MODE_CYCLE` in OverlayWindow.tsx / OverlayGallery.tsx):
-/// Auto → Verbatim → Cleanup → Rewrite → Agent → Prompt Enhance → Auto.
-pub const MODE_CYCLE_ORDER: [ProcessingMode; 6] = [
+/// Auto → Verbatim → Cleanup → Rewrite → Translate → Agent → Prompt Enhance →
+/// Auto.
+///
+/// Translate sits where the drawn mode list puts it, between Rewrite and the
+/// assistant, so the cycle keeps reading as the order the modes are ordered by:
+/// how far each one moves from the transcript. Seven is not a comfortable cycle
+/// length and ADR 0041 says so; the answer to that is the mode-select overlay,
+/// not a shorter cycle with modes left out of it.
+pub const MODE_CYCLE_ORDER: [ProcessingMode; 7] = [
     ProcessingMode::Auto,
     ProcessingMode::Verbatim,
     ProcessingMode::Cleanup,
     ProcessingMode::Rewrite,
+    ProcessingMode::Translate,
     ProcessingMode::Agent,
     ProcessingMode::PromptEnhance,
 ];
@@ -227,7 +235,7 @@ pub async fn resolve_current_processing_mode() -> Result<ProcessingContext, Stri
 fn is_known_processing_mode(value: &str) -> bool {
     matches!(
         value,
-        "auto" | "cleanup" | "rewrite" | "agent" | "prompt_enhance" | "verbatim"
+        "auto" | "cleanup" | "rewrite" | "translate" | "agent" | "prompt_enhance" | "verbatim"
     )
 }
 
@@ -411,6 +419,7 @@ mod tests {
                 ProcessingMode::Verbatim,
                 ProcessingMode::Cleanup,
                 ProcessingMode::Rewrite,
+                ProcessingMode::Translate,
                 ProcessingMode::Agent,
                 ProcessingMode::PromptEnhance,
             ]
@@ -433,6 +442,10 @@ mod tests {
         );
         assert_eq!(
             next_mode_in_cycle(ProcessingMode::Rewrite),
+            ProcessingMode::Translate
+        );
+        assert_eq!(
+            next_mode_in_cycle(ProcessingMode::Translate),
             ProcessingMode::Agent
         );
         assert_eq!(

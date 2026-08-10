@@ -73,6 +73,11 @@ pub enum ProcessingMode {
     Auto,
     Cleanup,
     Rewrite,
+    /// Renders the dictation in another language instead of tidying it
+    /// (ADR 0041). It owns its own prompt in `core::translate` and is not a
+    /// member of the cleanup family: a translation replaces every word, which
+    /// is the opposite of a correction that has to stay near its input.
+    Translate,
     Agent,
     PromptEnhance,
     Verbatim,
@@ -86,6 +91,7 @@ impl ProcessingMode {
             ProcessingMode::Auto => "auto",
             ProcessingMode::Cleanup => "cleanup",
             ProcessingMode::Rewrite => "rewrite",
+            ProcessingMode::Translate => "translate",
             ProcessingMode::Agent => "agent",
             ProcessingMode::PromptEnhance => "prompt_enhance",
             ProcessingMode::Verbatim => "verbatim",
@@ -97,6 +103,7 @@ impl ProcessingMode {
             "auto" => ProcessingMode::Auto,
             "verbatim" => ProcessingMode::Verbatim,
             "rewrite" | "polished" | "professional" => ProcessingMode::Rewrite,
+            "translate" => ProcessingMode::Translate,
             "agent" => ProcessingMode::Agent,
             "prompt_enhance" => ProcessingMode::PromptEnhance,
             _ => ProcessingMode::Cleanup,
@@ -111,9 +118,9 @@ impl ProcessingMode {
     }
 
     /// Returns true when this mode routes the transcript through the cleanup /
-    /// rewrite transform pipeline (i.e. is not verbatim, agent or prompt
-    /// enhance). `Auto` is excluded because it is resolved into a concrete mode
-    /// before the transform runs.
+    /// rewrite transform pipeline (i.e. is not verbatim, translate, agent or
+    /// prompt enhance). `Auto` is excluded because it is resolved into a
+    /// concrete mode before the transform runs.
     pub fn is_cleanup_family(&self) -> bool {
         matches!(self, ProcessingMode::Cleanup | ProcessingMode::Rewrite)
     }
@@ -143,11 +150,16 @@ impl ProcessingMode {
                 filter_fillers: true,
                 professionalize: true,
             },
-            // Agent and Prompt Enhance own their own prompts and do not run the
-            // correction transform in the live pipeline. The preset still matters
-            // for the history re-transform, where the conservative arm applies:
-            // fix obvious typos, never remove or reformulate.
-            ProcessingMode::Agent | ProcessingMode::PromptEnhance => TransformPreset {
+            // Agent, Prompt Enhance and Translate own their own prompts and do
+            // not run the correction transform in the live pipeline. The preset
+            // still matters for the history re-transform, where the conservative
+            // arm applies: fix obvious typos, never remove or reformulate. For
+            // Translate that arm is also the only safe one, because the
+            // correction prompt forbids translating and re-running it over an
+            // already translated record must not undo the mode's own work.
+            ProcessingMode::Agent
+            | ProcessingMode::PromptEnhance
+            | ProcessingMode::Translate => TransformPreset {
                 post_process: true,
                 filter_fillers: false,
                 professionalize: false,
@@ -173,6 +185,7 @@ impl ProcessingMode {
             ProcessingMode::Rewrite => "polished",
             ProcessingMode::Auto
             | ProcessingMode::Cleanup
+            | ProcessingMode::Translate
             | ProcessingMode::Agent
             | ProcessingMode::PromptEnhance => "clean",
         }
@@ -243,6 +256,161 @@ impl PromptTarget {
             _ => PromptTarget::General,
         }
     }
+}
+
+/// What Translate does when the dictation is already in the target language.
+///
+/// It is a stored setting rather than a per-dictation judgement, which is the
+/// point ADR 0041 makes about it: the model still decides whether the two
+/// languages match, because it is the thing reading the text, but it never
+/// decides what follows from that. `Cleanup` is the default because a
+/// transcript that reaches an LLM and comes back untouched is the one outcome
+/// the user cannot tell apart from a failure.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TranslateSameLanguage {
+    PassThrough,
+    #[default]
+    Cleanup,
+}
+
+impl TranslateSameLanguage {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TranslateSameLanguage::PassThrough => "pass_through",
+            TranslateSameLanguage::Cleanup => "cleanup",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "pass_through" => TranslateSameLanguage::PassThrough,
+            _ => TranslateSameLanguage::Cleanup,
+        }
+    }
+}
+
+/// The address form a translation uses.
+///
+/// German, French and Spanish force a choice English does not carry, so a
+/// translation into any of them has to answer it before the first sentence.
+/// `AsDictated` keeps a formal sentence formal and is the default, because it
+/// is the only value that adds no decision of its own.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TranslateAddressForm {
+    #[default]
+    AsDictated,
+    Formal,
+    Informal,
+}
+
+impl TranslateAddressForm {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TranslateAddressForm::AsDictated => "as_dictated",
+            TranslateAddressForm::Formal => "formal",
+            TranslateAddressForm::Informal => "informal",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "formal" => TranslateAddressForm::Formal,
+            "informal" => TranslateAddressForm::Informal,
+            _ => TranslateAddressForm::AsDictated,
+        }
+    }
+}
+
+/// The languages Translate offers, as ISO 639-1 codes paired with the English
+/// name the prompt uses.
+///
+/// A code is stored and a name is sent. Storing the display name would put a
+/// piece of user-facing English in the config file, where a later translation
+/// of the surface would silently change what the prompt asks for.
+pub const TRANSLATE_LANGUAGES: [(&str, &str); 8] = [
+    ("en", "English"),
+    ("de", "German"),
+    ("fr", "French"),
+    ("es", "Spanish"),
+    ("it", "Italian"),
+    ("pt", "Portuguese"),
+    ("nl", "Dutch"),
+    ("pl", "Polish"),
+];
+
+/// The English name for a stored target-language code, defaulting to English.
+///
+/// The permissive default matches `ProcessingMode::from_str`: a config written
+/// by a newer build must not stop a translation, it may only make it land in
+/// the wrong language, which is recoverable and visible.
+pub fn translate_language_name(code: &str) -> &'static str {
+    let wanted = code.trim().to_lowercase();
+    TRANSLATE_LANGUAGES
+        .iter()
+        .find(|(candidate, _)| *candidate == wanted)
+        .map(|(_, name)| *name)
+        .unwrap_or("English")
+}
+
+/// Normalizes a stored target-language code, defaulting to English.
+pub fn normalize_translate_language(code: &str) -> String {
+    let wanted = code.trim().to_lowercase();
+    TRANSLATE_LANGUAGES
+        .iter()
+        .find(|(candidate, _)| *candidate == wanted)
+        .map(|(candidate, _)| (*candidate).to_string())
+        .unwrap_or_else(|| default_translate_target_language().to_string())
+}
+
+pub fn default_translate_target_language() -> &'static str {
+    "en"
+}
+
+/// The four answers a translation needs, resolved into one value.
+///
+/// Two of them are the profile's and two are the machine's, which is the scope
+/// split the drawing gives them, and the resolver exists for the same reason
+/// `active_text_profile_communication_style` does: a setting each call site
+/// reaches for on its own is a setting that ends up read in one place and
+/// forgotten in another. It is serializable because it is snapshotted into the
+/// capture config at capture start, so a mid-recording edit lands on the next
+/// session rather than half of the current one (ADR 0025).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TranslateSettings {
+    /// ISO 639-1, already normalized against `TRANSLATE_LANGUAGES`.
+    pub target_language: String,
+    pub same_language: TranslateSameLanguage,
+    pub address_form: TranslateAddressForm,
+    pub keep_profile_words: bool,
+}
+
+impl Default for TranslateSettings {
+    fn default() -> Self {
+        Self {
+            target_language: default_translate_target_language().to_string(),
+            same_language: TranslateSameLanguage::default(),
+            address_form: TranslateAddressForm::default(),
+            keep_profile_words: default_translate_keep_profile_words(),
+        }
+    }
+}
+
+impl TranslateSettings {
+    /// The English name of the target language, for the prompt.
+    pub fn target_language_name(&self) -> &'static str {
+        translate_language_name(&self.target_language)
+    }
+}
+
+fn default_profile_translate_target_language() -> String {
+    default_translate_target_language().to_string()
+}
+
+fn default_translate_keep_profile_words() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -789,6 +957,20 @@ pub struct ProfileModesSettings {
     /// A piece of the user's own writing. Subordinate to the register for form,
     /// authoritative for wording — see `core::communication_style`.
     pub style_sample: String,
+    /// The language Translate renders into, as an ISO 639-1 code (ADR 0041).
+    ///
+    /// Per profile rather than per machine, because "English mail" and "German
+    /// notes" are exactly what profiles are for. A profile switch can therefore
+    /// change the output language, which is intended and is why the target is
+    /// stated on the profile's own surface as well as on the model surface.
+    #[serde(default = "default_profile_translate_target_language")]
+    pub translate_target_language: String,
+    /// Whether the profile's names, products and technical terms survive a
+    /// translation untouched. On by default: they are the one part of a
+    /// sentence a translator must leave alone and a model will happily
+    /// localize.
+    #[serde(default = "default_translate_keep_profile_words")]
+    pub translate_keep_profile_words: bool,
 }
 
 impl Default for ProfileModesSettings {
@@ -800,6 +982,8 @@ impl Default for ProfileModesSettings {
             communication_length: CommunicationLength::Normal,
             style_instructions: String::new(),
             style_sample: String::new(),
+            translate_target_language: default_profile_translate_target_language(),
+            translate_keep_profile_words: default_translate_keep_profile_words(),
         }
     }
 }
@@ -939,6 +1123,14 @@ pub struct AppConfig {
     pub enhance_sub_mode: Option<EnhanceSubMode>,
     #[serde(default)]
     pub enhance_target: PromptTarget,
+    /// The two Translate settings that are not per profile, in the scope the
+    /// drawing gives them: the AI Models surface marks `Into` and `Keep the
+    /// profile's words` with a per-profile tag and marks these two with none,
+    /// exactly as it does for `enhance_sub_mode` and `enhance_target` above.
+    #[serde(default)]
+    pub translate_same_language: TranslateSameLanguage,
+    #[serde(default)]
+    pub translate_address_form: TranslateAddressForm,
     #[serde(default)]
     pub auto_detect_mode: bool,
     #[serde(default)]
@@ -953,6 +1145,13 @@ pub struct AppConfig {
     pub mode_cleanup_hotkey: String,
     #[serde(default = "default_mode_rewrite_hotkey")]
     pub mode_rewrite_hotkey: String,
+    /// The seventh mode slot, and the first one that ships empty (ADR 0041).
+    /// `Alt+1` through `Alt+6` are taken, so Translate either takes `Alt+7` or
+    /// takes none. It takes none, and the Hotkeys screen states that rather
+    /// than hiding it: the number of digits a modifier row can carry is a real
+    /// limit and the eighth mode will hit it harder than the seventh.
+    #[serde(default = "default_mode_translate_hotkey")]
+    pub mode_translate_hotkey: String,
     #[serde(default = "default_mode_agent_hotkey")]
     pub mode_agent_hotkey: String,
     #[serde(default = "default_mode_prompt_enhance_hotkey")]
@@ -1033,6 +1232,8 @@ impl Default for AppConfig {
             processing_mode: ProcessingMode::default(),
             enhance_sub_mode: None,
             enhance_target: PromptTarget::default(),
+            translate_same_language: TranslateSameLanguage::default(),
+            translate_address_form: TranslateAddressForm::default(),
             auto_detect_mode: true,
             profile_health_acknowledged_flags: HashMap::new(),
             mode_picker_hotkey: default_mode_picker_hotkey(),
@@ -1040,6 +1241,7 @@ impl Default for AppConfig {
             mode_verbatim_hotkey: default_mode_verbatim_hotkey(),
             mode_cleanup_hotkey: default_mode_cleanup_hotkey(),
             mode_rewrite_hotkey: default_mode_rewrite_hotkey(),
+            mode_translate_hotkey: default_mode_translate_hotkey(),
             mode_agent_hotkey: default_mode_agent_hotkey(),
             mode_prompt_enhance_hotkey: default_mode_prompt_enhance_hotkey(),
         }
@@ -1130,6 +1332,23 @@ impl AppConfig {
             length: modes.communication_length,
             instructions: modes.style_instructions.trim().to_string(),
             sample: modes.style_sample.trim().to_string(),
+        }
+    }
+
+    /// What Translate runs with for the active profile.
+    ///
+    /// The target language and the profile-words switch come from the profile,
+    /// the same-language behaviour and the address form from the machine. A
+    /// profile whose `modes` block predates Translate resolves to English with
+    /// the profile's words kept, which is the same answer a fresh profile gives.
+    pub(crate) fn active_text_profile_translate_settings(&self) -> TranslateSettings {
+        let modes = self.active_text_profile().modes.unwrap_or_default();
+
+        TranslateSettings {
+            target_language: normalize_translate_language(&modes.translate_target_language),
+            same_language: self.translate_same_language,
+            address_form: self.translate_address_form,
+            keep_profile_words: modes.translate_keep_profile_words,
         }
     }
 
@@ -1335,6 +1554,7 @@ impl AppConfig {
         self.mode_verbatim_hotkey = normalize_shortcut_value(&self.mode_verbatim_hotkey, true);
         self.mode_cleanup_hotkey = normalize_shortcut_value(&self.mode_cleanup_hotkey, true);
         self.mode_rewrite_hotkey = normalize_shortcut_value(&self.mode_rewrite_hotkey, true);
+        self.mode_translate_hotkey = normalize_shortcut_value(&self.mode_translate_hotkey, true);
         self.mode_agent_hotkey = normalize_shortcut_value(&self.mode_agent_hotkey, true);
         self.mode_prompt_enhance_hotkey = normalize_shortcut_value(
             &self.mode_prompt_enhance_hotkey,
@@ -1595,7 +1815,7 @@ pub fn load_app_config() -> Result<AppConfig, String> {
 pub fn validate_hotkey_collisions(config: &AppConfig) -> Result<(), String> {
     // (label, raw_value) for every hotkey field. Order matters only for the
     // error message (the first-registered label is reported as "already in use").
-    let entries: [(&str, &str); 10] = [
+    let entries: [(&str, &str); 11] = [
         ("Capture trigger", &config.hotkey),
         ("Pause capture", &config.pause_hotkey),
         ("Abort capture", &config.abort_hotkey),
@@ -1604,6 +1824,7 @@ pub fn validate_hotkey_collisions(config: &AppConfig) -> Result<(), String> {
         ("Mode verbatim", &config.mode_verbatim_hotkey),
         ("Mode cleanup", &config.mode_cleanup_hotkey),
         ("Mode rewrite", &config.mode_rewrite_hotkey),
+        ("Mode translate", &config.mode_translate_hotkey),
         ("Mode agent", &config.mode_agent_hotkey),
         ("Mode prompt enhance", &config.mode_prompt_enhance_hotkey),
     ];
@@ -1882,6 +2103,11 @@ fn default_mode_cleanup_hotkey() -> String {
 
 fn default_mode_rewrite_hotkey() -> String {
     "Alt+4".to_string()
+}
+
+/// Empty, and it is the only mode default that is. See the field's own note.
+fn default_mode_translate_hotkey() -> String {
+    String::new()
 }
 
 fn default_mode_agent_hotkey() -> String {
@@ -4200,5 +4426,114 @@ mod tests {
             error.contains("conflicts"),
             "equivalent normalized forms should collide: {error}"
         );
+    }
+
+    // ── Translate, the seventh mode (ADR 0041) ──────────────────────────────
+
+    /// The token has to survive a round trip, or a profile written by this
+    /// build reads back as Cleanup on the next launch.
+    #[test]
+    fn translate_round_trips_through_its_token() {
+        assert_eq!(ProcessingMode::Translate.as_str(), "translate");
+        assert_eq!(
+            ProcessingMode::from_str(ProcessingMode::Translate.as_str()),
+            ProcessingMode::Translate
+        );
+    }
+
+    /// A translation replaces every word, which is the opposite of a correction
+    /// that has to stay near its input. Letting it into the cleanup family
+    /// would route it through the correction prompt, whose global rules forbid
+    /// translating.
+    #[test]
+    fn translate_is_not_a_member_of_the_cleanup_family() {
+        assert!(!ProcessingMode::Translate.is_cleanup_family());
+        assert!(!ProcessingMode::Translate.is_auto());
+
+        let preset = ProcessingMode::Translate.transform_preset();
+        assert!(!preset.filter_fillers);
+        assert!(!preset.professionalize);
+    }
+
+    /// `Alt+1` through `Alt+6` are taken, so the seventh mode ships unbound.
+    /// It is the only mode slot whose default is empty.
+    #[test]
+    fn the_seventh_mode_ships_with_no_hotkey() {
+        let config = AppConfig::default();
+
+        assert_eq!(config.mode_translate_hotkey, "");
+        for bound in [
+            &config.mode_auto_hotkey,
+            &config.mode_verbatim_hotkey,
+            &config.mode_cleanup_hotkey,
+            &config.mode_rewrite_hotkey,
+            &config.mode_agent_hotkey,
+            &config.mode_prompt_enhance_hotkey,
+        ] {
+            assert!(!bound.is_empty());
+        }
+    }
+
+    /// A hand-set seventh key must collide with the other six like any other
+    /// slot, or two dead bindings ship instead of one refusal.
+    #[test]
+    fn the_seventh_mode_key_takes_part_in_the_collision_check() {
+        let mut config = collision_test_config();
+        config.mode_translate_hotkey = config.mode_rewrite_hotkey.clone();
+
+        let error = validate_hotkey_collisions(&config).unwrap_err();
+        assert!(
+            error.contains("Mode translate"),
+            "error should name the translate label: {error}"
+        );
+    }
+
+    /// Two of the four settings are the profile's and two are the machine's,
+    /// which is the scope the drawing gives them.
+    #[test]
+    fn the_translate_settings_resolve_from_both_scopes() {
+        let mut config = AppConfig::default();
+        config.translate_same_language = TranslateSameLanguage::PassThrough;
+        config.translate_address_form = TranslateAddressForm::Formal;
+        let active = config.active_text_profile_id.clone();
+        for profile in config.text_profiles.iter_mut() {
+            if profile.id == active {
+                profile.modes = Some(ProfileModesSettings {
+                    translate_target_language: "fr".to_string(),
+                    translate_keep_profile_words: false,
+                    ..ProfileModesSettings::default()
+                });
+            }
+        }
+
+        let settings = config.active_text_profile_translate_settings();
+        assert_eq!(settings.target_language, "fr");
+        assert_eq!(settings.target_language_name(), "French");
+        assert!(!settings.keep_profile_words);
+        assert_eq!(settings.same_language, TranslateSameLanguage::PassThrough);
+        assert_eq!(settings.address_form, TranslateAddressForm::Formal);
+    }
+
+    /// A profile whose modes block predates Translate must answer, not fail.
+    /// The answer is the same one a fresh profile gives.
+    #[test]
+    fn a_profile_predating_translate_resolves_to_the_shipped_default() {
+        let mut config = AppConfig::default();
+        for profile in config.text_profiles.iter_mut() {
+            profile.modes = None;
+        }
+
+        let settings = config.active_text_profile_translate_settings();
+        assert_eq!(settings.target_language, "en");
+        assert!(settings.keep_profile_words);
+    }
+
+    /// An unrecognised code lands on English rather than stopping a
+    /// translation, which is the same permissive rule `from_str` follows.
+    #[test]
+    fn an_unknown_target_language_normalizes_to_the_default() {
+        assert_eq!(normalize_translate_language("  DE "), "de");
+        assert_eq!(normalize_translate_language("klingon"), "en");
+        assert_eq!(translate_language_name("klingon"), "English");
     }
 }

@@ -182,19 +182,20 @@ describe("Hotkeys", () => {
     expect(screen.getAllByText("Registered")).toHaveLength(2);
   });
 
-  it("gives Translate the seventh slot and disables it, because the runtime has no key for it", async () => {
+  it("gives Translate the seventh slot, settable and unbound", async () => {
     render(<HotkeysScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     expect(screen.getByText("Translate")).toBeInTheDocument();
+    /* ADR 0041 gave it the slot and it ships with no binding, because Alt+1
+       through Alt+6 are taken. Unbound is not the same as inert: every mode row
+       is settable, and this one is empty until somebody sets it. */
     const rows = await screen.findAllByRole("button", { name: /not set/i });
-    const disabled = rows.filter((row) => (row as HTMLButtonElement).disabled);
-    /* ADR 0041 gave it the slot; `ProcessingMode` still has six values and
-       `mode_hotkeys` six fields, so there is nothing to write. It is drawn and
-       inert, never deleted and never left looking settable (ADR 0065). */
-    expect(disabled).toHaveLength(1);
+    expect(rows.filter((row) => (row as HTMLButtonElement).disabled)).toHaveLength(0);
     expect(
-      screen.getByText("The runtime carries no key for this mode yet, so there is nothing to bind."),
-    ).toBeInTheDocument();
+      screen.queryByText(
+        "The runtime carries no key for this mode yet, so there is nothing to bind.",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("takes the activation hint from the runtime's own answer about the trigger", async () => {

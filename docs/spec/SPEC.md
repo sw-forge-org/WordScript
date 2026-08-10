@@ -141,7 +141,7 @@ Insert modes: `direct_paste` -> `clipboard_only` -> `clipboard_fallback` ->
 ### Mode contract
 
 `ProcessingMode` (orthogonal to provider modes): `auto` / `cleanup` /
-`rewrite` / `agent` / `prompt_enhance` / `verbatim`.
+`rewrite` / `translate` / `agent` / `prompt_enhance` / `verbatim`.
 
 Effective mode resolution (per session) via `mode_router::resolve_processing_mode`:
 1. active `TextProfile.work_mode.processing_mode`
@@ -159,8 +159,8 @@ change `active_text_profile_id` are refused with
 `sessions::PROFILE_LOCKED_DURING_SESSION`, because the profile decides the
 recognizer settings and those are committed when recording starts. Everything
 derived from the profile -- text, vocabulary, dictionary, snippets, label,
-agent name, communication style -- is snapshotted into `NativeCaptureConfig` at
-capture start. The processing mode is the single exception: it is resolved at
+agent name, communication style, translate settings -- is snapshotted into
+`NativeCaptureConfig` at capture start. The processing mode is the single exception: it is resolved at
 pipeline time and therefore still applies to the recording in progress. One
 rule: during a recording only the processing mode changes anything; everything
 else applies from the next recording (ADR 0025).

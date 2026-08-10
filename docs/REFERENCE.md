@@ -158,6 +158,18 @@ describes the correction step only.
 - `rewrite`: cleanup plus stronger reformulation; corresponds to the legacy
   option `polished`; only manually selectable, never auto-detected.
   Preset `(true, true, true)`.
+- `translate`: the dictation is rendered in another language instead of being
+  tidied, through `translate::apply_translate` and its own prompt rather than
+  the correction prompt, which forbids translating (ADR 0041). Never
+  auto-selected: Auto may choose how text reads, never what language it is in.
+  No communication style applies -- a register on top of a translation changes
+  the text twice (ADR 0023). Four settings, resolved by
+  `AppConfig::active_text_profile_translate_settings` and snapshotted at capture
+  start: target language and `keep the profile's words` per profile, the
+  same-language behaviour and the address form per machine. It runs on the chat
+  model rather than the correction model, and ships ahead of its roadmap phase
+  (ADR 0071). Preset as for `agent`, used only by the history re-transform,
+  which does not route by mode -- a retried translation comes back cleaned up.
 - `agent`: dictation is executed as an instruction to the agent. Reaching this
   mode is itself the decision — there is no second intent check that can fall
   back to a cleanup. The output is the artifact the instruction asks for, never

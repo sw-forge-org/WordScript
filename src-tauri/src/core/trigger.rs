@@ -75,6 +75,7 @@ pub struct ModeHotkeys {
     pub verbatim: String,
     pub cleanup: String,
     pub rewrite: String,
+    pub translate: String,
     pub agent: String,
     pub prompt_enhance: String,
 }
@@ -91,6 +92,7 @@ impl ModeHotkeys {
             verbatim: config.mode_verbatim_hotkey.clone(),
             cleanup: config.mode_cleanup_hotkey.clone(),
             rewrite: config.mode_rewrite_hotkey.clone(),
+            translate: config.mode_translate_hotkey.clone(),
             agent: config.mode_agent_hotkey.clone(),
             prompt_enhance: config.mode_prompt_enhance_hotkey.clone(),
         }
@@ -103,6 +105,7 @@ impl ModeHotkeys {
             ProcessingMode::Verbatim => &self.verbatim,
             ProcessingMode::Cleanup => &self.cleanup,
             ProcessingMode::Rewrite => &self.rewrite,
+            ProcessingMode::Translate => &self.translate,
             ProcessingMode::Agent => &self.agent,
             ProcessingMode::PromptEnhance => &self.prompt_enhance,
         }
@@ -117,6 +120,7 @@ impl ModeHotkeys {
             (ProcessingMode::Verbatim.as_str(), self.verbatim.as_str()),
             (ProcessingMode::Cleanup.as_str(), self.cleanup.as_str()),
             (ProcessingMode::Rewrite.as_str(), self.rewrite.as_str()),
+            (ProcessingMode::Translate.as_str(), self.translate.as_str()),
             (ProcessingMode::Agent.as_str(), self.agent.as_str()),
             (
                 ProcessingMode::PromptEnhance.as_str(),
@@ -138,6 +142,7 @@ impl ModeHotkeys {
             (ProcessingMode::Verbatim, &self.verbatim),
             (ProcessingMode::Cleanup, &self.cleanup),
             (ProcessingMode::Rewrite, &self.rewrite),
+            (ProcessingMode::Translate, &self.translate),
             (ProcessingMode::Agent, &self.agent),
             (ProcessingMode::PromptEnhance, &self.prompt_enhance),
         ] {
@@ -2335,6 +2340,7 @@ mod tests {
             verbatim: "Ctrl+F1".to_string(),
             cleanup: String::new(),
             rewrite: String::new(),
+            translate: String::new(),
             agent: String::new(),
             prompt_enhance: String::new(),
         };
@@ -2354,6 +2360,7 @@ mod tests {
             verbatim: "V".to_string(),
             cleanup: "C".to_string(),
             rewrite: "R".to_string(),
+            translate: "T".to_string(),
             agent: "G".to_string(),
             prompt_enhance: "P".to_string(),
         };
@@ -2362,6 +2369,7 @@ mod tests {
         assert_eq!(hotkeys.for_mode(ProcessingMode::Verbatim), "V");
         assert_eq!(hotkeys.for_mode(ProcessingMode::Cleanup), "C");
         assert_eq!(hotkeys.for_mode(ProcessingMode::Rewrite), "R");
+        assert_eq!(hotkeys.for_mode(ProcessingMode::Translate), "T");
         assert_eq!(hotkeys.for_mode(ProcessingMode::Agent), "G");
         assert_eq!(hotkeys.for_mode(ProcessingMode::PromptEnhance), "P");
     }
@@ -3029,9 +3037,10 @@ mod tests {
         };
 
         let slots = hotkeys.all_slots();
-        assert_eq!(slots.len(), 7);
+        // The picker plus seven modes since Translate took the seventh slot.
+        assert_eq!(slots.len(), 8);
         assert_eq!(slots[0], ("mode_picker", "Ctrl+Alt+M"));
-        assert!(slots.iter().filter(|(_, value)| value.is_empty()).count() == 6);
+        assert!(slots.iter().filter(|(_, value)| value.is_empty()).count() == 7);
     }
 
     #[test]

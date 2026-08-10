@@ -43,7 +43,17 @@ import {
   type LaneName,
 } from "./data";
 import { formatBudgetDuration, useCaptureBudget } from "@/hooks/useCaptureBudget";
-import type { ProviderTier } from "@/types/ipc";
+import {
+  TRANSLATE_LANGUAGES,
+  type ProviderTier,
+  type TranslateAddressForm,
+  type TranslateSameLanguage,
+} from "@/types/ipc";
+import {
+  buildProfileModesPatch,
+  resolveActiveTextProfile,
+  resolveProfileModesSettings,
+} from "@/lib/textProfiles";
 import type { ProviderStatus } from "@/types/providers";
 import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
 
@@ -78,10 +88,22 @@ import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
  * The Connection card does NOT read it. Its rows are the ones that are really
  * wired, and they use the plain components.
  */
-const Wired = createContext<{ on: boolean; open?: WorkspaceRuntime["open"] }>({ on: false });
+const Wired = createContext<{
+  on: boolean;
+  open?: WorkspaceRuntime["open"];
+  /* Carried so the four Translate rows can read and write. Every other control
+     on this screen is a model choice, and a model choice has no config shape to
+     write into yet (ADR 0042, plan §11.36) — these four are the mode's own
+     settings and do. */
+  runtime?: WorkspaceRuntime;
+}>({ on: false });
 
 function useWired() {
   return useContext(Wired).on;
+}
+
+function useRuntime(): WorkspaceRuntime | undefined {
+  return useContext(Wired).runtime;
 }
 
 /** The `Per profile` tag's door. It is `runtime.open` and it is real now — a
@@ -149,7 +171,7 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   const [lane, setLane] = useState<LaneName>("Cloud");
 
   return (
-    <Wired.Provider value={{ on: Boolean(runtime), open: runtime?.open }}>
+    <Wired.Provider value={{ on: Boolean(runtime), open: runtime?.open, runtime }}>
       <ViewTop
         title="AI Models"
         lead="One connection, and what each job runs on it."
@@ -732,6 +754,142 @@ function jobBadge(lane: LaneName, jobKey?: JobKey, fallback?: { model: string; m
 
 /** A job the lane cannot run says so in place of a model and names the lane
  *  that can — an empty picker would be worse than the sentence. */
+/**
+ * The four rows that make Translate a mode rather than a flag (ADR 0041), and
+ * the only live controls in this job list.
+ *
+ * They are live and their neighbours are not, and the split is the same one the
+ * drawing already makes: every other row here picks a model, and a per-job model
+ * needs the connection shape ADR 0042 describes and the config does not have
+ * yet. These four are the mode's own settings and have had a config home since
+ * the commit that added the mode.
+ *
+ * The scope tags are the drawing's and they are literal. `Into` and `Keep the
+ * profile's words` carry one and are written into the ACTIVE profile — this
+ * screen has no profile selector, so the profile it means is the one running.
+ * The other two carry none and are the machine's.
+ *
+ * With no runtime this is the gallery: every control keeps the drawn default and
+ * changes nothing outside itself, which is what keeps the screen measurable.
+ */
+function TranslateJobSettings() {
+  const runtime = useRuntime();
+  const openProfiles = useOpenProfiles();
+  const config = runtime?.config;
+  const modes = config ? resolveProfileModesSettings(resolveActiveTextProfile(config)) : null;
+
+  const writeModes = (next: Parameters<typeof buildProfileModesPatch>[1]) => {
+    if (!runtime || !config) return;
+    runtime.patch(buildProfileModesPatch(config, next));
+  };
+
+  return (
+    <>
+      <Row
+        label="Into"
+        hint="One target, fixed. Reading it from the focused window is a guess, and a guess that silently changes the language you are writing in is worse than a wrong keystroke."
+        control={
+          <span className="ws-rowflex">
+            <ScopeTag onOpen={openProfiles} />
+            {runtime ? (
+              <Select
+                value={modes?.translate_target_language ?? "en"}
+                onChange={(event) => writeModes({ translate_target_language: event.target.value })}
+                aria-label="Into"
+              >
+                {TRANSLATE_LANGUAGES.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.label}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Select defaultValue="en" aria-label="Into">
+                {TRANSLATE_LANGUAGES.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </span>
+        }
+      />
+      <Row
+        label="When you already dictated in that language"
+        hint="Nothing to translate. Say which happens rather than letting the model decide per dictation."
+        control={
+          <InertSegment
+            options={["Pass through", "Run Cleanup"]}
+            active={
+              config?.translate_same_language === "pass_through" ? "Pass through" : "Run Cleanup"
+            }
+            label="When you already dictated in that language"
+            onChange={
+              runtime
+                ? (value) =>
+                    runtime.patch({
+                      translate_same_language: (value === "Pass through"
+                        ? "pass_through"
+                        : "cleanup") satisfies TranslateSameLanguage,
+                    })
+                : undefined
+            }
+          />
+        }
+      />
+      <Row
+        label="Address form"
+        hint="German, French and Spanish force a choice English does not carry. As dictated keeps a formal sentence formal."
+        control={
+          <InertSegment
+            options={["As dictated", "Formal", "Informal"]}
+            active={ADDRESS_FORM_LABELS[config?.translate_address_form ?? "as_dictated"]}
+            label="Address form"
+            onChange={
+              runtime
+                ? (value) =>
+                    runtime.patch({ translate_address_form: addressFormValue(value) })
+                : undefined
+            }
+          />
+        }
+      />
+      <Row
+        label="Keep the profile's words"
+        hint="Names, products and technical terms are what a translator must leave alone and a model will localize."
+        control={
+          <span className="ws-rowflex">
+            {runtime ? (
+              <Toggle
+                checked={modes?.translate_keep_profile_words ?? true}
+                onCheckedChange={(next) => writeModes({ translate_keep_profile_words: next })}
+                aria-label="Keep the profile's words"
+              />
+            ) : (
+              <InertToggle label="Keep the profile's words" on />
+            )}
+            <ScopeTag onOpen={openProfiles} />
+          </span>
+        }
+      />
+    </>
+  );
+}
+
+const ADDRESS_FORM_LABELS: Record<TranslateAddressForm, string> = {
+  as_dictated: "As dictated",
+  formal: "Formal",
+  informal: "Informal",
+};
+
+function addressFormValue(label: string): TranslateAddressForm {
+  const match = (Object.entries(ADDRESS_FORM_LABELS) as [TranslateAddressForm, string][]).find(
+    ([, drawn]) => drawn === label,
+  );
+  return match?.[0] ?? "as_dictated";
+}
+
 function LaneJobRow({
   lane,
   jobKey,
@@ -983,57 +1141,7 @@ function ModelsTab({
                   what="Renders the dictation in another language instead of tidying it."
                   hint="Overridden: translation is where model quality shows first, and it is not on the fastest path."
                 >
-                  <Row
-                    label="Into"
-                    hint="One target, fixed. Reading it from the focused window is a guess, and a guess that silently changes the language you are writing in is worse than a wrong keystroke."
-                    control={
-                      <span className="ws-rowflex">
-                        <ScopeTag onOpen={useOpenProfiles()} />
-                        <DrawnSelect defaultValue="English" aria-label="Into">
-                          <option>English</option>
-                          <option>German</option>
-                          <option>French</option>
-                          <option>Spanish</option>
-                          <option>Italian</option>
-                          <option>Portuguese</option>
-                          <option>Dutch</option>
-                          <option>Polish</option>
-                        </DrawnSelect>
-                      </span>
-                    }
-                  />
-                  <Row
-                    label="When you already dictated in that language"
-                    hint="Nothing to translate. Say which happens rather than letting the model decide per dictation."
-                    control={
-                      <InertSegment
-                        options={["Pass through", "Run Cleanup"]}
-                        active="Run Cleanup"
-                        label="When you already dictated in that language"
-                      />
-                    }
-                  />
-                  <Row
-                    label="Address form"
-                    hint="German, French and Spanish force a choice English does not carry. As dictated keeps a formal sentence formal."
-                    control={
-                      <InertSegment
-                        options={["As dictated", "Formal", "Informal"]}
-                        active="As dictated"
-                        label="Address form"
-                      />
-                    }
-                  />
-                  <Row
-                    label="Keep the profile's words"
-                    hint="Names, products and technical terms are what a translator must leave alone and a model will localize."
-                    control={
-                      <span className="ws-rowflex">
-                        <InertToggle label="Keep the profile's words" on />
-                        <ScopeTag onOpen={useOpenProfiles()} />
-                      </span>
-                    }
-                  />
+                  <TranslateJobSettings />
                 </LaneJobRow>
 
                 <LaneJobRow

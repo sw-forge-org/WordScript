@@ -26,7 +26,18 @@ export type TextProfileRewriteStyle = "verbatim" | "clean" | "polished";
 export type TextProfileInsertBehavior = "auto_paste" | "clipboard_only";
 export type TextProfileRecoveryBehavior = "standard";
 
-export type ProcessingMode = "auto" | "cleanup" | "rewrite" | "agent" | "prompt_enhance" | "verbatim";
+export type ProcessingMode =
+  | "auto"
+  | "cleanup"
+  | "rewrite"
+  /// Renders the dictation in another language instead of tidying it. Its own
+  /// mode rather than a flag on cleanup, because it replaces every word and a
+  /// mode indicator that said "Cleanup" while doing so would be wrong about
+  /// what happened (ADR 0041).
+  | "translate"
+  | "agent"
+  | "prompt_enhance"
+  | "verbatim";
 
 /** Mirrors `core::capture::InputLevelVerdict`. Diagnosis only — WordScript
  *  never writes the OS input volume, which is per device rather than per app. */
@@ -227,6 +238,29 @@ export type CommunicationRegister =
 
 export type CommunicationLength = "terse" | "normal" | "full";
 
+/// What Translate does when the dictation is already in the target language.
+/// Stored rather than judged per dictation: the model still decides whether the
+/// two languages match, it never decides what follows from that (ADR 0041).
+export type TranslateSameLanguage = "pass_through" | "cleanup";
+
+/// German, French and Spanish force a choice English does not carry.
+/// `as_dictated` keeps a formal sentence formal and adds no decision of its own.
+export type TranslateAddressForm = "as_dictated" | "formal" | "informal";
+
+/// The languages Translate offers, as the runtime's `TRANSLATE_LANGUAGES`.
+/// A code is stored and the English name is what reaches the prompt, so a later
+/// translation of this surface cannot change what the prompt asks for.
+export const TRANSLATE_LANGUAGES: { code: string; label: string }[] = [
+  { code: "en", label: "English" },
+  { code: "de", label: "German" },
+  { code: "fr", label: "French" },
+  { code: "es", label: "Spanish" },
+  { code: "it", label: "Italian" },
+  { code: "pt", label: "Portuguese" },
+  { code: "nl", label: "Dutch" },
+  { code: "pl", label: "Polish" },
+];
+
 export interface ProfileModesSettings {
   /// Applies to every mode, not only Auto. Persisted under the legacy key
   /// `auto_detect_mode` in configs written by older builds; Rust accepts both.
@@ -242,6 +276,14 @@ export interface ProfileModesSettings {
   /// authoritative for wording — the register is forbidden from supplying slang
   /// on its own, so this is where any comes from.
   style_sample:            string;
+  /// The language Translate renders into, as an ISO 639-1 code. Per profile
+  /// rather than per machine: "English mail" and "German notes" are exactly
+  /// what profiles are for, so a profile switch may change the output language.
+  translate_target_language: string;
+  /// Whether the profile's names, products and technical terms survive a
+  /// translation untouched. They are the one part of a sentence a translator
+  /// must leave alone and a model will otherwise localize.
+  translate_keep_profile_words: boolean;
 }
 
 export interface ProfileCaptureSettings {
@@ -356,6 +398,10 @@ export interface AppConfig {
   processing_mode?:         ProcessingMode;
   enhance_sub_mode?:        EnhanceSubMode | null;
   enhance_target?:          PromptTarget;
+  /// The two Translate settings that are not per profile. The target language
+  /// and the profile-words switch are, and live on `ProfileModesSettings`.
+  translate_same_language?: TranslateSameLanguage;
+  translate_address_form?:  TranslateAddressForm;
   /// Global fallback for profiles that predate the per-profile modes block. The
   /// real control is `ProfileModesSettings.collect_workspace_context`.
   auto_detect_mode?:        boolean;
@@ -364,6 +410,10 @@ export interface AppConfig {
   mode_verbatim_hotkey?:    string;
   mode_cleanup_hotkey?:     string;
   mode_rewrite_hotkey?:     string;
+  /// Empty by default, and the only mode slot that is: `Alt+1` through `Alt+6`
+  /// are taken, so the seventh mode either takes `Alt+7` or takes none
+  /// (ADR 0041).
+  mode_translate_hotkey?:   string;
   mode_agent_hotkey?:       string;
   mode_prompt_enhance_hotkey?: string;
   hold_watchdog_seconds?:   number;

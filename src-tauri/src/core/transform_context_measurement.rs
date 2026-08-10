@@ -38,7 +38,7 @@
 
 use super::*;
 use super::super::communication_style::CommunicationStyle;
-use super::super::config::ProcessingMode;
+use super::super::config::{ProcessingMode, TranslateSettings};
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -173,6 +173,7 @@ async fn measure_profile_context_width() {
         vocabulary: Vec::new(),
         agent_name: String::new(),
         style: CommunicationStyle::default(),
+        translate: TranslateSettings::default(),
     };
 
     // Production carries the context; the control arm is the same prompt with

@@ -770,6 +770,13 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
         // style the session never had — the mixing defect this function's
         // comment above already records for the correction switches.
         style: config.active_text_profile_communication_style(),
+        // Through the same resolver too, and for now it only travels: this path
+        // runs the correction transform for every mode, so a retried Translate
+        // record comes back cleaned up rather than translated, exactly as a
+        // retried Agent or Prompt Enhance record does. That is the conservative
+        // arm `ProcessingMode::transform_preset` documents, and routing the
+        // retry by mode is one job for all three rather than one for Translate.
+        translate: config.active_text_profile_translate_settings(),
         ..Default::default()
     }
 }
