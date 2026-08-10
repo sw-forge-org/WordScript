@@ -11,6 +11,7 @@ import {
   ListRows,
   Note,
   SectionHeader,
+  SegmentControl,
   Select,
   Toolbar,
   ToolbarSearch,
@@ -40,6 +41,16 @@ import type { PartlyWiredScreenProps } from "./props";
  * select AND an "Errors only" toggle — but the select already has a Failed
  * option, so two controls narrowed the list to the same set and could
  * contradict each other. The toggle is gone.
+ *
+ * AND A THIRD CONTROL THAT IS NOT A FILTER — `Written` / `Heard`, ADR 0070, the
+ * one place Leg 4d departs from this drawing. The row title is the WRITTEN text
+ * and that is right for a record of what you got; it is wrong for the job the
+ * owner now needs this screen to do, because the surface you go to in order to
+ * judge transcription accuracy was showing the AI's version first and the
+ * recogniser's one fold deep, per record. The segment switches which text every
+ * title carries. `Written` is the default, so the screen at rest is the drawing
+ * unchanged, and *View raw* is untouched — the pair per record is still where
+ * the two are compared side by side.
  *
  * FIVE OF THE SIX ROW CONTROLS ACT, and the sixth is one of the two reasons
  * this screen keeps its banner:
@@ -183,8 +194,34 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
   };
 }
 
-function titleOf(entry: TranscriptionHistoryEntry): string {
-  const text = (entry.transformed_transcript ?? entry.raw_transcript ?? "").trim();
+/** Which of a record's two texts the row titles carry (ADR 0070). */
+type ShownText = "written" | "heard";
+
+const SHOWN_TEXT_OPTIONS = [
+  { value: "written", label: "Written" },
+  { value: "heard", label: "Heard" },
+];
+
+/**
+ * THE TITLE, AND WHICH OF THE TWO TEXTS IT IS — ADR 0070.
+ *
+ * `written` is the drawing's own choice and stays the default: this is a record
+ * of what you GOT, and what you got is what was delivered. `heard` shows the
+ * recogniser's own words in the same rows, which is the reading the screen
+ * could not give at all before — the pair was one click deep behind *View raw*,
+ * per record, and judging transcription accuracy means scanning rather than
+ * opening 174 folds.
+ *
+ * NO FALLBACK IN `heard`, DELIBERATELY. If the recogniser produced nothing, the
+ * row says so; borrowing the transformed text under a control that says "Heard"
+ * would put the AI's sentence behind a label promising the opposite, which is
+ * the fake-readiness rule applied to a word instead of a state.
+ */
+function titleOf(entry: TranscriptionHistoryEntry, shows: ShownText): string {
+  const text =
+    shows === "heard"
+      ? (entry.raw_transcript ?? "").trim()
+      : (entry.transformed_transcript ?? entry.raw_transcript ?? "").trim();
   if (text) return text;
   if (entry.status === "failed") return entry.error ?? "Transcription failed.";
   return "Nothing was heard in this capture.";
@@ -234,6 +271,12 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
   const [openRaw, setOpenRaw] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | TranscriptionHistoryStatus>("");
+  /* NOT A FILTER, WHICH IS WHY IT IS NOT A SELECT BESIDE THE ONE ABOVE IT: it
+     narrows nothing and the count does not move. It is which of two texts the
+     list is showing, and a segment shows both readings and the current one at
+     once — a reader scanning for recogniser errors has to be able to see which
+     text they are scanning without opening a control to find out. */
+  const [shows, setShows] = useState<ShownText>("written");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -284,7 +327,7 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
         const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
         return {
           id: entry.id,
-          title: titleOf(entry),
+          title: titleOf(entry, shows),
           meta: [
             historyTime(entry.created_at_ms),
             PROCESSING_MODE_LABELS[entry.work_mode?.processing_mode ?? "auto"],
@@ -316,7 +359,7 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
       })
     : HISTORY.map((entry) => ({
         id: entry.id,
-        title: entry.text,
+        title: shows === "heard" ? (entry.heard ?? entry.text) : entry.text,
         meta: [entry.at, entry.mode, entry.profile],
         badges: entry.badges,
         raw: drawnRawOf(entry),
@@ -372,6 +415,12 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
             </option>
           ))}
         </Select>
+        <SegmentControl
+          aria-label="Show"
+          value={shows}
+          onChange={(next) => setShows(next as ShownText)}
+          options={SHOWN_TEXT_OPTIONS}
+        />
       </Toolbar>
 
       <SectionHeader title={heading}>

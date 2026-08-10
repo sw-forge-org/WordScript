@@ -79,17 +79,27 @@ Everything that would make this actionable:
   speaker who also writes English, which is the condition
   `transcription-hallucination.md` already identifies as adverse.
 
-## The surface you would check it on shows the wrong text first
+## The surface you check it on can now show the heard text — fixed 2026-08-10
 
-History's row title is the **written** text — what the AI produced — and the
-recogniser's own words are one click away behind *View raw*. That is right for
-a record of what you got and wrong for judging what was heard, which is the job
-this record needs the screen to do. The data is correct and complete
-(`raw_transcript` is the provider's response before any transform, and 92 of 142
-records differ from their transformed text); it is the default view that is
-unhelpful. Recorded in the relay's §2.5 as a decision for Leg 4d rather than
-changed unilaterally, because the title is drawn and the gallery is the source
-(ADR 0057).
+History's row title was the **written** text — what the AI produced — with the
+recogniser's own words one click away behind *View raw*. That is right for a
+record of what you got and wrong for judging what was heard, which is the job
+this record needs the screen to do. The data was correct and complete the whole
+time (`raw_transcript` is the provider's response before any transform, and 92
+of 174 records differ from their transformed text); it was the default view that
+was unhelpful.
+
+**Leg 4d added a `Written` / `Heard` segment to History's toolbar
+([ADR 0070](../decisions/0070-history-switches-which-of-a-records-two-texts-its-rows-carry.md)).**
+It switches which text every row title carries, so the list can be scanned for
+recogniser errors instead of opened fold by fold. `Written` stays the default,
+so the screen at rest is unchanged; *View raw* is untouched and is still where
+one record's two texts are compared side by side. This matters most for the
+prompt leak, which lives in `raw_transcript` and is *cleaned away* by the
+transform — under `Written` the recogniser fault is invisible by construction.
+
+It makes the defect visible. It does not make it smaller, and this record stays
+open until the rate below is measured.
 
 One defect found while checking this and already fixed: the raw panel's foot
 claimed *"Identical — no AI stage ran on this one"* whenever the two texts

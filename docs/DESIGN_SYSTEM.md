@@ -157,15 +157,19 @@ same rule when opened as a pop-out, and the pop-out renders the same section the
 sheet does rather than a second implementation of it.
 
 The shell uses grouped sidebar navigation and card-based content. A sidebar is
-for orientation, not a second application. **A nav row must open something**: the
-sidebar's search field and its Help row are both ported and neither is mounted,
-because the command palette does not exist and Help has nothing behind it. An
-affordance that opens nothing is the fake state rule applied to navigation.
+for orientation, not a second application. **A nav row must open something.**
+The sidebar's search field and its Help row were both ported in Leg 2 and
+mounted in no window for three legs, because the command palette did not exist
+and Help had nothing behind it — an affordance that opens nothing is the fake
+state rule applied to navigation. Both were mounted in Leg 4d, in the commit
+that built what each opens: the field and `Cmd`/`Ctrl`+`K` open the palette, and
+Help opens a popover over its own row (ADR 0069). The prototype draws the search
+field in all three of its sidebars, so the settings sheet carries one too.
 
-**Every view and section is drawn and not yet wired**, and each says so on
-itself with a `PreviewBanner` until the commit that wires it. A gallery screen
-may carry sample data and assert nothing; the same screen on a product surface
-may not imply a state the runtime did not reach.
+**Every view and section that is not yet wired says so on itself** with a
+`PreviewBanner` until the commit that wires it. A gallery screen may carry
+sample data and assert nothing; the same screen on a product surface may not
+imply a state the runtime did not reach.
 
 ### Frost
 
@@ -189,9 +193,12 @@ recedes behind it — and neither half is the material on its own.
   inverts it (ADR 0048): the fill goes up (82% → 92%), the sheen goes almost
   away, and the scrim becomes `rgba(24, 20, 14, 0.26)`.
 - **Where it applies: a surface that floats and is transient.** The command
-  palette and the settings sheet today; a popover if one earns it. Never on a
-  card, never on the sidebar, never on the overlay. A surface that is always on
-  screen has nothing to recede from.
+  palette and the settings sheet — both of them, as of Leg 4d, which is when the
+  nesting above stopped being a plan. Never on a card, never on the sidebar,
+  never on the overlay, and **not on the Help popover**: a popover anchored to
+  the row that opened it recedes nothing and dims nothing (ADR 0069). A surface
+  that is always on screen has nothing to recede from, and a surface you are
+  still looking past has nothing to push back.
 - **Under `prefers-reduced-transparency` the fill goes opaque and the window
   behind it stays sharp.** The material is a refinement of a panel that already
   reads without it, so nothing else changes. Under `prefers-reduced-motion` the

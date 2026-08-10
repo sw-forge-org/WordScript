@@ -46,8 +46,8 @@ Status: 2026-08-04
   Recorded here because the consolidations survived the port -- one recovery
   surface, one history surface, Overlay extracted from Input, About slimmed to
   version plus release path -- while the areas that carried them did not.
-- **The settings rework is a port in progress. The shell and the wiring have
-  landed; two surfaces and the runtime contracts have not.** What exists is the productive component library
+- **The settings rework is a port in progress. The shell, the wiring and the two
+  missing surfaces have landed; the runtime contracts have not.** What exists is the productive component library
   (`src/components/shell/`, `src/styles/shell.css`) ported 1:1 from the
   settings-rework prototype, the 25 screens built on it in `src/screens/`, one
   design-time route `/gallery` where they are displayed and judged (ADR 0055),
@@ -55,10 +55,12 @@ Status: 2026-08-04
   screen is *ported* when it stands in the gallery and *shipped* when it is
   wired; **all 25 are ported** as of 2026-08-04, each verified by computed-style
   diff against the running prototype in every state it has (`npm run
-  port:diff`), and as of 2026-08-10 **every screen that can be wired is** —
-  what is left is not wiring but two surfaces the port never carried (the
-  command palette and the Help modal) and four features that do not exist yet.
-  With the last one standing, the
+  port:diff`), and as of 2026-08-10 **every screen that can be wired is**. The
+  two surfaces the port never carried landed the same day — the search field
+  with the command palette behind it, and Help (ADR 0069) — together with the
+  communication style, which had been running in the runtime with no surface
+  anywhere (ADR 0068). What is left is the runtime contracts and four features
+  that do not exist yet. With the last screen standing, the
   prototype turned from source into provenance (ADR 0057) and the gallery is the
   source. The wiring and the runtime contracts are later legs — see
   `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what is next,

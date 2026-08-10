@@ -55,6 +55,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The communication style has a surface for the first time.** Relay Leg 4d,
+  ADR 0068: a sixth profile tab `Style`, in second position, carrying one card —
+  the register with its six levels, the length, your rules and a writing sample,
+  each free-text field with the budget meter the runtime's own bounds imply.
+  `core::communication_style` has been running the whole time and `transform`,
+  `agent` and `capture` all consume it, while the prototype pointed at the
+  profile for it three times and never drew it. On this machine one of six
+  profiles carried `register: quick` with 256 characters of style rules, applied
+  to every Rewrite and invisible — which is the exact defect ADR 0023 was
+  written against. Nothing in the runtime changed: no Rust, no migration, no new
+  field. The `Where each list lands` legend gains a fifth row that states the
+  style's narrow scope — Rewrite and the assistant — once, in one place.
+- **The search field and the command palette behind it.** `NavSearch` was ported
+  in Leg 2 and stood in no window for three legs, because it opens a palette the
+  port did not carry. Both sidebars now mount it, as the prototype does, and
+  `Cmd`/`Ctrl`+`K` toggles the palette: thirty-one entries in three groups,
+  prefix-then-word-start-then-substring ranking, match highlighting, keyboard
+  selection that wraps, and a click outside or Escape to dismiss. Twenty-five of
+  the entries navigate, the theme actions switch the scheme, and the three that
+  act on a transcript ask the runtime whether there is one. What cannot act is
+  drawn inert with the reason in the path column.
+- **Help opens four addresses over its own row** (ADR 0069, replacing ADR 0066's
+  centred modal): the site, Discord, GitHub, and the documentation, which is
+  drawn and inert because it has no address yet. The row had been deliberately
+  unmounted for three legs for exactly that reason — nothing behind it.
+- **History switches which of a record's two texts its rows carry** (ADR 0070).
+  `Written` stays the default and is the drawing unchanged; `Heard` retitles
+  every row with the recogniser's own words, so the screen you go to in order to
+  judge transcription accuracy can be scanned rather than opened fold by fold.
+  It narrows nothing and moves no count.
+
+### Changed
+
+- **The profile list's subline states the mode and one second fact.** It
+  returned an identical string for all six profiles on this machine, because two
+  of its three clauses could not vary — `recovery_behavior` has one value in the
+  type, and the rewrite style is a lossy function of a mode the row was not
+  showing. It now reads `Auto · Insert at cursor` or `Rewrite · Client register`:
+  the mode, then the register where one is set and the delivery otherwise, which
+  is what the prototype's three rows actually draw.
+- **A sub-tab row wraps instead of running off its pane.** Leg 4c measured the
+  profile's five sub-tabs clipping inside the detail column in WebKitGTK and
+  ADR 0068 adds a sixth. An overflow would put a tab behind a scroll this
+  surface draws no scrollbar for.
+
+### Added
+
 - **Every wireable surface now reads the runtime.** Relay Leg 4c, six more:
   **Hotkeys** is `native_trigger_status` per slot — the caps, the registration
   badge, the refusal sentence, the activation timings and this session's

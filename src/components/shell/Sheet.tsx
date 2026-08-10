@@ -28,12 +28,25 @@ import { cn } from "@/lib/utils";
 export function Sheet({
   onClose,
   label,
+  closeOnEscape = true,
   className,
   children,
 }: {
   /** Called by the scrim, the close control and Escape alike. */
   onClose: () => void;
   label: string;
+  /**
+   * ESCAPE DISMISSES THE TOPMOST TRANSIENT THING, AND THAT IS A STACK RATHER
+   * THAN A SWITCH. The command palette opens OVER this sheet, so while it is up
+   * the key is the palette's and this sheet must not take it — Escape closing
+   * the sheet out from under an open palette is the bug the ordering exists to
+   * prevent, and the prototype names it in `demo.js`'s keyboard layer.
+   *
+   * It is a prop rather than a check for the palette's DOM, because a sheet
+   * that knew what could be laid over it would have to learn about every future
+   * layer. The window owns the stack; this owns the key while it is on top.
+   */
+  closeOnEscape?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -43,6 +56,7 @@ export function Sheet({
      that is on screen owns the key, and the window would have to ask whether a
      sheet is open before it could answer it. */
   React.useEffect(() => {
+    if (!closeOnEscape) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -50,7 +64,7 @@ export function Sheet({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [closeOnEscape, onClose]);
 
   return (
     <div

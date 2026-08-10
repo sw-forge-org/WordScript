@@ -146,10 +146,15 @@ describe("Profiles", () => {
     expect(screen.getByText("13:39")).toBeInTheDocument();
   });
 
-  it("draws the four lists as a legend, which sets nothing", () => {
+  /* FIVE ROWS, NOT FOUR, SINCE ADR 0068. Four of them are the four content
+     tabs; the fifth is Style, and it is there to state the one scope on this
+     screen that is not "every mode" — Rewrite and the assistant. That is how
+     ADR 0023's narrow scope gets said once instead of on two copies of a card
+     (`SETTINGS_REWORK_PLAN.md` §11.4, superseded). */
+  it("draws the tabs as a legend, which sets nothing", () => {
     const { container } = render(<ProfilesScreen />);
     const legend = container.querySelector(".ws-legend")!;
-    expect(legend.querySelectorAll(".ws-legend-row")).toHaveLength(4);
+    expect(legend.querySelectorAll(".ws-legend-row")).toHaveLength(5);
     expect(legend.querySelector("input, select, button")).toBeNull();
   });
 

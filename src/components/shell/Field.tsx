@@ -43,6 +43,35 @@ export const TextArea = React.forwardRef<
 ));
 TextArea.displayName = "TextArea";
 
+/**
+ * WHAT A BOUNDED FIELD HAS SPENT — `demo.css`'s `.meter`, whose builder
+ * (`meterLine`) is the one function in `demo.js` that nothing ever called. It
+ * was written for the communication style's two bounded fields and stayed
+ * behind when that card moved into the profile and was never drawn there, so
+ * this is a port with provenance rather than a new component (ADR 0068).
+ *
+ * The class is `.ws-meter` and the component is not, because `LevelMeter` and
+ * `InputLevelMeter` already mean the audio kind: this one measures a budget,
+ * not a signal.
+ *
+ * It states the count rather than only colouring: what passes the bound is not
+ * sent to the model, and "over" without a number leaves the reader guessing by
+ * how much.
+ */
+export function BudgetMeter({ used, max }: { used: number; max: number }) {
+  const over = used > max;
+  return (
+    <div className="ws-meter" data-over={over ? "" : undefined}>
+      <span>
+        {used} / {max}
+      </span>
+      <span className="ws-meter-bar">
+        <i style={{ width: `${Math.min(100, Math.round((used / Math.max(1, max)) * 100))}%` }} />
+      </span>
+    </div>
+  );
+}
+
 /** A field and whatever states its constraint, on one column. */
 export function FieldWrap({
   className,

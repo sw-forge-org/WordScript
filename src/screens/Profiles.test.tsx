@@ -219,3 +219,78 @@ describe("Profiles, wired", () => {
     expect(screen.queryByText("Active in this session")).not.toBeInTheDocument();
   });
 });
+
+/**
+ * THE SIXTH TAB — ADR 0068. The runtime contract was met the whole time and the
+ * surface did not exist, so what is asserted here is the seam rather than the
+ * feature: the register a profile already holds is READ, both selects take
+ * `patch`, both textareas take `patchText`, and the three controls that cannot
+ * reach a prompt while the register is Off are inert with the reason on screen.
+ *
+ * jsdom can see the `disabled` attribute and cannot see whether a reader can
+ * tell — Leg 4c's finding 1. `.ws-sel[disabled]` and `.ws-field[disabled]` both
+ * have rules in `shell.css`, and the native host is what confirmed it.
+ */
+describe("Profiles · Style", () => {
+  const styled = (register: "off" | "quick") => {
+    const base = config();
+    base.text_profiles = [
+      {
+        ...base.text_profiles[0],
+        modes: {
+          ...base.text_profiles[0].modes!,
+          communication_register: register,
+          communication_length: "normal",
+          style_instructions: register === "quick" ? "no emoji" : "",
+          style_sample: "",
+        },
+      },
+    ];
+    return base;
+  };
+
+  it("shows the register the profile already carries, which nothing could see before", async () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: styled("quick") })} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Style" }));
+    expect(screen.getByLabelText("Communication register")).toHaveValue("quick");
+    expect(screen.getByLabelText("Style rules")).toHaveValue("no emoji");
+  });
+
+  it("writes the two selects instantly and the two textareas through patchText", async () => {
+    const patch = vi.fn();
+    const patchText = vi.fn();
+    render(
+      <ProfilesScreen
+        runtime={createWorkspaceRuntime({ active: true, config: styled("quick"), patch, patchText })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Style" }));
+    await userEvent.selectOptions(screen.getByLabelText("Communication length"), "terse");
+    expect(patch.mock.calls[0][0].text_profiles[0].modes.communication_length).toBe("terse");
+    expect(patchText).not.toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText("Writing sample"), "x");
+    expect(patchText.mock.calls[0][0].text_profiles[0].modes.style_sample).toBe("x");
+  });
+
+  it("keeps the length and both fields inert while the register is Off, with the reason on screen", async () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: styled("off") })} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Style" }));
+    /* `is_active()` gates the whole block in `core::communication_style`, so
+       these three genuinely cannot reach a prompt (ADR 0065). */
+    expect(screen.getByLabelText("Communication length")).toBeDisabled();
+    expect(screen.getByLabelText("Style rules")).toBeDisabled();
+    expect(screen.getByLabelText("Writing sample")).toBeDisabled();
+    expect(screen.getByLabelText("Communication register")).not.toBeDisabled();
+    expect(screen.getByText(/nothing on this card reaches a prompt/i)).toBeInTheDocument();
+  });
+
+  it("states ADR 0023's scope once, on the Legend, rather than on the card", async () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: styled("off") })} />);
+
+    expect(screen.getByText("Rewrite and the assistant")).toBeInTheDocument();
+  });
+});

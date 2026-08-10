@@ -7,6 +7,7 @@ import {
   NavFoot,
   NavGroup,
   NavRow,
+  NavSearch,
   ProfileSwitcher,
   ProviderSprite,
   StatusStrip,
@@ -25,6 +26,8 @@ import {
 } from "@/lib/settingsAnchors";
 import type { WorkspaceRuntime } from "@/screens/props";
 import { SettingsSheet } from "./workspace/SettingsSheet";
+import { HelpMenu } from "./workspace/HelpMenu";
+import { CommandPalette } from "./workspace/palette";
 import { VIEWS, findSection, findView, type SectionId, type ViewId } from "./workspace/ia";
 
 /**
@@ -67,13 +70,15 @@ const MAC = /Mac|iPhone|iPad/.test(
   typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
 );
 const SETTINGS_SHORTCUT = MAC ? "⌘," : "Ctrl+,";
+const SEARCH_SHORTCUT = MAC ? "⌘K" : "Ctrl K";
 
 export default function WorkspaceWindow() {
   const { state, saveConfig } = useRuntime();
-  const { resolved } = useColorScheme("dark");
+  const { resolved, setScheme } = useColorScheme("dark");
   const { form, patch, patchText, flushText } = useConfigDraft(state.config, saveConfig);
   const [view, setView] = useState<ViewId>("home");
   const [section, setSection] = useState<SectionId | null>(null);
+  const [palette, setPalette] = useState(false);
   const [, startTransition] = useTransition();
 
   const selectedProvider = (form?.provider ?? state.config?.provider) === "local_preview"
@@ -146,6 +151,25 @@ export default function WorkspaceWindow() {
       if (event.key !== "," || !(event.metaKey || event.ctrlKey) || event.altKey) return;
       event.preventDefault();
       setSection((open) => open ?? "general");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /* Cmd/Ctrl+K TOGGLES rather than opens, which is the prototype's behaviour
+     and the right one: the chord that summoned the palette is the chord the
+     hand is already on when it wants it gone. It is a frontend shortcut for the
+     same reason Cmd+, is — it means nothing outside a focused window, and
+     registering it globally would take the chord away from every other
+     application on the machine. It is deliberately NOT the only way in: the
+     search field in the sidebar is, and the chord is printed on it. */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      setPalette((open) => !open);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -262,100 +286,132 @@ export default function WorkspaceWindow() {
   const mode = work?.processing_mode ?? "auto";
 
   return (
-    <WindowShell data-frost-shell={section ? "" : undefined}>
+    <WindowShell
+      data-frost-shell={section ? "" : undefined}
+      data-frost-stack={palette ? "" : undefined}
+    >
       {/* The provider marks are a sprite and the sprite is a per-window
           resource: every `<use href="#pm-…">` resolves against this one host,
           and it sits outside the layer the sheet blurs so the symbols are not
           re-resolved when the sheet opens. */}
       <ProviderSprite />
 
-      {/* THE LAYER THAT RECEDES. `.ws-frost-shell` is the application, and it
-          is what goes soft behind the sheet — one element, so the nav, the
-          content and the strip blur together instead of each blurring against
-          transparency at its own edges and leaving seams. `.ws-frost-stack`,
-          the application PLUS the sheet, is what would recede behind the
-          command palette; there is no palette yet, so that layer is not drawn
-          (ADR 0051 carries the nesting). */}
-      <div className="ws-frost-shell">
-        <WindowBody>
-          <Nav label="Workspace">
-            <BrandMark scheme={resolved} />
+      {/* THE LAYERS THAT RECEDE, AND THEY NEST RATHER THAN RUN IN PARALLEL
+          (ADR 0051). `.ws-frost-shell` is the application and goes soft behind
+          the sheet — one element, so the nav, the content and the strip blur
+          together instead of each blurring against transparency at its own
+          edges and leaving seams. `.ws-frost-stack` is the application PLUS the
+          sheet and goes soft behind the palette. Opening the palette from
+          inside settings therefore takes BOTH back one step, which is the only
+          arrangement in which the depth order stays true — and it is why the
+          two flags on the window are independent rather than exclusive. */}
+      <div className="ws-frost-stack">
+        <div className="ws-frost-shell">
+          <WindowBody>
+            <Nav label="Workspace">
+              <BrandMark scheme={resolved} />
 
-            {/* No search field here, and it is the same decision the gallery
-                took: `.ws-nav-search` is ported and `NavSearch` is in the
-                library, but it opens the command palette and there is no
-                palette. A field that opens nothing is the fake affordance
-                rule 7 forbids. Mount it when the palette exists. */}
+              {/* MOUNTED IN LEG 4D, AFTER THREE LEGS OF DELIBERATE ABSENCE.
+                  `NavSearch` was ported 1:1 in Leg 2 and stood in no window,
+                  because it opens the command palette and the port carried none —
+                  a field that opens nothing is the fake affordance rule 7
+                  forbids. macOS puts it at the top of the sidebar, above the
+                  first group, and the chord is printed on the control it
+                  accelerates rather than left to be discovered. */}
+              <NavSearch shortcut={SEARCH_SHORTCUT} onOpen={() => setPalette(true)} />
 
-            <NavGroup title="Workspace">
-              {VIEWS.map((entry) => (
+              <NavGroup title="Workspace">
+                {VIEWS.map((entry) => (
+                  <NavRow
+                    key={entry.id}
+                    icon={<Icon name={entry.icon} />}
+                    label={entry.label}
+                    tag={entry.preview ? "preview" : undefined}
+                    current={entry.id === view}
+                    onClick={() => startTransition(() => setView(entry.id))}
+                  />
+                ))}
+              </NavGroup>
+
+              <NavFoot>
                 <NavRow
-                  key={entry.id}
-                  icon={<Icon name={entry.icon} />}
-                  label={entry.label}
-                  tag={entry.preview ? "preview" : undefined}
-                  current={entry.id === view}
-                  onClick={() => startTransition(() => setView(entry.id))}
+                  icon={<Icon name="settings" />}
+                  label="Settings"
+                  tag={SETTINGS_SHORTCUT}
+                  onClick={() => setSection("general")}
                 />
-              ))}
-            </NavGroup>
+                {/* MOUNTED IN THE COMMIT THAT BUILT WHAT IT OPENS (ADR 0066,
+                    as ADR 0069 redrew it). Three legs refused to mount it and
+                    every one recorded the same reason — there was nothing
+                    behind it. Leg 3 wrote the condition rather than the answer:
+                    "mount each when there is something to open." The row and
+                    its popover are one component, because the panel opens over
+                    the row and has to be anchored to it. */}
+                <HelpMenu />
+                <ProfileSwitcher
+                  config={form}
+                  onChange={patch}
+                  sessionActive={sessionActive}
+                  subtitle={`${mode[0].toUpperCase()}${mode.slice(1).replace("_", " ")} · ${target}`}
+                />
+              </NavFoot>
+            </Nav>
 
-            <NavFoot>
-              <NavRow
-                icon={<Icon name="settings" />}
-                label="Settings"
-                tag={SETTINGS_SHORTCUT}
-                onClick={() => setSection("general")}
-              />
-              {/* `Help` is drawn in the prototype's sidebar and is not mounted,
-                  for the reason the search field is not: there is nothing
-                  behind it. It goes back the moment there is. */}
-              <ProfileSwitcher
-                config={form}
-                onChange={patch}
-                sessionActive={sessionActive}
-                subtitle={`${mode[0].toUpperCase()}${mode.slice(1).replace("_", " ")} · ${target}`}
-              />
-            </NavFoot>
-          </Nav>
+            {/* P2. One scroll box per visited view, only one of them shown. */}
+            {VIEWS.filter((entry) => visitedViews.includes(entry.id)).map((entry) => (
+              <main
+                key={entry.id}
+                className="ws-content"
+                data-layout={entry.layout}
+                hidden={entry.id !== view}
+              >
+                <div className="ws-content-inner" data-layout={entry.layout}>
+                  {entry.render({
+                    banner: entry.banner,
+                    runtime: { ...runtime, active: entry.id === view && section === null },
+                  })}
+                </div>
+              </main>
+            ))}
+          </WindowBody>
 
-          {/* P2. One scroll box per visited view, only one of them shown. */}
-          {VIEWS.filter((entry) => visitedViews.includes(entry.id)).map((entry) => (
-            <main
-              key={entry.id}
-              className="ws-content"
-              data-layout={entry.layout}
-              hidden={entry.id !== view}
-            >
-              <div className="ws-content-inner" data-layout={entry.layout}>
-                {entry.render({
-                  banner: entry.banner,
-                  runtime: { ...runtime, active: entry.id === view && section === null },
-                })}
-              </div>
-            </main>
-          ))}
-        </WindowBody>
+          <StatusStrip
+            tone={readiness.tone}
+            label={readiness.label}
+            title={readiness.title}
+            facts={[lane, target]}
+          />
+        </div>
 
-        <StatusStrip
-          tone={readiness.tone}
-          label={readiness.label}
-          title={readiness.title}
-          facts={[lane, target]}
-        />
+        {section && (
+          <SettingsSheet
+            section={section}
+            runtime={runtime}
+            onSection={setSection}
+            onClose={() => setSection(null)}
+            /* The Escape stack: while the palette is up the key is its. */
+            closeOnEscape={!palette}
+            onSearch={() => setPalette(true)}
+            searchShortcut={SEARCH_SHORTCUT}
+            profile={{ initials: textProfileInitials(activeProfile), name: activeProfile.label }}
+            onOpenProfiles={() => {
+              setSection(null);
+              startTransition(() => setView("profiles"));
+            }}
+          />
+        )}
+
       </div>
 
-      {section && (
-        <SettingsSheet
-          section={section}
+      {/* Outside the stack, because the stack is what it makes recede. The
+          theme actions reach `useColorScheme` directly: the scheme is this
+          window's state and no config field carries it (§2.5), so what the
+          palette changes is what any other control here would change. */}
+      {palette && (
+        <CommandPalette
           runtime={runtime}
-          onSection={setSection}
-          onClose={() => setSection(null)}
-          profile={{ initials: textProfileInitials(activeProfile), name: activeProfile.label }}
-          onOpenProfiles={() => {
-            setSection(null);
-            startTransition(() => setView("profiles"));
-          }}
+          onScheme={setScheme}
+          onClose={() => setPalette(false)}
         />
       )}
     </WindowShell>

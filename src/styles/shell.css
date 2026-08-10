@@ -337,8 +337,22 @@
      the sidebar (§4.3 rule 2).
      ═════════════════════════════════════════════════════════════════════════ */
 
+  /* IT WRAPS RATHER THAN RUNNING OFF THE PANE, and that was found by counting
+     rather than by choosing. Leg 4c measured the profile's five sub-tabs
+     clipping inside the detail column in WebKitGTK — the row was wider than
+     the pane and the pane cut it — and ADR 0068 adds a sixth. The two answers
+     were a horizontal overflow or a wrap; an overflow puts a tab behind a
+     scroll this surface draws no scrollbar for, which is a tab nobody can see,
+     so it wraps. `max-width` is what makes that possible at all: `align-self:
+     flex-start` sizes the row to `fit-content`, and without the cap the row
+     takes its max-content width and has nothing to wrap against. The buttons
+     keep the prototype's own `flex`, because a second line is the answer here
+     and shrinking a label is not — `min-width: auto` already floors an item at
+     its content, and overriding `flex` to `none` measured as a style difference
+     on all eight sub-tab rows the port has. */
   .ws-subtabs {
-    display: flex; gap: var(--s1);
+    display: flex; flex-wrap: wrap; gap: var(--s1);
+    max-width: 100%;
     padding: 2px;
     background: var(--bg-inset);
     border: 1px solid var(--border);
@@ -461,6 +475,13 @@
     flex-wrap: wrap;
   }
   .ws-toolbar-right { margin-left: auto; }
+  /* A SEGMENT IN A CONTROL ROW TAKES THE ROW'S HEIGHT. `.ws-seg` is sized by
+     its own padding and comes out at 32 px, which is right beside a card row's
+     label and 4 px too tall beside a 28 px field and select. The prototype
+     never put one in a toolbar, so this is a new rule rather than a ported one
+     — and it is scoped to the toolbar so the segments on Profiles and Delivery,
+     which ARE measured, keep the height they were measured at. */
+  .ws-toolbar > .ws-seg { height: 28px; align-items: center; }
   /* Unscoped from the toolbar deliberately: the same search affordance is
      needed inside a note, and the alternative is an inline
      `position:relative;display:flex` at the call site — the class of patch
@@ -676,6 +697,12 @@
     from { opacity: 0; transform: translateY(10px) scale(0.985); }
     to   { opacity: 1; transform: none; }
   }
+
+  /* HELP IS NOT A SHEET. ADR 0066 proposed one and ADR 0069 replaced it with
+     the popover the sidebar already has vocabulary for — see `.ws-menu`. The
+     anchor is the one thing that belongs here: a popover positions against the
+     nearest positioned ancestor, so the row that opens it has to be one. */
+  .ws-nav-anchor { position: relative; }
   /* An entrance that is rasterised on every intermediate frame is the one kind
      of motion reduced motion is actually about. */
   @media (prefers-reduced-motion: reduce) {
@@ -1435,6 +1462,33 @@
     background: color-mix(in srgb, var(--danger) 7%, var(--bg-inset));
   }
   .ws-field-wrap { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+
+  /* ── The budget meter — `demo.css` §6, and it had never been rendered ──────
+     `.meter` is in the prototype's stylesheet and `meterLine(used, max)` is in
+     `demo.js` beside `textarea()` and `kbd()`, and NOTHING CALLS IT. It is the
+     one builder in that file with no caller: it was written for the
+     communication style's two bounded fields and stayed behind when the card
+     was moved into the profile and never drawn there (ADR 0068). So this is a
+     port with provenance rather than a new component — the rule and the markup
+     are the prototype's, and Leg 4d is only the first caller.
+
+     A BOUNDED FIELD STATES ITS BOUND WHILE YOU ARE STILL IN IT. What exceeds
+     `MAX_STYLE_RULE_CHARS` / `MAX_STYLE_SAMPLE_CHARS` is not sent to the model,
+     and a budget the user cannot see is indistinguishable from a bug — the
+     defect class ADR 0020 names. Over budget turns the whole line, not only the
+     bar: a red 2 px hairline is not a state anybody notices. */
+  .ws-meter {
+    display: flex; align-items: center; justify-content: space-between;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); color: var(--fg-muted);
+  }
+  .ws-meter-bar {
+    flex: 1; height: 2px; margin: 0 var(--s2);
+    background: var(--bg-inset); border-radius: 2px; overflow: hidden;
+  }
+  .ws-meter-bar i { display: block; height: 100%; background: var(--fg-muted); }
+  .ws-meter[data-over] { color: var(--danger); }
+  .ws-meter[data-over] .ws-meter-bar i { background: var(--danger); }
 
   /* ── Stepper — a bounded number adjusted by one, unit inside the control ─── */
 
@@ -3654,8 +3708,21 @@
     text-align: left; width: 100%;
     transition: background-color var(--dur-fast) var(--ease);
   }
-  .ws-menu button:hover,
+  /* Aligned to the row it belongs to rather than centred on it, for the
+     sidebar: a fixed 230 px panel centred on a nav row spills out of both edges
+     of a 200 px sidebar. It takes the anchor's width instead, with a floor so
+     it stays readable if the sidebar is ever narrower than its content. */
+  .ws-menu[data-align="start"] {
+    left: 0; right: 0;
+    width: auto; min-width: 190px;
+    transform: none;
+  }
+  .ws-menu button:hover:not([disabled]),
   .ws-menu button[aria-current="true"] { background: var(--bg-elevated); }
+  /* A control that cannot act looks like it (ADR 0065). Leg 4c found five
+     controls that took `disabled`, refused the click and looked entirely
+     operable, so a new state gets its rule in the same commit. */
+  .ws-menu button[disabled] { opacity: 0.4; pointer-events: none; }
   .ws-menu button > svg {
     width: 13px; height: 13px; color: var(--fg-muted); margin-top: 2px; flex: none;
   }
@@ -5380,5 +5447,149 @@
   @media (prefers-reduced-motion: reduce) {
     .ws-frost-shell,
     .ws-frost-stack { transition: none; }
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE COMMAND PALETTE — `demo.css` §"The command palette", ported by Leg 4d.
+
+     THE ONE PROTOTYPE SURFACE NO EARLIER LEG CARRIED. `NavSearch` was ported
+     in Leg 2 and mounted in no window for three legs, because the field opens
+     this and this did not exist — the fake-affordance rule the sidebar's Help
+     row was held back by as well.
+
+     WHY A DESKTOP UTILITY NEEDS ONE. The surface has four workspace views and
+     ten settings sections and §4 spent real effort deciding which of them a
+     given control belongs in. Every one of those decisions is right and every
+     one of them is still a thing the user has to know. The palette does not
+     replace the structure; it is the escape hatch FROM it, for the user who
+     knows the name of what they want and not the room it is in. And it indexes
+     SETTINGS, not only places — "where do I turn the sound cues off" is the
+     query people actually have, and a palette that answers it with "General"
+     has made them navigate anyway. The row carries the room it lives in, so
+     using the palette twice for one setting is how somebody learns where it is.
+
+     IT IS NOT A MODAL. It takes focus and dismisses on Escape or a click
+     outside, and it never blocks: nothing behind it is disabled, and it is
+     opened mid-task and abandoned constantly. Modal semantics would be a
+     promise about protected focus it does not need and cannot keep.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-cmdk-scrim {
+    position: absolute; inset: 0;
+    /* Above the settings sheet's scrim (10), because it opens over it. */
+    z-index: 60;
+    display: flex; justify-content: center;
+    /* `flex-start`, not the default stretch. Stretched, the panel is the full
+       56vh regardless of how many rows it found, and a palette holding two
+       results over a screen of empty grey reads as a search that failed. It
+       grows with what it found. */
+    align-items: flex-start;
+    padding-top: 12vh;
+    background: var(--frost-scrim);
+    animation: ws-cmdk-scrim-in 120ms var(--ease) both;
+  }
+  @keyframes ws-cmdk-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* The panel is the other half of the frost (ADR 0051): the window recedes,
+     this catches the light. `.ws-frost-panel` carries the material, so the four
+     values are not repeated here — the sheet and the palette are one material
+     and were two before Leg 3. */
+  .ws-cmdk {
+    width: min(560px, calc(100% - 2 * var(--s7)));
+    max-height: 56vh;
+    display: flex; flex-direction: column;
+    border-radius: var(--r-window);
+    overflow: hidden;
+    animation: ws-cmdk-in 160ms var(--ease) both;
+  }
+  @keyframes ws-cmdk-in {
+    from { opacity: 0; transform: translateY(-8px) scale(0.985); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ws-cmdk-scrim, .ws-cmdk { animation: none; }
+  }
+
+  .ws-cmdk-field {
+    display: flex; align-items: center; gap: var(--s3);
+    padding: 0 var(--s4); height: 50px; flex: none;
+  }
+  .ws-cmdk-field > svg { width: 16px; height: 16px; color: var(--fg-muted); }
+  .ws-cmdk-input {
+    flex: 1; min-width: 0; height: 100%;
+    font-stretch: var(--w-lead); letter-spacing: var(--ls-lead);
+    font-size: var(--t-lead); color: var(--fg);
+    background: none; border: none;
+  }
+  .ws-cmdk-input::placeholder { color: var(--fg-muted); }
+  /* The field is the whole top of the panel, so a ring around it would be a
+     ring around the panel. It is focused on open and cannot lose focus while
+     the palette is up; a ring would state something never in doubt. */
+  .ws-cmdk-input:focus-visible { outline: none; box-shadow: none; }
+
+  .ws-cmdk-list {
+    min-height: 0; overflow-y: auto;
+    padding: var(--s2) 0;
+    border-top: 1px solid var(--border);
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  .ws-cmdk-group {
+    padding: var(--s2) var(--s4) 3px;
+    font-stretch: var(--w-micro); letter-spacing: 0.07em;
+    font-size: var(--t-micro); font-weight: 600;
+    text-transform: uppercase; color: var(--fg-muted);
+  }
+
+  .ws-cmdk-row {
+    display: flex; align-items: center; gap: var(--s3);
+    width: 100%; padding: 8px var(--s4);
+    text-align: left; color: var(--fg);
+    font-stretch: var(--w-body); font-size: var(--t-body);
+  }
+  .ws-cmdk-row svg { width: 15px; height: 15px; flex: none; color: var(--fg-muted); }
+  .ws-cmdk-row .ws-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The path is the teaching part: it names the room the thing is in. On a row
+     that cannot act it carries the REASON instead, because a disabled control
+     takes `pointer-events: none` and a tooltip on it is a reason nobody can
+     reach (ADR 0065, and Leg 4c's finding that a state without styling is not
+     a state). */
+  .ws-cmdk-row .ws-where {
+    flex: none;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label);
+    font-size: var(--t-label); color: var(--fg-muted);
+  }
+  /* HOVER AND SELECTION ARE THE SAME GROUND, AND THAT IS DELIBERATE. A palette
+     has one selected row, moved with the arrows and run with Return, and the
+     pointer is a second way to reach the same thing rather than a parallel
+     state. A weaker hover tint would put two highlights on screen and leave the
+     reader working out which one Return would take. Selection is a ground and
+     not an accent fill: painting the one selected row in the attention colour
+     makes a list of options look like a list of warnings. */
+  .ws-cmdk-row[data-sel],
+  .ws-cmdk-row:hover:not([disabled]) { background: var(--bg-elevated); }
+  .ws-cmdk-row[data-sel] .ws-where,
+  .ws-cmdk-row:hover:not([disabled]) .ws-where { color: var(--fg-dim); }
+  .ws-cmdk-row:hover:not([disabled]) svg { color: var(--fg-dim); }
+  .ws-cmdk-row mark { background: none; color: var(--accent); font-weight: 600; }
+  .ws-cmdk-row[disabled] { opacity: 0.4; pointer-events: none; }
+
+  .ws-cmdk-empty { padding: var(--s5) var(--s4); color: var(--fg-muted); font-size: var(--t-body); }
+  .ws-cmdk-foot {
+    flex: none; display: flex; align-items: center; gap: var(--s4);
+    padding: 8px var(--s4);
+    border-top: 1px solid var(--border);
+    background: var(--bg-inset);
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
+    font-size: var(--t-micro); color: var(--fg-muted);
+  }
+  .ws-cmdk-foot .ws-k { display: inline-flex; align-items: center; gap: 4px; }
+  .ws-cmdk-foot kbd {
+    min-width: 17px; height: 17px; padding: 0 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--r-small);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    font-family: var(--font); font-size: 10px; color: var(--fg-dim);
   }
 }

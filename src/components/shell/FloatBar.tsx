@@ -87,17 +87,42 @@ export type MenuEntry = {
   /** A desk entry runs somewhere else, for minutes, with effects. */
   kind?: "desk";
   on?: boolean;
+  /** Absent on a DRAWN menu, which is what this component was built for and is
+   *  still what the Context screen renders. Leg 4d gave it its first live
+   *  caller (the Help menu, ADR 0069) and an entry that acts says so here. */
+  onSelect?: () => void;
+  /** Drawn and inert, with the reason in the hint (ADR 0065). */
+  disabled?: boolean;
 };
 
-export function Menu({ items, deskLabel }: { items: MenuEntry[]; deskLabel: string }) {
+/**
+ * A POPOVER OVER THE CONTROL THAT OPENED IT — `.ws-menu` opens upward, which
+ * is why `align` is the only thing a second caller needed.
+ *
+ * `align="center"` is the float bar's: a 230 px panel centred on a button in
+ * the middle of a wide surface. `align="start"` is the sidebar's: a panel that
+ * takes the width of the row it belongs to, because a 230 px panel centred on a
+ * nav row spills out of both edges of a 200 px sidebar.
+ */
+export function Menu({
+  items,
+  deskLabel,
+  align = "center",
+  label,
+}: {
+  items: MenuEntry[];
+  deskLabel?: string;
+  align?: "center" | "start";
+  label?: string;
+}) {
   const ordinary = items.filter((item) => item.kind !== "desk");
   const deskish = items.filter((item) => item.kind === "desk");
   return (
-    <div className="ws-menu" role="menu">
+    <div className="ws-menu" role="menu" aria-label={label} data-align={align}>
       {ordinary.map((item) => (
         <MenuEntryButton key={item.label} entry={item} />
       ))}
-      {deskish.length > 0 && (
+      {deskish.length > 0 && deskLabel && (
         <>
           <div className="ws-menu-rule">
             <span>{deskLabel}</span>
@@ -113,7 +138,13 @@ export function Menu({ items, deskLabel }: { items: MenuEntry[]; deskLabel: stri
 
 function MenuEntryButton({ entry }: { entry: MenuEntry }) {
   return (
-    <button type="button" role="menuitem" aria-current={entry.on ? "true" : "false"}>
+    <button
+      type="button"
+      role="menuitem"
+      aria-current={entry.on ? "true" : "false"}
+      disabled={entry.disabled}
+      onClick={entry.onSelect}
+    >
       <Icon name={entry.icon ?? "sparkle"} />
       <span className="ws-mtext">
         <b>{entry.label}</b>

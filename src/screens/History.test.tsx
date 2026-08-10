@@ -280,6 +280,60 @@ describe("the raw panel's foot", () => {
   });
 });
 
+/**
+ * ADR 0070 — the one control on this screen the prototype does not draw, and
+ * the reason it is here: the surface you go to in order to judge transcription
+ * accuracy was showing the AI's version of every row first.
+ */
+describe("Written and Heard", () => {
+  const pair = entry({
+    raw_transcript: "lets ship the settings restructure today",
+    transformed_transcript: "Let's ship the settings restructure today.",
+  });
+
+  it("titles the rows with the written text until asked otherwise", async () => {
+    mockRuntimeHistory([pair]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findByText("Let's ship the settings restructure today.")).toBeInTheDocument();
+  });
+
+  it("swaps every title to the recogniser's own words", async () => {
+    mockRuntimeHistory([pair]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await screen.findByText("Let's ship the settings restructure today.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Heard" }));
+    expect(screen.getByText("lets ship the settings restructure today")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Let's ship the settings restructure today."),
+    ).not.toBeInTheDocument();
+  });
+
+  /* It narrows nothing, so the count may not move — a control that looked like
+     the status filter beside it and did not behave like one would be worse
+     than no control. */
+  it("changes no count, because it is not a filter", async () => {
+    mockRuntimeHistory([pair, entry({ id: "second" })]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await screen.findByRole("heading", { name: "2 transcriptions" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Heard" }));
+    expect(screen.getByRole("heading", { name: "2 transcriptions" })).toBeInTheDocument();
+  });
+
+  /* No fallback under Heard: borrowing the transformed text would put the AI's
+     sentence behind a label promising the opposite. */
+  it("says nothing was heard rather than borrowing the written text", async () => {
+    mockRuntimeHistory([entry({ raw_transcript: null, transformed_transcript: "Cleaned up." })]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await screen.findByText("Cleaned up.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Heard" }));
+    expect(screen.getByText("Nothing was heard in this capture.")).toBeInTheDocument();
+  });
+});
+
 describe("the history clock", () => {
   it("says the time for today and names the day before that", () => {
     const now = new Date("2026-08-10T14:00:00").getTime();

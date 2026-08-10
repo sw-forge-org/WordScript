@@ -1677,6 +1677,164 @@ the overlay out of scope.
   the pill and the notification were both checked without a fourth build.
 - The AppImage step still fails on `linuxdeploy`; the binary is built and runs.
 
+### Leg 4d — the surface nobody could see, the surface nobody had ported, and one decision the owner handed back
+
+**ALL FOUR POINTS ARE DONE, AND A FIFTH THAT WAS ONLY "TO BE DISCUSSED".** The
+communication style has a tab (ADR 0068), the search field is mounted in both
+sidebars with the command palette behind it, Help opens four addresses over its
+own row (ADR 0069, replacing 0066's modal), the profile subline is decided and
+tested, and History's row title got the `Written` / `Heard` segment the owner
+left to my judgement (ADR 0070). Nothing was wired, because there was nothing
+left to wire: the four banners on Context, Notes & Meetings, Agents and
+Integrations are untouched and the gallery still holds twenty entries.
+
+**THE THING TO TAKE FROM THIS LEG: THE PROTOTYPE STILL CONTAINED THE ANSWER,
+TWICE, AND BOTH TIMES IT WAS A DEAD FUNCTION.** `meterLine(used, max)` sits in
+`demo.js` beside `textarea()` and `kbd()` and **nothing calls it** — it is the
+only builder in that file with no caller, and `.meter` is in `demo.css` beside
+it. It was written for the communication style's two bounded fields and stayed
+behind when the card was relocated into the profile and never drawn there. So
+the budget meter ADR 0068 asks for is a PORT with provenance rather than new
+design, and Leg 4d is only its first caller. The same check found the second
+one: `navSearch()` is called from **three** sidebars in `demo.js` (1765, 1806,
+1847), not one, so the settings sheet's nav carries a search field too — three
+legs of comments said "no search field here" about a place the prototype draws
+one. **Before drawing anything the prototype "does not have", grep for a
+builder nobody calls.**
+
+**THE COMMUNICATION STYLE IS VISIBLE, AND THE FIRST THING IT SHOWED WAS THE
+DEFECT.** The profile `Product and engineering` on this machine carries
+`register: quick` with 256 characters of style rules — including a loaded
+German lexicon line and a rule about working curse words into the output — that
+have been applied to every Rewrite under that profile with no surface anywhere.
+It is on screen now, in the native host, and that screenshot is the whole
+argument for ADR 0068. The runtime did not change: no Rust, no migration, no
+new field.
+
+**THE PALETTE IS THIRTY-ONE ENTRIES, NOT THE TWENTY-SIX THIS RELAY SAYS.**
+Counted off `CMDK_INDEX` and asserted in `palette.test.ts` so the correction
+outlives this paragraph: twelve `Go to`, thirteen `Settings`, six `Do`. The
+prompt's "another eleven" was an estimate. Twenty-five of the thirty-one are
+navigations and `runtime.open` answers every one.
+
+**THE SEAM HELD AND THE LIBRARY GREW BY THREE.** `Palette` and its six parts,
+`BudgetMeter`, and `Menu` gaining `onSelect` / `disabled` / `align` — its first
+LIVE caller after three legs as a drawn-only component. The index and what each
+row does stayed in `windows/workspace/palette.tsx`, because a library component
+that knew this window's views and sections would be the second product ADR 0055
+forbids. `Sheet` grew `closeOnEscape`, which is the Escape stack the prototype
+states and never had to build: palette first, then the sheet.
+
+**WHAT IS DRAWN AND INERT, WITH THE REASON WHERE A READER CAN REACH IT.**
+
+1. **The Style card's length, rules and sample while the register is `Off`.**
+   `is_active()` gates the whole block in `core::communication_style`, so all
+   three genuinely cannot reach a prompt. The reason is a `Note` under the card
+   and NOT a `title`: a disabled control takes `pointer-events: none`, so a
+   tooltip on one is a reason nobody can hover.
+2. **`Show transcripts in file manager` in the palette** — the same hole
+   History's row has. The reason goes in the path column, which normally names
+   the room a setting lives in.
+3. **`Restore last clipboard insert` and `Copy last transcript`** when there is
+   nothing to act on. They ask `native_insertion_status.last_transcript` rather
+   than guessing from `state.lastResult`, because the window's memory and the
+   runtime's scratchpad disagree the moment the window is reopened over a
+   running process.
+4. **Help's `Documentation`.** Two of ADR 0066's three URLs did not exist; the
+   owner supplied the Discord invite and named `wordscript.dev`, and said the
+   documentation has no link yet. It is drawn with `No address yet` in its hint
+   rather than left out, because a missing entry teaches the reader that
+   WordScript has no documentation.
+
+**WHAT LEG 4D ADDS TO §2.5.**
+
+- **The style budget is not exposed over IPC.** `MAX_STYLE_RULE_CHARS`,
+  `MAX_STYLE_SAMPLE_CHARS` and `CommunicationStyleAnalysis` — which reports what
+  was accepted and what was dropped — are all in `core::communication_style` and
+  **no command returns any of them.** The meter mirrors the two constants and
+  counts what was typed. Those are not the same number: the runtime collapses
+  whitespace, drops duplicate rules and truncates a rule past 120 characters
+  before it counts, and every one of those steps only ever REDUCES. So a meter
+  in the black is a guarantee that nothing was dropped and a meter in the red is
+  a maybe, which is the honest half of the contract. One command returning
+  `CommunicationStyleAnalysis` closes it and would also give
+  `Check against a sample` somewhere to put an answer.
+- **No config field carries the colour scheme.** The palette's three theme rows
+  call `useColorScheme` and change THIS window: nothing persists the choice, a
+  restart loses it, and the overlay window does not follow. §15.3 already owes
+  the native half (`window.theme()` and the Tauri theme-changed event); the
+  config field is the cheap half and it is now reachable from a control the
+  product ships.
+- **`Show transcripts in file manager` has no command**, and it is now visible
+  from a second surface rather than one. Unchanged as a fact; changed as a cost.
+
+**Findings for the next leg.**
+
+1. **THE NATIVE HOST ON THIS MACHINE IS ALREADY RUNNING AND IT HOT-RELOADS.** A
+   long-lived `npm run tauri dev` (a debug binary plus the Vite server on 1420)
+   was up for the whole leg and picks up the working tree in about a second. It
+   is a far better instrument than `npm run tauri build` at 3m 43s — and it may
+   be the owner's own session, so do not kill it and do not leave temporary code
+   in the tree longer than one screenshot.
+2. **FAST REFRESH PRESERVES COMPONENT STATE, so a temporary `useState` default
+   does not drive anything.** Changing `useState("home")` to `useState("history")`
+   and saving changes nothing on screen. A temporary MOUNT EFFECT does, because
+   adding a hook changes the signature and forces the remount.
+3. **Synthetic clicks do not reach the WebKitGTK window; synthetic SCROLL
+   does.** `xdotool click 1` on a nav row is ignored, `xdotool click 4/5` scrolls
+   the pane under the pointer. That is enough to read a card below the fold and
+   not enough to change a tab.
+4. **`xdotool search --pid` does not AND with `--name`.** Two hours of this leg
+   went into screenshots of a window that belonged to a different process.
+   Confirm with `xprop -id <win> _NET_WM_PID` before believing a window id.
+5. **`port:diff` is 26 of 28 at zero and two recorded departures.** `profiles`
+   carries the sixth sub-tab and the fifth legend row (ADR 0068); `history`
+   carries the segment and the narrower search field it leaves room for
+   (ADR 0070). Everything else is **structural 0 | style 0**, and one regression
+   was caught only by the script: `flex: none` on `.ws-subtabs button` measured
+   against the prototype's `0 1 auto` on all eight sub-tab rows in the port. The
+   wrap needed `flex-wrap` and `max-width`, not a shrink override.
+6. **Four orphans, still four.** `DangerRow`, `Inspector`, `PaneGroup`,
+   `VolumeSlider`. Nothing was deleted. `Menu` left that neighbourhood by
+   getting a caller rather than by being removed.
+7. **The AppImage step still fails on linuxdeploy** and the binary is still
+   built. One release build was spent this leg and it turned out not to be the
+   instrument — see finding 1.
+8. **`tauri.conf.json` still names the wrong thing twice**, `mode_router.rs:7`
+   still cites `OverlayGallery.tsx`, and the gallery still has no door in the
+   native host. Seven legs have carried these; all three are rule 6.
+
+**The native host, and what it settled.** WebKitGTK, the running dev binary.
+
+- **The Style tab draws the disabled state and the enabled one.** Under `Off`
+  the length select and both fields are visibly dimmed; under `Quick message`
+  the same select is bright and the live rules are on screen. That is Leg 4c's
+  finding 1 answered for the new controls.
+- **Six sub-tabs WRAP inside the profile pane** — `Defaults · Style · Context ·
+  Words · Replacements` on one line, `Snippets` on the second, nothing clipped.
+  At the gallery's wider column all six fit on one line, which is the rule
+  working rather than two behaviours.
+- **The palette renders** — panel, frost, group headings, the path column, the
+  selection ground, the foot — **and the two inert `Do` rows are drawn dimmed**,
+  which is `.ws-cmdk-row[disabled]` doing its job. It was also caught standing
+  over the settings sheet with BOTH layers receding, which is ADR 0051's nesting
+  in one screenshot.
+- **The search field is mounted in the workspace sidebar and in the sheet's**,
+  drawn as the prototype draws it, with the `Ctrl K` cap on the control it
+  accelerates.
+- **The profile list finally discriminates**: five profiles read
+  `Auto · Clipboard only` and one reads `Auto · Quick-message register`.
+
+**Checked in Chromium rather than in the host, and said so rather than implied.**
+The budget meter (`0 / 400`, and the over-budget state computing to `--danger`
+for both the count and the bar), History's toolbar with the segment at the
+toolbar's own 28 px, and the Help popover's two new rules —
+`.ws-menu[data-align="start"]` resolving to the anchor's 211 px instead of the
+float bar's fixed 230, and a disabled entry at `opacity: 0.4` with
+`pointer-events: none`. The Help POPOVER in place in the sidebar is the one
+thing this leg did not get a native screenshot of; its parts are all measured
+and its component is the float bar's.
+
 ### Leg 4c — the last six wireable screens, and the rule that had no styling
 
 **EVERY WIREABLE SCREEN IS WIRED. TEN ROWS BECAME FOUR.** The six the Leg 4c
@@ -2274,7 +2432,123 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 4d
+## The prompt for Leg 5
+
+You are picking up WordScript after the GUI port. Work in the repo root on
+`main`. Do not create a branch. **Leg 5 is the first leg allowed into
+`src-tauri/`** — rule 6 held for seven legs precisely so that this one would
+find a surface that states exactly what it cannot answer, and it does.
+
+### What is already true
+
+**Every screen the prototype drew stands, and every wireable one is wired.**
+Twenty of the twenty-five keep a gallery entry; four product rows keep a banner
+(Context, Notes & Meetings, Agents, Integrations) and every one of those is V2
+or Phase 8 and cannot be wired at all. `npm run port:diff` is 26 of 28 at
+**structural 0 | style 0**, with two RECORDED departures — `profiles`
+(ADR 0068's sixth tab) and `history` (ADR 0070's segment). Those two are the new
+baseline; a third departure needs its own ADR.
+
+**Nothing you find is a surprise.** §2.5 in this document is the list of what
+the runtime cannot answer, written down as it was found across five legs, and
+every screen that draws an inert control names its reason on itself.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. Leg 4d's record is your starting
+state; Leg 4c's below it carries the disabled-state rule you will be held to.
+**§2.5 — the entries under Leg 2c's, 2d's, 4a's, 4b's, 4c's and 4d's headings —
+is your backlog.** Then `CLAUDE.md`, `docs/spec/SPEC.md`, and
+`src/screens/props.ts`, which is the seam in about a hundred and ten lines.
+
+### The order, cheapest first, and the first three are days rather than weeks
+
+1. **THE SEVENTH `ProcessingMode`.** ADR 0041 gave Translate a slot and
+   `ProcessingMode` has six values, so **Hotkeys and Profiles each draw a
+   disabled control for it today**. One variant, one config field, and the two
+   controls come alive in the commit that adds them. It is the cheapest entry on
+   the whole list and it is visible from two screens.
+2. **`CommunicationStyleAnalysis` OVER IPC.** `core::communication_style`
+   already computes it — what it accepted, what it dropped, `used_chars`,
+   `max_chars` — and no command returns any of it. One command closes three
+   things at once: the Style tab's budget meters stop mirroring two constants
+   and counting typed characters (they over-count, see Leg 4d's §2.5 entry), and
+   **`Check against a sample` and `Show the effective bias` finally have an
+   answer to put somewhere** — which is the other half of the same job, and that
+   half is a DRAWING job first (ADR 0057: the gallery grows the surface, the
+   product follows).
+3. **A colour-scheme config field.** The palette ships three theme rows that
+   change this window and persist nothing; the overlay window does not follow.
+   §15.3 owes the native half (`window.theme()` plus the Tauri theme-changed
+   event) and the config field is the cheap half.
+4. **A reveal command.** `Show transcripts in file manager` is inert on History,
+   on Home and now in the palette — three surfaces, one hole. It is coupled to
+   the next one: there is nothing per transcript to reveal.
+5. **The Markdown-file promise.** The drawing says every transcript is a file in
+   `~/WordScript/transcripts`; the runtime keeps one `history.json`. Leg 4c made
+   the product state the truth and left the promise as your contract. Decide
+   whether it is kept or retired, in an ADR, before writing either.
+6. **Home's decision inbox.** ADR 0044's three sources have no receiver, so the
+   product draws nothing there — the one place on the surface where inventing
+   content would invent a QUESTION. It is why Home still carries a banner.
+7. **Full export, Full import, Reset all settings.** No command at all.
+8. **The five missing SURFACES, and they are design rather than runtime.** Add
+   and Edit for replacements and snippets, New profile's rename, and where an
+   `analyze_text_rules` answer goes. The gallery grows them first (ADR 0057).
+   Say in your record if you start this; it is bigger than it looks.
+
+### The rules you will be judged on
+
+**NEVER RENDER FAKE READINESS (rule 7).** Unchanged, and now it cuts the other
+way too: when you give a control its command, DELETE the reason it was carrying.
+A row that says "no command exists" beside a control that works is the same
+defect facing backwards.
+
+**A CONTROL THAT CANNOT ACT IS DISABLED WITH ITS REASON, AND THE DESIGN SYSTEM
+HAS TO DRAW THAT STATE** (ADR 0065, ADR 0067; Leg 4c's finding 1, Leg 4d's
+confirmation). `shell.css` now has rules for `.ws-seg button`, `.ws-provchip`,
+`.ws-sel`, `.ws-field`, `.ws-kbd-btn`, `.ws-flag`, `.ws-cmdk-row` and
+`.ws-menu button`. If you disable something outside that list, look at it in the
+native host before you believe it.
+
+**A BANNER COMES OFF IN THE COMMIT THAT MAKES IT FALSE, AND THE GALLERY ENTRY
+GOES WITH IT** (ADR 0057). `registry.test.tsx` holds both directions.
+
+### What you must NOT do
+
+- **Do not touch Context**, in any direction. The owner said on 2026-08-10 it is
+  going to be done differently and deliberately did not say how.
+- **Do not mount any of the six undecided surfaces.** ADRs 0060–0064 and one
+  roadmap candidate; `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not touch the overlay** (rule 5).
+- **Do not change a drawn screen's copy or layout to make a contract easier.**
+  Where the drawing and the runtime disagree on a FACT, wire the fact and leave
+  the copy, as Legs 4b, 4c and 4d each did once.
+- **Do not migrate a config without a backup path.** This is the first leg that
+  can write a migration, and the owner's machine carries six real profiles, 174
+  transcriptions and a communication style that was invisible until yesterday.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. Run the suite twice
+  before believing a failure.
+- `npm run port:diff` after anything that could move a screen — the 28-screen
+  command is in the Leg 4d prompt below, and the expected result is now 26 zeros
+  plus the two recorded departures.
+- **The native host is already running on this machine and hot-reloads** — see
+  Leg 4d's finding 1. Do not spend 3m 43s on `npm run tauri build` before
+  checking whether a `tauri dev` host is up, do not kill it, and do not leave a
+  temporary driver in the tree. Fast Refresh preserves state, so drive a surface
+  with a temporary mount effect rather than a changed `useState` default.
+- **Do not `pkill -f vite`.** It matches the agent shell's own command line.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 6
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 4d (spent — kept for the chain's record)
 
 You are picking up the WordScript GUI port. Work in the repo root on `main`.
 Do not create a branch. Leg 4d is yours, and it is **not a wiring leg**: every

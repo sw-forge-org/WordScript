@@ -3,6 +3,7 @@ import {
   Icon,
   NavGroup,
   NavRow,
+  NavSearch,
   Sheet,
   SheetBody,
   SheetContent,
@@ -38,6 +39,9 @@ export function SettingsSheet({
   runtime,
   onSection,
   onClose,
+  closeOnEscape,
+  onSearch,
+  searchShortcut,
   profile,
   onOpenProfiles,
 }: {
@@ -45,6 +49,10 @@ export function SettingsSheet({
   runtime: Omit<WorkspaceRuntime, "active">;
   onSection: (id: SectionId) => void;
   onClose: () => void;
+  /** False while the command palette is over this sheet — the Escape stack. */
+  closeOnEscape?: boolean;
+  onSearch: () => void;
+  searchShortcut: string;
   profile: { initials: string; name: string };
   onOpenProfiles: () => void;
 }) {
@@ -60,7 +68,7 @@ export function SettingsSheet({
   const writes = SECTIONS.some((entry) => !entry.banner);
 
   return (
-    <Sheet onClose={onClose} label="WordScript Settings">
+    <Sheet onClose={onClose} closeOnEscape={closeOnEscape} label="WordScript Settings">
       <SheetHead title="Settings" onClose={onClose}>
         {/* The profile the whole sheet is read in. Every value carrying a scope
             tag on these screens belongs to it, so it is stated once here rather
@@ -77,8 +85,12 @@ export function SettingsSheet({
 
       <SheetBody>
         <SheetNav label="Settings sections">
-          {/* No search field, for the reason the workspace sidebar has none:
-              it opens the command palette and there is no palette. */}
+          {/* THE SHEET'S SIDEBAR CARRIES ONE TOO, and that is the prototype
+              rather than a symmetry: `demo.js` calls `navSearch()` from all
+              three of its sidebars, and the sheet's is the one place a reader
+              is most likely to be looking for a control by name. No brand mark
+              above it here — the window behind it already states the brand. */}
+          <NavSearch shortcut={searchShortcut} onOpen={onSearch} />
           {SECTION_GROUPS.map((group) => (
             <NavGroup key={group.name} title={group.name}>
               {group.ids.map((id) => {

@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  CommunicationRegister,
   LocalProfileDecodeSettings,
   LocalProfilePromptSettings,
   ProfileCaptureSettings,
@@ -12,6 +13,7 @@ import type {
   TextProfileRewriteStyle,
   TextProfileWorkMode,
 } from "../types/ipc";
+import { PROCESSING_MODE_LABELS } from "./transformRules";
 
 function createProfileId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -176,57 +178,77 @@ export function resolveTextProfileWorkMode(profile: Pick<TextProfile, "work_mode
   return cloneTextProfileWorkMode(profile.work_mode);
 }
 
-// Derived from the processing mode, mirroring `ProcessingMode::rewrite_style_token`
-// in config.rs. The stored `rewrite_style` is only a fallback for work modes that
-// predate `processing_mode`: a profile could hold "polished" while running
-// "cleanup", and the summary then described a mode the runtime was not in.
-function rewriteStyleFromMode(workMode: TextProfileWorkMode): TextProfileRewriteStyle {
-  switch (workMode.processing_mode) {
-    case "verbatim":
-      return "verbatim";
-    case "rewrite":
-      return "polished";
-    case "auto":
-    case "cleanup":
-    case "agent":
-    case "prompt_enhance":
-      return "clean";
-    default:
-      return workMode.rewrite_style;
-  }
-}
-
-function rewriteStyleLabel(value: TextProfileRewriteStyle): string {
-  switch (value) {
-    case "verbatim":
-      return "Verbatim rewrite";
-    case "polished":
-      return "Polished rewrite";
-    default:
-      return "Clean rewrite";
-  }
-}
-
+/** The words the rest of the product uses for the same value — the Delivery
+ *  segment on this screen, the strip along the bottom of the window and the
+ *  Delivery & Insert section all read `Insert at cursor` / `Clipboard only`.
+ *  `Auto-paste delivery` was this file's own private vocabulary for it and was
+ *  the only place either phrase appeared. */
 function insertBehaviorLabel(value: TextProfileInsertBehavior): string {
   switch (value) {
     case "clipboard_only":
-      return "Clipboard-only delivery";
+      return "Clipboard only";
     default:
-      return "Auto-paste delivery";
+      return "Insert at cursor";
   }
 }
 
-function recoveryBehaviorLabel(value: TextProfileRecoveryBehavior): string {
-  switch (value) {
-    case "standard":
+/** `off` is not drawn — a profile with no register shows its delivery instead,
+ *  which is the pair the prototype draws on two of its three rows. */
+function communicationRegisterLabel(register: CommunicationRegister): string | null {
+  switch (register) {
+    case "off":
+      return null;
+    case "quick":
+      return "Quick-message register";
     default:
-      return "Standard recovery";
+      return `${register[0].toUpperCase()}${register.slice(1)} register`;
   }
 }
 
-export function describeTextProfileWorkMode(profile: Pick<TextProfile, "work_mode">): string {
+/**
+ * THE PROFILE LIST'S SUBLINE — decided in Leg 4d, not guessed, because Leg 4c
+ * found it returning the IDENTICAL string for all six profiles on the owner's
+ * machine and §2.5 recorded it as nobody's decision.
+ *
+ * WHAT WAS ACTUALLY WRONG WAS NOT THAT IT REPEATED. It stated one fact three
+ * times. `recovery_behavior` has exactly one value in the type
+ * (`TextProfileRecoveryBehavior = "standard"`), so `Standard recovery` was a
+ * constant on every profile that has ever existed. And `rewrite_style` is
+ * DERIVED from the processing mode, collapsing six modes onto three labels —
+ * `auto`, `cleanup`, `agent` and `prompt_enhance` all read `Clean rewrite`. Two
+ * of the three clauses could not vary, and the one that could was a lossy
+ * function of a value the row was not showing.
+ *
+ * SO IT STATES THE MODE ITSELF AND ONE SECOND FACT, which is the drawing's own
+ * shape: `Auto · Insert at cursor`, `Rewrite · Client register`, `Rewrite ·
+ * Clipboard only`. A mode and a delivery, not a sentence.
+ *
+ * THE SECOND SLOT IS THE REGISTER WHEN THERE IS ONE AND THE DELIVERY OTHERWISE,
+ * and that is what reproduces all three drawn rows exactly rather than two of
+ * them. A register is opt-in, defaults to `off`, and is the one thing about a
+ * profile with no other surface than the tab ADR 0068 adds — so where it is
+ * set it is the most specific true thing about that profile. Delivery is one of
+ * two values and is the fallback.
+ *
+ * IT IS A SUMMARY, NOT A KEY. Five profiles configured the same way read the
+ * same, and that is the honest answer: the thing that tells two profiles apart
+ * is the name above this line. Inventing a difference where the runtime holds
+ * none would be the fake-readiness defect in a subtitle.
+ */
+export function describeTextProfileWorkMode(
+  profile: Pick<TextProfile, "work_mode" | "modes">,
+): string {
   const workMode = resolveTextProfileWorkMode(profile);
-  return `${rewriteStyleLabel(rewriteStyleFromMode(workMode))}, ${insertBehaviorLabel(workMode.insert_behavior)}, ${recoveryBehaviorLabel(workMode.recovery_behavior)}`;
+  const register = communicationRegisterLabel(
+    resolveProfileModesSettings(profile).communication_register,
+  );
+  /* `processing_mode` is optional on the wire and a profile written before it
+     existed carries none. The runtime resolves that absence to Auto, so the
+     subline says Auto rather than a blank — the same default the screen's own
+     mode select applies. */
+  return `${PROCESSING_MODE_LABELS[workMode.processing_mode ?? "auto"]} · ${
+    register ?? insertBehaviorLabel(workMode.insert_behavior)
+  }`;
 }
 
 /** The version this mirror can honestly produce, which is deliberately not the

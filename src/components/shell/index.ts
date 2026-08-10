@@ -49,10 +49,15 @@ export {
   Sheet, SheetHead, SheetProfile, SheetBody, SheetNav, SheetContent, SheetFoot,
 } from "./Sheet";
 
+/* ── The palette over both of them — demo.css §"The command palette", Leg 4d ── */
+export {
+  Palette, PaletteField, PaletteList, PaletteGroup, PaletteRow, PaletteEmpty, PaletteFoot,
+} from "./Palette";
+
 /* ── Controls — demo.css §6, ported by Leg 2 ── */
 export { Button, IconButton } from "./Button";
 export type { ButtonVariant } from "./Button";
-export { Field, FieldWrap, TextArea } from "./Field";
+export { BudgetMeter, Field, FieldWrap, TextArea } from "./Field";
 export { Toggle } from "./Toggle";
 export { SegmentControl } from "./SegmentControl";
 export type { SegmentOption } from "./SegmentControl";

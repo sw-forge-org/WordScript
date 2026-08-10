@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  BudgetMeter,
   Button,
   Card,
   CardRows,
   DocLink,
   Field,
+  FieldWrap,
   Flag,
   Icon,
   IconButton,
@@ -46,7 +48,10 @@ import {
 import { SETTINGS_ANCHOR_AUTO_STOP, settingsAnchorElementId } from "@/lib/settingsAnchors";
 import type {
   AppConfig,
+  CommunicationLength,
+  CommunicationRegister,
   ProcessingMode,
+  ProfileModesSettings,
   TextProfile,
   TextProfileInsertBehavior,
   VocabularyHintEntry,
@@ -74,10 +79,20 @@ import type { PartlyWiredScreenProps } from "./props";
  *      profile writes; three decide when a recording stops.
  *   2. THE HEALTH CARD WAS A CARD. One flag, one sentence, one button — for a
  *      status that belongs beside the profile's name, where it is visible from
- *      all five tabs instead of only from this one.
+ *      all six tabs instead of only from this one.
  *   3. THE HINTS EXPLAINED THE FEATURE, NOT THE CHOICE. The reader is deciding
  *      whether to leave a switch alone; what they need is what changes if they
  *      don't — one clause, not three sentences.
+ *
+ * STYLE IS THE SIXTH TAB AND THE ONE THING ON THIS SCREEN THE PROTOTYPE NEVER
+ * DREW (ADR 0068). `core::communication_style` has been running the whole time
+ * — register, length, rules, sample, with ADR 0023's precedence between them —
+ * and `transform`, `agent` and `capture` all consume it, while the prototype
+ * pointed at this profile for it three times and gave it no tab. One profile on
+ * the owner's machine carries a non-default register set in the pre-port UI,
+ * applied to every Rewrite under it, invisible and unchangeable. That is the
+ * defect ADR 0023 exists against, and this tab is the whole of the fix: no
+ * Rust, no migration, no new field.
  *
  * THIS IS THE FIRST SCREEN IN THE PRODUCT WITH A TEXT FIELD, so it is the first
  * caller `patchText` has ever had. The Context tab's textarea writes
@@ -110,7 +125,86 @@ import type { PartlyWiredScreenProps } from "./props";
  * the button's tooltip, because that is the only place on the drawing they fit.
  */
 
-const TABS = ["Defaults", "Context", "Words", "Replacements", "Snippets"];
+/**
+ * SIX TABS, AND THE SECOND ONE IS THE DEPARTURE — ADR 0068.
+ *
+ * The prototype draws five and points at a sixth three times without ever
+ * drawing it, so `npm run port:diff -- profiles` stops measuring this screen
+ * 1:1 from the commit that adds `Style`. That is the recorded cost of the ADR
+ * rather than a regression, and it is the only one of the 28 measurements that
+ * moves.
+ *
+ * The order is semantic, not chronological: Defaults and Style are settings,
+ * Context, Words, Replacements and Snippets are content ordered broad →
+ * literal. Appending Style at the end would split the settings half around
+ * four content tabs.
+ */
+const TABS = ["Defaults", "Style", "Context", "Words", "Replacements", "Snippets"];
+
+/** Named after the addressee, or — for the lowest step — the medium. A ladder
+ *  of formality adjectives reads as near-synonyms in a select; "who am I
+ *  writing to" is something the speaker already knows (ADR 0023). */
+const REGISTER_OPTIONS: { value: CommunicationRegister; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "authority", label: "Authority" },
+  { value: "client", label: "Client" },
+  { value: "colleague", label: "Colleague" },
+  { value: "friend", label: "Friend" },
+  { value: "quick", label: "Quick message" },
+];
+
+/** The area's own words, carried over from the pre-port `ModesTab.tsx`
+ *  unchanged. Each level is defined by properties you can COUNT in the output —
+ *  address form, contractions, salutation, punctuation — never by an adjective,
+ *  because an adjective is neither verifiable nor enforceable. */
+const REGISTER_DESCRIPTIONS: Record<CommunicationRegister, string> = {
+  off: "No style instruction. The result takes its tone from the dictation, exactly as before.",
+  authority:
+    "Authorities, contracts, legal text. Fixed formulas, formal address, no contractions, full salutation and sign-off.",
+  client:
+    "Applications, external customer mail, leadership. Complete sentences, formal address, full salutation and sign-off.",
+  colleague:
+    "Internal mail to the team. Complete sentences, address form follows your dictation, short salutation.",
+  friend:
+    "Private mail, team chat, friends. Familiar address, contractions, short sentences, salutation optional.",
+  quick:
+    "Short messages and group chat. No salutation, fragments, minimal punctuation, lowercase starts allowed.",
+};
+
+/** `full` is drawn as Expansive: "Full" beside a length reads as a quantity of
+ *  text rather than as the third step of a scale. The runtime value is `full`. */
+const LENGTH_OPTIONS: { value: CommunicationLength; label: string }[] = [
+  { value: "terse", label: "Terse" },
+  { value: "normal", label: "Normal" },
+  { value: "full", label: "Expansive" },
+];
+
+/**
+ * MIRRORED, BECAUSE THE RUNTIME EXPOSES NEITHER — on §2.5.
+ *
+ * `core::communication_style` holds `MAX_STYLE_RULE_CHARS`,
+ * `MAX_STYLE_SAMPLE_CHARS` and a `CommunicationStyleAnalysis` that reports what
+ * it accepted and what it dropped, and no command returns any of it. So the
+ * meter counts what is TYPED, and the two numbers are not the same number: the
+ * runtime collapses whitespace, drops duplicate rules and truncates a rule past
+ * 120 characters before it counts.
+ *
+ * Every one of those steps only ever REDUCES, which is what makes the mirror
+ * safe in the one direction that matters: a meter in the black is a guarantee
+ * that nothing was dropped. A meter in the red means the runtime MAY have
+ * dropped something, and until it can be asked, that is the honest half.
+ */
+const MAX_STYLE_RULE_CHARS = 400;
+const MAX_STYLE_SAMPLE_CHARS = 400;
+
+/** Rules and a sample stay inert while the register is Off — `is_active()` in
+ *  `core::communication_style` gates the whole block, so a profile that has
+ *  switched the style off does not keep leaking the fields it happens to hold.
+ *  Three controls that cannot reach a prompt, disabled with the reason under
+ *  them rather than deleted (ADR 0065). The reason cannot be a `title`: a
+ *  disabled control takes `pointer-events: none`, so nothing hovers it. */
+const STYLE_IS_OFF =
+  "The register is Off, so nothing on this card reaches a prompt. Pick a register to use them.";
 
 /** The drawn order, which is not `ProcessingMode`'s. `Translate` has no runtime
  *  value; `Draft` is the surface's name for `agent` (`PROCESSING_MODE_LABELS`). */
@@ -189,6 +283,16 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   const [drawnSelected, setDrawnSelected] = useState(DRAWN_PROFILES[0].id);
   const [drawnDelivery, setDrawnDelivery] = useState("Insert at cursor");
   const [drawnWorkspace, setDrawnWorkspace] = useState(true);
+  /* The Style tab's drawn state starts OFF, and that is not an empty default:
+     the drawn profile's own subline is `Auto · Insert at cursor`, which under
+     `describeTextProfileWorkMode` is exactly what "no register" produces. A
+     gallery that drew a register here would contradict the list beside it.
+     Switching it in the gallery brings the other three controls alive, which
+     is how both halves of the card are reachable without a runtime. */
+  const [drawnRegister, setDrawnRegister] = useState<CommunicationRegister>("off");
+  const [drawnLength, setDrawnLength] = useState<CommunicationLength>("normal");
+  const [drawnRules, setDrawnRules] = useState("");
+  const [drawnSample, setDrawnSample] = useState("");
 
   const profiles = config?.text_profiles ?? [];
   const profile =
@@ -255,6 +359,25 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   const isActive = Boolean(profile && profile.id === config?.active_text_profile_id);
   const flagCount = health?.flags.length ?? 0;
 
+  /* ONE READ AND ONE WRITE PER VALUE, and the branch is where the value comes
+     FROM rather than how the card is drawn — the discipline `PartlyWiredScreenProps`
+     exists for. The two selects are discrete and take `patch`; the two
+     textareas are prose and take `patchText` (plan P1). */
+  const register = runtime ? (modes?.communication_register ?? "off") : drawnRegister;
+  const length = runtime ? (modes?.communication_length ?? "normal") : drawnLength;
+  const styleRules = runtime ? (modes?.style_instructions ?? "") : drawnRules;
+  const styleSample = runtime ? (modes?.style_sample ?? "") : drawnSample;
+  const styleActive = register !== "off";
+
+  const writeModes = (next: Partial<ProfileModesSettings>, kind: "discrete" | "text" = "discrete") =>
+    write(
+      (current) => ({
+        ...current,
+        modes: { ...resolveProfileModesSettings(current), ...next },
+      }),
+      kind,
+    );
+
   const listRows = useMemo(
     () =>
       runtime
@@ -311,7 +434,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
           <>
             {/* The health flag lives in the detail header. It is a property of
                 the profile, not of the Defaults tab, and from here it is
-                visible on all five. Duplicate and Export went with it — they
+                visible on all six. Duplicate and Export went with it — they
                 are things you do to a profile rarely and from the list. */}
             <PaneDetailHead
               title={runtime ? (profile?.label ?? "No profile") : "General writing"}
@@ -551,13 +674,154 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                       </Button>
                     }
                   >
+                    {/* THE FIFTH ROW IS HOW ADR 0023'S SCOPE GETS SAID ONCE
+                        (ADR 0068). The other four rows are the four content
+                        tabs and the third column already names a scope per row;
+                        Style is the one setting on this screen that does not
+                        apply to every mode, and stating that here is what
+                        §11.4's "its scope named on each" was protecting —
+                        by a mechanism the profile already has, in one place
+                        instead of two cards that can disagree.
+
+                        It goes FIRST rather than appended, because the rows
+                        read in the order of the tabs they name and Style is
+                        tab two. A legend whose order disagrees with the tab
+                        row above it makes the reader match by name. */}
                     <Legend>
+                      <LegendRow name="Style" what="sets how a sentence is built" where="Rewrite and the assistant" />
                       <LegendRow name="Context" what="steers which word the AI picks" where="AI modes" />
                       <LegendRow name="Words & names" what="repairs mangled terms" where="recognizer + AI" />
                       <LegendRow name="Replacements" what="exact swap, before the AI" where="every mode" />
                       <LegendRow name="Snippets" what="phrase expands to a block" where="every mode" />
                     </Legend>
                   </Card>
+                </>
+              )}
+
+              {tab === "Style" && (
+                <>
+                  <Card
+                    title="Communication style"
+                    description="How this profile writes. Rewrite and the assistant only — Cleanup, Verbatim and Prompt Enhance are untouched."
+                  >
+                    <CardRows>
+                      {/* The hint IS the register's definition and it changes
+                          with the value, because six levels described in one
+                          static sentence is six levels nobody can tell apart. */}
+                      <Row
+                        label="Writes to"
+                        hint={REGISTER_DESCRIPTIONS[register]}
+                        control={
+                          <Select
+                            value={register}
+                            onChange={(event) => {
+                              const next = event.target.value as CommunicationRegister;
+                              if (!runtime) {
+                                setDrawnRegister(next);
+                                return;
+                              }
+                              writeModes({ communication_register: next });
+                            }}
+                            aria-label="Communication register"
+                          >
+                            {REGISTER_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Select>
+                        }
+                      />
+                      <Row
+                        label="Length"
+                        hint="Independent of the register above: formal and terse is as valid as formal and expansive."
+                        control={
+                          <Select
+                            value={length}
+                            disabled={!styleActive}
+                            onChange={(event) => {
+                              const next = event.target.value as CommunicationLength;
+                              if (!runtime) {
+                                setDrawnLength(next);
+                                return;
+                              }
+                              writeModes({ communication_length: next });
+                            }}
+                            aria-label="Communication length"
+                          >
+                            {LENGTH_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Select>
+                        }
+                      />
+                      <Row
+                        layout="stack"
+                        label="Your rules"
+                        hint="One rule per line. They outrank the register where the two touch, and they describe how to write, never what to write."
+                      >
+                        <FieldWrap>
+                          <TextArea
+                            rows={4}
+                            value={styleRules}
+                            disabled={!styleActive}
+                            placeholder={"no emoji\nkeep it under five sentences"}
+                            aria-label="Style rules"
+                            onChange={(event) => {
+                              if (!runtime) {
+                                setDrawnRules(event.target.value);
+                                return;
+                              }
+                              writeModes({ style_instructions: event.target.value }, "text");
+                            }}
+                            onBlur={runtime ? () => runtime.flushText() : undefined}
+                          />
+                          <BudgetMeter used={styleRules.trim().length} max={MAX_STYLE_RULE_CHARS} />
+                        </FieldWrap>
+                      </Row>
+                      <Row
+                        layout="stack"
+                        label="Writing sample"
+                        hint="A few lines you actually wrote. Tone, sentence shape and your expressions come from it — never its content."
+                      >
+                        <FieldWrap>
+                          <TextArea
+                            rows={4}
+                            value={styleSample}
+                            disabled={!styleActive}
+                            placeholder="morning, pushing the call to monday, hope that works"
+                            aria-label="Writing sample"
+                            onChange={(event) => {
+                              if (!runtime) {
+                                setDrawnSample(event.target.value);
+                                return;
+                              }
+                              writeModes({ style_sample: event.target.value }, "text");
+                            }}
+                            onBlur={runtime ? () => runtime.flushText() : undefined}
+                          />
+                          <BudgetMeter used={styleSample.trim().length} max={MAX_STYLE_SAMPLE_CHARS} />
+                        </FieldWrap>
+                      </Row>
+                    </CardRows>
+                  </Card>
+
+                  {/* Off is not "nothing set": the fields keep whatever they
+                      hold and the prompt sees none of it. Said under the card
+                      rather than on each of the three controls — one reason,
+                      one sentence — because a disabled control cannot carry a
+                      tooltip and three copies of it would be furniture. */}
+                  {styleActive ? (
+                    <Note icon="wand">
+                      Slang and the expressions you use come from your rules and your sample. The
+                      model is forbidden from supplying either on its own, because misplaced slang
+                      reads worse than none.
+                    </Note>
+                  ) : (
+                    <Note icon="alert">{STYLE_IS_OFF}</Note>
+                  )}
                 </>
               )}
 
