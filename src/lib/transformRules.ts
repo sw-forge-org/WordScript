@@ -1,3 +1,5 @@
+import type { ProcessingMode } from "../types/ipc";
+
 /**
  * THE TRANSFORM RULE VOCABULARY — what the runtime's `applied_rules` mean.
  *
@@ -185,3 +187,23 @@ export function describeAppliedRule(rule: string): AppliedRuleInfo {
       };
   }
 }
+
+/**
+ * WHAT A PROCESSING MODE IS CALLED ON THE SURFACE, and it is not what the
+ * runtime calls it in one place. `ProcessingMode::Agent` is drawn as `Draft`
+ * everywhere in the ported design — Home's record, History's meta line, the
+ * mode key on Hotkeys, the lane on AI Models — because "Agent" now means
+ * ADR 0030's desk, which is a different feature that Agents states on itself in
+ * as many words ("This is not the Draft mode").
+ *
+ * Here rather than in a screen for the same reason `describeAppliedRule` is:
+ * three surfaces read it, and a second copy is a second chance to disagree.
+ */
+export const PROCESSING_MODE_LABELS: Record<ProcessingMode, string> = {
+  auto: "Auto",
+  verbatim: "Verbatim",
+  cleanup: "Cleanup",
+  rewrite: "Rewrite",
+  agent: "Draft",
+  prompt_enhance: "Prompt Enhance",
+};

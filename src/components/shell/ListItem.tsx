@@ -31,7 +31,11 @@ export type RawTranscript = {
   /** No `heard` of its own means the two texts are identical. */
   same?: boolean;
   note?: string;
-  path: string;
+  /** OPTIONAL, AND ITS ABSENCE IS THE RUNTIME'S ANSWER. The drawing gives every
+   *  transcript a Markdown path; the runtime keeps one `history.json` and no
+   *  per-transcript file exists, so a wired caller passes none and the foot
+   *  states the sentence without a path it cannot produce. */
+  path?: string;
 };
 
 export function ListRows({ children }: { children: ReactNode }) {
@@ -120,7 +124,7 @@ export function RawPanel({ raw }: { raw: RawTranscript }) {
       </div>
       <div className="ws-raw-foot">
         {raw.same ? "Identical — no AI stage ran on this one." : (raw.note ?? "The AI stage rewrote it.")}
-        <span className="ws-raw-path ws-mono">{raw.path}</span>
+        {raw.path && <span className="ws-raw-path ws-mono">{raw.path}</span>}
       </div>
     </div>
   );

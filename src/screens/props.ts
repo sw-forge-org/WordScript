@@ -78,6 +78,34 @@ export interface WiredScreenProps extends ScreenProps {
 }
 
 /**
+ * A SCREEN WIRED IN PART, and it is a third shape rather than a compromise
+ * between the two above.
+ *
+ * Some screens can read half of what they draw and no more — History's `Show in
+ * file manager` has no command, Home's decision inbox has no receiver, AI
+ * Models has one integrated lane of four. Rule 7 says such a screen keeps the
+ * banner that states it, and `registry.test.tsx` reads exactly that banner to
+ * decide which gallery entries were allowed to retire. So a partly wired screen
+ * KEEPS ITS ENTRY — and an entry renders `() => <X />` with no props, which
+ * `WiredScreenProps` refuses.
+ *
+ * Hence `runtime` OPTIONAL, and its absence means "you are standing in the
+ * gallery": the screen takes its rows from `data.ts`, states the drawn
+ * sentence, and asserts no runtime state, which is what keeps `port:diff`
+ * exact. With a runtime it states this machine.
+ *
+ * IT IS STILL ONE IMPLEMENTATION. What branches is where a row comes FROM, not
+ * how it is drawn — the two paths meet on one list and one render, or the
+ * screen has quietly become the two implementations ADR 0055 exists to
+ * prevent. When the last fact on such a screen has a source, it moves to
+ * `WiredScreenProps`, loses its banner and its entry in one commit, and this
+ * shape is no longer one of its options.
+ */
+export interface PartlyWiredScreenProps extends ScreenProps {
+  runtime?: WorkspaceRuntime;
+}
+
+/**
  * What `windows/workspace/ia.tsx` hands to a row's `render`. `runtime` is always
  * present on a product surface; a screen that has not been wired yet simply
  * ignores it, which is what keeps the table one shape for all fourteen rows.

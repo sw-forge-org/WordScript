@@ -84,8 +84,16 @@ export interface SurfaceEntry<Id extends string> {
   render: (props: ScreenSlot) => ReactNode;
 }
 
-/** Said once, so that fourteen rows cannot disagree about what they are. */
-function notWired(what: string): ReactNode {
+/**
+ * Said once, so that fourteen rows cannot disagree about what they are.
+ *
+ * It carries "drawn, not wired" AND "wired in part", because both are the same
+ * statement to a reader: something on this surface does not come from the
+ * runtime. `registry.test.tsx` reads only whether a row has one — a screen that
+ * reads half of what it draws keeps its banner and its gallery entry, and says
+ * WHICH half is missing rather than repeating a generic sentence.
+ */
+function saysSo(what: string): ReactNode {
   return <PreviewBanner>{what}</PreviewBanner>;
 }
 
@@ -94,14 +102,14 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     id: "home",
     label: "Home",
     icon: "home",
-    banner: notWired("Drawn, not wired — the hero, the decision inbox and the record are sample data."),
+    banner: saysSo("Drawn, not wired — the hero, the decision inbox and the record are sample data."),
     render: (props) => <HomeScreen {...props} />,
   },
   {
     id: "history",
     label: "History",
     icon: "history",
-    banner: notWired("Drawn, not wired — the transcription record is sample data."),
+    banner: saysSo("Wired in part — Show in file manager has no path and no command, and a transcript is not a file on disk yet."),
     render: (props) => <HistoryScreen {...props} />,
   },
   {
@@ -109,7 +117,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     label: "Profiles",
     icon: "profiles",
     layout: "pane",
-    banner: notWired("Drawn, not wired — the profile list and every value in it are sample data."),
+    banner: saysSo("Drawn, not wired — the profile list and every value in it are sample data."),
     render: (props) => <ProfilesScreen {...props} />,
   },
   {
@@ -118,7 +126,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     icon: "notes",
     layout: "pane",
     preview: true,
-    banner: notWired("Planned for V2, and drawn rather than wired. The context object does not exist in the runtime."),
+    banner: saysSo("Planned for V2, and drawn rather than wired. The context object does not exist in the runtime."),
     render: (props) => <ContextScreen {...props} />,
   },
 ];
@@ -153,14 +161,14 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     label: "Notes & Meetings",
     icon: "notes",
     preview: true,
-    banner: notWired("Planned for V2, and drawn rather than wired."),
+    banner: saysSo("Planned for V2, and drawn rather than wired."),
     render: (props) => <NoteSettingsScreen {...props} />,
   },
   {
     id: "models",
     label: "AI Models",
     icon: "models",
-    banner: notWired("Drawn, not wired — the connection, the jobs and the installed models are sample data."),
+    banner: saysSo("Drawn, not wired — the connection, the jobs and the installed models are sample data."),
     render: (props) => <ModelsScreen {...props} />,
   },
   {
@@ -168,7 +176,7 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     label: "Agents",
     icon: "agents",
     preview: true,
-    banner: notWired("Planned for Phase 8 — ADR 0030 — and drawn rather than wired."),
+    banner: saysSo("Planned for Phase 8 — ADR 0030 — and drawn rather than wired."),
     render: (props) => <AgentsScreen {...props} />,
   },
   {
@@ -176,7 +184,7 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     label: "Integrations",
     icon: "integrations",
     preview: true,
-    banner: notWired("Planned for Phase 8, and drawn rather than wired."),
+    banner: saysSo("Planned for Phase 8, and drawn rather than wired."),
     render: (props) => <IntegrationsScreen {...props} />,
   },
   {
@@ -189,7 +197,7 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "privacy",
     label: "Privacy & Data",
     icon: "privacy",
-    banner: notWired("Drawn, not wired — retention and export do not act on this machine's data yet."),
+    banner: saysSo("Drawn, not wired — retention and export do not act on this machine's data yet."),
     render: (props) => <PrivacyScreen {...props} />,
   },
   {

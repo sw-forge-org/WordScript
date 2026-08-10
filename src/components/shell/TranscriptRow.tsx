@@ -19,8 +19,13 @@ import { ListItem, type ListItemBadge, type RawTranscript } from "./ListItem";
  * (ADR 0039), so a row whose audio has been swept cannot use it and says so by
  * disabling the control rather than by hiding it.
  *
- * Every row can be shown in the file manager, because every transcript is a
- * Markdown file (§11.23).
+ * ~~Every row can be shown in the file manager, because every transcript is a
+ * Markdown file (§11.23).~~ **The drawing says so and the runtime does not do
+ * it.** There is one `history.json` under the user data dir, no per-transcript
+ * file, and no reveal command — so the wired caller passes
+ * `revealDisabledReason` and the button stays drawn and inert (ADR 0065)
+ * instead of pointing at a folder that does not exist. The gallery passes
+ * nothing and keeps the drawing, which is what keeps `port:diff` exact.
  */
 export function TranscriptRow({
   title,
@@ -31,6 +36,13 @@ export function TranscriptRow({
   restorable,
   open,
   onToggleRaw,
+  onReveal,
+  onRetry,
+  onRestore,
+  onCopy,
+  onDelete,
+  revealDisabledReason,
+  busy,
 }: {
   title: string;
   meta: string[];
@@ -42,6 +54,19 @@ export function TranscriptRow({
   restorable?: boolean;
   open?: boolean;
   onToggleRaw?: () => void;
+  onReveal?: () => void;
+  onRetry?: () => void;
+  onRestore?: () => void;
+  onCopy?: () => void;
+  onDelete?: () => void;
+  /** Present means the surface has nowhere to reveal to. It becomes the
+   *  button's label as well as its reason, because `IconButton`'s label IS its
+   *  tooltip — a disabled control with no explanation is the fake-affordance
+   *  defect one step quieter. */
+  revealDisabledReason?: string;
+  /** A row whose command is still in flight. Every acting control idles rather
+   *  than queueing a second delete behind the first. */
+  busy?: boolean;
 }) {
   return (
     <ListItem
@@ -58,15 +83,34 @@ export function TranscriptRow({
             on={open}
             onClick={onToggleRaw}
           />
-          <IconButton label="Show in file manager" icon={<Icon name="folderOpen" />} />
+          <IconButton
+            label={revealDisabledReason ?? "Show in file manager"}
+            icon={<Icon name="folderOpen" />}
+            disabled={Boolean(revealDisabledReason)}
+            onClick={onReveal}
+          />
           <IconButton
             label={audioKept ? "Retry" : "Retry — audio no longer kept"}
             icon={<Icon name="restore" />}
-            disabled={!audioKept}
+            disabled={!audioKept || busy}
+            onClick={onRetry}
           />
-          {restorable && <IconButton label="Restore to cursor" icon={<Icon name="resume" />} />}
-          <IconButton label="Copy" icon={<Icon name="copy" />} />
-          <IconButton label="Delete" icon={<Icon name="trash" />} tone="danger" />
+          {restorable && (
+            <IconButton
+              label="Restore to cursor"
+              icon={<Icon name="resume" />}
+              disabled={busy}
+              onClick={onRestore}
+            />
+          )}
+          <IconButton label="Copy" icon={<Icon name="copy" />} onClick={onCopy} />
+          <IconButton
+            label="Delete"
+            icon={<Icon name="trash" />}
+            tone="danger"
+            disabled={busy}
+            onClick={onDelete}
+          />
         </>
       }
     />
