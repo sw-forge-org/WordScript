@@ -1944,7 +1944,13 @@ is the profile's STORED mode and keeps `auto` for an Auto record, so
    sentences — correct local time with the `+02:00` offset (so `chrono`'s
    `Local` works in the packaged environment), `mode: cleanup` from the new
    `effective_mode` on a record dictated under Auto, `delivery: clipboard`, and
-   German slugs with their umlauts intact.
+   German slugs with their umlauts intact. **ADR 0077 was verified the same
+   way, one commit later, and the folder carries its own before-and-after**:
+   `10-2234-kurzfrage-macht-es-nicht-mehr-sinn-dass-das-glei.md` was written by
+   the first-words slug, `10-2248-language-chip-problem.md` and
+   `10-2250-status-pages-erstellen-und-verwalten.md` by the model — in the
+   dictation's own language, which is the rule the prompt spends its longest
+   line on.
 4. **ALL FOUR OWED SURFACES ARE ANSWERED, AND THE FOURTH FOUND A BUG.**
    `Profiles → Defaults` under Translate draws both rows between the mode select
    and Delivery, nothing clipped, and the list subline moves with it. The Style
