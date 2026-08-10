@@ -58,6 +58,12 @@ pub struct TranscriptionHistoryEntry {
     /// that never reached a transform.
     #[serde(default)]
     pub effective_mode: Option<ProcessingMode>,
+    /// What the model called this (ADR 0077). Kept on the record as well as in
+    /// the file's name, because History's rows carry it too (ADR 0078) — and a
+    /// row that had to read a file to draw a heading would make the index
+    /// depend on the store it indexes.
+    #[serde(default)]
+    pub title: Option<String>,
     /// The Markdown file this record was written to (ADR 0074).
     ///
     /// `None` where there was no text to write, and on entries older than the
@@ -333,6 +339,7 @@ fn record_entry_with_work_mode(
         active_profile: request.active_profile,
         work_mode,
         effective_mode: request.effective_mode,
+        title: request.title.clone(),
         transcript_path,
         provider_profile: request.provider_profile,
         local_prompt_strength: request.local_prompt_strength,
@@ -1619,6 +1626,7 @@ mod tests {
                 active_profile: None,
                 work_mode: None,
                 effective_mode: None,
+                title: None,
                 transcript_path: None,
                 provider_profile: None,
                 local_prompt_strength: None,
@@ -1654,6 +1662,7 @@ mod tests {
                 active_profile: None,
                 work_mode: None,
                 effective_mode: None,
+                title: None,
                 transcript_path: None,
                 provider_profile: None,
                 local_prompt_strength: None,
@@ -1689,6 +1698,7 @@ mod tests {
                 active_profile: None,
                 work_mode: None,
                 effective_mode: None,
+                title: None,
                 transcript_path: None,
                 provider_profile: None,
                 local_prompt_strength: None,
@@ -1987,6 +1997,7 @@ mod tests {
                 ..TextProfileWorkMode::default()
             }),
             effective_mode,
+            title: None,
             transcript_path: None,
             provider_profile: None,
             local_prompt_strength: None,

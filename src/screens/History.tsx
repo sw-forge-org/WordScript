@@ -191,30 +191,52 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
   };
 }
 
-/** Which of a record's two texts the row titles carry (ADR 0070). */
-type ShownText = "written" | "heard";
+/** Which of a record's three readings the row titles carry (ADR 0070, 0078). */
+type ShownText = "title" | "written" | "heard";
 
 const SHOWN_TEXT_OPTIONS = [
+  { value: "title", label: "Title" },
   { value: "written", label: "Written" },
   { value: "heard", label: "Heard" },
 ];
 
 /**
- * THE TITLE, AND WHICH OF THE TWO TEXTS IT IS — ADR 0070.
+ * WHICH OF A RECORD'S THREE READINGS ITS ROW CARRIES — ADR 0070, extended by
+ * ADR 0078.
  *
- * `written` is the drawing's own choice and stays the default: this is a record
- * of what you GOT, and what you got is what was delivered. `heard` shows the
- * recogniser's own words in the same rows, which is the reading the screen
- * could not give at all before — the pair was one click deep behind *View raw*,
- * per record, and judging transcription accuracy means scanning rather than
- * opening 174 folds.
+ * `title` is the default and it is what the model named the record (ADR 0077).
+ * A list of 174 rows each opening with the first sentence of a dictation cannot
+ * be scanned — every row starts mid-thought, and the eye has nothing to land
+ * on. The title is the same string the transcript's filename is built from, so
+ * the folder and this list agree about what a record is called.
  *
- * NO FALLBACK IN `heard`, DELIBERATELY. If the recogniser produced nothing, the
- * row says so; borrowing the transformed text under a control that says "Heard"
- * would put the AI's sentence behind a label promising the opposite, which is
- * the fake-readiness rule applied to a word instead of a state.
+ * `written` is the drawing's own reading and what the screen showed before: a
+ * record of what you GOT, which is what was delivered.
+ *
+ * `heard` shows the recogniser's own words in the same rows, which is the
+ * reading the screen could not give at all before ADR 0070 — the pair was one
+ * click deep behind *View raw*, per record, and judging transcription accuracy
+ * means scanning rather than opening 174 folds. That job is why the segment
+ * keeps all three rather than being replaced by the title.
+ *
+ * TWO DIFFERENT FALLBACK RULES, AND THE DIFFERENCE IS THE POINT.
+ *
+ * `title` falls back to the written text, because a record from before ADR 0077
+ * — or one the model could not name — still has to say something, and its own
+ * words are the honest stand-in. Nothing is claimed by that: the segment says
+ * `Title` and the row shows the record's opening, which is what a title would
+ * have been made from.
+ *
+ * `heard` does NOT fall back. If the recogniser produced nothing, the row says
+ * so; borrowing the transformed text under a control that says "Heard" would
+ * put the AI's sentence behind a label promising the opposite, which is the
+ * fake-readiness rule applied to a word instead of a state.
  */
 function titleOf(entry: TranscriptionHistoryEntry, shows: ShownText): string {
+  if (shows === "title") {
+    const named = (entry.title ?? "").trim();
+    if (named) return named;
+  }
   const text =
     shows === "heard"
       ? (entry.raw_transcript ?? "").trim()
@@ -232,7 +254,7 @@ interface HistoryRow {
   meta: string[];
   badges?: ListItemBadge[];
   raw: RawTranscript;
-  audioKept: boolean;
+  retryDisabledReason?: string;
   restorable: boolean;
   /** The record's own file, where it wrote one (ADR 0074). */
   transcriptPath?: string | null;
@@ -261,6 +283,27 @@ const SEARCH_DEBOUNCE_MS = 250;
  *  was swept. The reason IS the label, because `IconButton`'s label is its
  *  tooltip and a disabled control with no explanation is the same defect
  *  quieter. */
+/**
+ * WHY A RETRY CANNOT RUN, OR NOTHING — and it is the RUNTIME's rule rather than
+ * a guess at it.
+ *
+ * `retry_transcription_history_entry` has two paths: with a raw transcript it
+ * re-runs the transform, and only without one does it need the kept capture to
+ * re-transcribe from. So the single condition that matters is "is there
+ * anything left to work from", and a record that has neither says which.
+ *
+ * The screen used to disable Retry on a missing `audio_path` alone. A
+ * successful run deletes its audio, so that greyed the control out on every
+ * completed record — the entire set somebody would actually want to re-run
+ * after fixing a profile or changing a model, which since ADR 0075 re-runs in
+ * the record's own mode.
+ */
+export function retryDisabledReason(entry: TranscriptionHistoryEntry): string | undefined {
+  const hasTranscript = Boolean((entry.raw_transcript ?? "").trim());
+  if (hasTranscript || entry.audio_path) return undefined;
+  return "Retry — no transcript and no recording left to re-run";
+}
+
 const REVEAL_HAS_NO_FILE =
   "Show in file manager — this run produced no text, so no file was written";
 
@@ -285,7 +328,7 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
      list is showing, and a segment shows both readings and the current one at
      once — a reader scanning for recogniser errors has to be able to see which
      text they are scanning without opening a control to find out. */
-  const [shows, setShows] = useState<ShownText>("written");
+  const [shows, setShows] = useState<ShownText>("title");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -343,9 +386,7 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
           ],
           badges: badgesFor(entry),
           raw: rawOf(entry),
-          /* Kept audio is the only thing Retry can re-run, and the runtime says
-             so by whether it still has a path. */
-          audioKept: Boolean(entry.audio_path),
+          retryDisabledReason: retryDisabledReason(entry),
           /* Offered where the text did not reach the cursor — the one case
              where placing it again is a thing to do. */
           restorable:
@@ -449,7 +490,7 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
                   meta={row.meta}
                   badges={row.badges}
                   raw={row.raw}
-                  audioKept={row.audioKept}
+                  retryDisabledReason={row.retryDisabledReason}
                   restorable={row.restorable}
                   busy={busyId === row.id}
                   open={openRaw === row.id}

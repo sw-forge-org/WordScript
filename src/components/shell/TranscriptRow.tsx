@@ -15,9 +15,14 @@ import { ListItem, type ListItemBadge, type RawTranscript } from "./ListItem";
  *
  * ORDER. Read, locate, redo, take, destroy. The two that only look are first,
  * the one that cannot be undone is last and is the only one that tones.
- * `Retry` keeps its shipped name — it re-runs the pipeline over kept audio
- * (ADR 0039), so a row whose audio has been swept cannot use it and says so by
- * disabling the control rather than by hiding it.
+ *
+ * `Retry` keeps its shipped name, and WHY it cannot run is the caller's to say
+ * rather than this row's. It used to take `audioKept` and disable itself
+ * whenever the capture was gone — which is one of the runtime's two retry
+ * paths, not both: a record that still holds its raw transcript re-runs the
+ * transform and needs no audio at all (ADR 0075). A successful run deletes its
+ * audio, so that condition greyed the control out on every completed record
+ * while the runtime would have re-run any of them.
  *
  * Every row can be shown in the file manager, because every transcript IS a
  * Markdown file (§11.23, ADR 0074). The wired caller passes the record's own
@@ -31,7 +36,7 @@ export function TranscriptRow({
   meta,
   badges,
   raw,
-  audioKept = true,
+  retryDisabledReason: retryLabel,
   restorable,
   open,
   onToggleRaw,
@@ -47,8 +52,9 @@ export function TranscriptRow({
   meta: string[];
   badges?: ListItemBadge[];
   raw: RawTranscript;
-  /** `false` is a record whose audio has been swept. */
-  audioKept?: boolean;
+  /** Why Retry cannot run on this record, or nothing. The caller decides,
+   *  because what a retry NEEDS is the runtime's rule and not this row's. */
+  retryDisabledReason?: string;
   /** The delivery fell back to the clipboard and the text can still be placed. */
   restorable?: boolean;
   open?: boolean;
@@ -89,9 +95,9 @@ export function TranscriptRow({
             onClick={onReveal}
           />
           <IconButton
-            label={audioKept ? "Retry" : "Retry — audio no longer kept"}
+            label={retryLabel ?? "Retry"}
             icon={<Icon name="restore" />}
-            disabled={!audioKept || busy}
+            disabled={Boolean(retryLabel) || busy}
             onClick={onRetry}
           />
           {restorable && (

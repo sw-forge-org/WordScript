@@ -515,6 +515,13 @@ Status: Proposed | Accepted | Superseded by NNNN
   falls back to the first-words slug -- the title decides what a file is called,
   never whether it exists. Passed into the history funnel as an argument, so the
   one synchronous place a file is created stays the only writer.
+- [0078](0078-a-history-row-opens-with-what-the-record-is-called.md):
+  ADR 0070's segment gains a third reading, `Title`, and it is the default -- a
+  list of 174 rows each opening mid-sentence cannot be scanned, and 0077 had
+  already produced the name. `Heard` stays because the job it was added for has
+  not gone away. The title is stored on the record rather than read from the
+  file, so a list render never touches the disk. `Title` falls back to the
+  written text and `Heard` still does not, which is one rule stated twice.
 
 ## Resolved: the number 0011 was used twice
 
@@ -542,8 +549,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0077; the next
-decision takes 0078.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0078; the next
+decision takes 0079.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

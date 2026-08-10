@@ -25,7 +25,7 @@ import {
   resolveTextProfileWorkMode,
 } from "@/lib/textProfiles";
 import type { ProcessingMode } from "@/types/ipc";
-import { badgesFor, rawOf as rawOfEntry } from "./History";
+import { badgesFor, rawOf as rawOfEntry, retryDisabledReason } from "./History";
 import { DESK_CAP, RECENT, rawOf } from "./data";
 import type { PartlyWiredScreenProps } from "./props";
 
@@ -176,7 +176,9 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           /* History's builder, not a second one. Home lists the same record and
              the foot has to make the same claim about it. */
           raw: rawOfEntry(entry),
-          audioKept: Boolean(entry.audio_path),
+          /* History's rule, not a second one: a record with a raw transcript
+             re-runs its transform and needs no capture (ADR 0075). */
+          retryDisabledReason: retryDisabledReason(entry),
           restorable:
             entry.insert_mode === "clipboard_only" ||
             entry.insert_mode === "clipboard_fallback" ||
@@ -203,7 +205,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
         meta: [entry.at, entry.mode, entry.profile],
         badges: entry.badges,
         raw: rawOf(entry),
-        audioKept: entry.audio !== false,
+        retryDisabledReason: entry.audio === false ? "Retry — no transcript and no recording left to re-run" : undefined,
         restorable: Boolean(entry.restore),
         copy: undefined,
         retry: undefined,
@@ -402,7 +404,9 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                 meta={row.meta}
                 badges={row.badges}
                 raw={row.raw}
-                audioKept={row.audioKept}
+                retryDisabledReason={
+                  "retryDisabledReason" in row ? row.retryDisabledReason : undefined
+                }
                 restorable={row.restorable}
                 open={openRaw === row.id}
                 onToggleRaw={() => setOpenRaw((id) => (id === row.id ? null : row.id))}

@@ -63,6 +63,7 @@ function historyEntry(
     active_profile: "General writing",
     work_mode: null,
     effective_mode: "cleanup",
+    title: null,
     transcript_path: null,
     provider_profile: null,
     local_prompt_strength: null,

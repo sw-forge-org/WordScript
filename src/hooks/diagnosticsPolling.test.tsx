@@ -45,6 +45,7 @@ function createHistoryEntry(overrides: Partial<TranscriptionHistoryEntry> = {}):
       recovery_behavior: "standard",
     },
     effective_mode: null,
+    title: null,
     transcript_path: null,
     fallback_acknowledged: false,
     provider_profile: null,

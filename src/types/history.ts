@@ -52,6 +52,10 @@ export interface TranscriptionHistoryEntry {
    *  is the profile's stored setting and keeps `auto` for an Auto record
    *  (ADR 0075). `null` on entries older than the field. */
   effective_mode: ProcessingMode | null;
+  /** What the model called this (ADR 0077). Also the row's heading on History
+   *  (ADR 0078), which is why it is on the record and not only in the file's
+   *  name. `null` on entries older than the field. */
+  title: string | null;
   /** The Markdown file this record was written to (ADR 0074). `null` where
    *  there was no text to write, and on entries older than the store. */
   transcript_path: string | null;

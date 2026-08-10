@@ -83,6 +83,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they replace anything and answer with where it went. The API key is not in an
   archive and the import says so: it lives in the OS secret store, which is the
   one thing about a machine that does not travel.
+- **History's rows open with what the record is called** (ADR 0078). ADR 0070's
+  `Written` / `Heard` segment gains a third reading, `Title`, and it is the
+  default: a list of rows each opening with the first sentence of a dictation
+  starts every line mid-thought and cannot be scanned. `Heard` stays, because
+  the job it was added for — judging transcription accuracy across many records
+  — has not gone away. A record the model never named falls back to its own
+  words.
 - **Home's decision inbox receives a fallen-back delivery** (ADR 0044,
   ADR 0076). The one of its three sources the runtime can already ask about, and
   it draws nothing when nothing is owed — which is the drawing's own rule and
@@ -173,6 +180,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Retry was greyed out on every record that had succeeded.** The control
+  disabled itself whenever `audio_path` was empty — but that is one of the
+  runtime's two retry paths, not both: a record that still holds its raw
+  transcript re-runs the transform and needs no capture at all. A successful run
+  deletes its audio, so the entire set somebody would actually want to re-run
+  after fixing a profile or changing a model was refusing, while the runtime
+  would have re-run any of it. The screens now state the runtime's own rule, and
+  the control is inert only where there is neither a transcript nor a recording.
+  It matters more since ADR 0075, because a retry re-runs the record's mode.
 - **A retried Agent, Prompt Enhance or Translate record re-runs its own mode**
   (ADR 0075). `retry_transcription_history_entry` called the cleanup family's
   transform for every entry, so three of the seven modes came back conservatively

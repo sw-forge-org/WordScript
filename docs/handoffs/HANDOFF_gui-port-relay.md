@@ -1969,34 +1969,53 @@ is the profile's STORED mode and keeps `auto` for an Auto record, so
    in that file that the standing 27px pill-width hypothesis cannot explain. No
    workaround, on the owner's instruction — documented, with a fifth row for the
    measurement table.
-5. **THE STYLE METER IS HONEST ABOUT DROPS AND SILENT ABOUT TRUNCATION.** Both
+5. **RETRY WAS GREYED OUT ON EVERY RECORD THAT HAD SUCCEEDED, and the owner
+   found it by asking why.** `TranscriptRow` disabled the control on a missing
+   `audio_path`, which is one of the runtime's two retry paths and not both: a
+   record holding its raw transcript re-runs the transform and needs no capture.
+   A successful run deletes its audio, so the entire set somebody would want to
+   re-run — after fixing a profile, after changing a model — was refusing, while
+   `retry_transcription_history_entry` would have run any of it. Fixed in this
+   leg. **The class is worth carrying: a UI precondition that is STRICTER than
+   the runtime's is invisible to every test that asserts the control is
+   disabled**, and this one had one.
+6. **THE STYLE METER IS HONEST ABOUT DROPS AND SILENT ABOUT TRUNCATION.** Both
    of the owner's two style rules are 124 and 131 characters and both are cut at
    120 with `...` appended — which is where 256 becomes 247. The meter reads
    black, `dropped` is empty, and two of two rules are losing their tails.
    Leg 5's record says "a meter in the black is a guarantee that nothing was
    dropped"; that is true and it is not the same as nothing being lost. Not
    fixed here — it is the Style card and not on this leg's list — but it is a
-   real gap between what the meter implies and what happened.
-6. **A BANNER CAN GO STALE IN A LEG THAT NEVER OPENED THE SCREEN.** Profiles was
+   real gap between what the meter implies and what happened. Written up as
+   `docs/known-issues/style-rules-are-truncated-without-saying-so.md` with the
+   four possible fixes, all of them product decisions rather than repairs.
+7. **A BANNER CAN GO STALE IN A LEG THAT NEVER OPENED THE SCREEN.** Profiles was
    still saying *"Translate is not a mode the runtime carries"* — false since
    Leg 5, which deleted four control-level reasons and left the banner. It was
    caught in the first native-host screenshot of this leg, before any code was
    written. **When a leg deletes a reason, grep the banners too.**
-7. **`npm test` IS NOT `npm run build`.** The suite was green with a mock whose
+8. **`npm test` IS NOT `npm run build`.** The suite was green with a mock whose
    signature `tsc` rejects, and only the build caught it. Run both; the relay
    says so and this is the leg that paid for it.
-8. **Four orphans, still four.** `DangerRow`, `Inspector`, `PaneGroup`,
+9. **Four orphans, still four.** `DangerRow`, `Inspector`, `PaneGroup`,
    `VolumeSlider`. Nothing was deleted.
-9. **`tauri.conf.json` still names the wrong thing twice** and `mode_router.rs:7`
+10. **`tauri.conf.json` still names the wrong thing twice** and `mode_router.rs:7`
    still cites `OverlayGallery.tsx`. Nine legs have carried these; `src-tauri/`
    has been open for two of them, so they are a choice rather than a rule.
-10. **`port:diff` is 26 measurements now, was 28.** `history` and `privacy` left
+11. **`port:diff` is 26 measurements now, was 28.** `history` and `privacy` left
     the gallery with their screens. Every one is **structural 0 | style 0**
     except `profiles`, which is ADR 0068's recorded departure. **`history`'s
     recorded departure (ADR 0070) is gone with the screen** — the segment is
     still on the product, there is simply nothing left to measure it against.
 
-**Checks at the close.** 437 frontend tests across 39 files (from 427),
+**A SEVENTH ENTRY THE OWNER ADDED AFTER THE LEG WAS PUSHED.** The title
+ADR 0077 produces is useful one row further in: History drew 174 rows each
+opening with the first sentence of a dictation, so the folder had become
+scannable and the list had not. ADR 0078 gives ADR 0070's segment a third
+reading, `Title`, and makes it the default — `Heard` stays, because the job it
+was added for has not gone away. The same look found the Retry defect above.
+
+**Checks at the close.** 439 frontend tests across 39 files (from 427),
 `cargo test` 670 (from 645), `npm run build` green, `port:diff` 25 of 26 at
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.

@@ -37,6 +37,7 @@ function entry(overrides: Partial<TranscriptionHistoryEntry> = {}): Transcriptio
       processing_mode: "cleanup",
     },
     effective_mode: "cleanup",
+    title: "Die Umstrukturierung der Einstellungen",
     transcript_path: "/tmp/transcripts/2026/08/10-0942-e1.md",
     fallback_acknowledged: false,
     provider_profile: null,
@@ -93,7 +94,8 @@ describe("History, wired", () => {
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await waitFor(() => expect(invoked).toHaveBeenCalledWith("transcription_history_entries", expect.anything()));
-    expect(await screen.findByText("Let's ship the settings restructure today.")).toBeInTheDocument();
+    /* The row opens with what the model named it (ADR 0078). */
+    expect(await screen.findByText("Die Umstrukturierung der Einstellungen")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "1 transcription" })).toBeInTheDocument();
     /* The drawing's rows are the gallery's and must not leak onto the product. */
     expect(screen.queryByText("Consolidate insert recovery into a single home.")).not.toBeInTheDocument();
@@ -168,13 +170,26 @@ describe("History, wired", () => {
     );
   });
 
-  it("cannot retry a record whose audio the runtime no longer has", async () => {
+  /* THE RUNTIME'S RULE, NOT HALF OF IT. `retry_transcription_history_entry`
+     re-runs the transform when the record holds a raw transcript and only needs
+     the kept capture when it does not. A successful run deletes its audio, so
+     disabling on `audio_path` alone greyed the control out on every completed
+     record while the runtime would have re-run any of them. */
+  it("retries a record that kept its transcript, with no audio left", async () => {
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* `audio_path` null is the runtime saying there is nothing to re-run
-       (ADR 0039), and the control says so by disabling rather than hiding. */
-    const swept = await screen.findByRole("button", { name: "Retry — audio no longer kept" });
-    expect(swept).toBeDisabled();
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(retry).toBeEnabled();
+  });
+
+  it("refuses only where there is neither a transcript nor a recording", async () => {
+    mockRuntimeHistory([entry({ raw_transcript: null, transformed_transcript: null, audio_path: null })]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const dead = await screen.findByRole("button", {
+      name: "Retry — no transcript and no recording left to re-run",
+    });
+    expect(dead).toBeDisabled();
   });
 
   it("offers Restore to cursor only where the text did not reach the cursor", async () => {
@@ -202,7 +217,7 @@ describe("History, wired", () => {
      Hotkeys), so what they hold moves here rather than being dropped. */
   it("filters on a toolbar, with two controls rather than the shipped three", async () => {
     const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
-    await screen.findByText("Let's ship the settings restructure today.");
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
 
     const toolbar = container.querySelector(".ws-toolbar") as HTMLElement;
     expect(within(toolbar).getByPlaceholderText("Search transcripts…")).toBeInTheDocument();
@@ -221,7 +236,7 @@ describe("History, wired", () => {
 
   it("narrows the list through the runtime's query rather than in the browser", async () => {
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
-    await screen.findByText("Let's ship the settings restructure today.");
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "failed");
     await waitFor(() =>
@@ -338,17 +353,32 @@ describe("Written and Heard", () => {
     transformed_transcript: "Let's ship the settings restructure today.",
   });
 
-  it("titles the rows with the written text until asked otherwise", async () => {
+  it("titles the rows with what the model named them until asked otherwise", async () => {
     mockRuntimeHistory([pair]);
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    expect(await screen.findByText("Let's ship the settings restructure today.")).toBeInTheDocument();
+    expect(await screen.findByText("Die Umstrukturierung der Einstellungen")).toBeInTheDocument();
   });
 
-  it("swaps every title to the recogniser's own words", async () => {
+  /* A record from before ADR 0077 has no title, and its own words are the
+     honest stand-in — the segment says `Title` and shows the opening, which is
+     what a title would have been made from. */
+  it("falls back to the written text on a record the model never named", async () => {
+    mockRuntimeHistory([entry({ title: null })]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(
+      await screen.findByText("Let's ship the settings restructure today."),
+    ).toBeInTheDocument();
+  });
+
+  it("swaps every title to the written text, then to the recogniser's own words", async () => {
     mockRuntimeHistory([pair]);
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
-    await screen.findByText("Let's ship the settings restructure today.");
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
+
+    await userEvent.click(screen.getByRole("button", { name: "Written" }));
+    expect(screen.getByText("Let's ship the settings restructure today.")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Heard" }));
     expect(screen.getByText("lets ship the settings restructure today")).toBeInTheDocument();
@@ -372,7 +402,9 @@ describe("Written and Heard", () => {
   /* No fallback under Heard: borrowing the transformed text would put the AI's
      sentence behind a label promising the opposite. */
   it("says nothing was heard rather than borrowing the written text", async () => {
-    mockRuntimeHistory([entry({ raw_transcript: null, transformed_transcript: "Cleaned up." })]);
+    mockRuntimeHistory([
+      entry({ title: null, raw_transcript: null, transformed_transcript: "Cleaned up." }),
+    ]);
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
     await screen.findByText("Cleaned up.");
 

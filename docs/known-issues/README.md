@@ -184,6 +184,14 @@ status change. Resolved bugs remain as references for the same failure class.
   Also qualifies the `switch` → `switcht` classification in the entry above —
   the same suffix in an imperative is this defect, so a token-level metric cannot
   separate them.
+- [style-rules-are-truncated-without-saying-so.md](style-rules-are-truncated-without-saying-so.md):
+  open, found by looking (2026-08-10) — a style rule past 120 characters is cut
+  with `...` appended and the budget meter stays black, because truncation is
+  not a *drop* and only drops turn it red. On the owner's own profile both of
+  two rules are truncated: 256 characters in the field, 247 counted, two tails
+  gone and nothing on screen saying so. The meter is correct; what a black meter
+  MEANS is the gap. Four possible fixes are listed, all of them product
+  decisions rather than repairs.
 - [macos-port-is-a-second-platform-backend.md](macos-port-is-a-second-platform-backend.md):
   open, scope record (2026-08-03) — what a macOS build actually costs. The
   conclusion "second backend, not a port" holds, but the blocker sits elsewhere
