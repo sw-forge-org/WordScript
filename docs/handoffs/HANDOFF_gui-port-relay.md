@@ -149,7 +149,7 @@ gallery of four sections.
 | **4a** | The interaction model the demo GUI never settled | *Done.* Five ADRs (0060–0064) and three roadmap entries; no code, and the six are still mounted nowhere. Five surfaces got a lifecycle; live subtitles got a candidate entry and stays undecided on purpose. §2.6 |
 | **4b** | The seam, P1, P2, the rebuild lab, and the first four sections | *Done.* `WorkspaceRuntime` is the seam and a wired screen's `runtime` prop is REQUIRED, so ADR 0057 is enforced by the compiler; About, Diagnostics (and its pop-out), General and Delivery & Insert read the runtime; 21 gallery entries left |
 | **4c** | The remaining six wireable sections | Hotkeys, History, Profiles, AI Models wired; Home and Privacy & Data wired in part and still saying so. Context, Notes & Meetings, Agents and Integrations keep their banners — they are V2 or Phase 8 |
-| **5** | Runtime contracts | §11.36 and §11.52, prioritised by what Leg 4 found blocking |
+| **5** | Runtime contracts | *Done.* The seventh `ProcessingMode` with its own prompt module (ADR 0041, 0071, 0072, 0073), `analyze_communication_style` over IPC, and `AppConfig.color_scheme`. Three §2.5 entries closed, three added. The native-host check is owed |
 | **6** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
 
 Legs 2 and 4 are large and may split into sub-legs (2a, 2b, …). A leg that
@@ -1677,6 +1677,153 @@ the overlay out of scope.
   the pill and the notification were both checked without a fourth build.
 - The AppImage step still fails on `linuxdeploy`; the binary is built and runs.
 
+### Leg 5 — the first leg into `src-tauri/`, and the mode that had been naming its own absence on two screens
+
+**THE FIRST THREE ENTRIES ARE DONE, AND A FOURTH THE OWNER ASKED FOR MID-LEG.**
+`ProcessingMode::Translate` exists and is selectable (ADR 0071),
+`analyze_communication_style` returns the budget the meters had been mirroring,
+`AppConfig.color_scheme` persists what the palette's theme rows change, and the
+overlay names the target language (ADR 0073). Five commits. Entries 4 through 8
+of the Leg 5 prompt are untouched and are Leg 6's.
+
+**THE THING TO TAKE FROM THIS LEG: A DRAWING CAN BE OLDER THAN A DECISION, AND
+FOLLOWING IT PAST ONE IS A REAL DEFECT.** ADR 0041 gave Translate four settings
+and the prototype draws all four inside the Translate job on AI Models, two of
+them tagged `Per profile`. So they were built there. Then the owner asked how the
+mode is actually used, and the answer was three screens for one decision: pick
+Translate on Profiles, set the language on AI Models, bind a key on Hotkeys.
+**ADR 0068 had ruled on exactly this two days earlier**, for the communication
+style, and its rejected alternative is one line — *beside the Rewrite job on AI
+Models, which is machine-scope for a profile-scope value*. The drawing predates
+the decision. ADR 0072 moves the two per-profile rows onto `Profiles → Defaults`
+under the mode select and leaves them STATED on AI Models with the scope tag as
+the door. **Before following the drawing, check whether a later ADR has already
+answered the question it is answering.**
+
+**AND THE SECOND ONE: THE OWNER REMEMBERED A DOCUMENTED WORKSPACE TAB, AND WAS
+RIGHT ABOUT THE DOCUMENT AND WRONG ABOUT WHICH SURFACE.** ADR 0064 makes the
+translation WINDOW a workspace view with a pop-out; it is a roadmap candidate
+gated on streaming recognition per direction and text-to-speech, and neither
+exists. ADR 0041's MODE is a different surface of the same capability, and the
+prototype separates them under a heading that says so in as many words
+(`demo.js:6911`, *"It is not the Translate mode, and it is not a second one"*).
+Both records were quoted back rather than paraphrased, and that settled it in one
+exchange. **The repo answers this class of question better than a rebuild does.**
+
+**WHAT TRANSLATE ACTUALLY COST, against "one variant and one config field" in
+the prompt.** The variant and the field are real, but the mode owns a prompt:
+`core::translate` is a new module, because the correction prompt carries a global
+rule that forbids translating and orders the language mix kept as dictated. A
+translation cannot be that prompt with a flag on it — which is ADR 0041's own
+argument, arriving as code. Four settings, two scopes, a seventh hotkey slot, a
+seventh cycle entry, the overlay union, and the same-language behaviour written
+into the prompt as a fixed consequence while the model still decides whether the
+two languages match.
+
+**IT SHIPS AHEAD OF ITS PHASE AND THAT IS RECORDED, NOT HIDDEN** (ADR 0071).
+`ROADMAP.md:154` files the mode under Phase 4 because translation is where model
+quality shows first. It runs on the chat model the product already has,
+`llama-3.3-70b-versatile`. A mode with a mediocre model beats a control that
+cannot act; the Phase 4 argument is an argument for a better model, not for no
+mode, and it stays true afterwards.
+
+**THE BUDGET METERS WERE HALF-HONEST AND ARE NOW WHOLE.** The runtime collapses
+whitespace, drops a repeated rule and truncates a rule past 120 characters
+before it counts, and every one of those only ever reduces — so the mirrored
+count was a guarantee in one direction and a "maybe" in the other. A meter in the
+red now means the runtime really did drop something. **The `dropped` list is not
+drawn, on the owner's call**: the field's hint states the two rules a reader can
+act on and `REFERENCE.md` carries the exhaustive table. A card enumerating the
+declined lines would be a second place for style rules to live.
+
+**WHAT IS DRAWN AND INERT, WITH THE REASON WHERE A READER CAN REACH IT.**
+
+1. **`Into` and `Keep the profile's words` on AI Models.** Disabled and showing
+   what the active profile holds, with the `Per profile` tag beside each as the
+   working door (ADR 0072). Both classes already had a `disabled` rule from
+   Leg 4c, so no new state was introduced.
+2. **The language chip on the processing surface.** Drawn, no handler. By then
+   the language is spent, and a press would change the next session while the
+   chip states this one.
+3. **Everything Leg 4c left inert is still inert**, minus the two Translate
+   controls whose reasons this leg deleted.
+
+**WHAT LEG 5 REMOVES FROM §2.5.**
+
+- **Translate has no runtime mode** — closed. The Hotkeys row and the Profiles
+  option both act, and both reason comments are gone from the source.
+- **The style budget is not exposed over IPC** — closed.
+  `analyze_communication_style` is registered and the meters read it.
+- **No config field carries the colour scheme** — closed. `color_scheme` is on
+  `AppConfig`, normalized to one of three, defaulting to `dark`.
+
+**WHAT LEG 5 ADDS TO §2.5.**
+
+- **`retry_transcription_history_entry` does not route by mode.** A retried
+  Translate record comes back cleaned up rather than translated, exactly as a
+  retried Agent or Prompt Enhance record does. Pre-existing for two modes,
+  visible for three now. **One job for all three, not one for Translate.**
+- **§15.3's native half is still owed.** `color_scheme` persists the choice and
+  the workspace follows it; `window.theme()` and the Tauri theme-changed event
+  are not wired, and the overlay window does not read the scheme at all. The
+  overlay is rule 5 and was left alone apart from what the mode forced.
+- **The gallery cannot reach a wired screen's runtime states**, which is what
+  made the Style meter and the two AI Models rows unverifiable outside the
+  native host. Not new, but this leg is the first where it blocked a check.
+
+**Findings for Leg 6.**
+
+1. **`npm run port:diff` WAS BROKEN ON EVERY SCREEN AND NOTHING SAID SO.** Its
+   Chromium path was pinned to `chromium-1232`, a Playwright revision that no
+   longer exists on this machine, and the failure was a bare `ENOENT` from
+   `spawn` with no message about why. It resolves the newest installed revision
+   now and errors with an instruction if there is none. **A check that cannot
+   run is worse than a check that fails.**
+2. **`import -window` no longer works on this machine.** Leg 4d's screenshot
+   instrument fails with `missing an image filename` for every argument,
+   including `-window root`, although the X11 delegate is built in.
+   `spectacle -f -b -n -S -e -o <file>` works, and the desktop is **two monitors
+   at a 1.6 device-pixel scale** (`6912x2508` for a `4320x1568` logical layout),
+   so a crop to an `xdotool` geometry must multiply by 1.6 first. That cost
+   several attempts and is written down so it costs none next time.
+3. **THE NATIVE-HOST CHECK DID NOT HAPPEN AND THAT IS THE ONE THING THIS LEG
+   OWES.** A `tauri dev` host was up the whole leg and hot-reloading, but the
+   window sat behind the owner's browser and then moved off-screen, and raising
+   it would have taken the focus of somebody working at the machine. The pill
+   was measured in Chromium instead — see finding 4 — and the four wired
+   surfaces were not looked at. Every state involved is one the design system
+   already draws: `.ws-sel` and `Toggle` have had `disabled` rules since Leg 4c,
+   and nothing new was disabled. **Look at Profiles → Defaults under Translate,
+   the Style meter, the AI Models Translate rows and the pill before building on
+   them.**
+4. **The pill was measured rather than argued about.** In the gallery's overlay
+   page: the language chip is **30 px** and the recording pill in Translate is
+   **282 px** unscaled, against the 480 px window whose overflow clips the
+   rounded ends. The widest pill on the page is 427 px and is unaffected. That
+   is real headroom, in Chromium metrics; WebKitGTK differs and not by 200 px.
+5. **A `Write` to a path that already exists overwrites it silently.**
+   `WorkspaceWindow.test.tsx` existed with 17 tests and was replaced with 4. It
+   was caught because the suite total FELL — 417 to 404 across a leg that only
+   added tests — and recovered from git in full. **Watch the total, not the
+   colour.**
+6. **Four orphans, still four.** `DangerRow`, `Inspector`, `PaneGroup`,
+   `VolumeSlider`. Nothing was deleted.
+7. **`tauri.conf.json` still names the wrong thing twice**, `mode_router.rs:7`
+   still cites `OverlayGallery.tsx`, and the gallery still has no door in the
+   native host. Eight legs have carried these, and **`src-tauri/` is open now**,
+   so two of the three stopped being rule 6 and started being a choice.
+8. **`port:diff` is 26 of 28 at zero and the two recorded departures, unchanged
+   through five commits.** `models` moved to structural 0 and back within the
+   leg, which is the script doing its job: wiring the four Translate rows left
+   it at zero, and it was the ADR 0072 rewrite that had to be checked rather
+   than assumed. `profiles` never moved — the two new rows render only under
+   Translate and the gallery's drawn mode is `auto`.
+
+**Checks at the close.** 427 frontend tests across 39 files (from 414 across 38),
+`cargo test` 645 (from 623), `npm run build` green, `port:diff` 26 of 28 at
+structural 0 | style 0. The suite was run after every commit and twice at the
+end.
+
 ### Leg 4d — the surface nobody could see, the surface nobody had ported, and one decision the owner handed back
 
 **ALL FOUR POINTS ARE DONE, AND A FIFTH THAT WAS ONLY "TO BE DISCUSSED".** The
@@ -2432,7 +2579,134 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 5
+## The prompt for Leg 6
+
+You are picking up WordScript after Leg 5. Work in the repo root on `main`. Do
+not create a branch. **`src-tauri/` is open** — Leg 5 opened it and the rule that
+kept it shut is spent.
+
+### What is already true
+
+**Every screen the prototype drew stands, every wireable one is wired, and the
+three cheapest runtime contracts are closed.** `ProcessingMode` has seven values
+and Translate is selectable, settable and states its target language on the
+overlay; `analyze_communication_style` answers what the two style fields cost;
+`AppConfig.color_scheme` persists the theme. `npm run port:diff` is 26 of 28 at
+**structural 0 | style 0** with the two RECORDED departures — `profiles`
+(ADR 0068's sixth tab) and `history` (ADR 0070's segment). A third departure
+needs its own ADR.
+
+**Nothing you find is a surprise.** §2.5 is the list of what the runtime cannot
+answer, and Leg 5's record says which three entries it closed and which three it
+added.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 5's record is your starting
+state and it owes you one thing: the native-host check it did not get.** Leg 4c's
+record below it carries the disabled-state rule you are still held to. Then
+`CLAUDE.md`, `docs/spec/SPEC.md`, and `src/screens/props.ts`.
+
+### The order, and the first one is a debt rather than a feature
+
+1. **LOOK AT LEG 5'S FOUR SURFACES IN THE NATIVE HOST**, before building on
+   them: `Profiles → Defaults` with the mode on Translate (two rows that appear
+   and disappear), the Style tab's budget meter reading a runtime number, the
+   two disabled Translate rows on AI Models with their `Per profile` tag, and
+   the pill's language chip. Every state involved is one the design system
+   already draws and nothing new was disabled, so this is a confirmation rather
+   than a hunt — but Leg 4c found five missing CSS rules exactly this way, and
+   every one of them had a passing test. Leg 5's findings 2 and 3 tell you how
+   to take the screenshot on this machine and why `import -window` will not.
+2. **A reveal command.** `Show transcripts in file manager` is inert on History,
+   on Home and in the palette — three surfaces, one hole. Coupled to the next
+   one: there is nothing per transcript to reveal.
+3. **The Markdown-file promise.** The drawing says every transcript is a file in
+   `~/WordScript/transcripts`; the runtime keeps one `history.json`. Leg 4c made
+   the product state the truth and left the promise as a contract. Decide whether
+   it is kept or retired, in an ADR, before writing either.
+4. **Route the history retry by mode.** A retried Agent, Prompt Enhance or
+   Translate record comes back as a conservative cleanup, because
+   `retry_transcription_history_entry` runs the correction transform for every
+   mode. It is one job for all three and Leg 5 added the third; the dispatch it
+   needs is the one already in `lib.rs`.
+5. **Home's decision inbox.** ADR 0044's three sources have no receiver, so the
+   product draws nothing there — the one place on the surface where inventing
+   content would invent a QUESTION. It is why Home still carries a banner.
+6. **Full export, Full import, Reset all settings.** No command at all.
+7. **§15.3's native half.** `window.theme()` and the Tauri theme-changed event,
+   so the shell follows the OS the way the media query does — and the overlay
+   window, which reads no scheme at all today.
+8. **The five missing SURFACES, and they are design rather than runtime.** Add
+   and Edit for replacements and snippets, New profile's rename, and where an
+   `analyze_text_rules` answer goes. The gallery grows them first (ADR 0057).
+   Say in your record if you start this; it is bigger than it looks.
+
+### The rules you will be judged on
+
+**NEVER RENDER FAKE READINESS (rule 7),** in both directions: when you give a
+control its command, DELETE the reason it was carrying. Leg 5 deleted four.
+
+**A CONTROL THAT CANNOT ACT IS DISABLED WITH ITS REASON, AND THE DESIGN SYSTEM
+HAS TO DRAW THAT STATE** (ADR 0065, ADR 0067). `shell.css` has rules for
+`.ws-seg button`, `.ws-provchip`, `.ws-sel`, `.ws-field`, `.ws-kbd-btn`,
+`.ws-flag`, `.ws-cmdk-row` and `.ws-menu button`. Outside that list, look in the
+native host before you believe it. **And there is now one recorded exception:**
+a control whose setting is IRRELEVANT under the current state is hidden, not
+disabled — ADR 0072 draws the line and says why.
+
+**CHECK WHETHER A LATER ADR HAS ALREADY ANSWERED THE QUESTION THE DRAWING IS
+ANSWERING.** Leg 5's one real defect was following the prototype past ADR 0068,
+which had settled the same placement question two days before the code was
+written. The prototype is the source for what a screen looks like; it is not the
+source for a decision made after it.
+
+**A BANNER COMES OFF IN THE COMMIT THAT MAKES IT FALSE, AND THE GALLERY ENTRY
+GOES WITH IT** (ADR 0057). `registry.test.tsx` holds both directions.
+
+### What you must NOT do
+
+- **Do not touch Context**, in any direction. The owner said on 2026-08-10 it is
+  going to be done differently and deliberately did not say how.
+- **Do not mount any of the six undecided surfaces.** ADRs 0060–0064 and one
+  roadmap candidate; `ia.test.tsx`'s last case asserts none is mounted. **The
+  translation VIEW is one of them** (ADR 0064) and is not the Translate mode —
+  the prototype separates the two under a heading that says so, at
+  `demo.js:6911`, and the owner asked about exactly this in Leg 5.
+- **Do not change a drawn screen's copy or layout to make a contract easier.**
+  Where the drawing and the runtime disagree on a FACT, wire the fact and leave
+  the copy.
+- **Do not migrate a config without a backup path.** The owner's machine carries
+  six real profiles, 174 transcriptions, a communication style that was
+  invisible until two days ago, and now a colour scheme and four translate
+  settings.
+- **The overlay is still rule 5** apart from what Leg 5 recorded: ADR 0073's
+  language chip and the seventh mode's label. Nothing else in `overlay*.css` or
+  `OverlayPill.tsx` moves without the owner saying so.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the test
+  TOTAL, not the colour** — Leg 5 silently overwrote a 17-test file with a
+  4-test one and the suite stayed green; the falling count was the only signal.
+  Run the suite twice before believing a failure.
+- `npm run port:diff` after anything that could move a screen. The 28-screen
+  command is in the Leg 4d prompt below; the expected result is 26 zeros plus the
+  two recorded departures.
+- **The native host is the only instrument for a drawn state**, and Leg 5's
+  findings 2 and 3 carry what works on this machine: `import -window` is dead,
+  `spectacle -f -b -n -S -e -o <file>` works, and a crop to an `xdotool`
+  geometry must be multiplied by the 1.6 device-pixel scale first. Do not raise
+  the window past somebody working at the machine — ask.
+- **Do not `pkill -f vite`.** It matches the agent shell's own command line.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 7
+prompt. Then report what you did, what you found, and anything the next leg needs
+that is not already written down.
+
+## The prompt for Leg 5 (spent — kept for the chain's record)
 
 You are picking up WordScript after the GUI port. Work in the repo root on
 `main`. Do not create a branch. **Leg 5 is the first leg allowed into

@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-04
+Status: 2026-08-10
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -34,11 +34,19 @@ Status: 2026-08-04
   wireable at all**, and carrying a banner for that reason rather than for a
   missing commit: Context (V2), Notes & Meetings (V2), Agents (Phase 8,
   ADR 0030), Integrations (Phase 8).
+- **The colour scheme survives a restart** (`AppConfig.color_scheme`, light /
+  dark / system). It is machine-wide rather than per profile, and `system` is a
+  deferral resolved at render time, so `<html data-theme>` always carries
+  `light` or `dark` (ADR 0048). The command palette's three theme rows write it;
+  before 2026-08-10 they changed the window and persisted nothing.
 - **A control the runtime cannot answer for is drawn and inert rather than
   deleted** (ADR 0065, ADR 0067): three of four provider lanes, seven of eight
   provider chips, the profile-list editors, `Show in file manager`, the full
-  export/import/reset trio, and the seventh processing mode. Every one carries
-  its reason. The fourteen pre-port areas were deleted in the commit that
+  export/import/reset trio. Every one carries its reason. **The seventh
+  processing mode left that list on 2026-08-10**: Translate is a mode you can
+  select, bind and run (ADR 0041, ADR 0071), so the two controls that had been
+  naming its absence act, and their reasons were deleted in the commit that made
+  them false. The fourteen pre-port areas were deleted in the commit that
   replaced them (ADR 0054), and the runtime behaviour they carried is now back
   on the ported screens.
 - Settings IA restructuring (2026-06-21, superseded 2026-08-05): the pre-port
@@ -151,13 +159,20 @@ Status: 2026-08-04
   cloud use separate model slots
 - local text profiles for transcription context, dictionary, snippets and
   work-mode defaults in the native transform/insert/history path
-- explicit processing modes (`auto`, `cleanup`, `rewrite`, `agent`,
-  `prompt_enhance`, `verbatim`) with `mode_router` resolution from manual
+- explicit processing modes (`auto`, `cleanup`, `rewrite`, `translate`,
+  `agent`, `prompt_enhance`, `verbatim`) with `mode_router` resolution from manual
   override and profile work-mode; `auto` is resolved per transcription via
   `resolve_auto_mode` (agent name + imperative -> agent; imperative + IDE
   context -> prompt_enhance; else cleanup); the renderer queries the
   effective mode via `resolve_current_processing_mode`; overlay side label
-  and profile dock show the active mode
+  and profile dock show the active mode. `translate` owns its own prompt in
+  `core::translate` rather than a flag on the correction prompt, is never
+  auto-selected, carries no communication style, and takes four settings -- the
+  target language and the profile-words switch per profile on
+  `Profiles -> Defaults`, the same-language behaviour and the address form per
+  machine on AI Models (ADR 0041, ADR 0071, ADR 0072). It ships ahead of its
+  roadmap phase and therefore on the chat model. The overlay states its target
+  language as a two-letter chip and steps it on press (ADR 0073)
 - `workspace_context` with foreground-app detection on macOS, Windows and
   Linux via `run_with_timeout` with dedicated pipe-drain threads
 - `prompt_enhance` mode with `enhance`/`expand` sub-mode and `PromptTarget`
@@ -247,8 +262,11 @@ Status: 2026-08-04
   The legacy globals remain only as migration input for configs predating
   per-profile modes
 - a dedicated Modes tab in settings exposing the active mode, sub-mode,
-  prompt target, the workspace-context switch and seven mode shortcuts
-  (one picker/cycler plus six direct modes) with platform-specific defaults
+  prompt target, the workspace-context switch and eight mode shortcuts
+  (one picker/cycler plus seven direct modes) with platform-specific defaults.
+  Translate's slot ships empty and is the only one that does: `Alt+1` through
+  `Alt+6` are taken, so the seventh mode takes none rather than `Alt+7`
+  (ADR 0041)
 - the agent name, shown in every mode rather than only while Agent is selected,
   because it is also the first criterion Auto routes on (ADR 0023)
 - a per-profile communication style read by Agent and Rewrite: register, length,
