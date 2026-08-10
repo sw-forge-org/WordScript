@@ -221,9 +221,11 @@ describe("WorkspaceWindow · the command palette", () => {
     render(<WorkspaceWindow />);
     const panel = await open(user);
 
-    const reveal = within(panel).getByRole("button", { name: /Show transcripts in file manager/ });
-    expect(reveal).toBeDisabled();
-    expect(reveal).toHaveTextContent("one history file, not one per transcript");
+    /* The reveal row ACTS since ADR 0074 — it opens the folder the transcripts
+       are in, which needs nothing of this session. */
+    expect(
+      within(panel).getByRole("button", { name: /Show transcripts in file manager/ }),
+    ).toBeEnabled();
     /* Nothing has been transcribed in this session and the scratchpad is empty,
        so neither of the two rows that act on a transcript pretends otherwise. */
     expect(within(panel).getByRole("button", { name: /Copy last transcript/ })).toBeDisabled();

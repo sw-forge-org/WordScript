@@ -36,6 +36,11 @@ hound       = "3.5"
 rodio       = "0.22.2"
 regex       = "1"
 semver      = "1"
+# Local civil dates for the transcript store (ADR 0074): the directory a person
+# browses has to be filed under the day they experienced, and a transcript
+# written at 00:30 belongs to that night rather than to the previous UTC day.
+# `clock` is what carries `Local`; nothing else in the crate is used.
+chrono      = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified.

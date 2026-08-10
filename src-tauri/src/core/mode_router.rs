@@ -320,6 +320,115 @@ pub fn set_mode_and_emit<R: Runtime>(
     Ok(resolve_current_processing_mode_sync())
 }
 
+/// WHICH TRANSFORM A CONCRETE MODE RUNS, and it is one answer for every caller
+/// (ADR 0075).
+///
+/// It lived inline in the native pipeline, which meant the pipeline was the
+/// only thing that could route by mode. The history retry could not, so a
+/// retried Agent, Prompt Enhance or Translate record came back as a
+/// conservative cleanup — the transform was re-run through
+/// `apply_native_transform` for every mode, and three of the seven do not go
+/// through it at all.
+///
+/// `mode` must already be concrete. `Auto` is resolved exactly once per
+/// session, upstream, and re-deciding it here would be the second
+/// classification ADR 0020 forbids — so it falls to the cleanup family rather
+/// than reaching for the classifier, and the caller is expected not to hand it
+/// one.
+///
+/// The result is NOT finalized: `finalize_with_text_rules` is the single exit
+/// every mode passes through afterwards, and keeping it outside this function
+/// is what stops a branch from bypassing the profile's dictionary.
+pub async fn apply_mode_transform(
+    text: &str,
+    mode: &ProcessingMode,
+    config: &super::transform::NativeTransformConfig,
+    app_config: &super::config::AppConfig,
+    active_profile: Option<&super::config::TextProfile>,
+) -> super::transform::NativeTransformResult {
+    // The chat model, not the correction model. Agent, Translate and Prompt
+    // Enhance are instruction-following jobs and are explicitly not on the
+    // fastest path (ADR 0041, ADR 0042).
+    let chat_model = || {
+        if config.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+            app_config.local_agent_model.clone()
+        } else {
+            app_config.agent_model.clone()
+        }
+    };
+
+    match mode {
+        ProcessingMode::Agent => {
+            let agent_config = super::agent::AgentConfig {
+                provider: config.provider.clone(),
+                agent_name: config.agent_name.clone(),
+                agent_model: chat_model(),
+                profile_label: config.profile_label.clone(),
+                profile_prompt: config.profile_prompt.clone(),
+                vocabulary: config.vocabulary.clone(),
+                dictionary_entries: config.dictionary_entries.clone(),
+                snippet_entries: config.snippet_entries.clone(),
+                workspace_context: config.workspace_hint.clone(),
+                style: config.style.clone(),
+            };
+            // No second classification. Reaching this arm already means the
+            // mode is Agent: either the user selected it, or Auto committed to
+            // it upstream.
+            let result = super::agent::apply_agent_transform(text, &agent_config).await;
+            super::transform::NativeTransformResult {
+                text: result.text,
+                corrected: result.was_agent,
+                applied_rules: vec!["agent_mode".to_string()],
+                warning: result.warning,
+            }
+        }
+        ProcessingMode::Translate => {
+            let translate_config = super::translate::TranslateConfig {
+                provider: config.provider.clone(),
+                model: chat_model(),
+                settings: config.translate.clone(),
+                profile_prompt: config.profile_prompt.clone(),
+                vocabulary: config.vocabulary.clone(),
+            };
+            let result = super::translate::apply_translate(text, &translate_config).await;
+            super::transform::NativeTransformResult {
+                text: result.text,
+                corrected: result.translated,
+                applied_rules: vec!["translate_mode".to_string()],
+                warning: result.warning,
+            }
+        }
+        ProcessingMode::PromptEnhance => {
+            let enhance_sub_mode = active_profile
+                .and_then(|profile| profile.work_mode.enhance_sub_mode.clone())
+                .or(app_config.enhance_sub_mode.clone())
+                .unwrap_or_default();
+            let enhance_target = active_profile
+                .and_then(|profile| profile.work_mode.target.clone())
+                .or(Some(app_config.enhance_target.clone()))
+                .unwrap_or_default();
+            let enhance_config = super::prompt_enhance::PromptEnhanceConfig {
+                provider: config.provider.clone(),
+                model: chat_model(),
+                sub_mode: enhance_sub_mode.as_str().to_string(),
+                target: enhance_target.as_str().to_string(),
+                profile_prompt: config.profile_prompt.clone(),
+                vocabulary: config.vocabulary.clone(),
+                workspace_context: config.workspace_hint.clone(),
+            };
+            let result =
+                super::prompt_enhance::apply_prompt_enhance(text, &enhance_config).await;
+            super::transform::NativeTransformResult {
+                text: result.text,
+                corrected: result.enhanced,
+                applied_rules: vec!["prompt_enhance".to_string()],
+                warning: result.warning,
+            }
+        }
+        _ => super::transform::apply_native_transform(text, config.clone()).await,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6654,6 +6654,7 @@ name = "wordscript"
 version = "0.2.2-alpha"
 dependencies = [
  "arboard",
+ "chrono",
  "cpal",
  "enigo",
  "hound",

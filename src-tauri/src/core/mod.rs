@@ -18,6 +18,7 @@ pub mod sessions;
 pub mod shortcut;
 pub mod sound;
 pub mod text_rules;
+pub mod transcript_store;
 pub mod transcription_hints;
 pub mod transform;
 pub mod translate;

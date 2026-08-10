@@ -44,6 +44,8 @@ function createHistoryEntry(overrides: Partial<TranscriptionHistoryEntry> = {}):
       insert_behavior: "auto_paste",
       recovery_behavior: "standard",
     },
+    effective_mode: null,
+    transcript_path: null,
     provider_profile: null,
     local_prompt_strength: null,
     local_prompt_carry: null,
@@ -124,6 +126,11 @@ describe("diagnostics polling hooks", () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === "transcription_history_storage_status") {
         return Promise.resolve({ path: "/tmp/history.json" });
+      }
+
+      /* The second store the foot states, read beside the index (ADR 0074). */
+      if (command === "transcript_store_status") {
+        return Promise.resolve({ root: "/tmp/WordScript/transcripts", exists: true });
       }
 
       if (command === "transcription_history_entries") {

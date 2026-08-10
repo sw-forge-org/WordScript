@@ -5,7 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
-use super::config::{AppConfig, TextProfileWorkMode};
+use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::insertion::{
     insert_transcription_from_legacy, NativeClipboardRestoreStatus, NativeInsertDriver,
     NativeInsertMode, NativeInsertRecoveryAction, NativeInsertResult,
@@ -13,9 +13,7 @@ use super::insertion::{
 use super::paths::history_file_path;
 use super::runtime_log;
 use super::sessions::now_ms;
-use super::transform::{
-    apply_native_transform, finalize_with_text_rules, NativeTransformConfig, NativeTransformResult,
-};
+use super::transform::{finalize_with_text_rules, NativeTransformConfig, NativeTransformResult};
 
 const DEFAULT_HISTORY_LIMIT: usize = 200;
 const MS_PER_DAY: u64 = 86_400_000;
@@ -48,6 +46,25 @@ pub struct TranscriptionHistoryEntry {
     pub active_profile: Option<String>,
     #[serde(default)]
     pub work_mode: Option<TextProfileWorkMode>,
+    /// WHAT ACTUALLY RAN, which `work_mode.processing_mode` is not.
+    ///
+    /// The work mode is the profile's stored setting, and `Auto` stays `Auto`
+    /// in it — the resolution happens once, in the pipeline, and was recorded
+    /// nowhere. Two things need the answer: the transcript file states the mode
+    /// its text was produced under (ADR 0074), and a retry has to re-run the
+    /// mode the record ran in rather than a correction (ADR 0075).
+    ///
+    /// `None` on every entry written before the field existed, and on the paths
+    /// that never reached a transform.
+    #[serde(default)]
+    pub effective_mode: Option<ProcessingMode>,
+    /// The Markdown file this record was written to (ADR 0074).
+    ///
+    /// `None` where there was no text to write, and on entries older than the
+    /// store. It is also the ONLY thing that authorises a delete: the runtime
+    /// removes paths an entry names and never walks the directory.
+    #[serde(default)]
+    pub transcript_path: Option<String>,
     pub provider_profile: Option<String>,
     pub local_prompt_strength: Option<String>,
     pub local_prompt_carry: Option<bool>,
@@ -84,6 +101,9 @@ pub struct RecordHistoryEntryRequest {
     pub model: Option<String>,
     pub language: Option<String>,
     pub active_profile: Option<String>,
+    /// The mode the transform actually ran in, where the caller knows it. The
+    /// paths that never reached a transform pass `None`.
+    pub effective_mode: Option<ProcessingMode>,
     pub provider_profile: Option<String>,
     pub local_prompt_strength: Option<String>,
     pub local_prompt_carry: Option<bool>,
@@ -252,8 +272,38 @@ fn record_entry_with_work_mode(
     ensure_loaded(&mut store);
 
     let created_at_ms = now_ms();
+    let id = next_history_id(created_at_ms, store.entries.len());
+
+    /* THE FILE IS WRITTEN HERE BECAUSE THIS IS WHERE A RECORD COMES INTO
+       EXISTENCE (ADR 0074). Every path arrives at this function — the native
+       pipeline, an empty result, an insert failure, a transcription failure and
+       a retry — so "one file per session on every path" is structural rather
+       than a rule five callers have to remember. A record with no written text
+       gets no file, and `write_transcript` answers `None` for it. */
+    let transcript_path = super::transcript_store::write_transcript(
+        &super::transcript_store::TranscriptDocument {
+            id: id.clone(),
+            created_at_ms,
+            written: request.transformed_transcript.clone().unwrap_or_default(),
+            heard: request.raw_transcript.clone(),
+            profile: request.active_profile.clone(),
+            // What ran, falling back to what the profile was set to. The
+            // fallback is only reached on paths that never resolved a mode,
+            // and `Auto` is then the honest answer rather than a guess at
+            // which concrete mode it would have become.
+            mode: request
+                .effective_mode
+                .clone()
+                .or_else(|| work_mode.as_ref().map(|mode| mode.processing_mode.clone())),
+            provider: request.provider.clone(),
+            model: request.model.clone(),
+            insert_mode: request.insert_mode.clone(),
+            audio_path: request.audio_path.clone(),
+        },
+    );
+
     let entry = TranscriptionHistoryEntry {
-        id: next_history_id(created_at_ms, store.entries.len()),
+        id,
         created_at_ms,
         status: request.status,
         source: request.source,
@@ -263,6 +313,8 @@ fn record_entry_with_work_mode(
         language: request.language,
         active_profile: request.active_profile,
         work_mode,
+        effective_mode: request.effective_mode,
+        transcript_path,
         provider_profile: request.provider_profile,
         local_prompt_strength: request.local_prompt_strength,
         local_prompt_carry: request.local_prompt_carry,
@@ -318,8 +370,12 @@ pub fn transcription_history_storage_status() -> Result<TranscriptionHistoryStor
 pub fn clear_transcription_history_entries() -> Result<Vec<TranscriptionHistoryEntry>, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
-    store.entries.clear();
+    // The record is the entry AND its file since ADR 0074. Clearing one and
+    // leaving the other is the drift the ADR exists to prevent, and on this
+    // command it is also what the button says it does.
+    let cleared: Vec<TranscriptionHistoryEntry> = store.entries.drain(..).collect();
     save_history_entries(&store.entries)?;
+    remove_transcript_files(&cleared);
     Ok(Vec::new())
 }
 
@@ -329,8 +385,15 @@ pub fn delete_transcription_history_entry(
 ) -> Result<Vec<TranscriptionHistoryEntry>, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
+    let removed: Vec<TranscriptionHistoryEntry> = store
+        .entries
+        .iter()
+        .filter(|entry| entry.id == request.id)
+        .cloned()
+        .collect();
     store.entries.retain(|entry| entry.id != request.id);
     save_history_entries(&store.entries)?;
+    remove_transcript_files(&removed);
     Ok(store.entries.iter().cloned().collect())
 }
 
@@ -451,19 +514,48 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
     };
 
     let app_config = AppConfig::load_from_disk();
-    let transform_config = transform_config_from_app_config(&app_config);
+    let mut transform_config = transform_config_from_app_config(&app_config);
     let local_history = local_history_context(&app_config);
 
+    /* THE MODE THE RECORD RAN IN, not a correction (ADR 0075).
+       This function used to call `apply_native_transform` for every entry,
+       which is the cleanup family's transform and only theirs — so a retried
+       Agent, Translate or Prompt Enhance record came back conservatively
+       tidied instead of re-run.
+
+       The record is the source, in this order: what actually ran, then the
+       profile's stored mode as it was at record time, then this machine's
+       current one for entries older than either field. Auto is resolved here
+       rather than carried, because an Auto record has no concrete mode to
+       repeat and the router is what decides one. */
+    let retry_mode = resolve_retry_mode(&existing, &app_config);
+    transform_config.apply_preset(retry_mode.transform_preset());
+
     runtime_log::record(format!(
-        "[WordScript] History retry start entry_id={} provider={} post_process={}",
-        existing.id, transform_config.provider, transform_config.post_process,
+        "[WordScript] History retry start entry_id={} provider={} mode={} post_process={}",
+        existing.id,
+        transform_config.provider,
+        retry_mode.as_str(),
+        transform_config.post_process,
     ));
+
+    let active_profile = app_config
+        .text_profiles
+        .iter()
+        .find(|profile| profile.id == app_config.active_text_profile_id);
 
     // Text rules are the pipeline's final stage and no longer run inside
     // `apply_native_transform`, so the retry has to finalize too — otherwise a
     // retried entry would come back without the profile's dictionary applied.
     let transformed = finalize_with_text_rules(
-        apply_native_transform(&raw_transcript, transform_config.clone()).await,
+        super::mode_router::apply_mode_transform(
+            &raw_transcript,
+            &retry_mode,
+            &transform_config,
+            &app_config,
+            active_profile,
+        )
+        .await,
         &transform_config,
     );
     let transformed_text = transformed.text.trim().to_string();
@@ -478,6 +570,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 model: Some(active_model_for_provider(&app_config)),
                 language: optional_non_empty(&app_config.language),
                 active_profile: app_config.active_text_profile_label(),
+                effective_mode: Some(retry_mode.clone()),
                 provider_profile: local_history.provider_profile,
                 local_prompt_strength: local_history.local_prompt_strength,
                 local_prompt_carry: local_history.local_prompt_carry,
@@ -516,6 +609,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             Some(raw_transcript),
             transformed,
             &insert_result,
+            Some(retry_mode.clone()),
         )?;
 
         if insert_result.ok {
@@ -565,6 +659,9 @@ pub fn history_entry_from_insert_result(
     raw_transcript: Option<String>,
     transformed: NativeTransformResult,
     insert_result: &NativeInsertResult,
+    // The mode the transform ran in, where the caller resolved one. `None` on
+    // the paths that never consulted the mode router.
+    effective_mode: Option<ProcessingMode>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -585,6 +682,7 @@ pub fn history_entry_from_insert_result(
             model: Some(active_model_for_provider(app_config)),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
+            effective_mode,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -616,6 +714,7 @@ pub fn record_insert_failure(
     transformed_text: String,
     transformed: NativeTransformResult,
     error: String,
+    effective_mode: Option<ProcessingMode>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -628,6 +727,7 @@ pub fn record_insert_failure(
             model: Some(active_model_for_provider(app_config)),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
+            effective_mode,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -678,6 +778,8 @@ pub fn record_transcription_failure(
             model,
             language,
             active_profile: app_config.active_text_profile_label(),
+            // Nothing was transcribed, so no mode ever ran over anything.
+            effective_mode: None,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -707,6 +809,7 @@ pub fn record_empty_result(
     app_config: &AppConfig,
     raw_transcript: String,
     transformed: NativeTransformResult,
+    effective_mode: Option<ProcessingMode>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -719,6 +822,7 @@ pub fn record_empty_result(
             model: Some(active_model_for_provider(app_config)),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
+            effective_mode,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -844,26 +948,114 @@ fn configured_history_retention_days(config: &AppConfig) -> u32 {
     config.history_retention_days.min(3650)
 }
 
-fn prune_entries_for_runtime(entries: &mut VecDeque<TranscriptionHistoryEntry>) {
-    let (history_limit, history_retention_days) = runtime_history_policy();
-    prune_entries(entries, history_limit, history_retention_days, now_ms());
+/// WHICH MODE A RETRY RE-RUNS (ADR 0075).
+///
+/// Three sources in order, and the order is the point:
+///
+/// 1. `effective_mode` — what actually ran. Present on everything recorded
+///    since the field existed, and the only source that is right for a record
+///    dictated under `Auto`.
+/// 2. `work_mode.processing_mode` — the profile's stored mode at record time.
+///    Right for every concrete mode on an older entry.
+/// 3. This machine's current active profile, for an entry that carries neither.
+///
+/// **`Auto` is resolved rather than repeated.** An Auto record has no concrete
+/// mode to re-run; the router decides one from the transcript, exactly as it
+/// did the first time. The classifier is deliberately not consulted here — that
+/// arm is asynchronous and costs a model call, and `resolve_auto_mode` answers
+/// deterministically for everything a retry can see. Where it cannot, Cleanup
+/// is the conservative answer and is also what the retry did for every mode
+/// before this record.
+fn resolve_retry_mode(entry: &TranscriptionHistoryEntry, app_config: &AppConfig) -> ProcessingMode {
+    let recorded = entry
+        .effective_mode
+        .clone()
+        .or_else(|| {
+            entry
+                .work_mode
+                .as_ref()
+                .map(|work_mode| work_mode.processing_mode.clone())
+        })
+        .unwrap_or_else(|| {
+            app_config
+                .text_profiles
+                .iter()
+                .find(|profile| profile.id == app_config.active_text_profile_id)
+                .map(|profile| profile.work_mode.effective_processing_mode())
+                .unwrap_or_else(|| app_config.processing_mode.clone())
+        });
+
+    if !recorded.is_auto() {
+        return recorded;
+    }
+
+    let text = entry
+        .raw_transcript
+        .as_deref()
+        .or(entry.transformed_transcript.as_deref())
+        .unwrap_or_default();
+
+    match super::mode_router::resolve_auto_mode(text, None, &app_config.agent_name) {
+        super::mode_router::AutoRoute::Decided { mode, .. } => mode,
+        super::mode_router::AutoRoute::NeedsClassifier => ProcessingMode::Cleanup,
+    }
 }
 
+/// Prune, and take the pruned records' files with them.
+///
+/// Retention is a promise Privacy & Data prints as two numbers, and it was only
+/// ever true of the index. Since ADR 0074 a record is also a file, so the sweep
+/// that drops the entry removes the file the entry named — in the same call,
+/// because a retention rule that holds for one of the two stores is worse than
+/// none: it reads as a guarantee and is not one.
+fn prune_entries_for_runtime(entries: &mut VecDeque<TranscriptionHistoryEntry>) {
+    let (history_limit, history_retention_days) = runtime_history_policy();
+    let dropped = prune_entries(entries, history_limit, history_retention_days, now_ms());
+    remove_transcript_files(&dropped);
+}
+
+/// The files of records that are going away, and nothing else. Never a
+/// directory walk (ADR 0074).
+fn remove_transcript_files(entries: &[TranscriptionHistoryEntry]) {
+    for entry in entries {
+        if let Some(path) = entry.transcript_path.as_deref() {
+            super::transcript_store::remove_transcript(path);
+        }
+    }
+}
+
+/// Answers with what it dropped, so the caller can decide what else that record
+/// owned. Kept pure of side effects for the same reason it takes its clock as
+/// an argument: the retention tests drive it directly.
 fn prune_entries(
     entries: &mut VecDeque<TranscriptionHistoryEntry>,
     history_limit: usize,
     history_retention_days: u32,
     reference_now_ms: u64,
-) {
+) -> Vec<TranscriptionHistoryEntry> {
+    let mut dropped = Vec::new();
+
     if history_retention_days > 0 {
         let cutoff_ms =
             reference_now_ms.saturating_sub(u64::from(history_retention_days) * MS_PER_DAY);
-        entries.retain(|entry| entry.created_at_ms >= cutoff_ms);
+        let mut kept = VecDeque::with_capacity(entries.len());
+        for entry in entries.drain(..) {
+            if entry.created_at_ms >= cutoff_ms {
+                kept.push_back(entry);
+            } else {
+                dropped.push(entry);
+            }
+        }
+        *entries = kept;
     }
 
     while entries.len() > history_limit {
-        entries.pop_back();
+        if let Some(entry) = entries.pop_back() {
+            dropped.push(entry);
+        }
     }
+
+    dropped
 }
 
 fn filter_history_entries(
@@ -1020,6 +1212,7 @@ mod tests {
                 model: Some("whisper-large-v3-turbo".to_string()),
                 language: Some("de".to_string()),
                 active_profile: None,
+                effective_mode: None,
                 provider_profile: None,
                 local_prompt_strength: None,
                 local_prompt_carry: None,
@@ -1071,6 +1264,7 @@ mod tests {
             model: None,
             language: None,
             active_profile: None,
+            effective_mode: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1101,6 +1295,7 @@ mod tests {
             model: None,
             language: None,
             active_profile: None,
+            effective_mode: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1149,6 +1344,7 @@ mod tests {
             model: Some("whisper-large-v3-turbo".to_string()),
             language: Some("de".to_string()),
             active_profile: Some("developer".to_string()),
+            effective_mode: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1180,6 +1376,7 @@ mod tests {
             model: Some("base.en".to_string()),
             language: Some("en".to_string()),
             active_profile: Some("support".to_string()),
+            effective_mode: None,
             provider_profile: Some("local-preview-base-quality".to_string()),
             local_prompt_strength: Some("profile_and_terms".to_string()),
             local_prompt_carry: Some(true),
@@ -1239,6 +1436,7 @@ mod tests {
             model: Some("whisper-large-v3-turbo".to_string()),
             language: Some("de".to_string()),
             active_profile: Some("developer".to_string()),
+            effective_mode: None,
             provider_profile: None,
             local_prompt_strength: None,
             local_prompt_carry: None,
@@ -1269,6 +1467,7 @@ mod tests {
             model: Some("base".to_string()),
             language: Some("en".to_string()),
             active_profile: Some("support".to_string()),
+            effective_mode: None,
             provider_profile: Some("local-preview-base-fast".to_string()),
             local_prompt_strength: Some("profile".to_string()),
             local_prompt_carry: Some(false),
@@ -1327,6 +1526,8 @@ mod tests {
                 language: None,
                 active_profile: None,
                 work_mode: None,
+                effective_mode: None,
+                transcript_path: None,
                 provider_profile: None,
                 local_prompt_strength: None,
                 local_prompt_carry: None,
@@ -1359,6 +1560,8 @@ mod tests {
                 language: None,
                 active_profile: None,
                 work_mode: None,
+                effective_mode: None,
+                transcript_path: None,
                 provider_profile: None,
                 local_prompt_strength: None,
                 local_prompt_carry: None,
@@ -1391,6 +1594,8 @@ mod tests {
                 language: None,
                 active_profile: None,
                 work_mode: None,
+                effective_mode: None,
+                transcript_path: None,
                 provider_profile: None,
                 local_prompt_strength: None,
                 local_prompt_carry: None,
@@ -1471,6 +1676,7 @@ mod tests {
                 recovery_message: "Transcript is on the clipboard. Paste manually.".to_string(),
                 clipboard_restore: NativeClipboardRestoreStatus::NotAttempted,
             },
+            None,
         )
         .expect("history entry from insert result");
 
@@ -1493,5 +1699,218 @@ mod tests {
             entry.recovery_message.as_deref(),
             Some("Transcript is on the clipboard. Paste manually.")
         );
+    }
+
+    /// A helper shaped like the funnel's happy path, so the ADR 0074 tests read
+    /// as "record something, then look at what else the record owns".
+    fn completed_request(text: &str) -> RecordHistoryEntryRequest {
+        RecordHistoryEntryRequest {
+            status: TranscriptionHistoryStatus::Completed,
+            source: TranscriptionHistorySource::NativePipeline,
+            retry_of: None,
+            provider: "groq".to_string(),
+            model: Some("whisper-large-v3-turbo".to_string()),
+            language: Some("de".to_string()),
+            active_profile: Some("General writing".to_string()),
+            effective_mode: Some(ProcessingMode::Cleanup),
+            provider_profile: None,
+            local_prompt_strength: None,
+            local_prompt_carry: None,
+            local_beam_size: None,
+            local_best_of: None,
+            raw_transcript: Some(format!("{text} uh")),
+            transformed_transcript: Some(text.to_string()),
+            corrected: true,
+            applied_rules: Vec::new(),
+            transform_warning: None,
+            insert_mode: Some(NativeInsertMode::DirectPaste),
+            active_driver: None,
+            pasted: Some(true),
+            fallback_available: None,
+            fallback_reason: None,
+            recovery_action: None,
+            recovery_message: None,
+            clipboard_restore: None,
+            error: None,
+            audio_path: None,
+        }
+    }
+
+    #[test]
+    fn a_recorded_transcript_is_also_a_file_and_the_entry_names_it() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("transcript-file");
+
+        let entry = record_entry(completed_request("Der Beleg wird eine Datei."))
+            .expect("history entry");
+
+        let path = entry.transcript_path.clone().expect("a transcript path");
+        let body = std::fs::read_to_string(&path).expect("the file");
+        assert!(body.contains(&format!("id: {}", entry.id)));
+        assert!(body.contains("Der Beleg wird eine Datei."));
+        // The heard text differed, so it is kept under its own heading.
+        assert!(body.contains("## Heard"));
+
+        super::super::transcript_store::remove_transcript(&path);
+    }
+
+    /// The `Empty` and `Failed` paths reach the same funnel and must not leave
+    /// an empty document behind (ADR 0074).
+    #[test]
+    fn a_record_without_text_names_no_file() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("transcript-file-empty");
+
+        let mut request = completed_request("ignored");
+        request.status = TranscriptionHistoryStatus::Empty;
+        request.transformed_transcript = None;
+
+        let entry = record_entry(request).expect("history entry");
+        assert_eq!(entry.transcript_path, None);
+    }
+
+    #[test]
+    fn deleting_a_record_deletes_the_file_it_named() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("transcript-file-delete");
+
+        let entry = record_entry(completed_request("Wird wieder geloescht."))
+            .expect("history entry");
+        let path = entry.transcript_path.clone().expect("a transcript path");
+        assert!(PathBuf::from(&path).exists());
+
+        delete_transcription_history_entry(DeleteTranscriptionHistoryEntryRequest {
+            id: entry.id.clone(),
+        })
+        .expect("delete");
+
+        assert!(!PathBuf::from(&path).exists(), "the file outlived its record");
+    }
+
+    #[test]
+    fn clearing_the_history_clears_the_files_with_it() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("transcript-file-clear");
+
+        let first = record_entry(completed_request("Erster Satz.")).expect("first");
+        let second = record_entry(completed_request("Zweiter Satz.")).expect("second");
+        let paths: Vec<String> = [first, second]
+            .iter()
+            .filter_map(|entry| entry.transcript_path.clone())
+            .collect();
+        assert_eq!(paths.len(), 2);
+
+        clear_transcription_history_entries().expect("clear");
+
+        for path in paths {
+            assert!(!PathBuf::from(&path).exists(), "{path} outlived the clear");
+        }
+    }
+
+    /// Retention is printed on Privacy & Data as a promise about everything the
+    /// product keeps. Before ADR 0074 it was only ever true of the index.
+    #[test]
+    fn retention_takes_the_pruned_records_files_with_them() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("transcript-file-retention");
+        // 25 is the floor `runtime_history_policy` clamps to, so the oldest of
+        // 26 is the one the limit pushes out.
+        const LIMIT: usize = 25;
+        set_history_policy_override_for_tests(LIMIT, 90);
+
+        let first = record_entry(completed_request("Faellt aus dem Limit.")).expect("first");
+        let dropped = first.transcript_path.clone().expect("a transcript path");
+        let kept: Vec<String> = (0..LIMIT)
+            .map(|index| {
+                record_entry(completed_request(&format!("Satz Nummer {index}.")))
+                    .expect("entry")
+                    .transcript_path
+                    .expect("a transcript path")
+            })
+            .collect();
+
+        assert!(!PathBuf::from(&dropped).exists(), "retention left a file behind");
+        for path in kept {
+            assert!(PathBuf::from(&path).exists());
+            super::super::transcript_store::remove_transcript(&path);
+        }
+    }
+
+    /// ADR 0075's precedence, and the reason the field exists: an `Auto` record
+    /// carries `auto` in its work mode and the concrete mode nowhere else.
+    #[test]
+    fn a_retry_runs_what_the_record_ran() {
+        let mut entry = sample_entry_for_mode(Some(ProcessingMode::Translate), ProcessingMode::Auto);
+        let config = AppConfig::default();
+        assert_eq!(resolve_retry_mode(&entry, &config), ProcessingMode::Translate);
+
+        // No `effective_mode` — an entry older than the field falls back to the
+        // profile's stored mode.
+        entry.effective_mode = None;
+        entry.work_mode = Some(TextProfileWorkMode {
+            processing_mode: ProcessingMode::Agent,
+            ..TextProfileWorkMode::default()
+        });
+        assert_eq!(resolve_retry_mode(&entry, &config), ProcessingMode::Agent);
+    }
+
+    #[test]
+    fn a_retry_of_an_auto_record_resolves_auto_rather_than_repeating_it() {
+        let entry = sample_entry_for_mode(None, ProcessingMode::Auto);
+        let resolved = resolve_retry_mode(&entry, &AppConfig::default());
+        assert!(!resolved.is_auto(), "Auto reached the transform");
+    }
+
+    fn sample_entry_for_mode(
+        effective_mode: Option<ProcessingMode>,
+        stored: ProcessingMode,
+    ) -> TranscriptionHistoryEntry {
+        TranscriptionHistoryEntry {
+            id: "history-1-0".to_string(),
+            created_at_ms: 1,
+            status: TranscriptionHistoryStatus::Completed,
+            source: TranscriptionHistorySource::NativePipeline,
+            retry_of: None,
+            provider: "groq".to_string(),
+            model: None,
+            language: None,
+            active_profile: None,
+            work_mode: Some(TextProfileWorkMode {
+                processing_mode: stored,
+                ..TextProfileWorkMode::default()
+            }),
+            effective_mode,
+            transcript_path: None,
+            provider_profile: None,
+            local_prompt_strength: None,
+            local_prompt_carry: None,
+            local_beam_size: None,
+            local_best_of: None,
+            raw_transcript: Some("Bitte den Absatz aufraeumen.".to_string()),
+            transformed_transcript: None,
+            corrected: false,
+            applied_rules: Vec::new(),
+            transform_warning: None,
+            insert_mode: None,
+            active_driver: None,
+            pasted: None,
+            fallback_available: None,
+            fallback_reason: None,
+            recovery_action: None,
+            recovery_message: None,
+            clipboard_restore: None,
+            error: None,
+            audio_path: None,
+        }
     }
 }

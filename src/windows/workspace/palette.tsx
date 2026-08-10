@@ -130,7 +130,6 @@ export function paletteMatches(query: string): PaletteEntry[] {
     .map((row) => row.entry);
 }
 
-const REVEAL_HAS_NOWHERE_TO_GO = "no folder — one history file, not one per transcript";
 const NOTHING_TRANSCRIBED_YET = "nothing transcribed yet";
 
 export function CommandPalette({
@@ -174,10 +173,6 @@ export function CommandPalette({
   const blocked = useCallback(
     (action: PaletteAction): string | undefined => {
       switch (action.kind) {
-        /* The same hole History's row has: the runtime keeps one `history.json`
-           and no per-transcript file exists to reveal (§2.5). */
-        case "reveal":
-          return REVEAL_HAS_NOWHERE_TO_GO;
         case "restore":
         case "copy":
           return lastTranscript ? undefined : NOTHING_TRANSCRIBED_YET;
@@ -225,7 +220,11 @@ export function CommandPalette({
         case "copy":
           if (lastTranscript) void navigator.clipboard.writeText(lastTranscript);
           return;
+        /* The COLLECTION rather than one record, which is why it takes no
+           path: History's row reveals the transcript you are looking at, and
+           this row is "where are they kept" (ADR 0074). */
         case "reveal":
+          void invoke("reveal_transcript_in_file_manager", { request: { path: null } });
           return;
       }
     },

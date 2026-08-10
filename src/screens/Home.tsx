@@ -101,7 +101,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   const [openRaw, setOpenRaw] = useState<string | null>(null);
   const [trigger, setTrigger] = useState<string | null>(null);
   const [effectiveMode, setEffectiveMode] = useState<ProcessingMode | null>(null);
-  const { entries, remove, retry } = useTranscriptionHistory(Boolean(runtime?.active));
+  const { entries, remove, retry, reveal } = useTranscriptionHistory(Boolean(runtime?.active));
 
   useEffect(() => {
     if (!runtime?.active) return;
@@ -155,10 +155,14 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
             entry.insert_mode === "clipboard_only" ||
             entry.insert_mode === "clipboard_fallback" ||
             entry.insert_mode === "scratchpad_fallback",
-          /* The same five commands History's rows call. Home lists the same
+          /* The record's own file (ADR 0074), so the sixth control acts here
+             for the same reason the other five do. */
+          transcriptPath: entry.transcript_path,
+          /* The same six commands History's rows call. Home lists the same
              record on the same builder, so it acts the same way — one builder
              was the point of `TranscriptRow` existing. */
           copy: () => void navigator.clipboard.writeText(text),
+          revealFile: () => void reveal(entry.transcript_path),
           retry: () => void retry(entry.id),
           remove: () => void remove(entry.id),
           restore: () =>
@@ -315,13 +319,14 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                 restorable={row.restorable}
                 open={openRaw === row.id}
                 onToggleRaw={() => setOpenRaw((id) => (id === row.id ? null : row.id))}
-                /* The same hole History states, stated the same way — one
-                   `history.json`, no per-transcript file, no reveal command. */
+                /* The same rule History follows: the file exists wherever the
+                   record names one, and the one record without text says so. */
                 revealDisabledReason={
-                  runtime
-                    ? "Show in file manager — the runtime keeps one history file, not one per transcript"
+                  runtime && !("transcriptPath" in row && row.transcriptPath)
+                    ? "Show in file manager — this run produced no text, so no file was written"
                     : undefined
                 }
+                onReveal={"revealFile" in row ? row.revealFile : undefined}
                 onCopy={row.copy}
                 onRetry={row.retry}
                 onDelete={row.remove}

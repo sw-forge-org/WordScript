@@ -5,6 +5,7 @@ import type {
   TranscriptionHistoryEntry,
   TranscriptionHistoryQuery,
   TranscriptionHistoryStorageStatus,
+  TranscriptStoreStatus,
 } from "../types/history";
 
 const REFRESH_INTERVAL_MS = 5000;
@@ -38,9 +39,18 @@ export function useTranscriptionHistory(isActive: boolean) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
+  const [transcriptRoot, setTranscriptRoot] = useState<string | null>(null);
   const activeQueryRef = useRef<TranscriptionHistoryQuery>({});
 
   const refreshStorageStatus = useCallback(async () => {
+    /* Two stores and both are read here, because History's foot states both:
+       the index it reads and the folder the transcripts are in (ADR 0074).
+       Independently, so a runtime that answers one and not the other still
+       states the half it has. */
+    void invoke<TranscriptStoreStatus>("transcript_store_status")
+      .then((next) => setTranscriptRoot(next?.root ?? null))
+      .catch(() => setTranscriptRoot(null));
+
     try {
       const next = await invoke<TranscriptionHistoryStorageStatus>("transcription_history_storage_status");
       setStoragePath(next.path);
@@ -48,6 +58,18 @@ export function useTranscriptionHistory(isActive: boolean) {
     } catch {
       setStoragePath(null);
       return null;
+    }
+  }, []);
+
+  /** Open the file manager on a record's own file, or on the folder when no
+   *  path is given. The runtime refuses anything outside its own root. */
+  const reveal = useCallback(async (path?: string | null) => {
+    try {
+      await invoke("reveal_transcript_in_file_manager", { request: { path: path ?? null } });
+      return true;
+    } catch (cause) {
+      setError(String(cause));
+      return false;
     }
   }, []);
 
@@ -170,6 +192,8 @@ export function useTranscriptionHistory(isActive: boolean) {
   return {
     entries,
     storagePath,
+    transcriptRoot,
+    reveal,
     error,
     isLoading,
     refresh,

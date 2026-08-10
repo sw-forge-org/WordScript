@@ -74,33 +74,6 @@ describe("Home", () => {
   });
 });
 
-describe("History", () => {
-  it("filters on a toolbar, with two controls rather than the shipped three", () => {
-    const { container } = render(<HistoryScreen />);
-    const toolbar = container.querySelector(".ws-toolbar")!;
-    expect(within(toolbar as HTMLElement).getByPlaceholderText("Search transcripts…")).toBeInTheDocument();
-    expect(within(toolbar as HTMLElement).getByLabelText("Status")).toBeInTheDocument();
-    /* The "Errors only" toggle is gone: the select already has Failed, so two
-       controls narrowed the list to the same set and could contradict. */
-    expect(within(toolbar as HTMLElement).queryByRole("switch")).not.toBeInTheDocument();
-    /* A count is the result of a list, not a label on it. */
-    expect(screen.getByRole("heading", { name: "7 transcriptions" })).toBeInTheDocument();
-  });
-
-  it("cannot retry a record whose audio was swept, and says so rather than hiding it", () => {
-    render(<HistoryScreen />);
-    const swept = screen.getByRole("button", { name: "Retry — audio no longer kept" });
-    expect(swept).toBeDisabled();
-    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(HISTORY.length - 1);
-  });
-
-  it("carries the pairing with Privacy & Data as a note, not as a second rule", () => {
-    render(<HistoryScreen />);
-    expect(screen.getByText(/Kept 90 days, capped at 500 entries/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Change the rule in Privacy & Data" })).toBeInTheDocument();
-  });
-});
-
 describe("Privacy & Data", () => {
   it("answers whether anything leaves with a fact, not with a door", () => {
     render(<PrivacyScreen />);

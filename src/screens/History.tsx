@@ -25,8 +25,7 @@ import type {
   TranscriptionHistoryEntry,
   TranscriptionHistoryStatus,
 } from "@/types/history";
-import { HISTORY, rawOf as drawnRawOf } from "./data";
-import type { PartlyWiredScreenProps } from "./props";
+import type { WiredScreenProps } from "./props";
 
 /**
  * HISTORY — `SCREENS.history`, WIRED IN PART, and the banner stays because of
@@ -52,33 +51,28 @@ import type { PartlyWiredScreenProps } from "./props";
  * unchanged, and *View raw* is untouched — the pair per record is still where
  * the two are compared side by side.
  *
- * FIVE OF THE SIX ROW CONTROLS ACT, and the sixth is one of the two reasons
- * this screen keeps its banner:
+ * ALL SIX ROW CONTROLS ACT (ADR 0074 closed the last one):
  *
  *  - **View raw** unfolds the record's two texts.
  *  - **Retry** is `retry_transcription_history_entry`, disabled on a record
  *    whose audio has been swept because there is nothing to re-run (ADR 0039).
+ *    It re-runs the mode the record ran in rather than a correction (ADR 0075).
  *  - **Restore to cursor** is `insert_text_native` with the record's written
  *    text, offered only where the delivery did not reach the cursor.
  *  - **Copy** is the clipboard, the same call About's version row makes.
- *  - **Delete** is `delete_transcription_history_entry`.
- *  - **Show in file manager has neither a path nor a command.** There is one
- *    `history.json` under the user data dir and no per-transcript file; no
- *    reveal command exists in the runtime at all. The button stays drawn and is
- *    DISABLED with the reason as its tooltip (ADR 0065).
+ *  - **Delete** is `delete_transcription_history_entry`, and it takes the
+ *    record's file with it.
+ *  - **Show in file manager** is `reveal_transcript_in_file_manager` on the
+ *    record's own `transcript_path`. Disabled on the one record that has no
+ *    file — a run that produced no text — with the reason as its tooltip
+ *    (ADR 0065), which is the shape Retry already had.
  *
- * AND THE FOOT NO LONGER CLAIMS A FOLDER THAT IS NOT THERE — the second reason.
- * The drawing says "Every transcript is a Markdown file in
- * ~/WordScript/transcripts". It is not:
- * `transcription_history_storage_status` answers with the one file the runtime
- * actually keeps, and on the product that is what the sentence states. This is
- * the same shape as General's device hint — the drawing drew one member of a
- * runtime-derived sentence and the wired path produces the family — rather than
- * a copy edit to make wiring easier. The Markdown-file PROMISE is a Leg 5
- * contract and stays on the relay's §2.5 list; what may not happen is the
- * product telling somebody to look in a folder that does not exist. The
- * per-row path in the raw panel goes for the same reason: `RawTranscript.path`
- * is optional now and the wired path has none.
+ * AND THE FOOT CLAIMS THE FOLDER AGAIN, because it is there. Leg 4c replaced
+ * the drawn sentence with the one file the runtime kept, on the rule that a
+ * product may not send somebody to a folder that does not exist. ADR 0074 built
+ * the folder, so the drawing's sentence is true and comes back — with the
+ * resolved root, because it follows `WORDSCRIPT_DATA_DIR` and this sentence is
+ * about THIS machine.
  *
  * IN THE GALLERY IT IS THE DRAWING, VERBATIM — no runtime, the seven sample
  * rows, the drawn sentence, `port:diff` unchanged. The two paths differ in
@@ -188,6 +182,9 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
     heard,
     written,
     same: identical && !stageRan,
+    /* The record's own file, which the drawing puts in this panel and which
+       the runtime writes since ADR 0074. Absent on a record with no text. */
+    path: entry.transcript_path ?? undefined,
     note:
       entry.transform_warning ??
       (identical && stageRan ? "The AI stage ran and changed nothing." : undefined),
@@ -237,7 +234,10 @@ interface HistoryRow {
   raw: RawTranscript;
   audioKept: boolean;
   restorable: boolean;
+  /** The record's own file, where it wrote one (ADR 0074). */
+  transcriptPath?: string | null;
   act?: {
+    reveal: () => void;
     retry: () => void;
     remove: () => void;
     restore: () => void;
@@ -256,17 +256,26 @@ const STATUS_FILTERS: { value: "" | TranscriptionHistoryStatus; label: string }[
  *  than reaching for `patchText` — nothing here is saved anywhere. */
 const SEARCH_DEBOUNCE_MS = 250;
 
-/** The drawn foot, which is what the gallery is measured against. Its claim is
- *  the §2.5 contract entry; the wired path states the runtime instead. */
-const DRAWN_FOOT =
-  "Every transcript is a Markdown file in ~/WordScript/transcripts. Kept 90 days, capped at 500 entries.";
+/** A record that produced no text has no file (ADR 0074), and that is the only
+ *  remaining case — the same shape Retry already has on a record whose audio
+ *  was swept. The reason IS the label, because `IconButton`'s label is its
+ *  tooltip and a disabled control with no explanation is the same defect
+ *  quieter. */
+const REVEAL_HAS_NO_FILE =
+  "Show in file manager — this run produced no text, so no file was written";
 
-const REVEAL_HAS_NOWHERE_TO_GO =
-  "Show in file manager — the runtime keeps one history file, not one per transcript";
-
-export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
-  const { entries, storagePath, error, refresh, remove, retry, exportEntries } =
-    useTranscriptionHistory(Boolean(runtime?.active));
+export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
+  const {
+    entries,
+    storagePath,
+    transcriptRoot,
+    reveal,
+    error,
+    refresh,
+    remove,
+    retry,
+    exportEntries,
+  } = useTranscriptionHistory(runtime.active);
 
   const [openRaw, setOpenRaw] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -287,7 +296,7 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
   );
 
   useEffect(() => {
-    if (!runtime?.active) return;
+    if (!runtime.active) return;
     if (searchTimer.current !== null) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
       void refresh(query, { background: true });
@@ -295,7 +304,7 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
     return () => {
       if (searchTimer.current !== null) clearTimeout(searchTimer.current);
     };
-  }, [runtime?.active, query, refresh]);
+  }, [runtime.active, query, refresh]);
 
   const act = useCallback(async (id: string, run: () => Promise<unknown>) => {
     setBusyId(id);
@@ -322,8 +331,7 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
     }
   }, [exportEntries, query]);
 
-  const rows: HistoryRow[] = runtime
-    ? entries.map((entry) => {
+  const rows: HistoryRow[] = entries.map((entry) => {
         const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
         return {
           id: entry.id,
@@ -344,7 +352,10 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
             entry.insert_mode === "clipboard_only" ||
             entry.insert_mode === "clipboard_fallback" ||
             entry.insert_mode === "scratchpad_fallback",
+          /* The file exists exactly where the record names one. */
+          transcriptPath: entry.transcript_path,
           act: {
+            reveal: () => void reveal(entry.transcript_path),
             retry: () => void act(entry.id, () => retry(entry.id)),
             remove: () => void act(entry.id, () => remove(entry.id)),
             restore: () =>
@@ -356,16 +367,7 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
             copy: () => void navigator.clipboard.writeText(text),
           },
         };
-      })
-    : HISTORY.map((entry) => ({
-        id: entry.id,
-        title: shows === "heard" ? (entry.heard ?? entry.text) : entry.text,
-        meta: [entry.at, entry.mode, entry.profile],
-        badges: entry.badges,
-        raw: drawnRawOf(entry),
-        audioKept: entry.audio !== false,
-        restorable: Boolean(entry.restore),
-      }));
+  });
 
   const count = rows.length;
   /* The count is the result of the filters, so it says which set it counted
@@ -375,14 +377,20 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
     ? `${count} ${count === 1 ? "match" : "matches"}`
     : `${count} ${count === 1 ? "transcription" : "transcriptions"}`;
 
-  const foot = runtime
-    ? (notice ??
-      `Every transcription is kept in ${
-        storagePath ?? "the WordScript data directory"
-      }. Kept ${runtime.config.history_retention_days} days, capped at ${
-        runtime.config.history_limit
-      } entries.`)
-    : DRAWN_FOOT;
+  /* THE DRAWN SENTENCE IS TRUE AGAIN (ADR 0074). Leg 4c replaced it with the
+     one file the runtime kept, because a product may not send somebody to a
+     folder that is not there. The folder is there now, so the claim goes back
+     — with the resolved root rather than the drawing's `~/WordScript/…`, since
+     the root follows `WORDSCRIPT_DATA_DIR` and this sentence is about THIS
+     machine. The index is named after it: it is where a retry reads from and
+     is the second thing a reader of this foot may want to find. */
+  const foot =
+    notice ??
+    `Every transcript is a Markdown file in ${
+      transcriptRoot ?? "~/WordScript/transcripts"
+    }. Kept ${runtime.config.history_retention_days} days, capped at ${
+      runtime.config.history_limit
+    } entries${storagePath ? `, indexed in ${storagePath}` : ""}.`;
 
   return (
     <>
@@ -446,7 +454,10 @@ export function HistoryScreen({ banner, runtime }: PartlyWiredScreenProps = {}) 
                   busy={busyId === row.id}
                   open={openRaw === row.id}
                   onToggleRaw={() => setOpenRaw((id) => (id === row.id ? null : row.id))}
-                  revealDisabledReason={runtime ? REVEAL_HAS_NOWHERE_TO_GO : undefined}
+                  revealDisabledReason={
+                    row.transcriptPath ? undefined : REVEAL_HAS_NO_FILE
+                  }
+                  onReveal={row.act?.reveal}
                   onRetry={row.act?.retry}
                   onDelete={row.act?.remove}
                   onRestore={row.act?.restore}

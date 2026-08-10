@@ -19,13 +19,12 @@ import { ListItem, type ListItemBadge, type RawTranscript } from "./ListItem";
  * (ADR 0039), so a row whose audio has been swept cannot use it and says so by
  * disabling the control rather than by hiding it.
  *
- * ~~Every row can be shown in the file manager, because every transcript is a
- * Markdown file (§11.23).~~ **The drawing says so and the runtime does not do
- * it.** There is one `history.json` under the user data dir, no per-transcript
- * file, and no reveal command — so the wired caller passes
- * `revealDisabledReason` and the button stays drawn and inert (ADR 0065)
- * instead of pointing at a folder that does not exist. The gallery passes
- * nothing and keeps the drawing, which is what keeps `port:diff` exact.
+ * Every row can be shown in the file manager, because every transcript IS a
+ * Markdown file (§11.23, ADR 0074). The wired caller passes the record's own
+ * path; a record that produced no text has no file and passes
+ * `revealDisabledReason` instead, which keeps the control drawn and inert with
+ * its reason (ADR 0065) rather than hidden. The gallery passes neither and
+ * keeps the drawing, which is what keeps `port:diff` exact.
  */
 export function TranscriptRow({
   title,

@@ -109,7 +109,6 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     id: "history",
     label: "History",
     icon: "history",
-    banner: saysSo("Wired in part — Show in file manager has no path and no command, and a transcript is not a file on disk yet."),
     render: (props) => <HistoryScreen {...props} />,
   },
   {
@@ -117,7 +116,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     label: "Profiles",
     icon: "profiles",
     layout: "pane",
-    banner: saysSo("Wired in part — Add, Edit and New profile have no drawn editor behind them, and Translate is not a mode the runtime carries."),
+    banner: saysSo("Wired in part — Add, Edit and New profile have no drawn editor behind them."),
     render: (props) => <ProfilesScreen {...props} />,
   },
   {

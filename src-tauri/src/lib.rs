@@ -1598,7 +1598,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     response.text.len(),
                     response.duration,
                 ));
-                let transformed = {
+                // The mode leaves this block with the text: the history record
+                // states what ran rather than what the profile was set to, and
+                // the transcript file states the same (ADR 0074, ADR 0075).
+                let (transformed, effective_mode) = {
                     let app_config = pipeline_app_config.clone();
                     let active_profile = app_config
                         .text_profiles
@@ -1623,7 +1626,6 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     // dictionary and snippets already followed (ADR 0025).
                     let agent_name = transform_config.agent_name.clone();
                     let communication_style = transform_config.style.clone();
-                    let translate_settings = transform_config.translate.clone();
 
                     // Workspace context is detected at most once per session and
                     // then reused by every branch. It used to be detected twice on
@@ -1713,131 +1715,29 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     mode_transform_config.workspace_hint = workspace_context.clone();
                     mode_transform_config.style = communication_style.clone();
 
-                    let raw_transform = match effective_mode {
-                        core::config::ProcessingMode::Agent => {
-                            let agent_model = if transform_config.provider
-                                == core::providers::LOCAL_PREVIEW_PROVIDER_ID
-                            {
-                                app_config.local_agent_model.clone()
-                            } else {
-                                app_config.agent_model.clone()
-                            };
-                            let agent_config = core::agent::AgentConfig {
-                                provider: mode_transform_config.provider.clone(),
-                                agent_name: agent_name.clone(),
-                                agent_model,
-                                profile_label: mode_transform_config.profile_label.clone(),
-                                profile_prompt: mode_transform_config.profile_prompt.clone(),
-                                vocabulary: mode_transform_config.vocabulary.clone(),
-                                dictionary_entries: mode_transform_config.dictionary_entries.clone(),
-                                snippet_entries: mode_transform_config.snippet_entries.clone(),
-                                workspace_context: workspace_context.clone(),
-                                style: communication_style.clone(),
-                            };
-                            // No second classification. Reaching this arm already
-                            // means the mode is Agent: either the user selected it,
-                            // or Auto committed to it above. Re-deciding here
-                            // overrode a manual choice and fell back to a cleanup
-                            // with flags from the profile's stored mode.
-                            let result =
-                                core::agent::apply_agent_transform(&response.text, &agent_config)
-                                    .await;
-                            core::transform::NativeTransformResult {
-                                text: result.text,
-                                corrected: result.was_agent,
-                                applied_rules: vec!["agent_mode".to_string()],
-                                warning: result.warning,
-                            }
-                        }
-                        core::config::ProcessingMode::Translate => {
-                            // The chat model, not the correction model. The
-                            // drawn model row marks this job as overridden off
-                            // the connection's default for exactly this reason:
-                            // rendering a dictation in another language is a
-                            // harder instruction-following job than tidying one,
-                            // and it is explicitly not on the fastest path
-                            // (ADR 0041, ADR 0042).
-                            let translate_model = if mode_transform_config.provider
-                                == core::providers::LOCAL_PREVIEW_PROVIDER_ID
-                            {
-                                app_config.local_agent_model.clone()
-                            } else {
-                                app_config.agent_model.clone()
-                            };
-                            let translate_config = core::translate::TranslateConfig {
-                                provider: mode_transform_config.provider.clone(),
-                                model: translate_model,
-                                settings: translate_settings.clone(),
-                                profile_prompt: mode_transform_config.profile_prompt.clone(),
-                                vocabulary: mode_transform_config.vocabulary.clone(),
-                            };
-                            let result = core::translate::apply_translate(
-                                &response.text,
-                                &translate_config,
-                            )
-                            .await;
-                            core::transform::NativeTransformResult {
-                                text: result.text,
-                                corrected: result.translated,
-                                applied_rules: vec!["translate_mode".to_string()],
-                                warning: result.warning,
-                            }
-                        }
-                        core::config::ProcessingMode::PromptEnhance => {
-                            let enhance_model = if mode_transform_config.provider
-                                == core::providers::LOCAL_PREVIEW_PROVIDER_ID
-                            {
-                                app_config.local_agent_model.clone()
-                            } else {
-                                app_config.agent_model.clone()
-                            };
-                            let enhance_sub_mode = active_profile
-                                .and_then(|p| p.work_mode.enhance_sub_mode.clone())
-                                .or(app_config.enhance_sub_mode.clone())
-                                .unwrap_or_default();
-                            let enhance_target = active_profile
-                                .and_then(|p| p.work_mode.target.clone())
-                                .or(Some(app_config.enhance_target.clone()))
-                                .unwrap_or_default();
-                            let enhance_config = core::prompt_enhance::PromptEnhanceConfig {
-                                provider: mode_transform_config.provider.clone(),
-                                model: enhance_model,
-                                sub_mode: enhance_sub_mode.as_str().to_string(),
-                                target: enhance_target.as_str().to_string(),
-                                profile_prompt: mode_transform_config.profile_prompt.clone(),
-                                vocabulary: mode_transform_config.vocabulary.clone(),
-                                // Reuses the single per-session detection above
-                                // instead of detecting a second time.
-                                workspace_context: workspace_context.clone(),
-                            };
-                            let result = core::prompt_enhance::apply_prompt_enhance(
-                                &response.text,
-                                &enhance_config,
-                            )
-                            .await;
-                            core::transform::NativeTransformResult {
-                                text: result.text,
-                                corrected: result.enhanced,
-                                applied_rules: vec!["prompt_enhance".to_string()],
-                                warning: result.warning,
-                            }
-                        }
-                        _ => {
-                            core::transform::apply_native_transform(
-                                &response.text,
-                                mode_transform_config.clone(),
-                            )
-                            .await
-                        }
-                    };
+                    // One dispatch, shared with the history retry (ADR 0075).
+                    // It used to stand here inline, which is why a retry could
+                    // not route by mode: the only implementation of "which
+                    // transform does this mode run" was inside this closure.
+                    let raw_transform = core::mode_router::apply_mode_transform(
+                        &response.text,
+                        &effective_mode,
+                        &mode_transform_config,
+                        &app_config,
+                        active_profile,
+                    )
+                    .await;
 
                     // The single exit. Every mode's result passes through the
                     // profile's dictionary and snippets here, so no branch can
                     // bypass them — Agent and Prompt Enhance did exactly that
                     // while this call lived inside `apply_native_transform`.
-                    core::transform::finalize_with_text_rules(
-                        raw_transform,
-                        &mode_transform_config,
+                    (
+                        core::transform::finalize_with_text_rules(
+                            raw_transform,
+                            &mode_transform_config,
+                        ),
+                        effective_mode,
                     )
                 };
                 let app_config = pipeline_app_config.clone();
@@ -1866,6 +1766,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         &app_config,
                         response.text.clone(),
                         transformed,
+                        Some(effective_mode.clone()),
                     );
                     core::runtime_log::record(format!(
                         "[WordScript] Native pipeline empty result elapsed_ms={}",
@@ -1902,6 +1803,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             provider.clone(),
                             response.text.clone(),
                             transformed.clone(),
+                            Some(effective_mode.clone()),
                         ) {
                             Ok(preview) => {
                                 core::runtime_log::record(format!(
@@ -1966,6 +1868,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 Some(response.text.clone()),
                                 transformed.clone(),
                                 &result,
+                                Some(effective_mode.clone()),
                             )
                             .ok();
 
@@ -2068,6 +1971,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 Some(response.text.clone()),
                                 transformed.clone(),
                                 &result,
+                                Some(effective_mode.clone()),
                             );
                             let error = result
                                 .error
@@ -2137,6 +2041,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 text.clone(),
                                 transformed.clone(),
                                 error.clone(),
+                                Some(effective_mode.clone()),
                             );
                             core::runtime_log::record(format!(
                                 "[WordScript] Native pipeline insertion failed session_id={} elapsed_ms={} error={}",
@@ -2765,6 +2670,8 @@ pub fn run() {
             core::insertion::clear_native_scratchpad,
             core::history::transcription_history_entries,
             core::history::transcription_history_storage_status,
+            core::transcript_store::transcript_store_status,
+            core::transcript_store::reveal_transcript_in_file_manager,
             core::history::export_transcription_history,
             core::history::clear_transcription_history_entries,
             core::history::delete_transcription_history_entry,

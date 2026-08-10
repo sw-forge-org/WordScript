@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
-use super::config::{AppConfig, TextProfileWorkMode};
+use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::history;
 use super::insertion::{insert_transcription_from_legacy, NativeInsertResult};
 use super::sound;
@@ -87,6 +87,11 @@ struct PendingTranscriptionPreview {
     provider: String,
     raw_text: String,
     transformed: NativeTransformResult,
+    /// The mode this text was produced under. Carried on the preview rather
+    /// than re-derived at commit time: a preview can sit on screen while the
+    /// profile's mode is changed underneath it, and the record has to state
+    /// what ran (ADR 0075).
+    effective_mode: Option<ProcessingMode>,
     occurred_at_ms: u64,
 }
 
@@ -158,6 +163,7 @@ impl NativeSessionState {
         provider: String,
         raw_text: String,
         transformed: NativeTransformResult,
+        effective_mode: Option<ProcessingMode>,
     ) -> Result<PendingTranscriptionPreviewEvent, String> {
         if !matches!(self.stage, NativeSessionStage::Processing) || self.active_session.is_none() {
             return Err("No native session is waiting for a preview commit.".to_string());
@@ -168,6 +174,7 @@ impl NativeSessionState {
             provider,
             raw_text,
             transformed,
+            effective_mode,
             occurred_at_ms: now_ms(),
         };
         let payload = preview.event_payload();
@@ -461,6 +468,7 @@ pub async fn commit_pending_transcription_preview(
                 Some(preview.raw_text.clone()),
                 preview.transformed.clone(),
                 &result,
+                preview.effective_mode.clone(),
             )
             .ok();
 
@@ -558,6 +566,7 @@ pub async fn commit_pending_transcription_preview(
                 Some(preview.raw_text.clone()),
                 preview.transformed.clone(),
                 &result,
+                preview.effective_mode.clone(),
             );
             let error = result
                 .error
@@ -587,6 +596,7 @@ pub async fn commit_pending_transcription_preview(
                 final_text,
                 preview.transformed,
                 error.clone(),
+                preview.effective_mode,
             );
             let _ = fail_processing_session_from_native_error(&app, &session_id, &error);
             let _ = app.emit(
@@ -631,12 +641,13 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
     provider: String,
     raw_text: String,
     transformed: NativeTransformResult,
+    effective_mode: Option<ProcessingMode>,
 ) -> Result<PendingTranscriptionPreviewEvent, String> {
     let state = app
         .try_state::<Mutex<NativeSessionState>>()
         .ok_or_else(|| "Native session state is not available.".to_string())?;
     let mut state = state.lock().map_err(|error| error.to_string())?;
-    state.stage_pending_preview(app_config, provider, raw_text, transformed)
+    state.stage_pending_preview(app_config, provider, raw_text, transformed, effective_mode)
 }
 
 pub fn complete_processing_session_from_transcription<R: Runtime>(
@@ -1008,6 +1019,7 @@ mod tests {
                     applied_rules: vec!["removed_fillers".to_string()],
                     warning: None,
                 },
+                None,
             )
             .unwrap();
 

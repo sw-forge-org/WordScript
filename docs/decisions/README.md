@@ -482,6 +482,23 @@ Status: Proposed | Accepted | Superseded by NNNN
   flow because every offered language has a two-letter code, which makes the
   width fixed rather than content-dependent; the width itself is a native-host
   measurement. A deliberate, owner-directed exception to relay rule 5.
+- [0074](0074-a-transcript-is-a-markdown-file-and-the-history-record-is-its-index.md):
+  the drawing's promise is kept -- every transcript that produced text is also a
+  Markdown file under `~/WordScript/transcripts`, written from the one funnel
+  every history record already passes through, so "on every path" is structural
+  rather than a rule five callers obey. `history.json` stays the index and
+  carries the path; delete, clear and retention take the file with the entry, and
+  the runtime deletes only paths an entry named. One file per transcript rather
+  than one per day, because the runtime then creates a file once and never edits
+  one. The case for retiring the promise is stated and answered in full.
+- [0075](0075-a-retry-re-runs-the-mode-the-record-ran-and-the-dispatch-has-one-implementation.md):
+  the mode dispatch moves out of the pipeline closure into
+  `core::mode_router::apply_mode_transform`, and the history retry uses it -- so
+  a retried Agent, Prompt Enhance or Translate record re-runs its own job instead
+  of coming back as a conservative cleanup. The record grows `effective_mode`,
+  what actually ran, because the stored work mode keeps `auto` for an Auto record
+  and could not answer. An Auto record has its Auto resolved again rather than
+  repeated.
 
 ## Resolved: the number 0011 was used twice
 
@@ -509,8 +526,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0073; the next
-decision takes 0074.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0075; the next
+decision takes 0076.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

@@ -32,9 +32,9 @@ export type RawTranscript = {
   same?: boolean;
   note?: string;
   /** OPTIONAL, AND ITS ABSENCE IS THE RUNTIME'S ANSWER. The drawing gives every
-   *  transcript a Markdown path; the runtime keeps one `history.json` and no
-   *  per-transcript file exists, so a wired caller passes none and the foot
-   *  states the sentence without a path it cannot produce. */
+   *  transcript a Markdown path and since ADR 0074 the runtime writes one, so a
+   *  wired caller passes the record's own file. It stays optional because one
+   *  record still has none: a run that produced no text. */
   path?: string;
 };
 

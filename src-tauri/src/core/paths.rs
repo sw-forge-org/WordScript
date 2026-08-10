@@ -80,6 +80,36 @@ pub fn history_file_path() -> PathBuf {
     user_data_dir().join("history.json")
 }
 
+/// Where a transcript is written as a Markdown file (ADR 0074).
+///
+/// NOT under the user data directory, and that is the whole point of it: the
+/// data directory is the application's own bookkeeping, and this is a folder a
+/// person opens. §11.23 puts it at `~/WordScript/transcripts` so that "your
+/// transcripts are yours" is a path rather than a sentence.
+///
+/// It still follows `WORDSCRIPT_DATA_DIR` and the test diversion, because a
+/// second instance running against isolated data must not write into the
+/// primary installation's folder, and the suite must never reach the
+/// developer's real one.
+pub fn transcripts_dir() -> PathBuf {
+    if let Some(override_dir) = env::var_os("WORDSCRIPT_DATA_DIR") {
+        return PathBuf::from(override_dir).join("transcripts");
+    }
+
+    #[cfg(test)]
+    {
+        return test_data_dir().join("transcripts");
+    }
+
+    #[cfg(not(test))]
+    {
+        home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("WordScript")
+            .join("transcripts")
+    }
+}
+
 /// Terms seen mangled once, waiting for the second sighting that promotes them
 /// into a profile (ADR 0035).
 ///
@@ -126,6 +156,10 @@ mod tests {
             scratchpad_file_path(),
             history_file_path(),
             vocabulary_candidates_file_path(),
+            // Lives outside the data directory in a real installation and
+            // inside the diverted one under test — the diversion is the point
+            // of asserting it here (ADR 0074).
+            transcripts_dir(),
         ] {
             assert!(path.starts_with(&dir), "{path:?} escaped {dir:?}");
         }

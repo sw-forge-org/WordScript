@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { HomeScreen } from "@/screens/Home";
-import { HistoryScreen } from "@/screens/History";
 import { PrivacyScreen } from "@/screens/Privacy";
 import { ProfilesScreen } from "@/screens/Profiles";
 import { CommitScreen } from "@/screens/Commit";
@@ -72,7 +71,6 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
     lead: "Four views. The window behind the settings sheet.",
     screens: [
       { id: "home", surface: "workspace", label: "Home", render: () => <HomeScreen /> },
-      { id: "history", surface: "workspace", label: "History", render: () => <HistoryScreen /> },
       { id: "profiles", surface: "workspace", layout: "pane", label: "Profiles", render: () => <ProfilesScreen /> },
       { id: "context", surface: "workspace", layout: "pane", label: "Context", preview: true, render: () => <ContextScreen /> },
     ],

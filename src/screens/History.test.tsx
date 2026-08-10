@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -36,6 +36,8 @@ function entry(overrides: Partial<TranscriptionHistoryEntry> = {}): Transcriptio
       recovery_behavior: "standard",
       processing_mode: "cleanup",
     },
+    effective_mode: "cleanup",
+    transcript_path: "/tmp/transcripts/2026/08/10-0942-e1.md",
     provider_profile: null,
     local_prompt_strength: null,
     local_prompt_carry: null,
@@ -65,6 +67,9 @@ function mockRuntimeHistory(entries: TranscriptionHistoryEntry[]) {
     if (command === "transcription_history_entries") return entries;
     if (command === "transcription_history_storage_status") {
       return { path: "/home/f/.local/share/wordscript/history.json" };
+    }
+    if (command === "transcript_store_status") {
+      return { root: "/home/f/WordScript/transcripts", exists: true };
     }
     return undefined;
   });
@@ -103,25 +108,42 @@ describe("History, wired", () => {
     expect(screen.getByRole("heading", { name: "0 transcriptions" })).toBeInTheDocument();
   });
 
-  it("keeps Show in file manager drawn and inert, because nothing can reveal a record", async () => {
+  it("reveals a record's own file, on the path the record names", async () => {
+    const user = userEvent.setup();
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const reveal = await screen.findByRole("button", { name: "Show in file manager" });
+    expect(reveal).toBeEnabled();
+    await user.click(reveal);
+
+    expect(invoked).toHaveBeenCalledWith("reveal_transcript_in_file_manager", {
+      request: { path: "/tmp/transcripts/2026/08/10-0942-e1.md" },
+    });
+  });
+
+  /* ADR 0074: the one record that has no file is one that produced no text.
+     ADR 0065 then applies unchanged — drawn, disabled, reason on the control —
+     which is the shape Retry already has on a record with no audio. */
+  it("disables the reveal on a record that produced no text, with the reason on it", async () => {
+    mockRuntimeHistory([entry({ status: "empty", transformed_transcript: null, transcript_path: null })]);
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const reveal = await screen.findByRole("button", {
-      name: /Show in file manager — the runtime keeps one history file/,
+      name: /Show in file manager — this run produced no text/,
     });
-    /* ADR 0065: a control that cannot act is disabled, not deleted and not left
-       looking settable — and the reason is its tooltip, because a disabled
-       control with no explanation is the same defect one step quieter. */
     expect(reveal).toBeDisabled();
   });
 
-  it("states the file the runtime actually keeps, not a folder of Markdown files", async () => {
+  it("states the folder of Markdown files again, because ADR 0074 built it", async () => {
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     expect(
-      await screen.findByText(/Every transcription is kept in \/home\/f\/.local\/share\/wordscript\/history.json/),
+      await screen.findByText(/Every transcript is a Markdown file in \/home\/f\/WordScript\/transcripts/),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/Markdown file/)).not.toBeInTheDocument();
+    /* The index is still named, because it is where a retry reads from. */
+    expect(
+      screen.getByText(/indexed in \/home\/f\/.local\/share\/wordscript\/history.json/),
+    ).toBeInTheDocument();
   });
 
   it("takes both retention numbers from the config rather than from the drawing", async () => {
@@ -164,12 +186,36 @@ describe("History, wired", () => {
     expect(await screen.findByRole("button", { name: "Restore to cursor" })).toBeInTheDocument();
   });
 
-  it("unfolds the two texts with no path, because there is no file to name", async () => {
+  it("unfolds the two texts and names the file the record was written to", async () => {
     const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await userEvent.click(await screen.findByRole("button", { name: "View raw transcript" }));
     expect(screen.getByText("lets ship the settings restructure today")).toBeInTheDocument();
-    expect(container.querySelector(".ws-raw-path")).toBeNull();
+    expect(container.querySelector(".ws-raw-path")).toHaveTextContent(
+      "/tmp/transcripts/2026/08/10-0942-e1.md",
+    );
+  });
+
+  /* THE THREE THAT CAME OFF THE FIDELITY SUITE when this screen left the
+     gallery. A retired screen has no measurement left (Leg 4c did the same for
+     Hotkeys), so what they hold moves here rather than being dropped. */
+  it("filters on a toolbar, with two controls rather than the shipped three", async () => {
+    const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await screen.findByText("Let's ship the settings restructure today.");
+
+    const toolbar = container.querySelector(".ws-toolbar") as HTMLElement;
+    expect(within(toolbar).getByPlaceholderText("Search transcripts…")).toBeInTheDocument();
+    expect(within(toolbar).getByLabelText("Status")).toBeInTheDocument();
+    /* The "Errors only" toggle is gone: the select already has Failed, so two
+       controls narrowed the list to the same set and could contradict. */
+    expect(within(toolbar).queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("carries the pairing with Privacy & Data as a note, not as a second rule", async () => {
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    expect(
+      await screen.findByRole("link", { name: "Change the rule in Privacy & Data" }),
+    ).toBeInTheDocument();
   });
 
   it("narrows the list through the runtime's query rather than in the browser", async () => {
