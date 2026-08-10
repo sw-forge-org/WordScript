@@ -14,7 +14,7 @@ import {
   WindowBody,
   WindowShell,
 } from "@/components/shell";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useColorScheme, type ColorScheme } from "@/hooks/useColorScheme";
 import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useProvider } from "@/hooks/useProvider";
 import { useRuntime } from "@/hooks/useRuntime";
@@ -74,12 +74,24 @@ const SEARCH_SHORTCUT = MAC ? "⌘K" : "Ctrl K";
 
 export default function WorkspaceWindow() {
   const { state, saveConfig } = useRuntime();
-  const { resolved, setScheme } = useColorScheme("dark");
+  const { resolved, scheme, setScheme } = useColorScheme("dark");
   const { form, patch, patchText, flushText } = useConfigDraft(state.config, saveConfig);
   const [view, setView] = useState<ViewId>("home");
   const [section, setSection] = useState<SectionId | null>(null);
   const [palette, setPalette] = useState(false);
   const [, startTransition] = useTransition();
+
+  /* The stored scheme, adopted when the runtime answers and whenever it changes
+     underneath — another window, or a config edited on disk. Keyed on the
+     runtime's config rather than on the draft, so the window follows what was
+     actually saved; a write from this window arrives back with the value it
+     just set, which is a no-op. Before the config loads the hook's own default
+     stands, and that default is what every window rendered before this field
+     existed. */
+  useEffect(() => {
+    const stored = state.config?.color_scheme;
+    if (stored && stored !== scheme) setScheme(stored);
+  }, [state.config?.color_scheme]);
 
   const selectedProvider = (form?.provider ?? state.config?.provider) === "local_preview"
     ? "local_preview"
@@ -245,6 +257,15 @@ export default function WorkspaceWindow() {
   }
 
   const activeProfile = resolveActiveTextProfile(form);
+  /* One writer for the scheme, and it does both halves: the window switches
+     immediately and the config keeps the choice. Doing only the first is what
+     the palette did for a leg — three rows that changed this window and lost
+     the choice on the next launch. `patch` is the discrete-control path, which
+     is what a theme row is. */
+  const writeScheme = (next: ColorScheme) => {
+    setScheme(next);
+    patch({ color_scheme: next });
+  };
   /* THE RUNTIME, AS A WIRED SCREEN SEES IT. One reader per window: `useRuntime`
      opens two event channels and loads the config, so a screen that called it
      for itself would double every listener and hold a second opinion of one
@@ -403,14 +424,11 @@ export default function WorkspaceWindow() {
 
       </div>
 
-      {/* Outside the stack, because the stack is what it makes recede. The
-          theme actions reach `useColorScheme` directly: the scheme is this
-          window's state and no config field carries it (§2.5), so what the
-          palette changes is what any other control here would change. */}
+      {/* Outside the stack, because the stack is what it makes recede. */}
       {palette && (
         <CommandPalette
           runtime={runtime}
-          onScheme={setScheme}
+          onScheme={writeScheme}
           onClose={() => setPalette(false)}
         />
       )}

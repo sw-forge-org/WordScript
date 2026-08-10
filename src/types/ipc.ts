@@ -236,6 +236,11 @@ export type CommunicationRegister =
   | "friend"
   | "quick";
 
+/// Mirrors `AppConfig.color_scheme`. Structurally identical to the shell's own
+/// `ColorScheme` in `hooks/useColorScheme`, which is where the resolution rule
+/// lives; this is the persisted half of it.
+export type ColorScheme = "light" | "dark" | "system";
+
 export type CommunicationLength = "terse" | "normal" | "full";
 
 /// What `core::communication_style` does with one of the two bounded free-text
@@ -425,6 +430,10 @@ export interface AppConfig {
   /// and the profile-words switch are, and live on `ProfileModesSettings`.
   translate_same_language?: TranslateSameLanguage;
   translate_address_form?:  TranslateAddressForm;
+  /// Light, dark, or follow the OS. `system` is a deferral resolved at render
+  /// time, so what lands on `<html data-theme>` is always `light` or `dark`
+  /// (ADR 0048). Machine-wide: it belongs to the window, not to a profile.
+  color_scheme?:            ColorScheme;
   /// Global fallback for profiles that predate the per-profile modes block. The
   /// real control is `ProfileModesSettings.collect_workspace_context`.
   auto_detect_mode?:        boolean;

@@ -6,6 +6,12 @@ import { createAppConfig } from "../test/factories";
 
 const CONFIG = createAppConfig();
 
+/* What the mocked runtime answers with. A `let` rather than the constant above
+   because one thing this window reads out of the config is the colour scheme,
+   and asserting that it is adopted needs a config that does not already agree
+   with the default. Reset in `afterEach`. */
+let runtimeConfig = CONFIG;
+
 const { invoke, saveConfig, listeners, openUrl } = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(undefined),
   saveConfig: vi.fn(async (next: unknown) => next),
@@ -22,7 +28,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 vi.mock("../hooks/useRuntime", () => ({
   useRuntime: () => ({
-    state: { status: "idle", config: CONFIG, paused: false, error: null },
+    state: { status: "idle", config: runtimeConfig, paused: false, error: null },
     saveConfig,
   }),
 }));
@@ -35,6 +41,8 @@ afterEach(() => {
   cleanup();
   listeners.clear();
   vi.clearAllMocks();
+  runtimeConfig = CONFIG;
+  document.documentElement.removeAttribute("data-theme");
 });
 
 /**
@@ -288,5 +296,58 @@ describe("WorkspaceWindow · Help", () => {
        is the nearest thing to a stray press this surface has. */
     await user.click(screen.getByRole("navigation", { name: "Workspace" }));
     expect(screen.queryByRole("menu", { name: "Help" })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The colour scheme, which is the one thing about this window that has to
+ * survive a restart.
+ *
+ * The palette shipped three theme rows for a leg that changed this window and
+ * persisted nothing, because no config field carried the choice. There is one
+ * now, so both directions are held here: the window adopts what the runtime
+ * answered with, and a change made here is written back.
+ *
+ * It belongs to the window rather than to a screen because the scheme lands on
+ * `<html data-theme>` and every surface reads it from there.
+ */
+describe("WorkspaceWindow \u00b7 the colour scheme", () => {
+  it("takes the scheme the runtime answered with", async () => {
+    runtimeConfig = createAppConfig({ color_scheme: "light" });
+    render(<WorkspaceWindow />);
+
+    await waitFor(() =>
+      expect(document.documentElement.getAttribute("data-theme")).toBe("light"),
+    );
+  });
+
+  /* `system` is a deferral rather than a third palette (ADR 0048): what lands
+     on the attribute is always the resolved value, never the word `system`. */
+  it("resolves system rather than writing it to the attribute", async () => {
+    runtimeConfig = createAppConfig({ color_scheme: "system" });
+    render(<WorkspaceWindow />);
+
+    await waitFor(() => {
+      const applied = document.documentElement.getAttribute("data-theme");
+      expect(applied === "light" || applied === "dark").toBe(true);
+    });
+  });
+
+  /* The half that was missing for a leg. The palette's theme rows switched this
+     window and the next launch lost the choice, because nothing wrote it down.
+     A theme row is a discrete control, so it takes the instant-save path. */
+  it("writes a scheme picked in the palette back to the config", async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceWindow />);
+
+    await user.keyboard("{Control>}k{/Control}");
+    await user.click(await screen.findByText("Switch to light theme"));
+
+    await waitFor(() =>
+      expect(saveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ color_scheme: "light" }),
+      ),
+    );
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   });
 });

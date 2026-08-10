@@ -97,8 +97,10 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     mode_verbatim_hotkey: "",
     mode_cleanup_hotkey: "",
     mode_rewrite_hotkey: "",
+    mode_translate_hotkey: "",
     mode_agent_hotkey: "",
     mode_prompt_enhance_hotkey: "",
+    color_scheme: "dark",
     ...overrides,
   };
 }

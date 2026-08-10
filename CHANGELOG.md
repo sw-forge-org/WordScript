@@ -68,6 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It ships ahead of its roadmap phase and therefore on the chat model the
   product already runs, which ADR 0071 records rather than leaves to be
   discovered.
+- **The colour scheme survives a restart.** `AppConfig.color_scheme` is the
+  config field the palette's three theme rows had been missing: they switched
+  the window and persisted nothing, so every launch came back dark. `system`
+  stays a deferral rather than a third palette (ADR 0048) — what lands on
+  `<html data-theme>` is always the resolved value — and the shipped default is
+  `dark`, which is what every window rendered before the field existed.
 - **The style budget meters state what the prompt costs**, not what was typed.
   `analyze_communication_style` returns `core::communication_style`'s own
   `CommunicationStyleAnalysis` — what each of the two bounded fields accepted,

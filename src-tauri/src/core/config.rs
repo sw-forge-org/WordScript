@@ -1131,6 +1131,14 @@ pub struct AppConfig {
     pub translate_same_language: TranslateSameLanguage,
     #[serde(default)]
     pub translate_address_form: TranslateAddressForm,
+    /// Light, dark, or follow the OS. `system` is a deferral rather than a
+    /// third palette: the window resolves it at render time and re-resolves it
+    /// when the OS changes, so what lands on `<html data-theme>` is always
+    /// `light` or `dark` (ADR 0048). Stored here because the choice belongs to
+    /// the machine, not to a profile, and because a window is not a place to
+    /// keep something that has to survive a restart.
+    #[serde(default = "default_color_scheme")]
+    pub color_scheme: String,
     #[serde(default)]
     pub auto_detect_mode: bool,
     #[serde(default)]
@@ -1232,6 +1240,7 @@ impl Default for AppConfig {
             processing_mode: ProcessingMode::default(),
             enhance_sub_mode: None,
             enhance_target: PromptTarget::default(),
+            color_scheme: default_color_scheme(),
             translate_same_language: TranslateSameLanguage::default(),
             translate_address_form: TranslateAddressForm::default(),
             auto_detect_mode: true,
@@ -1560,6 +1569,7 @@ impl AppConfig {
             &self.mode_prompt_enhance_hotkey,
             true,
         );
+        self.color_scheme = normalize_color_scheme(&self.color_scheme);
         self.overlay_monitor = normalize_overlay_monitor_value(&self.overlay_monitor);
         self.history_limit = self.history_limit.clamp(25, 1000);
         self.history_retention_days = self.history_retention_days.min(3650);
@@ -2106,6 +2116,22 @@ fn default_mode_rewrite_hotkey() -> String {
 }
 
 /// Empty, and it is the only mode default that is. See the field's own note.
+/// Dark, which is what every window rendered before this field existed. A
+/// config that predates it therefore looks exactly as it did.
+fn default_color_scheme() -> String {
+    "dark".to_string()
+}
+
+/// The three values the shell understands. Anything else normalizes to the
+/// default rather than reaching a window that would render it as `undefined`.
+pub fn normalize_color_scheme(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "light" => "light".to_string(),
+        "system" => "system".to_string(),
+        _ => default_color_scheme(),
+    }
+}
+
 fn default_mode_translate_hotkey() -> String {
     String::new()
 }
@@ -4535,5 +4561,27 @@ mod tests {
         assert_eq!(normalize_translate_language("  DE "), "de");
         assert_eq!(normalize_translate_language("klingon"), "en");
         assert_eq!(translate_language_name("klingon"), "English");
+    }
+
+    /// Dark is what every window rendered before the field existed, so a config
+    /// that predates it must look exactly as it did.
+    #[test]
+    fn a_config_predating_the_colour_scheme_stays_dark() {
+        assert_eq!(AppConfig::default().color_scheme, "dark");
+
+        let mut config = AppConfig::default();
+        config.color_scheme = String::new();
+        config.normalize_for_runtime();
+        assert_eq!(config.color_scheme, "dark");
+    }
+
+    /// The three the shell understands survive; anything else would reach a
+    /// window that cannot render it.
+    #[test]
+    fn the_colour_scheme_normalizes_to_one_of_three() {
+        assert_eq!(normalize_color_scheme(" Light "), "light");
+        assert_eq!(normalize_color_scheme("SYSTEM"), "system");
+        assert_eq!(normalize_color_scheme("dark"), "dark");
+        assert_eq!(normalize_color_scheme("solarized"), "dark");
     }
 }
