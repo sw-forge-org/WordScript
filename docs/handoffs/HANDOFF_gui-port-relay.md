@@ -1,7 +1,8 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Leg 4a is CLOSED. All six undecided surfaces have
-an answer on the record and none of them is mounted. Leg 4 — wiring — is next.**
+Opened 2026-08-04. **Active — Leg 4b is CLOSED. The seam is open, P1 and P2 are
+fixed on it, the rebuild lab is restored, and four of the fourteen mounted
+screens are wired. Leg 4c — the remaining six wireable screens — is next.**
 
 Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 Work happens on `main`. There is no feature branch; `gui-rework-second-pass` was
@@ -146,7 +147,8 @@ gallery of four sections.
 | **2d** | The last 10 screens | *Done.* All 25 stand in `/gallery` → Screens at the prototype's fidelity, on the real components, each measured exact in every state |
 | **3** | The shell overwrite | *Done.* One window; settings is a sheet over the workspace at its own scale (§11.22); four views and ten sections replace the 14 flat areas; `Cmd+,`; the pre-port shell and every replaced area deleted |
 | **4a** | The interaction model the demo GUI never settled | *Done.* Five ADRs (0060–0064) and three roadmap entries; no code, and the six are still mounted nowhere. Five surfaces got a lifecycle; live subtitles got a candidate entry and stays undecided on purpose. §2.6 |
-| **4** | Wiring, section by section | Each section either reads the runtime truthfully or carries a `PreviewBanner`; P1 and P2 fixed at the seam; the list of what the runtime cannot answer is written down; **each wired screen's Gallery → Screens entry is deleted in the commit that wires it** (ADR 0057) |
+| **4b** | The seam, P1, P2, the rebuild lab, and the first four sections | *Done.* `WorkspaceRuntime` is the seam and a wired screen's `runtime` prop is REQUIRED, so ADR 0057 is enforced by the compiler; About, Diagnostics (and its pop-out), General and Delivery & Insert read the runtime; 21 gallery entries left |
+| **4c** | The remaining six wireable sections | Hotkeys, History, Profiles, AI Models wired; Home and Privacy & Data wired in part and still saying so. Context, Notes & Meetings, Agents and Integrations keep their banners — they are V2 or Phase 8 |
 | **5** | Runtime contracts | §11.36 and §11.52, prioritised by what Leg 4 found blocking |
 | **6** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
 
@@ -396,6 +398,7 @@ Serve the prototype for comparison:
 | **2c** | 2026-08-04 | Opus 5 | `0fbddce`…`cd320f5` | **Four screens ported, fifteen of 25 now stand — and the leg SPLIT rather than overrun.** Notes & Meetings, AI Models, Onboarding and Agents, every tab and every one of onboarding's seven steps measured exact. The job list, the model badge, the downloadable model row, the onboarding rail, the desk's MCP readout and the agent thread are in the library. **The verifier can now reach a screen's other states** — `npm run port:diff models#1 onboarding#4` drives both surfaces into them — which turned up a fifth measurement false positive and a library defect Leg 2b could not have seen: the prototype's SECOND base rule, a 16 px default icon size, was never ported. 282 → 298 frontend tests, `cargo test` 623, both builds green. AI Models and its job list looked at in the native host. **The prototype's status is NOT flipped — 10 screens remain.** Full account below. |
 | **3** | 2026-08-05 | Opus 5 | `8f9077e` | **The shell is overwritten. The product is ONE WINDOW.** A workspace with four views, settings as a modal sheet over it at its own scale, `Cmd+,` to open and Escape to close. Fourteen flat areas deleted in the commit that replaced them; `FormCard`, `FormRow`, `Sidebar` and `StatTiles` deleted with their last caller; the 25 screens moved out of the gallery into `src/screens/` so the product mounts what the gallery displays. **All 33 `port:diff` measurements are structural 0 | style 0 after the shell change** — the regression check earned its keep. 289 frontend tests (335 minus the 67 that belonged to the deleted areas, plus 21 new), `cargo test` 623, both builds green. The workspace, the sheet and the agent overlay all looked at in the native host — **Leg 2d's three owed agent-overlay checks all pass.** ADR 0059 filed: the gallery gets a chord. **One live defect found and fixed: the overlay's deep link had been resolving to nothing.** Full account below.
 | **4a** | 2026-08-05 | Opus 5 | `67bd0f9` | **Six drawn surfaces got a lifecycle, and no code was written.** Five ADRs — 0060 onboarding, 0061 the agent overlay, 0062 the handoff, 0063 meeting capture, 0064 the translation window — plus three roadmap entries: meeting capture's gate 1 closed, and two new candidates (live subtitles, the live-translation window) for the two surfaces that genuinely had no roadmap home. **Live subtitles is deliberately the one without an ADR**: what turns captions on cannot be decided honestly before the capture exists, and saying so is the answer. The owner decided three of them; the rest are derived and each ADR says which it was. **Two things were nearly decided wrong and the drawn surface caught both** — the notification does not retract when a dictation starts, it offsets above the pill, and §7's "meeting capture is not on the roadmap" has been false since the day it was written. 289 frontend tests, `cargo test` 623, `npm run build` green — untouched, as a doc leg should leave them. Full account below. |
+| **4b** | 2026-08-10 | Opus 5 | `a8dc617`…`88bf75a` | **The seam is open, P1 and P2 are fixed on it, the rebuild lab is back, and four of fourteen sections are wired — so the leg SPLIT rather than overrun.** About & Updates, Diagnostics (with its pop-out), General and Delivery & Insert read the runtime; the other ten keep their banners and four of those can never lose one. **ADR 0057 is mechanical now**: a wired screen takes a REQUIRED `runtime` prop, so its gallery entry stops compiling, and `registry.test.tsx` asserts the set that left the registry EQUALS the set the product mounts without a banner — both directions fail. `RebuildLabTab`'s ~1000 lines came back onto the drawing, and cost less than budgeted because the drawing had been read off the surface it replaces. 289 → 316 frontend tests, `cargo test` 623, both builds green. Gallery 25 → 21 entries; `port:diff` 33 → 29 measurements, **every one structural 0 \| style 0**. Full account below. |
 | **2d** | 2026-08-04 | Opus 5 | `ae5af81`… | **The last ten screens ported. ALL 25 STAND, every one measured exact in every state it has.** Context with its four note tabs and both windows over it, the intake's three ways in, Actions & templates, meeting capture, the handoff, live subtitles, translation, client conversations and the agent overlay. The note grammar, the five-member window family, the intake, the shipped overlay pill drawn at its real geometry, the caption strip and the echo, the translation window and the client record are in the library. Three library defects no earlier screen could show: the wide layout had no measure, the 16 px icon base rule was shrinking the dot-matrix readout to a square, and `Card` now owns the head/rows/body/foot order that three legs had got wrong at a call site. 298 → 335 frontend tests, `cargo test` 623, both builds green. Context looked at in the native host; the agent overlay is owed there. **The prototype's status IS flipped — Leg 2 is closed.** Full account below. |
 
 ### Leg 1 — what landed, and the one thing it got wrong
@@ -1047,6 +1050,52 @@ of how a surface is entered or left*, not because a label states them.
   length of each spoken utterance.** ADR 0064. Both are new runtime capability
   and neither is a setting on top of something that exists.
 
+**Leg 4's additions to the same list.** Every one of these was found by trying
+to read a fact rather than by reading a drawing, which is why Leg 2 could not
+have found them: the drawing states them and the runtime turns out not to.
+
+- **The runtime log has no severity field.** `runtime_log::record` takes one
+  string. The ported `Log` draws INFO / WARN / ERROR in three colours and there
+  is nothing to put in that column, so `LogLine.level` is optional now and a
+  real line draws with an empty gutter. Deriving a level from whether a line
+  contains the word "error" would be a guess printed in the one place somebody
+  reads to find out what went wrong. **Leg 5 contract, and the cheapest on this
+  list** — the levels already exist in the component.
+- **`complete_v1_slice_capture` records the profile it was given and decodes its
+  rules from the ACTIVE profile's work mode.** So Diagnostics' Text profile
+  select labels the run without changing it. **Leg 5 contract**, and the fix is
+  one argument reaching `build_transcript`.
+- **`audio_level` is one scalar and a waveform needs a history.** The ported
+  waveform can only be driven by opening a microphone of its own
+  (`getUserMedia`), which would have WordScript hold a second capture device for
+  as long as a settings page is open — the exact signal ADR 0063's detection
+  watches for. It is drawn at rest on the product surface for that reason, and
+  the level meter beside it is live. **Leg 5 contract**: a short sample history
+  on the event, or a component that takes one.
+- **Nothing says how this build was installed.** About's "How you run it today"
+  is derived from whether this bundle came from the dev server, which is honest
+  while there is no installer and stops being an answer the day there is one.
+  **Leg 5 contract**, and small.
+- **The build-lane row names different lanes than the runtime does.** The
+  drawing says "Linux AppImage, macOS universal, Windows MSI"; `build_targets`
+  says DMG, NSIS and AppImage + DEB. The badge is wired and the hint is not,
+  because the gallery is the source and a disagreement is an ADR or a bug in the
+  gallery (ADR 0057) — never a quiet edit. **Somebody has to decide which is
+  right.**
+- **`clear_runtime_log_entries` has no door on the ported Diagnostics.** The
+  pre-port panel had a Clear button; the ported card has no footer. The command
+  exists and nothing calls it. **A missing control rather than a missing
+  capability** — and adding one is drawing, so it needs the gallery to grow it
+  first.
+- **Privacy & Data's Export, Import and Reset have no commands.**
+  `export_transcription_history` writes the HISTORY as JSON; the drawn row
+  promises "everything local, as one archive". There is no import of anything
+  and no reset-to-defaults. **Leg 5 contract, three of them**, and they are why
+  that section still carries its banner.
+- **The context objects and meeting-audio rows on Privacy are V2 and an open
+  decision** and say so on themselves. Not a gap — recorded so the next leg does
+  not go looking for a source.
+
 **THE PROTOTYPE'S STATUS IS FLIPPED.** All 25 screens stand, so ADR 0057's
 condition is met: the prototype is provenance, the gallery is the source, and
 rule 4b has expired. Said here, in the rules section above, and in
@@ -1421,6 +1470,217 @@ the overlay out of scope.
   the pill and the notification were both checked without a fourth build.
 - The AppImage step still fails on `linuxdeploy`; the binary is built and runs.
 
+### Leg 4b — the seam, the rebuild lab, and four sections of fourteen
+
+**IT SPLIT AT FOUR AND SAYS SO.** Four of the fourteen mounted screens are wired
+— About & Updates, Diagnostics, General, Delivery & Insert — plus the
+`RebuildLabTab` restoration, which is the single largest item the Leg 4 prompt
+named and is done. **Ten are left**, and they are listed at the foot of this
+record with what each one needs. Reporting fourteen when four are wired is what
+the prompt told this leg not to do.
+
+**THE ONE THING TO TAKE FROM THIS LEG: THE COMPILER NOW ENFORCES ADR 0057.** A
+wired screen takes `WiredScreenProps`, whose `runtime` is REQUIRED. The
+gallery's registry renders `() => <X />` and passes nothing, so the moment a
+screen is wired its registry entry stops compiling and has to go — in the same
+commit, which is exactly what the ADR asks for. `registry.test.tsx` holds the
+other direction: the prototype's 25 ids are frozen in it as provenance, and the
+set missing from the registry must EQUAL the set the product mounts without a
+banner. An entry deleted for tidiness fails; a screen wired without retiring its
+entry fails. The count is derived from that subtraction rather than written
+down, so the `toHaveLength(25)` that would have had to be edited fourteen times
+— and that made the one honest edit indistinguishable from five dishonest ones —
+is gone. That was this leg's first commit, before any wiring, as the prompt
+asked.
+
+**THE SEAM IS ONE OBJECT AND ONE READER.** `WorkspaceRuntime` in
+`src/screens/props.ts`: `config`, `state`, `patch`, `patchText`, `flushText`,
+`active`, and an optional `open`. One reader per window — `useRuntime` opens two
+event channels and loads the config, so a screen calling it for itself would
+double every listener and give two components two opinions of one config. The
+window reads; the screen is handed the result. `active` is false while a surface
+is mounted-but-hidden so a poll can idle, and `open` is optional because the
+Diagnostics pop-out has nowhere to navigate to and a door that opens nothing is
+the fake affordance rule 7 forbids.
+
+**P1 AND P2 ARE FIXED AT THAT SEAM, and neither is visible in a screen — which
+is the test that they are in the right place.**
+
+- **P1** is `src/hooks/useConfigDraft.ts`, shared by both windows that hold a
+  config draft. `patch` stays instant for a discrete control, because there is
+  no such thing as a half-pressed toggle; `patchText` puts the draft in the form
+  on the keystroke and debounces the write by 400 ms. **A discrete patch flushes
+  a pending text commit first** — without that, a debounced keystroke can land
+  after a later toggle carrying the config it was computed from, and quietly
+  revert it. Leaving a screen and unmounting both flush. *Nothing calls
+  `patchText` yet:* none of the four wired screens has a text field. It is the
+  seam being ready rather than a fix being exercised, and the first screen with
+  a text input — Profiles, AI Models — is where it earns its keep. Say so.
+- **P2** was not what the plan's wording suggests. §2.4 says "drop
+  `key={active}`", and Leg 3 had already dropped it — but a rendered element of
+  a DIFFERENT TYPE unmounts the old one just the same, so the remount survived
+  the rewrite and P2 was still true. Every view and every settings section the
+  user has actually opened now stays mounted with the inactive ones `hidden`.
+  They are SIBLINGS rather than one container with a swapped child because each
+  keeps its own scroll box and its own `data-layout`; a surface nobody opened
+  costs nothing. Two CSS rules were needed and they are the only two lines in
+  `shell.css` this leg added that the prototype does not have: Tailwind's
+  preflight declares `[hidden] { display: none }` in `@layer base` and
+  `shell.css` is `@layer components`, so the LAYER — not the specificity — is
+  why `.ws-content { display: flex }` would otherwise win.
+
+**THE SHEET'S FOOT IS THE PROTOTYPE'S LINE AGAIN**, and it is derived rather
+than typed: `SECTIONS.some((entry) => !entry.banner)`. A leg that somehow
+un-wired all ten would get the honest line back without having to remember to.
+
+**THE REBUILD LAB IS BACK, AND IT COST LESS THAN THE PROMPT BUDGETED.** The
+reason is worth recording against the estimate: **`RebuildLabTab`'s three panels
+ARE the ported screen's three tabs, and its three selects carry exactly the
+prototype's three option lists.** `TRIGGER_OPTIONS` was "Hold to talk / Tap to
+toggle / Diagnostics demo"; so is the drawing. `INSERT_TARGET_OPTIONS` was
+"Editor preview / Clipboard fallback preview"; so is the drawing. Its ten
+`MetaRow`s are the drawn Runtime-snapshot card's eight rows plus two. Whoever
+drew this screen was reading the surface it replaces, so restoring it was a
+mapping and not a rebuild. **The lesson for the remaining ten: read the pre-port
+area out of `8f9077e^` BEFORE deciding what a row means.** `git show
+8f9077e^:src/components/settings/<Tab>.tsx`.
+
+`describeAppliedRule` — the ~40-entry vocabulary that knows what
+`phrase_repetition_collapsed` is — came back as `src/lib/transformRules.ts`
+rather than into a component, because it is runtime vocabulary and the next
+surface that has to explain a rule should read it instead of writing a second
+table. What did NOT come back is `parseRuntimeLogRuleHints`, and that is not a
+loss: it scraped `rules=` out of log lines because the transform result was not
+otherwise reachable, and on this surface the result IS reachable. It is
+obsolete, not dropped.
+
+**THE POP-OUT WAS WIRED BY THE SAME CHANGE**, because it mounts the same screen.
+It reads the runtime for itself, which is NOT a second opinion of one config: it
+is a separate webview with its own JavaScript context, so its `useRuntime` is
+the one reader in ITS window. What must not happen — two readers inside one
+window — does not.
+
+**WHAT WAS DELIBERATELY LEFT ABSENT RATHER THAN INVENTED.** This is the rule the
+leg was to be judged on, so here is every place it bit:
+
+1. **The runtime log has no severity field.** `LogLine.level` is optional now
+   and a real line draws with an empty gutter and no hue. The three levels stay
+   in the component for the day the runtime emits one.
+2. **Everything on Diagnostics that only exists after a check says `not run`**,
+   and the rules list uses `CheckList`'s `todo` — the empty ring that means a
+   probe that has not run — rather than a tick.
+3. **About says "Not checked" in both release rows until the check answers**,
+   and it does not ask GitHub for a section nobody opened.
+4. **General's waveform stays at rest on the product surface.** Not laziness:
+   `active` makes upstream open a microphone with `getUserMedia`, so driving it
+   would have WordScript hold a second capture device for as long as a settings
+   page is open — the exact signal ADR 0063's detection watches for. The
+   measurement under it is live.
+5. **Delivery's doors are absent in the pop-out**, because `open` is absent
+   there.
+6. **The diff marks on Diagnostics are computed from the two strings the runtime
+   returned** — exact, not case-folded, because `capitalized_sentence_start` is
+   one of the rules the list beneath is claiming.
+
+**A FIFTH ORPHAN CAME BACK INTO USE AND THE PROMPT'S GUESS ABOUT TWO OTHERS WAS
+WRONG.** The Leg 4 prompt listed six genuinely orphaned exports and guessed that
+"at least `Inspector` and `RawPanel` look like Diagnostics' business". Measured:
+
+- **`InputLevelMeter` is General's** and is now used. Five orphans left.
+- **`RawPanel` is History's, not Diagnostics'.** It renders a `RawTranscript` as
+  a Heard/Written pair inside `.ws-list-raw`, which is a history list item's
+  disclosure body. It lives in `ListItem.tsx`.
+- **`Inspector` is a generic slide-over** with a width and an Escape handler and
+  belongs to no screen in particular. Nothing Diagnostics needed.
+- `DangerRow`, `PaneGroup`, `VolumeSlider` unexamined beyond confirming they are
+  still referenced by nothing.
+- **Nothing was deleted.** Five orphans, all still there.
+
+**Findings for Leg 4c.**
+
+1. **A WIRED SCREEN CANNOT BE LOOKED AT IN A BROWSER, and that changes the
+   check.** The workspace needs `invoke`; without the Tauri host it renders
+   "Connecting to runtime…" and nothing else. The Leg 4 prompt's "look at it in
+   the browser first — screenshots work" was written for gallery screens and
+   stops being true for exactly the screens this leg produces. The browser is
+   still the right instrument for the twenty-one screens still IN the gallery.
+   **Budget one `npm run tauri build` per batch of wired screens, not per
+   screen** — and batch them, because the build is the expensive part.
+2. **Playwright's browser had to be installed.** `npx @playwright/mcp
+   install-browser chrome-for-testing`, ~114 MB, once. `port:diff` wants
+   `CHROME=` pointed at it: the script's default is `chromium-1232` and this
+   machine has `chromium-1237`.
+3. **`port:diff` is 29 measurements now, was 33.** `about`, `diagnostics`,
+   `general` and `delivery` left the gallery with their screens. Every remaining
+   one is **structural 0 | style 0**, and `--text` still prints nothing — the
+   `text` column is entirely Leg 2b's recorded soft divergences, unchanged.
+   The list this leg ran is in the 4c prompt so the number is reproducible.
+4. **A command that answers with anything but a list crashes a screen that calls
+   `.find` on it.** `WorkspaceWindow.test.tsx` mocks `invoke` to resolve
+   `undefined` for every command, which is exactly what a runtime that does not
+   know a command looks like. `Array.isArray` before `setState`, and treat "not
+   an array" as "did not answer" rather than as "none" — the row then states the
+   stored value rather than claiming the machine has no microphone.
+5. **Run the suite twice before believing a failure.** One full run reported
+   eight unrelated files failing with 5–15 s test durations, and a clean re-run
+   was green. It was machine load (a browser download and a dev server), not the
+   code.
+6. **`pkill -f vite` kills the agent's own shell**, because the pattern matches
+   the shell's command line. It cost one commit that silently did not run. Kill
+   by PID.
+7. **`tauri.conf.json` still names the wrong thing twice**, `mode_router.rs:7`
+   still cites `OverlayGallery.tsx`, and the gallery still has no door in the
+   native host. Five legs have now carried these; all three are one file Leg 4
+   may not open (rule 6).
+
+**The native host, and it is where the wiring paid for itself.** All four wired
+screens were looked at in WebKitGTK, in one build that walked the sheet's
+sections on a timer — synthetic input still cannot be delivered, so the trick is
+Leg 3's `scrollTop` timer generalised to `setSection`, and it turns four builds
+into one. `import -window <id>` at 14 s, 26 s, 50 s and 72 s.
+
+- **The workspace renders correctly with P2's sibling scroll boxes.** Nav, the
+  Home view with its banner, the strip along the bottom reading `Ready · Groq
+  cloud · whisper-large-v3 · Clipboard only`. Nothing moved.
+- **The sheet's foot reads "Every change applies as you make it."** and the
+  frost is running under it.
+- **General states the truth about THIS machine and it is not the drawing's.**
+  The saved microphone is unavailable, so the row says so and keeps the stored
+  value selected rather than silently showing another device. The meter reads
+  "Speak to measure the level." with its threshold mark at the far left.
+- **Diagnostics reads the live snapshot**: `idle`, `no session armed`, `groq /
+  whisper-large-v3`, `Ready`, `auto → cleanup`, `native · 12 min cap · 0 s
+  silence stop`. Every one of those is this machine's.
+- **DELIVERY CAUGHT THE BEST ONE.** The drawing says `tier 1 · Linux · X11` and
+  `Insert at cursor`; this machine reports **`experimental · Linux Wayland`** and
+  the active profile is **`Clipboard only`**. A drawing of a plausible machine
+  and the machine it is running on disagreed on four facts, and that is the
+  entire argument for this leg.
+- **About is talking to GitHub**: the runtime's own summary sentence, `In
+  progress`, `Building`, and `npm run tauri build` for a built bundle.
+- **One layout consequence worth passing on.** A long runtime hint beside a wide
+  control collapses into a narrow column — General's unavailable-microphone
+  sentence wraps to eight short lines next to a full-width select. The drawn
+  hint was one short line, so the row was never laid out against a long one. It
+  is the exceptional case rather than the normal one and no drawing was changed
+  for it, but a screen with long runtime strings should expect it.
+
+**What is left, and what each one needs.** Ten rows in `ia.tsx` still carry a
+banner. Four of them are not Leg 4's at all.
+
+| Screen | State | What it needs |
+| --- | --- | --- |
+| `hotkeys` | **wireable** | `HotkeyRecorder` (kept unreferenced for exactly this), `validate_shortcut`, `shortcut_vocabulary`, `shortcut_platform`, `shortcut_capabilities`, `native_trigger_status`, and the seven `mode_*_hotkey` config fields. Read `8f9077e^:src/components/settings/InputTab.tsx` and `ShortcutField.tsx` first — the trigger half of that area is this screen |
+| `history` | **wireable** | `useTranscriptionHistory` (kept for this), `transcription_history_entries`, `delete_…`, `retry_…`, `export_…`, plus `RawPanel`, which is History's and is one of the five orphans |
+| `profiles` | **wireable** | `config.text_profiles` end to end, `switch_active_text_profile`, `get_profile_health`, `acknowledge_profile_health_flag`, `analyze_text_rules`, `import/export_text_rules`, `useCaptureBudget`. **The first screen with text fields — `patchText` is waiting for it** |
+| `models` | **wireable, largest** | `provider_status`, `save/clear/validate_provider_api_key`, `resolve_provider_tiers`, `resolve_capture_budget`. The "On this machine" tab is the largest single block of runtime the port drew and the donor's `useModelDownload` has no equivalent here (§2.5, Leg 2c) |
+| `home` | **partly** | The hero and the record can read `state.lastResult` and the history; the decision inbox has no receiver and two Summary-tab gestures point at it (§2.5, Leg 2d). Wire what reads, keep the banner |
+| `privacy` | **partly** | `history_limit` and `history_retention_days` are config; `clear_transcription_history_entries` is real. Export, Import and Reset have no commands at all, so it **keeps its banner and its gallery entry** |
+| `context` | **cannot** | V2. The context object does not exist |
+| `notesettings` | **cannot** | V2 |
+| `agents` | **cannot** | Phase 8, ADR 0030 |
+| `integrations` | **cannot** | Phase 8 |
+
 ### Leg 4a — six lifecycles, no code, and the two things the drawing caught
 
 **FIVE ADRs AND THREE ROADMAP ENTRIES. NOTHING ELSE CHANGED.** `git diff` touches
@@ -1573,7 +1833,143 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 4
+## The prompt for Leg 4c
+
+Copied to a fresh agent verbatim.
+
+---
+
+You are picking up the WordScript GUI port. Work in
+`/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
+on the `main` branch. Do not create a branch. **Leg 4c is yours: the rest of the
+wiring.**
+
+**What is already true**
+
+Leg 4b opened the seam, fixed P1 and P2 on it, restored `RebuildLabTab` onto the
+ported Diagnostics screen, and wired four of the fourteen mounted screens —
+About & Updates, Diagnostics, General, Delivery & Insert. **Ten rows in
+`src/windows/workspace/ia.tsx` still carry a banner and four of those can never
+lose one.** The table at the foot of Leg 4b's record is the list, with what each
+remaining screen needs and which pre-port file to read for it.
+
+**Read this first**
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. Leg 4b's record directly above the
+Leg 4 prompt is your starting state and carries seven findings you will
+otherwise rediscover. **§2.5 — the entries under Leg 2c's, Leg 2d's, Leg 4a's
+and now Leg 4b's headings — is the list of what the runtime cannot answer.** Add
+to it; do not start a second one. Then `CLAUDE.md`, and `src/screens/props.ts`,
+which is the seam in about eighty lines.
+
+**What wiring looks like now, and it is smaller than it was**
+
+`WorkspaceRuntime` is handed to every row. Take it, change the screen's props
+from `ScreenProps` to `WiredScreenProps`, and the compiler will tell you the
+gallery entry has to go — that is ADR 0057 enforced rather than remembered.
+Delete the row's `banner` in the same commit, move that screen's assertions out
+of `src/screens/screens.test.tsx` into `src/screens/<Screen>.test.tsx`, and
+write them about WHICH FACTS COME FROM THE RUNTIME rather than about fidelity,
+because a retired screen has no measurement left.
+
+**Read the pre-port area before you decide what a row means.** This is Leg 4b's
+biggest single saving and it will be yours: the ported screens were drawn by
+reading the surfaces they replace, so the drawn option lists, hints and row
+orders are frequently that area's own, verbatim. `git show
+8f9077e^:src/components/settings/InputTab.tsx` and so on — the file list is `git
+ls-tree -r 8f9077e^ --name-only src/components/settings/`.
+
+**The rule you will be judged on**
+
+**Never render fake readiness** (rule 7). A screen that reads three of its eight
+facts and invents the other five is worse than the banner it replaced. If a fact
+has no source the row says so — Leg 4b's four screens do it six different ways
+and they are listed in its record — and the fact goes on §2.5. **A partial
+wiring is fine and it keeps its banner**: `privacy` and `home` are both partly
+wireable and both should end this leg wired in part and still saying so, with
+their gallery entries intact. The guard in `registry.test.tsx` enforces exactly
+that pairing.
+
+**THE GALLERY STILL SHRINKS BY WIRING AND BY NOTHING ELSE.** It is a test now
+rather than a paragraph, so you will not get it wrong by accident — but do not
+argue with it. Twenty-one entries, and the eleven that are mounted nowhere stay
+whatever else happens: 84 components in `components/shell/` are reachable only
+through them.
+
+**Five exports are still orphaned** — `DangerRow`, `Inspector`, `PaneGroup`,
+`RawPanel`, `VolumeSlider`. `RawPanel` is History's and you are wiring History,
+so it stops being orphaned this leg. This is information, not a delete list; if
+you do remove one, say so with what you checked.
+
+**What you must NOT do**
+
+- **Do not mount any of the six undecided surfaces.** ADRs 0060–0064 and one
+  roadmap candidate; every one is Phase 6, Phase 8 or a V2 candidate.
+  `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not delete a banner from Context, Notes & Meetings, Agents or
+  Integrations.** They are V2 or Phase 8 and cannot be wired at all. For those,
+  deleting the banner is the error, not the goal.
+- **Do not touch `src-tauri/`.** Rule 6 stands through Leg 4. What you find goes
+  on §2.5 for Leg 5, which is prioritised by what you find blocking.
+- **Do not touch the overlay.** Rule 5. Writing `overlay_*` CONFIG from General
+  is not touching it and is already done; `overlay*.css` and `OverlayPill.tsx`
+  do not move.
+- **Do not change a drawn screen's copy or layout to make wiring easier.** The
+  gallery is the source (ADR 0057). Leg 4b hit one real disagreement — About's
+  build-lane hint names different artifacts than `build_targets` does — and left
+  the copy alone, put the badge on the runtime and filed it in §2.5. Do that.
+
+**How to check yourself**
+
+- `npm test`, `npm run build`, `cargo test` in `src-tauri/`. **Run the suite
+  twice before believing a failure** — Leg 4b saw eight unrelated files fail
+  once under machine load and pass on a clean re-run.
+- `npm run port:diff` after anything that could move a screen. Serve the
+  prototype (`python3 -m http.server 8791 --directory
+  docs/prototypes/settings-rework`), run `npm run dev`, and point the script at
+  the browser this machine has:
+
+  ```
+  CHROME=/home/felixontv/.cache/ms-playwright/chromium-1237/chrome-linux64/chrome \
+  npm run port:diff -- home history profiles context hotkeys notesettings models \
+    agents integrations privacy onboarding translate subtitles meeting conversation \
+    agentoverlay handoff commit contextintake contextactions \
+    models#1 agents#1 agents#2 onboarding#1 onboarding#2 onboarding#3 onboarding#4 \
+    onboarding#5 onboarding#6
+  ```
+
+  That is the 29. Every one is `structural 0 | style 0` today and `--text`
+  prints nothing. **Take the screens you wire out of that list and say so in
+  your record with the new count**, so the drop is a decision rather than a
+  regression.
+- **A WIRED SCREEN CANNOT BE LOOKED AT IN A BROWSER.** The workspace needs
+  `invoke`; without the host it renders "Connecting to runtime…". The browser is
+  still right for the twenty-one screens still in the gallery. For the wired
+  ones: `npm run tauri build` (the AppImage step fails on `linuxdeploy`; the
+  binary is built), run `src-tauri/target/release/wordscript`, `xdotool search
+  --name "WordScript – Settings"`, `import -window <id>`. Synthetic input still
+  cannot be delivered, so hoist what you need or use Leg 3's trick — a temporary
+  `useEffect` setting `.ws-content`'s `scrollTop` on a timer lets one build be
+  captured twice. **Batch the screens and build once. Do not interrupt the
+  build** — killing cargo mid-link costs a full dependency rebuild.
+- **Do not `pkill -f vite`.** It matches the agent shell's own command line and
+  kills the shell. Kill by PID.
+
+**Split again if you run long.** Leg 2 split three times and Leg 4 has split
+once; each split was right. Six wireable screens is more than one session if
+Models and Profiles are in it. Say so, list what is left, write the 4d prompt.
+
+**When it is done**
+
+Commit, push to `main`, append your record to the leg log, and write the next
+prompt. If every wireable screen is wired, say so and write the **Leg 5** prompt
+instead — the runtime contracts, prioritised by what §2.5 now says is blocking.
+Then report what you did, what you found, and anything the next leg needs that
+is not already written down.
+
+---
+
+## The prompt for Leg 4 (spent — kept for the chain's record)
 
 Copied to a fresh agent verbatim.
 

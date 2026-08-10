@@ -55,6 +55,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The first four settings surfaces read the runtime.** Relay Leg 4b:
+  **About & Updates** states the running binary's version, copies it, and runs
+  `check_app_update` — badge, the runtime's own summary and a Check now that
+  re-runs it — plus four project links that open. **Diagnostics** is the
+  `RebuildLabTab` the shell overwrite gave up, restored onto the ported drawing:
+  the slice snapshot, a real capture-to-insert check with per-stage durations,
+  the decoded transform rules and the buffered runtime log, on both of its
+  mounts. **General** writes every field it draws — microphone, the four sound
+  packs, cue volume, the launch signature, the overlay's placement, display and
+  anchor, and the result overlay's dwell — lists the machine's real microphones
+  and displays, and plays a cue through the runtime's own synthesiser.
+  **Delivery & Insert** is `native_insertion_status` in full: platform, tier,
+  readiness, strategy, the two-stage driver chain with each driver's real
+  availability, and the scratchpad with a Clear that clears.
+- **The transform-rule vocabulary is back**, as `src/lib/transformRules.ts` — the
+  forty-odd entries that know what `phrase_repetition_collapsed` means, so a
+  Diagnostics screen read because something is wrong does not print runtime
+  identifiers at the person reading it.
+
+### Changed
+
+- **Typing no longer writes to disk on every keystroke.** A text field commits
+  through a 400 ms debounce while the draft lands in the form immediately; a
+  discrete control keeps instant save, and a discrete change flushes a pending
+  text commit first so a late keystroke cannot revert it. (plan P1)
+- **A view or a settings section you come back to is no longer rebuilt.** Every
+  surface the user has actually opened stays mounted with the inactive ones
+  hidden, each keeping its own scroll position. (plan P2)
+- **The settings sheet's foot says "Every change applies as you make it." again**
+  — derived from whether any section writes, rather than typed.
+
 - **Six drawn surfaces got a decided lifecycle, and nothing was built for
   them.** Relay Leg 4a: how each is entered, what holds its state, what
   dismisses it, and what happens to it when the thing it is about ends —
