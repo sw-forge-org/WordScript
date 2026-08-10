@@ -1096,6 +1096,73 @@ have found them: the drawing states them and the runtime turns out not to.
   decision** and say so on themselves. Not a gap — recorded so the next leg does
   not go looking for a source.
 
+**Raised by the owner on 2026-08-10**, against Leg 4b's report and from the demo
+rather than from the code. Two became ADRs; the rest are contracts.
+
+- **"Every transcript is a Markdown file in `~/WordScript/transcripts`" is not
+  what the runtime does.** History's foot states it, and every drawn entry
+  carries a path like
+  `~/WordScript/transcripts/2026/08/03-0942-settings-restructure.md`. The
+  runtime keeps ONE `history.json` under the user data dir and no per-transcript
+  file exists. **Leg 5 contract, and it is the second of the two on this list
+  where getting it wrong later is a data migration rather than a relabel** — the
+  first is Leg 2d's *folders are directories*. It is the same shape of promise
+  and probably the same piece of work.
+- **`Show in file manager` has neither a path nor a command.** It follows the
+  entry above: no file, nothing to reveal, and no `reveal`/`show_in_folder`
+  command exists (the `opener` plugin could carry one). **Leg 5 contract.**
+- **History's badges have no source.** `Clipboard`, `Insert failed`,
+  `Retried once` are drawn per entry; the runtime's `TranscriptionHistoryEntry`
+  carries `status`, `insert_mode`, `pasted`, `retry_of` and `applied_rules`,
+  which is enough to DERIVE all three — but which badge follows from which field
+  is a decision nobody has taken, and taking it inside a wiring commit is how a
+  placeholder becomes the product. **Leg 4c decides it and writes it down; it is
+  wiring, not contract.**
+- **The whole of `AI Models` is one task rather than a screen to wire.**
+  [ADR 0065](../decisions/0065-groq-is-the-only-integrated-lane-and-every-other-one-stays-drawn-and-disabled.md):
+  Groq is the only integrated lane, the UI does not change, and Local,
+  Self-hosted and Enterprise stay drawn and disabled. The §2.5 entries Leg 2c
+  and 2d filed about this screen are **deferred, not answered**. The ADR leaves
+  one point open on purpose — whether `local_preview` is disabled only here or
+  everywhere, since the status strip reads it — and it must be asked, not
+  guessed.
+- **`Help` finally has something behind it.**
+  [ADR 0066](../decisions/0066-help-is-a-small-modal-with-three-links-which-is-what-finally-mounts-the-row.md):
+  a small modal with Discord, GitHub and the documentation. Three legs refused
+  to mount that row for the written reason that nothing was behind it; this is
+  that something. Two of the three URLs do not exist yet and a link that opens a
+  404 must not be drawn.
+- **THE SEARCH BAR IS MISSING AND THE COMMAND PALETTE BEHIND IT WAS NEVER
+  PORTED.** Raised by the owner in as many words: *the searchbar 1:1 from the
+  demo GUI was also forgotten.* He is right, and the record was misleading about
+  why. `NavSearch` is ported 1:1 — the search glyph, the word `Search`, the
+  `⌘K` / `Ctrl K` keycap — and it is mounted in no window, so the product's
+  sidebar simply has no search bar where the prototype's has one. Leg 2a wrote
+  that it "opens the command palette, the gallery has none" and Leg 3 repeated
+  it; both are true of the PORT and neither is true of the prototype, which has
+  a complete palette: `demo.js:8031–8366`, a 26-entry `CMDK_INDEX` in three
+  groups, prefix/word-start/substring scoring, match highlighting, keyboard
+  selection and `Cmd`/`Ctrl`+`K`. **So the search field was never waiting on a
+  decision. It was waiting on a surface nobody ported**, and three legs recorded
+  the absence as a principle instead of as a gap.
+- **It is the ONLY prototype surface the port never carried.** Checked
+  mechanically rather than assumed: the prototype has exactly two top-level
+  surfaces outside its 25 screens — `settingsModal`, which Leg 3 ported as the
+  sheet, and `commandPalette`, which nobody did. "All 25 screens stand" was
+  always true and was always about the 25; this is the thing that was never in
+  the count.
+- **Most of the palette's index is answerable today.** Twelve of its entries are
+  `go:` navigations and the seam grew `runtime.open` in Leg 4b; another eleven
+  are `go:` under a settings-row label; the theme actions have `useColorScheme`;
+  Copy last transcript has `state.lastResult`. **One entry has no source** —
+  *Show transcripts in file manager*, which is the same missing path as
+  History's row. So this is a port with one hole in it, not a feature to design.
+- **Context is going to be done differently.** Said by the owner on 2026-08-10
+  and deliberately not elaborated. Until it is, Context, its intake and its
+  actions panel stay exactly as they are: mounted with a V2 banner, drawn, and
+  three entries in the gallery. **Nothing about Context is Leg 4c's**, and
+  nobody should start deriving a design from the drawing in the meantime.
+
 **THE PROTOTYPE'S STATUS IS FLIPPED.** All 25 screens stand, so ADR 0057's
 condition is met: the prototype is provenance, the gallery is the source, and
 rule 4b has expired. Said here, in the rules section above, and in
@@ -1671,15 +1738,38 @@ banner. Four of them are not Leg 4's at all.
 | Screen | State | What it needs |
 | --- | --- | --- |
 | `hotkeys` | **wireable** | `HotkeyRecorder` (kept unreferenced for exactly this), `validate_shortcut`, `shortcut_vocabulary`, `shortcut_platform`, `shortcut_capabilities`, `native_trigger_status`, and the seven `mode_*_hotkey` config fields. Read `8f9077e^:src/components/settings/InputTab.tsx` and `ShortcutField.tsx` first — the trigger half of that area is this screen |
-| `history` | **wireable** | `useTranscriptionHistory` (kept for this), `transcription_history_entries`, `delete_…`, `retry_…`, `export_…`, plus `RawPanel`, which is History's and is one of the five orphans |
+| `history` | **wireable, and bigger than it looks** | `useTranscriptionHistory` (kept for this), `transcription_history_entries`, `delete_…`, `retry_…`, `export_…`, plus `RawPanel`, which is History's and one of the five orphans. **Six per-row controls are drawn** — View raw, Show in file manager, Retry, Restore to cursor, Copy, Delete — plus two filters, a count and per-entry badges. Two of those have no runtime at all (see §2.5: the Markdown-file claim and Show in file manager) and the badges need a derivation decided rather than guessed. **Wire what reads, leave the two that cannot, keep the banner** |
 | `profiles` | **wireable** | `config.text_profiles` end to end, `switch_active_text_profile`, `get_profile_health`, `acknowledge_profile_health_flag`, `analyze_text_rules`, `import/export_text_rules`, `useCaptureBudget`. **The first screen with text fields — `patchText` is waiting for it** |
-| `models` | **wireable, largest** | `provider_status`, `save/clear/validate_provider_api_key`, `resolve_provider_tiers`, `resolve_capture_budget`. The "On this machine" tab is the largest single block of runtime the port drew and the donor's `useModelDownload` has no equivalent here (§2.5, Leg 2c) |
+| `models` | **partly, and it is now a small job** | **ADR 0065**: Groq is the only integrated lane. The UI does not change; Local, Self-hosted and Enterprise stay drawn and DISABLED. Wire the Cloud lane — `provider_status`, `save/clear/validate_provider_api_key`, `resolve_provider_tiers`, `resolve_capture_budget` — and disable the rest with the vocabulary the surface has. **Keeps its banner.** Ask the ADR's open question before greying anything: `local_preview` exists and the status strip reads it |
 | `home` | **partly** | The hero and the record can read `state.lastResult` and the history; the decision inbox has no receiver and two Summary-tab gestures point at it (§2.5, Leg 2d). Wire what reads, keep the banner |
 | `privacy` | **partly** | `history_limit` and `history_retention_days` are config; `clear_transcription_history_entries` is real. Export, Import and Reset have no commands at all, so it **keeps its banner and its gallery entry** |
 | `context` | **cannot** | V2. The context object does not exist |
 | `notesettings` | **cannot** | V2 |
 | `agents` | **cannot** | Phase 8, ADR 0030 |
 | `integrations` | **cannot** | Phase 8 |
+
+**Two things beside the ten, both raised by the owner on 2026-08-10 and neither
+of them one of the 25 screens.**
+
+- **`Help` is a small modal** with Discord, GitHub and the documentation
+  (ADR 0066), and its row is mounted in the commit that builds it. That is the
+  first new UI this port has drawn — the prototype draws the row and not what it
+  opens — so it is judged by eye rather than measured.
+- **THE SEARCH BAR GOES BACK, 1:1, AND THE PALETTE BEHIND IT GETS PORTED.** The
+  owner's words: *the searchbar 1:1 from the demo GUI was also forgotten.*
+  `NavSearch` is already ported exactly and mounted nowhere; the palette is
+  `demo.js:8031–8366` and is the only prototype surface the port never carried.
+  It is a PORT, read per the method Leg 2 used — read the builder whole, read
+  its rules in `demo.css`, put the rules in `shell.css` and not at a call site —
+  and not a design job. Twelve of its 26 entries are navigations the seam can
+  already do through `runtime.open`; one, *Show transcripts in file manager*,
+  has no source and is the same hole as History's row, so it is drawn disabled
+  per ADR 0065's rule rather than left out.
+
+**Neither blocks the ten**, but the search bar is a visible absence in the
+shipped sidebar rather than a deferred feature, so do not let it fall off the
+end again — it has now been carried by three legs as a principle when it was a
+gap.
 
 ### Leg 4a — six lifecycles, no code, and the two things the drawing caught
 
@@ -1885,10 +1975,22 @@ ls-tree -r 8f9077e^ --name-only src/components/settings/`.
 facts and invents the other five is worse than the banner it replaced. If a fact
 has no source the row says so — Leg 4b's four screens do it six different ways
 and they are listed in its record — and the fact goes on §2.5. **A partial
-wiring is fine and it keeps its banner**: `privacy` and `home` are both partly
-wireable and both should end this leg wired in part and still saying so, with
-their gallery entries intact. The guard in `registry.test.tsx` enforces exactly
-that pairing.
+wiring is fine and it keeps its banner**: `home`, `privacy`, `history` and
+`models` are all partly wireable and all four should end this leg wired in part
+and still saying so, with their gallery entries intact. The guard in
+`registry.test.tsx` enforces exactly that pairing.
+
+**A CONTROL THAT CANNOT ACT IS DISABLED, NOT DELETED AND NOT LEFT LOOKING
+SETTABLE.** This is the owner's instruction of 2026-08-10 and it is now
+[ADR 0065](../decisions/0065-groq-is-the-only-integrated-lane-and-every-other-one-stays-drawn-and-disabled.md).
+The UI does not change: no row, field, tab or lane is deleted, moved or
+reworded. What changes is whether it can be operated, and the vocabulary for
+saying so already exists — `Button`'s `disabled`, `StatusBadge`'s `plan` tone,
+the `preview` tag. It is written about `AI Models`, where three of four provider
+lanes are affected, and it is the general rule for every screen you touch.
+General already does the one case where the drawing itself asked for absence
+instead — Display and Anchor in manual placement — and that stays the exception
+rather than the pattern.
 
 **THE GALLERY STILL SHRINKS BY WIRING AND BY NOTHING ELSE.** It is a test now
 rather than a paragraph, so you will not get it wrong by accident — but do not
@@ -1909,6 +2011,15 @@ you do remove one, say so with what you checked.
 - **Do not delete a banner from Context, Notes & Meetings, Agents or
   Integrations.** They are V2 or Phase 8 and cannot be wired at all. For those,
   deleting the banner is the error, not the goal.
+- **Do not touch Context at all, in any direction.** The owner said on
+  2026-08-10 that it is going to be done differently and deliberately did not
+  say how. It stays mounted with its V2 banner and its three gallery entries,
+  and nobody derives a design from the drawing in the meantime.
+- **Do not grey out the Local lane before asking.** ADR 0065 leaves exactly one
+  point open and names it: `local_preview` is a real runtime provider and the
+  status strip already states it, so whether Local is disabled only on `AI
+  Models` or everywhere is the owner's to answer. An implementation must not
+  settle it quietly (the discipline ADR 0064 set for its own open points).
 - **Do not touch `src-tauri/`.** Rule 6 stands through Leg 4. What you find goes
   on §2.5 for Leg 5, which is prioritised by what you find blocking.
 - **Do not touch the overlay.** Rule 5. Writing `overlay_*` CONFIG from General

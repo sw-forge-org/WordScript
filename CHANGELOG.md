@@ -69,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Delivery & Insert** is `native_insertion_status` in full: platform, tier,
   readiness, strategy, the two-stage driver chain with each driver's real
   availability, and the scratchpad with a Clear that clears.
+- **Two decisions taken against the drawn surfaces.** ADR 0065: Groq is the only
+  provider WordScript integrates, and `AI Models` keeps every lane it draws with
+  the other three disabled rather than deleted or left looking settable — a
+  scope decision, not a capability claim. ADR 0066: the sidebar's `Help` row
+  opens a small modal with Discord, GitHub and the documentation, which is what
+  finally gives three legs' worth of deliberately unmounted row something to
+  open.
 - **The transform-rule vocabulary is back**, as `src/lib/transformRules.ts` — the
   forty-odd entries that know what `phrase_repetition_collapsed` means, so a
   Diagnostics screen read because something is wrong does not print runtime

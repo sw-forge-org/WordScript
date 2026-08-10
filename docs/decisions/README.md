@@ -409,6 +409,21 @@ Status: Proposed | Accepted | Superseded by NNNN
   in — opt-in and consent are one field, and opting out leaves no file. One live
   conversation at a time, because there is one microphone. ADR 0041's mode is
   untouched; the workspace grows a fifth view the day this ships and not before.
+- [0065](0065-groq-is-the-only-integrated-lane-and-every-other-one-stays-drawn-and-disabled.md):
+  Groq is the only provider WordScript integrates. `AI Models` keeps every lane,
+  row and field it draws — nothing is deleted, moved or reworded — and Local,
+  Self-hosted and Enterprise are disabled with the `disabled` / `plan` /
+  `preview` vocabulary the surface already has, rather than left looking
+  settable. A scope decision, not a capability claim. **One point is left open
+  on purpose**: `local_preview` exists in the runtime and the status strip reads
+  it, so whether the Local lane is disabled only on this screen or everywhere is
+  asked before anything is greyed out.
+- [0066](0066-help-is-a-small-modal-with-three-links-which-is-what-finally-mounts-the-row.md):
+  the sidebar's `Help` row opens a small modal with Discord, GitHub and the
+  documentation, and is mounted in the commit that builds it. Three legs refused
+  to mount it because there was nothing behind it; this is that something. The
+  search field beside it stays unmounted — the prototype's `Cmd`+`K` palette was
+  never ported and that is separate work.
 
 ## Resolved: the number 0011 was used twice
 
@@ -436,8 +451,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-05 the filed range runs through 0064; the next
-decision takes 0065.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0066; the next
+decision takes 0067.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"
