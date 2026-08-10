@@ -2737,6 +2737,7 @@ pub fn run() {
             core::providers::clear_provider_api_key,
             core::providers::validate_provider_api_key,
             core::providers::transcribe_audio_file,
+            core::communication_style::analyze_communication_style,
             core::text_rules::analyze_text_rules,
             core::text_rules::export_text_rules,
             core::text_rules::import_text_rules,

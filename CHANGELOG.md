@@ -68,6 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It ships ahead of its roadmap phase and therefore on the chat model the
   product already runs, which ADR 0071 records rather than leaves to be
   discovered.
+- **The style budget meters state what the prompt costs**, not what was typed.
+  `analyze_communication_style` returns `core::communication_style`'s own
+  `CommunicationStyleAnalysis` — what each of the two bounded fields accepted,
+  what it dropped, and the characters the result actually spends. The meters
+  used to count the characters in the textarea against two constants copied out
+  of the runtime, which reads high whenever whitespace collapses, a rule repeats
+  or a rule runs past 120 characters; a meter in the red could only ever mean
+  "maybe". It now means the runtime really did drop something. The list of what
+  was dropped is not drawn: the field's hint states the two rules a reader can
+  act on and `REFERENCE.md` carries the rest.
 - **The seventh mode ships with no hotkey**, and that is stated rather than
   papered over with `Alt+7`: the shipped defaults occupy `Alt+1` through
   `Alt+6`. The row on Hotkeys is settable like the other six and empty until

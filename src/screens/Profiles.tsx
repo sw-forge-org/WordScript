@@ -50,6 +50,7 @@ import type {
   AppConfig,
   CommunicationLength,
   CommunicationRegister,
+  CommunicationStyleAnalysis,
   ProcessingMode,
   ProfileModesSettings,
   TextProfile,
@@ -177,22 +178,16 @@ const LENGTH_OPTIONS: { value: CommunicationLength; label: string }[] = [
 ];
 
 /**
- * MIRRORED, BECAUSE THE RUNTIME EXPOSES NEITHER — on §2.5.
+ * The gallery's number, and only the gallery's.
  *
- * `core::communication_style` holds `MAX_STYLE_RULE_CHARS`,
- * `MAX_STYLE_SAMPLE_CHARS` and a `CommunicationStyleAnalysis` that reports what
- * it accepted and what it dropped, and no command returns any of it. So the
- * meter counts what is TYPED, and the two numbers are not the same number: the
- * runtime collapses whitespace, drops duplicate rules and truncates a rule past
- * 120 characters before it counts.
- *
- * Every one of those steps only ever REDUCES, which is what makes the mirror
- * safe in the one direction that matters: a meter in the black is a guarantee
- * that nothing was dropped. A meter in the red means the runtime MAY have
- * dropped something, and until it can be asked, that is the honest half.
+ * With a runtime the meters read `analyze_communication_style`, which answers
+ * what the prompt will actually cost rather than what was typed. Without one
+ * there is nothing to ask, and a gallery screen may carry sample data and
+ * assert nothing (ADR 0055), so the drawn meter counts characters against the
+ * bound it is drawn with. The two agree on any input that needs no normalizing,
+ * which is every input the gallery has.
  */
-const MAX_STYLE_RULE_CHARS = 400;
-const MAX_STYLE_SAMPLE_CHARS = 400;
+const DRAWN_STYLE_BUDGET = 400;
 
 /** Rules and a sample stay inert while the register is Off — `is_active()` in
  *  `core::communication_style` gates the whole block, so a profile that has
@@ -274,6 +269,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   const [tab, setTab] = useState(TABS[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [health, setHealth] = useState<ProfileHealthStatus | null>(null);
+  const [styleAnalysis, setStyleAnalysis] = useState<CommunicationStyleAnalysis | null>(null);
   const [term, setTerm] = useState("");
 
   /* The drawn state, unchanged, for the gallery. */
@@ -352,6 +348,47 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
 
   const work = profile ? resolveTextProfileWorkMode(profile) : null;
   const modes = profile ? resolveProfileModesSettings(profile) : null;
+
+  /* What the two bounded style fields will actually cost the prompt. The two
+     numbers the meters used to show were the field's own character count
+     against a constant copied out of `core::communication_style`, and the
+     runtime's count is lower whenever whitespace collapses, a rule repeats or a
+     rule runs past 120 characters. Asked on every edit rather than debounced:
+     it is a pure function of its argument with no disk and no network in it,
+     and a meter that lags the field it measures is the defect it exists
+     against. */
+  useEffect(() => {
+    if (!runtime?.active || !modes) {
+      setStyleAnalysis(null);
+      return;
+    }
+    let cancelled = false;
+    void invoke<CommunicationStyleAnalysis>("analyze_communication_style", {
+      request: {
+        style: {
+          register: modes.communication_register,
+          length: modes.communication_length,
+          instructions: modes.style_instructions,
+          sample: modes.style_sample,
+        },
+      },
+    })
+      .then((next) => {
+        if (!cancelled) setStyleAnalysis(next);
+      })
+      .catch(() => {
+        if (!cancelled) setStyleAnalysis(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    runtime?.active,
+    modes?.communication_register,
+    modes?.communication_length,
+    modes?.style_instructions,
+    modes?.style_sample,
+  ]);
   const capture = profile ? resolveProfileCaptureSettings(profile) : null;
   const isActive = Boolean(profile && profile.id === config?.active_text_profile_id);
   const flagCount = health?.flags.length ?? 0;
@@ -751,7 +788,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                       <Row
                         layout="stack"
                         label="Your rules"
-                        hint="One rule per line. They outrank the register where the two touch, and they describe how to write, never what to write."
+                        hint="One rule per line. They outrank the register where the two touch, and they describe how to write, never what to write. The meter counts what the prompt gets: repeated lines and anything past 120 characters in one line are dropped before it is counted."
                       >
                         <FieldWrap>
                           <TextArea
@@ -769,7 +806,10 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             }}
                             onBlur={runtime ? () => runtime.flushText() : undefined}
                           />
-                          <BudgetMeter used={styleRules.trim().length} max={MAX_STYLE_RULE_CHARS} />
+                          <BudgetMeter
+                            used={styleAnalysis?.instructions.used_chars ?? styleRules.trim().length}
+                            max={styleAnalysis?.instructions.max_chars ?? DRAWN_STYLE_BUDGET}
+                          />
                         </FieldWrap>
                       </Row>
                       <Row
@@ -793,7 +833,10 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             }}
                             onBlur={runtime ? () => runtime.flushText() : undefined}
                           />
-                          <BudgetMeter used={styleSample.trim().length} max={MAX_STYLE_SAMPLE_CHARS} />
+                          <BudgetMeter
+                            used={styleAnalysis?.sample.used_chars ?? styleSample.trim().length}
+                            max={styleAnalysis?.sample.max_chars ?? DRAWN_STYLE_BUDGET}
+                          />
                         </FieldWrap>
                       </Row>
                     </CardRows>

@@ -238,7 +238,11 @@ The register sets form, never wording — slang and youth language may come only
 from the user's rules and writing sample, never from the model's own memory.
 Precedence is fixed and stated in the prompt: preset, then rules, then sample,
 with the sample subordinate for form and authoritative for wording. Default is
-`off`, at which every prompt is byte-identical to the pre-style build.
+`off`, at which every prompt is byte-identical to the pre-style build. The two
+free-text fields are bounded, and `analyze_communication_style` returns what the
+budget accepted, what it dropped and what the result costs -- the surface states
+the cost rather than counting the characters in the field, which is a higher
+number whenever whitespace collapses, a rule repeats or a rule runs long.
 
 Every prompt WordScript sends is written in English regardless of dictation
 language, and each states explicitly that the output language is the dictated

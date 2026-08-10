@@ -238,6 +238,29 @@ export type CommunicationRegister =
 
 export type CommunicationLength = "terse" | "normal" | "full";
 
+/// What `core::communication_style` does with one of the two bounded free-text
+/// style fields, including the part it will not send.
+export interface StyleFieldBudget {
+  /// What reaches the prompt, after whitespace is collapsed, duplicate lines
+  /// are dropped and a line past 120 characters is truncated.
+  accepted:                string[];
+  /// What the budget refused. Not drawn anywhere: the meter says how much of
+  /// the budget is spent, and the rules that spend it are in `REFERENCE.md`.
+  dropped:                 string[];
+  /// The characters the prompt actually costs, which is never more and is often
+  /// less than the characters that were typed.
+  used_chars:              number;
+  max_chars:               number;
+}
+
+/// Mirrors `core::communication_style::CommunicationStyleAnalysis`.
+export interface CommunicationStyleAnalysis {
+  register:                string;
+  length:                  string;
+  instructions:            StyleFieldBudget;
+  sample:                  StyleFieldBudget;
+}
+
 /// What Translate does when the dictation is already in the target language.
 /// Stored rather than judged per dictation: the model still decides whether the
 /// two languages match, it never decides what follows from that (ADR 0041).

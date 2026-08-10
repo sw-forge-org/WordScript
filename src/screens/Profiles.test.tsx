@@ -67,6 +67,21 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
   };
 }
 
+/* The runtime's answer, and the point of it is that `used_chars` is not the
+   length of what was typed: the field below holds a repeated line and a lot of
+   loose whitespace, and the budget keeps 22 characters of it. */
+const STYLE_ANALYSIS = {
+  register: "quick",
+  length: "normal",
+  instructions: {
+    accepted: ["keep it short", "no emoji"],
+    dropped: [],
+    used_chars: 22,
+    max_chars: 400,
+  },
+  sample: { accepted: [], dropped: [], used_chars: 0, max_chars: 400 },
+};
+
 beforeEach(() => {
   invoked.mockReset();
   invoked.mockImplementation(async (command: string) => {
@@ -77,6 +92,7 @@ beforeEach(() => {
         flags: [{ kind: "form_conflict", hint: "The prompt asks for two different address forms." }],
       };
     }
+    if (command === "analyze_communication_style") return STYLE_ANALYSIS;
     return undefined;
   });
 });
@@ -182,6 +198,27 @@ describe("Profiles, wired", () => {
     expect(screen.getByRole("button", { name: /^Edit —/ })).toBeDisabled();
     /* Delete needs no editor, so it is the one that acts. */
     expect(screen.getByRole("button", { name: "Delete" })).not.toBeDisabled();
+  });
+
+  it("shows what the prompt costs rather than what was typed into the field", async () => {
+    /* The whole point of the command. What is in the field normalizes down —
+       the whitespace collapses and the repeated line goes — and the runtime is
+       the only thing that knows by how much. */
+    const withStyle = config();
+    withStyle.text_profiles[0].modes = {
+      ...withStyle.text_profiles[0].modes!,
+      communication_register: "quick",
+      style_instructions: "  keep   it   short  \nkeep it short\nno emoji",
+    };
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: withStyle })} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Style" }));
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("analyze_communication_style", expect.anything()),
+    );
+
+    expect(await screen.findByText("22 / 400")).toBeInTheDocument();
+    expect(screen.queryByText("42 / 400")).not.toBeInTheDocument();
   });
 
   it("deletes a replacement and a snippet from the profile the runtime holds", async () => {

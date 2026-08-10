@@ -297,8 +297,31 @@ sources are the two user fields. `src/data/styleLexicons.json` seeds them per
 language; it is opt-in, dated, and loaded into the user's own rules where they
 can read and edit it, never into a hidden runtime layer.
 
-With `register = off` every prompt is byte-identical to before. Cleanup, Verbatim
-and Prompt Enhance never carry a style block. On Rewrite the "preserve the tone"
+**What the two free-text fields actually cost, and why the meter under them is
+not a character count.** `analyze_communication_style` returns a
+`CommunicationStyleAnalysis`: per field the lines it accepted, the lines it
+dropped, `used_chars` and `max_chars`. `used_chars` counts what reaches the
+prompt, which is never more and is usually less than what was typed, because the
+budget runs three reductions first:
+
+| Field | What it does before counting |
+| --- | --- |
+| `style_instructions` | Collapses runs of whitespace inside each line; drops a line that repeats one already seen, case-insensitively; truncates a line past 120 characters and marks it with an ellipsis; then drops whole lines once the 400-character total is reached |
+| `style_sample` | Collapses whitespace per line and drops empty lines, keeping the line structure; cuts the whole field at 400 characters and reports the cut tail |
+
+Every one of those only ever reduces, so a meter under the bound is a guarantee
+that nothing was dropped. **The `dropped` list is not drawn anywhere.** The meter
+answers how much of the budget is spent, the hint on the field states the two
+rules a reader can act on (repeats and the per-line limit), and the exhaustive
+list lives here rather than on a surface — a card that enumerates the lines the
+runtime declined is a second place for style rules to live, which is what the
+budget exists to avoid.
+
+With `register = off` every prompt is byte-identical to before, and the analysis
+still reports the budget rather than zeroing it: the fields keep what they hold,
+the surface disables them separately, and a meter that disagreed with the
+textarea beside it would be a third statement about the same value. Cleanup,
+Verbatim and Prompt Enhance never carry a style block. On Rewrite the "preserve the tone"
 clause is *replaced* rather than extended, since both would order opposite things
 about the same property; meaning, language mix and terminology stay untouchable.
 

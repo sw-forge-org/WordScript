@@ -307,6 +307,33 @@ impl CommunicationStyle {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct AnalyzeCommunicationStyleRequest {
+    pub style: CommunicationStyle,
+}
+
+/// What the runtime will actually do with the two free-text style fields.
+///
+/// The surface used to answer this itself, by counting the characters in the
+/// textarea against two constants copied out of this file. Those are not the
+/// same number and never were: the budget collapses whitespace, drops a line
+/// that repeats one already accepted, and truncates a line past
+/// `MAX_STYLE_RULE_LINE_CHARS` before it counts. Every one of those steps only
+/// ever reduces, so the mirror was safe in one direction — a meter in the black
+/// really did mean nothing was dropped — and useless in the other, where a
+/// meter in the red could only say "maybe".
+///
+/// The style is passed in rather than read from the active profile, because the
+/// screen that asks is editing a selected profile, which is not necessarily the
+/// active one, and asks while the user is still typing into it. It is a pure
+/// function of its argument for the same reason.
+#[tauri::command]
+pub fn analyze_communication_style(
+    request: AnalyzeCommunicationStyleRequest,
+) -> CommunicationStyleAnalysis {
+    request.style.analysis()
+}
+
 /// Rules, budgeted as a list: normalized, deduplicated, truncated per line.
 pub fn style_rules_budget(value: &str) -> StyleFieldBudget {
     let mut accepted: Vec<String> = Vec::new();
@@ -633,6 +660,68 @@ mod tests {
             CommunicationLength::from_str("nonsense"),
             CommunicationLength::Normal
         );
+    }
+
+    /// The whole reason the command exists: what the runtime counts is not what
+    /// the user typed. Three rules that only ever reduce, asserted together
+    /// because the surface reads one number and has to be able to trust it.
+    #[test]
+    fn the_analysis_counts_what_the_prompt_gets_not_what_was_typed() {
+        let typed = "  keep   it   short  \nkeep it short\nno emoji\n";
+        let analysis = analyze_communication_style(AnalyzeCommunicationStyleRequest {
+            style: CommunicationStyle {
+                register: CommunicationRegister::Quick,
+                instructions: typed.to_string(),
+                ..CommunicationStyle::default()
+            },
+        });
+
+        // Whitespace collapsed, the duplicate line gone, and the count is of
+        // the result rather than of the 46 characters that were typed.
+        assert_eq!(analysis.instructions.accepted, ["keep it short", "no emoji"]);
+        assert_eq!(analysis.instructions.used_chars, "keep it short".len() + 1 + "no emoji".len());
+        assert!(analysis.instructions.used_chars < typed.chars().count());
+        assert_eq!(analysis.instructions.max_chars, MAX_STYLE_RULE_CHARS);
+        assert!(analysis.instructions.dropped.is_empty());
+    }
+
+    /// Over the budget, the runtime names what it will not send. The surface
+    /// does not draw that list, so this test is the only place it is checked.
+    #[test]
+    fn the_analysis_names_the_lines_it_will_not_send() {
+        let mut rules = String::new();
+        for index in 0..12 {
+            rules.push_str(&format!("rule number {index} {}\n", "x".repeat(40)));
+        }
+
+        let analysis = analyze_communication_style(AnalyzeCommunicationStyleRequest {
+            style: CommunicationStyle {
+                register: CommunicationRegister::Quick,
+                instructions: rules,
+                ..CommunicationStyle::default()
+            },
+        });
+
+        assert!(!analysis.instructions.dropped.is_empty());
+        assert!(analysis.instructions.used_chars <= MAX_STYLE_RULE_CHARS);
+    }
+
+    /// `Off` gates the whole block in `prompt_block`, and the analysis reports
+    /// the budget rather than the gate: the fields still hold what they hold,
+    /// and the surface disables them separately. A analysis that zeroed them
+    /// would make the meter disagree with the textarea beside it.
+    #[test]
+    fn the_analysis_reports_the_budget_even_while_the_register_is_off() {
+        let analysis = analyze_communication_style(AnalyzeCommunicationStyleRequest {
+            style: CommunicationStyle {
+                register: CommunicationRegister::Off,
+                instructions: "no emoji".to_string(),
+                ..CommunicationStyle::default()
+            },
+        });
+
+        assert_eq!(analysis.register, "off");
+        assert_eq!(analysis.instructions.used_chars, "no emoji".len());
     }
 }
 
