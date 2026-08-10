@@ -1,6 +1,6 @@
 # WordScript Roadmap
 
-Status: 2026-08-05
+Status: 2026-08-10
 
 > This is the canonical phase detail. [STATUS.md](STATUS.md) reports the
 > current state; [VISION.md](VISION.md) defines the product direction.
@@ -39,10 +39,14 @@ spoken, only the prompt argument is dictated, and a visible keyed confirmation
 precedes the start (ADR 0030).
 
 Unscheduled work with an open decision gate is filed below the phases, not
-inside them — currently four items: a second paste mechanism on Wayland,
-meeting capture, live subtitles, and the live-translation window. The last two
-were added on 2026-08-05 by relay Leg 4a, which decided the lifecycle of six
-drawn surfaces and found that three of them had no roadmap home at all.
+inside them — currently five items: a second paste mechanism on Wayland,
+streaming recognition and the spoken-output path, meeting capture, live
+subtitles, and the live-translation window. Two were added on 2026-08-05 by
+relay Leg 4a, which decided the lifecycle of six drawn surfaces and found that
+three of them had no roadmap home at all. The fifth was added on 2026-08-10 for
+the same reason one level down: the audio capabilities three of those surfaces
+wait on were named only as each other's blockers, and half of them turned out to
+be inside Phase 8 already.
 
 ## Phase 1 - Transcription Bias, Profile Health, Corpus
 
@@ -475,6 +479,66 @@ reliable; and any per-paste privilege prompt, under any mechanism.
 "Copy and insert at cursor" with at most one authorization dialog for the
 lifetime of the restore token.
 
+## Candidate - Streaming recognition and the spoken-output path
+
+**Status:** candidate, not scheduled. Added 2026-08-10, after Leg 5 found that
+the three capabilities below are named in four different places as somebody
+else's blocker and nowhere as work with an owner.
+
+**This entry exists to be read before the three that wait on it**, and its first
+finding is that most of it is not homeless at all.
+
+| Capability | Who owns it today | What waits on it |
+| --- | --- | --- |
+| **Streaming recognition** | **nobody** | live subtitles' echo, the translation window's `Conversation` tab |
+| Text-to-speech | **Phase 8**, already scoped: Cartesia Sonic-3 by measured TTFB, local Kokoro-82M as the labelled privacy mode | the translation window's spoken output |
+| Not speaking over the open microphone | **Phase 8**, already scoped and better than the alternative: cascaded barge-in in Rust (Silero VAD plus Smart Turn v3), cancelling playback on detected speech with pre-roll | the translation window, which asks for a plain mute of the recogniser |
+| Per-language output-device routing | nobody, and it is the small one | the translation window |
+
+**So the thing that is genuinely missing is one capability, not three.** Phase 8
+owns the voice and owns the barge-in, and the live-translation candidate asks
+for a cruder version of the same thing without knowing Phase 8 answers it. A
+reader pricing the translation window from its own entry prices the spoken half
+twice; a reader building Phase 8's voice builds it without knowing three
+surfaces are waiting behind it. That is the drift this record closes.
+
+**Streaming recognition is the one with no owner and no precedent in the
+runtime.** `providers/mod.rs` has exactly one speech entry point --
+`transcribe_audio_file` -- and `capture.rs` records to a file, stops, uploads
+and gets text back. There is no partial result anywhere in the contract, and the
+session model is built on the batch shape: one recording ends in exactly one
+authoritative result and one reducer commit (ADR 0018, ADR 0019).
+
+**Decision gate - answer before writing code:**
+
+1. **Does any provider on the roadmap stream at all?** If the cloud lane does
+   not, this stops being a Phase 4 question and becomes a Phase 5 one -- the
+   local runtime already runs a decoder this process owns. Which phase inherits
+   it follows from the answer, and nothing should be built before it is taken.
+2. **Does a streaming path replace the batch path or sit beside it?** A dictation
+   still has to end in one authoritative result; partial results that also have
+   to converge on one commit are a second contract, not a swap. ADR 0018 and
+   ADR 0019 are what a wrong answer here breaks.
+3. **Is the language switch detectable without a button per turn?** Already the
+   translation window's own gate and already called *the feature's real gate*
+   there. It is a measurement, and it is the one that decides whether a
+   conversation at a table works or only demonstrates.
+4. **Two output devices reopen ADR 0010.** `core::sound` runs one persistent
+   output stream by decision, and the runtime enumerates input devices only --
+   `list_native_input_devices` has no counterpart. Routing one language to the
+   room and the other to an earpiece is a second stream plus output enumeration,
+   which is small work against a deliberate decision, so it needs the ADR rather
+   than a patch.
+
+**Out of scope:** the surfaces themselves. Meeting capture, live subtitles and
+the live-translation window keep their own entries and their own gates; this one
+is only what sits underneath them. `ProcessingMode::Translate` is unaffected and
+already shipped -- it is batch, one utterance, one result (ADR 0041, ADR 0071).
+
+**Success measure:** a sentence reaches a caption strip while the speaker is
+still talking, and the machine speaks into one output device while recording
+from the microphone without transcribing itself.
+
 ## Candidate - Meeting capture
 
 **Status:** candidate, not scheduled. Added 2026-08-03. Needs the decision gate
@@ -567,7 +631,7 @@ so first and then treats them as the two things they are:
 | Reads | the room — system audio | you — the open microphone |
 | Lives | its own strip over somebody else's video | bare text under the dictation pill |
 | You are | the audience | the speaker |
-| Waits on | system-audio capture | streaming recognition |
+| Waits on | system-audio capture, which meeting capture scopes | streaming recognition, which nothing scoped until 2026-08-10 — see *Streaming recognition and the spoken-output path* |
 
 **Why it is written down at all.** It was drawn as part of the settings rework
 and has never had a roadmap home. Captions share their whole dependency with
@@ -646,9 +710,14 @@ voice is a model row in AI Models like every other model choice (ADR 0042).
 - **Text-to-speech with per-language output-device routing.** Their language out
   loud to the room, yours in your ear. Routing per language is the whole design
   and is the reason this is a desktop product: a phone has one speaker and one
-  screen, so both people share both.
+  screen, so both people share both. **The voice itself is Phase 8's** — see
+  *Streaming recognition and the spoken-output path*, added 2026-08-10, which
+  found that half of this list already has an owner. Only the routing is new.
 - **A mute of the recogniser for the length of each spoken utterance.** Out loud
-  plus an open microphone is the machine transcribing itself.
+  plus an open microphone is the machine transcribing itself. **Phase 8 already
+  scopes a better answer** — cascaded barge-in in Rust, cancelling playback on
+  detected speech with pre-roll — so this line is a cruder version of work that
+  is already planned rather than a requirement of its own.
 - **`Silent` as a real setting**, not a broken one — somebody translating a menu
   at the next table wants no sound at all, and it is the same window.
 - The consent field on a conversation object, and a fifth workspace view.
