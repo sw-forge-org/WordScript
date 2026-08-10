@@ -146,7 +146,6 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "hotkeys",
     label: "Hotkeys",
     icon: "keyboard",
-    banner: notWired("Drawn, not wired — the shortcuts shown are sample data and none is registered."),
     render: (props) => <HotkeysScreen {...props} />,
   },
   {

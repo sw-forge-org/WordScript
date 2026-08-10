@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { HomeScreen } from "@/screens/Home";
 import { HistoryScreen } from "@/screens/History";
-import { HotkeysScreen } from "@/screens/Hotkeys";
 import { PrivacyScreen } from "@/screens/Privacy";
 import { ProfilesScreen } from "@/screens/Profiles";
 import { CommitScreen } from "@/screens/Commit";
@@ -82,7 +81,6 @@ export const SCREEN_GROUPS: ScreenGroup[] = [
     group: "Settings",
     lead: "Ten sections in three groups, in a sheet at its own scale (§11.22).",
     screens: [
-      { id: "hotkeys", surface: "settings", label: "Hotkeys", render: () => <HotkeysScreen /> },
       { id: "notesettings", surface: "settings", label: "Notes & Meetings", preview: true, render: () => <NoteSettingsScreen /> },
       { id: "models", surface: "settings", label: "AI Models", render: () => <ModelsScreen /> },
       { id: "agents", surface: "settings", label: "Agents", preview: true, render: () => <AgentsScreen /> },

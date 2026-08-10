@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Card,
   CardRows,
@@ -12,34 +12,304 @@ import {
   Stepper,
   ViewTop,
 } from "@/components/shell";
-import type { ScreenProps } from "./props";
+import { HotkeyRecorder } from "@/components/settings/HotkeyRecorder";
+import {
+  loadShortcutCapabilities,
+  loadShortcutPlatform,
+  readTriggerStatus,
+  validateShortcut,
+} from "@/lib/shortcuts";
+import type {
+  AppConfig,
+  NativeTriggerStatus,
+  ShortcutBindingInfo,
+  ShortcutCapabilities,
+  ShortcutCapability,
+  ShortcutPlatform,
+} from "@/types/ipc";
+import type { WiredScreenProps } from "./props";
 
 /**
- * HOTKEYS — `SCREENS.hotkeys`.
+ * HOTKEYS — `SCREENS.hotkeys`, wired.
  *
  * A shortcut the OS refused is the single most expensive silent failure in the
  * product: nothing happens, and nothing says why. It is stated per row, as a
- * badge beside the caps rather than as a sentence under them.
+ * badge beside the caps rather than as a sentence under them — and the badge is
+ * `native_trigger_status`'s answer for that slot, not a drawing of one.
  *
  * TRANSLATE TOOK THE SEVENTH SLOT RATHER THAN DISPLACING ONE (ADR 0041). The
  * shipped defaults run Alt+1..6, so a seventh mode is the first that arrives
  * with no default binding — stated on its row rather than papered over with
  * Alt+7, because the number of digits a modifier row can carry is a real limit
  * and the eighth mode will hit it harder.
+ *
+ * AND THE RUNTIME HAS NO SEVENTH SLOT EITHER. `ProcessingMode` is six values and
+ * `mode_hotkeys` is six fields plus the picker; there is no `translate` in
+ * either. So the Translate row is drawn and DISABLED with the reason on it
+ * (ADR 0065's general rule), never a control that looks settable and writes
+ * nowhere. The fact is on the relay's §2.5 list.
+ *
+ * WHY THE MODE ROWS CARRY NO BADGE AND THE CAPTURE ROWS DO. That is the
+ * drawing's own split and it is the badge rule (§11.20): a badge is for a
+ * status that is NOT expected. Every capture shortcut is expected to be
+ * registered, so its state is worth a permanent column; a mode shortcut is
+ * empty by default, so "not registered" there is usually just "not set". A mode
+ * row that DOES have a problem says so in its hint, which is the slot the
+ * drawing already uses on the row above it.
+ *
+ * THE ONE FACT WITH NO SOURCE IS "TAKEN BY THE DESKTOP" AS A PHRASE. The
+ * runtime answers `registered` plus a sentence, never a three-word cause, so
+ * the badge states what it knows — `Registered`, `Not registered`, `Disabled`,
+ * `Not checked` — and the sentence goes in the hint where a sentence fits.
  */
 
-const MODES: Array<[string, string | null]> = [
-  ["Auto", "Alt+1"],
-  ["Verbatim", "Alt+2"],
-  ["Cleanup", "Alt+3"],
-  ["Rewrite", "Alt+4"],
-  ["Translate", null],
-  ["Draft", "Alt+5"],
-  ["Prompt Enhance", "Alt+6"],
+/** `mode_hotkeys.all_slots()` in `core::trigger`, which is what `BindingInfo`'s
+ *  `label` carries. The three capture slots are its first three registrations. */
+type CaptureField = "hotkey" | "pause_hotkey" | "abort_hotkey";
+type ModeField =
+  | "mode_picker_hotkey"
+  | "mode_auto_hotkey"
+  | "mode_verbatim_hotkey"
+  | "mode_cleanup_hotkey"
+  | "mode_rewrite_hotkey"
+  | "mode_agent_hotkey"
+  | "mode_prompt_enhance_hotkey";
+
+const CAPTURE_SLOTS: { field: CaptureField; binding: string; label: string; hint: string }[] = [
+  {
+    field: "hotkey",
+    binding: "capture",
+    label: "Dictate",
+    hint: "Starts and stops a capture, in any app.",
+  },
+  {
+    field: "pause_hotkey",
+    binding: "pause",
+    label: "Pause",
+    hint: "Holds the capture without ending the session.",
+  },
+  {
+    field: "abort_hotkey",
+    binding: "abort",
+    label: "Abort",
+    hint: "Discards the capture. Nothing is transcribed or inserted.",
+  },
 ];
 
-export function HotkeysScreen({ banner }: ScreenProps = {}) {
-  const [activation, setActivation] = useState("Tap");
+/**
+ * The drawn seven, in the drawing's order. `field` null is the mode the runtime
+ * does not carry — see the header. `Draft` is the surface's name for the
+ * runtime's `agent`; the mapping is the port's, and the binding label is the
+ * runtime's own `ProcessingMode::as_str()`.
+ */
+const MODE_SLOTS: { label: string; field: ModeField | null; binding: string | null }[] = [
+  { label: "Auto", field: "mode_auto_hotkey", binding: "auto" },
+  { label: "Verbatim", field: "mode_verbatim_hotkey", binding: "verbatim" },
+  { label: "Cleanup", field: "mode_cleanup_hotkey", binding: "cleanup" },
+  { label: "Rewrite", field: "mode_rewrite_hotkey", binding: "rewrite" },
+  { label: "Translate", field: null, binding: null },
+  { label: "Draft", field: "mode_agent_hotkey", binding: "agent" },
+  { label: "Prompt Enhance", field: "mode_prompt_enhance_hotkey", binding: "prompt_enhance" },
+];
+
+const ACTIVATION_MODES: { value: AppConfig["activation_mode"]; label: string }[] = [
+  { value: "tap", label: "Tap" },
+  { value: "double_tap", label: "Double tap" },
+  { value: "hold", label: "Hold" },
+];
+
+const ALL_FIELDS: (CaptureField | ModeField)[] = [
+  "hotkey",
+  "pause_hotkey",
+  "abort_hotkey",
+  "mode_picker_hotkey",
+  "mode_auto_hotkey",
+  "mode_verbatim_hotkey",
+  "mode_cleanup_hotkey",
+  "mode_rewrite_hotkey",
+  "mode_agent_hotkey",
+  "mode_prompt_enhance_hotkey",
+];
+
+function readField(config: AppConfig, field: CaptureField | ModeField): string {
+  return (config[field] as string | undefined) ?? "";
+}
+
+/** `HotkeyButton` splits on `+`; the runtime joins on ` + `. Nothing else in
+ *  either representation is touched — the raw token string is never shown (T9). */
+function comboFromDisplay(display: string | undefined, stored: string): string | null {
+  const human = display?.trim();
+  if (human) return human.split(" + ").join("+");
+  return stored.trim() ? stored.trim() : null;
+}
+
+/**
+ * The mechanics of an activation mode, from the runtime's own timing constants,
+ * plus whatever the capability matrix says about this session. The drawing drew
+ * ONE member of this family — tap, on a modifier-only trigger — and it is kept
+ * word for word as that case.
+ */
+function activationHint(
+  mode: AppConfig["activation_mode"],
+  status: NativeTriggerStatus | null,
+  capability: ShortcutCapability | undefined,
+  modifierOnly: boolean,
+  triggerLabel: string,
+): string {
+  const withReason = (base: string) => (capability?.reason ? `${base} ${capability.reason}` : base);
+
+  if (mode === "double_tap") {
+    return withReason(
+      `Two taps within ${status?.double_tap_window_ms ?? 400} ms start or stop the capture. A single tap does nothing.`,
+    );
+  }
+  if (mode === "hold") {
+    return withReason(
+      `Records while the shortcut is held and stops on release. A press shorter than ${
+        status?.hold_arm_ms ?? 300
+      } ms starts nothing and leaves nothing behind.`,
+    );
+  }
+  return withReason(
+    modifierOnly
+      ? `${triggerLabel} is modifier-only, so every press acts — and other apps lose it. Double tap avoids that.`
+      : `Tap starts and stops on the same shortcut. Repeated presses within ${
+          status?.debounce_ms ?? 300
+        } ms are debounced.`,
+  );
+}
+
+/** Four answers and no fifth. `undefined` is the runtime not having answered
+ *  yet, which is not the same as "not registered" and does not claim to be. */
+function badgeFor(binding: ShortcutBindingInfo | undefined, stored: string) {
+  if (!stored.trim()) return { tone: "neutral" as const, text: "Disabled" };
+  if (!binding) return { tone: "neutral" as const, text: "Not checked" };
+  if (binding.registered) return { tone: "success" as const, text: "Registered" };
+  return { tone: "danger" as const, text: "Not registered" };
+}
+
+export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
+  const { config, patch, active } = runtime;
+
+  const [status, setStatus] = useState<NativeTriggerStatus | null>(null);
+  const [platform, setPlatform] = useState<ShortcutPlatform | null>(null);
+  const [capabilities, setCapabilities] = useState<ShortcutCapabilities | null>(null);
+  const [modifierOnly, setModifierOnly] = useState(false);
+  const [recording, setRecording] = useState<CaptureField | ModeField | null>(null);
+
+  /* The recorder itself releases and restores the OS grabs, so the registration
+     state and the capability matrix are both stale the moment it closes: the
+     matrix carries this session's press/release evidence, which the same
+     keystrokes change. Read together, always. */
+  const refresh = useCallback(() => {
+    void readTriggerStatus()
+      .then(setStatus)
+      .catch(() => setStatus(null));
+    void loadShortcutCapabilities()
+      .then(setCapabilities)
+      .catch(() => setCapabilities(null));
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    refresh();
+    void loadShortcutPlatform()
+      .then(setPlatform)
+      .catch(() => setPlatform(null));
+  }, [active, refresh]);
+
+  /* A saved shortcut is re-registered by the runtime, so the row's badge has to
+     be re-read when the value changes — not when the section is opened. */
+  useEffect(() => {
+    if (!active) return;
+    refresh();
+  }, [active, refresh, config.hotkey, config.pause_hotkey, config.abort_hotkey]);
+
+  /* Whether the trigger is modifier-only is the runtime's answer, never a rule
+     re-derived here — the UI owns no key knowledge (ADR 0006). */
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    void validateShortcut(config.hotkey)
+      .then((result) => {
+        if (!cancelled) setModifierOnly(result.ok && result.modifier_only);
+      })
+      .catch(() => {
+        if (!cancelled) setModifierOnly(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, config.hotkey]);
+
+  const bindingFor = (label: string | null) =>
+    label ? status?.bindings.find((binding) => binding.label === label) : undefined;
+
+  const takenBy = (self: CaptureField | ModeField) =>
+    ALL_FIELDS.filter((field) => field !== self)
+      .map((field) => readField(config, field))
+      .filter(Boolean);
+
+  const commit = (field: CaptureField | ModeField, value: string) => {
+    /* A shortcut is a discrete value — there is no half-recorded chord — so it
+       takes the instant-save path the sheet's foot states, not `patchText`. */
+    patch({ [field]: value } as Partial<AppConfig>);
+    setRecording(null);
+    refresh();
+  };
+
+  const captureBinding = bindingFor("capture");
+  const triggerLabel = comboFromDisplay(captureBinding?.display, config.hotkey) ?? "The trigger";
+  const activationCapability = capabilities?.activation_modes.find(
+    (entry) => entry.id === config.activation_mode,
+  );
+
+  /** The row's control, at rest or recording. Recording is a state the drawing
+   *  does not have, so it is the port's own recorder rather than a second
+   *  drawing of one — `HotkeyRecorder` already owns the grab suspension, the
+   *  chord accumulation and the ten-second timeout. */
+  const control = (
+    field: CaptureField | ModeField,
+    binding: ShortcutBindingInfo | undefined,
+    allowModifierOnly = true,
+  ) => {
+    const stored = readField(config, field);
+    if (recording === field) {
+      return (
+        <HotkeyRecorder
+          value={stored}
+          display={binding?.display}
+          allowModifierOnly={allowModifierOnly}
+          takenValues={takenBy(field)}
+          onChange={(next) => commit(field, next)}
+          onStopRecording={() => {
+            setRecording(null);
+            refresh();
+          }}
+          ariaLabel={`Record ${field}`}
+        />
+      );
+    }
+    return (
+      <HotkeyButton
+        combo={comboFromDisplay(binding?.display, stored)}
+        onClick={() => setRecording(field)}
+      />
+    );
+  };
+
+  /* The closing note is a fact about THIS session, and the runtime is the only
+     thing that knows which one it is. The drawing's second clause is a fact
+     about this screen and stays as written. */
+  const platformLine = platform
+    ? `${platform.summary} — ${
+        platform.global_shortcuts_available
+          ? "the desktop registers global shortcuts"
+          : "this session offers no global-shortcut API"
+      }; a combination another app already holds is reported here, never silently dropped.${
+        platform.notes.length > 0 ? ` ${platform.notes.join(" ")}` : ""
+      }`
+    : "Reading what this session does with global shortcuts…";
 
   return (
     <>
@@ -48,49 +318,49 @@ export function HotkeysScreen({ banner }: ScreenProps = {}) {
       <SectionHeader title="Capture">
         <Card>
           <CardRows>
-            <Row
-              label="Dictate"
-              hint="Starts and stops a capture, in any app."
-              control={
-                <span className="ws-rowflex">
-                  <StatusBadge tone="success">Registered</StatusBadge>
-                  <HotkeyButton combo="Ctrl+Super" />
-                </span>
-              }
-            />
-            <Row
-              label="Pause"
-              hint="Holds the capture without ending the session."
-              control={
-                <span className="ws-rowflex">
-                  <StatusBadge tone="success">Registered</StatusBadge>
-                  <HotkeyButton combo="Ctrl+Space" />
-                </span>
-              }
-            />
-            <Row
-              label="Abort"
-              hint="Discards the capture. Nothing is transcribed or inserted."
-              control={
-                <span className="ws-rowflex">
-                  <StatusBadge tone="danger">Taken by the desktop</StatusBadge>
-                  <HotkeyButton combo="Ctrl+Alt" />
-                </span>
-              }
-            />
+            {CAPTURE_SLOTS.map((slot) => {
+              const binding = bindingFor(slot.binding);
+              const stored = readField(config, slot.field);
+              const badge = badgeFor(binding, stored);
+              return (
+                <Row
+                  key={slot.field}
+                  label={slot.label}
+                  hint={binding?.error ?? slot.hint}
+                  control={
+                    <span className="ws-rowflex">
+                      <StatusBadge tone={badge.tone}>{badge.text}</StatusBadge>
+                      {control(slot.field, binding)}
+                    </span>
+                  }
+                />
+              );
+            })}
             <Row
               label="Activation"
-              hint="Ctrl+Super is modifier-only, so every press acts — and other apps lose it. Double tap avoids that."
+              hint={activationHint(
+                config.activation_mode,
+                status,
+                activationCapability,
+                modifierOnly,
+                triggerLabel,
+              )}
               control={
                 <SegmentControl
                   aria-label="Activation"
-                  value={activation}
-                  onChange={setActivation}
-                  options={[
-                    { value: "Tap", label: "Tap" },
-                    { value: "Double tap", label: "Double tap" },
-                    { value: "Hold", label: "Hold" },
-                  ]}
+                  value={config.activation_mode}
+                  onChange={(next) => patch({ activation_mode: next })}
+                  options={ACTIVATION_MODES.map((mode) => ({
+                    value: mode.value,
+                    label: mode.label,
+                    /* A mode this session cannot honor is offered inert with
+                       the reason in the hint, never silently swapped — and the
+                       one that is already stored stays operable, so a user is
+                       never locked out of the value they have. */
+                    disabled:
+                      capabilities?.activation_modes.find((entry) => entry.id === mode.value)
+                        ?.state === "unavailable" && mode.value !== config.activation_mode,
+                  }))}
                 />
               }
             />
@@ -103,12 +373,30 @@ export function HotkeysScreen({ banner }: ScreenProps = {}) {
           <CardRows>
             <Row
               label="Mode select"
-              hint="Opens the picker; press again to cycle."
-              control={<HotkeyButton combo="Alt+S" />}
+              hint={bindingFor("mode_picker")?.error ?? "Opens the picker; press again to cycle."}
+              control={control("mode_picker_hotkey", bindingFor("mode_picker"))}
             />
-            {MODES.map(([mode, combo]) => (
-              <Row key={mode} label={mode} control={<HotkeyButton combo={combo} />} />
-            ))}
+            {MODE_SLOTS.map((slot) => {
+              if (!slot.field) {
+                return (
+                  <Row
+                    key={slot.label}
+                    label={slot.label}
+                    hint="The runtime carries no key for this mode yet, so there is nothing to bind."
+                    control={<HotkeyButton combo={null} disabled />}
+                  />
+                );
+              }
+              const binding = bindingFor(slot.binding);
+              return (
+                <Row
+                  key={slot.label}
+                  label={slot.label}
+                  hint={binding?.error ?? undefined}
+                  control={control(slot.field, binding)}
+                />
+              );
+            })}
           </CardRows>
         </Card>
       </SectionHeader>
@@ -119,7 +407,16 @@ export function HotkeysScreen({ banner }: ScreenProps = {}) {
             <Row
               label="Picker stays for"
               hint="Press the key again to cycle while it is open."
-              control={<Stepper value={4} suffix="s" min={1} max={30} aria-label="Picker stays for" />}
+              control={
+                <Stepper
+                  value={config.mode_select_timeout_s}
+                  onChange={(next) => patch({ mode_select_timeout_s: next })}
+                  suffix="s"
+                  min={1}
+                  max={30}
+                  aria-label="Picker stays for"
+                />
+              }
             />
           </CardRows>
         </Card>
@@ -129,8 +426,7 @@ export function HotkeysScreen({ banner }: ScreenProps = {}) {
           are on Alt rather than Ctrl, which is history: it belongs in the ADR
           that decided it, not under a list of keys that already work. */}
       <Note icon="keyboard" tail={<DocLink>Why the mode keys are on Alt</DocLink>}>
-        Linux · X11 — the desktop registers global shortcuts; a combination another app already
-        holds is reported here, never silently dropped.
+        {platformLine}
       </Note>
     </>
   );

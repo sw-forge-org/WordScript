@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it } from "vitest";
 import { HomeScreen } from "./Home";
 import { HistoryScreen } from "./History";
-import { HotkeysScreen } from "./Hotkeys";
 import { PrivacyScreen } from "./Privacy";
 import { ProfilesScreen } from "./Profiles";
 import { CommitScreen } from "./Commit";
@@ -99,23 +98,6 @@ describe("History", () => {
     render(<HistoryScreen />);
     expect(screen.getByText(/Kept 90 days, capped at 500 entries/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Change the rule in Privacy & Data" })).toBeInTheDocument();
-  });
-});
-
-describe("Hotkeys", () => {
-  it("reports a refused shortcut rather than swallowing it", () => {
-    render(<HotkeysScreen />);
-    expect(screen.getByText("Taken by the desktop")).toBeInTheDocument();
-    expect(screen.getAllByText("Registered")).toHaveLength(2);
-  });
-
-  it("gives Translate the seventh slot with no default binding", () => {
-    render(<HotkeysScreen />);
-    /* ADR 0041. A seventh mode is the first that arrives without a default, and
-       it says so rather than being papered over with Alt+7. */
-    const unset = screen.getAllByRole("button", { name: /not set/i });
-    expect(unset).toHaveLength(1);
-    expect(screen.getByText("Translate")).toBeInTheDocument();
   });
 });
 
