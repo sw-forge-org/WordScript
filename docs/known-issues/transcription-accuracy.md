@@ -1,0 +1,101 @@
+# Raw Transcription Accuracy — Frequent Mishearings
+
+Status: **Open, unmeasured.** Reported by the owner on 2026-08-10 against daily
+use: *"Aktuell ist die Transkription sehr ungenau und es kommen sehr viele
+solche Artefakte vor."* No measurement exists yet, which is the first thing this
+record owes.
+
+## Symptom
+
+Dictated speech comes back with words the speaker did not say. The output is
+fluent, grammatical and plausible — it is simply wrong, and it is wrong in a way
+that survives every downstream stage, because nothing after the recognizer has
+any evidence that a substitution happened.
+
+Frequency is the new part of the report. Individual mishearings were already
+known; what is reported now is that they are **common enough to change how the
+product is used**, because a dictated brief has to be re-read before it can be
+trusted.
+
+## Why this is not `transcription-hallucination.md`
+
+The two are neighbours and they are not the same failure, so they get separate
+records:
+
+| | Hallucination | Mishearing |
+| --- | --- | --- |
+| What happens | Content appears that was **not spoken at all** — subtitle labels, closing phrases, music markers, a language shift | Content that **was spoken** comes back as different words |
+| Where it is visible | Often at the edges: trailing silence, after a pause, very short utterances | Anywhere, mid-sentence, at normal speaking volume |
+| Detectable downstream | Partly — `is_hallucination` catches known whole-output and prefix phrases | **Not at all.** A mishearing is well-formed text; no string filter can see it |
+| Mitigation that exists | The approved slice of 2026-07-29 | None |
+
+`cleanup-invents-tokens-on-broken-input.md` is the stage after this one: it
+records what the AI stage does when it is handed a damaged transcript. A
+mishearing is the damage.
+
+## Evidence in hand, and it is unusually direct
+
+The owner dictates requirements into WordScript and pastes them into agent
+briefs, so **the relay itself carries dated samples of this defect**:
+
+- **2026-08-10.** A brief about where the communication style belongs contained
+  the sentence *"Normale Sätze mit Satzzeichen und Kleinschreibung."* Nothing of
+  the sort was said or meant. It was carried into the conversation, could not be
+  placed against any surface, feature or file, and had to be queried and
+  withdrawn as an artifact. It cost one round trip.
+- Earlier legs of the same relay record the general shape: a feature name in a
+  brief that matches nothing in the repository is worth suspecting as a
+  mishearing before it is worth searching for.
+
+That is the failure at full strength: the artifact was **grammatical German in
+the register of the surrounding text**, which is exactly why no filter can catch
+it and why the reader spent effort on it before rejecting it.
+
+## What is not known
+
+Everything that would make this actionable:
+
+- **No error rate.** There is no WER, no per-session count, and no way to say
+  whether accuracy is worse than last month or worse for one profile than
+  another. "Very inaccurate" is the whole of the measurement today.
+- **Which lane.** Groq `whisper-large-v3` and the local `whisper-cli` path are
+  both in use and the report does not separate them.
+- **Whether the input is the cause.** Microphone, level, room, and the
+  ~-26 dBFS speech threshold the level meter draws are all upstream of the
+  recognizer and none of them is recorded per transcription.
+- **Whether the profile's vocabulary is reaching the recognizer.** Terms exist
+  per profile (`vocabulary_hints`) and the runtime decides how many reach the
+  bias; `stt-hints-bypass-the-vocabulary-opt-in.md` is an open record in that
+  same area. A term that never arrives cannot repair the word it was added for.
+- **Whether language mix is a factor.** The samples are German dictated by a
+  speaker who also writes English, which is the condition
+  `transcription-hallucination.md` already identifies as adverse.
+
+## Next steps, cheapest first
+
+1. **Capture instances instead of describing them.** Every mishearing that
+   costs a round trip goes into
+   `src-tauri/tests/fixtures/regression_transcripts.json` (loader:
+   `core::regression_corpus`, 26 entries today) with a `failure_mode` of its
+   own, plus a matching synthetic test. That turns a complaint into a corpus,
+   and the corpus is the only thing that can show a change is an improvement.
+   The 2026-08-10 sample above is the first candidate.
+2. **Record what the audio looked like.** The history entry already carries the
+   provider, the model and the profile; the input level summary is emitted on
+   the `empty` event and kept nowhere. Persisting a peak/mean per transcription
+   would separate "the recognizer is wrong" from "the microphone is quiet"
+   without any new capability.
+3. **Separate the lanes in the report.** A per-lane count is a filter over data
+   the history already holds, once instances are being marked at all.
+4. **Then, and only then, the model question.** Whether
+   `whisper-large-v3-turbo` versus `whisper-large-v3` versus a local
+   faster-whisper path changes the rate is a real question and it is unanswerable
+   without step 1 — every one of them will feel better on the day it is
+   installed.
+
+## Consequence for anyone reading a brief
+
+Until there is a measurement: **a sentence in a dictated brief that matches
+nothing in the repository, the plan or the drawing is a candidate mishearing and
+is worth one direct question rather than an hour of searching.** That has now
+happened often enough to be a working rule rather than an anecdote.

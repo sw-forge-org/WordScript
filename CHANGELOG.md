@@ -116,7 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads them — the pre-port surface had the controls, the prototype points at
   the profile for them three times, and the profile screen never drew them. A
   profile carrying a non-default register cannot be seen or changed in the
-  product. Recorded in the relay's §2.5 and first on Leg 4d.
+  product. Recorded in the relay's §2.5 and first on Leg 4d; where it goes is
+  settled by ADR 0068 — a sixth profile tab, `Style`.
+- **Raw transcription accuracy is poor and unmeasured.** Dictated words come
+  back as different words often enough that a dictated brief has to be re-read
+  before it is trusted. Distinct from the hallucination record: a mishearing is
+  fluent, grammatical and in register, so nothing downstream can see it. Nothing
+  is measured yet — see `docs/known-issues/transcription-accuracy.md`.
 
 ### Fixed
 

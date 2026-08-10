@@ -424,6 +424,17 @@ Status: Proposed | Accepted | Superseded by NNNN
   to mount it because there was nothing behind it; this is that something. The
   search field beside it stays unmounted — the prototype's `Cmd`+`K` palette was
   never ported and that is separate work.
+- [0068](0068-the-communication-style-is-a-tab-in-the-profile-and-the-legend-states-its-scope.md):
+  ADR 0023's per-profile communication style — register, length, style rules,
+  writing sample — is running in the runtime and has no surface anywhere: the
+  prototype points at the profile for it three times and never draws it, so the
+  port carried a faithful absence and one profile on the owner's machine has a
+  non-default register nobody can see. It becomes a sixth profile tab, `Style`,
+  in second position, carrying one card `Communication style`, and the Legend on
+  Defaults gains a fifth row stating its scope — which supersedes the placement
+  half of `SETTINGS_REWORK_PLAN.md` §11.4 while meeting what §11.4 protected.
+  Rejected: beside the Rewrite job on AI Models, which is machine-scope for a
+  profile-scope value (ADR 0024).
 - [0067](0067-local-preview-is-treated-as-an-unpublished-provider-everywhere-it-is-offered.md):
   answers the point 0065 left open, asked of the owner before anything was
   greyed out. `local_preview` is treated like every other unpublished provider
@@ -459,8 +470,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-10 the filed range runs through 0067; the next
-decision takes 0068.)
+takes 0021. (As of 2026-08-10 the filed range runs through 0068; the next
+decision takes 0069.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

@@ -36,6 +36,14 @@ status change. Resolved bugs remain as references for the same failure class.
   silently disabled both overlay layout effects and therefore the only native
   repaint trigger for a mode change. Reported as mode-picker overlay stacking;
   not a compositor problem (2026-07-27).
+- [transcription-accuracy.md](transcription-accuracy.md): **open, unmeasured** —
+  dictated words come back as different words, often enough that a dictated
+  brief has to be re-read before it is trusted (owner, 2026-08-10). Distinct
+  from the hallucination record below: a mishearing is fluent, grammatical and
+  in register, so no downstream filter can see it. The relay carries dated
+  samples because the owner dictates his briefs. Nothing is measured yet; the
+  first step is capturing instances into the regression corpus rather than
+  describing them.
 - [transcription-hallucination.md](transcription-hallucination.md): mitigated —
   raw transcription language drift and hallucination. The approved slice landed
   on 2026-07-29 (ADR 0015, ADR 0016): the capture config now reaches the runtime

@@ -1268,6 +1268,10 @@ first hole this port has found in the PROTOTYPE rather than in the runtime.**
   **Leg 4d owns it, and it is a drawing job before it is a wiring job**
   (ADR 0057): the gallery grows the surface, the product follows. The runtime
   contract is already met, so the wiring afterwards is one card.
+  **Where it goes was decided with the owner the same day —
+  [ADR 0068](../decisions/0068-the-communication-style-is-a-tab-in-the-profile-and-the-legend-states-its-scope.md):
+  a sixth profile tab `Style` in second position, with the Defaults Legend
+  stating its scope in a fifth row.**
 
 **THE PROTOTYPE'S STATUS IS FLIPPED.** All 25 screens stand, so ADR 0057's
 condition is met: the prototype is provenance, the gallery is the source, and
@@ -2294,17 +2298,36 @@ and now has three shapes rather than two.
    that profile, invisible and unchangeable. That is the defect ADR 0023 exists
    against.
 
-   **Draw it first, wire it second** (ADR 0057). Ask the owner where it goes
-   before you draw: the prototype's three pointers say "the profile", the plan's
-   §11.4 put it on two mode tabs under the old IA, and those are different
-   answers. The runtime contract is already met, so once there is a drawing the
-   wiring is one card — and `patchText` is the right writer for both textareas,
-   with `MAX_STYLE_RULE_CHARS` / `MAX_STYLE_SAMPLE_CHARS` as the budget meters
-   the pre-port surface drew.
+   **WHERE IT GOES IS DECIDED — [ADR 0068](../decisions/0068-the-communication-style-is-a-tab-in-the-profile-and-the-legend-states-its-scope.md),
+   taken with the owner on 2026-08-10. Do not re-open it.** A sixth profile tab
+   `Style`, in SECOND position — after Defaults, before Context — carrying one
+   card titled `Communication style`. The `Where each list lands` Legend on
+   Defaults gains a fifth row, **Style · sets how a sentence is built · Rewrite
+   and the assistant**, and that row is how ADR 0023's narrow scope gets stated
+   once. The ADR carries why Defaults and Context were both wrong, why AI Models
+   was wrong, and what §11.4 it supersedes.
 
-   **The profile-list subline already displays a register** (`Rewrite · Client
-   register` in the drawing) for a value nothing can set, so item 3's subline
-   derivation and this are the same piece of work — do them together.
+   **Draw it first, wire it second** (ADR 0057): the gallery grows the tab, the
+   product follows. The runtime contract is already met, so the wiring is one
+   card — two selects on `patch`, two textareas on `patchText`, and
+   `MAX_STYLE_RULE_CHARS` / `MAX_STYLE_SAMPLE_CHARS` as the budget meters the
+   pre-port `ModesTab.tsx` drew. Read that file out of `8f9077e^` before you
+   draw: the six register descriptions are written to be verifiable by counting
+   properties in the output rather than by an adjective, and they are the area's
+   own words.
+
+   **Two things the same commit settles.** `npm run port:diff -- profiles` stops
+   measuring 1:1 against the prototype's five-tab screen — that is the accepted
+   cost and the ADR records it, so say so in your record rather than treating it
+   as a regression. And **six sub-tabs will not fit as drawn**: `.ws-subtabs` has
+   neither `flex-wrap` nor `overflow`, and the five already clip inside the
+   profile pane in the native host (`Replacemen…`). One-word labels or an
+   overflow rule, decided here.
+
+   **The profile-list subline is the same piece of work.** It already displays a
+   register (`Rewrite · Client register`) for a value nothing can set, and
+   `describeTextProfileWorkMode` returns an identical string for every profile —
+   so item 3's derivation and this tab are one job.
 
 1. **THE SEARCH BAR AND THE COMMAND PALETTE.** This is the one to do first and
    the owner has raised it once already, in as many words: *the searchbar 1:1
