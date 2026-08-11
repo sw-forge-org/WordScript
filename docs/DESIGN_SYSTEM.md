@@ -366,14 +366,43 @@ Three more of the same kind:
 Not a preference. Facts that do not fit move to `docs/` and are linked from the
 control that needs them.
 
-| Element | Budget |
+**A BUDGET IS QUOTED WITH THE THING BESIDE IT.** `.ws-row-ctl` is `flex: none`,
+so every pixel a control takes comes off the text column, and `.ws-sel` is
+`width: auto`, so a Select is as wide as the longest option the runtime put in
+it. "One line" is therefore a different number on every row. Leg 11 measured all
+of them in WebKitGTK across 123 rows (ADR 0092); the `≤ 90` this table carried
+until then had never been measured and is wrong for every case in it.
+
+| Element | Budget, measured |
 | --- | --- |
 | Section header | 1–4 words |
-| Section description | ≤ 90 characters, one line |
+| Section description | one line — 23 to ~70 characters, depending on the `action` sharing its row |
+| Card description | one line — about 66 characters at 436 px |
 | Row label | 1–4 words |
-| Row hint | ≤ 90 characters, one line |
+| Row hint, control is a runtime-filled `Select` + `Button` | **12–26 characters. Do not write a sentence; use the card.** |
+| Row hint, control is a `Select` | ~34–57 characters |
+| Row hint, control is a badge or one `Button` | ~62–73 characters |
+| Row hint, stacked row (no control slot) | ~60–74 (`.ws-row-hint` caps at `62ch`) |
 | Empty state | 1 line + 1 action |
-| Anything longer | → `docs/`, reached by a link |
+| Anything longer | → the card description, a `Note`, or `docs/` |
+
+**Two lines is the drawing's norm, not a defect.** 62 of the prototype's own
+rows draw two, consistently, across Models, Agents, Integrations, Notes &
+Meetings, Privacy and About. Three lines beside neighbours drawing one is the
+departure worth fixing.
+
+**A ROW MUST NOT PRINT THE RUNTIME TEXT ITS OWN CONTROL DISPLAYS.** A device
+name, a monitor label, a release summary: that text is what sets the control's
+width, so the row spends its text column on the string and then tries to print
+the string in what is left. This is not a length mistake and no length rule
+catches it — the string and the width have the same cause.
+
+**jsdom cannot check any of this.** It reports the string and is structurally
+unable to report the wrap. The instrument is the native host: measure
+`.ws-row-hint`'s `getBoundingClientRect().height` against its computed
+line-height. A conditional state is priced by cloning the hint node and setting
+the alternate text — a default-state check never renders it, and a screen in the
+wrong mode does not render the row at all.
 
 ## Component Rules
 

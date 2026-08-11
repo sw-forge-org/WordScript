@@ -53,6 +53,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The copy budget is measured now, and `≤ 90 characters, one line` was wrong
+  for every row on the surface** (ADR 0092). `.ws-row-ctl` is `flex: none` and
+  `.ws-sel` is `width: auto`, so a Select is as wide as the longest option the
+  runtime put in it and every one of those pixels comes off the text column.
+  Measured in WebKitGTK across 123 rows and 51 conditional states, **one line
+  holds between 12 and 73 characters** depending on the control beside it. The
+  `≤ 90` was written in four places — `Card.description`, `SectionHeader.description`,
+  `DESIGN_SYSTEM.md`'s budget table and the plan's §5.2, where it was also
+  promised a lint rule that was never possible — and all four now carry the
+  measurement. **Two lines is the drawing's norm**: 62 of the 74 rows over one
+  line are the prototype's copy verbatim, and they are deliberately untouched.
+- **Three rows stopped printing the runtime text their own control displays.**
+  `General`'s `Input device` built four conditional sentences out of the device
+  name its Select was already showing and drew four lines — five where a saved
+  device is missing — beside an `Input level` row drawing one; the row now
+  carries no hint, the standing fact is on the card, and the two exceptional
+  states are a `Note` under it with room for a sentence. `General`'s `Anchor`
+  named the monitor with the `(Primary)` suffix its own Select carries, where
+  the drawing names it `DP-1`. `About`'s release row grew a 68-character summary
+  to 172; the five `check_app_update` summaries state their result only, and the
+  clause all five shared is on the **This build** section header once.
+
 ### Added
 
 - **Text rules can be shared again, and the two halves are on different screens

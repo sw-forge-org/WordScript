@@ -620,6 +620,22 @@ Status: Proposed | Accepted | Superseded by NNNN
   the mirror channel and dropped the session-id guard, so any caller would have
   hung the overlay until ADR 0018's fallback fired.
 
+- [0092](0092-a-copy-budget-belongs-to-a-row-and-a-row-does-not-know-its-own-width.md):
+  the one-line budget **measured** in WebKitGTK across 123 rows, not asserted.
+  One line holds between 12 and 73 characters depending on the control, `≤ 90`
+  is wrong for every case, and 62 of the 74 over-length rows are the prototype's
+  own copy — two lines is the drawing's norm. Three rows were port-authored and
+  share one mistake: **a row must not print the runtime text its own control
+  displays**, because `.ws-sel` is `width: auto`, so that text sets the width it
+  then has to fit inside.
+
+- [0093](0093-the-sweep-that-found-fourteen-missed-three-because-it-looked-for-the-wrong-absence.md):
+  `read_diag_log`, `clear_diag_log` and `overlay_open_devtools` lost their caller
+  in the same commit as the text rules and were **not** among ADR 0089's
+  fourteen, because a command whose name survives in a test mock looks called to
+  a name-grep. `append_diag_log` still writes a log nothing can read. Recorded,
+  not deleted: the devtools door has no shell substitute and the other two do.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
@@ -646,8 +662,11 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-11 the filed range runs through 0091; the next
-decision takes 0092. 0082 through 0091 were filed on one day by two tracks
+takes 0021. (As of 2026-08-11 this commit files through **0093**, and **0094
+through 0100 are already claimed** by the core-hardening track in the same
+working tree — they were sitting there untracked while this leg's checks ran, so
+the next decision takes **0101** and this line was stale within the hour it was
+written. 0082 through 0100 were filed on one day by two tracks
 running concurrently on `main` — the GUI port relay and the core-hardening pass
 — which is why a leg claims its number early rather than at the end, and why a
 handoff sentence naming "the next free number" is the first thing to go stale.

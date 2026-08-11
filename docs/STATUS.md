@@ -63,6 +63,21 @@ Status: 2026-08-11
   Kept and listed instead of deleted: `preview_prompt_enhance` (ADR 0065 defers
   it), the text-rules import/export pair (a capability the port dropped), and
   the session command shells the Rust trigger path drives directly.
+- **The sweep that found fourteen had missed three** (ADR 0093, 2026-08-11).
+  `read_diag_log`, `clear_diag_log` and `overlay_open_devtools` lost their caller
+  in the same commit as the text rules — `8f9077e` deleted `OverlayDiagPanel.tsx`
+  — and were invisible to the sweep because their names survive as `case` arms in
+  `OverlayWindow.test.tsx`'s invoke mock, so a name-grep finds them and a
+  call-grep does not. `append_diag_log` still has a live caller, so the overlay
+  writes `/tmp/kilo/overlay-diag.log` in dev builds and **no surface can read
+  it**; read it with `tail -f`. Nothing deleted: the devtools door has no shell
+  substitute and the other two do. The disposition is open.
+- **The copy budget was measured for the first time** (ADR 0092, 2026-08-11).
+  One line on a row holds between **12 and 73 characters** depending on the
+  control beside it, not the `≤ 90` four documents asserted. Three port-authored
+  rows on `General` and `About` were printing the runtime text their own control
+  displays; the prototype's own two-line rows are the drawing's norm and are
+  untouched. `docs/DESIGN_SYSTEM.md` carries the measured table.
 - **Profiles can be edited, not only read** (ADR 0082, 2026-08-11). Add and Edit
   on Replacements and Snippets, rename, duplicate and delete a profile, and both
   calls to `analyze_text_rules` all open a panel that unfolds under the row or
@@ -295,9 +310,11 @@ Status: 2026-08-11
   server-side filters, JSON export and a separate diagnostics view from
   transient runtime logs
 - profile rule validation, preview and conflict handling on Profiles.
-  **Import and export have a complete runtime and no caller** — their UI went
-  with Leg 3's shell overwrite and the full backup on Privacy & Data is a
-  different artifact, not a replacement (ADR 0089)
+  Import and export lost their caller to Leg 3's shell overwrite and had a
+  complete runtime reachable from nothing for six legs (ADR 0089); **both have a
+  surface again since 2026-08-11** — `Export rules` on the profile's row menu,
+  import on Privacy & Data as a new profile (ADR 0090). The full backup is still
+  a different artifact, not a replacement
 - profile health and bias policy: automatic detection of systemic behavioral
   distortion in a profile (length bias in dictionary, contradictory style
   instructions, cleanup-suppressing prompt patterns) with a traffic-light

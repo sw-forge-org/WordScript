@@ -157,6 +157,7 @@ gallery of four sections.
 | **8** | The health flag's click, and two fields waiting on a measurement | *Done.* The flag opens the flags with a door and an acknowledge each (ADR 0085); **Profiles is wired and out of the gallery**, 26 measurements become 25; `duration_ms` completes §11.23's frontmatter (ADR 0086); the title call's surface is decided and its cost measured (ADR 0087) |
 | **9** | Documentation and drift | *Done.* The Titles row drawn at a measured **6 \| 6**, not the 18 \| 6 priced (ADR 0088); a caller sweep that found **fourteen** orphaned commands and removed six (ADR 0089); SPEC, README, ARCHITECTURE, REFERENCE, DESIGN_SYSTEM, VISION, ROADMAP, STATUS and the plan's §0 read against the shipped product for the first time since Leg 3 |
 | **10** | *(to be decided — see the Leg 10 prompt)* | The two capabilities the drift pass surfaced without settling: text-rules import/export has a complete runtime and no UI, and the session command shells SPEC names as contract have no caller |
+| **11** | The row width pass, and the drift sweep | *Done.* The copy budget MEASURED across 123 rows in WebKitGTK rather than asserted — one line holds 12 to 73 characters and `≤ 90` was wrong in all four places it was written (ADR 0092); three port-authored rows fixed, 62 prototype rows left alone; three commands ADR 0089's fourteen had missed, recorded undecided (ADR 0093) |
 
 Legs 2 and 4 are large and may split into sub-legs (2a, 2b, …). A leg that
 splits says so in its record and writes the prompt for the next sub-leg.
@@ -402,6 +403,7 @@ Serve the prototype for comparison:
 
 | Leg | Date | Agent | Commit | Outcome |
 | --- | --- | --- | --- | --- |
+| **11** | 2026-08-11 | Opus 5 | *(this leg)* | **The budget got measured instead of asserted, and the number was wrong for every row on the surface.** A temporary instrument walked the four views and ten sections in WebKitGTK and reported what each `.ws-row-hint` actually DRAWS: **123 rows, 51 conditional states, one line holding between 12 and 73 characters** depending on the control beside it. `≤ 90` is wrong for all of them. **62 of the 74 over-length rows are the prototype's own copy** — two lines is the drawing's norm, so Leg 10's "at most one line" described its card, not the design. Three rows were port-authored and share one mistake: **a row must not print the runtime text its own control displays**, because `.ws-sel` is `width: auto`, so that text sets the width it then has to fit inside. `Input device` drew four lines and five in the state a saved device is missing, beside a neighbour drawing one; `Anchor` had the same defect and was invisible, because the machine is in manual placement and the row is not rendered at all. ADR 0092. **The drift sweep found three commands ADR 0089's fourteen had missed** — `read_diag_log`, `clear_diag_log`, `overlay_open_devtools`, orphaned by the same commit as the text rules, invisible because a command whose name survives in a test mock looks called to a name-grep. Nothing deleted; ADR 0093. 473 frontend tests across 39 files, `cargo test` 740, `cargo check` 15 warnings, `port:diff` 24 of 25 at structural 0 \| style 0 with `models` at 6 \| 6 and 33 in the text column — all unchanged. Full account below. |
 | 0 | 2026-08-04 | Opus 5 | `dbd83c6` | Relay opened. `gui-rework-second-pass` consolidated into `main` and deleted. ADR 0054 and 0055 filed. Baseline: 154 tests green, `/gallery` does not exist, Stage 1a and 1b unstarted apart from the `glass*` removal and the font wiring. |
 | 1 | 2026-08-04 | Opus 5 | `135771f` | Dead code out, token write, eight primitives, `/gallery` shell, native-host look. 154 → 217 tests, `npm run build` green. ADR 0056 filed: the light scheme's `--fg-muted` was measured for the first time and missed AA. **The gallery's own pages were composed rather than ported — Leg 2 fixes that first.** Full account below. |
 | **2a** | 2026-08-04 | Opus 5 | `438d1d4` | **§2.1 done: the four gallery pages are ported, not composed.** The controls of `demo.css` §6 and the nav/content grammar of §3–§4 are in the library — 17 new components, ~700 lines of ported CSS. 217 → 244 frontend tests, `cargo test` 623 green, `npm run build` green. Verified by computed-style diff against the running prototype, property by property, and in the native host. **The frost pair is settled: the material runs.** ADR 0058 filed. §2.2 is Leg 2b's. Full account below. |
@@ -1836,6 +1838,139 @@ declined lines would be a second place for style rules to live.
 `cargo test` 645 (from 623), `npm run build` green, `port:diff` 26 of 28 at
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.
+
+### Leg 11 — the budget nobody had measured, and the rule that turned out to describe one card
+
+**BOTH ENTRIES ARE DONE.** Two ADRs (0092, 0093). Two commits, plus the
+documentation commit.
+
+**THE THING TO TAKE FROM THIS LEG: THE BUDGET WAS MEASURABLE ALL ALONG, AND
+MEASURING IT CONTRADICTED THE BRIEF THAT SENT ME TO APPLY IT.** Leg 10 said a
+copy budget is a function of the control beside it and that nothing in the
+toolchain knows that. The second half was the part worth acting on: a mount
+effect that walks the surfaces and reads `.ws-row-hint`'s
+`getBoundingClientRect().height` against its computed line-height reports the
+drawn line count directly, in the shipped engine, for **123 rows and 51
+conditional states** in about twenty seconds. What it reported:
+
+| Control | Text column | One line holds |
+| --- | --- | --- |
+| runtime-filled `Select` + `Button` | 80–165 px | **12–26 characters** |
+| runtime-filled `Select` | ~250 px | ~34 |
+| `Select`, fixed options | ~300–350 px | ~45–57 |
+| badge or one `Button` | ~400–470 px | ~62–73 |
+| stacked row | 436 px (`62ch` cap) | ~60–74 |
+
+**`≤ 90` IS WRONG FOR EVERY CASE IN THAT TABLE**, and it was written down in
+four places: `Card.description`'s docblock, `SectionHeader.description`'s,
+`DESIGN_SYSTEM.md`'s copy-budget table and the plan's §5.2 — where it was
+additionally promised a **lint rule**, which was never possible for a number
+that is not knowable from the source. `Card`'s had been copied from
+`SectionHeader`, whose paragraph is not even the same width: it shares its row
+with the section's `action`, so it was measured between 131 px (23 characters)
+and 444 px (about 70) on the shipped surfaces. All four are corrected.
+
+**THE RULE IN MY OWN BRIEF DESCRIBED ONE CARD.** "The explanation belongs on the
+section header; a row gets at most one line" — of **74 measurements over one
+line, 62 carry the prototype's copy verbatim**. Two lines is the drawing's norm,
+consistently, on Models, Agents, Integrations, Notes & Meetings, Privacy and
+About. Applying the rule as written would have rewritten sixty rows of the
+donor's copy on the authority of a sentence derived from one card of two. The
+check that separated them was mechanical: normalise the string, ask whether
+`demo.js` contains it. Three lines beside neighbours drawing one is the real
+departure, and that is what Leg 10 actually fixed.
+
+**THE THREE PORT-AUTHORED DEFECTS ARE ONE MISTAKE, AND IT IS NOT A LENGTH
+MISTAKE.** `General`'s `Input device`, `General`'s `Anchor` and `About`'s
+`Latest published release` each put **the control's own runtime text into the
+hint beside it** — a device name, a monitor label, a release summary. `.ws-sel`
+is `width: auto`, so that text is also what sets the control's width: the row
+spends its text column on the string and then tries to print the string in what
+is left. Every length rule misses this, because the string and the width have
+the same cause and shortening one moves the other. The drawing had none of it —
+the prototype gives `Input device` a 46-character static hint and names the
+monitor `DP-1` where its own Select holds `DP-1 (2560×1440) — primary`.
+
+**A SHORTER SENTENCE WAS TRIED FIRST AND THE INSTRUMENT REFUSED IT.** The
+replacement ran 24 characters and still drew two lines, because the row had
+**80 pixels**. That is the measurement that decided the fix: the row is given no
+hint at all. The standing fact is the card's description; a running capture and
+a missing device are exceptional and get a `Note` under the card, which spans it
+at about seventy characters a line; an error stays on the row and wraps, because
+truncating a runtime error would be a lie about the runtime. In the state that
+mattered most the row was repeating its own control — the `<option>` already
+reads `<name> — not available`.
+
+**THE SECOND DEFECT WAS UNREACHABLE BY SCREENSHOT.** `Anchor` is only rendered
+in preset placement and the machine is in manual, so the row does not exist on
+this surface. It was found by reading the drawing for the screen being changed,
+and priced by cloning the hint node and setting the alternate text. **Enumerate
+the states** in the brief meant this, and a screenshot pass would have closed
+the leg without seeing it.
+
+**`native_capture_status` NEARLY LOST ITS ONLY CALLER TO A COPY FIX.** Dropping
+the recording sentence made `captureStatus` dead state, and deleting the invoke
+with it would have manufactured exactly the drift ADR 0089 sweeps for — inside
+the leg running the sweep. The fact moved to the `Note` instead, where it has
+room to name the device.
+
+**THE SWEEP'S OWN LIST WAS SHORT** (ADR 0093). `read_diag_log`,
+`clear_diag_log` and `overlay_open_devtools` have no caller and were **not**
+among ADR 0089's fourteen. All three were orphaned by `8f9077e` — Leg 3's shell
+overwrite, the same commit that orphaned the text rules — which deleted
+`OverlayDiagPanel.tsx`. Leg 9 missed them because their names still appear in
+`src/`: as `case` arms in `OverlayWindow.test.tsx`'s invoke mock, which nothing
+removed when the panel went. **A command whose name survives in a test mock
+looks called to a name-grep and uncalled to a call-grep, and only the second is
+true.** `append_diag_log` still has a live caller, so WordScript writes a
+diagnostic log no surface can read, and both comments went on naming the deleted
+panel for eight legs. Corrected, recorded, nothing deleted — the devtools door
+has no shell substitute and the other two do.
+
+**Findings for Leg 12.**
+
+1. **THE INSTRUMENT IS TEN LINES AND IT SHOULD BE REBUILT RATHER THAN
+   REDERIVED.** A mount effect that walks `VIEWS` and `SECTIONS` with a 700 ms
+   settle, reads each `.ws-row-hint`'s height against its line-height, clones
+   the node to price alternate strings, and **POSTs to a loopback collector**.
+   `tauri.conf.json` sets `csp: null`, so `fetch` needs no permission and lands
+   in a file the shell can read immediately. `append_diag_log` was tried first
+   and failed silently into its own `.catch` — do not debug through a channel
+   whose failure mode is silence.
+2. **THE SHEET'S WIDTH IS NOT CONSTANT BETWEEN RUNS.** The same rows measured
+   542 px of row width in one pass and 457 in the next, which moved
+   `Input device`'s text column from 165 px to 80. Any budget is a budget at a
+   window size. Measure, do not carry a number.
+3. **THE ROWS STILL DRAWING THREE LINES ARE THE PROTOTYPE'S** and were left
+   alone deliberately: Models (`Bias from the profile's words`, `Into`,
+   `Address form`, `When it looks`, the assistant `Provider`), Agents
+   (`Restart it` at **four**, `Changing it`, `Open a terminal here`,
+   `Instruction file`, `Adding one`), Privacy (`Context objects`, `The accounts
+   you do have`), About (`Account, sign-in and sync`). If the owner ever wants
+   the drawing's copy tightened, that is the list and it is a design decision,
+   not a port fix.
+4. **`Profiles`' editor rows were never measured.** The panel is closed in the
+   default state and the instrument only sees what is rendered; the same is true
+   of `Diagnostics`' non-default tabs and every `Models` job that is not
+   expanded. A future pass has to open them.
+5. **The three `never used` warnings are still not this leg's:**
+   `should_oscillate_flat_reveal`, `NativeInsertionState::configure`,
+   `ModeHotkeys::for_mode`. Unchanged since Leg 9's finding 5, still the
+   core-hardening track's.
+6. **A stale `port:diff` browser was holding 9333** from a run at 05:03 that
+   never finished — ten hours old, `--user-data-dir=/tmp/wordscript-port-diff`.
+   The script binds that port itself, so a new run would have attached to a
+   ten-hour-old browser instead of failing. Killed by PID. Check `ss -ltn`
+   before a run.
+
+**Checks at the close.** 473 frontend tests across 39 files (unchanged — two
+assertions rewritten, none added or removed), `cargo test` **740 unchanged**,
+`cargo check` **15 warnings unchanged**, `npm run build` green, `port:diff`
+**24 of 25 at structural 0 | style 0** with `models` at 6 | 6 and 33 in the soft
+text column. Both screens this leg touched had already left the gallery, so no
+measurement moved. Load ran 1.6–2.4 and the suite did not flake. Every fix was
+measured in the native host before and after, and the one that looked right on
+the first attempt was rejected by the second measurement.
 
 ### Leg 10 — the question the drawing had already answered, and the budget that turned out to be a variable
 
@@ -3273,7 +3408,136 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 11
+## The prompt for Leg 12
+
+You are picking up WordScript after Leg 11. Work in the repo root on `main`. Do
+not create a branch. `src-tauri/` is open, and **the core-hardening track is
+working in the same tree** — check `git log --oneline -5` before you start and
+stage your own paths when you commit.
+
+### What is already true
+
+**The copy budget is measured, and it is a range rather than a number** (ADR
+0092). One line holds between **12 and 73 characters** depending on the control
+beside it, `≤ 90` was wrong in all four places it was written down, and
+`DESIGN_SYSTEM.md` now carries the measured table. **Two lines is the drawing's
+norm**: 62 of the 74 rows over one line are the prototype's own copy, so the
+"at most one line" rule Leg 11 was handed described one card, not the design.
+
+**Three commands ADR 0089's sweep missed are recorded and undecided** (ADR
+0093): `read_diag_log`, `clear_diag_log`, `overlay_open_devtools`, orphaned by
+`8f9077e` along with the text rules. `append_diag_log` still writes a log no
+surface reads. Nothing was deleted.
+
+**`port:diff` is 24 of 25 at structural 0 | style 0**, `models` the one
+departure at 6 | 6 (ADR 0088). `cargo test` 740, `cargo check` 15 warnings, 473
+frontend tests across 39 files.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 11's record is your starting
+state, and its findings 1 and 4 are the two that will cost you if you skip
+them**: the instrument is ten lines and should be rebuilt rather than
+rederived, and three whole classes of row have never been measured because they
+are not rendered in a default state. Then ADR 0092, ADR 0093, `CLAUDE.md` and
+`docs/spec/SPEC.md`.
+
+### The order
+
+1. **The rows no instrument has reached yet.** `Profiles`' editor panel,
+   `Diagnostics`' non-default tabs and every `Models` job that is not expanded
+   were never measured, because the instrument only sees what is rendered.
+   Rebuild it (Leg 11 finding 1), open those surfaces, and apply ADR 0092's
+   test: is the copy the prototype's, or did the port write it? Only the second
+   is yours to change.
+2. **Whatever the drift pass turns up in `src-tauri/`.** Run the sweep with
+   Leg 11's third question: `invoke_handler` against `invoke(` in **non-test**
+   `src/`, then the survivors against the whole tree to see what is still
+   asserting them. That is what turned up ADR 0093's three.
+
+### The rules you will be judged on
+
+**MEASURE THE BUDGET, DO NOT CARRY IT.** The sheet's row width changed from 542
+to 457 pixels between two passes in one session, which moved a text column from
+165 px to 80. Every number in ADR 0092's table is a number at a window size.
+
+**A ROW MUST NOT PRINT THE RUNTIME TEXT ITS OWN CONTROL DISPLAYS.** Not a length
+mistake, and no length rule catches it: `.ws-sel` is `width: auto`, so the
+string and the width have the same cause and shortening one moves the other.
+
+**THE PROTOTYPE IS A SPECIFICATION EVEN IN ITS PROSE, AND IN WHAT IT LEAVES
+OUT.** The drawing names a monitor `DP-1` where its own Select holds
+`DP-1 (2560×1440) — primary`. Read the drawing for the screen you are changing
+before you decide anything is a defect.
+
+**A BRIEF'S RULE IS A CLAIM, AND CLAIMS GET CHECKED.** Leg 11 was sent to apply
+"a row gets at most one line" and found it false of 62 rows on the surface it
+was sent to fix. Checking it cost one script.
+
+**ASK WHY IT IS THERE BEFORE YOU ASK WHETHER ANYTHING CALLS IT.** Still ADR
+0089's question, and it is what kept three dev doors alive this leg.
+
+**STRIKE THE ITEM WHEN YOU DO IT.** Leg 9 struck a bullet six briefs had
+re-carried; Leg 10 struck both of Leg 9's; Leg 11 struck both of Leg 10's.
+
+### What you must NOT do
+
+- **Do not rewrite the prototype's copy.** ADR 0092 lists the rows still drawing
+  three lines and they are the drawing's. Tightening them is a design decision
+  and the owner's, not a port fix.
+- **Do not widen the Context opening** beyond the drawn gesture lifted on
+  2026-08-11 and the row pass the owner scoped on 2026-08-11 — ask.
+- **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
+  roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not edit an existing ADR.** Append-only. The next free number is **0101**
+  — 0094 through 0100 were claimed by the core-hardening track while Leg 11's
+  checks were running, which is the second time in two legs that sentence went
+  stale before the commit landed. Grep the tree, source as well as `docs/`.
+- **Do not rename the `settings` window label** without being asked.
+- **Do not migrate a config without a backup path.** `core::backup` is the
+  pattern.
+- **The overlay is still rule 5.** The two commands that resized it dynamically
+  are gone (ADR 0089) — do not bring that path back.
+- **Leave a temporary instrument out of the commit** and grep for it. Leg 11's
+  lived at `src/dev/rowAudit.ts` with one hook in `WorkspaceWindow.tsx`.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the TOTAL,
+  not the colour.** Leg 11 closed at 473 frontend across 39 files, `cargo test`
+  740, `cargo check` 15 warnings. Under load the suite flakes by about 5;
+  `npx vitest run --no-file-parallelism` is the tiebreaker and `uptime` says
+  whether to reach for it. Leg 11 ran at 1.6–2.4 and saw none.
+- **`npm run port:diff` TAKES GALLERY IDS OR IT MEASURES NOTHING**, and a name
+  that is not one is dropped in silence. The 25 are the **16 ids in
+  `src/windows/gallery/registry.tsx` except `ds`** plus `models#1 agents#1
+  agents#2 onboarding#1`–`#6`. Read the registry, not a prose list. Expect **24
+  of 25 at structural 0 | style 0** with `models` at 6 | 6 and 33 in the soft
+  text column. **Check `ss -ltn | grep 9333` first** — the script binds that
+  port itself, and Leg 11 found a ten-hour-old browser holding it, which would
+  have made a run attach to stale code instead of failing.
+- **The native host is the only instrument for a drawn state**, and it has found
+  a defect in five consecutive legs. `spectacle -a -b -n -o <file>` captures the
+  active window and is the only reliable capture. Pointer events do not reach
+  the webview; keys do, and **must be sent bare**. The palette opens on `ctrl+k`
+  and lists the four workspace views first; `ctrl+,` opens settings, always on
+  `General`. **But prefer the instrument to the screenshot**: it reads every row
+  on every surface in one pass, including states no screenshot can reach.
+- **Check whether a host and a dev server are ALREADY running before starting
+  one.** `tauri dev` starts its own Vite, so a `npm run dev` you start yourself
+  collides on 1420 and kills the host. `ps -o lstart=` on the pid shows whose is
+  whose, and `xprop -id <win> _NET_WM_PID` maps a window to its process.
+- **Do not raise the window past somebody working at the machine — ask.**
+- **Never `pkill`.** Kill by PID, and stop what you started. `pkill -P $$` will
+  kill your own shell — it cost Leg 11 a round trip, as `pkill -f` cost Leg 6.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 13
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 11 (spent — kept for the chain's record)
 
 You are picking up WordScript after Leg 10. Work in the repo root on `main`. Do
 not create a branch. `src-tauri/` is open, and **the core-hardening track is
@@ -3307,23 +3571,18 @@ Then ADR 0090, ADR 0091, `CLAUDE.md` and `docs/spec/SPEC.md`.
 
 ### The order
 
-1. **The width defect on `General`, and it is a pass rather than a fix.**
-   `Input device` pairs a `Select` with a `Rescan` button and a
-   runtime-conditional hint that draws at **six lines** in WebKitGTK. Leg 10
-   found it in its own screenshots while fixing the same defect one screen over,
-   and left it because `General` was not its scope. The value here is not the
-   one row: it is **every `Row` whose control is more than one button**, checked
-   in the host, against the rule that a section header carries the explanation
-   and a row carries at most one line. Conditional copy is the part a
-   default-state check never sees, so enumerate the states rather than opening
-   the screen once.
-2. **Whatever the drift pass turns up in `src-tauri/`.** ADR 0089 put the
-   `invoke_handler`-against-`invoke(` sweep into every leg that touches the
-   runtime, and Leg 10 found it has a blind spot: `StartNativeSessionRequest`
-   and `CompleteNativeSessionRequest` outlived the commands that deserialized
-   them with **no warning at all**, because a `pub` item with no user compiles
-   silently. Extend the sweep to types reached only through a command you are
-   deleting.
+1. ~~**The width defect on `General`, and it is a pass rather than a fix.**~~
+   **STRUCK — done by Leg 11 (ADR 0092).** Measured rather than eyeballed: 123
+   rows in the host, one line holding 12 to 73 characters, `≤ 90` wrong in all
+   four places it was written down. **The rule in this bullet was wrong** — 62
+   of the 74 over-length rows are the prototype's own copy, so two lines is the
+   drawing's norm. Three rows were port-authored and shared one mistake: a row
+   printing the runtime text its own control displays.
+2. ~~**Whatever the drift pass turns up in `src-tauri/`.**~~ **STRUCK — done by
+   Leg 11 (ADR 0093).** Leg 10's type extension found nothing further. The sweep
+   itself was short by three: `read_diag_log`, `clear_diag_log` and
+   `overlay_open_devtools`, orphaned by `8f9077e` and invisible because their
+   names survive in a test mock.
 
 ### The rules you will be judged on
 

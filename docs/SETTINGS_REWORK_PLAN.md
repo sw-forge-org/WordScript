@@ -561,11 +561,19 @@ native host. This is a gate, not a check at the end.
 | Element | Budget | Enforcement |
 | --- | --- | --- |
 | Section header | 1–4 words | — |
-| Section description | ≤ 90 chars, one line | lint rule |
+| Section description | ~~≤ 90 chars, one line~~ **see below** | the native host |
 | Row label | 1–4 words | — |
-| Row hint | ≤ 90 chars, one line | lint rule |
+| Row hint | ~~≤ 90 chars, one line~~ **see below** | the native host |
 | Empty state | 1 line + 1 action | — |
 | Anything longer | → `docs/`, reached by a link | review |
+
+**The `≤ 90` was never measured and the lint rule was never possible.** Leg 11
+measured 123 rows in WebKitGTK: one line holds between 12 and 73 characters
+depending on what the control beside it takes, and a `Select` is as wide as the
+longest option the runtime put in it — so the budget is not knowable when the
+sentence is written, let alone by a linter over the source. jsdom reports the
+string and cannot report the wrap. `docs/DESIGN_SYSTEM.md` carries the measured
+table; ADR 0092 carries the derivation.
 
 Target: **3068 words → under 900** on the settings surface, without deleting a
 single fact. Facts that do not fit move to documentation and are linked from the
