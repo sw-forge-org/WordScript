@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import {
   AddButton,
   AnswerPanel,
@@ -58,6 +59,7 @@ import {
   resolveProfileCaptureSettings,
   resolveProfileModesSettings,
   resolveTextProfileWorkMode,
+  textRulesDocumentFromProfile,
 } from "@/lib/textProfiles";
 import { SETTINGS_ANCHOR_AUTO_STOP, settingsAnchorElementId } from "@/lib/settingsAnchors";
 import { TRANSLATE_LANGUAGES } from "@/types/ipc";
@@ -259,6 +261,19 @@ const PROFILE_FIELDS: EditorFieldSpec[] = [
  *  lists fold one entry's output into the next (`transform.rs`), which is why
  *  the rows can be reordered at all. */
 const ORDER_NOTE = "Runs in order. A later rule sees what an earlier one wrote.";
+
+/** A profile's name as the SUGGESTED half of a save dialog's filename — the
+ *  user still names the file. Only the characters a path separator or a shell
+ *  would make ambiguous are folded away; the dialog is what writes the path. */
+function slugForFile(label: string) {
+  return (
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "profile"
+  );
+}
 
 /**
  * WHAT YOU CAN DO TO A ROW — at the row, on every list, in one shape
@@ -472,7 +487,22 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
    * state is also what keeps the sample answer from standing open behind a
    * health panel two cards above it.
    */
-  const [answer, setAnswer] = useState<"sample" | "bias" | "health" | null>(null);
+  const [answer, setAnswer] = useState<"sample" | "bias" | "health" | "export" | null>(null);
+
+  /**
+   * WHAT THE LAST RULES EXPORT DID (ADR 0090), and it is a property of the
+   * PROFILE rather than of a tab — so it opens where the health flag's panel
+   * opens, above the sub-tabs, and not inside whichever tab happened to be
+   * open when the menu was used.
+   *
+   * The analysis comes back with the path because `export_text_rules` returns
+   * one, and a file you are about to send somebody is the last moment at which
+   * knowing it carries a blocking issue is still cheap.
+   */
+  const [exported, setExported] = useState<
+    { path: string; analysis: TextRulesAnalysis } | { error: string } | null
+  >(null);
+  const [exporting, setExporting] = useState(false);
 
   /** Where a row menu is open, on which row, and of which kind. One at a time,
    *  and the point is measured rather than derived: `.ws-menu` leaves the flow
@@ -602,6 +632,50 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
     setEditing({ kind: "profile", id: copy.id });
   };
 
+  /**
+   * WRITE THIS PROFILE'S RULES AS A SHAREABLE FILE (ADR 0090).
+   *
+   * `export_text_rules` has been complete in the runtime since before the port
+   * — schema version, analysis, and the merge and conflict resolution its
+   * counterpart uses — and had no caller from Leg 3's shell overwrite until
+   * this one. The capability was in `ARCHITECTURE.md` the whole time, which is
+   * how it stayed lost.
+   *
+   * EXPORT IS THE HALF THAT BELONGS ON A ROW, and the asymmetry is the reason
+   * the pair is split across two screens: this acts on the profile the menu
+   * opened on, so its target is never in question. Import CREATES a profile and
+   * has no row to act on, so it lives on Privacy & Data, where a thing arriving
+   * from outside is already what the screen is about.
+   */
+  const exportRules = async (id: string) => {
+    const target = config.text_profiles.find((entry) => entry.id === id);
+    if (!target) return;
+
+    const path = await saveFileDialog({
+      title: `Export rules of ${target.label}`,
+      defaultPath: `wordscript-rules-${slugForFile(target.label)}.json`,
+      filters: [{ name: "WordScript text rules", extensions: ["json"] }],
+    });
+    if (!path) return;
+
+    setExporting(true);
+    setAnswer("export");
+    // The previous answer goes before the next write starts, or the panel
+    // spends the write reporting the path of the file before this one.
+    setExported(null);
+    try {
+      const result = await invoke<{ path: string; analysis: TextRulesAnalysis }>(
+        "export_text_rules",
+        { request: { path, ...textRulesDocumentFromProfile(target) } },
+      );
+      setExported({ path: result.path, analysis: result.analysis });
+    } catch (cause) {
+      setExported({ error: String(cause) });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const moveReplacement = (index: number, direction: -1 | 1) =>
     write((current) => ({
       ...current,
@@ -728,6 +802,18 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
           onSelect: () => {
             setMenu(null);
             duplicateProfile();
+          },
+        },
+        /* A VERB, LIKE ITS THREE NEIGHBOURS, AND IT ACTS ON THIS ROW — which is
+           the whole reason only the export half is here (ADR 0090). An Import
+           on a row menu would name a target it cannot have: importing makes a
+           profile, and the row you opened the menu on is not it. */
+        {
+          label: "Export rules",
+          icon: "download",
+          onSelect: () => {
+            setMenu(null);
+            void exportRules(menu.id);
           },
         },
         {
@@ -929,7 +1015,14 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
             {/* The health flag lives in the detail header. It is a property of
                 the profile, not of the Defaults tab, and from here it is
                 visible on all six. Duplicate and Export went with it — they
-                are things you do to a profile rarely and from the list. */}
+                are things you do to a profile rarely and from the list.
+
+                THAT SENTENCE WAS TRUE OF DUPLICATE AND NOT OF EXPORT UNTIL LEG
+                10. The row menu shipped in Leg 7 with three verbs and this
+                comment kept naming four, which is the same defect one layer
+                down from `ARCHITECTURE.md` claiming the UI did text-rules
+                import/export for six legs: a note asserting a control is
+                indistinguishable from the control (ADR 0090). */}
             <PaneDetailHead
               title={profile?.label ?? "No profile"}
               description={
@@ -1008,6 +1101,66 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                   onOpen={(where) => setTab(where)}
                   onAcknowledge={acknowledge}
                   onClose={() => setAnswer(null)}
+                />
+              )}
+
+              {/* THE EXPORT ANSWERS WHERE THE PROFILE IS (ADR 0090), on the
+                  flag panel's plane and for the flag panel's reason: the menu
+                  that asked is reachable from all six tabs, so an answer drawn
+                  inside one of them would be somewhere else half the time.
+
+                  IT NAMES THE FILE AND WHAT IS IN IT. A path alone leaves the
+                  reader to open the file to find out whether the words came
+                  with it, and the counts are the cheapest possible answer to
+                  the question the export was asked in order to settle. The
+                  second column says where a rules file comes back IN, because
+                  this menu deliberately has no Import and a door that exists
+                  only on another screen is one the reader has to be told
+                  about. */}
+              {answer === "export" && (
+                <AnswerPanel
+                  onClose={() => {
+                    setAnswer(null);
+                    setExported(null);
+                  }}
+                  columns={[
+                    {
+                      label: exporting
+                        ? "Writing"
+                        : exported && "error" in exported
+                          ? "Export failed"
+                          : "Written",
+                      body: (
+                        <p>
+                          {exporting
+                            ? "Writing the file…"
+                            : exported === null
+                              ? "Nothing was written."
+                              : "error" in exported
+                                ? exported.error
+                                : `${profile?.prompt.trim() ? "The prompt, " : ""}${
+                                    profile?.vocabulary_hints.length ?? 0
+                                  } words, ${profile?.dictionary_entries.length ?? 0} replacements and ${
+                                    profile?.snippet_entries.length ?? 0
+                                  } snippets went to ${exported.path}.`}
+                        </p>
+                      ),
+                    },
+                    {
+                      label: "Coming back in",
+                      body: (
+                        <p>
+                          A rules file is imported on Privacy &amp; Data, where it lands as a new
+                          profile.
+                          {exported !== null &&
+                          !("error" in exported) &&
+                          exported.analysis.blocking
+                            ? " What was written still has a blocking issue — the file carries it too."
+                            : ""}
+                        </p>
+                      ),
+                    },
+                  ]}
                 />
               )}
 

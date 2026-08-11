@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,6 +17,20 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
 
 const invoked = vi.mocked(invoke);
+
+/**
+ * A BUTTON BY THE ROW IT SITS IN, and the card is why it has to be.
+ *
+ * `Export` and `Import` each name two different artifacts on this screen since
+ * ADR 0090 — the machine's archive and one profile's rules — so a query by verb
+ * alone matches both and the test that used to pass now cannot say which door
+ * it pressed. Naming the row is also what the reader does.
+ */
+function inRow(label: string) {
+  const row = screen.getByText(label).closest(".ws-row");
+  if (!row) throw new Error(`No row labelled ${label}`);
+  return within(row as HTMLElement);
+}
 
 /**
  * Privacy & Data is still in the gallery, so its fidelity is still measured in
@@ -85,9 +99,18 @@ describe("Privacy & Data, wired", () => {
 
     /* All four were the reason this screen carried a banner. `core::backup`
        answers the three that had no command at all, and the banner came off in
-       the commit that made it false (ADR 0057). */
-    for (const name of ["Export", "Import", "Reset", "Clear"]) {
-      expect(screen.getByRole("button", { name }), name).toBeEnabled();
+       the commit that made it false (ADR 0057). The two rules rows joined them
+       in Leg 10 against `export_text_rules` and `import_text_rules`, which had
+       been complete in the runtime and unreachable since Leg 3 (ADR 0090). */
+    for (const [row, name] of [
+      ["Full export", "Export"],
+      ["Full import", "Import"],
+      ["Profile rules", "Export"],
+      ["Import rules", "Import"],
+      ["Reset all settings", "Reset"],
+      ["Clear transcription history", "Clear"],
+    ] as const) {
+      expect(inRow(row).getByRole("button", { name }), row).toBeEnabled();
     }
   });
 
@@ -115,7 +138,7 @@ describe("Privacy & Data · export, import and reset", () => {
     });
     render(<PrivacyScreen runtime={runtime} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Export" }));
+    await userEvent.click(inRow("Full export").getByRole("button", { name: "Export" }));
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("export_full_backup", {
@@ -141,7 +164,7 @@ describe("Privacy & Data · export, import and reset", () => {
     });
     render(<PrivacyScreen runtime={runtime} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await userEvent.click(inRow("Full import").getByRole("button", { name: "Import" }));
 
     expect(
       await screen.findByText(/went to \/data\/config.backup-import-1.json/),
@@ -162,6 +185,104 @@ describe("Privacy & Data · export, import and reset", () => {
     await userEvent.click(screen.getByRole("button", { name: "Reset" }));
 
     expect(await screen.findByText(/6 profiles and the history stayed/)).toBeInTheDocument();
+  });
+
+  it("exports the profile the picker names, with its words rather than its legacy string", async () => {
+    const config = createAppConfig();
+    config.text_profiles = [
+      {
+        ...config.text_profiles[0],
+        id: "p-1",
+        label: "General writing",
+        prompt: "Write plainly.",
+        /* The legacy field still holds what a pre-migration profile carried.
+           Nothing has written it since ADR 0035 and the recognizer stopped
+           reading it, so an export that carried IT would ship a word list the
+           user has not seen in six legs. */
+        stt_hints: "stale\nfrom before",
+        vocabulary_hints: [
+          { ...config.text_profiles[0].vocabulary_hints[0], id: "v-1", phrase: "Kubernetes" },
+        ],
+        dictionary_entries: [],
+        snippet_entries: [],
+      },
+    ];
+    config.active_text_profile_id = "p-1";
+
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "export_text_rules") {
+        return { path: "/tmp/chosen-archive.json", analysis: { blocking: false } };
+      }
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    await userEvent.click(inRow("Profile rules").getByRole("button", { name: "Export" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("export_text_rules", {
+        request: {
+          path: "/tmp/chosen-archive.json",
+          prompt: "Write plainly.",
+          stt_hints: "Kubernetes",
+          dictionary_entries: [],
+          snippet_entries: [],
+        },
+      }),
+    );
+  });
+
+  /* The rule this half is arranged around, and it is the opposite of the
+     archive's: an import that REPLACES has to say where the replaced state
+     went, and an import that replaces NOTHING has to say that it did not. */
+  it("adds an imported file as a new profile without replacing or switching one", async () => {
+    const patch = vi.fn();
+    const config = createAppConfig();
+    config.text_profiles = [{ ...config.text_profiles[0], id: "p-1", label: "General writing" }];
+    config.active_text_profile_id = "p-1";
+
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "import_text_rules") {
+        return {
+          document: {
+            schema_version: 1,
+            prompt: "Imported prompt.",
+            stt_hints: "Postgres",
+            dictionary_entries: [{ id: "theirs-1", phrase: "hdb", replace_with: "Herzliche Grüße" }],
+            snippet_entries: [],
+          },
+          analysis: { blocking: false },
+        };
+      }
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true, config, patch })} />);
+
+    await userEvent.click(inRow("Import rules").getByRole("button", { name: "Import" }));
+
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const written = patch.mock.calls[0][0];
+    expect(written.text_profiles).toHaveLength(2);
+    expect(written.text_profiles[0].id).toBe("p-1");
+    /* The profile that was here is untouched and still the active one. */
+    expect(written.active_text_profile_id).toBe("p-1");
+
+    const added = written.text_profiles[1];
+    expect(added.label).toBe("Chosen archive");
+    expect(added.prompt).toBe("Imported prompt.");
+    /* THE WORDS SURVIVE THE SCHEMA GAP. The document has nowhere but the legacy
+       string to carry terms, and a profile whose terms live only there reaches
+       no recognizer (ADR 0035) — so the import runs the same migration a disk
+       load runs. */
+    expect(added.vocabulary_hints.map((hint: { phrase: string }) => hint.phrase)).toEqual([
+      "Postgres",
+    ]);
+    /* And the rule ids are this machine's, for `duplicateTextProfile`'s reason:
+       a file's ids were minted in somebody else's profile. */
+    expect(added.dictionary_entries[0].id).not.toBe("theirs-1");
+    expect(added.dictionary_entries[0].replace_with).toBe("Herzliche Grüße");
+
+    expect(await screen.findByText(/no profile was replaced/)).toBeInTheDocument();
   });
 
   it("answers whether anything leaves with a fact, not with a door", () => {

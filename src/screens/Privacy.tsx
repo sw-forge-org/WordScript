@@ -12,6 +12,13 @@ import {
   StatusBadge,
   ViewTop,
 } from "@/components/shell";
+import {
+  buildTextProfilesPatch,
+  resolveActiveTextProfile,
+  textProfileFromRulesDocument,
+  textRulesDocumentFromProfile,
+} from "@/lib/textProfiles";
+import type { TextRulesAnalysis, TextRulesDocument } from "@/types/textRules";
 import type { WiredScreenProps } from "./props";
 
 /**
@@ -56,6 +63,27 @@ import type { WiredScreenProps } from "./props";
  * `runtime.open`. `Open Context` still goes to a V2 screen, which is a fact
  * about Context and not about this row — the row's job is to say where the
  * rule about context objects is stated.
+ *
+ * PROFILE RULES ARE THE FOURTH AND FIFTH DOORS, AND THEY ARE A DIFFERENT SIZE
+ * OF ARTIFACT FROM THE TWO ABOVE THEM (ADR 0090). The full archive is this
+ * MACHINE — config, history, transcripts — and it is the thing you keep. A
+ * rules file is one profile's CONTENT — its prompt, words, replacements and
+ * snippets — and it is the thing you send somebody. `export_full_backup` was
+ * never a substitute: a colleague who wants your abbreviations does not want
+ * your history.
+ *
+ * THE EXPORT NAMES ITS PROFILE AND THE IMPORT MAKES ONE, which is the whole of
+ * why the pair is split the way it is. Export also stands on the profile's own
+ * row menu, where it acts on the row and needs no picker; import has no row to
+ * act on, because the profile it produces does not exist yet. Drawing an Import
+ * on a row would name a target it cannot have.
+ *
+ * NOTHING HERE SNAPSHOTS, AND THAT IS NOT AN OMISSION. `import_full_backup` and
+ * `reset_all_settings` snapshot because they REPLACE what is on this machine.
+ * An imported rules file is appended as a new profile: no existing profile is
+ * read, changed or removed, so there is no previous state for a snapshot to
+ * hold and the way back is deleting the profile the import just made — one
+ * confirmed click on the screen the row points at.
  */
 const HISTORY_LIMITS = [50, 100, 200, 500, 1000];
 
@@ -69,16 +97,43 @@ const RETENTIONS: { value: number; label: string }[] = [
   { value: 0, label: "Keep all" },
 ];
 
+/** The profile a rules file becomes, named after the file it came from. The
+ *  export's own suggested name is stripped back off, so a round trip does not
+ *  produce a profile called "wordscript rules support reply". */
+function labelFromFile(path: string) {
+  const base = (path.split(/[\\/]/).pop() ?? "")
+    .replace(/\.json$/i, "")
+    .replace(/^wordscript-rules-/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
+  if (!base) return "Imported rules";
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
 export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
   /* One line per row rather than a shared notice: three destructive doors sit
      within a screen of each other, and a single message would leave a reader
      guessing which one it answered. */
-  const [busy, setBusy] = useState<"export" | "import" | "reset" | null>(null);
+  const [busy, setBusy] = useState<
+    "export" | "import" | "reset" | "rules-export" | "rules-import" | null
+  >(null);
   const [exported, setExported] = useState<string | null>(null);
   const [imported, setImported] = useState<string | null>(null);
   const [reset, setReset] = useState<string | null>(null);
+  const [rulesExported, setRulesExported] = useState<string | null>(null);
+  const [rulesImported, setRulesImported] = useState<string | null>(null);
+
+  /* WHICH PROFILE THE EXPORT MEANS. It opens on the active one because that is
+     the profile the reader is currently being written by, and it is a local
+     selection rather than a config write — picking what to export changes
+     nothing about the machine, so it must not land on disk. */
+  const activeProfileId = resolveActiveTextProfile(runtime.config).id;
+  const [rulesProfileId, setRulesProfileId] = useState(activeProfileId);
+  const rulesProfile =
+    runtime.config.text_profiles.find((entry) => entry.id === rulesProfileId) ??
+    resolveActiveTextProfile(runtime.config);
 
   const clear = async () => {
     setClearing(true);
@@ -138,6 +193,88 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
       );
     } catch (cause) {
       setImported(String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runRulesExport = async () => {
+    const path = await saveFileDialog({
+      title: `Export rules of ${rulesProfile.label}`,
+      defaultPath: "wordscript-rules.json",
+      filters: [{ name: "WordScript text rules", extensions: ["json"] }],
+    });
+    if (!path) return;
+
+    setBusy("rules-export");
+    try {
+      const answer = await invoke<{ path: string; analysis: TextRulesAnalysis }>(
+        "export_text_rules",
+        { request: { path, ...textRulesDocumentFromProfile(rulesProfile) } },
+      );
+      setRulesExported(
+        `${rulesProfile.label} — ${rulesProfile.vocabulary_hints.length} words, ${rulesProfile.dictionary_entries.length} replacements and ${rulesProfile.snippet_entries.length} snippets — written to ${answer.path}.`,
+      );
+    } catch (cause) {
+      setRulesExported(String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runRulesImport = async () => {
+    const path = await openFileDialog({
+      title: "Import profile rules",
+      multiple: false,
+      filters: [{ name: "WordScript text rules", extensions: ["json"] }],
+    });
+    if (typeof path !== "string") return;
+
+    setBusy("rules-import");
+    try {
+      /* THE RUNTIME PARSES AND JUDGES THE FILE, and this call is how — the
+         schema check, the merge and the analysis all live in `text_rules.rs`
+         and a second reader here would be the second implementation ADR 0055
+         exists against. The current-* fields are empty and the resolution is
+         `replace_current` because there is nothing to resolve against: the
+         file becomes a profile of its own, so the merge branch has no work to
+         do and its absence is what makes this import unable to overwrite. */
+      const answer = await invoke<{ document: TextRulesDocument; analysis: TextRulesAnalysis }>(
+        "import_text_rules",
+        {
+          request: {
+            path,
+            current_prompt: "",
+            current_stt_hints: "",
+            current_dictionary_entries: [],
+            current_snippet_entries: [],
+            sample_text: null,
+            resolution: "replace_current",
+          },
+        },
+      );
+
+      const created = textProfileFromRulesDocument(answer.document, labelFromFile(path));
+      runtime.patch(
+        buildTextProfilesPatch(
+          runtime.config,
+          [...runtime.config.text_profiles, created],
+          /* The new profile is NOT made active. An import is a thing arriving,
+             not a decision to be written by it — switching would change how the
+             very next dictation comes out on the strength of a file the reader
+             has not looked at yet. */
+          runtime.config.active_text_profile_id,
+        ),
+      );
+
+      const blocking = answer.analysis.blocking
+        ? " It has a blocking issue — Profiles shows which."
+        : "";
+      setRulesImported(
+        `Added as the profile ${created.label}: ${created.vocabulary_hints.length} words, ${created.dictionary_entries.length} replacements and ${created.snippet_entries.length} snippets. Nothing else changed and no profile was replaced.${blocking}`,
+      );
+    } catch (cause) {
+      setRulesImported(String(cause));
     } finally {
       setBusy(null);
     }
@@ -287,7 +424,17 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
         </Card>
       </SectionHeader>
 
-      <SectionHeader title="Export">
+      {/* THE HEADING CARRIES WHAT THE TWO PAIRS ARE, because the rows below it
+          cannot. A row's hint is one line, and the two rules rows spend their
+          width on a control — a picker plus a button — so the column left for
+          their text is roughly thirty characters where the archive rows have
+          fifty. The sentence explaining what a rules file IS does not fit
+          there and belongs here anyway (donor rule: a section header is a
+          descriptive line, a row is at most one). */}
+      <SectionHeader
+        title="Export"
+        description="Everything on this machine as one archive, or one profile's rules as a file you can send."
+      >
         <Card>
           <CardRows>
             <Row
@@ -316,6 +463,74 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                 >
                   Import
                 </Button>
+              }
+            />
+            {/* THE PICKER IS THE CONTROL AND THE BUTTON IS BESIDE IT, because
+                the row has to say WHICH profile before it can offer to write
+                one. The two archive rows above need no such thing — there is
+                one machine.
+
+                THE HINT IS SHORT BECAUSE THE PICKER IS WIDE, and that is a
+                measurement rather than a preference: `.ws-row-ctl` is
+                `flex: none`, so every pixel the control takes comes off the
+                text column. The first build of this row ran 79 characters —
+                inside the ≤ 90 one-line budget the other rows are written to —
+                and drew THREE lines in WebKitGTK against neighbours that drew
+                one, because the budget is a function of what the control costs
+                and the neighbours' control is a single button. jsdom reports
+                the string and cannot report the wrap. */}
+            <Row
+              label="Profile rules"
+              hint={rulesExported ?? "Prompt, words and snippets."}
+              control={
+                <span className="ws-rowflex">
+                  <Select
+                    value={rulesProfileId}
+                    onChange={(event) => setRulesProfileId(event.target.value)}
+                    aria-label="Profile to export"
+                  >
+                    {runtime.config.text_profiles.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    icon={<Icon name="download" />}
+                    busy={busy === "rules-export"}
+                    disabled={busy !== null}
+                    onClick={() => void runRulesExport()}
+                  >
+                    Export
+                  </Button>
+                </span>
+              }
+            />
+            <Row
+              label="Import rules"
+              /* Same width rule as the row above: two buttons, so the second
+                 sentence — that nothing is replaced and nothing is switched —
+                 is in the ANSWER, where it is read at the moment it matters
+                 and has the whole row to be read in. */
+              hint={rulesImported ?? "Lands as a new profile."}
+              control={
+                <span className="ws-rowflex">
+                  <Button
+                    variant="ghost"
+                    busy={busy === "rules-import"}
+                    disabled={busy !== null}
+                    onClick={() => void runRulesImport()}
+                  >
+                    Import
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    icon={<Icon name="arrow" />}
+                    onClick={() => runtime.open?.({ view: "profiles" })}
+                  >
+                    Open Profiles
+                  </Button>
+                </span>
               }
             />
           </CardRows>

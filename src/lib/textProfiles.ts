@@ -462,6 +462,87 @@ export function duplicateTextProfile(profile: TextProfile, label: string): TextP
   });
 }
 
+/**
+ * WHAT A PROFILE PUTS IN A SHAREABLE RULES FILE (ADR 0090).
+ *
+ * `TextRulesDocument` is the runtime's own schema and carries four things: the
+ * prompt, the words, the replacements and the snippets. It is a profile's
+ * CONTENT and none of its settings — a rules file that carried a delivery
+ * target or a processing mode would be a profile, and a profile is what
+ * `export_full_backup` already moves.
+ *
+ * THE WORDS COME FROM `vocabulary_hints` AND NOT FROM `stt_hints`, which is the
+ * one thing about this that is not mechanical. The document schema is v1 and
+ * predates the per-entry vocabulary model, so its only home for terms is the
+ * legacy newline string — but `stt_hints` is a field the current surface never
+ * writes (ADR 0035: it survives migration and no longer feeds the recognizer).
+ * Exporting it would write whatever string a profile happened to carry from
+ * before its migration and silently drop every word the user has added since.
+ */
+export function textRulesDocumentFromProfile(profile: TextProfile): {
+  prompt: string;
+  stt_hints: string;
+  dictionary_entries: DictionaryEntry[];
+  snippet_entries: SnippetEntry[];
+} {
+  return {
+    prompt: profile.prompt,
+    stt_hints: profile.vocabulary_hints.map((hint) => hint.phrase).join("\n"),
+    dictionary_entries: profile.dictionary_entries,
+    snippet_entries: profile.snippet_entries,
+  };
+}
+
+/**
+ * A NEW PROFILE FROM AN IMPORTED RULES FILE (ADR 0090).
+ *
+ * IT RE-IDS THE RULES, for `duplicateTextProfile`'s reason and one more. A
+ * file's rule ids were minted in somebody else's profile, so importing them
+ * verbatim is the `duplicate_rule_id` collision that function exists against —
+ * except here the two profiles are not even related, so nothing about the
+ * collision would look like a copy to whoever eventually reads the runtime's
+ * applied-rules line.
+ *
+ * IT RUNS THE LEGACY MIGRATION RATHER THAN CONVERTING THE WORDS ITSELF. An
+ * imported document IS a v1-shaped payload — terms in the newline string,
+ * nothing in `vocabulary_hints` — and the product already owns exactly one
+ * function that turns that shape into the current one, mirroring
+ * `TextProfile::migrate_vocabulary_hints` in `config.rs`. Converting the string
+ * here would be a second copy of the recognizer's own limits (48 characters,
+ * four words, four slots), and the copy that drifts is the one that decides an
+ * imported word reaches the recognizer when the runtime says it does not.
+ */
+export function textProfileFromRulesDocument(
+  document: {
+    prompt: string;
+    stt_hints: string;
+    dictionary_entries: DictionaryEntry[];
+    snippet_entries: SnippetEntry[];
+  },
+  label: string,
+): TextProfile {
+  const imported: TextProfile = {
+    ...createTextProfile(),
+    label,
+    prompt: document.prompt,
+    stt_hints: document.stt_hints,
+    vocabulary_hints: [],
+    // The migration is a no-op at or above the current schema version, so the
+    // profile has to declare the version its payload actually is.
+    schema_version: 1,
+    dictionary_entries: document.dictionary_entries.map((entry) => ({
+      ...entry,
+      id: createRuleId("dict"),
+    })),
+    snippet_entries: document.snippet_entries.map((entry) => ({
+      ...entry,
+      id: createRuleId("snippet"),
+    })),
+  };
+
+  return migrateLegacyBiasPolicyToVocabularyHints(imported);
+}
+
 export function buildTextProfilesPatch(
   config: AppConfig,
   nextProfiles: TextProfile[],

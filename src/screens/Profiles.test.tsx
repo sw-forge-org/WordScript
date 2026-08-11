@@ -8,6 +8,9 @@ import type { AppConfig } from "@/types/ipc";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
+/* The save dialog the rules export opens. Answering with a fixed path is what
+   lets the test assert the command's argument rather than the dialog's. */
+vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn(async () => "/tmp/rules.json") }));
 
 const invoked = vi.mocked(invoke);
 
@@ -628,7 +631,64 @@ describe("Profiles, wired", () => {
     expect(screen.getByRole("menu", { name: "Actions for Support reply" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /Rename/ })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /Duplicate/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Export rules/ })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /Delete/ })).toBeInTheDocument();
+
+    /* AND NO IMPORT, WHICH IS THE POINT OF THE SPLIT (ADR 0090). Every entry
+       here acts on the row the menu opened on; an import makes a profile, so
+       the row it would act on does not exist yet and the door is on Privacy &
+       Data instead. */
+    expect(screen.queryByRole("menuitem", { name: /Import/ })).not.toBeInTheDocument();
+  });
+
+  it("exports the rules of the row the menu was opened on, not of the selected one", async () => {
+    const two = config();
+    two.text_profiles = [
+      { ...two.text_profiles[0], prompt: "The general prompt." },
+      {
+        ...two.text_profiles[0],
+        id: "support",
+        label: "Support reply",
+        prompt: "The support prompt.",
+        stt_hints: "stale legacy string",
+        vocabulary_hints: [
+          { ...two.text_profiles[0].vocabulary_hints[0], id: "v-s", phrase: "Zendesk" },
+        ],
+        dictionary_entries: [],
+        snippet_entries: [],
+      },
+    ];
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "export_text_rules") {
+        return { path: "/tmp/rules.json", analysis: { blocking: false } };
+      }
+      return undefined;
+    });
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: two })} />);
+
+    await userEvent.pointer({
+      keys: "[MouseRight]",
+      target: screen.getByRole("button", { name: /Support reply/ }),
+    });
+    await userEvent.click(screen.getByRole("menuitem", { name: /Export rules/ }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("export_text_rules", {
+        request: {
+          path: "/tmp/rules.json",
+          prompt: "The support prompt.",
+          /* From `vocabulary_hints` and not from the legacy `stt_hints`, which
+             nothing has written since ADR 0035 (see `Privacy.test.tsx`). */
+          stt_hints: "Zendesk",
+          dictionary_entries: [],
+          snippet_entries: [],
+        },
+      }),
+    );
+
+    /* The answer says where a rules file comes back IN, because this menu
+       deliberately has no Import to point at. */
+    expect(await screen.findByText(/imported on Privacy & Data/)).toBeInTheDocument();
   });
 
   it("asks before it deletes, and states what goes with it", async () => {
