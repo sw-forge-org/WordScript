@@ -210,6 +210,30 @@ describe("AI Models, wired", () => {
     await userEvent.click(within(addressForm).getByRole("button", { name: "Informal" }));
     expect(patch).toHaveBeenCalledWith({ translate_address_form: "informal" });
   });
+
+  /**
+   * ADR 0088. The row exists because a model call paid on every dictation was
+   * named on no surface; it does not open because ADR 0077 resolves that model
+   * through `chat_model_for_provider` and there is nothing to set.
+   *
+   * BOTH HALVES ARE ASSERTED, because the failure mode is turning it into a
+   * `LaneJobRow` "for consistency" — which would draw a chevron, a model picker
+   * and an override row for a choice the runtime does not read. That is the
+   * fake affordance rule 7 forbids, and it would also cost the screen the
+   * measured 6 | 6 it now carries.
+   */
+  it("states the title call without offering a setting for it", () => {
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const titles = screen.getByText("Titles").closest(".ws-job");
+    expect(titles).not.toBeNull();
+    /* It runs a model, and says which without naming a second one to pick. */
+    expect(within(titles as HTMLElement).getByText("Runs the assistant's model")).toBeVisible();
+    /* Nothing to open: not a <details>, and no control inside it. */
+    expect(titles!.tagName).toBe("DIV");
+    expect(titles!.querySelector("summary")).toBeNull();
+    expect(within(titles as HTMLElement).queryByRole("combobox")).toBeNull();
+  });
 });
 
 describe("AI Models, in the gallery", () => {

@@ -54,13 +54,20 @@ export function Job({
 }
 
 /**
- * A job with nothing to open. Two cases and they are the same drawing: a mode
- * that runs no model at all, and a job this lane cannot run.
+ * A job with nothing to open. Three cases and they are the same drawing: a mode
+ * that runs no model at all, a job this lane cannot run, and a job that runs one
+ * it does not choose.
  *
  * The second one says so in place of a model and names the lane that can — an
  * empty picker would be worse than the sentence. They belong on this screen for
  * one reason: "why can I not set a model for Verbatim" is answered by seeing it
  * stated. An absence answers nothing.
+ *
+ * THE THIRD CASE IS WHY THIS IS NOT CALLED `JobDisabled` — Titles (ADR 0087)
+ * runs a model on every dictation and has no setting, because ADR 0077 resolves
+ * it through `chat_model_for_provider` rather than a field of its own. What all
+ * three share is not the absence of a model, it is the absence of anything to
+ * open, and `<details>` onto an empty body is the affordance that opens nothing.
  */
 export function JobNone({
   name,

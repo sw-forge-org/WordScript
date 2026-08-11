@@ -970,7 +970,13 @@ function ModelsTab({
           the product: heard, written, spoken. Three groups, and a fourth for the
           modes that run no model at all — which have to be on this screen
           because "why can I not set a model for Verbatim" is answered by seeing
-          it stated, not by its absence. */}
+          it stated, not by its absence.
+
+          The rule is one row per job that RUNS a model, not per job that SETS
+          one. Titles is the case that separates the two (ADR 0087): it runs the
+          assistant's model on every dictation and configures nothing, and a cost
+          paid on every dictation and named on no surface is exactly what this
+          list exists to prevent. */}
       <SectionHeader title="What runs what" description="One row per job. Open one to change it.">
         <Card>
           <div className="ws-stack ws-gap4">
@@ -1208,6 +1214,23 @@ function ModelsTab({
                     }
                   />
                 </LaneJobRow>
+
+                {/* TITLES — ADR 0087, and it is the one row here that states
+                    without setting. ADR 0077 spends a model call per dictation
+                    to name the transcript file and resolves it through
+                    `chat_model_for_provider`, which is the assistant's model;
+                    there is no per-job override to offer, so the row does not
+                    open. A `<details>` onto an empty body is the affordance that
+                    opens nothing, which is rule 7 applied to navigation.
+
+                    It sits last in Writing rather than in `Runs no model`,
+                    because it runs one — and the cost it owes the reader is that
+                    the call is EXTRA, not that it exists. */}
+                <JobNone
+                  name="Titles"
+                  why="Names the transcript file, once per dictation and in every mode — Verbatim included, because naming a document is not rewriting it. One extra call; the first words of the text are used when no model is set or the call fails."
+                  control={<StatusBadge tone="plan">Runs the assistant's model</StatusBadge>}
+                />
               </JobList>
             </div>
 
