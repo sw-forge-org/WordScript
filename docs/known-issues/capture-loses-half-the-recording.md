@@ -26,6 +26,15 @@ It did not. **Between 12 % and 52 % of the audio was never captured.** The
 transcript is of what was recorded, not of what was said, and nothing in the
 product tells the user that a gap exists.
 
+**A report of a swallowed dictation is not automatically this record.** Since
+2026-08-12 a second loss channel is documented in
+[transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md):
+the audio arrives whole and the recogniser stops early. The user's sentence is
+the same either way, so the two are told apart by the verdicts, not by the
+report — `Capture integrity` answers whether the audio reached the file,
+`Transcription coverage` whether the file reached the transcript. Both events
+measured on 2026-08-12 read `Intact` here and belong to that record.
+
 ## The measurement (2026-08-03)
 
 Two numbers the runtime already logs turn out to be the same measurement, and

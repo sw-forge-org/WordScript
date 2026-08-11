@@ -62,6 +62,16 @@ status change. Resolved bugs remain as references for the same failure class.
   and is not answerable**: the join works (136 of 136 records paired) but 9 of
   the 11 short captures had outlived their transcripts. That is a retention
   artifact rather than a result, and ADR 0079 removes the need for the join.
+- [transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md):
+  **open, instrumented 2026-08-12** — a dictation comes back shorter than it was
+  spoken, on audio the capture read as `Intact`. The far side of the capture
+  record below: there the audio never reached the file, here the file never
+  reached the transcript, and the user's report is the same sentence in both
+  cases. Two events measured the same night, one of them 11.7 s of recorded
+  audio with no segment over it. `TranscriptionCoverage` now names it, **and
+  nothing reacts to the name**: the verdict is not persisted and a truncated
+  transcript is still transformed, inserted and reported as a completed session.
+  What the product should do about it is an open decision, not an oversight.
 - [transcription-hallucination.md](transcription-hallucination.md): mitigated —
   raw transcription language drift and hallucination. The approved slice landed
   on 2026-07-29 (ADR 0015, ADR 0016): the capture config now reaches the runtime

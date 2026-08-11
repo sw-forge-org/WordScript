@@ -11,6 +11,14 @@ Transkription sehr ungenau und es kommen sehr viele solche Artefakte vor."*
 There is still no WER and no general accuracy rate, so the headline complaint
 stays open.
 
+**A second loss channel was found on 2026-08-12 and is recorded separately:**
+[transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md).
+It is not a mishearing — the words that arrive are right, and the ones after
+them are simply absent — so it belongs beside this record rather than in it. It
+does **not** answer the join above, which stays blocked for the reason stated:
+that question is about capture shortfall against mishearings, and this one is
+about audio the capture kept whole.
+
 ## Symptom
 
 Dictated speech comes back with words the speaker did not say. The output is
