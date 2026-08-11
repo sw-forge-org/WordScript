@@ -2444,8 +2444,14 @@ async fn sync_overlay_window_visibility(
 /// call is gated to debug builds because Tauri v2 only exposes it when
 /// `debug_assertions` is set or the `devtools` Cargo feature is enabled. The
 /// command itself is always registered so the invoke_handler macro stays
-/// uniform; in release builds it returns an error (the frontend only calls it
-/// under `import.meta.env.DEV` anyway).
+/// uniform; in release builds it returns an error.
+///
+/// NO FRONTEND CALLS IT. This said "the frontend only calls it under
+/// `import.meta.env.DEV` anyway" until Leg 11 checked: `OverlayDiagPanel.tsx`
+/// was that caller and Leg 3 deleted it in `8f9077e`. Of the three doors that
+/// commit orphaned this is the one with no substitute — a webview's inspector
+/// cannot be opened from outside the process, where the log the other two serve
+/// is a file on disk. Kept, listed, and undecided: ADR 0093.
 #[tauri::command]
 async fn overlay_open_devtools(app: AppHandle) -> Result<(), String> {
     #[cfg(any(debug_assertions, feature = "devtools"))]

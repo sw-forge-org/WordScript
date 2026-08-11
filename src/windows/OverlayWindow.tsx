@@ -219,9 +219,17 @@ function audioPayloadToLevel(payload: AudioLevelEvent): number {
 
 // DEV-only diagnostic log (plan 1784433288646, Phase 1.2). Writes to both the
 // browser console and the Rust-side /tmp/kilo/overlay-diag.log via
-// `append_diag_log`. The Settings-Window Diagnose-Panel polls that file for
-// live display. Never blocks the render or reveal path. In production
+// `append_diag_log`. Never blocks the render or reveal path. In production
 // (import.meta.env.DEV === false) this is a no-op.
+//
+// NOTHING IN THE PRODUCT READS THIS FILE. `OverlayDiagPanel.tsx` polled it
+// through `read_diag_log` until Leg 3's shell overwrite (`8f9077e`) deleted the
+// panel, and this comment went on naming it for eight legs — the same defect as
+// `Profiles.tsx`'s fourth verb, and found the same way, by checking the claim
+// instead of reading it. The writer survived because it has a caller; the two
+// readers did not, and Leg 9's sweep missed them because it looks for commands
+// with no `invoke(`, which is what they became. Read it with `tail -f`; whether
+// the doors come back is ADR 0093's open question.
 //
 // Every line carries a monotonic sequence number. The log is read to decide
 // whether an effect ran at all — a missing `[ov-repaint]` next to its
