@@ -38,11 +38,12 @@ for the current implementation state and open gaps.
   result actions, remembered user drag placement, and Linux compositor guards
 - Durable transcription history, filters, export, retry, runtime logs, and
   pipeline diagnostics
-- Home, History, Profiles, Speech & AI, Modes, Capture, Overlay, Insert &
-  Recovery, Diagnostics and About settings surfaces with native runtime and
-  automatic save-state truth
-- Clearly labeled Chat, Upload, Notes and Account layout previews whose sample
-  state is local-only and not part of the active runtime
+- One workspace window with four views — Home, History, Profiles, Context — and
+  settings as a sheet over it holding ten sections in three groups, all on
+  native runtime truth with immediate save
+- History, Profiles, General, Hotkeys, Delivery & Insert, Privacy & Data,
+  Diagnostics and About & Updates read and write the runtime; Home and AI Models
+  read part of what they draw and say which part on themselves
 - Internal release build-up artifacts with checksums and optional maintainer
   draft releases
 
@@ -126,9 +127,9 @@ The local lane requires:
 - a locally available cleanup model selected in settings or through
   `WORDSCRIPT_LOCAL_CHAT_MODEL`
 
-Provider & Models reports the native readiness of the speech runner, STT model,
-cleanup endpoint, and cleanup model. It does not treat an environment variable
-or a saved path as proof that local dictation is ready.
+AI Models reports the native readiness of the speech runner, STT model, cleanup
+endpoint, and cleanup model. It does not treat an environment variable or a
+saved path as proof that local dictation is ready.
 
 ## Platform Support
 

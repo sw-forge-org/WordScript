@@ -1,6 +1,7 @@
 # WordScript -- Architecture
 
-Status: 2026-07-25
+Status: 2026-08-11 — read against the shipped product by Leg 9; the UI layer
+section had described the pre-port shell since before Leg 3's overwrite
 
 > This file is the living architecture overview. Hard architecture decisions
 > (e.g. Tauri/Rust as runtime owner, native window decorations, cloud-first
@@ -56,14 +57,17 @@ Three windows in the Tauri config:
   shown follows from `RuntimeState.resultSurfaceOpen`, set in the same reducer
   commit that ends the session. Idle is parked offscreen natively; placement
   comes from a remembered manual position or a preset display anchor.
-- `settings`: native-decorated shell with grouped Workspace, Engine, System
-  the workspace: four views (Home, History, Profiles, Context) in a `.ws-nav`
-  sidebar, the active-profile row at its foot, a status strip along the bottom
-  edge, and **settings as a modal sheet laid over it at its own scale**
-  (`Cmd+,`, Escape to close). Restructured 2026-08-05 by Leg 3 of the port
-  relay; the fourteen flat areas it replaced were deleted in the same commit
-  (ADR 0054). Every view and section is the ported drawing and says so on
-  itself — the shell reads the runtime, the content does not, until Leg 4.
+- `settings`: **the window label, not its job.** It is the workspace: four
+  views (Home, History, Profiles, Context) in a `.ws-nav` sidebar, the
+  active-profile row at its foot, a status strip along the bottom edge, and
+  **settings as a modal sheet laid over it at its own scale** (`Cmd+,`, Escape
+  to close) holding ten sections in three groups. Restructured 2026-08-05 by
+  Leg 3 of the port relay; the fourteen flat areas it replaced were deleted in
+  the same commit (ADR 0054). Ten of the fourteen surfaces now read the runtime
+  and eight of those write it; the four that do not, plus the two that read
+  half of what they draw, each carry a banner saying so (rule 7). The
+  `tauri.conf.json` label and the `#/settings` route keep the pre-port name —
+  six Rust call sites and the window-state persistence key hang on it.
 - `rebuild-lab`: native-decorated diagnostics pop-out mounting the **same**
   Diagnostics section the sheet does, rather than a second implementation of it.
 
@@ -72,8 +76,10 @@ Key frontend building blocks:
 - `src/windows/OverlayWindow.tsx`
 - `src/windows/WorkspaceWindow.tsx` and `src/windows/workspace/`
 - `src/windows/RebuildLabWindow.tsx`
-- `src/screens/` — the 25 ported screens, mounted by the product and displayed
-  by the gallery. One implementation, two sets of props (ADR 0055)
+- `src/screens/` — the ported screens. One implementation, two sets of props
+  (ADR 0055): a wired screen takes `WiredScreenProps` and the compiler then
+  refuses it a gallery entry, which is what makes "wired" and "retired from the
+  gallery" one edit rather than two
 - `src/components/shell/` and `src/styles/shell.css` — the productive library
 - `src/hooks/useRuntime.ts`
 - `src/hooks/useProvider.ts`
@@ -82,14 +88,21 @@ Key frontend building blocks:
 
 The UI is responsible for: displaying runtime status, waveform and errors;
 the guarded in-pill action state after a run; config maintenance; the global
-manual profile switch in the sidebar plus included profiles, preview,
-validation and import/export in Text Rules; tab-specific orientation via the
-compact header; the About release build-up explanation (strictly separating
-public release visibility from workflow-internal draft handoffs); Text Rules
-as a workspace with a short process summary, compact profile library and
-pinned stage navigation; visible recovery actions and diagnostics; separate
-rendering of transient runtime logs and durable native transcript history
-with filters, export and the visible history store path.
+manual profile switch in the sidebar and the sheet's header; **Profiles** as a
+two-pane surface with the profile library, its rule lists with editors that
+unfold under the row they act on (ADR 0082), the native analysis behind preview
+and validation, and the health flags with their acknowledgement (ADR 0085); the
+About release build-up explanation (strictly separating public release
+visibility from workflow-internal draft handoffs); visible recovery actions and
+diagnostics; separate rendering of transient runtime logs and durable native
+transcript history with filters, export and the visible history store path.
+
+**Text-rules import and export are NOT among them, and this line used to claim
+they were.** `export_text_rules` and `import_text_rules` are complete in the
+runtime and have had no caller since Leg 3's shell overwrite; the full backup on
+Privacy & Data writes the whole config, which is a different artifact. The doc
+asserting a capability the product had lost is how it stayed invisible for six
+legs (ADR 0089).
 
 The UI is **not** responsible for: global shortcut registration, microphone
 capture, session state machine, insert decisions.
@@ -194,7 +207,8 @@ The active product core lives in `src-tauri/src/core/`.
 - `agent.rs`: hybrid intent detection (heuristic + LLM classifier) and agent
   execution; sits as a routing layer before `transform.rs`.
 - `text_rules.rs`: analysis, preview, import/export, conflict handling and
-  profile health analysis of Text Rules.
+  profile health analysis for the profile's rule lists. Import and export are
+  complete here and reached by nothing since Leg 3 (ADR 0089).
 
 ### Mode routing and workspace
 
@@ -573,9 +587,9 @@ Rules:
   cleanup endpoint/model; the contract is evaluated against the currently
   selected local STT and cleanup models and must not reconstruct local
   readiness from `credential.configured` or copy.
-- Provider & Models renders the same contract as a preflight checklist for
-  speech runner, STT model, cleanup endpoint and cleanup model; this UI is
-  display and guidance, not a second setup source.
+- AI Models renders the same contract as a preflight checklist for speech
+  runner, STT model, cleanup endpoint and cleanup model, under its `On this
+  machine` tab; this UI is display and guidance, not a second setup source.
 - `local_preview` probes the runner via an active native spawn, not just
   filesystem presence; error codes like `runner_probe_failed` or
   `runner_probe_timed_out` are part of the same product truth.
@@ -636,8 +650,8 @@ contract.
 These are possible later product stages but not active architecture today:
 
 - automatic model management with download/pull flow and installer-like
-  checks beyond the current env-based runtime wiring and the Provider &
-  Models preflight surface
+  checks beyond the current env-based runtime wiring and the AI Models
+  preflight surface
 - automatic or permission-based app/mode activation for work modes
 - a full live-preview / controlled-commit path in the overlay with actions
   before the final commit

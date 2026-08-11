@@ -1,6 +1,6 @@
 # WordScript Roadmap
 
-Status: 2026-08-10
+Status: 2026-08-11
 
 > This is the canonical phase detail. [STATUS.md](STATUS.md) reports the
 > current state; [VISION.md](VISION.md) defines the product direction.
@@ -23,8 +23,9 @@ honest, not merely broader.
 
 Outside this pipeline are Notes, Search, Sync, assistant identities, accounts,
 hosted workspaces, and browser or computer use. They are V2 or later work and
-must not dilute V1. Visible Chat, Upload, Notes and Account settings layouts are
-previews only and do not change this phase boundary.
+must not dilute V1. The four surfaces the workspace draws without wiring —
+Context, Notes & Meetings, Agents, Integrations — each state their phase on
+themselves and do not change this phase boundary.
 
 **MCP is no longer a single fence** (ADR 0029). WordScript **as an MCP server**
 is planned work and appears as Phase 8 below. WordScript **as an MCP client in
@@ -62,7 +63,7 @@ capturing real failures as regression data, and exposing profile health.
 - `ProfileHealthFlag::BiasPolicyWeak` and persisted acknowledgements.
 - The regression corpus and loader at
   `src-tauri/tests/fixtures/regression_transcripts.json`.
-- A Text Rules bias-policy stage that shows effective cloud and local prompts.
+- A bias-policy stage on Profiles that shows effective cloud and local prompts.
 
 **Success measure:** profile bias is inspectable, regression-tested, and does
 not silently turn broad context or snippets into transcription prompts.

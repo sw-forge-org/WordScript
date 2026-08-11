@@ -1,6 +1,7 @@
 # WordScript -- Vision
 
-Status: 2026-08-03
+Status: 2026-08-11 — the surface paragraph read against the shipped IA by Leg 9;
+the direction itself is unchanged since 2026-08-03
 
 > Architecture decisions that ground this vision live as append-only ADRs in
 > `docs/decisions/`. This file is the living north star; the roadmap is the
@@ -99,9 +100,11 @@ explicitly invoked asynchronous one, beside the dictation path rather than
 inside it. Browser use and computer use stay where they are: far, and
 unscheduled.
 
-The current settings shell exposes Chat, Upload, Notes and Account only as
-clearly labeled layout previews. Their sample or component-local state is not
-evidence that the later platform behavior exists.
+Chat, Upload and Account are no longer on the surface at all: the pre-port
+shell's previews of them were deleted with its fourteen flat areas in Leg 3
+(ADR 0054). What remains drawn-and-not-wired is Context, Notes & Meetings,
+Agents and Integrations, each carrying a banner naming the phase it belongs to.
+A drawing is not evidence that the later platform behavior exists.
 
 ### One input, three outputs — the direction as of 2026-08-03
 

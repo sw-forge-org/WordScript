@@ -1,6 +1,7 @@
 # WordScript -- Reference
 
-Status: 2026-07-25
+Status: 2026-08-11 — surface names read against the shipped IA by Leg 9; the
+constants themselves were not re-derived and carry their own provenance
 
 > The consolidated spec lives at `docs/spec/SPEC.md`; this file bundles
 > project-wide constants that do not belong in a single architecture, status
@@ -118,7 +119,7 @@ Status: 2026-07-25
 ### Transcript delivery modes (delivery contract)
 
 Set per text profile as `work_mode.insert_behavior`; the settings label is
-"Transcript delivery" under *Insert & Recovery*. The legacy tokens `"clipboard"`
+"Transcript delivery" under *Delivery & Insert*. The legacy tokens `"clipboard"`
 and `"manual"` normalize to `clipboard_only`, unknown values to `auto_paste`,
 and the normalized form is persisted rather than recomputed on every load — if
 it is not, a legacy token pins the profile to clipboard-only forever (ADR 0019,
@@ -357,9 +358,9 @@ toggle lives per profile
 - Ollama locally at `http://127.0.0.1:11434` or `WORDSCRIPT_LOCAL_CHAT_BASE_URL`
 - a local cleanup model selected via `local_correction_model` or
   `WORDSCRIPT_LOCAL_CHAT_MODEL`
-- Provider & Models shows these prerequisites as a native preflight
-  checklist, not just as env text; the checklist reads `local_setup`, not
-  its own UI heuristics.
+- AI Models shows these prerequisites as a native preflight checklist, not
+  just as env text; the checklist reads `local_setup`, not its own UI
+  heuristics.
 - the lane is no longer STT-only; AI cleanup runs locally over the separate
   cleanup model and only falls back to the raw local transcript when the
   cleanup model is unavailable or a guardrail rejects.

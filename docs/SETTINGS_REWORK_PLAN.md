@@ -1,17 +1,22 @@
 # Settings Surface Rework Plan
 
-Status: 2026-08-04 — **Stage 0 done and accepted through fourteen passes. The
-delivery model changed on 2026-08-04 (§16): the rework is a port that overwrites
-rather than a migration (ADR 0054), it is judged in a new `/gallery` route
-rather than against the shipped surface (ADR 0055), and it runs as a relay of
-legs on `main`, tracked in
+Status: 2026-08-11 — **this plan is spent as an instruction and kept as
+derivation.** The delivery model changed on 2026-08-04 (§16): the rework is a
+port that overwrites rather than a migration (ADR 0054), judged in a
+`/gallery` route rather than against the shipped surface (ADR 0055), running as
+a relay of legs on `main` tracked in
 [`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md).
-**Leg 2 is closed: all 25 prototype screens now stand in `/gallery` → Screens on
-the ported components, each measured exact against the running prototype. The
-prototype has turned from source into provenance (ADR 0057) and the gallery is
-the source from here.** Leg 3 is next and is the shell overwrite — one window,
-settings as a sheet at its own scale, the new IA replacing the 14 flat areas,
-`Cmd+,`, and the old areas deleted.**
+
+**Legs 1 through 9 are closed.** All 25 prototype screens stand in `/gallery`;
+the shell was overwritten in Leg 3 and the fourteen flat areas deleted with it;
+ten of the workspace's fourteen surfaces read the runtime and eight write it.
+The prototype turned from source into provenance in Leg 2 (ADR 0057) and the
+gallery has been the source since.
+
+**The relay is where current state lives, not this file.** Read the handoff's
+leg log for what is done and `docs/STATUS.md` for what works. What this plan is
+still good for is §2 through §11: the derivation of WHY the surface is shaped
+the way it is, which nothing else carries.
 
 > **2026-08-03 — the recording limits changed under this plan.** ADR 0038 and
 > ADR 0039 shipped outside the rework and touched two things it owns. The
@@ -42,9 +47,12 @@ settings as a sheet at its own scale, the new IA replacing the 14 flat areas,
 
 ## 0. Start here
 
-**If you are picking this plan up: read this section, then §11.7–§11.21, then
-§12, then start Stage 1a.** Everything above §8 is the derivation and is still
-accurate except where §11 records a correction. Do not re-derive it.
+**If you are picking this plan up: it is a derivation, not a queue.** The
+staged delivery it describes (Stage 1a onward) was replaced on 2026-08-04 by the
+leg relay — read `handoffs/HANDOFF_gui-port-relay.md` for what to do next, and
+this file for why the surface is shaped the way it is. Everything above §8 is
+the derivation and is still accurate except where §11 records a correction. Do
+not re-derive it.
 
 **§11.17 is the one Stage 1 must not skip.** It is not a screen correction: it
 is four missing design-system rules that the prototype had already been patching

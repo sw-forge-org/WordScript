@@ -1,6 +1,9 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-11
+Status: created 2026-07-24, last drift check 2026-08-11 (Leg 9, and the first
+one to read this file against the shipped product since Leg 3's shell
+overwrite — the Architecture and Contracts sections and the deviation list all
+still described the pre-port surface)
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -38,12 +41,25 @@ Three windows:
   `auto_paste` delivers first and then shows the result surface
   (Copy / Edit / Dismiss). Which surface is shown follows from runtime state set
   in one reducer commit, not from per-mode predicates. Idle is parked offscreen
-  natively.
-- `settings`: native-decorated shell. Grouped 232px sidebar (profile dock +
-  areas), compact toolbar, one dominant content surface, immediate auto-save
-  and a footer status bar.
-- `rebuild-lab`: native-decorated diagnostics pop-out reusing the same
-  Rebuild Lab panel.
+  natively. Its size is fixed per surface (`OverlaySurface::dimensions`): one
+  `set_size` on first reveal and no dynamic resizing, because `set_size` is
+  asynchronous on WebKitGTK and a second resize path is where the ghosting came
+  from (ADR 0089).
+- `settings`: **the label is the window's, not its job.** Since Leg 3's shell
+  overwrite this window is the WORKSPACE — four views (Home, History, Profiles,
+  Context) in a sidebar, the active-profile row at its foot, a status strip
+  along the bottom edge — and settings is a modal sheet laid over it at its own
+  scale (`Cmd+,`, Escape to close), holding ten sections in three groups. The
+  fourteen flat areas it replaced were deleted in the same commit (ADR 0054).
+  The `tauri.conf.json` label and the URL `#/settings` still say the old name
+  because six Rust call sites and the window-state persistence key are on it;
+  renaming is a runtime change nobody has asked for, not a doc fix.
+- `rebuild-lab`: native-decorated diagnostics pop-out mounting the same
+  Diagnostics section the sheet does, rather than a second implementation.
+
+A fourth route exists and ships no window: `/gallery` is the design-time
+acceptance surface for the port (ADR 0055), reached only by a chord (ADR 0059),
+named by no surface and linked from none.
 
 Rust core modules in `src-tauri/src/core/`:
 
@@ -76,13 +92,23 @@ Rust core modules in `src-tauri/src/core/`:
 
 ### Tauri commands (UI -> Rust), key surface
 
-- `start_native_session`, `stop_native_session`, `abort_native_session`
-- `reveal_overlay_window`, `park_overlay_window`, `sync_overlay_window_visibility`
+- `abort_native_session` (the overlay draws an abort; start and stop come from
+  the native trigger). `start_native_session`, `stop_native_session`,
+  `native_session_status` and `complete_native_session` are registered and have
+  **no UI caller** — they are command shells over `start_from_native`,
+  `processing_from_native` and the session state machine, which the Rust trigger
+  path drives directly. Kept as contract, listed as unreached (ADR 0089).
+- `sync_overlay_window_visibility`. `reveal_overlay_window` and
+  `park_overlay_window` are **not commands** and never were: they are
+  Rust-internal functions in `lib.rs`, listed here in error until Leg 9.
 - `load_app_config`, `save_config` (config load/normalize/write paths are
-  serialized by the config-file lock)
+  serialized by the config-file lock). `save_config` carries the whole config
+  and is the seam every discrete control writes through, including the profile
+  health acknowledgement (ADR 0085) — the two targeted
+  `*acknowledge_profile_health_flag` commands were removed in Leg 9, having had
+  no caller in any commit (ADR 0089).
 - `resolve_current_processing_mode` (effective mode source of truth)
 - `switch_active_text_profile`, `set_active_profile_processing_mode`
-- `acknowledge_profile_health_flag`, `unacknowledge_profile_health_flag`
 - `commit_pending_transcription_preview` (clipboard_only commit; optional
   `text` replaces the preview text for an overlay edit before delivery)
 - `native_insertion_status` (platform support contract)
@@ -451,20 +477,42 @@ result surface (ADR 0011a).
 - No second production provider; `fast`/`quality`/`local`/`self_hosted` mode
   model is not yet a real multi-provider system.
 - No guided setup/packaging path from install to first useful dictation.
-- Chat, Upload, Notes and Account are visible layout previews backed only by
-  local component state. They have no runtime-backed chat, batch
-  transcription, meeting-note, account or sync behavior.
-- A 25-screen accepted design now stands in full at the design-time route
-  `/gallery`, on the productive component library, and **none of it is wired**
-  (ADR 0055: a screen is *ported* when it stands there and *shipped* when it is
-  wired). It states facts this spec's Contracts and Data Model sections do not
-  have -- a context object with an `origin` and five states, folders that are
-  directories on disk, four speaker-confidence statuses, actions as files in
+- Chat, Upload and Account are gone from the product's information
+  architecture; the pre-port shell's previews of them were deleted with the
+  fourteen flat areas in Leg 3 (ADR 0054) and were not re-drawn. Notes survives
+  as the `Notes & Meetings` section, drawn and not wired.
+- **The port is wired, and this entry says which parts.** ADR 0055's terms: a
+  screen is *ported* when it stands in `/gallery` and *shipped* when it is
+  wired. The workspace mounts fourteen surfaces:
+
+  - **wired** (eight, carrying no banner, and retired from the gallery as they
+    were wired): History, Profiles, General, Hotkeys, Delivery & Insert,
+    Privacy & Data, Diagnostics, About & Updates.
+  - **wired in part** (two, each stating its own gap on itself): Home — the
+    decision inbox receives a fallen-back delivery and nothing else, the desk
+    (Phase 8) and a meeting's open questions (V2) have no receiver; AI Models —
+    the Groq connection is real, the other three lanes and every job override
+    are drawn and inert (ADR 0065, ADR 0067).
+  - **drawn, not wired** (four, each stating why): Context (V2 — the context
+    object does not exist in the runtime), Notes & Meetings (V2), Agents
+    (Phase 8, ADR 0030), Integrations (Phase 8).
+
+  `npm run port:diff` is 25 measurements, 24 at structural 0 | style 0 with
+  `models` the one recorded departure at 6 | 6 (ADR 0088).
+- **The design still states facts this spec does not have**, and they remain
+  unimplemented: a context object with an `origin` and five states, folders that
+  are directories on disk, four speaker-confidence statuses, actions as files in
   `_actions/`, a second capture window, a spoken agent channel, and per-language
   audio routing. The full list is §2.5 of
-  `docs/handoffs/HANDOFF_gui-port-relay.md`, split between what is wiring and
-  what is a new runtime contract. **Nothing in that design may be read as
-  implemented**, and the shipped surface above is unchanged by it.
+  `docs/handoffs/HANDOFF_gui-port-relay.md`. **A drawn surface may not be read
+  as implemented**; the six undecided surfaces (ADRs 0060-0064 plus the roadmap
+  candidate) are mounted in no window at all.
+- **Text-rules import and export have a runtime and no caller.**
+  `export_text_rules` and `import_text_rules` are complete — schema version,
+  conflict resolution, merge, analysis — and their UI went with Leg 3's shell
+  overwrite. `export_full_backup` is not a replacement: it writes the whole
+  config, not a shareable rules document. A capability the pre-port surface had
+  (ADR 0089).
 - Sync/accounts/cloud workspaces are planned (ADR 0005, local-first,
   WordScript-owned) but not built. Docs and UI must not present them as
   active product reality outside clearly labeled preview surfaces.

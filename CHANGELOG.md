@@ -55,6 +55,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AI Models has a row for the title call** (ADR 0088). ADR 0077 spends a
+  chat-model call on every dictation to name the transcript file, and until now
+  it was stated in a decision record and on no surface. Titles is a row in the
+  Writing group that names the model it runs — the assistant's, resolved through
+  `chat_model_for_provider` — and offers no setting, because ADR 0077 gives it
+  none. It does not open, and that is the decision rather than an economy: a
+  `<details>` whose body holds no control is the affordance that opens nothing.
+  Measured both ends: `models` goes from structural 0 | style 0 to **structural
+  6 | style 6**, against the 18 | 6 ADR 0087 had priced for a `LaneJobRow`
+  shape. A flat row renders `div.job` where a job row renders `details.job`, so
+  it occupies its own sibling index space and shifts no path — the 6 are its own
+  nodes and one height reported at each ancestor it cascades through.
+
 - **The profile health flag's click opens the flags** (ADR 0085). It had no
   destination because its four kinds point at three different tabs, so it routes
   to none of them: it opens a panel listing each flag with its sentence and the
@@ -124,6 +137,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answer with the same compact menu of verbs. Context's is drawn only: the
   context object does not exist in the runtime and the banner still says so, but
   the two rails no longer have two manners.
+
+### Removed
+
+- **Six registered Tauri commands that no caller ever reached** (ADR 0089). A
+  sweep of the whole `invoke_handler` list against every `invoke(` in `src/`
+  found fourteen caller-less commands, not the two the leg was sent for, so they
+  are triaged by *why* they lost a caller rather than by whether they have one.
+  Removed as superseded: `acknowledge_profile_health_flag` and
+  `unacknowledge_profile_health_flag` (the config seam performs that write since
+  ADR 0085, and neither took an `AppHandle`, so neither could emit `ready` — a
+  second window would never have learned), `get_workspace_context`,
+  `app_config_file_path`, `resize_overlay_to_height` and `resize_edit_overlay`,
+  plus the five `OVERLAY_EDIT_MODE_*` clamp constants that existed only to bound
+  the last two. The resize pair is why this class goes rather than being
+  tolerated: it is the dynamic overlay sizing path this codebase deliberately
+  abandoned, and leaving it registered keeps a route back into the ghosting in
+  `docs/known-issues/overlay-ghosting.md`.
+
+  **Kept rather than deleted, and now listed:** `preview_prompt_enhance` (ADR
+  0065 defers it to Phase 8 explicitly), `export_text_rules` and
+  `import_text_rules` (complete runtimes whose UI went with Leg 3's overwrite
+  and which nothing replaced — a lost capability, not a corpse), and the session
+  command shells (`start_native_session`, `stop_native_session`,
+  `native_session_status`, `complete_native_session`) plus
+  `transcribe_audio_file`, whose functions the Rust pipeline drives directly.
+
+  Corrects Leg 8's premise while keeping its rule: `PromptsTab.tsx` never called
+  the acknowledge commands — it held acknowledgements in React state and passed
+  them to `get_profile_health` as a request field. No commit in the
+  repository's history invoked either from `src/`.
 
 ### Changed
 

@@ -1,8 +1,9 @@
 # WordScript Design System
 
-Status: 2026-08-04 — the token write of the GUI port's Leg 1 has landed
-(`src/styles/globals.css` and `src/styles/shell.css`). The rules below are the
-product's, and `/gallery` renders them live.
+Status: 2026-08-11 — read against the shipped product by Leg 9. The token write
+of the GUI port's Leg 1 landed in `src/styles/globals.css` and
+`src/styles/shell.css`; the rules below are the product's, and `/gallery`
+renders them live.
 
 > The product contract is [SPEC.md](spec/SPEC.md). Native window decorations
 > are established by [ADR 0003](decisions/0003-native-fensterdekorationen.md).
@@ -480,17 +481,24 @@ implementation with two sets of props, and a component that exists only under
 - Labels and action names must use the same terms as native history, recovery,
   and provider status.
 
-## Provider, Text Rules, and Privacy UX
+## AI Models, Profiles, and Privacy UX
 
-Provider & Models renders capabilities and setup from native status. For
-`local_preview`, it shows the speech runner, STT model, cleanup endpoint, and
-cleanup model as a native preflight checklist. It does not infer readiness from
-environment variables or paths.
+AI Models renders capabilities and setup from native status. For
+`local_preview`, its `On this machine` tab shows the speech runner, STT model,
+cleanup endpoint, and cleanup model as a native preflight checklist. It does not
+infer readiness from environment variables or paths. Its job list carries one
+row per job that RUNS a model, which is not the same as one row per job that
+SETS one — Titles states the model it runs and offers no setting, because there
+is none to offer (ADR 0088).
 
-Text Rules treats profiles as explicit work modes. Context is conservative STT
-assistance; short explicit `stt_hints` are separate from snippets. Dictionary
-rules run before snippets. Preview and validation use the same native analysis
-path. Included profiles are normal persisted profiles with visible origin, not a
+Profiles treats profiles as explicit work modes. The profile's context field
+holds topics and reaches the LLM stages only; the individual terms live in
+`vocabulary_hints`, which is the sole profile path to the recognizer (ADR 0032,
+narrowed by ADR 0035). `stt_hints` is a migration remnant read by nothing and
+must not be drawn as a control. Dictionary rules run before snippets, and both
+apply in list order — a later rule sees what an earlier one wrote, which is why
+the lists reorder. Preview and validation use the same native analysis path.
+Included profiles are normal persisted profiles with visible origin, not a
 hidden second catalog.
 
 Groq remains BYOK. UI copy says that credentials are stored locally in the OS

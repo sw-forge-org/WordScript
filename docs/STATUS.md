@@ -45,6 +45,24 @@ Status: 2026-08-11
   deleted `PromptsTab.tsx`; the flag carries the resulting `level` as its tone.
   An acknowledged flag stays in the list and in the count, because it is still
   true — it just stops colouring the profile.
+- **AI Models names the model call nobody could see** (ADR 0088, 2026-08-11).
+  ADR 0077 spends a chat-model call on every dictation to title the transcript
+  file, and no surface said so. Titles is now a row in the Writing group that
+  states which model runs it — the assistant's, via `chat_model_for_provider` —
+  and offers no setting, because there is none. It does not open: a `<details>`
+  onto an empty body is the affordance that opens nothing. It is the one row on
+  that list which runs a model without setting one.
+- **Six registered commands with no caller were removed** (ADR 0089,
+  2026-08-11). A sweep of the `invoke_handler` list against every `invoke(` in
+  `src/` found fourteen, not the two the leg was sent for, and they triage by
+  why they lost a caller rather than by whether they have one. Gone: both
+  `*acknowledge_profile_health_flag` (the config seam does that write and these
+  could not emit `ready`), `get_workspace_context`, `app_config_file_path`, and
+  both overlay resize commands — the dynamic sizing path this codebase
+  abandoned, whose return is the ghosting in `known-issues/overlay-ghosting.md`.
+  Kept and listed instead of deleted: `preview_prompt_enhance` (ADR 0065 defers
+  it), the text-rules import/export pair (a capability the port dropped), and
+  the session command shells the Rust trigger path drives directly.
 - **Profiles can be edited, not only read** (ADR 0082, 2026-08-11). Add and Edit
   on Replacements and Snippets, rename, duplicate and delete a profile, and both
   calls to `analyze_text_rules` all open a panel that unfolds under the row or
@@ -109,7 +127,10 @@ Status: 2026-08-11
   port:diff`), and as of 2026-08-10 **every screen that can be wired is**. A
   wired screen then RETIRES from the gallery and stops being measured (ADR 0057),
   so the diff shrinks as the product grows: **25 measurements as of 2026-08-11,
-  all at structural 0 | style 0**, `profiles` having left with its banner. The
+  24 of them at structural 0 | style 0**, `profiles` having left with its
+  banner. The one recorded departure is `models` at **structural 6 | style 6**,
+  which is the Titles row (ADR 0088) — a deliberate addition to the drawing, in
+  its own commit with its own before-and-after. The
   two surfaces the port never carried landed the same day — the search field
   with the command palette behind it, and Help (ADR 0069) — together with the
   communication style, which had been running in the runtime with no surface
@@ -178,7 +199,7 @@ Status: 2026-08-11
 - Groq BYOK with OS secret-store storage
 - `local_preview` as a full local runtime lane over external `whisper-cli`,
   local ggml models and local Ollama cleanup (STT plus cleanup, not STT-only)
-- Provider & Models preflight for the local runtime lane with native runner,
+- AI Models preflight for the local runtime lane with native runner,
   STT-model, cleanup-endpoint and cleanup-model readiness
 - bounded STT prompt bias for Groq and `local_preview` from active profile
   context, dictionary spellings and likely phrases; **the bias policy and every
@@ -197,7 +218,7 @@ Status: 2026-08-11
 - the automatic bias path is now more conservative: generic profile
   categories are no longer forwarded to STT and cleanup; included profiles
   start without prefilled snippet-like `stt_hints`
-- Text Rules shows this conservative bias contract and warns when profile or
+- Profiles shows this conservative bias contract and warns when profile or
   hint lines are ignored by the automatic path or when no concrete STT hints
   remain
 - hallucination filter and optional AI cleanup with conservative preserve
@@ -273,13 +294,19 @@ Status: 2026-08-11
 - persistent native transcription history with retry, delete/clear,
   server-side filters, JSON export and a separate diagnostics view from
   transient runtime logs
-- Text Rules validation, preview, import/export and conflict handling
+- profile rule validation, preview and conflict handling on Profiles.
+  **Import and export have a complete runtime and no caller** — their UI went
+  with Leg 3's shell overwrite and the full backup on Privacy & Data is a
+  different artifact, not a replacement (ADR 0089)
 - profile health and bias policy: automatic detection of systemic behavioral
   distortion in a profile (length bias in dictionary, contradictory style
   instructions, cleanup-suppressing prompt patterns) with a traffic-light
-  display in the Text Rules tab and a dot in the profile dock; individual
-  flags can be acknowledged without changing config; persistent
-  `profile_health_acknowledged_flags` map
+  display on Profiles and a dot in the profile dock; a flag opens a panel
+  listing every flag with a door to the tab that holds its cause (ADR 0085).
+  **Acknowledging a flag DOES change config** — it writes the persistent
+  `profile_health_acknowledged_flags` map through the config seam, and until
+  Leg 8 nothing wrote it at all, so `derive_health_level` was computing a level
+  from a set no surface could reach
 - native insertion with multiple fallback levels
 - scratchpad and last-transcript restore
 - input preflight for the first dictation with trigger and microphone status
@@ -374,10 +401,10 @@ Additional rules:
   action, manual paste, scratchpad recovery and clipboard-restore signal
 - persisted history entries and history exports carry the same recovery
   fields so retry, export and diagnostics keep the same insert truth
-- scratchpad recovery in Insert & Recovery, diagnostic preview transcripts in
+- scratchpad recovery in Delivery & Insert, diagnostic preview transcripts in
   Diagnostics and the persistent history store are three separate native data
   surfaces
-- overlay, Insert & Recovery and Diagnostics read the same native platform
+- overlay, Delivery & Insert and Diagnostics read the same native platform
   status; About no longer shows platform status
 - overlay visibility itself follows the native host contract: active
   sessions are revealed bottom-center, idle states are parked offscreen

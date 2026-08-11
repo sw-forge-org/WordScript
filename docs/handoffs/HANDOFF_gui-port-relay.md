@@ -155,7 +155,8 @@ gallery of four sections.
 | **6** | Runtime contracts, the second pass | *Done.* The Markdown transcript store with model-written filenames (ADR 0074, 0077), the reveal command on three surfaces, the retry routed by mode through one shared dispatch (ADR 0075), `core::backup`'s export/import/reset, Home's decision inbox (ADR 0076), and §15.3's native half. History and Privacy & Data are fully wired and left the gallery |
 | **7** | The five missing SURFACES | *Done.* Add and Edit for replacements and snippets, New profile's rename, `More`'s menu and where an `analyze_text_rules` answer goes, all on one panel plane (ADR 0082) — plus one shape per job across both pane screens |
 | **8** | The health flag's click, and two fields waiting on a measurement | *Done.* The flag opens the flags with a door and an acknowledge each (ADR 0085); **Profiles is wired and out of the gallery**, 26 measurements become 25; `duration_ms` completes §11.23's frontmatter (ADR 0086); the title call's surface is decided and its cost measured (ADR 0087) |
-| **9** | Documentation and drift | DESIGN_SYSTEM, ROADMAP, README, ARCHITECTURE, `SETTINGS_REWORK_PLAN` §0, `spec-sync` — plus the two things Leg 8 measured and owed |
+| **9** | Documentation and drift | *Done.* The Titles row drawn at a measured **6 \| 6**, not the 18 \| 6 priced (ADR 0088); a caller sweep that found **fourteen** orphaned commands and removed six (ADR 0089); SPEC, README, ARCHITECTURE, REFERENCE, DESIGN_SYSTEM, VISION, ROADMAP, STATUS and the plan's §0 read against the shipped product for the first time since Leg 3 |
+| **10** | *(to be decided — see the Leg 10 prompt)* | The two capabilities the drift pass surfaced without settling: text-rules import/export has a complete runtime and no UI, and the session command shells SPEC names as contract have no caller |
 
 Legs 2 and 4 are large and may split into sub-legs (2a, 2b, …). A leg that
 splits says so in its record and writes the prompt for the next sub-leg.
@@ -263,10 +264,15 @@ window under this compositor. A human with a mouse can.
   `docs/decisions/README.md` when you file one.
 - `CHANGELOG.md` under `[Unreleased]`, your record in the leg log, and the
   **Leg 3 prompt**.
-- **Flip the prototype's status** (ADR 0057). When the last screen stands in the
-  gallery, say so in this document and in `SETTINGS_REWORK_PLAN.md` §0, which
-  still calls the prototype mandatory reading with no horizon. Rule 4b applies
-  to screens not yet ported and expires with them.
+- ~~**Flip the prototype's status** (ADR 0057). When the last screen stands in
+  the gallery, say so in this document and in `SETTINGS_REWORK_PLAN.md` §0,
+  which still calls the prototype mandatory reading with no horizon. Rule 4b
+  applies to screens not yet ported and expires with them.~~ **DONE by Leg 2 in
+  `db9a6dc`** and struck through by Leg 9. §0 has read "the prototype is
+  PROVENANCE, not the source" since 2026-08-04. **Nobody struck it, so six
+  consecutive briefs re-carried it as owed** — including the Leg 9 prompt, which
+  is what sent a leg to fix something that had been fixed for six legs. An owed
+  list nobody marks off manufactures debt.
 
 ### 2.6 What the demo GUI did NOT settle, and it is not the same gap as §2.5
 
@@ -1831,6 +1837,148 @@ declined lines would be a second place for style rules to live.
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.
 
+### Leg 9 — the doors nobody walked through, and the debt that had been paid six legs ago
+
+**ALL THREE ENTRIES ARE DONE.** Two ADRs (0088, 0089). Three commits, plus the
+documentation commit.
+
+**THE THING TO TAKE FROM THIS LEG: A DOCUMENT THAT ASSERTS A CAPABILITY IS HOW
+A REGRESSION HIDES.** `export_text_rules` and `import_text_rules` are complete
+in the runtime — schema version, conflict resolution, merge, analysis — and
+their caller went with Leg 3's shell overwrite. Nothing replaced them: the full
+backup on Privacy & Data writes the whole config, which is a different artifact.
+For six legs `ARCHITECTURE.md` said the UI does "preview, validation and
+import/export in Text Rules", and every reader who checked the doc found the
+capability present and every reader who checked the runtime found it compiled.
+Only the caller was gone, and nothing looks at callers.
+
+**THE SWEEP WAS SEVEN TIMES THE BRIEF.** The brief sent this leg after two
+caller-less commands. `invoke_handler` against every `invoke(` in `src/` is two
+greps and it found **fourteen**. Applying Leg 7's rule flatly — a primitive with
+no user is not part of the system — would have deleted a lane ADR 0065 defers
+and the lost capability above. So they are triaged by *why* they lost a caller
+(ADR 0089), which is one command: `git log -S'"the_name"' -- src/`.
+
+- **superseded → deleted (6):** both `*acknowledge_profile_health_flag`,
+  `get_workspace_context`, `app_config_file_path`, `resize_overlay_to_height`,
+  `resize_edit_overlay`. The resize pair is why the class goes rather than being
+  tolerated: it is the dynamic sizing path this codebase abandoned, and leaving
+  it registered keeps a route back into `known-issues/overlay-ghosting.md`.
+- **owed a surface → kept:** `preview_prompt_enhance` (ADR 0065, Phase 8).
+- **lost capability → kept and listed:** the text-rules pair.
+- **command shell only → kept and listed:** `transcribe_audio_file` and the four
+  session commands, whose functions the Rust pipeline drives directly.
+
+Five `OVERLAY_EDIT_MODE_*` constants went with the resize commands. `cargo check`
+named all five the moment those two left — the compiler confirming they had
+exactly one user. 20 warnings to 15.
+
+**THE LEG 8 RECORD IS WRONG ON ONE PREMISE AND THIS LEG CORRECTS IT.** It says
+the acknowledge commands lost their caller "since Leg 3 deleted `PromptsTab.tsx`
+in `8f9077e`, which is the file that used to call them". That file did not call
+them: it held acknowledgements in React `useState` and passed them to
+`get_profile_health` as a request field, so they were never persisted at all.
+`git log --all -S` finds **no commit in the repository's history** in which
+either was invoked from `src/`. They were a surface never built, not a caller
+deleted. Leg 8's rule survives; its example does not.
+
+**§2.5's LAST BULLET HAS BEEN DONE SINCE LEG 2 AND SIX BRIEFS RE-CARRIED IT.**
+"Flip the prototype's status … `SETTINGS_REWORK_PLAN.md` §0, which still calls
+the prototype mandatory reading with no horizon." §0 has read *"the prototype is
+PROVENANCE, not the source"* since `db9a6dc` — Leg 2's own closing commit.
+Nobody struck the bullet, so every subsequent prompt inherited it, including the
+Leg 9 prompt, which sent a leg to fix something fixed six legs earlier. The
+bullet is struck through now. **An owed list nobody marks off manufactures
+debt**, and it is more expensive than the drift it was tracking, because a real
+item and a phantom one are indistinguishable to the next reader.
+
+**THE MEASURED COST WAS A THIRD OF THE PRICE, AND THE SHAPE IS WHY.** ADR 0087
+priced the Titles row at **structural 18 | style 6**, measured on a
+`LaneJobRow`. But `LaneJobRow` contradicts ADR 0087's own ruling that the row
+states rather than sets: its `<details>` would open onto an empty body, the fake
+affordance rule 7 forbids. The shape that carries the decision honestly is a
+flat `JobNone`, and it costs **6 | 6** — its own six nodes plus one height
+reported at each of six ancestors. `JobNone` renders `div.job` where
+`LaneJobRow` renders `details.job`, so an appended flat row occupies its own
+sibling index space and **shifts no path at all**. Both ends measured in this
+leg rather than inferred (ADR 0088).
+
+**THE NATIVE HOST FOUND A DEFECT AGAIN — THE THIRD LEG RUNNING.** The row
+shipped with a 228-character description carrying the Verbatim ruling and the
+ADR 0077 fallback. The copy budget is ≤ 90 on one line and its three neighbours
+run 82, 91 and 98. jsdom sees a correct string; WebKitGTK draws four lines
+against rows that take one. Now 78. Both facts that went were already recorded
+in ADRs, which is where a fact that does not fit a row belongs.
+
+**WHAT LEG 9 REMOVES FROM §2.5.**
+
+- **AI Models has no row for the title model call** — closed (ADR 0088).
+- **`acknowledge_profile_health_flag` and `unacknowledge_profile_health_flag`
+  have no caller** — closed by deletion (ADR 0089).
+
+**WHAT LEG 9 ADDS TO §2.5.**
+
+- **Text-rules import and export have a complete runtime and no UI.** A
+  capability the pre-port surface had. Not a runtime gap and not a drawn-design
+  debt — a third kind: a shipped feature whose surface was deleted.
+- **Four session commands SPEC names as contract have no UI caller.**
+  `start_native_session`, `stop_native_session`, `native_session_status`,
+  `complete_native_session`. The operations are alive via the Rust trigger path.
+  Removing them is a contract change, so this leg corrected the SPEC section
+  describing them and left the commands alone.
+
+**Findings for Leg 10.**
+
+1. **THE SPEC ITSELF HAD DRIFTED, AND IT IS THE FILE EVERY OTHER DOC DEFERS
+   TO.** `docs/spec/SPEC.md` said **"none of it is wired"** about a port where
+   eight surfaces write the runtime and two more read it. It described the
+   `settings` window as the pre-port shell with a 232px sidebar. Its "Tauri
+   commands (UI -> Rust), key surface" list carried four commands no UI calls
+   and two entries (`reveal_overlay_window`, `park_overlay_window`) that are not
+   commands at all. Its `Status:` line said "last drift check 2026-08-11" — the
+   date was current and the content was three legs stale. **A drift-check date
+   is not evidence of a drift check.**
+2. **`xdotool` reports geometry this machine's compositor does not honour.**
+   `getwindowgeometry` returned three different positions for one window across
+   one session and none matched where it was drawn; `getdisplaygeometry` returns
+   the primary monitor only while windows sit past its right edge. Cropping a
+   full-desktop `spectacle` capture to those numbers lands on whatever else is
+   on screen — twice it landed on the owner's browser. **`spectacle -a -b -n -o
+   <file>` captures the active window and is the only reliable instrument**;
+   `xdotool getactivewindow` is trustworthy, its geometry is not.
+3. **Synthetic POINTER events do not reach the webview; synthetic KEYS do.**
+   Leg 6 recorded that clicks are dead. The same holds for the wheel: fourteen
+   `xdotool click 5` over the content scrolled nothing. `Page_Down` also did
+   nothing, because the scroll container has no focus. **`Tab` is the scroller**
+   — 34 of them walk focus from the top of AI Models to the Writing group and
+   drag the viewport along. The command palette takes arrow keys and `Return`
+   but ignores `xdotool type`, so navigate it by counting rows, not by typing.
+4. **The Leg 9 prompt itself carried a stale instruction** (see the §2.5 finding
+   above) **and a stale number** (ADR 0087's 18 | 6, correct for a shape the
+   decision it accompanied had ruled out). Both were caught by checking rather
+   than by obeying. A prompt is a leg's best summary of the state, not the state.
+5. **Three `never used` warnings survive `cargo check` and are not this leg's:**
+   `should_oscillate_flat_reveal`, `NativeInsertionState::configure`,
+   `ModeHotkeys::for_mode`. They are in the tree the core-hardening track is
+   working in; the sweep that found them is in ADR 0089 and they were left alone
+   deliberately.
+6. **`port:diff` takes an explicit screen list or it measures nothing.** With no
+   arguments it prints `ALL EXACT` over an empty set, which reads exactly like a
+   pass. The list is every gallery id except `ds`, plus `models#1 agents#1
+   agents#2 onboarding#1`–`#6` — 25 measurements.
+7. **The window label is still `settings` and still names the wrong thing**, on
+   a window that is the workspace. Six Rust call sites and the window-state
+   persistence key hang on it, so renaming is a runtime change rather than a doc
+   fix; the docs now say what the label is and why it stayed. `mode_router.rs`'s
+   citation of `OverlayGallery.tsx` — a file ADR 0055 folded away — is gone.
+
+**Checks at the close.** 470 frontend tests across 39 files (from 469), `cargo
+test` 740 unchanged, `cargo check` 15 warnings (from 20), `npm run build` green,
+`port:diff` **24 of 25 at structural 0 | style 0** with `models` at 6 | 6. Load
+was 2.0–3.2 throughout and the suite did not flake; `--no-file-parallelism` was
+used for the final count anyway. The Titles row was confirmed in the native host
+before and after the copy fix.
+
 ### Leg 8 — the click that could not route, and the two fields that had been waiting on a measurement each
 
 **ALL THREE ENTRIES ARE DONE.** Three ADRs (0085, 0086, 0087). **Profiles is
@@ -3002,7 +3150,139 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 9
+## The prompt for Leg 10
+
+You are picking up WordScript after Leg 9. Work in the repo root on `main`. Do
+not create a branch. `src-tauri/` is open, and **the core-hardening track is
+working in the same tree** — check `git log --oneline -5` before you start and
+stage your own paths when you commit.
+
+### What is already true
+
+**The documentation describes the product again.** Leg 9 read SPEC, README,
+ARCHITECTURE, REFERENCE, DESIGN_SYSTEM, VISION, ROADMAP, STATUS and the plan's
+§0 against the shipped build — the first time since Leg 3's overwrite — and the
+spec was the worst of them: it said *"none of it is wired"* about a port with
+eight wired surfaces, under a `Status:` line whose drift-check date was current.
+
+**AI Models names the title call** (ADR 0088), at a measured `models` 6 | 6
+rather than the 18 | 6 ADR 0087 had priced, because the shape that carries "it
+states rather than sets" is a flat row and a flat row shifts no sibling path.
+`port:diff` is **24 of 25 at structural 0 | style 0**.
+
+**Six caller-less commands are gone and eight are documented** (ADR 0089). The
+sweep — `invoke_handler` against every `invoke(` in `src/` — found fourteen when
+the brief expected two.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 9's record is your starting
+state, and its findings 2 and 3 will save you an hour** if you go near the
+native host: `xdotool`'s geometry is not to be trusted on this compositor,
+pointer events do not reach the webview, and `Tab` is how you scroll. Then ADR
+0089, `CLAUDE.md`, `docs/spec/SPEC.md`, and `src/screens/props.ts`.
+
+### The order, and both entries are decisions before they are code
+
+1. **Text-rules import and export, and this is the leg's question.** The runtime
+   is complete — schema version, conflict resolution, merge, analysis — and has
+   had no caller since Leg 3's shell overwrite deleted the surface that called
+   it. Nothing replaced it: `export_full_backup` writes the whole config, which
+   is not a shareable rules document. **This is a capability the product had and
+   silently lost**, and Leg 9 deliberately did not decide it. Three answers are
+   open and each is defensible: draw it on Profiles (it is that screen's data
+   and ADR 0082 already gives you the panel plane); fold it into Privacy & Data
+   beside the backup (both are import/export of user data); or delete the
+   runtime and record that WordScript does not share rule sets. **Ask the owner
+   before deleting** — this is a product decision, not a cleanup.
+2. **The four session commands SPEC names as contract and nothing calls.**
+   `start_native_session`, `stop_native_session`, `native_session_status`,
+   `complete_native_session`. The operations are alive — the Rust trigger path
+   drives `start_from_native`, `processing_from_native` and the state machine
+   directly — so these are command shells. `abort_native_session` is the one of
+   the five with a caller, because the overlay draws an abort. Either the spec
+   stops calling them the UI surface, or something starts calling them. Leg 9
+   corrected the section's description and left the commands, because removing
+   a contract is not a drift fix.
+
+### The rules you will be judged on
+
+**A DOCUMENT THAT ASSERTS A CAPABILITY IS HOW A REGRESSION HIDES.**
+`ARCHITECTURE.md` claimed the UI does text-rules import/export for six legs. The
+doc said present, the runtime said compiles, and only the caller was gone.
+Nothing looks at callers unless somebody greps for them.
+
+**A DRIFT-CHECK DATE IS NOT EVIDENCE OF A DRIFT CHECK.** SPEC's `Status:` line
+read "last drift check 2026-08-11" over three-leg-stale content. If you touch a
+`Status:` line, say what you actually read against what.
+
+**STRIKE THE ITEM WHEN YOU DO IT.** §2.5's last bullet was discharged by Leg 2
+in `db9a6dc` and re-carried as owed by six consecutive prompts, including Leg
+9's. A list nobody marks off costs more than the drift it tracks, because a real
+item and a phantom one look identical.
+
+**MEASURE THE SHAPE YOU ARE SHIPPING, NOT THE ONE YOU TRIED.** ADR 0087's 18 | 6
+was honest and belonged to a `LaneJobRow` that the same ADR's own ruling had
+excluded. The number carried forward one leg as fact and was a third off.
+
+**THE NATIVE HOST HAS FOUND A DEFECT IN THREE CONSECUTIVE LEGS**, and Leg 9's
+was pure rendering: a 228-character row description against a ≤ 90 budget, which
+jsdom reports as a correct string.
+
+### What you must NOT do
+
+- **Do not widen the Context opening.** One drawn gesture was lifted, on
+  2026-08-11, so the two rails would not differ. The screen is still going to be
+  done differently and the owner still has not said how.
+- **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
+  roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not edit an existing ADR.** Append-only. The next free number is **0090**
+  and that sentence is the first thing that goes stale — grep the tree, source
+  as well as `docs/`, because a number is cited in code before its file lands.
+- **Do not rename the `settings` window label** without being asked. Six Rust
+  call sites and the window-state persistence key hang on it; the docs now say
+  what it is and why it stayed.
+- **Do not migrate a config without a backup path.** `core::backup` is the
+  pattern: snapshot, act, answer with where the snapshot went.
+- **The overlay is still rule 5**, and its ghosting on a language change is
+  documented rather than worked around. The two commands that resized it
+  dynamically are gone (ADR 0089) — do not bring that path back.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the TOTAL,
+  not the colour.** Leg 9 closed at 470 frontend across 39 files, `cargo test`
+  740, `cargo check` 15 warnings. Under load the suite flakes by about 5;
+  `npx vitest run --no-file-parallelism` is the tiebreaker and `uptime` tells
+  you whether to reach for it. Leg 9 ran at 2.0–3.2 and saw none.
+- **`npm run port:diff` TAKES A SCREEN LIST OR IT MEASURES NOTHING.** With no
+  arguments it prints `ALL EXACT` over an empty set, which reads exactly like a
+  pass. Serve the prototype on 8791, run `npm run dev`, and pass: every gallery
+  id except `ds`, plus `models#1 agents#1 agents#2 onboarding#1`–`#6`. Expect
+  **24 of 25 at structural 0 | style 0** with `models` at 6 | 6 (ADR 0088). The
+  `text` column is the soft category Leg 2a recorded as false positives.
+- **The native host is the only instrument for a drawn state**, and Leg 9's
+  findings 2 and 3 are the operating manual: `spectacle -a -b -n -o <file>`
+  captures the active window and is the only reliable capture — do NOT crop a
+  full-desktop shot to an `xdotool` geometry, which on this compositor points
+  somewhere else and twice landed on the owner's browser. Pointer events
+  (clicks AND wheel) do not reach the webview; keys do. The palette opens on
+  `ctrl+k`, takes arrows and `Return`, and ignores `xdotool type` — count rows.
+  `Tab` is how you scroll a section: focus walks and drags the viewport.
+- **Check whether a host and a dev server are ALREADY running before starting
+  one**, and note that `tauri dev` starts its own Vite — a `npm run dev` you
+  started yourself will collide with it on 1420. `ps -o lstart=` on the pid
+  shows whose is whose.
+- **Do not raise the window past somebody working at the machine — ask.**
+- **Never `pkill -f`.** Kill by PID, and stop what you started.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 11
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 9 (spent — kept for the chain's record)
 
 You are picking up WordScript after Leg 8. Work in the repo root on `main`. Do
 not create a branch. `src-tauri/` is open, and **the core-hardening track is
