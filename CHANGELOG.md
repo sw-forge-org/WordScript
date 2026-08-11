@@ -55,6 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The defect that needed no dictation got a binary that needs no app**
+  (ADR 0084). `capture-soak` opens the device WordScript opens, holds it open
+  for hours and reports what it delivers — the loss of audio in
+  `capture-loses-half-the-recording.md` happens about once per hour of open
+  stream, not once per capture, and every diagnostic it needs is written before
+  the empty-recording branch, so nobody has to speak into it. It carries
+  `CallbackCadence` and `CaptureIntegrity` themselves rather than copies, does
+  the same per-callback work minus the `app.emit`, and rotates its books into
+  300 s segments from inside a callback so the segments tile the run without a
+  seam a dropout could hide in. Not shipped and not reachable from the UI; run
+  by hand, writing its own log. **The eleven events are still eleven** — the
+  tool exists, a night has not been recorded.
 - **The five controls that had no editor behind them have one, and it unfolds
   under the row it acts on** (ADR 0082). Add and Edit on Profiles' Replacements
   and Snippets, a new profile's rename, `More`'s menu, and both calls to

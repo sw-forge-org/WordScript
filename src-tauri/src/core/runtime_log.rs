@@ -20,7 +20,7 @@ fn process_start() -> Instant {
 /// line with `journalctl` and with the overlay diagnostic log, while the
 /// monotonic value makes a stall visible at a glance and survives wall-clock
 /// jumps from NTP. Convert the epoch value with `date -d @<seconds>`.
-fn log_timestamp() -> String {
+pub(crate) fn log_timestamp() -> String {
     let epoch_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis())

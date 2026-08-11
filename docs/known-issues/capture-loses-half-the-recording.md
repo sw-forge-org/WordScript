@@ -4,7 +4,9 @@ Status: **Open — cause not located, and now instrumented for the next
 occurrence. Re-measured 2026-08-10 and 2026-08-11: 11 affected captures rather
 than 8, unchanged between the two runs, and the worst one is still the most
 recent. The capture REPORTS the gap (ADR 0079) and now also reports the CADENCE
-of its own input stream (ADR 0083), which is step 2 below. No real gap has been
+of its own input stream (ADR 0083), which is step 2 below. Step 3 now has a
+tool and not yet a night: `capture-soak` (ADR 0084) can reproduce the conditions
+unattended, and has not been run for longer than seconds. No real gap has been
 recorded yet.**
 
 This is the defect the overlay freeze reports have been describing; the frozen
@@ -271,6 +273,43 @@ itself has no app to go to. **A soak that finds nothing does not exonerate
 PipeWire — it moves the suspicion to the app**, and that is a result worth
 having either way.
 
+### Route A shipped 2026-08-11: the tool exists, the night does not
+
+[ADR 0084](../decisions/0084-the-defect-that-needed-no-dictation-gets-a-binary-that-needs-no-app.md).
+`capture-soak` (`src-tauri/src/bin/capture_soak.rs`) opens the device the app
+opens and holds it open, rotating its bookkeeping into 300 s segments that each
+carry a cadence and an integrity verdict:
+
+```text
+cargo run --release --bin capture-soak -- --hours 8
+PIPEWIRE_DEBUG=3 journalctl --user -u pipewire -f      # step 4, same night
+```
+
+It carries `CallbackCadence`, `CaptureIntegrity` and `InputLevelSummary`
+themselves rather than copies, so a disagreement between the soak and a capture
+cannot be an artifact of two implementations. Rotation happens inside a
+callback, so segments tile the run exactly and a stalled stream keeps its
+segment open and growing instead of producing a run of tidy ones.
+
+Verified against real hardware for 20 s and 12 s on 2026-08-11:
+`host=Alsa device=default sample_rate=44100 channels=2 sample_format=f32`, which
+is the configuration all 497 capture starts in the log share. Healthy segments
+read `missing_ratio` between 0.0000 and 0.0055 with `signature=no_gaps`.
+
+**Nothing has been soaked yet.** Building the instrument is not running it, and
+the eleven events in this record are still eleven. Step 3 stays open.
+
+**The instrument fabricated a total loss on its first run.** The 20 s run ended
+with a segment reading `missing_ratio=1.0000` — a 3 ms remainder of the rotation
+reported as if all its audio had been lost. That is this record's own failure
+class produced by the tool built to find it, and it was visible only in the log
+of a real run; the synthetic tests passed throughout. A remainder too short for
+`CaptureIntegrity` to judge is now dropped, while a judged segment is reported
+even with no samples in it, because a stream that stopped for minutes is the
+finding rather than an artifact. Both directions are asserted
+(`the_rotation_remainder_is_not_reported_as_a_total_loss`,
+`a_stream_that_stopped_entirely_is_still_reported_at_the_end`).
+
 ### Route B — the real app, silent
 
 If the suspicion lands on the app: set `silence_timeout_seconds` to `0`, which
@@ -323,10 +362,13 @@ Untested, ordered by what the evidence supports.
 
 1. ~~**Report the gap.**~~ **Done 2026-08-10, ADR 0079.** See above.
 2. ~~Log the cpal callback cadence.~~ **Done 2026-08-11, ADR 0083.** See above.
-3. **Build the soak and run it overnight.** Route A above. This is now the first
-   open step and it does not wait for anything: at one event per hour of open
-   stream, a night produces roughly eight of them, and each carries a signature
-   naming which hypothesis it supports. Step 4 is folded into the same night.
+3. ~~Build the soak.~~ **Built 2026-08-11, ADR 0084 — and not yet run.** The
+   binary exists and is verified against real hardware for seconds, not hours.
+   **Run it overnight**: at one event per hour of open stream a night produces
+   roughly eight, each carrying a signature naming which hypothesis it supports.
+   Step 4 is folded into the same night. A night that produces nothing is a
+   result and moves the suspicion from PipeWire to the app's own per-callback
+   work; it is not an exoneration of either.
 4. Watch PipeWire from the other side, **at `PIPEWIRE_DEBUG=3`**, and correlate
    a suspend against a soak window. The retrospective half was taken on
    2026-08-11 at default level and found nothing, which is weak evidence and not

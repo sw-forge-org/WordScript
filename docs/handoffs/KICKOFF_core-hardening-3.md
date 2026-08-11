@@ -18,8 +18,8 @@ class — output that is fluent, grammatical, plausible and wrong, with nothing
 downstream carrying evidence that a substitution happened:
 `capture-loses-half-the-recording.md`, `transcription-accuracy.md`,
 `stt-prompt-leaks-into-the-transcript.md`, `singular-address-becomes-plural.md`,
-`cleanup-invents-tokens-on-broken-input.md`. Then ADRs 0079, 0080, 0081 and
-0083, and `CLAUDE.md`.
+`cleanup-invents-tokens-on-broken-input.md`. Then ADRs 0079, 0080, 0081, 0083
+and 0084, and `CLAUDE.md`.
 
 ## Where the cluster actually stands
 
@@ -29,7 +29,7 @@ What two passes bought is that the cluster went from invisible to instrumented.
 
 | Record | Still occurring? | What exists now |
 |---|---|---|
-| Capture loses audio | **Yes, 11 events, cause unknown** | Reported (0079); the next one arrives with a callback cadence and a named signature (0083) |
+| Capture loses audio | **Yes, 11 events, cause unknown** | Reported (0079); the next one arrives with a callback cadence and a named signature (0083); `capture-soak` can now provoke the conditions unattended (0084) but **has not been run for a night** |
 | Prompt leak | **Yes in the recogniser, 12.5 % of raw** | Removed from the delivery (0080); displaced words stay gone |
 | Pluralized address | **Yes, one of three shapes** | Two repaired (0081), third out of reach by design |
 | Mishearings at large | **Yes, unmeasured** | One instance in the corpus; still no WER, no rate |
@@ -75,10 +75,23 @@ clean, and the harness is written to refuse that reading. Leave it refused.
 
 ## The order, and the first item is the whole point
 
-1. **Build the soak and run it overnight.** `capture-loses-half-the-recording.md`
-   → *How to reproduce it*. This is the one task that can produce a **cause**
-   rather than another description, and the second pass worked out why it is
-   cheap:
+1. **Run the soak overnight.** The binary was built on 2026-08-11
+   ([ADR 0084](../decisions/0084-the-defect-that-needed-no-dictation-gets-a-binary-that-needs-no-app.md))
+   and verified against real hardware for **seconds, not hours** — so this step
+   is still the first open one and still the only task that can produce a
+   **cause** rather than another description:
+
+   ```text
+   cargo run --release --bin capture-soak -- --hours 8
+   PIPEWIRE_DEBUG=3 journalctl --user -u pipewire -f     # step 4, same night
+   ```
+
+   Each 300 s segment writes a cadence line, an integrity verdict and
+   `epoch_ms_at_start`, which is what a journal window is correlated against.
+   **A night that produces nothing is a result** — it moves the suspicion from
+   PipeWire to the app's own per-callback work — and the record says so in
+   advance so it cannot be quietly reinterpreted afterwards. The reasoning that
+   made it cheap:
 
    - **Nobody has to speak.** All three diagnostic lines are written in
      `stop_native_capture` *before* the `if samples.is_empty() || !has_voice_activity`
@@ -88,20 +101,24 @@ clean, and the harness is written to refuse that reading. Leave it refused.
      total stream runtime. It looks rare per capture only because the average
      capture is under a minute. A night yields roughly eight.
 
-   So: a standalone binary opening the same stream (ALSA `default`, 44100/2/f32,
-   identical across all 497 capture starts in the log), carrying the existing
-   `CallbackCadence`, doing the same per-callback work, writing its own log,
-   running unattended. Fold step 4 of the record into the same night —
-   `journalctl --user -u pipewire` with **`PIPEWIRE_DEBUG=3`**, because the
-   retrospective check at default level found nothing and that is weak evidence
-   rather than a refutation.
-
-   **A soak that finds nothing is a result**: it moves the suspicion from
-   PipeWire to the app's own per-callback work. Report it as one.
+   What the binary does, so you can judge whether it measures what you need: it
+   opens the same stream (ALSA `default`, 44100/2/f32, confirmed identical to
+   all 497 capture starts in the log), carries the existing `CallbackCadence`
+   and `CaptureIntegrity` rather than copies of them, does the same per-callback
+   work minus the `app.emit`, and rotates its books into 300 s segments from
+   inside a callback so the segments tile the run without seams. Step 4 folds in
+   at **`PIPEWIRE_DEBUG=3`**, because the retrospective check at default level
+   found nothing and that is weak evidence rather than a refutation.
 
    **The first real gap is a corpus entry.** Nothing in the corpus describes an
    observed dropout — the cadence assertions run over a synthetic timeline, which
    pins the arithmetic and not the phenomenon.
+
+   **The soak fabricated a total loss on its first real run**, and the synthetic
+   tests were green while it did. A 3 ms rotation remainder was reported as
+   `missing_ratio=1.0000`. Read the soak log by hand before trusting a number
+   out of it — this cluster's own failure class is fully capable of appearing in
+   the tool built to detect it.
 
 2. **The candidate-length floor does not distinguish an LLM from a human, and
    should.** This is the sharpest finding of the second pass and its record
@@ -187,7 +204,7 @@ second pass:
   cited "ADR 0082" in `src/components/shell/EditorPanel.tsx` and `shell.css`
   while `docs/decisions/` still showed 0082 as free. Grep the whole tree —
   `grep -rn "ADR 008[0-9]" src/ src-tauri/src/ docs/` — before claiming one. The
-  next free number is **0084**.
+  next free number is **0085** — 0084 was taken by the soak on 2026-08-11.
 - **Stage explicitly, never `git add -A`.** The other track's unfinished files
   sit in the working tree the whole time. Check `git status` before committing
   and add your own paths by name.
@@ -206,17 +223,41 @@ reproduced. And **Context in any direction**: another agent owns that contract.
 ## Checks
 
 ```text
-cd src-tauri && cargo test    # 731 passing, 3 ignored, after the second pass
-npm test                      # 451 passing across 39 files
+cd src-tauri && cargo test    # 739 passing, 3 ignored, after the third pass
+npm test                      # 465 passing across 39 files at 0662d94
 npm run build
 npx tsc --noEmit
 ```
 
+**The `npm test` total moves under you and the number above is a commit, not a
+promise.** It was 451 at `8d2ae07` and 465 at `0662d94` a few hours later,
+because the GUI port relay added tests to `src/screens/Profiles.test.tsx` while
+this track was running. Both were verified green. Check the number against
+`git log` rather than reading a mismatch as damage.
+
 **Run the suite twice before believing a failure.** `npm test` flaked once in ten
 runs during the second pass — 2 failures in 2 files, not reproducible in the nine
 others, and the previous pass saw the same thing in `OverlayWindow.test.tsx`.
-**Capture the output when it does**, which the second pass failed to do and so
-cannot name the tests.
+
+**The third pass captured it.** One serial run of the working tree, five failures
+in five files, every one of them `Error: Test timed out in 5000ms` and not a
+single assertion; the next run of the same unchanged files was green at 465/465:
+
+- `Diagnostics.test.tsx` → *opens on Checks, with the sub-tab row inside the masthead* (5548 ms)
+- `Profiles.test.tsx` → *writes the context textarea through patchText and commits it on blur* (5175 ms)
+- `screens.test.tsx` → *Context > opens the Ask window with an answer that names the rows it read* (8125 ms)
+- `gallery/Foundations.test.tsx` → *carries the sections of SCREENS.ds, in order* (5084 ms)
+- `WorkspaceWindow.test.tsx` → *Help > closes on a press outside it and on Escape* (11370 ms)
+
+It is a timeout under load, not a defect: one test per file, no overlap between
+runs, and the same suite finishes in 11 s when nothing competes with it.
+
+**Do not run two suites at once to save time.** The third pass did, and `cargo
+test`'s tree reported *13 failures in 7 files* — 8 of them 5000 ms timeouts on
+tests taking 12 s — which is a green tree misreported as broken. Serially the
+same commit is 451/451 in 11 s against 104 s under contention. That is
+*Check your own instrument* one layer up: the harness was fine, the measuring
+conditions were not.
 
 **Watch the TOTAL, not the colour**: a silently shrunk test file has cost this
 repo a leg before.

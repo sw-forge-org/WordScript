@@ -6,6 +6,10 @@ authors = []
 license = "AGPL-3.0-only"
 repository = "https://github.com/sw-forge-org/WordScript"
 edition = "2021"
+# Required since the repo grew a second binary: `tauri dev` shells out to a bare
+# `cargo run`, which refuses to guess between targets. Without this the dev host
+# stops before it starts, and no test or `cargo check` catches it.
+default-run = "wordscript"
 
 [lib]
 name = "wordscript_lib"
@@ -14,6 +18,13 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [[bin]]
 name = "wordscript"
 path = "src/main.rs"
+
+# Route A of docs/known-issues/capture-loses-half-the-recording.md: an
+# unattended soak of the input stream, with no app and no words. Not shipped —
+# it is a diagnostic run by hand against the same device the app opens.
+[[bin]]
+name = "capture-soak"
+path = "src/bin/capture_soak.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

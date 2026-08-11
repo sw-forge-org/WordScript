@@ -32,16 +32,16 @@ fn default_agent_name() -> String {
 
 const DEFAULT_MAX_RECORDING_SECONDS: u64 = 720;
 const DEFAULT_SILENCE_TIMEOUT_SECONDS: u64 = 30;
-const DEFAULT_VOICE_THRESHOLD: f32 = 0.02;
-const AUDIO_LEVEL_INTERVAL_MS: u64 = 42;
+pub(crate) const DEFAULT_VOICE_THRESHOLD: f32 = 0.02;
+pub(crate) const AUDIO_LEVEL_INTERVAL_MS: u64 = 42;
 const MIN_SILENCE_AUTOSTOP_SECONDS: u64 = 1;
-const WAVEFORM_BUCKET_COUNT: usize = 19;
+pub(crate) const WAVEFORM_BUCKET_COUNT: usize = 19;
 const TRANSCRIPTION_SAMPLE_RATE: u32 = 16_000;
 const TRANSCRIPTION_CHANNELS: u16 = 1;
 /// Below this the signal is indistinguishable from a muted or wrong device.
 const SILENT_PEAK_THRESHOLD: f32 = 0.001;
 /// A sample this close to full scale has lost its peak to the converter.
-const CLIPPING_SAMPLE_THRESHOLD: f32 = 0.99;
+pub(crate) const CLIPPING_SAMPLE_THRESHOLD: f32 = 0.99;
 /// Sustained clipping, not the occasional transient.
 const CLIPPING_RATIO_THRESHOLD: f32 = 0.005;
 /// Window the silence trim scans in, and the pad it keeps on either side of
@@ -125,7 +125,12 @@ fn silent_dbfs() -> f32 {
 }
 
 impl InputLevelSummary {
-    fn new(peak: f32, clipped_samples: u64, total_samples: u64, sum_squares: f64) -> Self {
+    pub(crate) fn new(
+        peak: f32,
+        clipped_samples: u64,
+        total_samples: u64,
+        sum_squares: f64,
+    ) -> Self {
         let clipped_ratio = if total_samples == 0 {
             0.0
         } else {
@@ -565,7 +570,7 @@ struct CallbackGap {
 /// reports nothing, which is acceptable: this defect always ends with a
 /// transcript.
 #[derive(Debug, Clone)]
-struct CallbackCadence {
+pub(crate) struct CallbackCadence {
     /// Interleaved samples the device produces per second — `sample_rate ×
     /// channels`. It converts a callback's size into the audio time it carries,
     /// which is what makes a late callback distinguishable from a lost one.
@@ -591,7 +596,7 @@ struct CallbackCadence {
 }
 
 impl CallbackCadence {
-    fn new(sample_rate: u32, channels: u16) -> Self {
+    pub(crate) fn new(sample_rate: u32, channels: u16) -> Self {
         Self {
             samples_per_second: f64::from(sample_rate.max(1)) * f64::from(channels.max(1)),
             last_callback_at: None,
@@ -612,7 +617,7 @@ impl CallbackCadence {
     /// `now` is passed in rather than read here so the cadence can be driven
     /// over a synthetic timeline in a test. A dropout instrumentation asserted
     /// with `thread::sleep` would be measuring the test runner's scheduler.
-    fn observe(&mut self, started_at: Instant, now: Instant, samples: usize) {
+    pub(crate) fn observe(&mut self, started_at: Instant, now: Instant, samples: usize) {
         self.callbacks += 1;
         self.samples_total += samples as u64;
         if self.nominal_samples == 0 {
@@ -703,7 +708,10 @@ impl CallbackCadence {
 /// stood next to the eight broken ones; a cadence line that only appeared on
 /// failures would have no baseline to be read against, and the first question
 /// asked of the first gap would be whether gaps are normal.
-fn cadence_log_lines(cadence: &CallbackCadence, integrity: &CaptureIntegrity) -> Vec<String> {
+pub(crate) fn cadence_log_lines(
+    cadence: &CallbackCadence,
+    integrity: &CaptureIntegrity,
+) -> Vec<String> {
     let share = cadence
         .share_of_missing_audio(integrity)
         .map(|share| format!("{share:.3}"))
@@ -810,7 +818,12 @@ pub struct CaptureIntegrity {
 }
 
 impl CaptureIntegrity {
-    fn new(wall: Duration, sample_count: usize, sample_rate: u32, channels: u16) -> Self {
+    pub(crate) fn new(
+        wall: Duration,
+        sample_count: usize,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Self {
         let wall_seconds = wall.as_secs_f64();
         let recorded_seconds = capture_duration_seconds(sample_count, sample_rate, channels);
         let missing_ratio = if wall_seconds <= 0.0 {
@@ -1624,7 +1637,10 @@ fn rollback_rebuild_pause(shared: &Arc<Mutex<SharedCaptureData>>) {
     }
 }
 
-fn select_input_device(host: &cpal::Host, preferred_name: &str) -> Result<Device, String> {
+pub(crate) fn select_input_device(
+    host: &cpal::Host,
+    preferred_name: &str,
+) -> Result<Device, String> {
     if !preferred_name.trim().is_empty() {
         let devices = host
             .input_devices()
@@ -1864,7 +1880,7 @@ fn capture_duration_seconds(sample_count: usize, sample_rate: u32, channels: u16
     sample_count as f64 / frames_per_second
 }
 
-fn waveform_buckets(samples: &[f32]) -> [f32; WAVEFORM_BUCKET_COUNT] {
+pub(crate) fn waveform_buckets(samples: &[f32]) -> [f32; WAVEFORM_BUCKET_COUNT] {
     let mut sums = [0.0_f32; WAVEFORM_BUCKET_COUNT];
     let mut peaks = [0.0_f32; WAVEFORM_BUCKET_COUNT];
     let mut counts = [0_usize; WAVEFORM_BUCKET_COUNT];
@@ -2185,7 +2201,7 @@ pub fn prune_retained_captures() {
     }
 }
 
-fn sample_format_label(sample_format: SampleFormat) -> &'static str {
+pub(crate) fn sample_format_label(sample_format: SampleFormat) -> &'static str {
     match sample_format {
         SampleFormat::F32 => "f32",
         SampleFormat::I16 => "i16",
@@ -2194,7 +2210,7 @@ fn sample_format_label(sample_format: SampleFormat) -> &'static str {
     }
 }
 
-fn f32_to_i16(sample: f32) -> i16 {
+pub(crate) fn f32_to_i16(sample: f32) -> i16 {
     let clamped = sample.clamp(-1.0, 1.0);
     (clamped * f32::from(i16::MAX)).round() as i16
 }
