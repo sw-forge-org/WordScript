@@ -228,6 +228,66 @@ Only one of the 11 short captures falls inside the journal's reach, which is why
 this is a coincidence check and not a measurement. Watching PipeWire live during
 a long capture is still worth doing and is still step 3.
 
+## How to reproduce it, and why nobody has to speak
+
+Worked out 2026-08-11. Every plan before this one assumed the defect had to be
+waited for, because a capture needs a dictation. **It does not.**
+
+**1. The diagnostics do not depend on speech.** All three lines — capture
+integrity, callback cadence, input level — are written in `stop_native_capture`
+*before* the `if samples.is_empty() || !has_voice_activity` branch. A recording
+with no words in it is discarded as empty and still leaves the complete
+measurement in the runtime log. The defect is a loss of samples from the input
+stream, and silence produces samples like anything else.
+
+**2. The rate makes it a short experiment, not a vigil.** Eleven events across
+roughly **9 hours of total stream runtime** (643 captures, 7.9 h of it in
+captures of at least 20 s):
+
+> **About one event per hour of open input stream.**
+
+That is the number that was missing. The defect looks rare per *capture* — 11 in
+643 — only because the average capture is under a minute. Per hour of stream it
+is common, and an unattended run overnight should produce roughly eight events.
+
+### Route A — a soak, unattended, no app and no words
+
+A standalone binary that opens the same stream (ALSA `default`, 44100 Hz,
+2 channels, `f32` — identical across all 497 capture starts in the log), carries
+the same `CallbackCadence`, and runs for hours writing its own log. It touches
+no session, no dev host and no microphone etiquette.
+
+**What it settles:** hypothesis 1 directly. A parked or rerouted ALSA client
+shows as `signature=stream_suspended` with a timestamped window, which is then
+correlated against `journalctl --user -u pipewire` — **step 3 of the plan below,
+done in the same night.** Run PipeWire at `PIPEWIRE_DEBUG=3` for that, because
+the retrospective check at default level found nothing.
+
+**What it cannot settle:** if the cause is contention with WordScript's own
+per-callback work — the `app.emit` every 42 ms, the webview beside it — a bare
+stream may never reproduce it. The soak should therefore do the same work per
+callback (buffer copy, peak and RMS, the 42 ms bookkeeping); only the emit
+itself has no app to go to. **A soak that finds nothing does not exonerate
+PipeWire — it moves the suspicion to the app**, and that is a result worth
+having either way.
+
+### Route B — the real app, silent
+
+If the suspicion lands on the app: set `silence_timeout_seconds` to `0`, which
+disables the auto-stop (`should_auto_stop` gates on `> 0`), raise
+`max_recording_seconds`, start a capture and leave it. It is discarded as empty
+at the end and writes the full diagnostic anyway, per point 1 above. One
+setting, no words.
+
+### What was withdrawn
+
+An earlier version of this plan said "under load". **That was a guess and the
+data does not carry it.** The one short capture inside the journal's reach ran
+at 18.3 % available memory, inside the healthy band of 11.8--51.6 %, with six
+healthy long captures tighter than it. Scripting artificial load would test a
+hypothesis nothing supports. Letting the soak run through an ordinary working
+day puts it in the conditions the defect actually occurred in.
+
 ## Environment
 
 - `host=Alsa device=default sample_rate=44100 channels=2 sample_format=f32` —
@@ -263,20 +323,18 @@ Untested, ordered by what the evidence supports.
 
 1. ~~**Report the gap.**~~ **Done 2026-08-10, ADR 0079.** See above.
 2. ~~Log the cpal callback cadence.~~ **Done 2026-08-11, ADR 0083.** See above.
-   **The next step is to wait for it to fire**, which costs nothing and needs no
-   code: the next `verdict=short` capture writes a cadence line beside it, and
-   its `signature` names the hypothesis. Until then the three below remain
-   untested rather than eliminated.
-3. Watch PipeWire from the other side during a long capture
-   (`pw-cli` / `pw-top`, and `journalctl --user -u pipewire`, ideally with
-   `PIPEWIRE_DEBUG=3`) and correlate a suspend against a capture window. The
-   retrospective half of this was taken on 2026-08-11 and found nothing at
-   default log level — see above. **Live, at debug level, it is still open**,
-   and it is the one thing that would confirm hypothesis 1 outright rather than
-   inferring it from the resume size.
-4. ~~Fix the pause interaction in `shortfall_ratio`.~~ **Done 2026-08-10,
+3. **Build the soak and run it overnight.** Route A above. This is now the first
+   open step and it does not wait for anything: at one event per hour of open
+   stream, a night produces roughly eight of them, and each carries a signature
+   naming which hypothesis it supports. Step 4 is folded into the same night.
+4. Watch PipeWire from the other side, **at `PIPEWIRE_DEBUG=3`**, and correlate
+   a suspend against a soak window. The retrospective half was taken on
+   2026-08-11 at default level and found nothing, which is weak evidence and not
+   a refutation. Live and at debug level this is the one thing that would
+   confirm hypothesis 1 outright rather than inferring it from the resume size.
+5. ~~Fix the pause interaction in `shortfall_ratio`.~~ **Done 2026-08-10,
    ADR 0079** — `LevelEmitSummary` measures against `effective_elapsed`.
-5. **Put the first real gap in the corpus.** Nothing in
+6. **Put the first real gap in the corpus.** Nothing in
    `regression_transcripts.json` describes an observed dropout, because none has
    been recorded. The cadence assertions run over a synthetic timeline, which
    pins the arithmetic and not the phenomenon.
