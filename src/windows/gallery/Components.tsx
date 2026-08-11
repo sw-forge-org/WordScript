@@ -13,14 +13,20 @@ import {
   Button,
   Card,
   CardRows,
+  ConfirmPanel,
   Disclosure,
+  EditorPanel,
   EmptyState,
   Field,
   HotkeyButton,
   LaneCard,
   LevelMeter,
+  ListItem,
+  ListRows,
+  Menu,
   Note,
   PreviewBanner,
+  Reorder,
   Row,
   ScopeTag,
   SectionHeader,
@@ -382,6 +388,133 @@ export function Components() {
             </Card>
           </div>
         </Card>
+      </SectionHeader>
+
+      {/* ADR 0082. It is shown UNDER A ROW rather than on its own, because the
+          panel's whole argument is its relationship to the row above it: the
+          shared inset plane, the dropped rule, the actions that stay visible
+          while it is open. A swatch of it floating in a `State` box would draw
+          a form and hide the design. */}
+      <SectionHeader
+        title="The editor, unfolded"
+        description="Add and Edit open under the row they act on. No dialog, no scrim, nothing behind it recedes."
+      >
+        <Card title="Two halves of one sentence" description="A replacement, opened for editing.">
+          <ListRows>
+            <ListItem
+              title="hdb  →  Herzliche Gruesse"
+              meta={["exact", "case-insensitive"]}
+              open
+              actions={
+                <Reorder what="replacement" onUp={() => {}} onDown={() => {}} atTop atBottom={false} />
+              }
+            />
+            <EditorPanel
+              fields={[
+                { key: "phrase", label: "What you say", required: true },
+                { key: "replace_with", label: "What gets written", required: true },
+              ]}
+              initial={{ phrase: "hdb", replace_with: "Herzliche Gruesse" }}
+              note="Runs in order. A later rule sees what an earlier one wrote."
+              onSave={() => {}}
+              onCancel={() => {}}
+            />
+          </ListRows>
+        </Card>
+
+        <Card
+          title="A value that holds line breaks"
+          description="A snippet body takes the full row; Enter is its own newline and Ctrl+Enter commits."
+        >
+          <ListRows>
+            <ListItem title="Standard reply" meta={["expands to 4 lines"]} open />
+            <EditorPanel
+              fields={[
+                { key: "trigger", label: "Trigger phrase", required: true },
+                { key: "label", label: "Name" },
+                { key: "expansion", label: "Expands to", multiline: true, required: true },
+              ]}
+              initial={{ trigger: "standard reply", label: "Standard reply", expansion: "" }}
+              issues={[
+                {
+                  severity: "warning",
+                  message: "This trigger also matches a replacement. The replacement runs first.",
+                },
+              ]}
+              onSave={() => {}}
+              onCancel={() => {}}
+            />
+          </ListRows>
+        </Card>
+
+        <Note>
+          Save is disabled while a required field is empty and names the field in its tooltip
+          (ADR 0065). The snippet above is missing its body, so its Save is drawn in that state.
+        </Note>
+
+        <Card
+          title="Before something is gone"
+          description="A destructive action asks where the thing is, with the thing still on screen behind it."
+        >
+          <ListRows>
+            <ListItem title="KA  →  Kundenanfrage" meta={["exact", "case-insensitive"]} open />
+            <ConfirmPanel
+              question="Delete the replacement for “KA”?"
+              detail="It writes “Kundenanfrage” today."
+              confirmLabel="Delete replacement"
+              onConfirm={() => {}}
+              onCancel={() => {}}
+            />
+          </ListRows>
+        </Card>
+
+        <Note tone="alert">
+          Cancel takes focus when this opens, never the danger button. A panel that opens with the
+          destructive control focused turns a stray Return into the deletion it exists to prevent.
+        </Note>
+      </SectionHeader>
+
+      {/* The menu is `fixed` at a measured point, so a gallery that rendered it
+          live would drop a panel over the page. What is shown is the SHAPE:
+          three verbs, no descriptions, at the width that makes. */}
+      <SectionHeader
+        title="A row's own actions"
+        description="Every list answers a right-click the same way. Verbs, not descriptions — the width follows."
+      >
+        <Card>
+          <div className="ws-states">
+            <State label="a row's verbs">
+              <Menu
+                label="Actions"
+                items={[
+                  { label: "Rename", icon: "type" },
+                  { label: "Duplicate", icon: "copy" },
+                  { label: "Delete", icon: "trash" },
+                ]}
+              />
+            </State>
+            <State label="one entry that cannot act">
+              <Menu
+                label="Actions, last profile"
+                items={[
+                  { label: "Rename", icon: "type" },
+                  { label: "Duplicate", icon: "copy" },
+                  {
+                    label: "Delete",
+                    icon: "trash",
+                    hint: "The last profile cannot be deleted",
+                    disabled: true,
+                  },
+                ]}
+              />
+            </State>
+          </div>
+        </Card>
+        <Note>
+          A menu whose entries carry no hint draws itself narrow. The one entry that needs a reason
+          gets one, which is why the second panel is the wide shape — and why the reason is worth
+          the width.
+        </Note>
       </SectionHeader>
 
       <SectionHeader

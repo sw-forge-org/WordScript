@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
+import { AddButton } from "./Button";
 import { Icon, type IconName } from "./Icon";
 import { StatusBadge, type StatusTone } from "./StatusBadge";
 
@@ -28,11 +29,38 @@ export function Pane({ list, detail }: { list: ReactNode; detail: ReactNode }) {
   );
 }
 
-export function PaneListHead({ title, count }: { title: string; count?: ReactNode }) {
+/**
+ * THE HEAD OF A LIST COLUMN — its name, how many there are, and the one control
+ * that adds one (ADR 0082).
+ *
+ * ADDING IS ALWAYS `+` IN THE HEAD OF THE LIST IT ADDS TO. The product had
+ * three shapes for one job: a labelled button at the foot of the profile list,
+ * another at the foot of a rule card, and this `+` in Context's section heads.
+ * Context's is the one that survives, for the reason it is right: the control
+ * sits with the COUNT it changes, at the top of the list where the reader
+ * already looks to see what is there — and it stays in one place while the list
+ * under it grows past the fold, which a foot button does not.
+ *
+ * It is `.ws-add`, the same button `PaneSecHead` draws, so the two lists are
+ * not two designs.
+ */
+export function PaneListHead({
+  title,
+  count,
+  addLabel,
+  onAdd,
+}: {
+  title: string;
+  count?: ReactNode;
+  /** The accessible name AND the tooltip — "New profile", not "Add". */
+  addLabel?: string;
+  onAdd?: () => void;
+}) {
   return (
     <div className="ws-pane-list-head">
       <b>{title}</b>
       {count !== undefined && <span className="ws-count">{count}</span>}
+      {addLabel && <AddButton label={addLabel} onClick={onAdd} />}
     </div>
   );
 }
@@ -63,6 +91,7 @@ export function PaneRow({
   pinned,
   current,
   onClick,
+  onContextMenu,
 }: {
   icon?: IconName;
   title: string;
@@ -74,6 +103,11 @@ export function PaneRow({
   pinned?: boolean;
   current?: boolean;
   onClick?: () => void;
+  /** WHAT YOU CAN DO TO THIS ROW, at the row (ADR 0082). The list is where a
+   *  profile or a note is recognised, so it is where the actions on it belong;
+   *  a header button is one place further from the thing it acts on and the
+   *  head clips its own popover. A row without one simply has no menu. */
+  onContextMenu?: (event: MouseEvent) => void;
 }) {
   return (
     <button
@@ -81,6 +115,7 @@ export function PaneRow({
       className="ws-pane-row"
       aria-current={current ? "true" : "false"}
       onClick={onClick}
+      onContextMenu={onContextMenu}
     >
       {icon && <Icon name={icon} />}
       <span className="ws-pane-row-text">

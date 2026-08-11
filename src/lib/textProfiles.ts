@@ -1,11 +1,13 @@
 import type {
   AppConfig,
   CommunicationRegister,
+  DictionaryEntry,
   LocalProfileDecodeSettings,
   LocalProfilePromptSettings,
   ProfileCaptureSettings,
   ProfileModesSettings,
   ProfileSpeechSettings,
+  SnippetEntry,
   TextProfile,
   TextProfileCuration,
   TextProfileInsertBehavior,
@@ -21,6 +23,47 @@ function createProfileId() {
   }
 
   return `profile-${Date.now()}-${Math.round(Math.random() * 100000)}`;
+}
+
+/** A rule's id, on the same construction as a profile's.
+ *
+ *  IT HAS TO BE STABLE AND UNIQUE FOR A REASON BEYOND REACT KEYS: the runtime
+ *  names the rule that fired in its applied-rules line (`rule_label` in
+ *  `transform.rs`), and `analyze_text_rules` routes every issue back through
+ *  `rule_ids`. Two entries sharing an id make both of those point at the wrong
+ *  row, which the analysis reports as `duplicate_rule_id`. */
+function createRuleId(prefix: "dict" | "snippet") {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.round(Math.random() * 100000)}`;
+}
+
+export function createDictionaryEntry(phrase = "", replaceWith = ""): DictionaryEntry {
+  return { id: createRuleId("dict"), phrase, replace_with: replaceWith };
+}
+
+export function createSnippetEntry(
+  trigger = "",
+  expansion = "",
+  label = "",
+): SnippetEntry {
+  return { id: createRuleId("snippet"), label, trigger, expansion };
+}
+
+/** Move one entry of an ordered rule list, and it is a library function because
+ *  BOTH lists are ordered and the runtime reads both orders the same way:
+ *  `apply_dictionary_entries` and `apply_snippet_entries` each feed one rule's
+ *  output into the next. A screen-local copy per list is how the two drift. */
+export function moveEntry<T>(entries: T[], index: number, direction: -1 | 1): T[] {
+  const target = index + direction;
+  if (index < 0 || index >= entries.length || target < 0 || target >= entries.length) {
+    return entries;
+  }
+  const next = [...entries];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
 }
 
 function cloneTextProfileCuration(curation?: TextProfileCuration): TextProfileCuration {
@@ -388,6 +431,35 @@ export function createTextProfile(): TextProfile {
     modes: createDefaultProfileModesSettings(),
     capture: createDefaultProfileCaptureSettings(),
   };
+}
+
+/**
+ * A COPY OF A PROFILE, WITH IDENTITIES OF ITS OWN (ADR 0082).
+ *
+ * It re-ids the RULES as well as the profile. `rule_label` in `transform.rs`
+ * puts a rule's id into the runtime's applied-rules line, so two profiles
+ * carrying the same rule id make that line ambiguous about which profile's rule
+ * fired — and `analyze_text_rules` reports `duplicate_rule_id` for entries that
+ * are genuinely different rules the moment the two are ever merged.
+ *
+ * The copy is not curated, for the reason `clearTextProfileCuration` exists: a
+ * curated profile somebody has taken a copy of to change is no longer the one
+ * WordScript ships.
+ */
+export function duplicateTextProfile(profile: TextProfile, label: string): TextProfile {
+  return cloneTextProfile(profile, {
+    id: createProfileId(),
+    label,
+    curation: createEmptyTextProfileCuration(),
+    dictionary_entries: profile.dictionary_entries.map((entry) => ({
+      ...entry,
+      id: createRuleId("dict"),
+    })),
+    snippet_entries: profile.snippet_entries.map((entry) => ({
+      ...entry,
+      id: createRuleId("snippet"),
+    })),
+  });
 }
 
 export function buildTextProfilesPatch(

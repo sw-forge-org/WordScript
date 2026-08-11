@@ -548,6 +548,18 @@ Status: Proposed | Accepted | Superseded by NNNN
   45 tokens of which 3 are the defect -- and is **German-only by declaration**,
   gated on the detected language, while the echo strip is language-agnostic by
   construction. An unestablished language declines the repair.
+- [0082](0082-an-editor-is-a-panel-that-unfolds-under-its-own-row.md):
+  the five controls that had been drawn, disabled and carrying *"no editor is
+  drawn for this yet"* since Leg 4c get one, and it is the panel `RawPanel`
+  already opens under a list row rather than a dialog over a surface that is
+  already a modal sheet. The record also settles the shape those actions are
+  reached in, across BOTH pane screens after the owner named the inconsistency
+  in the running app: adding is `+` in the head of the list it adds to, a row's
+  actions are a right-click with a compact menu of verbs, an icon on a row is
+  only for what you repeat positionally, and **deleting always asks at the
+  row** -- a rule used to go on one click while the profile holding it asked
+  twice. A swipe-to-reveal was raised and rejected with reasons. Costs
+  `profiles` two measured differences and `context` none.
 
 ## Resolved: the number 0011 was used twice
 
@@ -575,8 +587,10 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-11 the filed range runs through 0081; the next
-decision takes 0082.)
+takes 0021. (As of 2026-08-11 the filed range runs through 0083; the next
+decision takes 0084. 0082 and 0083 were filed the same day by two tracks running
+concurrently on `main` — the GUI port relay and the core-hardening pass — which
+is why a leg claims its number early rather than at the end.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

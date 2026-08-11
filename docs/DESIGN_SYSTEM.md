@@ -171,6 +171,32 @@ field in all three of its sidebars, so the settings sheet carries one too.
 sample data and assert nothing; the same screen on a product surface may not
 imply a state the runtime did not reach.
 
+### One shape per job on a list (ADR 0082)
+
+Four rules, and they hold on every list in the product rather than per screen.
+Three shapes for "add one" and two for "act on a row" is what they replaced.
+
+- **Editing opens a panel that unfolds under the row it acts on**, on
+  `.ws-list-edit` — the plane `.ws-list-raw` already uses for a transcript's two
+  texts. Not a dialog: the settings surface is itself a modal sheet, and a second
+  scrim over it is the weight ADR 0069 took off Help. The panel holds the draft
+  until Save, so Cancel discards it and one finished value reaches the config.
+  First field focused, Enter commits, Escape reverts and stops there; a
+  multiline value keeps Enter and commits on Ctrl/Cmd+Enter.
+- **Adding is `AddButton` — a `+` in the HEAD of the list it adds to**, beside
+  the name and the count, where it stays put while the list grows past the fold.
+  `PaneListHead` and `Card` both take one. A card's FOOT is for an action on its
+  content as a whole — a check, a run — never for making another row.
+- **A row's actions are a right-click**, answering with `RowMenu`: a compact
+  `.ws-menu` of VERBS with no hint under them, placed at viewport coordinates so
+  no scrolling or overflow-hiding ancestor can clip it. A hint appears on the one
+  entry whose absence needs a reason. What stays an ICON on a row is only what
+  you repeat positionally — the reorder pair.
+- **A destructive action asks at the row**, with `ConfirmPanel` on the same
+  plane: it names the thing, states what goes with it, and focuses Cancel rather
+  than the danger control. Nothing is centred, so the row is still visible behind
+  the question — which is the evidence a modal would cover.
+
 ### Frost
 
 Frost is the fourth surface class and the only one that is a pair.

@@ -47,6 +47,53 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
+/**
+ * ADD ONE OF WHATEVER THIS LIST HOLDS — `.ws-add`, the `+` Context's section
+ * heads have drawn since Leg 2d, promoted to the one shape for the job
+ * (ADR 0082).
+ *
+ * The product had three: this, a labelled ghost button at the foot of the
+ * profile list, and another at the foot of each rule card. One job, one
+ * control, and the surviving one is the one that sits in a HEAD — beside the
+ * name of the thing and the count of it, staying put while the list under it
+ * grows past the fold.
+ *
+ * The label is not drawn and not lost: it is the accessible name and the
+ * tooltip, and it names what gets made — "New profile", never "Add".
+ */
+export const AddButton = React.forwardRef<
+  HTMLButtonElement,
+  Omit<React.ComponentPropsWithoutRef<"button">, "type" | "children"> & {
+    label: string;
+    /** The panel this opens is open. */
+    on?: boolean;
+  }
+>(({ label, on, className, ...props }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    className={cn("ws-add", className)}
+    aria-label={label}
+    title={label}
+    data-on={on ? "" : undefined}
+    {...props}
+  >
+    <PlusGlyph />
+  </button>
+));
+AddButton.displayName = "AddButton";
+
+/** The one glyph this control draws for itself, like every other primitive that
+ *  owns its mark (`Stepper`'s chevrons, `Chip`'s ×). */
+function PlusGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" aria-hidden>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
 interface IconButtonProps extends Omit<React.ComponentPropsWithoutRef<"button">, "type"> {
   /** The accessible name AND the tooltip. It is not lost — only its drawing is. */
   label: string;

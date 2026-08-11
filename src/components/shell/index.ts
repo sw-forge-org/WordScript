@@ -55,7 +55,7 @@ export {
 } from "./Palette";
 
 /* ── Controls — demo.css §6, ported by Leg 2 ── */
-export { Button, IconButton } from "./Button";
+export { AddButton, Button, IconButton } from "./Button";
 export type { ButtonVariant } from "./Button";
 export { BudgetMeter, Field, FieldWrap, TextArea } from "./Field";
 export { Toggle } from "./Toggle";
@@ -93,8 +93,10 @@ export { ProviderMark, ProviderSprite, ProviderChips, brandSymbolId } from "./Pr
 
 /* ── The workspace grammar — Leg 2b ── */
 export { HomeOpen, HeroInvoke, HeroFacts, KeyCap } from "./HomeHero";
-export { ListRows, ListItem, RawPanel } from "./ListItem";
+export { ListRows, ListItem, RawPanel, AnswerPanel, Reorder } from "./ListItem";
 export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
+export { EditorPanel, ConfirmPanel } from "./EditorPanel";
+export type { EditorFieldSpec, EditorIssue } from "./EditorPanel";
 export { TranscriptRow } from "./TranscriptRow";
 export { OwedList, Owed } from "./Owed";
 export { Log, Diff, DiffPane, DiffMark } from "./Log";
@@ -122,7 +124,7 @@ export {
   WhoChips, WhoChip, WhoAdd, Enh, EnhItem, EnhAct, LinkGroup, LinkRow, Readout,
 } from "./NoteBody";
 export type { WhoHow, WhoStatus } from "./NoteBody";
-export { FloatBar, MicButton, SplitButton, Menu } from "./FloatBar";
+export { FloatBar, MicButton, SplitButton, Menu, RowMenu } from "./FloatBar";
 export type { MenuEntry } from "./FloatBar";
 export {
   ChatWindow, ChatWinDeco, AiChatBody, AiChatFoot, Msg, Bubble, Typing,

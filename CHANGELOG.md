@@ -55,6 +55,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The five controls that had no editor behind them have one, and it unfolds
+  under the row it acts on** (ADR 0082). Add and Edit on Profiles' Replacements
+  and Snippets, a new profile's rename, `More`'s menu, and both calls to
+  `analyze_text_rules` — every one of them had been drawn, disabled and carrying
+  *"No editor is drawn for this yet"* since Leg 4c, and the prototype draws no
+  editor for any of them, so this is the first surface the port designed rather
+  than carried across. It is the plane `RawPanel` already opens on: same inset
+  ground, same dropped rule above, nothing dimmed and nothing centred. Not a
+  dialog, because Settings is already a modal sheet and a second scrim over it is
+  the weight ADR 0069 took off Help. The panel holds the draft until Save, so
+  Cancel can throw it away and one finished value reaches the config instead of a
+  keystroke; the first field takes focus, Enter commits, Escape reverts, and a
+  snippet body keeps Enter for its own newline and commits on Ctrl+Enter.
+- **`analyze_text_rules` answers where it was asked.** *Check against a sample*
+  opens a live preview under the card — what you say, what gets written, and the
+  rules that fired by name — and *Show the effective bias* opens what the
+  recognizer actually receives beside what deterministic repair can reach.
+  Warnings appear **under the rule that caused them**, routed by `rule_ids`,
+  which is the pre-port behaviour restored: a list of issues at the top of a
+  screen tells the reader something is wrong and leaves them to find it.
+- **The rule lists can be reordered, and say why.** `apply_dictionary_entries`
+  and `apply_snippet_entries` each fold one entry's output into the next, so the
+  order is a value — and it was one the ported list could neither show nor set.
+- **A row's actions are a right-click, on every list in both pane screens.**
+  Profiles' profile rows and rule rows, and Context's folders and objects, all
+  answer with the same compact menu of verbs. Context's is drawn only: the
+  context object does not exist in the runtime and the banner still says so, but
+  the two rails no longer have two manners.
+
+### Changed
+
+- **Adding is `+` in the head of the list it adds to, everywhere** (ADR 0082).
+  The product had three shapes for one job — a labelled button at the foot of
+  the profile list, another at the foot of each rule card, and Context's `+` in
+  a section head. Context's wins: it sits with the count it changes, at the top,
+  and stays put while the list grows past the fold.
+- **Deleting always asks, at the row.** A replacement or a snippet used to
+  disappear on one click with no question while the profile containing it asked
+  twice. Both are one press plus one confirmation now, and the panel focuses
+  Cancel rather than the danger button. Deleting the active profile hands the
+  session to the first one left; the last profile cannot be deleted at all.
+- **What stays an icon on a row is only what you repeat positionally** — the
+  reorder pair. Edit and Delete left the rule rows for the menu.
+
 - **A capture reports the cadence of its own input stream** (ADR 0083). ADR 0079
   made a short capture say so; this says *how* it went short. `CallbackCadence`
   counts every cpal callback and every stretch over 200 ms in which the stream

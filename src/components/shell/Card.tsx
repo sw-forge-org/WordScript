@@ -9,6 +9,15 @@ interface CardProps {
   /** The action that acts on this card's content. Rendered as the card's foot. */
   footer?: React.ReactNode;
   /**
+   * The control that ADDS to what this card holds, in its head (ADR 0082).
+   *
+   * Not the foot, and that is the same rule `PaneListHead` states: adding sits
+   * with the thing's name and its count, at the top, where it stays put while
+   * the list under it grows. The foot is for an action on the card's content as
+   * a whole — a check, a run — not for making another row.
+   */
+  action?: React.ReactNode;
+  /**
    * WHAT IS NOT A ROW STACK, AFTER WHAT IS. `demo.js`'s `card()` renders head,
    * then ROWS, then BODY, then foot — and a card that carries both had them the
    * wrong way round in three separate places across Legs 2b, 2c and 2d, each
@@ -42,13 +51,38 @@ interface CardProps {
  * Not to be confused with `FormCard`, which is the pre-port card the shipped
  * settings areas still use. Legs 2 and 3 move those callers here and delete it.
  */
-export function Card({ title, description, footer, body, className, children }: CardProps) {
+export function Card({
+  title,
+  description,
+  footer,
+  body,
+  action,
+  className,
+  children,
+}: CardProps) {
   return (
     <div className={cn("ws-card", className)}>
-      {(title || description) && (
-        <div className="ws-card-head">
-          {title && <h3>{title}</h3>}
-          {description && <p>{description}</p>}
+      {/* A CARD WITHOUT AN ACTION KEEPS ITS EXACT MARKUP. The head is a column
+          of two, and wrapping them unconditionally to make room for a third
+          would add one element to every card in the product — which `port:diff`
+          measures by path on every screen. So the wrapper exists only where
+          there is something to sit beside. */}
+      {(title || description || action) && (
+        <div className="ws-card-head" data-action={action ? "" : undefined}>
+          {action ? (
+            <>
+              <div className="ws-grow">
+                {title && <h3>{title}</h3>}
+                {description && <p>{description}</p>}
+              </div>
+              {action}
+            </>
+          ) : (
+            <>
+              {title && <h3>{title}</h3>}
+              {description && <p>{description}</p>}
+            </>
+          )}
         </div>
       )}
       {children}

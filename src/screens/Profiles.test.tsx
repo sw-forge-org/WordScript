@@ -14,8 +14,10 @@ const invoked = vi.mocked(invoke);
 /**
  * WHAT A PARTLY WIRED SCREEN'S TEST IS FOR. Profiles is still in the gallery,
  * so its fidelity is still measured in `screens.test.tsx` against the drawing.
- * This file is which facts come from the runtime, which controls write, and
- * that the five that cannot act are inert rather than absent.
+ * This file is which facts come from the runtime, which controls write, and —
+ * since Leg 7 — that the five that could not act now open a surface and carry
+ * no reason any more. One control is still inert and has its own case: the
+ * health flag's click, whose four kinds point at three different tabs.
  *
  * It is also the first place `patchText` is called from a screen. The debounce
  * itself is `useConfigDraft.test.tsx`; what is asserted here is that the text
@@ -81,6 +83,18 @@ const STYLE_ANALYSIS = {
   },
   sample: { accepted: [], dropped: [], used_chars: 0, max_chars: 400 },
 };
+
+/** THE ONE GESTURE EVERY ROW ACTION STARTS WITH (ADR 0082). Rows answer a
+ *  right-click with a compact menu of verbs; the only icons left on a row are
+ *  the reorder pair. */
+async function rowMenu(rowName: RegExp | string) {
+  /* A profile row is a `button`; a rule row is a `div`. Both are "the row",
+     which is what the gesture targets, so this resolves the text to whichever
+     box carries it. */
+  const label = screen.getAllByText(rowName)[0];
+  const row = label.closest(".ws-list-item, .ws-pane-row") ?? label;
+  await userEvent.pointer({ keys: "[MouseRight]", target: row });
+}
 
 beforeEach(() => {
   invoked.mockReset();
@@ -186,18 +200,331 @@ describe("Profiles, wired", () => {
     expect(flag).toBeDisabled();
   });
 
-  it("keeps every control with no editor behind it drawn and inert", async () => {
+  /* ADR 0082. The five that could not act now open a panel, and the assertion
+     is deliberately the OPPOSITE of the one this test carried through three
+     legs: rule 7 runs in both directions, and a control that kept a reason
+     after getting its command is the same defect as one that never had it. */
+  it("opens a surface for each of the five controls that had none", async () => {
     render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
 
-    expect(screen.getByRole("button", { name: /New profile/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^More/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Check against a sample/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /New profile/ })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /^More/ })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /Check against a sample/ })).not.toBeDisabled();
 
     await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
-    expect(screen.getByRole("button", { name: "Add replacement" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Edit —/ })).toBeDisabled();
-    /* Delete needs no editor, so it is the one that acts. */
-    expect(screen.getByRole("button", { name: "Delete" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "New replacement" })).not.toBeDisabled();
+    await rowMenu(/KA/);
+    expect(screen.getByRole("menuitem", { name: /Edit/ })).not.toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: /Delete/ })).not.toBeDisabled();
+    /* And no control on the screen still says an editor is missing. */
+    expect(screen.queryByTitle(/No editor is drawn/)).not.toBeInTheDocument();
+  });
+
+  it("commits one finished value on Save rather than a keystroke", async () => {
+    const patch = vi.fn();
+    const patchText = vi.fn();
+    render(
+      <ProfilesScreen
+        runtime={createWorkspaceRuntime({ active: true, config: config(), patch, patchText })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
+    await rowMenu(/KA/);
+    await userEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+    await userEvent.clear(screen.getByLabelText("What gets written"));
+    await userEvent.type(screen.getByLabelText("What gets written"), "Kundenanfragen");
+
+    /* The draft lives in the panel: nothing has reached the config yet, which
+       is what makes Cancel able to throw it away. */
+    expect(patch).not.toHaveBeenCalled();
+    expect(patchText).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(patch.mock.calls[0][0].text_profiles[0].dictionary_entries).toEqual([
+      { id: "d1", phrase: "KA", replace_with: "Kundenanfragen" },
+    ]);
+    expect(patchText).not.toHaveBeenCalled();
+  });
+
+  it("throws the draft away on Cancel and on Escape", async () => {
+    const patch = vi.fn();
+    render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config(), patch })} />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
+    await rowMenu(/KA/);
+    await userEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+    await userEvent.type(screen.getByLabelText("What you say"), "XX");
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(patch).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("What you say")).not.toBeInTheDocument();
+
+    await rowMenu(/KA/);
+    await userEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+    await userEvent.type(screen.getByLabelText("What you say"), "{Escape}");
+    expect(patch).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("What you say")).not.toBeInTheDocument();
+  });
+
+  it("refuses to save a rule the runtime would skip, and says which half is missing", async () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
+    await userEvent.click(screen.getByRole("button", { name: "New replacement" }));
+
+    /* `apply_dictionary_entries` skips an entry with an empty half, so saving
+       one writes a rule that is drawn in the list and never runs. */
+    const add = screen.getByRole("button", { name: "Add" });
+    expect(add).toBeDisabled();
+    expect(add).toHaveAttribute("title", expect.stringContaining("What you say"));
+
+    await userEvent.type(screen.getByLabelText("What you say"), "hdb");
+    expect(screen.getByRole("button", { name: "Add" })).toHaveAttribute(
+      "title",
+      "What gets written needs a value",
+    );
+  });
+
+  it("appends a new rule and gives it an id of its own", async () => {
+    const patch = vi.fn();
+    render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config(), patch })} />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
+    await userEvent.click(screen.getByRole("button", { name: "New replacement" }));
+    await userEvent.type(screen.getByLabelText("What you say"), "hdb");
+    await userEvent.type(screen.getByLabelText("What gets written"), "Herzliche Grüße");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    const entries = patch.mock.calls[0][0].text_profiles[0].dictionary_entries;
+    expect(entries).toHaveLength(2);
+    expect(entries[1]).toMatchObject({ phrase: "hdb", replace_with: "Herzliche Grüße" });
+    expect(entries[1].id).not.toBe(entries[0].id);
+  });
+
+  /* The runtime folds one rule's output into the next (`transform.rs`), so the
+     order is a value — and it was one the surface could neither show nor set. */
+  it("moves a rule against the order the runtime applies, and stops at the ends", async () => {
+    const patch = vi.fn();
+    const two = config();
+    two.text_profiles[0].dictionary_entries = [
+      { id: "d1", phrase: "KA", replace_with: "Kundenanfrage" },
+      { id: "d2", phrase: "WS", replace_with: "WordScript" },
+    ];
+    render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: two, patch })} />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
+    const up = screen.getAllByRole("button", { name: "Move replacement up" });
+    expect(up[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Move replacement down" })[1]).toBeDisabled();
+
+    await userEvent.click(up[1]);
+    expect(
+      patch.mock.calls[0][0].text_profiles[0].dictionary_entries.map((e: { id: string }) => e.id),
+    ).toEqual(["d2", "d1"]);
+  });
+
+  it("keeps Enter for the snippet body and commits it with the modifier", async () => {
+    const patch = vi.fn();
+    render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config(), patch })} />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Snippets" }));
+    await rowMenu(/standard closing/);
+    await userEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+    const body = screen.getByLabelText("Expands to");
+    await userEvent.clear(body);
+    await userEvent.type(body, "one{Enter}two");
+
+    /* A snippet body is the one value here that legitimately holds newlines. */
+    expect(patch).not.toHaveBeenCalled();
+    expect(body).toHaveValue("one\ntwo");
+
+    await userEvent.type(body, "{Control>}{Enter}{/Control}");
+    expect(patch.mock.calls[0][0].text_profiles[0].snippet_entries[0].expansion).toBe("one\ntwo");
+  });
+
+  it("creates the profile the New profile control promises", async () => {
+    const patch = vi.fn();
+    render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config(), patch })} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /New profile/ }));
+    expect(patch.mock.calls[0][0].text_profiles).toHaveLength(2);
+  });
+
+  /* THE REGRESSION THE NATIVE HOST FOUND AND EVERY MOCK HID. `patch` is a spy
+     that does not feed the config back, so `profile.id` never moved and an
+     effect keyed on it never fired a second time. In the running app the write
+     came back one render later and closed the rename that the same click had
+     opened. The test has to return the write. */
+  it("keeps the new profile's name field open once the write comes back", async () => {
+    const current = config();
+    const patch = vi.fn();
+    const { rerender } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: current, patch })} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /New profile/ }));
+    const written = patch.mock.calls[0][0];
+    rerender(
+      <ProfilesScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: { ...current, ...written },
+          patch,
+        })}
+      />,
+    );
+
+    expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Profile name")).toHaveValue("New profile");
+  });
+
+  it("drops an open draft when another profile is picked", async () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
+    await rowMenu(/KA/);
+    await userEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+    expect(screen.getByLabelText("What you say")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Snippets" }));
+    expect(screen.queryByLabelText("What you say")).not.toBeInTheDocument();
+  });
+
+  /* ADR 0082, after the owner saw the first build: the actions belong at the
+     row, and the header menu was being clipped by the head's own overflow. */
+  it("opens the row's actions on a right-click, on the row it was opened on", async () => {
+    const two = config();
+    two.text_profiles = [
+      two.text_profiles[0],
+      { ...two.text_profiles[0], id: "support", label: "Support reply" },
+    ];
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: two })} />);
+
+    await userEvent.pointer({
+      keys: "[MouseRight]",
+      target: screen.getByRole("button", { name: /Support reply/ }),
+    });
+
+    expect(screen.getByRole("menu", { name: "Actions for Support reply" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Rename/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Duplicate/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Delete/ })).toBeInTheDocument();
+  });
+
+  it("asks before it deletes, and states what goes with it", async () => {
+    const patch = vi.fn();
+    const two = config();
+    two.text_profiles = [
+      two.text_profiles[0],
+      { ...two.text_profiles[0], id: "support", label: "Support reply" },
+    ];
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: two, patch })} />);
+
+    await userEvent.pointer({
+      keys: "[MouseRight]",
+      target: screen.getByRole("button", { name: /Support reply/ }),
+    });
+    await userEvent.click(screen.getByRole("menuitem", { name: /Delete/ }));
+
+    /* The menu entry opens the question and nothing else. */
+    expect(patch).not.toHaveBeenCalled();
+    expect(screen.getByText("Delete Support reply?")).toBeInTheDocument();
+    expect(
+      screen.getByText("1 replacements, 1 snippets and 1 words go with it."),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete profile" }));
+    expect(patch.mock.calls[0][0].text_profiles.map((p: { id: string }) => p.id)).toEqual([
+      "general",
+    ]);
+  });
+
+  it("refuses to delete the last profile, with the reason in the entry", async () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    await userEvent.pointer({
+      keys: "[MouseRight]",
+      target: screen.getByRole("button", { name: /General writing/ }),
+    });
+
+    /* Something has to be active, and a config with no profile is a state no
+       screen can repair. */
+    expect(screen.getByRole("menuitem", { name: /Delete/ })).toBeDisabled();
+    expect(screen.getByText("The last profile cannot be deleted")).toBeInTheDocument();
+  });
+
+  it("hands the session on when the active profile is the one deleted", async () => {
+    const patch = vi.fn();
+    const two = config();
+    two.text_profiles = [
+      two.text_profiles[0],
+      { ...two.text_profiles[0], id: "support", label: "Support reply" },
+    ];
+    two.active_text_profile_id = "general";
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: two, patch })} />);
+
+    await userEvent.pointer({
+      keys: "[MouseRight]",
+      target: screen.getAllByRole("button", { name: /General writing/ })[0],
+    });
+    await userEvent.click(screen.getByRole("menuitem", { name: /Delete/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete profile" }));
+
+    expect(patch.mock.calls[0][0].active_text_profile_id).toBe("support");
+  });
+
+  it("puts an analysis warning under the rule that caused it", async () => {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "resolve_capture_budget") return BUDGET;
+      if (command === "get_profile_health") return { level: "green", flags: [] };
+      if (command === "analyze_communication_style") return STYLE_ANALYSIS;
+      if (command === "analyze_text_rules") {
+        return {
+          blocking: false,
+          issues: [
+            {
+              severity: "warning",
+              code: "dictionary_snippet_overlap",
+              message: "This phrase also triggers a snippet.",
+              rule_ids: ["d1"],
+            },
+          ],
+          preview: { input: "", output: "", applied_rules: [] },
+          transcription_bias: {
+            dictionary_terms: [],
+            stt_hints: [],
+            ignored_stt_hint_lines: [],
+            over_limit_stt_hint_lines: [],
+            manual_overrides_applied: [],
+            effective_stt_hints_source: "profile terms",
+          },
+          profile_context: { accepted: [], dropped: [], used_chars: 0, max_chars: 400 },
+          vocabulary_repair: { repairable: [], too_short: [], min_chars: 4 },
+          dictionary_count: 1,
+          snippet_count: 1,
+        };
+      }
+      return undefined;
+    });
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
+    await rowMenu(/KA/);
+    await userEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+
+    /* The issue arrives with `rule_ids`, which is what lets it appear under the
+       rule instead of in a list that tells you something is wrong elsewhere. */
+    expect(await screen.findByText("This phrase also triggers a snippet.")).toBeInTheDocument();
   });
 
   /* Hidden rather than disabled under another mode, and that is the one place
@@ -250,14 +577,24 @@ describe("Profiles, wired", () => {
     expect(screen.queryByText("42 / 400")).not.toBeInTheDocument();
   });
 
-  it("deletes a replacement and a snippet from the profile the runtime holds", async () => {
+  /* A RULE USED TO GO ON ONE CLICK WHILE THE PROFILE CONTAINING IT ASKED TWICE.
+     That was the sharpest inconsistency on the screen and the owner named it.
+     Both are one press plus one confirmation now (ADR 0082). */
+  it("asks before it deletes a rule, the same way it asks for a profile", async () => {
     const patch = vi.fn();
     render(
       <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config(), patch })} />,
     );
 
     await userEvent.click(screen.getByRole("tab", { name: "Replacements" }));
-    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await rowMenu(/KA/);
+    await userEvent.click(screen.getByRole("menuitem", { name: /Delete/ }));
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(screen.getByText("Delete the replacement for “KA”?")).toBeInTheDocument();
+    expect(screen.getByText("It writes “Kundenanfrage” today.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete replacement" }));
     expect(patch.mock.calls[0][0].text_profiles[0].dictionary_entries).toEqual([]);
   });
 

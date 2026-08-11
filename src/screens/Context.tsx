@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import {
   ActionNew,
   ActionRow,
@@ -52,6 +52,7 @@ import {
   PaneSec,
   PaneSecHead,
   PreviewBanner,
+  RowMenu,
   RecStart,
   Row,
   ScopeTag,
@@ -115,17 +116,53 @@ const LINES = [
   { at: "01:40", who: "S1", tone: "a" as const, text: "Not this week. It needs its own ADR." },
 ];
 
-/** The rail is shared by the reading state and the intake state, because it is
- *  the same list either way — the intake is a thing you do TO this list, not a
- *  different collection. */
+/**
+ * The rail is shared by the reading state and the intake state, because it is
+ * the same list either way — the intake is a thing you do TO this list, not a
+ * different collection.
+ *
+ * THE SAME ROW GESTURE AS PROFILES, DRAWN (ADR 0082).
+ *
+ * The two rails are the same shape and had grown different manners: Profiles
+ * answered a right-click, Context answered nothing, and the two `+` controls in
+ * these section heads were the pattern that WON for adding — the profile list
+ * now carries the same one. So this rail gets the other half.
+ *
+ * **Every entry here is drawn and none of them acts**, which is not this
+ * screen's exception but its whole condition: the context object does not exist
+ * in the runtime and the view's banner says so. `MenuEntry.onSelect` is
+ * documented as absent on a drawn menu, and the float bar's has been drawn that
+ * way since Leg 2d. What is being settled here is the SHAPE — where the actions
+ * live and what they are called — so that whoever wires Context inherits a rail
+ * that already behaves like the rest of the product rather than a second idiom
+ * to reconcile.
+ */
 function ContextRail({ addOn }: { addOn?: boolean }) {
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    kind: "folder" | "object";
+    name: string;
+  } | null>(null);
+
+  const openAt = (event: MouseEvent, kind: "folder" | "object", name: string) => {
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY, kind, name });
+  };
+
   return (
     <>
       <PaneSec>
         <PaneSecHead label="Folders" addLabel="New folder" />
         <Folders>
           {FOLDERS.map((folder) => (
-            <FolderRow key={folder.name} name={folder.name} count={folder.n} current={folder.on} />
+            <FolderRow
+              key={folder.name}
+              name={folder.name}
+              count={folder.n}
+              current={folder.on}
+              onContextMenu={(event) => openAt(event, "folder", folder.name)}
+            />
           ))}
         </Folders>
       </PaneSec>
@@ -144,10 +181,35 @@ function ContextRail({ addOn }: { addOn?: boolean }) {
               icon={object.icon}
               current={object.on && !addOn}
               badge={object.state}
+              onContextMenu={(event) => openAt(event, "object", object.title)}
             />
           ))}
         </PaneScroll>
       </PaneSec>
+
+      {menu && (
+        <RowMenu
+          at={menu}
+          label={`Actions for ${menu.name}`}
+          onClose={() => setMenu(null)}
+          /* A FOLDER IS NOT DUPLICATED. It holds things rather than being one,
+             and a copy of it would have to answer whether its contents came
+             along — a question this screen has no runtime to ask. */
+          items={
+            menu.kind === "folder"
+              ? [
+                  { label: "Rename", icon: "type" },
+                  { label: "Delete", icon: "trash" },
+                ]
+              : [
+                  { label: "Rename", icon: "type" },
+                  { label: "Duplicate", icon: "copy" },
+                  { label: "Move to folder", icon: "folder" },
+                  { label: "Delete", icon: "trash" },
+                ]
+          }
+        />
+      )}
     </>
   );
 }

@@ -1,4 +1,6 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type MouseEvent, type ReactNode } from "react";
+import { IconButton } from "./Button";
+import { Icon } from "./Icon";
 import { StatusBadge, type StatusTone } from "./StatusBadge";
 import { StatusDot, type StatusDotTone } from "./StatusDot";
 
@@ -52,6 +54,7 @@ export function ListItem({
   actions,
   raw,
   open,
+  onContextMenu,
 }: {
   title: string;
   meta: string[];
@@ -62,10 +65,18 @@ export function ListItem({
   actions?: ReactNode;
   raw?: RawTranscript;
   open?: boolean;
+  /** The row's own actions, at the row (ADR 0082). Every list in the product
+   *  answers a right-click the same way; what stays as an ICON on the row is
+   *  only what you repeat positionally, which is the reorder pair. */
+  onContextMenu?: (event: MouseEvent) => void;
 }) {
   return (
     <>
-      <div className="ws-list-item" data-open={open ? "" : undefined}>
+      <div
+        className="ws-list-item"
+        data-open={open ? "" : undefined}
+        onContextMenu={onContextMenu}
+      >
         <div className="ws-list-item-text">
           <b>{title}</b>
           <span className="ws-list-item-meta">
@@ -104,6 +115,98 @@ export function ListItem({
       </div>
       {open && raw && <RawPanel raw={raw} />}
     </>
+  );
+}
+
+/**
+ * MOVE THIS ROW UP OR DOWN, FOR A LIST WHOSE ORDER THE RUNTIME READS.
+ *
+ * It is a library pair rather than two buttons a screen assembles, because the
+ * ordering affordance has to look and sit the same on every list that grows one
+ * — `.ws-list-actions` reserves its space either way, and a screen that put
+ * Delete first would give its rows a different rhythm from the list above it.
+ *
+ * BOTH ENDS ARE DISABLED RATHER THAN HIDDEN. Hiding the up arrow on the first
+ * row makes every other row's action run start at a different x, which is the
+ * defect `.ws-list-item-badges` was rebuilt to fix one line further left.
+ * ADR 0072's hide-instead-of-disable exception is for a setting that is
+ * IRRELEVANT under the current state; the first row's "up" is not irrelevant,
+ * it is unavailable, and that is what disabled means (ADR 0065).
+ */
+export function Reorder({
+  onUp,
+  onDown,
+  atTop,
+  atBottom,
+  what,
+}: {
+  onUp: () => void;
+  onDown: () => void;
+  atTop: boolean;
+  atBottom: boolean;
+  /** What is being moved, for the accessible name: "Move replacement up". */
+  what: string;
+}) {
+  return (
+    <>
+      <IconButton
+        label={`Move ${what} up`}
+        icon={<Icon name="caretUp" />}
+        disabled={atTop}
+        onClick={onUp}
+      />
+      <IconButton
+        label={`Move ${what} down`}
+        icon={<Icon name="caretDown" />}
+        disabled={atBottom}
+        onClick={onDown}
+      />
+    </>
+  );
+}
+
+/**
+ * AN ANSWER, UNFOLDED WHERE IT WAS ASKED FOR — the same panel as `RawPanel`
+ * with N labelled columns instead of its two (ADR 0082).
+ *
+ * `analyze_text_rules` has been a real command with nowhere to put its answer
+ * since Leg 4c, and the two controls that call it — *Check against a sample*
+ * and *Show the effective bias* — sit at the foot of the cards whose content
+ * they are about. So the answer opens there, on the plane a reader has already
+ * learned means "inside this", rather than on a screen of its own that would
+ * have to restate which profile and which list it was computed from.
+ *
+ * `head` is for the input an answer is computed FROM — the sample sentence.
+ * It spans the columns because a field sized to half the panel would wrap a
+ * sentence that the output below it prints in full.
+ */
+export function AnswerPanel({
+  head,
+  columns,
+  foot,
+  onClose,
+}: {
+  head?: ReactNode;
+  columns: { label: string; body: ReactNode }[];
+  foot?: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="ws-list-raw">
+      {head && <div className="ws-raw-head">{head}</div>}
+      {columns.map((column) => (
+        <div key={column.label} className="ws-raw-col">
+          <span className="ws-raw-label">{column.label}</span>
+          {column.body}
+        </div>
+      ))}
+      <div className="ws-raw-foot">
+        {foot}
+        <button type="button" className="ws-raw-close" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </div>
   );
 }
 

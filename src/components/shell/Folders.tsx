@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Icon } from "./Icon";
 
 /**
@@ -60,11 +60,15 @@ export function FolderRow({
   count,
   current,
   onClick,
+  onContextMenu,
 }: {
   name: string;
   count: number;
   current?: boolean;
   onClick?: () => void;
+  /** The row's own actions, at the row — the same gesture every list in the
+   *  product answers (ADR 0082). */
+  onContextMenu?: (event: MouseEvent) => void;
 }) {
   return (
     <button
@@ -72,6 +76,7 @@ export function FolderRow({
       className="ws-folder-row"
       aria-current={current ? "true" : "false"}
       onClick={onClick}
+      onContextMenu={onContextMenu}
     >
       <Icon name={current ? "folderOpen" : "folder"} />
       <span className="ws-fname">{name}</span>

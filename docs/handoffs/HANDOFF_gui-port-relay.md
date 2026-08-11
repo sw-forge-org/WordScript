@@ -403,6 +403,7 @@ Serve the prototype for comparison:
 | **3** | 2026-08-05 | Opus 5 | `8f9077e` | **The shell is overwritten. The product is ONE WINDOW.** A workspace with four views, settings as a modal sheet over it at its own scale, `Cmd+,` to open and Escape to close. Fourteen flat areas deleted in the commit that replaced them; `FormCard`, `FormRow`, `Sidebar` and `StatTiles` deleted with their last caller; the 25 screens moved out of the gallery into `src/screens/` so the product mounts what the gallery displays. **All 33 `port:diff` measurements are structural 0 | style 0 after the shell change** — the regression check earned its keep. 289 frontend tests (335 minus the 67 that belonged to the deleted areas, plus 21 new), `cargo test` 623, both builds green. The workspace, the sheet and the agent overlay all looked at in the native host — **Leg 2d's three owed agent-overlay checks all pass.** ADR 0059 filed: the gallery gets a chord. **One live defect found and fixed: the overlay's deep link had been resolving to nothing.** Full account below.
 | **4a** | 2026-08-05 | Opus 5 | `67bd0f9` | **Six drawn surfaces got a lifecycle, and no code was written.** Five ADRs — 0060 onboarding, 0061 the agent overlay, 0062 the handoff, 0063 meeting capture, 0064 the translation window — plus three roadmap entries: meeting capture's gate 1 closed, and two new candidates (live subtitles, the live-translation window) for the two surfaces that genuinely had no roadmap home. **Live subtitles is deliberately the one without an ADR**: what turns captions on cannot be decided honestly before the capture exists, and saying so is the answer. The owner decided three of them; the rest are derived and each ADR says which it was. **Two things were nearly decided wrong and the drawn surface caught both** — the notification does not retract when a dictation starts, it offsets above the pill, and §7's "meeting capture is not on the roadmap" has been false since the day it was written. 289 frontend tests, `cargo test` 623, `npm run build` green — untouched, as a doc leg should leave them. Full account below. |
 | **4b** | 2026-08-10 | Opus 5 | `a8dc617`…`88bf75a` | **The seam is open, P1 and P2 are fixed on it, the rebuild lab is back, and four of fourteen sections are wired — so the leg SPLIT rather than overrun.** About & Updates, Diagnostics (with its pop-out), General and Delivery & Insert read the runtime; the other ten keep their banners and four of those can never lose one. **ADR 0057 is mechanical now**: a wired screen takes a REQUIRED `runtime` prop, so its gallery entry stops compiling, and `registry.test.tsx` asserts the set that left the registry EQUALS the set the product mounts without a banner — both directions fail. `RebuildLabTab`'s ~1000 lines came back onto the drawing, and cost less than budgeted because the drawing had been read off the surface it replaces. 289 → 316 frontend tests, `cargo test` 623, both builds green. Gallery 25 → 21 entries; `port:diff` 33 → 29 measurements, **every one structural 0 \| style 0**. Full account below. |
+| **7** | 2026-08-11 | Opus 5 | *(this leg)* | **The five controls that had no editor have one, and the leg turned into the surface's manners.** `EditorPanel`, `AnswerPanel`, `ConfirmPanel`, `AddButton`, `Reorder` and `RowMenu` are library components on the plane `RawPanel` already opened on; Add and Edit act on both rule lists, a new profile is asked for its name where it was made, `More` has its menu, and `analyze_text_rules` answers under the card that asked, with each issue under the rule that caused it. Both rule lists reorder, because the runtime folds one entry's output into the next. **The owner reviewed it in the running host mid-leg and named the real fault: three shapes for "add", two for "act on a row", two weights for "delete".** So one shape per job, on BOTH pane screens — `+` in the list head, right-click for a row's verbs, an icon only for what repeats positionally, and a confirm at the row every time. Context's rail carries the gesture drawn, on the owner lifting the standing do-not-touch for exactly that. ADR 0082. 451 → 465 frontend tests, `cargo test` 731, both builds green; `context` still structural 0 \| style 0, `profiles`' recorded departure grows by two measured differences. **Two defects only the native host could show.** Full account below. |
 | **6** | 2026-08-10 | Opus 5 | `6608131`…`6ee471b` | **The drawn promise turned out to be a folder, so the folder exists — and the retry stopped running the wrong job.** `core::transcript_store` writes every transcript as a Markdown file whose NAME the chat model writes (ADR 0074, ADR 0077), from the one funnel every history record passes through; delete, clear and retention take the file with the entry, and the runtime removes only paths an entry named. `Show transcripts in file manager` acts on all three surfaces. The mode dispatch left the pipeline's closure for `core::mode_router::apply_mode_transform`, so a retried Agent, Prompt Enhance or Translate record re-runs its own mode (ADR 0075) — a defect that had been live for two of them since they shipped. `core::backup` answers Full export, Full import and Reset all settings, both destructive ones snapshotting first. Home's decision inbox receives a fallen-back delivery and nothing else (ADR 0076). §15.3's native half is closed for the shell. **History and Privacy & Data are fully wired and left the gallery**; `port:diff` 28 → 26 measurements, 25 at structural 0 \| style 0. 427 → 437 frontend tests, `cargo test` 645 → 670, both builds green. **Four ADRs, and two of them were the owner's corrections mid-leg.** Full account below. |
 | **2d** | 2026-08-04 | Opus 5 | `ae5af81`… | **The last ten screens ported. ALL 25 STAND, every one measured exact in every state it has.** Context with its four note tabs and both windows over it, the intake's three ways in, Actions & templates, meeting capture, the handoff, live subtitles, translation, client conversations and the agent overlay. The note grammar, the five-member window family, the intake, the shipped overlay pill drawn at its real geometry, the caption strip and the echo, the translation window and the client record are in the library. Three library defects no earlier screen could show: the wide layout had no measure, the 16 px icon base rule was shrinking the dot-matrix readout to a square, and `Card` now owns the head/rows/body/foot order that three legs had got wrong at a call site. 298 → 335 frontend tests, `cargo test` 623, both builds green. Context looked at in the native host; the agent overlay is owed there. **The prototype's status IS flipped — Leg 2 is closed.** Full account below. |
 
@@ -1829,6 +1830,122 @@ declined lines would be a second place for style rules to live.
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.
 
+### Leg 7 — the editors that had no drawing, and the manners the screen turned out to be missing
+
+**ALL THREE ENTRIES OF THE PROMPT ARE DONE FOR ENTRY 1, WHICH WAS THE WHOLE
+LEG, AND ENTRIES 2 AND 3 ARE NOT.** `duration_ms` and the title's model call on
+AI Models are untouched and are named in the Leg 8 prompt. One ADR (0082).
+
+**THE THING TO TAKE FROM THIS LEG: THE BRIEF ASKED FOR FIVE EDITORS AND THE
+SCREEN NEEDED MANNERS.** Building the five was straightforward — the grammar was
+already there. What was not in the brief, and what the owner found by opening
+the running app, is that the screen had accumulated **three shapes for "add one"
+(a foot button on the profile list, a foot button per rule card, Context's `+`
+in a section head), two for "act on a row" (a menu on profiles, four icons on
+rules), and two weights for "delete" (a profile asked twice; a rule inside it
+went on one click with no question)**. Adding a fifth editor to that would have
+been a correct answer to the wrong question. The four rules in ADR 0082 are the
+leg's real output and they hold on every list rather than per screen.
+
+**THE PROVENANCE THE BRIEF DID NOT NAME, AND IT CHANGED TWO DECISIONS.** The
+prototype draws no editor — true, and the reason the brief calls this the first
+new design. But `src/components/settings/PromptsTab.tsx`, 1720 lines, **deleted
+by Leg 3's own shell overwrite in `8f9077e`**, drew every rule as a permanently
+open card with two fields, reorder controls, and the analysis issues attached to
+the rule that caused them. Reading it produced the reorder decision and the
+issues-at-the-rule decision. Leg 6's rule was *check whether the PLAN designed
+the thing*; this leg's is one level lower: **check whether the product already
+shipped it and something deleted it.** `git log --diff-filter=D` is the tool.
+
+**THE ORDER WAS LOAD-BEARING AND THE PORT HAD DROPPED IT.**
+`apply_dictionary_entries` and `apply_snippet_entries` each run `for entry in
+entries` folding `current` forward, so a later rule sees what an earlier one
+wrote. The pre-port surface drew reorder and said so in copy; the ported list
+had neither, so it read as a set where the runtime applies a sequence. That is
+the drawing and the runtime disagreeing on a FACT, which the brief's own
+exception covers.
+
+**TWO DEFECTS ONLY THE NATIVE HOST COULD SHOW, AND BOTH WERE INVISIBLE TO EVERY
+TEST FOR THE SAME REASON.** `New profile` created the profile, opened the rename
+— and an effect keyed on `profile?.id` closed it again, because the config write
+came back one render later and moved that id. The panel had also seeded its
+field with the PREVIOUS profile's name. **`patch` is a spy that does not feed the
+config back**, so the id never moved in jsdom and neither fault could occur
+there. The fix is a test that returns the write. This is Leg 6's finding 5 one
+layer down: a precondition that only breaks once a write comes back is invisible
+to a test that never returns one.
+
+**THE MENU WAS CLIPPED AND THE FIX WAS MEASURED THREE TIMES.** `.ws-menu` was
+absolutely positioned; `.ws-pane-detail-head` hides its overflow, so the first
+build shipped a menu cut off at its second entry — the owner saw it in a
+screenshot. A `.ws-menu-anchor` wrapper fixed it and took `profiles` from
+structural 5 to **14**, because `port:diff` walks by path and one inserted
+element shifts every sibling after it. Making the head's existing action run the
+positioned box cost no node and moved **`context`** by one style property — a
+screen this leg had no business moving. `position: fixed` at a measured point
+needs no ancestor and costs neither. **Measure the alternative before keeping
+the tidy one.**
+
+**WHAT LEG 7 REMOVES FROM §2.5.**
+
+- **Add / Edit on Replacements and Snippets have no drawn editor** — closed.
+- **New profile cannot be renamed** — closed.
+- **`More` opens a menu the drawing does not have** — closed.
+- **`analyze_text_rules` has nowhere to put its answer** — closed, on both
+  controls.
+
+**WHAT LEG 7 ADDS TO §2.5.**
+
+- **The profile health flag's click has no destination.** The count is read and
+  the sentences are the tooltip, but the four flag kinds point at three
+  different tabs — `form_conflict` and `cleanup_interference` at Context,
+  `length_bias` at Replacements, `bias_policy_weak` at Words. One click on an
+  aggregate count cannot route. **It is the last thing between Profiles and
+  `WiredScreenProps`**, and it is a decision rather than a repair.
+- **Context's row actions are drawn and act on nothing.** Deliberate, and the
+  banner already says the screen is not wired. Whoever wires Context inherits
+  the shape rather than a second idiom.
+
+**Findings for Leg 8.**
+
+1. **The owner lifted the Context do-not-touch, for one specific change.** The
+   Leg 7 brief forbids Context in any direction (owner, 2026-08-10). The owner
+   lifted it on 2026-08-11 so the two pane screens would not grow two manners,
+   and only for the drawn row gesture. **The rest of the instruction stands** —
+   it is still going to be done differently, and nothing about the context
+   object was decided here. Ask before widening it again.
+2. **A swipe-to-reveal was proposed by the owner and rejected with reasons**, in
+   ADR 0082: a touch idiom whose desktop gesture collides with text and row
+   selection, with no affordance, and a second hidden path to the actions the
+   right-click already gives. The half worth keeping — the two-step at the row —
+   is `ConfirmPanel`.
+3. **`.ws-menu` grew `at`, and `align="end"` / `drop="down"` were added and then
+   deleted the same day.** They had no caller once the panel became `fixed`, and
+   a primitive with no user is not part of the system. If a future caller wants
+   an anchored menu below its control, that is the rule to restore — with a
+   caller.
+4. **The test suite flakes under load and the number is 5.** With the owner's
+   dev host, cargo and `port:diff` all running, three separate full runs failed
+   3, 5 and 5 tests, a DIFFERENT set each time, all passing in isolation.
+   `npx vitest run --no-file-parallelism` was green every time. `uptime` said
+   load average 14. Believe the serial run.
+5. **The owner's `tauri dev` host disappeared mid-leg and it was not killed by
+   this agent** — no `pkill` was ever run. `npm run dev` on 1420 is enough for
+   `port:diff`; only a drawn state in WebKitGTK needs the full host.
+6. **Clicks still do not reach WebKitGTK, and a temporary mount effect has an
+   ordering trap.** Setting the tab and opening a panel in the same effect does
+   nothing: the screen's own clear-on-tab-change effect wipes it. Set the tab,
+   then open the panel in a `setTimeout`.
+7. **`port:diff` after this leg**: `context` **structural 0 | style 0** with the
+   new gesture on it — a right-click that renders nothing until it happens is
+   free. `profiles` moves to 172 vs 175 | structural 14 | style 18, and exactly
+   two of those are this leg's: the head's title is 24 px narrower where the `+`
+   sits, and the scroll is 45 px taller where the foot button was.
+
+**Checks at the close.** 465 frontend tests across 39 files (from 451),
+`cargo test` 731, `npm run build` green, `port:diff` as above. The suite was run
+serially at the end after three parallel runs disagreed with each other.
+
 ### Leg 6 — the promise that turned out to be a folder, and the retry that had been running the wrong job
 
 **ALL SEVEN ENTRIES ARE DONE, AND AN EIGHTH THE OWNER RAISED MID-LEG.** Six
@@ -2775,7 +2892,107 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 7
+## The prompt for Leg 8
+
+You are picking up WordScript after Leg 7. Work in the repo root on `main`. Do
+not create a branch. `src-tauri/` is open, and **the core-hardening track is
+working in the same tree** — check `git log --oneline -5` before you start and
+stage your own paths when you commit.
+
+### What is already true
+
+**Profiles is editable.** The five controls that had been drawn and inert since
+Leg 4c act (ADR 0082): Add and Edit on both rule lists, rename, `More`'s menu,
+and both calls to `analyze_text_rules`. Every one opens a panel that unfolds
+under the row or card it acts on. Both rule lists reorder. **One shape per job
+holds across both pane screens** — adding is `+` in the list head, a row's
+actions are a right-click, an icon on a row is only for what repeats
+positionally, and deleting always asks at the row. Context's rail carries the
+same gesture, drawn only.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 7's record is your starting
+state and its finding 1 binds you**: the owner lifted the Context do-not-touch
+for one drawn change and nothing else. Then ADR 0082, `CLAUDE.md`,
+`docs/spec/SPEC.md`, and `src/screens/props.ts`.
+
+### The order
+
+1. **The profile health flag's click, and it is the last thing between Profiles
+   and `WiredScreenProps`.** The count is read and the sentences are the
+   tooltip; the click has no destination because the four flag kinds point at
+   three different tabs. Decide the routing — one flag routes to its own tab,
+   several route to the first, or the flag opens a panel listing them with a
+   door each — file the ADR, and take Profiles out of the gallery in the commit
+   that closes it. Its drawn branch and `DRAWN_*` constants go with it, and its
+   fidelity cases move to the wired suite rather than being dropped (ADR 0057).
+2. **`duration_ms` in the transcript frontmatter.** §11.23 asks for it, the
+   record has no source, and `transcript_store` has a test asserting its absence
+   so that adding it is deliberate. The pipeline already times itself. Leg 7 did
+   not get to it.
+3. **Whether the title's model call belongs on a surface.** ADR 0077 spends a
+   model call per dictation and no screen says so; every other model choice
+   lives on AI Models' job list. Leg 7 did not get to it either.
+
+### The rules you will be judged on
+
+**NEVER RENDER FAKE READINESS (rule 7)**, in both directions — and Leg 7 is the
+leg that shows what the second direction costs: it deleted five reasons, one
+banner, and rewrote the test that had asserted them for three legs.
+
+**CHECK WHETHER THE PRODUCT ALREADY SHIPPED THE THING AND SOMETHING DELETED
+IT.** Leg 5's rule is about ADRs, Leg 6's about the plan, and Leg 7's is about
+the deleted implementation: `PromptsTab.tsx` had the editor, the reorder and the
+issues-at-the-rule, and Leg 3's own overwrite removed it.
+`git log --diff-filter=D --name-only` is the tool.
+
+**MEASURE THE ALTERNATIVE BEFORE YOU KEEP THE TIDY ONE.** Three menu anchors
+were tried; the obvious wrapper cost `profiles` nine structural differences and
+the second choice moved `context`, which was not this leg's to move.
+
+**A PRIMITIVE WITH NO USER IS NOT PART OF THE SYSTEM.** `align="end"` and
+`drop="down"` were added and deleted the same day for that reason.
+
+### What you must NOT do
+
+- **Do not widen the Context opening.** One drawn gesture was lifted, on
+  2026-08-11, so the two rails would not differ. The screen is still going to be
+  done differently and the owner still has not said how.
+- **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
+  roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not migrate a config without a backup path.** `core::backup` is the
+  pattern: snapshot, act, answer with where the snapshot went.
+- **The overlay is still rule 5**, and its ghosting on a language change is
+  documented rather than worked around.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the TOTAL,
+  not the colour.** **Under load the suite flakes and the number is 5** — three
+  parallel runs failed a different 3–5 tests each and all passed in isolation.
+  `npx vitest run --no-file-parallelism` is the tiebreaker; `uptime` tells you
+  whether to reach for it.
+- `npm run port:diff` after anything that could move a screen. Serve the
+  prototype on 8791, run `npm run dev`, and expect **25 of 26 at structural 0 |
+  style 0** with `profiles` at 172 vs 175 | structural 14 | style 18 — ADR 0068's
+  departure plus ADR 0082's two.
+- **The native host is the only instrument for a drawn state**, and Leg 7 found
+  two defects with it that no test could see. `xdotool key ctrl+k` opens the
+  palette through XTEST; clicks are dead. Where the palette cannot reach, use a
+  temporary mount effect — and set the tab in one tick and open the panel in a
+  `setTimeout`, or the clear-on-tab-change effect wipes it. Take it out before
+  the commit.
+- **Do not raise the window past somebody working at the machine — ask.**
+- **Never `pkill -f`.** Kill by PID.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 9
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 7 (spent — kept for the chain's record)
 
 You are picking up WordScript after Leg 6. Work in the repo root on `main`. Do
 not create a branch. `src-tauri/` is open.

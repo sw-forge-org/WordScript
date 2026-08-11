@@ -30,12 +30,21 @@ Status: 2026-08-11
   refuses during a session because the runtime does; the overlay's deep link
   resolves. **Fully wired:** About & Updates, Diagnostics, General, Delivery &
   Insert, Hotkeys, History, Privacy & Data. **Wired in part, each stating on
-  itself exactly what it cannot read:** Profiles (no drawn editor behind Add,
-  Edit and New profile), AI Models (one integrated lane of four), Home (two of
+  itself exactly what it cannot read:** Profiles (the health flag counts and
+  explains, and its click has nowhere to go: its four kinds point at three
+  different tabs), AI Models (one integrated lane of four), Home (two of
   the decision inbox's three sources have no receiver). **Not wireable at all**,
   and carrying a banner for that reason rather than for a missing commit:
   Context (V2), Notes & Meetings (V2), Agents (Phase 8, ADR 0030), Integrations
   (Phase 8).
+- **Profiles can be edited, not only read** (ADR 0082, 2026-08-11). Add and Edit
+  on Replacements and Snippets, rename, duplicate and delete a profile, and both
+  calls to `analyze_text_rules` all open a panel that unfolds under the row or
+  card they act on — the five controls that had been drawn and inert since
+  Leg 4c. Both rule lists reorder, because the runtime folds one entry's output
+  into the next. **One shape per job across both pane screens:** adding is `+`
+  in the list head, a row's actions are a right-click, and deleting always asks
+  at the row. Context's rail carries the same gesture, drawn only.
 - **Every transcript is a Markdown file** under `~/WordScript/transcripts`
   (ADR 0074), written at the moment its record is, with the frontmatter §11.23
   specifies. `history.json` stays the index and carries the path; Delete, Clear

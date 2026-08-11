@@ -82,7 +82,7 @@ export function HelpMenu() {
   }));
 
   return (
-    <div ref={anchor} className="ws-nav-anchor">
+    <div ref={anchor} className="ws-menu-anchor">
       <NavRow
         icon={<Icon name="help" />}
         label="Help"

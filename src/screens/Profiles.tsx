@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  AddButton,
+  AnswerPanel,
   BudgetMeter,
   Button,
   Card,
   CardRows,
+  ConfirmPanel,
   DocLink,
+  EditorPanel,
   Field,
   FieldWrap,
   Flag,
@@ -15,6 +19,8 @@ import {
   LegendRow,
   ListItem,
   ListRows,
+  RowMenu,
+  type MenuEntry,
   Note,
   Pane,
   PaneDetailHead,
@@ -23,6 +29,7 @@ import {
   PaneListHead,
   PaneRow,
   PaneScroll,
+  Reorder,
   Row,
   SegmentControl,
   Select,
@@ -33,6 +40,8 @@ import {
   TextArea,
   Toggle,
   ViewTop,
+  type EditorFieldSpec,
+  type EditorIssue,
   type TermChip,
 } from "@/components/shell";
 import { formatBudgetDuration, useCaptureBudget } from "@/hooks/useCaptureBudget";
@@ -40,7 +49,12 @@ import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
 import {
   buildTextProfilesPatch,
   clearTextProfileCuration,
+  createDictionaryEntry,
+  createSnippetEntry,
+  createTextProfile,
   describeTextProfileWorkMode,
+  duplicateTextProfile,
+  moveEntry,
   resolveProfileCaptureSettings,
   resolveProfileModesSettings,
   resolveTextProfileWorkMode,
@@ -58,7 +72,7 @@ import type {
   TextProfileInsertBehavior,
   VocabularyHintEntry,
 } from "@/types/ipc";
-import type { ProfileHealthStatus } from "@/types/textRules";
+import type { ProfileHealthStatus, TextRulesAnalysis } from "@/types/textRules";
 import type { PartlyWiredScreenProps } from "./props";
 
 /**
@@ -104,24 +118,23 @@ import type { PartlyWiredScreenProps } from "./props";
  * half-pressed toggle — and a discrete patch flushes a pending text commit
  * first, so the two cannot land out of order.
  *
- * WHAT CANNOT ACT, AND IT IS WHY THE BANNER STAYS. Each one is DISABLED with
- * the reason on it rather than deleted (ADR 0065):
+ * FIVE CONTROLS GOT THEIR SURFACE IN LEG 7 AND THE REASONS THEY CARRIED WENT
+ * WITH THEM (ADR 0082). Add and Edit on both rule lists, New profile's rename,
+ * More's menu, and the two calls to `analyze_text_rules` all open a panel that
+ * unfolds where they stand — the same plane `RawPanel` opens on, because a
+ * second dialog over a surface that is already a modal sheet is the weight
+ * ADR 0069 took off Help. The rule lists grew reordering with them: the runtime
+ * folds one entry's output into the next, so their order is a value the reader
+ * could neither see nor set.
  *
- *   - **Add / Edit on Replacements and Snippets.** The list rows are read from
- *     `dictionary_entries` and `snippet_entries` and Delete writes them back,
- *     but the drawing has no editor behind Add or Edit — no form, no dialog, no
- *     inline field. Building one is drawing, and the gallery is the source
- *     (ADR 0057), so it has to grow one first.
- *   - **New profile**, for the same reason one step earlier: `createTextProfile`
- *     produces a profile called "New profile" and nothing on this surface can
- *     rename it.
- *   - **More**, which opens a menu the drawing does not have.
- *   - **Check against a sample** and **Show the effective bias**, which are
- *     `analyze_text_rules` — a real command whose ANSWER has nowhere drawn to
- *     go.
- *
- * The health flag count IS read (`get_profile_health`) and its sentences are
- * the button's tooltip, because that is the only place on the drawing they fit.
+ * WHAT CANNOT ACT, AND IT IS WHY THE BANNER STAYS. One control, DISABLED with
+ * the reason on it rather than deleted (ADR 0065): **the profile health flag's
+ * click.** The count IS read (`get_profile_health`) and its sentences are the
+ * button's tooltip, but the four flag kinds point at three different tabs —
+ * `form_conflict` and `cleanup_interference` at Context, `length_bias` at
+ * Replacements, `bias_policy_weak` at Words — so one click on an aggregate
+ * count has no single destination. Picking one is a decision rather than a
+ * repair, and it is the last thing between this screen and `WiredScreenProps`.
  */
 
 /**
@@ -211,9 +224,62 @@ const MODE_OPTIONS: { value: ProcessingMode; label: string }[] = [
   { value: "prompt_enhance", label: PROCESSING_MODE_LABELS.prompt_enhance },
 ];
 
-const NO_EDITOR_DRAWN = "No editor is drawn for this yet";
-const NO_ANSWER_SURFACE = "Nothing on this surface can show the result yet";
+/**
+ * WHAT THE EDITOR ASKS FOR, PER KIND (ADR 0082).
+ *
+ * `required` is not a UI nicety here: `apply_dictionary_entries` and
+ * `apply_snippet_entries` both `continue` past an entry whose halves are empty
+ * after trimming, so saving one writes a rule that is drawn in the list and
+ * never runs — the silent kind of wrong this whole surface exists against. A
+ * snippet's NAME is the one field that may be blank, because the runtime falls
+ * back to the trigger for it and the row already draws that fallback.
+ */
+const REPLACEMENT_FIELDS: EditorFieldSpec[] = [
+  { key: "phrase", label: "What you say", placeholder: "e.g. hdb", required: true },
+  {
+    key: "replace_with",
+    label: "What gets written",
+    placeholder: "e.g. Herzliche Grüße",
+    required: true,
+  },
+];
 
+const SNIPPET_FIELDS: EditorFieldSpec[] = [
+  { key: "trigger", label: "Trigger phrase", placeholder: "e.g. standard closing", required: true },
+  { key: "label", label: "Name", placeholder: "Defaults to the trigger" },
+  { key: "expansion", label: "Expands to", multiline: true, required: true },
+];
+
+/** One field, which is what makes the panel select its whole value on open —
+ *  a rename is a replacement of the name, not an adjustment to it. */
+const PROFILE_FIELDS: EditorFieldSpec[] = [
+  { key: "label", label: "Profile name", placeholder: "e.g. Support reply", required: true },
+];
+
+/** The rule the runtime applies, stated where the rule is being written. Both
+ *  lists fold one entry's output into the next (`transform.rs`), which is why
+ *  the rows can be reordered at all. */
+const ORDER_NOTE = "Runs in order. A later rule sees what an earlier one wrote.";
+
+/**
+ * WHAT YOU CAN DO TO A ROW — at the row, on every list, in one shape
+ * (ADR 0082).
+ *
+ * The screen had grown three idioms for one job: a menu on the profile rows, a
+ * run of four icons on the rule rows, and nothing at all on Context. The owner
+ * named it as redundancy and it was. **A right-click answers on every row**,
+ * with the same compact menu of verbs; the only thing that stays an ICON on a
+ * row is what you repeat positionally, which is the reorder pair.
+ *
+ * The panel is `fixed` at a measured point, because the pane head hides its
+ * overflow and a list scrolls: the first build shipped a menu cut off at its
+ * second entry, found in the running app and by no test.
+ *
+ * VERBS, NOT DESCRIPTIONS. `.ws-menu` was built for destinations worth reading
+ * and carries a hint per entry; three verbs with sentences under them make a
+ * 230 px panel out of a list of three words, which the owner saw and said so.
+ * An entry with no hint draws the menu narrow.
+ */
 /* The drawing's own lists, which is what the gallery is measured against. */
 const DRAWN_PROFILES = [
   { id: "d1", title: "General writing", sub: "Auto · Insert at cursor", active: true },
@@ -251,6 +317,13 @@ function termsOf(profile: TextProfile): TermChip[] {
     term: hint.phrase,
     origin: hint.origin === "learned" ? "learned" : "added",
   }));
+}
+
+/** A list on one line, or the sentence that says it is empty. A blank block in
+ *  a readout reads as a surface that did not run rather than as an empty
+ *  answer, which is the same defect the sample panel's foot avoids. */
+function listOrNone(items?: string[]) {
+  return items && items.length > 0 ? items.join(" · ") : "None.";
 }
 
 function newVocabularyHint(phrase: string): VocabularyHintEntry {
@@ -355,6 +428,346 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
     else runtime.patch(partial);
   };
 
+  /**
+   * WHICH EDITOR IS OPEN, AND EXACTLY ONE IS (ADR 0082).
+   *
+   * Two open panels would make Escape ambiguous and would let two drafts of two
+   * rules exist at once — a Cancel that has to be right about which one it
+   * discards. `id: null` is the Add case, where the panel is drawn at the foot
+   * of the list it will append to rather than under a row.
+   *
+   * A rule commits through `patch` and not `patchText`, which is the opposite
+   * of the Context tab one tab over. The draft lives in the panel until Save
+   * (that is what makes Cancel able to throw it away), so what reaches the
+   * config is one finished value rather than a keystroke — which is the
+   * discrete case plan P1 draws the line at.
+   */
+  const [editing, setEditing] = useState<{
+    kind:
+      | "replacement"
+      | "snippet"
+      | "profile"
+      | "delete-profile"
+      | "delete-replacement"
+      | "delete-snippet";
+    id: string | null;
+  } | null>(null);
+
+  /** Where a row menu is open, on which row, and of which kind. One at a time,
+   *  and the point is measured rather than derived: `.ws-menu` leaves the flow
+   *  so no ancestor can clip it. */
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    kind: "profile" | "replacement" | "snippet";
+    id: string;
+  } | null>(null);
+
+
+  /**
+   * An open panel belongs to the row it was opened on, so leaving that row
+   * drops the draft rather than letting it reappear over a different rule.
+   *
+   * IT WATCHES THE TAB AND NOT THE PROFILE, AND THE NATIVE HOST IS WHAT SAID
+   * SO. The first version also cleared on `profile?.id`, which is a value
+   * DERIVED from the config — so `New profile` opened the rename, the config
+   * write landed one render later, the id changed, and the effect closed the
+   * panel that the same click had just opened. The profile is cleared where the
+   * user actually changes it (the list row below) instead, which is the same
+   * rule without a race against a write.
+   *
+   * Every unit test passed through this: `patch` is a mock that does not feed
+   * the config back, so `profile?.id` never moved and the effect never fired a
+   * second time. A precondition that only breaks once a write comes back is
+   * invisible to a test that never returns one — the class Leg 6 recorded one
+   * layer up.
+   */
+  useEffect(() => {
+    setEditing(null);
+  }, [tab]);
+
+  const saveReplacement = (id: string | null, values: Record<string, string>) => {
+    write((current) => ({
+      ...current,
+      dictionary_entries:
+        id === null
+          ? [...current.dictionary_entries, createDictionaryEntry(values.phrase, values.replace_with)]
+          : current.dictionary_entries.map((entry) =>
+              entry.id === id
+                ? { ...entry, phrase: values.phrase, replace_with: values.replace_with }
+                : entry,
+            ),
+    }));
+    setEditing(null);
+  };
+
+  const saveSnippet = (id: string | null, values: Record<string, string>) => {
+    write((current) => ({
+      ...current,
+      snippet_entries:
+        id === null
+          ? [
+              ...current.snippet_entries,
+              createSnippetEntry(values.trigger, values.expansion, values.label),
+            ]
+          : current.snippet_entries.map((entry) =>
+              entry.id === id
+                ? {
+                    ...entry,
+                    trigger: values.trigger,
+                    expansion: values.expansion,
+                    label: values.label,
+                  }
+                : entry,
+            ),
+    }));
+    setEditing(null);
+  };
+
+  /* A NEW PROFILE ARRIVES ASKING FOR ITS NAME. `createTextProfile` produces one
+     called "New profile", which was the whole reason the control was inert: a
+     surface that can make a thing and not name it leaves the naming to whoever
+     finds it later. Selecting it and opening the rename is one gesture. */
+  const newProfile = () => {
+    if (!runtime || !config) {
+      setEditing({ kind: "profile", id: "drawn" });
+      return;
+    }
+    const created = createTextProfile();
+    runtime.patch(
+      buildTextProfilesPatch(
+        config,
+        [...config.text_profiles, created],
+        config.active_text_profile_id,
+      ),
+    );
+    setSelectedId(created.id);
+    setTab(TABS[0]);
+    setEditing({ kind: "profile", id: created.id });
+  };
+
+  /**
+   * DELETING IS THE ONE ACTION HERE THAT CANNOT BE UNDONE, so two things guard
+   * it: the menu entry only OPENS the question (`ConfirmPanel`), and the last
+   * remaining profile refuses outright — `resolve_active_text_profile` has to
+   * find one, and a config with an empty list is a state no screen can repair.
+   *
+   * Deleting the ACTIVE profile hands the session to the first one left rather
+   * than leaving `active_text_profile_id` pointing at nothing. A running
+   * capture is unaffected: it keeps what it started with (ADR 0025).
+   */
+  const deleteProfile = (id: string) => {
+    if (!runtime || !config) return;
+    const rest = config.text_profiles.filter((entry) => entry.id !== id);
+    if (rest.length === 0) return;
+    runtime.patch(
+      buildTextProfilesPatch(
+        config,
+        rest,
+        config.active_text_profile_id === id ? rest[0].id : config.active_text_profile_id,
+      ),
+    );
+    if (selectedId === id) setSelectedId(rest[0].id);
+    setEditing(null);
+  };
+
+  const duplicateProfile = () => {
+    if (!runtime || !config || !profile) return;
+    const copy = duplicateTextProfile(profile, `${profile.label} copy`);
+    runtime.patch(
+      buildTextProfilesPatch(
+        config,
+        [...config.text_profiles, copy],
+        config.active_text_profile_id,
+      ),
+    );
+    setSelectedId(copy.id);
+    setEditing({ kind: "profile", id: copy.id });
+  };
+
+  const moveReplacement = (index: number, direction: -1 | 1) =>
+    write((current) => ({
+      ...current,
+      dictionary_entries: moveEntry(current.dictionary_entries, index, direction),
+    }));
+
+  const moveSnippet = (index: number, direction: -1 | 1) =>
+    write((current) => ({
+      ...current,
+      snippet_entries: moveEntry(current.snippet_entries, index, direction),
+    }));
+
+  const snippetRows = useMemo(
+    () =>
+      runtime && profile
+        ? profile.snippet_entries.map((item) => ({
+            id: item.id,
+            title: item.label || item.trigger,
+            trigger: item.trigger,
+            label: item.label,
+            expansion: item.expansion,
+          }))
+        : DRAWN_SNIPPETS.map(([name, body]) => ({
+            id: name,
+            title: name,
+            trigger: name,
+            label: name,
+            expansion: body,
+          })),
+    [runtime, profile],
+  );
+
+  /**
+   * WHAT THE RULES ACTUALLY DO, ASKED OF THE RUNTIME RATHER THAN RECOMPUTED
+   * HERE — and it is the command that had nowhere to put its answer.
+   *
+   * Asked on every edit rather than debounced, for the reason the style meter
+   * gives one card over: `analyze_text_rules` is a pure function of its request
+   * with no disk and no network in it, and an answer that lags the field it
+   * describes is the defect it exists against. It is NOT `get_profile_health`,
+   * which does read the config from disk and is asked far less often.
+   *
+   * The issues come back with `rule_ids`, which is what lets a warning appear
+   * under the rule that caused it instead of in a list somewhere that tells you
+   * something is wrong and leaves you to find it.
+   */
+  const [analysis, setAnalysis] = useState<TextRulesAnalysis | null>(null);
+  const [sample, setSample] = useState("");
+  const [answer, setAnswer] = useState<"sample" | "bias" | null>(null);
+
+  useEffect(() => {
+    if (!runtime?.active || !profile) {
+      setAnalysis(null);
+      return;
+    }
+    let cancelled = false;
+    void invoke<TextRulesAnalysis>("analyze_text_rules", {
+      request: {
+        prompt: profile.prompt,
+        stt_hints: profile.stt_hints,
+        vocabulary_hints: profile.vocabulary_hints,
+        dictionary_entries: profile.dictionary_entries,
+        snippet_entries: profile.snippet_entries,
+        sample_text: sample.trim().length > 0 ? sample : null,
+        bias_mode: profile.work_mode?.bias_mode ?? null,
+        local_prompt_strength: config?.local_prompt_strength ?? null,
+        local_prompt_carry: config?.local_prompt_carry ?? null,
+        manual_bias: profile.work_mode?.manual_bias ?? null,
+      },
+    })
+      .then((next) => {
+        if (!cancelled) setAnalysis(next);
+      })
+      .catch(() => {
+        if (!cancelled) setAnalysis(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    runtime?.active,
+    profile?.id,
+    profile?.prompt,
+    profile?.stt_hints,
+    profile?.vocabulary_hints,
+    profile?.dictionary_entries,
+    profile?.snippet_entries,
+    profile?.work_mode,
+    config?.local_prompt_strength,
+    config?.local_prompt_carry,
+    sample,
+  ]);
+
+  const bias = analysis?.transcription_bias ?? null;
+  const repair = analysis?.vocabulary_repair ?? null;
+
+  const deleteRule = (kind: "replacement" | "snippet", id: string) => {
+    write((current) =>
+      kind === "replacement"
+        ? {
+            ...current,
+            dictionary_entries: current.dictionary_entries.filter((item) => item.id !== id),
+          }
+        : { ...current, snippet_entries: current.snippet_entries.filter((item) => item.id !== id) },
+    );
+    setEditing(null);
+  };
+
+  /**
+   * THE ROW'S VERBS, and the same three shapes on every list this screen has.
+   *
+   * Delete NEVER acts from here. It opens the question under the row, which is
+   * the rule that used to hold only for a profile: a rule disappeared on one
+   * click with no ask, while the profile that CONTAINS it asked twice. Both are
+   * one press plus one confirmation now.
+   */
+  const menuItems = (): MenuEntry[] => {
+    if (!menu) return [];
+    if (menu.kind === "profile") {
+      const lastOne = listRows.length <= 1;
+      return [
+        {
+          label: "Rename",
+          icon: "type",
+          onSelect: () => {
+            setMenu(null);
+            setEditing({ kind: "profile", id: menu.id });
+          },
+        },
+        {
+          label: "Duplicate",
+          icon: "copy",
+          onSelect: () => {
+            setMenu(null);
+            duplicateProfile();
+          },
+        },
+        {
+          label: "Delete",
+          icon: "trash",
+          /* Something has to be active, and a config with an empty list is a
+             state no screen can repair. The only hint in these menus, because
+             it is the only entry whose absence needs explaining (ADR 0065). */
+          hint: lastOne ? "The last profile cannot be deleted" : undefined,
+          disabled: lastOne,
+          onSelect: lastOne
+            ? undefined
+            : () => {
+                setMenu(null);
+                setEditing({ kind: "delete-profile", id: menu.id });
+              },
+        },
+      ];
+    }
+    return [
+      {
+        label: "Edit",
+        icon: "type",
+        onSelect: () => {
+          setMenu(null);
+          setEditing({ kind: menu.kind, id: menu.id });
+        },
+      },
+      {
+        label: "Delete",
+        icon: "trash",
+        onSelect: () => {
+          setMenu(null);
+          setEditing({
+            kind: menu.kind === "replacement" ? "delete-replacement" : "delete-snippet",
+            id: menu.id,
+          });
+        },
+      },
+    ];
+  };
+
+  /** What the analysis says about ONE rule, for the panel that edits it. */
+  const issuesFor = (id: string): EditorIssue[] =>
+    (analysis?.issues ?? [])
+      .filter((issue) => issue.rule_ids.includes(id))
+      .map((issue) => ({ severity: issue.severity, message: issue.message }));
+
   const work = profile ? resolveTextProfileWorkMode(profile) : null;
   const modes = profile ? resolveProfileModesSettings(profile) : null;
 
@@ -455,7 +868,12 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
       <Pane
         list={
           <>
-            <PaneListHead title="Profiles" count={String(listRows.length)} />
+            <PaneListHead
+              title="Profiles"
+              count={String(listRows.length)}
+              addLabel="New profile"
+              onAdd={newProfile}
+            />
             <PaneScroll>
               {listRows.map((row) => (
                 <PaneRow
@@ -464,20 +882,24 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                   title={row.title}
                   sub={row.sub}
                   current={row.id === currentId}
-                  onClick={() => (runtime ? setSelectedId(row.id) : setDrawnSelected(row.id))}
+                  onClick={() => {
+                    setEditing(null);
+                    if (runtime) setSelectedId(row.id);
+                    else setDrawnSelected(row.id);
+                  }}
+                  /* The row is picked as well as targeted: a menu that acts on
+                     something other than what the detail is showing is how you
+                     rename the wrong profile. */
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setEditing(null);
+                    if (runtime) setSelectedId(row.id);
+                    else setDrawnSelected(row.id);
+                    setMenu({ x: event.clientX, y: event.clientY, kind: "profile", id: row.id });
+                  }}
                 />
               ))}
             </PaneScroll>
-            <PaneListFoot>
-              <Button
-                variant="ghost"
-                icon={<Icon name="plus" />}
-                disabled={Boolean(runtime)}
-                title={runtime ? `New profile — ${NO_EDITOR_DRAWN.toLowerCase()}` : undefined}
-              >
-                New profile
-              </Button>
-            </PaneListFoot>
           </>
         }
         detail={
@@ -506,15 +928,75 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                       {runtime ? `${flagCount} ${flagCount === 1 ? "flag" : "flags"}` : "1 flag"}
                     </Flag>
                   )}
+                  {/* The same menu, from the header, for a pointer that has
+                      not been taught the row carries one. It opens under the
+                      button rather than at the cursor, which is where a menu
+                      opened by a CLICK belongs. */}
                   <IconButton
-                    label={runtime ? `More — ${NO_EDITOR_DRAWN.toLowerCase()}` : "More"}
+                    label="More"
                     icon={<Icon name="updown" />}
-                    disabled={Boolean(runtime)}
+                    on={Boolean(menu)}
+                    onClick={(event) => {
+                      const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                      setMenu(
+                        menu
+                          ? null
+                          : {
+                              x: box.right - 132,
+                              y: box.bottom + 6,
+                              kind: "profile",
+                              id: currentId ?? "drawn",
+                            },
+                      );
+                    }}
                   />
                 </>
               }
             />
             <PaneDetailMain>
+              {/* THE RENAME OPENS UNDER THE TITLE IT CHANGES. It is the same
+                  panel the rule lists use, in the one place on this screen
+                  where the value being edited is the heading above it — which
+                  is also where `New profile` leaves you standing, so a profile
+                  called "New profile" is a name you have already been asked
+                  for rather than one you have to go and find (ADR 0082). */}
+              {/* IT WAITS FOR THE PROFILE IT NAMES. The panel seeds its draft
+                  once, at mount, and `New profile` opens it one render before
+                  the config write comes back — so mounting it immediately
+                  seeded the field with the PREVIOUS profile's name and left it
+                  there, because the key had not changed. Rendering it only when
+                  the target is the current profile makes the mount and the
+                  value arrive together. */}
+              {/* The question opens where the profile is, with its name and
+                  its lists still on screen behind it — which is the evidence a
+                  centred confirm would cover up. */}
+              {editing?.kind === "delete-profile" && (
+                <ConfirmPanel
+                  question={`Delete ${profile?.label ?? "this profile"}?`}
+                  detail={
+                    profile
+                      ? `${profile.dictionary_entries.length} replacements, ${profile.snippet_entries.length} snippets and ${profile.vocabulary_hints.length} words go with it.`
+                      : undefined
+                  }
+                  confirmLabel="Delete profile"
+                  onConfirm={() => editing.id && deleteProfile(editing.id)}
+                  onCancel={() => setEditing(null)}
+                />
+              )}
+
+              {editing?.kind === "profile" && (!runtime || profile?.id === editing.id) && (
+                <EditorPanel
+                  key={editing.id ?? "new"}
+                  fields={PROFILE_FIELDS}
+                  initial={{ label: runtime ? (profile?.label ?? "") : "General writing" }}
+                  saveLabel="Rename"
+                  onSave={(values) => {
+                    write((current) => ({ ...current, label: values.label }));
+                    setEditing(null);
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              )}
               <SubTabs
                 label="Profile"
                 value={tab}
@@ -774,11 +1256,56 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                       <Button
                         variant="ghost"
                         icon={<Icon name="play" />}
-                        disabled={Boolean(runtime)}
-                        title={runtime ? NO_ANSWER_SURFACE : undefined}
+                        on={answer === "sample"}
+                        onClick={() => setAnswer(answer === "sample" ? null : "sample")}
                       >
                         Check against a sample
                       </Button>
+                    }
+                    body={
+                      answer === "sample" && (
+                        <AnswerPanel
+                          onClose={() => setAnswer(null)}
+                          head={
+                            <FieldWrap>
+                              <span className="ws-raw-label">Say something</span>
+                              <TextArea
+                                value={sample}
+                                rows={2}
+                                placeholder="Type a sentence the way you would dictate it."
+                                onChange={(event) => setSample(event.target.value)}
+                              />
+                            </FieldWrap>
+                          }
+                          columns={[
+                            {
+                              label: "Heard",
+                              body: <p>{analysis?.preview.input || sample || "Nothing yet."}</p>,
+                            },
+                            {
+                              label: "Written",
+                              body: (
+                                <p>
+                                  {analysis?.preview.output ||
+                                    (runtime
+                                      ? "Nothing yet."
+                                      : "Type in the runtime to see this.")}
+                                </p>
+                              ),
+                            },
+                          ]}
+                          /* THE RULES THAT FIRED, BY NAME. An empty run is
+                             stated rather than left blank: "nothing applied" is
+                             the answer somebody checking a rule they just wrote
+                             is most often looking for, and a blank foot reads
+                             as a surface that did not run. */
+                          foot={
+                            analysis?.preview.applied_rules.length
+                              ? analysis.preview.applied_rules.join(" · ")
+                              : "No rule applied to this sample."
+                          }
+                        />
+                      )
                     }
                   >
                     {/* THE FIFTH ROW IS HOW ADR 0023'S SCOPE GETS SAID ONCE
@@ -1032,7 +1559,51 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                       </Row>
                     </CardRows>
                   </Card>
-                  <Card>
+                  <Card
+                    body={
+                      answer === "bias" && (
+                        <AnswerPanel
+                          onClose={() => setAnswer(null)}
+                          columns={[
+                            {
+                              label: `Reaches the recognizer (${bias?.stt_hints.length ?? 0})`,
+                              body: <p>{listOrNone(bias?.stt_hints)}</p>,
+                            },
+                            {
+                              label: `Repaired afterwards (${repair?.repairable.length ?? 0})`,
+                              body: <p>{listOrNone(repair?.repairable)}</p>,
+                            },
+                            /* A TERM BELOW THE FLOOR IS NOT A DEFECT TO FIX and
+                               the column says which of its two effects it has
+                               (ADR 0033). Drawn only when there is one, because
+                               an empty column here would teach the reader that
+                               something is missing. */
+                            ...(repair?.too_short.length
+                              ? [
+                                  {
+                                    label: `Too short to repair, under ${repair.min_chars} characters`,
+                                    body: <p>{listOrNone(repair.too_short)}</p>,
+                                  },
+                                ]
+                              : []),
+                            ...(bias?.over_limit_stt_hint_lines.length
+                              ? [
+                                  {
+                                    label: "Switched on, past the slot budget",
+                                    body: <p>{listOrNone(bias.over_limit_stt_hint_lines)}</p>,
+                                  },
+                                ]
+                              : []),
+                          ]}
+                          foot={
+                            bias
+                              ? `Source: ${bias.effective_stt_hints_source}.`
+                              : "The runtime has not answered yet."
+                          }
+                        />
+                      )
+                    }
+                  >
                     <CardRows>
                       <Row
                         label="Effective transcription bias"
@@ -1041,8 +1612,8 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                           <Button
                             variant="ghost"
                             icon={<Icon name="eye" />}
-                            disabled={Boolean(runtime)}
-                            title={runtime ? NO_ANSWER_SURFACE : undefined}
+                            on={answer === "bias"}
+                            onClick={() => setAnswer(answer === "bias" ? null : "bias")}
                           >
                             Show
                           </Button>
@@ -1057,15 +1628,13 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                 <>
                   <Card
                     title="Replacements"
-                    description="Shorthand you say on purpose. Exact match, every mode."
-                    footer={
-                      <Button
-                        icon={<Icon name="plus" />}
-                        disabled={Boolean(runtime)}
-                        title={runtime ? NO_EDITOR_DRAWN : undefined}
-                      >
-                        Add replacement
-                      </Button>
+                    description="Shorthand you say on purpose. Exact match, every mode, in order."
+                    action={
+                      <AddButton
+                        label="New replacement"
+                        on={editing?.kind === "replacement" && editing.id === null}
+                        onClick={() => setEditing({ kind: "replacement", id: null })}
+                      />
                     }
                   >
                     <ListRows>
@@ -1074,38 +1643,69 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             (item) => [item.phrase, item.replace_with, item.id] as const,
                           )
                         : DRAWN_REPLACEMENTS.map(([from, to]) => [from, to, from] as const)
-                      ).map(([from, to, id]) => (
-                        <ListItem
-                          key={id}
-                          title={`${from}  →  ${to}`}
-                          meta={["exact", "case-insensitive"]}
-                          actions={
-                            <>
-                              <IconButton
-                                label={runtime ? `Edit — ${NO_EDITOR_DRAWN.toLowerCase()}` : "Edit"}
-                                icon={<Icon name="type" />}
-                                disabled={Boolean(runtime)}
+                      ).map(([from, to, id], index, all) => (
+                        <Fragment key={id}>
+                          <ListItem
+                            title={`${from}  →  ${to}`}
+                            meta={["exact", "case-insensitive"]}
+                            open={
+                              (editing?.kind === "replacement" ||
+                                editing?.kind === "delete-replacement") &&
+                              editing.id === id
+                            }
+                            /* Only the reorder pair stays an icon: it is the
+                               one action you repeat, and it is positional —
+                               reaching it through a menu would mean opening the
+                               menu once per step. */
+                            actions={
+                              <Reorder
+                                what="replacement"
+                                atTop={index === 0}
+                                atBottom={index === all.length - 1}
+                                onUp={() => moveReplacement(index, -1)}
+                                onDown={() => moveReplacement(index, 1)}
                               />
-                              <IconButton
-                                label="Delete"
-                                icon={<Icon name="trash" />}
-                                tone="danger"
-                                onClick={
-                                  runtime
-                                    ? () =>
-                                        write((current) => ({
-                                          ...current,
-                                          dictionary_entries: current.dictionary_entries.filter(
-                                            (item) => item.id !== id,
-                                          ),
-                                        }))
-                                    : undefined
-                                }
-                              />
-                            </>
-                          }
-                        />
+                            }
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              setMenu({
+                                x: event.clientX,
+                                y: event.clientY,
+                                kind: "replacement",
+                                id,
+                              });
+                            }}
+                          />
+                          {editing?.kind === "delete-replacement" && editing.id === id && (
+                            <ConfirmPanel
+                              question={`Delete the replacement for “${from}”?`}
+                              detail={`It writes “${to}” today.`}
+                              confirmLabel="Delete replacement"
+                              onConfirm={() => deleteRule("replacement", id)}
+                              onCancel={() => setEditing(null)}
+                            />
+                          )}
+                          {editing?.kind === "replacement" && editing.id === id && (
+                            <EditorPanel
+                              fields={REPLACEMENT_FIELDS}
+                              initial={{ phrase: from, replace_with: to }}
+                              note={ORDER_NOTE}
+                              issues={issuesFor(id)}
+                              onSave={(values) => saveReplacement(id, values)}
+                              onCancel={() => setEditing(null)}
+                            />
+                          )}
+                        </Fragment>
                       ))}
+                      {editing?.kind === "replacement" && editing.id === null && (
+                        <EditorPanel
+                          fields={REPLACEMENT_FIELDS}
+                          note={ORDER_NOTE}
+                          saveLabel="Add"
+                          onSave={(values) => saveReplacement(null, values)}
+                          onCancel={() => setEditing(null)}
+                        />
+                      )}
                     </ListRows>
                   </Card>
                   <Note icon="arrow" tail={<DocLink>Why</DocLink>}>
@@ -1117,55 +1717,78 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
               {tab === "Snippets" && (
                 <Card
                   title="Snippets"
-                  description="A trigger phrase you say, and the block it expands to."
-                  footer={
-                    <Button
-                      icon={<Icon name="plus" />}
-                      disabled={Boolean(runtime)}
-                      title={runtime ? NO_EDITOR_DRAWN : undefined}
-                    >
-                      Add snippet
-                    </Button>
+                  description="A trigger phrase you say, and the block it expands to. In order, after replacements."
+                  action={
+                    <AddButton
+                      label="New snippet"
+                      on={editing?.kind === "snippet" && editing.id === null}
+                      onClick={() => setEditing({ kind: "snippet", id: null })}
+                    />
                   }
                 >
                   <ListRows>
-                    {(runtime && profile
-                      ? profile.snippet_entries.map(
-                          (item) => [item.label || item.trigger, item.expansion, item.id] as const,
-                        )
-                      : DRAWN_SNIPPETS.map(([name, body]) => [name, body, name] as const)
-                    ).map(([name, body, id]) => (
-                      <ListItem
-                        key={id}
-                        title={name}
-                        meta={[`expands to ${body.split("\n").length} lines`]}
-                        actions={
-                          <>
-                            <IconButton
-                              label={runtime ? `Edit — ${NO_EDITOR_DRAWN.toLowerCase()}` : "Edit"}
-                              icon={<Icon name="type" />}
-                              disabled={Boolean(runtime)}
+                    {snippetRows.map((row, index) => (
+                      <Fragment key={row.id}>
+                        <ListItem
+                          title={row.title}
+                          meta={[`expands to ${row.expansion.split("\n").length} lines`]}
+                          open={
+                            (editing?.kind === "snippet" || editing?.kind === "delete-snippet") &&
+                            editing.id === row.id
+                          }
+                          actions={
+                            <Reorder
+                              what="snippet"
+                              atTop={index === 0}
+                              atBottom={index === snippetRows.length - 1}
+                              onUp={() => moveSnippet(index, -1)}
+                              onDown={() => moveSnippet(index, 1)}
                             />
-                            <IconButton
-                              label="Delete"
-                              icon={<Icon name="trash" />}
-                              tone="danger"
-                              onClick={
-                                runtime
-                                  ? () =>
-                                      write((current) => ({
-                                        ...current,
-                                        snippet_entries: current.snippet_entries.filter(
-                                          (item) => item.id !== id,
-                                        ),
-                                      }))
-                                  : undefined
-                              }
-                            />
-                          </>
-                        }
-                      />
+                          }
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            setMenu({
+                              x: event.clientX,
+                              y: event.clientY,
+                              kind: "snippet",
+                              id: row.id,
+                            });
+                          }}
+                        />
+                        {editing?.kind === "delete-snippet" && editing.id === row.id && (
+                          <ConfirmPanel
+                            question={`Delete “${row.title}”?`}
+                            detail={`It expands to ${row.expansion.split("\n").length} lines today.`}
+                            confirmLabel="Delete snippet"
+                            onConfirm={() => deleteRule("snippet", row.id)}
+                            onCancel={() => setEditing(null)}
+                          />
+                        )}
+                        {editing?.kind === "snippet" && editing.id === row.id && (
+                          <EditorPanel
+                            fields={SNIPPET_FIELDS}
+                            initial={{
+                              trigger: row.trigger,
+                              label: row.label,
+                              expansion: row.expansion,
+                            }}
+                            note={ORDER_NOTE}
+                            issues={issuesFor(row.id)}
+                            onSave={(values) => saveSnippet(row.id, values)}
+                            onCancel={() => setEditing(null)}
+                          />
+                        )}
+                      </Fragment>
                     ))}
+                    {editing?.kind === "snippet" && editing.id === null && (
+                      <EditorPanel
+                        fields={SNIPPET_FIELDS}
+                        note={ORDER_NOTE}
+                        saveLabel="Add"
+                        onSave={(values) => saveSnippet(null, values)}
+                        onCancel={() => setEditing(null)}
+                      />
+                    )}
                   </ListRows>
                 </Card>
               )}
@@ -1173,6 +1796,24 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
           </>
         }
       />
+
+      {/* OUTSIDE THE PANE ON PURPOSE. The panel is `fixed` at a measured point,
+          so its place in the tree decides nothing about where it draws — and
+          keeping it out of the pane is what keeps it out of every ancestor that
+          scrolls or hides overflow. That clipping is the defect the owner found
+          in the running app. */}
+      {menu && (
+        <RowMenu
+          at={menu}
+          label={
+            menu.kind === "profile"
+              ? `Actions for ${listRows.find((row) => row.id === menu.id)?.title ?? "this profile"}`
+              : `Actions for this ${menu.kind}`
+          }
+          items={menuItems()}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </>
   );
 }

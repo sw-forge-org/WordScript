@@ -162,6 +162,13 @@
     color: var(--fg-dim);
     max-width: 62ch;
   }
+  /* A head that carries the card's add control turns into a row, and only then
+     (ADR 0082). The `+` sits with the title, at the top, for the same reason it
+     does in a pane's list head: adding belongs with the name of the thing being
+     added to, and it stays put while the list under it grows. */
+  .ws-card-head[data-action] {
+    flex-direction: row; align-items: flex-start; gap: var(--s3);
+  }
   .ws-card-head + * { margin-top: var(--s3); }
 
   /* Only against the card's own edge. A stack that follows a head keeps its
@@ -702,7 +709,20 @@
      the popover the sidebar already has vocabulary for — see `.ws-menu`. The
      anchor is the one thing that belongs here: a popover positions against the
      nearest positioned ancestor, so the row that opens it has to be one. */
-  .ws-nav-anchor { position: relative; }
+  /* A popover positions against the nearest positioned ancestor, so the control
+     it opens over has to be inside one. Named for the MENU rather than for the
+     sidebar: the contract belongs to `.ws-menu`, and Leg 7 gave it a second
+     caller in a pane head that is not a nav row at all (ADR 0082). */
+  .ws-menu-anchor { position: relative; }
+  /* A SECOND CALLER WANTED AN ANCHOR IN A PANE HEAD AND ENDED UP NEEDING NONE.
+     Two attempts are recorded here because both were measured. Wrapping the
+     button in a `.ws-menu-anchor` of its own costs a DOM node, and `port:diff`
+     walks by path: one inserted element shifted every sibling after it and took
+     `profiles`' departure from structural 5 to structural 14. Making the head's
+     existing action run the positioned box cost no node — and one style
+     property on CONTEXT, which is a pane too and is not this leg's to move. The
+     panel is `fixed` now (below), so it needs no positioned ancestor at all and
+     neither rule survives. */
   /* An entrance that is rasterised on every intermediate frame is the one kind
      of motion reduced motion is actually about. */
   @media (prefers-reduced-motion: reduce) {
@@ -3243,7 +3263,8 @@
      It sits on the inset plane so it reads as inside the record rather than as
      the next one, and the row above it drops its rule so the pair is one
      block. */
-  .ws-list-item:has(+ .ws-list-raw) { border-bottom: none; }
+  .ws-list-item:has(+ .ws-list-raw),
+  .ws-list-item:has(+ .ws-list-edit) { border-bottom: none; }
   .ws-list-raw {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3280,8 +3301,96 @@
     font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
     color: var(--fg-muted);
   }
+  /* The input an answer is computed FROM, above the columns that answer
+     (`Readout`, ADR 0082). It spans, because a sample sentence in a half-width
+     field wraps where the output below it does not. */
+  .ws-raw-head { grid-column: 1 / -1; }
+  /* The panel dismisses itself, so the control that opened it does not have to
+     become a toggle the reader has to find again. Type-scale text rather than a
+     button: it sits in the foot's micro line and a `.ws-btn` there would be the
+     heaviest object in a panel that only reports. */
+  .ws-raw-close {
+    margin-left: auto;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .ws-raw-close:hover { color: var(--fg); }
+  /* A foot with a close control has two things in it, so the path stops being
+     the only thing pushed right. */
+  .ws-raw-foot:has(.ws-raw-close) .ws-raw-path { margin-left: 0; }
   @container (max-width: 560px) {
     .ws-list-raw { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* ── The editor, unfolded ─────────────────────────────────────────────────
+     ADR 0082. It shares the plane above deliberately: same inset ground, same
+     radius, same margin, and the row above drops its rule the same way. A
+     reader who has opened a transcript already knows what this is, and the two
+     panels answer the same question in the same place — what is inside this
+     row — with the difference that one of them can be changed.
+
+     THE FIELDS ARE A GRID AND THE PAIR IS THE POINT. A replacement is two
+     halves of one sentence ("what you say" → "what gets written"), and stacking
+     them makes the reader hold the first to judge the second — the reasoning
+     `.ws-list-raw` is built on, for the same reason. A multiline value takes
+     the full row, because a snippet body next to a 14-character trigger would
+     size the column to the trigger. */
+  .ws-list-edit {
+    padding: var(--s4);
+    margin: 0 var(--pad-card) var(--row-py);
+    border-radius: var(--r-card);
+    background: var(--bg-inset);
+    border-bottom: none;
+    display: flex; flex-direction: column; gap: var(--s3);
+  }
+  .ws-edit-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s3) var(--s5);
+  }
+  .ws-edit-field { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  /* A confirm has no fields, so the question takes the row they would have. It
+     is body type rather than the micro label above a field: it is the sentence
+     the reader is deciding on. */
+  .ws-edit-question {
+    grid-column: 1 / -1;
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    color: var(--fg);
+  }
+  .ws-edit-field[data-wide] { grid-column: 1 / -1; }
+  .ws-edit-label {
+    font-stretch: var(--w-micro); font-size: var(--t-micro); font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--fg-muted);
+  }
+
+  /* What the analysis says about THIS rule, under the fields that caused it.
+     The pre-port surface put every issue in one list at the top of the screen,
+     which told the reader a rule was wrong and left them to find it. */
+  .ws-edit-issues { display: flex; flex-direction: column; gap: 6px; }
+  .ws-edit-issues p {
+    display: flex; align-items: flex-start; gap: var(--s2);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.5; color: var(--fg-dim);
+  }
+
+  /* The note sits on the same line as the buttons and takes the slack, so the
+     panel's height does not change when a rule has something to say. */
+  .ws-edit-foot {
+    display: flex; align-items: center; gap: var(--s2);
+    padding-top: var(--s2);
+    border-top: 1px solid var(--border);
+  }
+  .ws-edit-note {
+    margin-right: auto;
+    font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    /* It explains; it never pushes the commit off the panel. */
+    min-width: 0;
+  }
+  @container (max-width: 560px) {
+    .ws-edit-fields { grid-template-columns: minmax(0, 1fr); }
   }
 
   /* ═════════════════════════════════════════════════════════════════════════
@@ -3715,6 +3824,27 @@
   .ws-menu[data-align="start"] {
     left: 0; right: 0;
     width: auto; min-width: 190px;
+    transform: none;
+  }
+  /* A LIST OF VERBS IS NOT A LIST OF DESTINATIONS (ADR 0082). 230 px is the
+     width four addresses with hints under them need; three words do not, and at
+     that width a row's actions read as a panel rather than as a menu. It takes
+     its content's width, with a floor so the three entries still line up, and
+     its rows lose the vertical room the second line was paying for. */
+  .ws-menu[data-compact] { width: max-content; min-width: 132px; }
+  .ws-menu[data-compact] button { padding: 6px 10px; align-items: center; }
+  .ws-menu[data-compact] button > svg { margin-top: 0; }
+
+  /* AT VIEWPORT COORDINATES, WHICH IS WHAT AN ANCESTOR THAT CLIPS LEAVES YOU.
+     `.ws-pane-detail-head` hides its overflow, so the first build of the
+     profile menu was cut off at its second entry — visible only in the running
+     host. Anything opened FROM A ROW has the same problem in every list it is
+     opened in, so the panel leaves the flow: the caller measures, this places.
+     The offsets are the caller's `at`, as an inline style, because a coordinate
+     is a measurement rather than a spacing value (the rule §11.17 is about). */
+  .ws-menu[data-fixed] {
+    position: fixed;
+    bottom: auto; right: auto;
     transform: none;
   }
   .ws-menu button:hover:not([disabled]),
