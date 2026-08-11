@@ -1,7 +1,10 @@
 # WordScript -- Architecture
 
 Status: 2026-08-11 — read against the shipped product by Leg 9; the UI layer
-section had described the pre-port shell since before Leg 3's overwrite
+section had described the pre-port shell since before Leg 3's overwrite. The
+provider section was rewritten the same day by stage A1 of the speech track,
+which replaced the enum dispatch with the role registry in code; nothing else
+in this file was re-read for it
 
 > This file is the living architecture overview. Hard architecture decisions
 > (e.g. Tauri/Rust as runtime owner, native window decorations, cloud-first
@@ -234,17 +237,32 @@ The active product core lives in `src-tauri/src/core/`.
 
 ### Provider and text processing
 
-- `providers/mod.rs`: shared provider contract, dispatch and typed
-  command surface (modes, capabilities, errors). **Dispatch is a closed
-  `enum ProviderId { Groq, LocalPreview }`**, matched in each top-level
-  capability function — two providers, eight functions.
+- `providers/mod.rs`: shared provider contract and typed command surface (modes,
+  capabilities, errors). The eight top-level capability functions are **thin
+  resolvers**: each looks the id up in the registry and calls a role.
+- `providers/registry.rs`: the role split (ADR 0094, built 2026-08-11).
+  `Provider` carries status and the credential; `SpeechProvider` carries
+  recognition, the account plans and the capture ceiling; `ChatProvider` carries
+  completions; `VoiceProvider` carries synthesis and **is implemented by
+  nobody** — it is declared so the third role is a role rather than an exception
+  bolted on later. A `ProviderEntry` names one id, its aliases and the
+  implementations behind it, so **adding a provider is a module plus one entry**
+  and nothing in `mod.rs` moves. Several ids may point at one implementation,
+  which is how an OpenAI-compatible shape absorbs a column of the drawn matrix.
 
-  *Planned and not built* (ADR 0094, ADR 0095, ADR 0096): the enum becomes three
-  traits plus a registry, the provider axis splits per role, and a streaming
-  recognition contract stands beside `transcribe_audio_file` without touching
-  it. What each vendor can actually serve is surveyed per row and per date in
-  [PROVIDERS.md](PROVIDERS.md) — that document is a capability reference and not
-  a claim about this codebase.
+  **A provider that cannot serve a role does not stub it.** The absence is
+  `speech: None` / `chat: None` / `voice: None` on the entry, and the compiler
+  is what enforces it: `Some(&GROQ)` in the `voice` slot fails to build, because
+  `Groq: VoiceProvider` is not satisfied. There is no "unsupported" error to
+  return, because there is no call to make.
+
+  *Planned and not built* (ADR 0094's second half, ADR 0095, ADR 0096): the
+  provider axis in the config still holds one `provider` field per profile
+  rather than a resolved default plus a sparse override per job, no streaming
+  recognition contract stands beside `transcribe_audio_file`, and no adapter
+  beyond these two is registered. What each vendor can actually serve is
+  surveyed per row and per date in [PROVIDERS.md](PROVIDERS.md) — that document
+  is a capability reference and not a claim about this codebase.
 
   **`ProviderCapabilities` crosses the seam and nothing on the other side reads
   it.** The struct is mirrored in `src/types/providers.ts` and returned by
@@ -338,8 +356,8 @@ lane and missing helpers.
    effective `auto` value becomes a concrete mode per
    transcription via `resolve_auto_mode`. The renderer can query the effective
    mode via `resolve_current_processing_mode`.
-6. `providers/mod.rs` resolves the active provider and dispatches today to
-   `providers/groq.rs` or `providers/local_preview.rs`.
+6. `providers/mod.rs` resolves the active provider's registry entry and calls its
+   speech role — `providers/groq.rs` or `providers/local_preview.rs` today.
 6b. `confidence_gate.rs` drops segments the provider's own metrics mark as
    invented, before any downstream stage sees the text (cloud lane only).
 6c. `recognizer_repair.rs` strips an echo of the prompt this request sent and

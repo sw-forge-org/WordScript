@@ -103,11 +103,14 @@ constants themselves were not re-derived and carry their own provenance
   this semantics, not build their own error categories.
 - There is no WordScript proxy or hosted mode.
 - **Neither lane streams, and neither speaks.** Both take a file and return one
-  result; there is no speech synthesis anywhere in the runtime. Which vendors
-  serve which role -- batch, streaming, detected language, voice -- is surveyed
-  per row and per date in [PROVIDERS.md](PROVIDERS.md), and the planned contracts
-  are ADR 0094 through ADR 0097 plus ADR 0105 through ADR 0109. **None of that
-  is built**; this section describes what runs today.
+  result; there is no speech synthesis anywhere in the runtime. `VoiceProvider`
+  exists as a declared role with no implementation, which is the type saying the
+  same thing. Which vendors serve which role -- batch, streaming, detected
+  language, voice -- is surveyed per row and per date in
+  [PROVIDERS.md](PROVIDERS.md), and the planned contracts are ADR 0094 through
+  ADR 0097 plus ADR 0105 through ADR 0109. **Only ADR 0094's trait-and-registry
+  half is built** (2026-08-11); the rest describes what does not run yet, and
+  this section describes what does.
 - **`ProviderCapabilities` is returned and is read by nothing.** The struct
   crosses to `src/types/providers.ts` on `provider_status`, and no field of it
   is consumed in `src/` -- the capability answers drawn on `AI Models` come from

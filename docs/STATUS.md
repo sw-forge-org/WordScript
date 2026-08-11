@@ -159,6 +159,15 @@ Status: 2026-08-11
 
 ## Implemented core features
 
+- a provider contract that is three role traits over one registry (ADR 0094,
+  2026-08-11): `core/providers/registry.rs` holds `Provider`, `SpeechProvider`,
+  `ChatProvider` and `VoiceProvider`, an entry names an id and the
+  implementations behind it, and the eight capability functions resolve an entry
+  rather than match an enum. Adding a provider is a module plus an entry, and a
+  provider that cannot serve a role does not implement it — `VoiceProvider` is
+  declared and implemented by nobody, because nothing in this runtime speaks. It
+  registered no new adapter and changed no behaviour: 740 Rust tests and 474
+  frontend tests unchanged
 - recording limits that agree with what the pipeline can do (ADR 0038): a
   processing limit resolved per provider, account plan and model; an auto-stop
   the user sets under it with a recommended safety margin; and the silence stop

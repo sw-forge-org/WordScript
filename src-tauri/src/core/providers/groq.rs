@@ -12,9 +12,11 @@ use tokio::time::sleep;
 use crate::core::runtime_log;
 
 use super::{
+    registry::{ChatProvider, Provider, ProviderFuture, SpeechProvider},
     ChatCompletionRequest, ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError,
     ProviderCredentialStatus, ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus,
-    ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
+    ProviderStatusRequest, ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse,
+    ValidateProviderApiKeyResponse,
 };
 
 const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
@@ -75,7 +77,68 @@ struct GroqClient {
     max_retries: u8,
 }
 
-pub fn provider_status() -> Result<GroqProviderStatus, ProviderCommandError> {
+/// Groq as the registry sees it: recognition and completions on one key.
+///
+/// It implements no `VoiceProvider`, and there is no stub saying so — the
+/// registry entry's `voice: None` is the whole statement (ADR 0094).
+pub struct Groq;
+
+pub static GROQ: Groq = Groq;
+
+impl Provider for Groq {
+    /// The request carries a model and a correction model for the lane that
+    /// needs them to answer. Groq's status does not depend on either.
+    fn status(
+        &self,
+        _request: &ProviderStatusRequest,
+    ) -> Result<ProviderStatus, ProviderCommandError> {
+        provider_status()
+    }
+
+    fn save_api_key(
+        &self,
+        api_key: &str,
+    ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+        save_api_key(api_key)
+    }
+
+    fn clear_api_key(&self) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+        clear_api_key()
+    }
+
+    fn validate_api_key(
+        &self,
+        api_key: Option<String>,
+    ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
+        Box::pin(validate_api_key(api_key))
+    }
+}
+
+impl SpeechProvider for Groq {
+    fn transcribe_audio_file(
+        &self,
+        request: TranscribeAudioFileRequest,
+    ) -> ProviderFuture<TranscriptionResponse> {
+        Box::pin(transcribe_audio_file(request))
+    }
+
+    fn tiers(&self) -> Vec<ProviderTier> {
+        tiers()
+    }
+
+    /// Bound by the plan, never by the model: the ceiling is an upload size.
+    fn capture_limits(&self, _model: &str, tier_id: &str) -> ProviderCaptureLimits {
+        capture_limits(tier_id)
+    }
+}
+
+impl ChatProvider for Groq {
+    fn create_chat_completion(&self, request: ChatCompletionRequest) -> ProviderFuture<String> {
+        Box::pin(create_chat_completion(request))
+    }
+}
+
+fn provider_status() -> Result<GroqProviderStatus, ProviderCommandError> {
     Ok(GroqProviderStatus {
         provider: "groq".to_string(),
         default_profile: "cloud-fast".to_string(),
@@ -86,20 +149,20 @@ pub fn provider_status() -> Result<GroqProviderStatus, ProviderCommandError> {
     })
 }
 
-pub fn save_api_key(api_key: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+fn save_api_key(api_key: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     let api_key = normalize_api_key(api_key)?;
     write_api_key_to(&OsSecretStore, &api_key).map_err(secret_store_error)?;
     cache_groq_api_key(Some(api_key));
     credential_status().map_err(ProviderCommandError::from)
 }
 
-pub fn clear_api_key() -> Result<ProviderCredentialStatus, ProviderCommandError> {
+fn clear_api_key() -> Result<ProviderCredentialStatus, ProviderCommandError> {
     clear_api_key_in(&OsSecretStore).map_err(secret_store_error)?;
     cache_groq_api_key(None);
     credential_status().map_err(ProviderCommandError::from)
 }
 
-pub async fn validate_api_key(
+async fn validate_api_key(
     api_key: Option<String>,
 ) -> Result<ValidateGroqApiKeyResponse, ProviderCommandError> {
     let (api_key, checked_with) = match api_key {
@@ -123,7 +186,7 @@ pub async fn validate_api_key(
     })
 }
 
-pub async fn transcribe_audio_file(
+async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<GroqTranscriptionResponse, ProviderCommandError> {
     let api_key = load_groq_api_key()?;
@@ -140,7 +203,7 @@ pub async fn transcribe_audio_file(
         .map_err(ProviderCommandError::from)
 }
 
-pub async fn create_chat_completion(
+async fn create_chat_completion(
     request: ChatCompletionRequest,
 ) -> Result<String, ProviderCommandError> {
     let api_key = load_groq_api_key()?;
@@ -756,7 +819,7 @@ pub const GROQ_DEV_TIER_ID: &str = "dev";
 /// The two limits were already in this file as the thresholds the upload
 /// validator checks; stating them as plans is what lets a paying account record
 /// to its real ceiling instead of the free one.
-pub fn tiers() -> Vec<ProviderTier> {
+fn tiers() -> Vec<ProviderTier> {
     vec![
         ProviderTier {
             id: GROQ_FREE_TIER_ID.to_string(),
@@ -777,7 +840,7 @@ pub fn tiers() -> Vec<ProviderTier> {
 /// plan. An unrecognised plan id falls back to the default one rather than to
 /// the larger — being wrong towards "you may record less" costs a retry, being
 /// wrong the other way costs the recording.
-pub fn capture_limits(tier_id: &str) -> ProviderCaptureLimits {
+fn capture_limits(tier_id: &str) -> ProviderCaptureLimits {
     let tiers = tiers();
     let tier = tiers
         .iter()

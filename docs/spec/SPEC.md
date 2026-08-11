@@ -16,6 +16,13 @@ claim, and nothing else** — it is not a drift check on this file and does not
 inherit Leg 10's date for the parts it did not read. Every clause it added is a
 planned contract and says so; none of it is implemented.
 
+Amended 2026-08-11 by stage A1 of that track, which is the first of its steps to
+change code. **It read `core/providers/` and moved the two clauses in this file
+that described the enum dispatch**, plus the pipeline step that named it; it
+read nothing else and does not inherit any earlier date for the rest. ADR 0094's
+other half — the provider axis in the config — is still planned and still says
+so.
+
 **Re-read the same day under review, which found one claim in the first pass
 false**: that `ProviderCapabilities` is read by `AI Models` and therefore stops
 a surface claiming a capability its lane lacks. Nothing reads it. The clause is
@@ -93,7 +100,8 @@ Rust core modules in `src-tauri/src/core/`:
 - `sound/` -- one synthesised G-major theme: startup signature plus listen,
   handoff, done, abort and error cues, four timbre packs, played on a single
   persistent output stream (see ADR 0010)
-- `providers/mod.rs` -- shared provider contract, dispatch, typed modes/capabilities/errors
+- `providers/mod.rs` -- shared provider contract, thin resolvers over the registry, typed modes/capabilities/errors
+- `providers/registry.rs` -- the role traits (`Provider`, `SpeechProvider`, `ChatProvider`, `VoiceProvider`) and the frozen id-to-implementation table; adding a provider is a module plus one entry (ADR 0094)
 - `providers/groq.rs` -- cloud-first production lane (BYOK, secret store, Groq HTTP errors)
 - `providers/local_preview.rs` -- local runtime lane (whisper-cli STT, Ollama cleanup, native model discovery, probe-based runner health)
 - `confidence_gate.rs` -- drops segments Whisper's own metrics mark as invented; cloud lane only, thresholds are constants (ADR 0016)
@@ -183,12 +191,19 @@ UI implementation details, not Rust event names or Tauri channels.
   `user_action`. UI must relay this, never invent its own error categories.
 - `local` (on-device, current `local_preview` lane) and `self_hosted`
   (user-run remote/LAN, reserved, not active) are not interchangeable labels.
-- **Dispatch is a closed `enum ProviderId { Groq, LocalPreview }` today**, and
-  ADR 0094 replaces it with three traits (`SpeechProvider`, `ChatProvider`,
-  `VoiceProvider`) plus a registry, with the provider axis split per role — a
-  resolved default plus a sparse override per job, not a provider/model pair per
-  job. A provider that cannot serve a role does not implement it. Planned; not
-  built.
+- **Dispatch is a registry over three role traits** (ADR 0094), built
+  2026-08-11. `core/providers/registry.rs` declares `Provider` (status and
+  credential), `SpeechProvider` (recognition, plans, capture ceiling),
+  `ChatProvider` (completions) and `VoiceProvider` (synthesis); a
+  `ProviderEntry` names one id, its aliases and the implementations behind it,
+  and the eight top-level functions in `providers/mod.rs` resolve an entry and
+  call a role. The closed `enum ProviderId` is gone. **A provider that cannot
+  serve a role does not implement it**: the absence is `voice: None` on the
+  entry, never a stub returning "unsupported", and `Some(..)` does not compile
+  without an implementation the compiler has seen. `VoiceProvider` is declared
+  and implemented by nobody. **ADR 0094's other half is not built** — the
+  provider axis in the config is still one `provider` field per profile, not a
+  resolved default plus a sparse override per job.
 - **Capability axes split between provider and model** (ADR 0110). `speech_synthesis`
   is a provider-level role question and joins `transcription` and
   `chat_completion` on `ProviderCapabilities`; **`transcription_streaming`,
@@ -493,7 +508,8 @@ no account. Entities:
    `AppConfig.processing_mode`. The config is loaded after the recording ends,
    so a mode changed mid-recording is already on disk here. An effective `auto`
    value is resolved to a concrete mode per transcription.
-6. `providers/mod.rs` dispatches to `groq` or `local_preview`. The request comes
+6. `providers/mod.rs` resolves the registry entry the active provider names and
+   calls its speech role -- `groq` or `local_preview` today. The request comes
    from `NativeCaptureConfig::resolve_transcription_request`, the single place a
    provider request is derived from a capture (ADR 0015).
 6b. `confidence_gate.rs` drops low-confidence segments (cloud lane only).

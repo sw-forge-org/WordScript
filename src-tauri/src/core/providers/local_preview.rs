@@ -11,11 +11,12 @@ use crate::core::confidence_gate::{MAX_NO_SPEECH_PROB, MIN_AVG_LOGPROB};
 use crate::core::runtime_log;
 
 use super::{
+    registry::{ChatProvider, Provider, ProviderFuture, SpeechProvider},
     ChatCompletionRequest, LocalProviderIssueCode, LocalProviderReadiness,
     LocalProviderSetupStatus, ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError,
     ProviderCredentialStatus, ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus,
-    ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
-    LOCAL_PREVIEW_PROVIDER_ID,
+    ProviderStatusRequest, ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse,
+    ValidateProviderApiKeyResponse, LOCAL_PREVIEW_PROVIDER_ID,
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 90_000;
@@ -124,7 +125,74 @@ impl LocalProfileSelection {
     }
 }
 
-pub fn provider_status(
+/// The local runtime as the registry sees it: recognition on whisper-cli,
+/// completions on a local AI runtime, and no key for either.
+///
+/// It implements no `VoiceProvider`. Nothing in this build synthesises, and a
+/// stub returning "unsupported" would be a role the type says exists (ADR 0094).
+pub struct LocalPreview;
+
+pub static LOCAL_PREVIEW: LocalPreview = LocalPreview;
+
+impl Provider for LocalPreview {
+    /// Both model fields are read here: the local status is a statement about
+    /// the runner, the STT model and the chat model that were actually asked
+    /// for, and answering for a different model is how a setup surface reports
+    /// a readiness the run will not have.
+    fn status(
+        &self,
+        request: &ProviderStatusRequest,
+    ) -> Result<ProviderStatus, ProviderCommandError> {
+        provider_status(
+            request.model.as_deref(),
+            request.correction_model.as_deref(),
+        )
+    }
+
+    fn save_api_key(
+        &self,
+        api_key: &str,
+    ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+        save_api_key(api_key)
+    }
+
+    fn clear_api_key(&self) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+        clear_api_key()
+    }
+
+    fn validate_api_key(
+        &self,
+        api_key: Option<String>,
+    ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
+        Box::pin(validate_api_key(api_key))
+    }
+}
+
+impl SpeechProvider for LocalPreview {
+    fn transcribe_audio_file(
+        &self,
+        request: TranscribeAudioFileRequest,
+    ) -> ProviderFuture<TranscriptionResponse> {
+        Box::pin(transcribe_audio_file(request))
+    }
+
+    fn tiers(&self) -> Vec<ProviderTier> {
+        tiers()
+    }
+
+    /// Bound by the model, never by the plan: the ceiling is decode time.
+    fn capture_limits(&self, model: &str, _tier_id: &str) -> ProviderCaptureLimits {
+        capture_limits(model)
+    }
+}
+
+impl ChatProvider for LocalPreview {
+    fn create_chat_completion(&self, request: ChatCompletionRequest) -> ProviderFuture<String> {
+        Box::pin(create_chat_completion(request))
+    }
+}
+
+fn provider_status(
     model: Option<&str>,
     correction_model: Option<&str>,
 ) -> Result<ProviderStatus, ProviderCommandError> {
@@ -185,19 +253,19 @@ pub fn provider_status(
     })
 }
 
-pub fn save_api_key(_api_key: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+fn save_api_key(_api_key: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     Err(ProviderCommandError::invalid_request(
         "Local runtime does not use API keys. Configure whisper-cli, a local STT model, and a local AI runtime instead.",
     ))
 }
 
-pub fn clear_api_key() -> Result<ProviderCredentialStatus, ProviderCommandError> {
+fn clear_api_key() -> Result<ProviderCredentialStatus, ProviderCommandError> {
     Err(ProviderCommandError::invalid_request(
         "Local runtime does not use API keys. There is no stored key to clear.",
     ))
 }
 
-pub async fn validate_api_key(
+async fn validate_api_key(
     _api_key: Option<String>,
 ) -> Result<ValidateProviderApiKeyResponse, ProviderCommandError> {
     let status = provider_status(None, None)?;
@@ -214,7 +282,7 @@ pub async fn validate_api_key(
     })
 }
 
-pub async fn transcribe_audio_file(
+async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<TranscriptionResponse, ProviderCommandError> {
     let selected_profile = request
@@ -460,7 +528,7 @@ fn normalize_local_decode_value(value: Option<u8>, fallback: u8) -> u8 {
     }
 }
 
-pub async fn create_chat_completion(
+async fn create_chat_completion(
     request: ChatCompletionRequest,
 ) -> Result<String, ProviderCommandError> {
     let started_at = Instant::now();
@@ -588,7 +656,7 @@ fn provider_profiles() -> Vec<ProviderProfile> {
 
 /// The local runtime has no account plans: nothing here is billed by request
 /// size, so there is nothing to choose between.
-pub fn tiers() -> Vec<ProviderTier> {
+fn tiers() -> Vec<ProviderTier> {
     Vec::new()
 }
 
@@ -616,7 +684,7 @@ fn realtime_factor(model: &str) -> f64 {
 
 /// What one capture may cost locally: bounded by how long the model takes to
 /// decode it, never by an upload.
-pub fn capture_limits(model: &str) -> ProviderCaptureLimits {
+fn capture_limits(model: &str) -> ProviderCaptureLimits {
     let model = if model.trim().is_empty() {
         "base"
     } else {

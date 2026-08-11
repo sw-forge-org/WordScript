@@ -366,7 +366,23 @@ table* blocks G2's surface. Neither blocks A, B, C, D or E.
 
 | Step | State |
 | --- | --- |
-| A1–A3, B1–B2, C1–C3, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
+| A1 | **done** 2026-08-11 — `core/providers/registry.rs`, the enum gone, four counts unchanged |
+| A2–A3, B1–B2, C1–C3, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.
+
+**A1, as it landed.** Three role traits plus a fourth (`Provider`) for what is
+not a role today — status and the credential — because ADR 0105 is where that
+half splits per role, and putting it on the three role traits now would be the
+same edit in three places later. `SpeechProvider` carries the account plans and
+the capture ceiling beside recognition: a plan is today entirely a statement
+about how much audio may be uploaded, so a provider with no speech role has none
+to choose between. `capture_limits` takes **both** model and tier on the trait,
+because a cloud lane is bound by the plan and a local one by the model and the
+caller knows which least of all — the shape `providers/mod.rs:189` already had.
+The registry is a `&'static [ProviderEntry]` table rather than accessor methods
+on a base trait, so "a module plus a registry line" is literally one line, and
+the donor's many-to-one shape is two entries pointing at one static. Futures are
+boxed (`ProviderFuture<T>`) because an `async fn` in a trait is not
+dyn-compatible and no new dependency was worth a pure refactor.

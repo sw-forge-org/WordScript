@@ -155,7 +155,11 @@ chat rather than after it**.
   default's credential.
 - **The contract becomes a trait plus a registry** (ADR 0094). The closed
   `enum ProviderId` dispatch does not survive ten providers, and a provider that
-  cannot serve a role does not stub it.
+  cannot serve a role does not stub it. **Built 2026-08-11** as plan stage A1 —
+  the enum is gone, `core/providers/registry.rs` holds the three role traits and
+  the id table, and `VoiceProvider` is declared with no implementation. The
+  record's other half — the provider axis splitting per role in the config — is
+  not built and is not A1.
 - **No adapter lands before the row that operates it** (ADR 0109). An inert lane
   that says so is honest; a capability with no drawn control is not visible as
   missing at all. This is what gates Groq voice: `voice` is not in `JobKey`, and

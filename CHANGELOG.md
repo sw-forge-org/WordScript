@@ -165,6 +165,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The provider enum is gone; dispatch is a registry over three role traits**
+  (ADR 0094, plan stage A1 — the first step of the speech track to change code).
+  `core/providers/registry.rs` declares `Provider`, `SpeechProvider`,
+  `ChatProvider` and `VoiceProvider`; a `ProviderEntry` names one id, its
+  aliases and the implementations behind it; and the eight top-level functions
+  in `providers/mod.rs` became thin resolvers that look an entry up and call a
+  role. **Adding a provider is now a module plus one entry**, where it was an
+  edit in eight match statements. **A provider that cannot serve a role does not
+  stub it** — the absence is `voice: None`, and `Some(&GROQ)` in that slot fails
+  to compile because `Groq: VoiceProvider` is not satisfied, which was verified
+  by making it fail rather than by asserting it here. `VoiceProvider` is
+  declared and implemented by nobody, and carries no method: the synthesis shape
+  belongs to ADR 0097 and ADR 0109, and a signature invented ahead of them would
+  be a guess the compiler cannot check.
+  **A pure refactor, and the test counts are the proof**: `cargo test` 740
+  passed / 3 ignored and `cargo check` 15 warnings, both unchanged; `npm test`
+  474 across 39 files and `npm run build` unchanged by construction, since
+  nothing in `src/` was touched and every `invoke(` still resolves against
+  `invoke_handler`. ADR 0094's other half is untouched and still planned: the
+  config holds one `provider` field per profile, not a resolved default plus a
+  sparse override per job.
 - **Streaming is a property of a model, not of a provider** (ADR 0110). ADR 0094
   named OpenRouter *"the exception that proves the axes are per provider"*; a
   second read of the donor's model registry shows **it is a constant nowhere**.

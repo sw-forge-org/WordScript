@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 
 pub mod groq;
 pub mod local_preview;
+pub mod registry;
+
+pub use registry::{
+    ChatProvider, Provider, ProviderEntry, ProviderFuture, SpeechProvider, VoiceProvider,
+};
 
 pub const DEFAULT_PROVIDER_ID: &str = "groq";
 pub const LOCAL_PREVIEW_PROVIDER_ID: &str = "local_preview";
@@ -174,12 +179,16 @@ impl ProviderCaptureLimits {
 }
 
 /// The account plans a provider offers, for the settings surface to render.
+///
+/// A provider that does not listen has nothing to choose between, and so does
+/// one this build does not know: both answer with an empty list rather than
+/// with another lane's plans.
 pub fn provider_tiers(provider: &str) -> Vec<ProviderTier> {
-    match resolve_provider_id(provider) {
-        Ok(ProviderId::Groq) => groq::tiers(),
-        Ok(ProviderId::LocalPreview) => local_preview::tiers(),
-        Err(_) => Vec::new(),
-    }
+    registry::resolve_entry(provider)
+        .ok()
+        .and_then(|entry| entry.speech)
+        .map(|speech| speech.tiers())
+        .unwrap_or_default()
 }
 
 /// What one capture may cost on this provider, under this model and plan.
@@ -187,11 +196,11 @@ pub fn provider_tiers(provider: &str) -> Vec<ProviderTier> {
 /// The dispatch every other provider capability already uses. The capture
 /// budget calls this and knows nothing about any particular lane.
 pub fn capture_limits(provider: &str, model: &str, tier_id: &str) -> ProviderCaptureLimits {
-    match resolve_provider_id(provider) {
-        Ok(ProviderId::Groq) => groq::capture_limits(tier_id),
-        Ok(ProviderId::LocalPreview) => local_preview::capture_limits(model),
-        Err(_) => ProviderCaptureLimits::unbounded(),
-    }
+    registry::resolve_entry(provider)
+        .ok()
+        .and_then(|entry| entry.speech)
+        .map(|speech| speech.capture_limits(model, tier_id))
+        .unwrap_or_else(ProviderCaptureLimits::unbounded)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -352,35 +361,9 @@ pub struct ChatCompletionRequest {
     pub max_retries: Option<u8>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProviderId {
-    Groq,
-    LocalPreview,
-}
-
-impl ProviderId {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Groq => DEFAULT_PROVIDER_ID,
-            Self::LocalPreview => LOCAL_PREVIEW_PROVIDER_ID,
-        }
-    }
-}
-
-fn resolve_provider_id(provider: &str) -> Result<ProviderId, ProviderCommandError> {
-    match provider.trim().to_ascii_lowercase().as_str() {
-        "" | DEFAULT_PROVIDER_ID => Ok(ProviderId::Groq),
-        "local" | LOCAL_PREVIEW_PROVIDER_ID => Ok(ProviderId::LocalPreview),
-        other => Err(ProviderCommandError::invalid_request(format!(
-            "Provider '{}' is not supported yet.",
-            other
-        ))),
-    }
-}
-
 pub fn normalize_provider_value(provider: &str) -> String {
-    resolve_provider_id(provider)
-        .map(ProviderId::as_str)
+    registry::resolve_entry(provider)
+        .map(|entry| entry.id)
         .unwrap_or(DEFAULT_PROVIDER_ID)
         .to_string()
 }
@@ -403,72 +386,65 @@ pub fn migrate_legacy_provider_api_key(
     provider: &str,
     api_key: &str,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    match resolve_provider_id(provider)? {
-        ProviderId::Groq => groq::save_api_key(api_key),
-        ProviderId::LocalPreview => local_preview::save_api_key(api_key),
-    }
+    registry::resolve_entry(provider)?
+        .provider
+        .save_api_key(api_key)
 }
 
 #[tauri::command]
 pub fn provider_status(
     request: ProviderStatusRequest,
 ) -> Result<ProviderStatus, ProviderCommandError> {
-    match resolve_provider_id(&request.provider)? {
-        ProviderId::Groq => groq::provider_status(),
-        ProviderId::LocalPreview => local_preview::provider_status(
-            request.model.as_deref(),
-            request.correction_model.as_deref(),
-        ),
-    }
+    registry::resolve_entry(&request.provider)?
+        .provider
+        .status(&request)
 }
 
 #[tauri::command]
 pub fn save_provider_api_key(
     request: SaveProviderApiKeyRequest,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    match resolve_provider_id(&request.provider)? {
-        ProviderId::Groq => groq::save_api_key(&request.api_key),
-        ProviderId::LocalPreview => local_preview::save_api_key(&request.api_key),
-    }
+    registry::resolve_entry(&request.provider)?
+        .provider
+        .save_api_key(&request.api_key)
 }
 
 #[tauri::command]
 pub fn clear_provider_api_key(
     request: ClearProviderApiKeyRequest,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    match resolve_provider_id(&request.provider)? {
-        ProviderId::Groq => groq::clear_api_key(),
-        ProviderId::LocalPreview => local_preview::clear_api_key(),
-    }
+    registry::resolve_entry(&request.provider)?
+        .provider
+        .clear_api_key()
 }
 
 #[tauri::command]
 pub async fn validate_provider_api_key(
     request: ValidateProviderApiKeyRequest,
 ) -> Result<ValidateProviderApiKeyResponse, ProviderCommandError> {
-    match resolve_provider_id(&request.provider)? {
-        ProviderId::Groq => groq::validate_api_key(request.api_key).await,
-        ProviderId::LocalPreview => local_preview::validate_api_key(request.api_key).await,
-    }
+    registry::resolve_entry(&request.provider)?
+        .provider
+        .validate_api_key(request.api_key)
+        .await
 }
 
 #[tauri::command]
 pub async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<TranscriptionResponse, ProviderCommandError> {
-    match resolve_provider_id(&request.provider)? {
-        ProviderId::Groq => groq::transcribe_audio_file(request).await,
-        ProviderId::LocalPreview => local_preview::transcribe_audio_file(request).await,
-    }
+    registry::resolve_entry(&request.provider)?
+        .require_speech()?
+        .transcribe_audio_file(request)
+        .await
 }
 
 pub async fn create_chat_completion(
     request: ChatCompletionRequest,
 ) -> Result<String, ProviderCommandError> {
-    match resolve_provider_id(&request.provider)? {
-        ProviderId::Groq => groq::create_chat_completion(request).await,
-        ProviderId::LocalPreview => local_preview::create_chat_completion(request).await,
-    }
+    registry::resolve_entry(&request.provider)?
+        .require_chat()?
+        .create_chat_completion(request)
+        .await
 }
 
 #[cfg(test)]
@@ -487,7 +463,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_provider_dispatch() {
-        let error = resolve_provider_id("openai").unwrap_err();
+        let error = registry::resolve_entry("openai").unwrap_err();
 
         assert!(matches!(error.kind, ProviderErrorKind::InvalidRequest));
         assert!(error.message.contains("openai"));
