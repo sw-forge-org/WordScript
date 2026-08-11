@@ -360,10 +360,14 @@ struct SoakLog {
 }
 
 impl SoakLog {
-    /// Deliberately NOT the runtime log. The soak writes thousands of lines
-    /// over a night and the runtime log rotates at 4 MB — folding them together
-    /// would push out the very capture history the soak is meant to be compared
-    /// against.
+    /// Deliberately NOT the runtime log, but not for volume: measured, a night
+    /// writes about 390 lines and 65 kB, which would displace nothing.
+    ///
+    /// The reason is that a soak segment is not a capture. Its lines are
+    /// deliberately byte-for-byte the ones a capture writes, so interleaving
+    /// them into the runtime log would put hundreds of entries that no session
+    /// produced into the history the soak exists to be compared against — and
+    /// the reader could no longer tell which is which.
     fn new(path: Option<PathBuf>) -> Self {
         let path = path.unwrap_or_else(|| {
             crate::core::paths::user_data_dir()

@@ -135,6 +135,23 @@ none of them runs anything. `default-run = "wordscript"` in `[package]` fixes
 it, and the episode is the reason `CLAUDE.md` requires shell-, window- and
 Tauri-bound changes to be checked in the host rather than in a preview.
 
+**Correction, same day: the log-volume figure above is wrong.** The Decision
+section justifies a separate log partly with "a night of soaking writes
+thousands of lines". Measured over a full 300 s segment it writes **four lines
+per segment — about 390 lines and 65 kB for an eight-hour night**, which would
+displace nothing at a 4 MB rotation. The separation is still right, for the
+reason that survives measurement: a soak segment is not a capture, and its lines
+are deliberately identical to a capture's, so interleaving them would put
+hundreds of entries no session produced into the history the soak is compared
+against. Left standing rather than rewritten, because these records are
+append-only and a number that was guessed should be visible as one.
+
+**Measured cost of a night** (2026-08-11, release build, default 300 s
+segments): peak RSS 30.3 MB by `VmHWM` across a full rotation, 3.73 s of CPU per
+330 s — **1.13 % of one core**, roughly 5–6 minutes of CPU for eight hours. The
+sample buffer is hard-capped per segment at `segment_seconds × rate × channels`,
+so a stalled stream cannot grow it: 300 s caps at 50.5 MB of samples.
+
 **The instrument caught itself once already.** The first 20 s run against real
 hardware ended with a segment reading `missing_ratio=1.0000` -- a 3 ms remainder
 of the rotation, reported as a total loss. It was fabricated damage produced by
