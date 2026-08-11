@@ -59,8 +59,15 @@ open, and its cost had never been measured.
   does not draw a picker for a choice the runtime does not read.
 - **The `what` line carries the cost, because the cost is the point.** ADR 0077
   named "one extra model call per dictation" as the thing worth stating rather
-  than discovering on a bill. The row says it is extra, says it runs in every
-  mode including Verbatim, and says the first words are used when it fails.
+  than discovering on a bill, and the row says so in 78 characters: *"Names the
+  transcript file — one extra model call per dictation, in every mode."*
+
+  **It first shipped at 228 and the native host is what caught it.** The
+  Verbatim ruling and the fallback were both in the row; jsdom sees a correct
+  string and WebKitGTK draws four lines against neighbours that take one, in a
+  budget of ≤ 90 characters on one line. Both facts are already recorded — the
+  ruling in ADR 0087, the fallback in ADR 0077 — which is where a fact that does
+  not fit a row belongs.
 
 **Measured, both ends, in this leg:**
 

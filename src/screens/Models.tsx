@@ -1225,10 +1225,18 @@ function ModelsTab({
 
                     It sits last in Writing rather than in `Runs no model`,
                     because it runs one — and the cost it owes the reader is that
-                    the call is EXTRA, not that it exists. */}
+                    the call is EXTRA, not that it exists.
+
+                    THE SENTENCE IS 78 CHARACTERS BECAUSE THE NATIVE HOST SAID
+                    SO. It first shipped at 228 — the Verbatim ruling and the
+                    fallback both in the row — which jsdom sees as a correct
+                    string and WebKitGTK draws as four lines against neighbours
+                    that take one. The copy budget is ≤ 90 on one line, and the
+                    two facts that went are in ADR 0087 and ADR 0077, which is
+                    where a fact that does not fit belongs. */}
                 <JobNone
                   name="Titles"
-                  why="Names the transcript file, once per dictation and in every mode — Verbatim included, because naming a document is not rewriting it. One extra call; the first words of the text are used when no model is set or the call fails."
+                  why="Names the transcript file — one extra model call per dictation, in every mode."
                   control={<StatusBadge tone="plan">Runs the assistant's model</StatusBadge>}
                 />
               </JobList>
