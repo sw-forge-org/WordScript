@@ -4,7 +4,11 @@ import { cn } from "@/lib/utils";
 interface CardProps {
   /** The card's own head, inside the card. A group of cards is headed by `SectionHeader`. */
   title?: React.ReactNode;
-  /** One line, at most 90 characters. */
+  /** One line. That is about 66 CHARACTERS, not the 90 this said until Leg 11
+   *  measured it: `.ws-card-head > p` draws at 436 px in the settings sheet and
+   *  a 90-character description wraps to two. 90 was never measured — it was
+   *  carried from `SectionHeader`, whose paragraph is a different width again
+   *  because the section's action shares its row. */
   description?: React.ReactNode;
   /** The action that acts on this card's content. Rendered as the card's foot. */
   footer?: React.ReactNode;

@@ -164,26 +164,38 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
     void readMonitors();
   }, [active, asked, rescan, readMonitors]);
 
-  const defaultDevice = devices.find((device) => device.is_default) ?? null;
   const hasExplicitDevice = Boolean(config.audio_device.trim());
-  const selectedDeviceLabel = hasExplicitDevice
-    ? config.audio_device
-    : defaultDevice?.name ?? DEFAULT_DEVICE_LABEL;
   const selectedDeviceAvailable =
     !hasExplicitDevice || devices.some((device) => device.name === config.audio_device);
 
-  /* The pre-port area's own sentence, and the one the drawing carries: which
-     microphone the NEXT capture takes, plus the two cases where that answer is
-     not the obvious one. */
-  const deviceHint = deviceError
-    ? deviceError
-    : captureStatus?.is_recording && captureStatus.device_name
-      ? `Current capture is still using ${captureStatus.device_name}. Any new mic selection applies to the next recording.`
-      : !selectedDeviceAvailable
-        ? `Saved microphone is not available right now. WordScript will fall back to ${
-            defaultDevice?.name ?? "the system default microphone"
-          } on the next capture.`
-        : `Next capture will use ${selectedDeviceLabel}.`;
+  /* THIS ROW'S ONE-LINE BUDGET IS RUNTIME DATA, NOT A NUMBER ANYONE CAN WRITE
+     DOWN. `.ws-sel` is `width: auto`, so the Select is as wide as the longest
+     device name the machine reports, and `.ws-row-ctl` is `flex: none`, so
+     every one of those pixels comes off the text column. Measured in the host
+     on a machine whose devices are ordinary, the control took 377 px of 542 and
+     left the hint 165 — about TWENTY-SIX characters per line. The four
+     sentences this ternary used to build ran 46 to 124 characters and drew two,
+     four and five lines beside an `Input level` row that draws one.
+
+     Leg 10's rule was that a copy budget is a function of the control beside
+     it. This row is the sharper case: the control's width is a function of what
+     the runtime put IN it, so the budget is not knowable when the sentence is
+     written. A row in that position cannot carry a sentence at all.
+
+     A SHORTER SENTENCE WAS NOT THE FIX, and measuring the first attempt is
+     what showed it: with the sheet at 457 px the control took 377 and left the
+     text column EIGHTY PIXELS — about twelve characters — so a 24-character
+     replacement still drew two lines. The row cannot hold a sentence of any
+     length, so it is not given one.
+
+     Each state goes where it has room instead. A change landing on the next
+     capture is standing and on the card. An unavailable device is exceptional
+     and gets the Note below, which spans the card at about seventy characters
+     a line. What is left on the row is an ERROR — which must be shown whole,
+     wrapping and all, because truncating it would be a lie about the runtime.
+     The `<option>` already reads "<name> — not available", so the row was
+     repeating its own control in the state it most needed to be readable. */
+  const deviceHint = deviceError ?? undefined;
 
   const placement: OverlayPositionMode = config.overlay_position_mode ?? "preset";
   const usesPreset = placement === "preset";
@@ -193,6 +205,14 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
     monitors.find((monitor) => monitor.id === monitorValue) ??
     monitors.find((monitor) => monitor.is_primary) ??
     null;
+  /* THE SAME DEFECT AS `Input device`, one card down and invisible in manual
+     placement — which is the state this machine is in, so no screenshot of it
+     was ever going to show the row at all. `label` is what the Display Select
+     above holds, `<name> (Primary)`, and putting it in the Anchor hint made the
+     row repeat the control that sets its own width. The drawing names the
+     monitor "DP-1" where its Select holds "DP-1 (2560×1440) — primary": the
+     short form is the one that belongs in a sentence. */
+  const monitorName = selectedMonitor?.label.replace(/\s*\(Primary\)$/, "") ?? null;
   const anchorLabel =
     OVERLAY_ANCHORS.find((anchor) => anchor.value === anchorValue)?.label.toLowerCase() ??
     "the chosen anchor";
@@ -210,7 +230,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
       <ViewTop title="General" lead="Microphone, sound and where the overlay appears." banner={banner} />
 
       <SectionHeader title="Microphone">
-        <Card>
+        <Card description="A change applies to the next capture, not the one running.">
           <CardRows>
             <Row
               label="Input device"
@@ -269,6 +289,30 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
             </Row>
           </CardRows>
         </Card>
+        {/* THE TWO STATES THE CARD'S STANDING LINE CANNOT CARRY, on the one
+            surface in this section with room for a sentence: a Note spans the
+            card at about seventy characters a line, where the row they came off
+            holds twelve. Each names a DEVICE, which is the part neither the
+            card nor the `<option>` label says, and a device name is the very
+            thing that made the row unfittable.
+
+            A running capture wins over a missing device because it is about to
+            end and the other is not. This is also what still reads
+            `native_capture_status`: the row stopped needing it, and dropping
+            the call with the sentence would have left the command without a
+            caller — the drift ADR 0089 sweeps for, manufactured by a copy fix. */}
+        {!deviceError && captureStatus?.is_recording && captureStatus.device_name && (
+          <Note icon="about">
+            {`Current capture is still using ${captureStatus.device_name}. A new selection applies to the next recording.`}
+          </Note>
+        )}
+        {!deviceError && !captureStatus?.is_recording && !selectedDeviceAvailable && (
+          <Note icon="about">
+            {`Saved microphone is not available right now. WordScript falls back to ${
+              devices.find((device) => device.is_default)?.name ?? "the system default microphone"
+            } on the next capture.`}
+          </Note>
+        )}
       </SectionHeader>
 
       <SectionHeader title="Sound">
@@ -396,7 +440,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
               <Row
                 label="Anchor"
                 hint={`Kept on ${
-                  selectedMonitor?.label ?? "the selected display"
+                  monitorName ?? "the selected display"
                 } at ${anchorLabel} until you drag it somewhere else.`}
                 control={
                   <Select

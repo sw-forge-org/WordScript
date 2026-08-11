@@ -3,7 +3,12 @@ import { cn } from "@/lib/utils";
 
 interface SectionHeaderProps {
   title: React.ReactNode;
-  /** One line, at most 90 characters. Anything longer belongs in `docs/`. */
+  /** One line. Anything longer belongs in `docs/`. HOW LONG "one line" IS
+   *  DEPENDS ON THE `action` BESIDE IT: this paragraph shares its row with the
+   *  section's action, so Leg 11 measured it between 131 px (23 characters) and
+   *  444 px (about 70) on the shipped surfaces. The 90 this said until then was
+   *  never measured and is wrong in both directions — quote the budget with the
+   *  action, or measure the section. */
   description?: React.ReactNode;
   /** A control that acts on the whole section — a count, a sub-tab row, a link. */
   action?: React.ReactNode;

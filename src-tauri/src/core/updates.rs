@@ -72,7 +72,7 @@ pub async fn check_app_update() -> Result<AppUpdateStatus, String> {
     let status = match response {
         Ok(response) if response.status() == StatusCode::NOT_FOUND => release_path_building(
             &current_version,
-            "Commercial release build-up is active, but there are no published WordScript releases yet. Internal draft handoffs stay workflow-only until the first public release exists.",
+            "No published WordScript release exists yet.",
             None,
             None,
             None,
@@ -106,7 +106,7 @@ pub async fn check_app_update() -> Result<AppUpdateStatus, String> {
             runtime_log::record(format!("[WordScript] GitHub release check failed: {error}"));
             check_failed(
                 &current_version,
-                "WordScript could not reach GitHub Releases. The release path is still being assembled, so treat this as workflow diagnostics rather than a ready updater.".to_string(),
+                "WordScript could not reach GitHub Releases.".to_string(),
             )
         }
     };
@@ -114,6 +114,15 @@ pub async fn check_app_update() -> Result<AppUpdateStatus, String> {
     Ok(status)
 }
 
+// A SUMMARY IS ONE FACT AND FITS ONE LINE. Every one of these five used to
+// carry a second clause about the release path not being ready, which is a
+// standing fact about the project rather than a result of the check — and it is
+// stated once, on About's "This build" section header, which has the card's
+// full width. The row that draws these has a badge and a button beside it and
+// holds about 57 characters per line in WebKitGTK; the longest of the five ran
+// 172 and drew three lines. The budget belongs to a row three files away, in
+// another language, and nothing in either toolchain connects the two, so it is
+// written here instead (Leg 11).
 fn classify_release_status(current_version: &str, release: GitHubRelease) -> AppUpdateStatus {
     let release_version = normalize_release_version(&release.tag_name);
     let release_notes = release.body.and_then(|value| trim_optional(value));
@@ -126,7 +135,7 @@ fn classify_release_status(current_version: &str, release: GitHubRelease) -> App
         VersionComparison::NewerReleaseAvailable => AppUpdateStatus {
             current_version: current_version.to_string(),
             status: AppUpdateStatusKind::UpdateAvailable,
-            summary: "A newer GitHub release exists. Treat this as release-track validation until the installer and updater handoff are declared stable.".to_string(),
+            summary: "A newer GitHub release exists.".to_string(),
             release_version,
             release_url: Some(release.html_url),
             release_notes,
@@ -136,7 +145,7 @@ fn classify_release_status(current_version: &str, release: GitHubRelease) -> App
         VersionComparison::CurrentIsLatest | VersionComparison::Unknown => AppUpdateStatus {
             current_version: current_version.to_string(),
             status: AppUpdateStatusKind::UpToDate,
-            summary: "This build matches the latest visible release tag, but the commercial release path is still being tightened before user-facing rollout.".to_string(),
+            summary: "This build matches the latest visible release tag.".to_string(),
             release_version,
             release_url: Some(release.html_url),
             release_notes,

@@ -46,8 +46,8 @@ describe("General", () => {
     expect(invoked).not.toHaveBeenCalled();
   });
 
-  it("lists the microphones this machine has and says which one the next capture takes", async () => {
-    render(<GeneralScreen runtime={createWorkspaceRuntime({ active: true })} />);
+  it("lists the microphones this machine has and lets the control say which one is selected", async () => {
+    const { container } = render(<GeneralScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await waitFor(() => expect(invoked).toHaveBeenCalledWith("list_native_input_devices"));
     const select = (await screen.findByLabelText("Input device")) as HTMLSelectElement;
@@ -56,7 +56,20 @@ describe("General", () => {
       "System default microphone — default",
       "Yeti Nano Analog Stereo",
     ]);
-    expect(screen.getByText("Next capture will use System default microphone.")).toBeInTheDocument();
+
+    /* THE ROW CARRIES NO SENTENCE, and that is a measurement rather than a
+       preference. `.ws-sel` is `width: auto` and `.ws-row-ctl` is `flex: none`,
+       so this Select is as wide as the longest device name the machine reports
+       and takes it off the text column: measured in the host it left EIGHTY
+       pixels, about twelve characters a line, and the four sentences this row
+       used to build drew two, four and five lines beside an `Input level` row
+       that drew one. jsdom reports the string and cannot report the wrap, which
+       is why the rule is asserted here as an absence. Leg 11, ADR 0092. */
+    const deviceRow = select.closest(".ws-row")!;
+    expect(deviceRow.querySelector(".ws-row-hint")).toBeNull();
+    expect(container.querySelector(".ws-card-head > p")).toHaveTextContent(
+      "A change applies to the next capture, not the one running.",
+    );
   });
 
   it("says a saved microphone is gone instead of quietly showing another one", async () => {
@@ -66,9 +79,11 @@ describe("General", () => {
     });
     render(<GeneralScreen runtime={runtime} />);
 
-    expect(
-      await screen.findByText(/Saved microphone is not available right now/),
-    ).toBeInTheDocument();
+    /* On the Note under the card, not on the row: the row holds about twelve
+       characters beside this Select, and the Note spans it at about seventy. */
+    const note = await screen.findByText(/Saved microphone is not available right now/);
+    expect(note.closest(".ws-note")).not.toBeNull();
+    expect(note.closest(".ws-row")).toBeNull();
     // And the stored value is still what the control shows.
     expect(screen.getByLabelText("Input device")).toHaveValue("Unplugged USB mic");
   });

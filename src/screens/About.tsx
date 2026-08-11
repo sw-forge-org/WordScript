@@ -176,7 +176,19 @@ export function AboutScreen({ banner, runtime }: WiredScreenProps) {
     <>
       <ViewTop title="About & Updates" lead="Lightweight speech-to-text for your desktop." banner={banner} />
 
-      <SectionHeader title="This build">
+      {/* THE POLICY IS ON THE HEADER BECAUSE IT WAS ON EVERY SUMMARY. All five
+          `check_app_update` summaries carried the same second clause — that the
+          release path is still being assembled and this is workflow diagnostics
+          rather than a ready updater — and each one paid for it in a row whose
+          control is a badge plus a button. Measured in the host, that row's
+          text column holds about 57 characters per line, and the summary ran
+          172 and drew three against neighbours that draw one. It is one fact
+          about the project, so it is stated once, here, where the header has the
+          card's full width. */}
+      <SectionHeader
+        title="This build"
+        description="Still being assembled, so a check is workflow diagnostics."
+      >
         <Card>
           <CardRows>
             <Row

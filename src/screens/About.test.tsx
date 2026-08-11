@@ -29,7 +29,13 @@ function status(overrides: Partial<AppUpdateStatus> = {}): AppUpdateStatus {
   return {
     current_version: "0.2.2-alpha",
     status: "release_path_building",
-    summary: "Commercial release build-up is active, but there are no published WordScript releases yet.",
+    /* `core::updates`'s own string for this state, verbatim. It is 43
+       characters because the row that draws it holds about 57 beside a badge
+       and a button — the clause it used to carry about the release path not
+       being ready is on the section header now, where it is stated once and has
+       the card's full width (ADR 0092). A mock that keeps the old string is a
+       test asserting copy the runtime no longer produces. */
+    summary: "No published WordScript release exists yet.",
     release_version: null,
     release_url: null,
     release_notes: null,
@@ -68,7 +74,12 @@ describe("About & Updates", () => {
 
     await waitFor(() => expect(invoked).toHaveBeenCalledWith("check_app_update"));
     expect(await screen.findByText("In progress")).toBeInTheDocument();
-    expect(screen.getByText(/no published WordScript releases yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No published WordScript release exists yet/)).toBeInTheDocument();
+    /* And the standing half of what the summary used to say is on the section
+       header, once, rather than repeated by all five summaries (ADR 0092). */
+    expect(
+      screen.getByText("Still being assembled, so a check is workflow diagnostics."),
+    ).toBeInTheDocument();
     /* The drawing's own hint said the same thing as a literal. It is the
        runtime's sentence now, so a published release changes this row without
        anybody editing it. */
