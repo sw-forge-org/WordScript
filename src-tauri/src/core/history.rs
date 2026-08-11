@@ -359,6 +359,18 @@ fn record_entry_with_work_mode(
             provider: request.provider.clone(),
             model: request.model.clone(),
             insert_mode: request.insert_mode.clone(),
+            /* THE LENGTH OF THE AUDIO, NOT OF THE SESSION (ADR 0085).
+               `recorded_seconds` is what arrived from the microphone, which is
+               the thing the `audio:` path beside it points at and the only one
+               of the two a reader can check. `wall_seconds` is the clock, and
+               where the two disagree that disagreement is the defect ADR 0079
+               measures rather than a duration to publish. Absent on every path
+               that measured nothing — a retry, an upload, a record older than
+               the measurement. */
+            duration_ms: request
+                .capture_integrity
+                .as_ref()
+                .map(|integrity| (integrity.recorded_seconds * 1000.0).round().max(0.0) as u64),
             audio_path: request.audio_path.clone(),
             title: request.title.clone(),
         },

@@ -45,6 +45,14 @@ pub struct TranscriptDocument {
     pub provider: String,
     pub model: Option<String>,
     pub insert_mode: Option<NativeInsertMode>,
+    /// How long the audio this text came from actually is, in milliseconds
+    /// (§11.23, ADR 0085).
+    ///
+    /// `None` wherever nobody measured one — a record written before
+    /// `capture_integrity` existed, a retry, an upload. The field is then left
+    /// out of the frontmatter rather than written as zero, which is the same
+    /// rule `profile`, `model` and `audio` already follow.
+    pub duration_ms: Option<u64>,
     /// Present only while the capture is still on disk (ADR 0039).
     pub audio_path: Option<String>,
     /// What the model called this, where one was asked and answered
@@ -220,11 +228,14 @@ fn resolve_path(root: &Path, created_at_ms: u64, slug: &str) -> Option<PathBuf> 
 
 /// The document, as it lands on disk.
 ///
-/// `duration_ms` is in §11.23's frontmatter and is NOT written, because the
-/// history record does not carry one. An invented number in a field somebody
-/// may later read as measurement is worse than an absent field, and this is the
-/// same rule the surface follows (rule 7). It goes in when the record grows a
-/// duration.
+/// `duration_ms` WAS the one §11.23 field with no source, and the note here
+/// said it would go in "when the record grows a duration". The record grew one
+/// three legs later without anybody connecting the two: ADR 0079 put
+/// `capture_integrity` on every entry the native pipeline writes, and
+/// `recorded_seconds` in it is the length of the audio this text was made from
+/// (ADR 0085). It is still absent wherever nothing measured one, because an
+/// invented number in a field somebody may later read as measurement is worse
+/// than an absent field — which is rule 7 with a file instead of a screen.
 fn render(document: &TranscriptDocument) -> Option<String> {
     let at = Local.timestamp_millis_opt(document.created_at_ms as i64).single()?;
 
@@ -241,6 +252,11 @@ fn render(document: &TranscriptDocument) -> Option<String> {
     out.push_str(&format!("provider: {}\n", document.provider));
     if let Some(model) = document.model.as_deref().filter(|v| !v.trim().is_empty()) {
         out.push_str(&format!("model: {model}\n"));
+    }
+    // §11.23 puts it between the model and the delivery, and the order of a
+    // frontmatter block is the order somebody reads it in.
+    if let Some(duration_ms) = document.duration_ms {
+        out.push_str(&format!("duration_ms: {duration_ms}\n"));
     }
     out.push_str(&format!(
         "delivery: {}\n",
@@ -445,6 +461,7 @@ mod tests {
             provider: "groq".to_string(),
             model: Some("whisper-large-v3-turbo".to_string()),
             insert_mode: Some(NativeInsertMode::DirectPaste),
+            duration_ms: None,
             audio_path: None,
             title: None,
         }
@@ -514,11 +531,29 @@ mod tests {
         assert!(rendered.trim_end().ends_with("Ship the thing."));
     }
 
-    /// The field is in §11.23 and the record has no source for it. Asserted so
-    /// that a later leg adding a duration adds it deliberately rather than
-    /// finding an invented one already there.
+    /// The field this test used to assert the ABSENCE of, so that adding it
+    /// would have to be deliberate (ADR 0085). It is deliberate now, and the
+    /// assertion turns over: a measured capture states its length, in §11.23's
+    /// position between the model and the delivery.
     #[test]
-    fn no_duration_is_written_because_the_record_does_not_carry_one() {
+    fn a_measured_capture_states_its_length_in_the_frontmatter() {
+        let mut measured = document("Ship the thing.");
+        measured.duration_ms = Some(8_420);
+        let rendered = render(&measured).expect("rendered");
+        assert!(rendered.contains("duration_ms: 8420\n"));
+
+        let head = rendered.split("---").nth(1).expect("the frontmatter block");
+        let model_at = head.find("model:").expect("model");
+        let duration_at = head.find("duration_ms:").expect("duration");
+        let delivery_at = head.find("delivery:").expect("delivery");
+        assert!(model_at < duration_at && duration_at < delivery_at);
+    }
+
+    /// The other half of the same rule, and the reason the field is an
+    /// `Option`: a retry and an upload measure no capture, and `duration_ms: 0`
+    /// on one of those would be a measurement nobody took.
+    #[test]
+    fn an_unmeasured_capture_leaves_the_duration_out_rather_than_writing_zero() {
         let rendered = render(&document("Ship the thing.")).expect("rendered");
         assert!(!rendered.contains("duration_ms"));
     }
