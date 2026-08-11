@@ -45,6 +45,19 @@ standing. **ADR 0094's other half is still not built** — the provider half of 
 resolution is still the connection's single field — and ADR 0102's acquisition
 half (the OAuth flow) is stage D3, so no vendor accepts a subscription today.
 
+Amended 2026-08-11 by stage A5, which removed the on-disk compatibility layers
+(ADR 0112). **It read `core/config.rs`, `core/providers/groq.rs`,
+`core/shortcut.rs`, `core/backup.rs` and `src/lib/textProfiles.ts` and moved
+only the clauses that described a migration**; it read nothing else. Every path
+that existed to read an older *local* on-disk form is gone — the plaintext key
+in `config.json`, the pre-role and retired-service secret entries, the
+millisecond timeouts, the global `auto_paste`, the shortcut and profile
+migration bodies, the pynput shortcut dialect, the `auto_detect_mode` alias.
+**The two schema counters stay and stamp**, and so does `without_secrets()`,
+which now scrubs nothing and carries a promise instead. **A boundary where
+something foreign arrives kept its tolerance**: `stt_hints` still reaches an
+imported document. The window for this is one release wide and it closed here.
+
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
 The living overview docs (`ARCHITECTURE.md`, `VISION.md`, `REFERENCE.md`,
@@ -332,9 +345,11 @@ UI implementation details, not Rust event names or Tauri channels.
   `ProviderStatus` answers per role in `role_credentials` and folds them into
   the one `credential` block **conservatively**: configured means every role has
   one, because overstating readiness is the fake-state defect and understating
-  it is visible. A pre-role key is adopted onto every role it used to pay for
-  before any write or delete touches it, and the config migration takes a
-  `core::backup` snapshot first. **Still bound to one connection**: with
+  it is visible. There is **one entry per `(provider, role, kind)` and no
+  second place to look**: the pre-role entry name, the retired bundle
+  identifier and the adoption that fanned one string across both roles were
+  removed by ADR 0112, together with the plaintext key an older build wrote
+  into `config.json`. **Still bound to one connection**: with
   ADR 0094's config half unbuilt, the provider half of the resolution is the
   connection's single `provider` field, so "follow the connection" is today the
   only path a job takes.
@@ -426,8 +441,9 @@ choice; Verbatim was measured as an Auto candidate and rejected (see
 `known-issues/auto-mode-verbatim-routing.md`).
 
 Workspace context is collected once per session when the active profile allows it
-(`ProfileModesSettings.collect_workspace_context`, legacy key
-`auto_detect_mode`), and reaches every mode: Auto routing as a category signal,
+(`ProfileModesSettings.collect_workspace_context`; the pre-rename key
+`auto_detect_mode` was accepted as a serde alias until ADR 0112 and is not
+any more). It reaches every mode: Auto routing as a category signal,
 and the cleanup, rewrite and agent prompts as exactly one bounded hint line that
 forbids deriving content from it.
 
@@ -554,12 +570,16 @@ no account. Entities:
   migration remnant read by nothing. `VocabularyRepairCoverage` reports which
   terms clear the repair floor, so the settings panel names that boundary
   without restating it, and every per-row fact is resolved from the runtime's
-  analysis rather than recomputed (ADR 0034). `schema_version` is 4; each
-  migration guards on its own version, so bumping the constant cannot re-run an
-  earlier step, and the version-4 step rewrites no entry -- the frontend mirror
-  writes profiles back at a lower version, so an unconditional rewrite there
-  would relabel learned rows as hand-typed. `stt_hints` and `use_as_prompt_hint`
-  remain migration-only remnants read by nothing. `bias_mode` and `manual_bias`
+  analysis rather than recomputed (ADR 0034). `schema_version` is 4 on both
+  sides and **no migration stands behind it**: ADR 0112 removed all four steps
+  along with the installations that needed them, and what the counter buys now
+  is that the next migration is a one-shot gate rather than a rewrite on every
+  save. A load below the current version stamps it and rewrites no field.
+  `stt_hints` is no longer read from a config -- it stays because an imported
+  `TextRulesDocument` is a v1 payload and the newline string is the only home
+  its schema has for terms, which `text_rules.rs` honours and
+  `textProfileFromRulesDocument` converts. `use_as_prompt_hint` remains a
+  remnant read by nothing. `bias_mode` and `manual_bias`
   are still consulted on the capture path, but no reachable configuration sets
   anything other than the `Conservative` default: ADR 0017 removed the
   bias-policy panel and nothing replaced it.

@@ -270,10 +270,12 @@ describe("Privacy & Data · export, import and reset", () => {
     const added = written.text_profiles[1];
     expect(added.label).toBe("Chosen archive");
     expect(added.prompt).toBe("Imported prompt.");
-    /* THE WORDS SURVIVE THE SCHEMA GAP. The document has nowhere but the legacy
-       string to carry terms, and a profile whose terms live only there reaches
-       no recognizer (ADR 0035) — so the import runs the same migration a disk
-       load runs. */
+    /* THE WORDS SURVIVE THE SCHEMA GAP. The document has nowhere but its
+       newline string to carry terms, and a profile whose terms live only there
+       reaches no recognizer (ADR 0035) — so the import converts them. This is
+       the door ADR 0112 kept when it removed the config migrations: an archive
+       comes from another machine and another build, which this machine's disk
+       does not. */
     expect(added.vocabulary_hints.map((hint: { phrase: string }) => hint.phrase)).toEqual([
       "Postgres",
     ]);

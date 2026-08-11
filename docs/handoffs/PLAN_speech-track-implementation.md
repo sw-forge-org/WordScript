@@ -35,7 +35,10 @@ that changes a count says by how much and why, in its commit.
 across 39 files** — the six extra cases are `b330815`'s sidebar work, not this
 track's. `cargo check` stays at 15. A step compares against the last line here,
 not against the opening one. After A3: `cargo test` **760 passed / 3 ignored**,
-frontend **480 across 39 files** unmoved, `cargo check` still 15.
+frontend **480 across 39 files** unmoved, `cargo check` still 15. **After A5 the
+Rust baseline goes down for the first time**: `cargo test` **742 passed / 3
+ignored** (−18, every one a case that held a migration), frontend **480 across
+39 files** unmoved, `cargo check` still 15.
 
 **The rules no step may break**, restated from the records because a plan is
 where they get quietly dropped: no partial result reaches the session reducer
@@ -700,8 +703,8 @@ Speaking row, so it is flagged rather than assumed.
 | A1 | **done** 2026-08-11 — `core/providers/registry.rs`, the enum gone, four counts unchanged |
 | A2 | **done** 2026-08-11 — `ModelCapabilities` per `(provider, model)`, `speech_synthesis` on the provider, +8 Rust tests |
 | A3 | **done** 2026-08-11 — the secret-store entry keyed `(provider, role, kind)`, `provider_status` per role, the pre-role key adopted onto both roles, +12 Rust tests |
-| A5 | **not started** — added 2026-08-11 (ADR 0112); **runs before A4** |
-| A4 | **not started** — added to this page 2026-08-11; it is the step no record had a position for |
+| A5 | **done** 2026-08-11 — every on-disk compatibility path removed, both schema counters kept, the import door kept, −18 Rust tests |
+| A4 | **not started** — added to this page 2026-08-11; it is the step no record had a position for. **A5 has landed, so it inherits the smaller file and the licence to fall back to defaults** |
 | B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
@@ -874,3 +877,52 @@ added to). `cargo check` 15 warnings unchanged. In `src/` only
 `types/providers.ts` moved, types only, so the frontend suite reads 480 across
 39 files and `npm run port:diff` is `ALL EXACT` — no drawing moved, which for
 this step is the point rather than a side effect.
+
+**A5, as it landed.** Three things the record leaves to whoever implements it,
+and one finding.
+
+**How far "stops accepting pynput tokens" reaches.** Only the six `_l`/`_r`
+modifier spellings. `cmd`, `win`, `command`, `meta`, the browser `event.code`
+names and the key abbreviations (`esc`, `pgup`, `del`) stay, because none of
+them is a sidecar form: `cmd` is what a Tauri accelerator and a macOS user
+write, `ControlLeft` is what the recorder sends, and `parse` is exactly the
+boundary whose tolerance ADR 0112 protects in the same breath as it removes the
+dialect. What is gone is the one spelling nothing living produces. A value still
+holding it now stores unchanged and reads as *not registerable*, which is the
+answer every other unparsable string already gets.
+
+**The `auto_detect_mode` serde alias went too, and it is not on the record's
+inventory.** ADR 0112 lists the frontend fallback in `textProfiles.ts`; that
+fallback's own comment says it exists *because Rust accepts the alias*. Removing
+one half would have left a pair where the surviving side is justified only by
+the side that went. Both go. The frontend half was already dead either way —
+`load_app_config` returns a Rust-serialized struct, so the canonical key is the
+only one a window ever sees.
+
+**The conversion moved rather than went.** The frontend migration and the import
+door were one function, and the plan's *done when* keeps `stt_hints` applying to
+an imported document. So `textProfileFromRulesDocument` converts the newline
+string itself now, and the migration wrapper is gone. This does put a second
+copy of the recognizer's limits (48 characters, four words, four slots) in the
+frontend — a cost paid knowingly, because the runtime still resolves what
+actually reaches the recognizer (`select_recognizer_slots`), so a drift here
+changes what an import creates and never what a capture sends.
+
+**And the finding: the subtraction cost this machine nothing at all.** ADR 0112
+argues from *no published releases*, which makes the developer's own config the
+one file at risk. It was already in the current shape — six profiles, each
+carrying `speech`, `modes` and `capture`, all at schema 4, `shortcut_schema_version`
+2, and not one removed key on disk. So the paths deleted here were not merely
+serving one machine; they were serving no state that machine still holds.
+
+Counts: `cargo test` 742 passed / 3 ignored (**−18**). Deleted: three
+mode-lane migration cases, two `LegacyTextRules` cases, two reseed cases, the
+`auto_paste` roundtrip, six vocabulary and context migration cases, two
+schema-rerun cases, the `auto_detect_mode` alias case, and five pre-role
+credential cases in `groq.rs`. Kept and re-pointed at the rule rather than the
+migration: the disk payload never carrying a credential field, a chosen
+shortcut surviving a schema bump, the stored opt-in deciding no recognizer slot,
+an entry without an origin loading as the user's, a role reading only its own
+entry, and — new, because ADR 0112 asks for it — that a config *this* build
+writes round-trips unchanged. `cargo check` 15 warnings unchanged. The frontend
+suite is unmoved at 480 across 39 files and `npm run port:diff` is `ALL EXACT`.

@@ -320,8 +320,9 @@ export const TRANSLATE_LANGUAGES: { code: string; label: string }[] = [
 ];
 
 export interface ProfileModesSettings {
-  /// Applies to every mode, not only Auto. Persisted under the legacy key
-  /// `auto_detect_mode` in configs written by older builds; Rust accepts both.
+  /// Applies to every mode, not only Auto. The pre-rename key
+  /// `auto_detect_mode` was accepted as a serde alias until ADR 0112; neither
+  /// side reads it now.
   collect_workspace_context: boolean;
   agent_name:              string;
   /// Sets the form of generated text, never its wording. Defaults to "off",

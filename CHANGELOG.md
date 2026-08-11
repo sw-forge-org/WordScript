@@ -53,6 +53,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — the on-disk compatibility layers, while removing them is still free (speech track, stage A5, ADR 0112)
+
+`cargo test` 742 passed / 3 ignored (**−18**: every case that held a migration,
+and none that held a rule — the difference is which sentence the test name
+makes). `cargo check` 15 warnings unchanged. The frontend suite reads **480
+across 39 files, unmoved**, because no frontend case ever held one of these
+migrations: the only one in the area holds the *import* door, and that door
+stays open. `npm run port:diff` is `ALL EXACT` — no drawing moved.
+
+**Nothing was behind any of it.** `docs/STATUS.md` records no published
+versioned releases and `check_app_update` reports the same, so every path below
+served a case that existed on one machine. That machine's config was already in
+the current shape when this landed — all six profiles carrying all three
+sub-blocks at schema 4, no removed key on disk — so the subtraction cost it
+nothing. **The window closes at the first published release**, and this is not a
+precedent for deleting migrations later.
+
+- **The plaintext key in `config.json` is gone**, with the three compatibility
+  layers A3 had to carry over one API key: `AppConfig.legacy_groq_api_key` and
+  its deferred-rewrite branch, the retired bundle identifier
+  `io.github.swbench.wordscript`, and the pre-role entry name `groq_api_key`
+  with the adoption that fanned it across both roles before any write or delete
+  touched it. A credential is now one entry per `(provider, role, kind)` with no
+  second place to look. **A3's rules are untouched** — the fan-out across
+  registered roles, the refusal of an inadmissible kind, and *clearing one role
+  does not clear another* all still hold and still have their tests.
+- **The millisecond timeout fields, the global `auto_paste` shadow field, the
+  `LegacyTextRules` top-level block, the too-early-seeded reseed repair and the
+  global-settings-into-the-active-profile migration** are gone from
+  `core/config.rs`, together with the three `TextProfile` migration bodies.
+- **Both schema counters stay and stamp.** `TEXT_PROFILE_SCHEMA_VERSION` and
+  `shortcut_schema_version` cost a `u32` each and are what keeps the *next*
+  migration a one-shot gate rather than a rewrite on every save — D6's defect,
+  observed 183 times in two runtime logs. A load below the current version now
+  stamps it and rewrites no field.
+- **`AppConfig::without_secrets()` stays and scrubs nothing.** It cleared the
+  one secret an `AppConfig` ever held; the promise it carries — *nothing leaving
+  this runtime holds a secret* — outlives that field, and it is called on every
+  write, export and planned config event, so a later credential field lands
+  inside a function that already exists.
+- **`core/shortcut.rs` stops accepting the pynput dialect** (`ctrl_l`, `alt_r`,
+  `shift_l`), a form only the removed Python sidecar produced (ADR 0091).
+  Everything else a live surface can send is unchanged: the plain modifier word,
+  the platform words for Super, browser `event.code`, key abbreviations and
+  comma separators. **A boundary where something foreign arrives keeps its
+  tolerance** — that is the whole distinction this step turns on.
+- **The `auto_detect_mode` serde alias goes on both sides.** ADR 0112 lists only
+  the frontend fallback, and that fallback existed because the runtime accepted
+  the alias; keeping one half would have left a pair whose one side justifies
+  the other.
+- **The import door is not the config door, and it stayed open.** `stt_hints`
+  survives as a field a foreign document may carry, `text_rules.rs` still
+  honours it, and the conversion into per-entry vocabulary moved out of
+  `migrateLegacyBiasPolicyToVocabularyHints` and into
+  `textProfileFromRulesDocument`, which is the door it was always really
+  serving. An imported archive comes from another machine and another build.
+- **`backup::snapshot_config` is private again.** A3 widened it for the
+  credential migration; with that migration gone, a visibility with no caller
+  behind it is the defect class ADR 0089 and ADR 0103 each swept for. A4 widens
+  it back in the step that needs it.
+- **The price, stated rather than discovered:** a `config.json` written by an
+  earlier build now reads partly as defaults. A pre-seconds timeout, a global
+  `auto_paste`, a pre-work-mode profile set, a profile with no per-profile
+  blocks and a plaintext API key are ignored instead of converted.
+
 ### Added — the provider survey's second pass, and five records from it
 
 Documentation only. `cargo test` 760 passed / 3 ignored and `cargo check` 15

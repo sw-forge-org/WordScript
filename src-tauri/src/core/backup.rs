@@ -91,11 +91,13 @@ fn snapshot_path_for(kind: &str) -> PathBuf {
 /// job is to be exactly what was there, including any field this build does not
 /// know about. A re-serialized config would silently drop those.
 ///
-/// **Visible to the rest of the crate because a migration is the third
-/// destructive door** (ADR 0094, ADR 0105): it replaces what is on disk with
-/// something this build prefers, and the rule that a config is never replaced
-/// without a backup path does not care whether the replacing was asked for.
-pub(crate) fn snapshot_config(kind: &str) -> Result<PathBuf, String> {
+/// **Private again, and deliberately.** A3 widened it to `pub(crate)` for the
+/// credential migration; ADR 0112 removed that migration, and a visibility with
+/// no caller behind it is the same defect class as a registered command with no
+/// caller (ADR 0089, ADR 0103). The next config migration — A4's provider axis
+/// — widens it back in the step that needs it, which is where the reader can
+/// see why.
+fn snapshot_config(kind: &str) -> Result<PathBuf, String> {
     let source = config_file_path();
     let target = snapshot_path_for(kind);
 

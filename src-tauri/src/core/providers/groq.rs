@@ -24,13 +24,10 @@ use super::{
 
 const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
 const GROQ_KEY_SERVICE: &str = "io.github.sw-forge-org.wordscript";
-const LEGACY_GROQ_KEY_SERVICES: &[&str] = &["io.github.swbench.wordscript"];
-/// The entry name every build before the per-role split stored the one key
-/// under (ADR 0105). It is read and migrated, never written again.
-const LEGACY_GROQ_KEY_USER: &str = "groq_api_key";
 /// The roles Groq's key pays for. Held to the registry entry by a test in this
-/// module — the entry is the answer, this list is what the migration fans out
-/// across, and two lists that disagreed would strand a credential.
+/// module — the entry is the answer, this list is what a save with no named
+/// role fans out across, and two lists that disagreed would strand a
+/// credential.
 const GROQ_CREDENTIAL_ROLES: &[ProviderRole] = &[ProviderRole::Speech, ProviderRole::Chat];
 /// **A bearer token is the only shape here, not the chosen one.** Groq sells no
 /// consumer subscription, so there is nothing for a second kind to authenticate
@@ -819,7 +816,7 @@ fn normalize_api_key(api_key: &str) -> Result<String, GroqProviderError> {
 
 /// The secret-store surface used for the Groq key.
 ///
-/// The keyring is process-global OS state, so the legacy-service migration
+/// The keyring is process-global OS state, so every read, write and delete
 /// below sits behind this trait: the tests exercise it against an in-memory
 /// store instead of writing into the developer's real secret store.
 trait SecretStore {
@@ -860,96 +857,32 @@ fn credential_entry_user(role: ProviderRole, kind: CredentialKind) -> String {
     format!("groq.{}.{}", role.as_str(), kind.as_str())
 }
 
-/// Reads the key stored for one role, migrating a pre-role entry on the way.
+/// Reads the key stored for one role.
 ///
 /// `Ok(None)` means no entry this build knows holds a key for that role --
 /// which is a legitimate state, not a store failure, and it is the state that
 /// makes a job inert with a name rather than with a stack trace.
+///
+/// Three fallbacks stood here until ADR 0112 — a retired bundle identifier, the
+/// pre-role entry name, and the adoption that fanned one string across both
+/// roles before anything touched it. Every one of them served a keyring on one
+/// machine whose owner wrote it off, and the adoption logic was the most
+/// delicate code in A3.
 fn read_api_key_from(
     store: &impl SecretStore,
     role: ProviderRole,
     kind: CredentialKind,
 ) -> Result<Option<String>, KeyringError> {
-    if let Some(api_key) = store.read(GROQ_KEY_SERVICE, &credential_entry_user(role, kind))? {
-        return Ok(Some(api_key));
-    }
-
-    // Only the API key ever existed as one string per provider. A kind that
-    // never had a pre-role form has nothing to inherit and must not adopt one.
-    if kind != CredentialKind::ApiKey {
-        return Ok(None);
-    }
-
-    let Some(api_key) = read_legacy_api_key(store)? else {
-        return Ok(None);
-    };
-
-    adopt_legacy_api_key(store, &api_key)?;
-    Ok(Some(api_key))
+    store.read(GROQ_KEY_SERVICE, &credential_entry_user(role, kind))
 }
 
-/// The one key a pre-role build stored, wherever it still sits: under the
-/// current service name or under a retired one.
-fn read_legacy_api_key(store: &impl SecretStore) -> Result<Option<String>, KeyringError> {
-    if let Some(api_key) = store.read(GROQ_KEY_SERVICE, LEGACY_GROQ_KEY_USER)? {
-        return Ok(Some(api_key));
-    }
-
-    for legacy_service in LEGACY_GROQ_KEY_SERVICES {
-        if let Some(api_key) = store.read(legacy_service, LEGACY_GROQ_KEY_USER)? {
-            return Ok(Some(api_key));
-        }
-    }
-
-    Ok(None)
-}
-
-/// Moves the pre-role key onto **every role it used to pay for**, then drops
-/// the old entries.
-///
-/// It lands on all of them rather than on the role being read, because that is
-/// what the single string meant: one key, entered once, that recognition and
-/// cleanup both spent. Migrating only the role that happened to ask first would
-/// leave the other silently inert on the next start. The writes come before the
-/// deletes, so an interrupted migration re-runs instead of losing the key, and
-/// the old entries go so a cleared role cannot be resurrected from them.
-fn adopt_legacy_api_key(store: &impl SecretStore, api_key: &str) -> Result<(), KeyringError> {
-    for role in GROQ_CREDENTIAL_ROLES {
-        store.write(
-            GROQ_KEY_SERVICE,
-            &credential_entry_user(*role, CredentialKind::ApiKey),
-            api_key,
-        )?;
-    }
-
-    clear_legacy_api_keys_in(store)?;
-    runtime_log::record(format!(
-        "groq secret store: moved the stored API key onto one entry per role ({}) and dropped the pre-role entry",
-        GROQ_CREDENTIAL_ROLES
-            .iter()
-            .map(|role| role.as_str())
-            .collect::<Vec<_>>()
-            .join(", "),
-    ));
-
-    Ok(())
-}
-
-/// Writes one role's credential.
-///
-/// A pre-role entry still on disk is adopted **first**: it is somebody's key
-/// for every role, and overwriting one role's entry while it sat there would
-/// drop the other role's credential the moment the old entry is cleaned up.
+/// Writes one role's credential and touches no other entry.
 fn write_api_key_to(
     store: &impl SecretStore,
     role: ProviderRole,
     kind: CredentialKind,
     api_key: &str,
 ) -> Result<(), KeyringError> {
-    if let Some(existing) = read_legacy_api_key(store)? {
-        adopt_legacy_api_key(store, &existing)?;
-    }
-
     store.write(
         GROQ_KEY_SERVICE,
         &credential_entry_user(role, kind),
@@ -959,29 +892,15 @@ fn write_api_key_to(
 
 /// Clears one role's credential and nothing else.
 ///
-/// The pre-role entry is adopted before the delete for the same reason a write
-/// adopts it: left in place it would answer the next read for the role that was
-/// just cleared, and removed outright it would take the other role's key with
-/// it. **Clearing one role never clears another's** (ADR 0105).
+/// **Clearing one role never clears another's** (ADR 0105) — the rule A3
+/// established, which the removal of the pre-role adoption leaves untouched
+/// because the entry names were already one per `(role, kind)`.
 fn clear_api_key_in(
     store: &impl SecretStore,
     role: ProviderRole,
     kind: CredentialKind,
 ) -> Result<(), KeyringError> {
-    if let Some(existing) = read_legacy_api_key(store)? {
-        adopt_legacy_api_key(store, &existing)?;
-    }
-
     store.delete(GROQ_KEY_SERVICE, &credential_entry_user(role, kind))
-}
-
-fn clear_legacy_api_keys_in(store: &impl SecretStore) -> Result<(), KeyringError> {
-    store.delete(GROQ_KEY_SERVICE, LEGACY_GROQ_KEY_USER)?;
-    for legacy_service in LEGACY_GROQ_KEY_SERVICES {
-        store.delete(legacy_service, LEGACY_GROQ_KEY_USER)?;
-    }
-
-    Ok(())
 }
 
 fn secret_store_error(error: KeyringError) -> GroqProviderError {
@@ -1193,14 +1112,6 @@ mod tests {
     }
 
     impl FakeSecretStore {
-        /// A store holding the one pre-role entry, which is what every install
-        /// before ADR 0105 looks like.
-        fn with_legacy_entry(service: &str, secret: &str) -> Self {
-            let store = Self::default();
-            store.set(service, LEGACY_GROQ_KEY_USER, secret);
-            store
-        }
-
         fn set(&self, service: &str, user: &str, secret: &str) {
             self.entries
                 .borrow_mut()
@@ -1255,77 +1166,41 @@ mod tests {
     #[test]
     fn uses_single_neutral_product_namespace_for_key_service() {
         assert_eq!(GROQ_KEY_SERVICE, "io.github.sw-forge-org.wordscript");
-        assert!(LEGACY_GROQ_KEY_SERVICES.contains(&"io.github.swbench.wordscript"));
-        assert!(!LEGACY_GROQ_KEY_SERVICES.contains(&GROQ_KEY_SERVICE));
     }
 
+    /// The roles a save with no named role fans out across are the roles the
+    /// registry registered. Two lists that drifted apart would strand a
+    /// credential under an entry nothing reads.
     #[test]
-    fn moves_a_key_stored_under_a_retired_service_name() {
-        let store =
-            FakeSecretStore::with_legacy_entry("io.github.swbench.wordscript", "gsk_legacy_key");
-
-        let api_key = read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
-            .expect("read must succeed");
-
-        assert_eq!(api_key.as_deref(), Some("gsk_legacy_key"));
-        assert_eq!(
-            store.role_key(ProviderRole::Speech).as_deref(),
-            Some("gsk_legacy_key")
-        );
-        assert_eq!(
-            store.get("io.github.swbench.wordscript", LEGACY_GROQ_KEY_USER),
-            None
-        );
-    }
-
-    /// **The migration ADR 0105 owes**: one string per provider becomes one
-    /// entry per `(provider, role, kind)`, and it lands on every role that
-    /// string used to pay for. Migrating only the role that asked first would
-    /// leave the other inert on the next start, with no user action that
-    /// explains it.
-    #[test]
-    fn a_pre_role_key_lands_on_every_role_it_used_to_pay_for() {
-        let store = FakeSecretStore::with_legacy_entry(GROQ_KEY_SERVICE, "gsk_single_string");
-
-        let api_key = read_api_key_from(&store, ProviderRole::Chat, CredentialKind::ApiKey)
-            .expect("read must succeed");
-
-        assert_eq!(api_key.as_deref(), Some("gsk_single_string"));
-        assert_eq!(
-            store.role_key(ProviderRole::Speech).as_deref(),
-            Some("gsk_single_string"),
-            "the role that did not ask must still be paid for",
-        );
-        assert_eq!(
-            store.role_key(ProviderRole::Chat).as_deref(),
-            Some("gsk_single_string")
-        );
-        assert_eq!(store.get(GROQ_KEY_SERVICE, LEGACY_GROQ_KEY_USER), None);
-    }
-
-    /// The roles the migration fans out across are the roles the registry
-    /// registered. Two lists that drifted apart would strand a credential under
-    /// an entry nothing reads.
-    #[test]
-    fn the_migrated_roles_are_the_roles_the_registry_registered() {
+    fn the_credential_roles_are_the_roles_the_registry_registered() {
         let entry = crate::core::providers::registry::resolve_entry("groq").expect("groq entry");
 
         assert_eq!(entry.roles(), GROQ_CREDENTIAL_ROLES.to_vec());
     }
 
+    /// One entry per `(role, kind)` and no second place to look. The pre-role
+    /// name and the retired service went with ADR 0112, so a role with nothing
+    /// stored answers `None` rather than inheriting another role's key.
     #[test]
-    fn prefers_the_role_entry_over_a_pre_role_one() {
-        let store = FakeSecretStore::with_legacy_entry(GROQ_KEY_SERVICE, "gsk_legacy_key");
+    fn a_role_reads_only_its_own_entry() {
+        let store = FakeSecretStore::default();
         store.set(
             GROQ_KEY_SERVICE,
             &credential_entry_user(ProviderRole::Speech, CredentialKind::ApiKey),
-            "gsk_current_key",
+            "gsk_speech_key",
         );
 
-        let api_key = read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
-            .expect("read must succeed");
-
-        assert_eq!(api_key.as_deref(), Some("gsk_current_key"));
+        assert_eq!(
+            read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+                .expect("read must succeed")
+                .as_deref(),
+            Some("gsk_speech_key"),
+        );
+        assert_eq!(
+            read_api_key_from(&store, ProviderRole::Chat, CredentialKind::ApiKey)
+                .expect("read must succeed"),
+            None,
+        );
     }
 
     #[test]
@@ -1373,56 +1248,6 @@ mod tests {
             read_api_key_from(&store, ProviderRole::Chat, CredentialKind::ApiKey)
                 .expect("read must succeed"),
             None,
-        );
-    }
-
-    #[test]
-    fn clearing_removes_the_pre_role_entry_so_the_key_cannot_return() {
-        let store =
-            FakeSecretStore::with_legacy_entry("io.github.swbench.wordscript", "gsk_legacy_key");
-
-        clear_api_key_in(&store, ProviderRole::Speech, CredentialKind::ApiKey)
-            .expect("clear must succeed");
-
-        assert_eq!(store.role_key(ProviderRole::Speech), None);
-        assert_eq!(
-            store.get("io.github.swbench.wordscript", LEGACY_GROQ_KEY_USER),
-            None
-        );
-        assert_eq!(
-            read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
-                .expect("read must succeed"),
-            None
-        );
-    }
-
-    /// A save while a pre-role entry is still on disk adopts it first. Without
-    /// that, storing a chat key would drop the speech credential the same
-    /// string was paying for.
-    #[test]
-    fn saving_one_role_adopts_the_pre_role_key_for_the_other() {
-        let store =
-            FakeSecretStore::with_legacy_entry("io.github.swbench.wordscript", "gsk_legacy_key");
-
-        write_api_key_to(
-            &store,
-            ProviderRole::Chat,
-            CredentialKind::ApiKey,
-            "gsk_current_key",
-        )
-        .expect("write must succeed");
-
-        assert_eq!(
-            store.role_key(ProviderRole::Chat).as_deref(),
-            Some("gsk_current_key")
-        );
-        assert_eq!(
-            store.role_key(ProviderRole::Speech).as_deref(),
-            Some("gsk_legacy_key"),
-        );
-        assert_eq!(
-            store.get("io.github.swbench.wordscript", LEGACY_GROQ_KEY_USER),
-            None
         );
     }
 

@@ -4,15 +4,11 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
-use super::backup;
 use super::communication_style::{
     CommunicationLength, CommunicationRegister, CommunicationStyle,
 };
 use super::paths::config_file_path;
-use super::providers::{
-    default_provider_id, migrate_legacy_provider_api_key, normalize_provider_value,
-    provider_credentials_configured,
-};
+use super::providers::{default_provider_id, normalize_provider_value};
 use super::runtime_log;
 
 /// Serializes every load -> modify -> save sequence touching `config.json`.
@@ -50,22 +46,15 @@ pub const DEFAULT_AGENT_MODEL: &str = "llama-3.3-70b-versatile";
 pub const DEFAULT_LOCAL_AGENT_MODEL: &str = "llama3.2:latest";
 pub const DEFAULT_AGENT_NAME: &str = "WordScript";
 
-/// Current version of the shortcut half of the config schema. Legacy shortcut
-/// rewrites are gated on this so they run once instead of on every save.
+/// Current version of the shortcut half of the config schema.
+///
+/// **The counter outlives the rewrites it used to gate** (ADR 0112). Versions 1
+/// and 2 rewrote values written by builds nobody runs, and those bodies are
+/// gone; the number stays because it is what makes the *next* shortcut
+/// migration a one-shot gate rather than a rule that fires on every save — the
+/// D6 defect, where a persist-time rewrite silently replaced a value the user
+/// had just chosen.
 pub const SHORTCUT_SCHEMA_VERSION: u32 = 2;
-
-/// The mode lane defaults up to shortcut schema version 1, in the order the
-/// version-2 migration walks them. Kept as a table so the migration recognizes
-/// an untouched old default instead of guessing at a value the user picked.
-const LEGACY_MODE_HOTKEYS: [&str; 7] = [
-    "Ctrl+S",
-    "Ctrl+1",
-    "Ctrl+2",
-    "Ctrl+3",
-    "Ctrl+4",
-    "Ctrl+5",
-    "Ctrl+6",
-];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -576,43 +565,16 @@ pub struct VocabularyHintEntry {
     pub observation_count: u32,
 }
 
-/// Bumped when a profile's shape changes in a way that needs a one-time
-/// migration on load. 1 = pre-vocabulary profiles carrying `stt_hints` as a
-/// free-text blob plus a profile-wide bias policy. 2 = curated profiles whose
-/// context field was seeded with spellings instead of topics (ADR 0032). 3 =
-/// vocabulary entries that predate the learned/user distinction (ADR 0035).
-pub const TEXT_PROFILE_SCHEMA_VERSION: u32 = 4;
-
-/// The curated context fields as they were seeded between 2026-05-25 and
-/// ADR 0032, when the field held spellings rather than the topics its own
-/// description asks for.
+/// The profile shape this build writes.
 ///
-/// Matched byte for byte and never by shape: an edited value must survive
-/// untouched. This is the same restraint `refresh_curated_text_profile_presentation`
-/// documents after the `work_mode` reset — a template may not overwrite what a
-/// user can edit.
-const LEXICAL_SEED_PROMPTS: &[(&str, &str)] = &[
-    (
-        "curated-customer-success",
-        "WordScript\nSEV-1\nSEV-2\nSLA\nRCA\nKB\nStatuspage\nEnterprise plan",
-    ),
-    (
-        "curated-sales",
-        "WordScript\nCRM\nMRR\nACV\nPOC\nROI\nMSA\nMutual Action Plan",
-    ),
-    (
-        "curated-founder-ops",
-        "WordScript\nP&L\nOKR\nQBR\nSOP\n1:1\nBoard update\nBudget variance",
-    ),
-    (
-        "curated-recruiting",
-        "WordScript\nHR\nATS\nHM\nEOD\n1:1\nscorecard\nheadcount",
-    ),
-    (
-        "curated-product-engineering",
-        "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri",
-    ),
-];
+/// **The counter stays; the three migration bodies behind it are gone**
+/// (ADR 0112). Versions 1 to 4 read shapes only this machine ever wrote — a
+/// free-text hint blob, a curated context field seeded with spellings
+/// (ADR 0032), vocabulary entries predating the learned/user distinction
+/// (ADR 0035) — and no installation carries any of them. What the number still
+/// buys is the *next* migration: a step that lands here guards on its own
+/// version, so it runs once instead of rewriting on every save.
+pub const TEXT_PROFILE_SCHEMA_VERSION: u32 = 4;
 
 fn default_text_profile_schema_version() -> u32 {
     1
@@ -623,9 +585,13 @@ pub struct TextProfile {
     pub id: String,
     pub label: String,
     pub prompt: String,
-    /// Legacy free-text hints. Migration-only from schema version 2 onwards:
-    /// read once into `vocabulary_hints`, then left alone. Removed in a later
-    /// release once no config in the wild still carries version 1.
+    /// The free-text hint blob, kept for the door it still arrives through.
+    ///
+    /// **No migration reads it any more** (ADR 0112) — but a `TextRulesDocument`
+    /// is a v1 payload written on somebody else's machine, and the newline
+    /// string is the only place it can carry terms. `text_rules.rs` honours it
+    /// for exactly that case, which is why the field outlives the migration
+    /// that used to consume it. An import door is not the config door.
     #[serde(default)]
     pub stt_hints: String,
     #[serde(default)]
@@ -648,125 +614,25 @@ pub struct TextProfile {
 }
 
 impl TextProfile {
-    /// One-time move from the free-text `stt_hints` blob plus the profile-wide
-    /// bias policy to per-entry vocabulary. Returns whether anything changed.
+    /// Lands the profile on the shape this build writes. Returns whether
+    /// anything changed.
     ///
-    /// Lines the hint filter would have ignored anyway are dropped here too,
-    /// but logged rather than silently lost: they were never reaching Whisper,
-    /// and carrying them forward would only recreate the illusion that they did.
-    /// Runs every pending one-time migration in version order and lands the
-    /// profile on the current schema. Returns whether anything changed.
+    /// **It stamps and nothing else, and that is the whole of it after
+    /// ADR 0112.** Three steps used to run here — the hint blob to per-entry
+    /// vocabulary, the curated context field back to topics, the origin field —
+    /// and each read a shape only this machine ever wrote. They are gone with
+    /// the installations behind them.
     ///
-    /// Each step guards on its own version rather than on the constant, so
-    /// bumping the constant cannot silently re-run a migration that already
-    /// happened.
+    /// What survives is the *place*: the next migration lands in this function,
+    /// behind a guard on its own version number rather than on the constant, so
+    /// it runs once instead of on every save. That distinction is D6's defect
+    /// and the reason the counter was worth keeping when its contents were not.
     pub(crate) fn migrate_to_current_schema(&mut self) -> bool {
-        let mut changed = self.migrate_vocabulary_hints();
-        changed |= self.migrate_lexical_context_seed();
-        changed |= self.migrate_vocabulary_origin();
+        if self.schema_version >= TEXT_PROFILE_SCHEMA_VERSION {
+            return false;
+        }
+
         self.schema_version = TEXT_PROFILE_SCHEMA_VERSION;
-        changed
-    }
-
-    /// Version 1 -> 2. Returns the curated context field to topics where it
-    /// still holds the spellings seeded between 2026-05-25 and ADR 0032.
-    ///
-    /// Nothing moves to `vocabulary_hints`: every acronym in those seeds is
-    /// already a `dictionary_entry`, which is where a dictated form maps to a
-    /// written one, and copying it into the recognizer channel would recreate
-    /// exactly the redundancy ADR 0017 removed.
-    fn migrate_lexical_context_seed(&mut self) -> bool {
-        if self.schema_version >= 3 {
-            return false;
-        }
-
-        let Some((_, lexical_seed)) = LEXICAL_SEED_PROMPTS
-            .iter()
-            .find(|(id, _)| *id == self.id.as_str())
-        else {
-            return false;
-        };
-
-        if self.prompt != *lexical_seed {
-            return false;
-        }
-
-        let Some(seed) = curated_text_profile_seeds()
-            .into_iter()
-            .find(|seed| seed.id == self.id)
-        else {
-            return false;
-        };
-
-        self.prompt = seed.prompt;
-        super::runtime_log::record(format!(
-            "[WordScript] Profile context restored to topics profile={}",
-            self.id,
-        ));
-        true
-    }
-
-    /// Version 3 -> 4: vocabulary entries gained an origin.
-    ///
-    /// Every entry that existed before the runtime could learn one is the
-    /// user's, by definition — nothing was promoting terms yet — and serde's
-    /// default already lands there. So this step deliberately rewrites nothing.
-    ///
-    /// It would be easy to write the loop anyway "to be sure", and it would be
-    /// a defect: the frontend mirror in `textProfiles.ts` writes profiles back
-    /// at the version *it* can produce, so this step also runs over configs
-    /// that already hold learned rows. An unconditional overwrite there would
-    /// quietly relabel every learned term as hand-typed on the next load.
-    ///
-    /// What it does do is report the change, which is what makes the config
-    /// carry the new version number after one load.
-    fn migrate_vocabulary_origin(&mut self) -> bool {
-        if self.schema_version >= 4 {
-            return false;
-        }
-
-        self.schema_version = 4;
-        true
-    }
-
-    fn migrate_vocabulary_hints(&mut self) -> bool {
-        if self.schema_version >= 2 {
-            return false;
-        }
-
-        let filtered =
-            super::transcription_hints::filter_stt_hint_lines(&self.stt_hints);
-
-        // Conservative and Off never forwarded profile terms; only Manual with
-        // the cloud flag opted in. That is the closest honest default.
-        let default_use_as_prompt_hint = matches!(self.work_mode.bias_mode, BiasMode::Manual)
-            && self.work_mode.manual_bias.cloud_include_profile_terms;
-
-        if self.vocabulary_hints.is_empty() {
-            self.vocabulary_hints = filtered
-                .accepted
-                .iter()
-                .enumerate()
-                .map(|(index, phrase)| VocabularyHintEntry {
-                    id: format!("{}-vocab-{index}", self.id),
-                    phrase: phrase.clone(),
-                    use_as_prompt_hint: default_use_as_prompt_hint,
-                    origin: VocabularyHintOrigin::User,
-                    ..VocabularyHintEntry::default()
-                })
-                .collect();
-        }
-
-        if !filtered.ignored.is_empty() {
-            super::runtime_log::record(format!(
-                "[WordScript] Profile vocabulary migration dropped unusable hint lines profile={} count={} lines={:?}",
-                self.id,
-                filtered.ignored.len(),
-                filtered.ignored,
-            ));
-        }
-
-        self.schema_version = 2;
         true
     }
 
@@ -856,18 +722,6 @@ pub(crate) fn select_recognizer_slots(entries: &[VocabularyHintEntry]) -> Vec<St
     selected
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-struct LegacyTextRules {
-    #[serde(default)]
-    prompt: String,
-    #[serde(default)]
-    stt_hints: String,
-    #[serde(default)]
-    dictionary_entries: Vec<DictionaryEntry>,
-    #[serde(default)]
-    snippet_entries: Vec<SnippetEntry>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct LocalProfileDecodeSettings {
     pub profile_id: String,
@@ -942,10 +796,11 @@ impl Default for ProfileSpeechSettings {
 #[serde(default)]
 pub struct ProfileModesSettings {
     /// Whether workspace context is collected for this profile. Read through
-    /// `AppConfig::active_text_profile_collect_workspace_context`; the legacy
-    /// name is kept as a serde alias because the toggle predates the context
-    /// reaching modes other than Auto.
-    #[serde(alias = "auto_detect_mode")]
+    /// `AppConfig::active_text_profile_collect_workspace_context`.
+    ///
+    /// The pre-rename key `auto_detect_mode` was accepted here as a serde alias
+    /// until ADR 0112: it named this toggle back when the context reached Auto
+    /// only, and no config outside this machine ever carried it.
     pub collect_workspace_context: bool,
     pub agent_name: String,
     /// How this profile's agent writes. Defaults to `Off`, so a config written
@@ -1030,8 +885,6 @@ pub enum OverlayAnchor {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
-    #[serde(alias = "groq_api_key", skip_serializing_if = "String::is_empty")]
-    pub legacy_groq_api_key: String,
     pub model: String,
     pub language: String,
     pub active_text_profile_id: String,
@@ -1071,9 +924,10 @@ pub struct AppConfig {
     /// milliseconds.
     #[serde(default = "default_double_tap_window_ms")]
     pub double_tap_window_ms: u64,
-    /// Migration gate for the shortcut lane. Legacy rewrites run once at
-    /// version `0` and never again — a migration that fires on every save
-    /// silently rewrites values the user just chose (D6).
+    /// Migration gate for the shortcut lane. No rewrite is pending today
+    /// (ADR 0112); the number is what keeps the next one a one-shot rule rather
+    /// than one that fires on every save and rewrites what the user just chose
+    /// (D6).
     #[serde(default)]
     pub shortcut_schema_version: u32,
     pub overlay_position_mode: OverlayPositionMode,
@@ -1091,19 +945,6 @@ pub struct AppConfig {
     pub result_actions_timeout_s: u64,
     #[serde(default = "default_mode_select_timeout_s")]
     pub mode_select_timeout_s: u64,
-    // Legacy millisecond fields. Pre-seconds configs stored these; we migrate
-    // them into the new `_s` fields in `normalize_for_runtime` and never write
-    // them again. `#[serde(default)]` = 0 so we can detect "absent in file".
-    #[serde(default, skip_serializing)]
-    pub result_actions_timeout_ms: u64,
-    #[serde(default, skip_serializing)]
-    pub mode_select_timeout_ms: u64,
-    // Legacy global auto_paste. The real per-profile control is
-    // `TextProfileWorkMode.insert_behavior`. This shadow field exists only for
-    // migration (old configs that set `auto_paste: false` are migrated into
-    // `insert_behavior: "clipboard_only"` in `normalize_for_runtime`).
-    #[serde(default = "default_legacy_auto_paste", skip_serializing)]
-    pub auto_paste: bool,
     pub play_sounds: bool,
     #[serde(default = "default_sound_volume")]
     pub sound_volume: f32,
@@ -1187,7 +1028,6 @@ impl Default for AppConfig {
         let default_local_prompt_strength = default_local_prompt_strength().to_string();
 
         Self {
-            legacy_groq_api_key: String::new(),
             model: "whisper-large-v3-turbo".to_string(),
             language: String::new(),
             active_text_profile_id: default_text_profile_id().to_string(),
@@ -1236,9 +1076,6 @@ impl Default for AppConfig {
             silence_timeout_seconds: 30,
             result_actions_timeout_s: 9,
             mode_select_timeout_s: 6,
-            result_actions_timeout_ms: 0,
-            mode_select_timeout_ms: 0,
-            auto_paste: true,
             play_sounds: true,
             sound_volume: default_sound_volume(),
             sound_pack: default_sound_pack(),
@@ -1279,7 +1116,7 @@ impl AppConfig {
             .cloned()
             .or_else(|| self.text_profiles.first().cloned())
             .unwrap_or_else(|| {
-                default_text_profile(String::new(), String::new(), Vec::new(), Vec::new())
+                default_text_profile()
             })
     }
 
@@ -1405,10 +1242,18 @@ impl AppConfig {
         (!trimmed.is_empty()).then(|| trimmed.to_string())
     }
 
+    /// The config as it may leave this runtime.
+    ///
+    /// **It scrubs nothing today, and it is not therefore removable.** Until
+    /// ADR 0112 it cleared `legacy_groq_api_key`, the one secret an `AppConfig`
+    /// ever held; that field is gone and every credential now lives in the OS
+    /// secret store. What remains is the promise: *nothing leaving this runtime
+    /// holds a secret*. It is called on every disk write, on every export and
+    /// on the config-changed event ADR 0108 plans, so a later field that does
+    /// hold one lands inside a function that already exists rather than making
+    /// its author invent the rule again.
     pub fn without_secrets(&self) -> Self {
-        let mut sanitized = self.clone();
-        sanitized.legacy_groq_api_key.clear();
-        sanitized
+        self.clone()
     }
 
     fn load_raw_from_disk() -> Self {
@@ -1417,85 +1262,7 @@ impl AppConfig {
             return Self::default();
         };
 
-        let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(&raw) else {
-            return Self::default();
-        };
-
-        let mut config = serde_json::from_value::<Self>(raw_value.clone()).unwrap_or_default();
-        apply_legacy_text_rules_from_value(&mut config, &raw_value);
-        if should_reseed_curated_text_profiles(&raw_value) {
-            config.curated_profiles_seeded = false;
-        }
-        config
-    }
-
-    fn has_pending_legacy_secret(&self) -> bool {
-        !self.legacy_groq_api_key.trim().is_empty()
-    }
-
-    /// Moves a key out of the config file and into the per-role credential
-    /// store (ADR 0105).
-    ///
-    /// **The snapshot comes first and the migration does not run without one.**
-    /// This is the step that removes a secret from a file the user can read and
-    /// re-keys it under entries only this build knows the names of; if any part
-    /// of that is wrong, the copy next to the config is the only way back. The
-    /// order is `backup`'s own: snapshot, then act.
-    fn try_migrate_legacy_secret(&mut self) -> Result<bool, String> {
-        let legacy_key = self.legacy_groq_api_key.trim().to_string();
-        if legacy_key.is_empty() {
-            return Ok(false);
-        }
-
-        let snapshot = backup::snapshot_config("credential-migration")?;
-
-        self.provider = normalize_provider_value(&self.provider);
-        let credential = migrate_legacy_provider_api_key(&self.provider, &legacy_key)
-            .map_err(|error| error.message)?;
-        self.legacy_groq_api_key.clear();
-
-        runtime_log::record(format!(
-            "[WordScript] Migrated legacy {} API key to {} snapshot={}",
-            self.provider,
-            credential.storage,
-            snapshot.display(),
-        ));
-
-        Ok(true)
-    }
-
-    fn reconcile_legacy_secret_before_save() -> Result<(), String> {
-        let mut disk_config = Self::load_raw_from_disk();
-        if !disk_config.has_pending_legacy_secret() {
-            return Ok(());
-        }
-
-        disk_config.provider = normalize_provider_value(&disk_config.provider);
-
-        match disk_config.try_migrate_legacy_secret() {
-            Ok(true) => {
-                disk_config.save_to_disk()?;
-                Ok(())
-            }
-            Ok(false) => Ok(()),
-            Err(error) => {
-                if provider_credentials_configured(&disk_config.provider)
-                    .map_err(|provider_error| provider_error.message)?
-                {
-                    runtime_log::record(format!(
-                        "[WordScript] Dropping unresolved legacy {} API key from disk because a provider credential is already configured after migration failed: {}",
-                        disk_config.provider,
-                        error,
-                    ));
-                    return Ok(());
-                }
-
-                Err(
-                    "Could not migrate the legacy Groq key to the OS secret store. Save the key again in Provider & Models before saving settings."
-                        .to_string(),
-                )
-            }
-        }
+        serde_json::from_str::<Self>(&raw).unwrap_or_default()
     }
 
     /// Returns whether normalization rewrote a profile's `work_mode`, so
@@ -1540,15 +1307,6 @@ impl AppConfig {
             &mut self.local_profile_decode_settings,
             active_local_decode,
         );
-        // Migrate legacy millisecond timeout fields into the new seconds fields.
-        // A non-zero `_ms` value from an old config means the file predated the
-        // rename; we convert it to seconds (rounded) and clear the legacy field.
-        if self.result_actions_timeout_ms > 0 && self.result_actions_timeout_s == default_result_actions_timeout_s() {
-            self.result_actions_timeout_s = (self.result_actions_timeout_ms + 500) / 1000;
-        }
-        if self.mode_select_timeout_ms > 0 && self.mode_select_timeout_s == default_mode_select_timeout_s() {
-            self.mode_select_timeout_s = (self.mode_select_timeout_ms + 500) / 1000;
-        }
         // Clamp all timeout fields to technically realistic ranges.
         // Max recording: 1–30 minutes (60–1800s). Groq free tier caps at
         // ~25 MiB ≈ 13 min; dev tier at ~100 MiB ≈ 53 min. Local preview has
@@ -1571,22 +1329,6 @@ impl AppConfig {
         self.sound_pack = super::sound::SoundPack::from_str_or_default(&self.sound_pack)
             .as_str()
             .to_string();
-        self.result_actions_timeout_ms = 0;
-        self.mode_select_timeout_ms = 0;
-        // Migrate legacy global `auto_paste: false` into per-profile
-        // `insert_behavior: "clipboard_only"`. Only affects profiles whose
-        // `insert_behavior` is not already explicitly `"clipboard_only"` (i.e.
-        // profiles still on the old default `"auto_paste"` whose user clearly
-        // wanted clipboard-only globally).
-        if !self.auto_paste {
-            for profile in &mut self.text_profiles {
-                let behavior = profile.work_mode.normalized().insert_behavior;
-                if behavior != "clipboard_only" {
-                    profile.work_mode.insert_behavior = "clipboard_only".to_string();
-                }
-            }
-        }
-        self.auto_paste = false;
         migrate_shortcut_schema(self);
         self.hold_watchdog_seconds = self.hold_watchdog_seconds.min(3600);
         // Below ~150 ms a deliberate double tap is hard to hit; above ~1 s two
@@ -1617,12 +1359,7 @@ impl AppConfig {
     /// canonical form.
     fn normalize_text_profiles(&mut self) -> bool {
         if self.text_profiles.is_empty() {
-            self.text_profiles.push(default_text_profile(
-                String::new(),
-                String::new(),
-                Vec::new(),
-                Vec::new(),
-            ));
+            self.text_profiles.push(default_text_profile());
         }
 
         if !self.curated_profiles_seeded {
@@ -1724,15 +1461,6 @@ impl AppConfig {
 
         let mut should_save = false;
 
-        match config.try_migrate_legacy_secret() {
-            Ok(migrated) => should_save |= migrated,
-            Err(error) => runtime_log::record(format!(
-                "[WordScript] Legacy provider key migration deferred: {error}"
-            )),
-        }
-
-        should_save |= config.migrate_global_settings_to_active_profile();
-
         // A `work_mode` rewrite counts towards `should_save`. It did not before,
         // which is why a non-canonical `insert_behavior` could be corrected in
         // memory on every load and never written back — see
@@ -1747,88 +1475,11 @@ impl AppConfig {
                 config.abort_hotkey.clone(),
             );
 
-        if should_save && !config.has_pending_legacy_secret() {
+        if should_save {
             let _ = config.save_to_disk();
-        } else if should_save {
-            runtime_log::record(
-                "[WordScript] Deferred config rewrite because a legacy provider key is still pending migration."
-                    .to_string(),
-            );
         }
 
         config
-    }
-
-    /// Migrates global settings into the active profile's per-profile sub-objects.
-    /// Returns true if any migration was performed.
-    fn migrate_global_settings_to_active_profile(&mut self) -> bool {
-        let active_index = self
-            .text_profiles
-            .iter()
-            .position(|p| p.id == self.active_text_profile_id)
-            .unwrap_or(0);
-
-        if active_index >= self.text_profiles.len() {
-            return false;
-        }
-
-        let mut migrated = false;
-        let profile = &mut self.text_profiles[active_index];
-
-        // Migrate speech settings if not already present
-        if profile.speech.is_none() {
-            profile.speech = Some(ProfileSpeechSettings {
-                provider: self.provider.clone(),
-                model: self.model.clone(),
-                language: self.language.clone(),
-                language_locked: false,
-                correction_model: self.correction_model.clone(),
-                local_correction_model: self.local_correction_model.clone(),
-                agent_model: self.agent_model.clone(),
-                local_agent_model: self.local_agent_model.clone(),
-                local_model: self.local_model.clone(),
-                local_profile: self.local_profile.clone(),
-                local_prompt_strength: self.local_prompt_strength.clone(),
-                local_prompt_carry: self.local_prompt_carry,
-                local_beam_size: self.local_beam_size,
-                local_best_of: self.local_best_of,
-                local_profile_prompt_settings: self.local_profile_prompt_settings.clone(),
-                local_profile_decode_settings: self.local_profile_decode_settings.clone(),
-            });
-            migrated = true;
-        }
-
-        // Migrate modes settings if not already present. The three cleanup flags
-        // are deliberately not carried over: the mode owns that behavior now, so
-        // copying them would recreate values nothing reads. The communication
-        // style has no global predecessor to migrate from and stays at its
-        // default, which emits no style block.
-        if profile.modes.is_none() {
-            profile.modes = Some(ProfileModesSettings {
-                collect_workspace_context: self.auto_detect_mode,
-                agent_name: self.agent_name.clone(),
-                ..ProfileModesSettings::default()
-            });
-            migrated = true;
-        }
-
-        // Migrate capture settings if not already present
-        if profile.capture.is_none() {
-            profile.capture = Some(ProfileCaptureSettings {
-                max_recording_seconds: self.max_recording_seconds,
-                silence_timeout_seconds: self.silence_timeout_seconds,
-            });
-            migrated = true;
-        }
-
-        if migrated {
-            runtime_log::record(
-                "[WordScript] Migrated global settings into active profile's per-profile sub-objects."
-                    .to_string(),
-            );
-        }
-
-        migrated
     }
 
     pub fn save_to_disk(&self) -> Result<(), String> {
@@ -1910,14 +1561,11 @@ pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<A
     // a value, so two fields that pass a raw-value check can still collide on
     // disk — a state the validator would have approved and registration would
     // then reject.
-    // Hold the config file lock across the legacy-secret reconcile + normalize
-    // + write so a parallel read-modify-write command (e.g.
-    // set_active_profile_processing_mode from the mode hotkey, or a
-    // resolve_current_processing_mode re-save) cannot read a stale file and
-    // write it back over this change — the cause of "settings switch back to
-    // clipboard only". `reconcile_legacy_secret_before_save` does its own
-    // load -> maybe-save for the legacy provider key; it is now inside the
-    // same locked section so that write can't race this one either.
+    // Hold the config file lock across normalize + write so a parallel
+    // read-modify-write command (e.g. set_active_profile_processing_mode from
+    // the mode hotkey, or a resolve_current_processing_mode re-save) cannot
+    // read a stale file and write it back over this change — the cause of
+    // "settings switch back to clipboard only".
     // A settings save carries the whole config, so it is a second way to change
     // the active profile — by picking another one, or by deleting the active
     // one and letting normalization fall back to the first. Both land in the
@@ -1936,7 +1584,6 @@ pub fn save_config<R: Runtime>(app: AppHandle<R>, config: AppConfig) -> Result<A
     }
 
     let sanitized = with_config_file_lock(|| {
-        AppConfig::reconcile_legacy_secret_before_save()?;
         let mut sanitized = config.without_secrets();
         sanitized.normalize_for_runtime();
         validate_hotkey_collisions(&sanitized)?;
@@ -2076,10 +1723,6 @@ fn default_mode_select_timeout_s() -> u64 {
     6
 }
 
-fn default_legacy_auto_paste() -> bool {
-    true
-}
-
 fn default_sound_volume() -> f32 {
     super::sound::DEFAULT_VOLUME
 }
@@ -2174,87 +1817,23 @@ fn normalize_shortcut_value(value: &str, allow_modifier_only: bool) -> String {
     )
 }
 
-/// One-shot migration of shortcut values written by older builds. Runs only
-/// while `shortcut_schema_version` is below the current version, so a value the
-/// user chose today can never be rewritten by a legacy rule tomorrow.
+/// Stamps the shortcut schema version onto a config below it.
 ///
-/// Version 1: the pre-contract normalizer dropped the trailing key of
-/// `ctrl_l+win+space`, `ctrl_l+cmd+space` and `ctrl_l+alt_l+space` on every
-/// save, which turned the Windows default hotkey into a modifier-only shortcut
-/// and made those three combinations unselectable. Configs written by that
-/// build therefore hold the truncated value; there is nothing to repair, but
-/// the version is recorded so the truncation cannot come back.
+/// **Two rewrites used to run here and both are gone** (ADR 0112): version 1
+/// recorded that a pre-contract normalizer had truncated three space
+/// combinations, and version 2 moved an untouched mode lane from `Ctrl` to
+/// `Alt`. Each existed for configs written by builds nobody runs.
 ///
-/// Version 2: the whole mode lane moved from `Ctrl` to `Alt` (`Ctrl+S` ->
-/// `Alt+S`, `Ctrl+1`-`Ctrl+6` -> `Alt+1`-`Alt+6`). A slot that still holds
-/// exactly its old default is moved along, so an installation that never
-/// touched the binding ends up on the new standard instead of keeping the save
-/// and tab-switching grabs forever. Every other value — a shortcut the user
-/// assigned, an empty slot meaning "disabled", and a `Ctrl+…` value re-entered
-/// after this migration ran — is left alone, because the version gate makes
-/// this a one-shot rule.
+/// The stamp stays because the gate is the point. A shortcut migration that
+/// fires on every save rewrites the value the user chose a second ago — D6,
+/// observed — so the next one lands here, below its own version number, and
+/// runs once.
 fn migrate_shortcut_schema(config: &mut AppConfig) {
     if config.shortcut_schema_version >= SHORTCUT_SCHEMA_VERSION {
         return;
     }
 
-    if config.shortcut_schema_version < 2 {
-        migrate_mode_lane_from_ctrl_to_alt(config);
-    }
-
     config.shortcut_schema_version = SHORTCUT_SCHEMA_VERSION;
-}
-
-/// Moves every mode slot that still holds its pre-version-2 `Ctrl` default onto
-/// the matching `Alt` default.
-///
-/// A slot is skipped when its new value is already held by a hotkey that is not
-/// itself migrating — a user who put `Alt+2` on mode auto by hand must not have
-/// mode verbatim migrated on top of it, because a colliding pair cannot be
-/// registered and would leave both bindings dead.
-fn migrate_mode_lane_from_ctrl_to_alt(config: &mut AppConfig) {
-    let replacements = [
-        default_mode_picker_hotkey(),
-        default_mode_auto_hotkey(),
-        default_mode_verbatim_hotkey(),
-        default_mode_cleanup_hotkey(),
-        default_mode_rewrite_hotkey(),
-        default_mode_agent_hotkey(),
-        default_mode_prompt_enhance_hotkey(),
-    ];
-    let mut slots = [
-        &mut config.mode_picker_hotkey,
-        &mut config.mode_auto_hotkey,
-        &mut config.mode_verbatim_hotkey,
-        &mut config.mode_cleanup_hotkey,
-        &mut config.mode_rewrite_hotkey,
-        &mut config.mode_agent_hotkey,
-        &mut config.mode_prompt_enhance_hotkey,
-    ];
-
-    let moves: Vec<bool> = slots
-        .iter()
-        .zip(LEGACY_MODE_HOTKEYS)
-        .map(|(slot, legacy)| normalize_shortcut_value(slot, true) == legacy)
-        .collect();
-
-    let mut taken: Vec<String> = [&config.hotkey, &config.pause_hotkey, &config.abort_hotkey]
-        .into_iter()
-        .map(|value| normalize_shortcut_value(value, true))
-        .collect();
-    taken.extend(
-        slots
-            .iter()
-            .zip(&moves)
-            .filter(|(_, moving)| !**moving)
-            .map(|(slot, _)| normalize_shortcut_value(slot, true)),
-    );
-
-    for ((slot, moving), replacement) in slots.iter_mut().zip(moves).zip(replacements) {
-        if moving && !taken.contains(&replacement) {
-            **slot = replacement;
-        }
-    }
 }
 
 fn default_local_prompt_strength() -> &'static str {
@@ -2552,24 +2131,24 @@ fn normalize_manual_bias(value: &ManualBias) -> ManualBias {
     }
 }
 
-fn default_text_profile(
-    prompt: String,
-    stt_hints: String,
-    dictionary_entries: Vec<DictionaryEntry>,
-    snippet_entries: Vec<SnippetEntry>,
-) -> TextProfile {
+/// The profile every fresh install starts from.
+///
+/// It took a prompt, a hint blob and two rule lists until ADR 0112, because
+/// `apply_legacy_text_rules_from_value` built the first profile out of a
+/// pre-profile config's four top-level fields. That path is gone and every
+/// remaining caller passed empties, so the parameters went with it.
+fn default_text_profile() -> TextProfile {
     TextProfile {
         id: default_text_profile_id().to_string(),
         label: default_text_profile_label().to_string(),
-        prompt,
-        stt_hints,
-        // A freshly built profile has nothing to migrate.
+        prompt: String::new(),
+        stt_hints: String::new(),
         vocabulary_hints: Vec::new(),
         schema_version: TEXT_PROFILE_SCHEMA_VERSION,
         work_mode: TextProfileWorkMode::default(),
         curation: TextProfileCuration::default(),
-        dictionary_entries,
-        snippet_entries,
+        dictionary_entries: Vec::new(),
+        snippet_entries: Vec::new(),
         speech: None,
         modes: None,
         capture: None,
@@ -2582,12 +2161,7 @@ fn curated_text_profile_seeds() -> Vec<TextProfile> {
 }
 
 fn default_seeded_text_profiles() -> Vec<TextProfile> {
-    let mut profiles = vec![default_text_profile(
-        String::new(),
-        String::new(),
-        Vec::new(),
-        Vec::new(),
-    )];
+    let mut profiles = vec![default_text_profile()];
     profiles.extend(curated_text_profile_seeds());
     profiles
 }
@@ -2633,104 +2207,42 @@ fn refresh_curated_text_profile_presentation(text_profiles: &mut [TextProfile]) 
     }
 }
 
-fn legacy_text_rules_present(legacy: &LegacyTextRules) -> bool {
-    !legacy.prompt.trim().is_empty()
-        || !legacy.stt_hints.trim().is_empty()
-        || !legacy.dictionary_entries.is_empty()
-        || !legacy.snippet_entries.is_empty()
-}
-
-fn raw_has_persisted_text_profiles(raw_value: &serde_json::Value) -> bool {
-    raw_value
-        .get("text_profiles")
-        .and_then(|profiles| profiles.as_array())
-        .map(|profiles| !profiles.is_empty())
-        .unwrap_or(false)
-}
-
-fn should_reseed_curated_text_profiles(raw_value: &serde_json::Value) -> bool {
-    let Some(profiles) = raw_value
-        .get("text_profiles")
-        .and_then(|profiles| profiles.as_array())
-    else {
-        return false;
-    };
-
-    if profiles.is_empty() {
-        return false;
-    }
-
-    match raw_value
-        .get("curated_profiles_seeded")
-        .and_then(|value| value.as_bool())
-    {
-        Some(false) | None => return true,
-        Some(true) => {}
-    }
-
-    let has_curated_profile = profiles.iter().any(|profile| {
-        profile
-            .get("curation")
-            .and_then(|curation| curation.get("curated"))
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false)
-    });
-    if has_curated_profile {
-        return false;
-    }
-
-    // Legacy profile configs from before the work-mode rollout were incorrectly
-    // treated as already seeded and therefore never received the included baselines.
-    profiles
-        .iter()
-        .all(|profile| profile.get("work_mode").is_none())
-}
-
-fn apply_legacy_text_rules_from_value(config: &mut AppConfig, raw_value: &serde_json::Value) {
-    if raw_has_persisted_text_profiles(raw_value) {
-        return;
-    }
-
-    let legacy = serde_json::from_value::<LegacyTextRules>(raw_value.clone()).unwrap_or_default();
-    if !legacy_text_rules_present(&legacy) {
-        return;
-    }
-
-    config.text_profiles = vec![default_text_profile(
-        legacy.prompt,
-        legacy.stt_hints,
-        legacy.dictionary_entries,
-        legacy.snippet_entries,
-    )];
-    config.active_text_profile_id = default_text_profile_id().to_string();
-    config.curated_profiles_seeded = false;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// **The promise, not the field it used to be about.** `without_secrets`
+    /// scrubbed `legacy_groq_api_key` until ADR 0112 removed it, and an
+    /// identity function is easy to mistake for a dead one. What it guards is
+    /// the payload: every write, export and event goes through it, so a field
+    /// added later that does hold a credential must be scrubbed here rather
+    /// than reach a file the user can read.
     #[test]
-    fn disk_config_payload_never_contains_groq_key() {
-        let config = AppConfig {
-            legacy_groq_api_key: "gsk_secret_value".to_string(),
-            ..AppConfig::default()
-        };
+    fn disk_config_payload_never_carries_a_credential_field() {
+        let serialized = serde_json::to_string(&AppConfig::default().without_secrets())
+            .expect("serialize config");
 
-        let serialized =
-            serde_json::to_string(&config.without_secrets()).expect("serialize config");
-
-        assert!(!serialized.contains("gsk_secret_value"));
-        assert!(!serialized.contains("legacy_groq_api_key"));
-        assert!(!serialized.contains("groq_api_key"));
+        for name in ["api_key", "groq_api_key", "token", "secret", "password"] {
+            assert!(
+                !serialized.contains(name),
+                "a config field named like a credential ('{name}') reached the disk payload",
+            );
+        }
     }
 
     #[test]
-    fn normalizes_legacy_shortcuts_to_the_canonical_contract_form() {
-        assert_eq!(normalize_shortcut_value("ctrl_l, win", true), "Ctrl+Super");
-        assert_eq!(normalize_shortcut_value("ctrl_l+alt_l", true), "Ctrl+Alt");
+    fn normalizes_alternate_spellings_to_the_canonical_contract_form() {
+        // The tolerance that stays: comma separators, `event.code` names from
+        // the recorder, and the platform words for Super. What went with
+        // ADR 0112 is the pynput dialect (`ctrl_l`), which only the removed
+        // sidecar ever wrote.
+        assert_eq!(normalize_shortcut_value("ctrl, win", true), "Ctrl+Super");
+        assert_eq!(
+            normalize_shortcut_value("ControlLeft+AltLeft", true),
+            "Ctrl+Alt"
+        );
         assert_eq!(normalize_shortcut_value("Ctrl+F9", true), "Ctrl+F9");
-        assert_eq!(normalize_shortcut_value("ctrl_l+f9", true), "Ctrl+F9");
+        assert_eq!(normalize_shortcut_value("ctrl+f9", true), "Ctrl+F9");
     }
 
     #[test]
@@ -2738,15 +2250,15 @@ mod tests {
         // D6: these three used to lose their trailing key on every save, which
         // silently rewrote the Windows default hotkey to a modifier-only value.
         assert_eq!(
-            normalize_shortcut_value("ctrl_l+alt_l+space", true),
+            normalize_shortcut_value("ctrl+alt+space", true),
             "Ctrl+Alt+Space"
         );
         assert_eq!(
-            normalize_shortcut_value("ctrl_l+win+space", true),
+            normalize_shortcut_value("ctrl+win+space", true),
             "Ctrl+Super+Space"
         );
         assert_eq!(
-            normalize_shortcut_value("ctrl_l+cmd+space", true),
+            normalize_shortcut_value("ctrl+cmd+space", true),
             "Ctrl+Super+Space"
         );
     }
@@ -2775,7 +2287,7 @@ mod tests {
         let mut config = AppConfig {
             hotkey: "f1".to_string(),
             abort_hotkey: "f4".to_string(),
-            pause_hotkey: "ctrl_l+f10".to_string(),
+            pause_hotkey: "ctrl+f10".to_string(),
             ..AppConfig::default()
         };
 
@@ -2791,13 +2303,13 @@ mod tests {
         // D5: the old normalizer lowercased unknown tokens and stored a value
         // that could never register, with the failure visible only in a toast.
         let mut config = AppConfig {
-            mode_cleanup_hotkey: "ctrl_l+florp".to_string(),
+            mode_cleanup_hotkey: "ctrl+florp".to_string(),
             ..AppConfig::default()
         };
 
         config.normalize_for_runtime();
 
-        assert_eq!(config.mode_cleanup_hotkey, "ctrl_l+florp");
+        assert_eq!(config.mode_cleanup_hotkey, "ctrl+florp");
     }
 
     #[test]
@@ -2817,89 +2329,35 @@ mod tests {
         assert_eq!(config.shortcut_schema_version, before.shortcut_schema_version);
     }
 
+    /// A slot the user chose is never rewritten from below. The version-2 rule
+    /// that moved an untouched `Ctrl` mode lane onto `Alt` went with ADR 0112,
+    /// but the property it was gated for is the one that outlives it: bumping
+    /// the schema must leave every assigned value alone.
     #[test]
-    fn the_untouched_ctrl_mode_lane_moves_to_alt() {
-        // Schema version 2: an installation that never touched the mode lane
-        // must land on `Alt+S` and `Alt+1`-`Alt+6` instead of keeping the save
-        // and tab-switching grabs. The raw legacy spellings count too, because
-        // the migration runs before normalization.
-        let mut config = AppConfig {
-            shortcut_schema_version: 1,
-            mode_picker_hotkey: "ctrl_l+s".to_string(),
-            mode_auto_hotkey: "Ctrl+1".to_string(),
-            mode_verbatim_hotkey: "Ctrl+2".to_string(),
-            mode_cleanup_hotkey: "Ctrl+3".to_string(),
-            mode_rewrite_hotkey: "Ctrl+4".to_string(),
-            mode_agent_hotkey: "ctrl_l+5".to_string(),
-            mode_prompt_enhance_hotkey: "Ctrl+6".to_string(),
-            ..AppConfig::default()
-        };
-
-        config.normalize_for_runtime();
-
-        assert_eq!(config.mode_picker_hotkey, "Alt+S");
-        assert_eq!(config.mode_auto_hotkey, "Alt+1");
-        assert_eq!(config.mode_verbatim_hotkey, "Alt+2");
-        assert_eq!(config.mode_cleanup_hotkey, "Alt+3");
-        assert_eq!(config.mode_rewrite_hotkey, "Alt+4");
-        assert_eq!(config.mode_agent_hotkey, "Alt+5");
-        assert_eq!(config.mode_prompt_enhance_hotkey, "Alt+6");
-        assert_eq!(config.shortcut_schema_version, SHORTCUT_SCHEMA_VERSION);
-        assert!(validate_hotkey_collisions(&config).is_ok());
-    }
-
-    #[test]
-    fn a_chosen_mode_shortcut_survives_the_default_change() {
-        // Only untouched old defaults move. A shortcut the user assigned stays,
-        // an empty slot stays disabled, and a `Ctrl+…` value re-entered after
-        // the migration ran is never taken away again — the version gate makes
-        // the rule one-shot.
+    fn a_chosen_mode_shortcut_survives_a_schema_bump() {
         let mut config = AppConfig {
             shortcut_schema_version: 1,
             mode_picker_hotkey: "Ctrl+Alt+M".to_string(),
             mode_auto_hotkey: String::new(),
+            mode_agent_hotkey: "Ctrl+5".to_string(),
             ..AppConfig::default()
         };
 
         config.normalize_for_runtime();
+
         assert_eq!(config.mode_picker_hotkey, "Ctrl+Alt+M");
-        assert_eq!(config.mode_auto_hotkey, "");
-
-        let mut reassigned = AppConfig {
-            mode_picker_hotkey: "Ctrl+S".to_string(),
-            ..AppConfig::default()
-        };
-
-        reassigned.normalize_for_runtime();
-        assert_eq!(reassigned.mode_picker_hotkey, "Ctrl+S");
-    }
-
-    #[test]
-    fn the_migration_never_moves_a_slot_onto_an_occupied_shortcut() {
-        // A user who put `Alt+2` on mode auto by hand must not get mode
-        // verbatim migrated on top of it: a colliding pair cannot be registered
-        // and would leave both bindings dead.
-        let mut config = AppConfig {
-            shortcut_schema_version: 1,
-            mode_auto_hotkey: "Alt+2".to_string(),
-            mode_verbatim_hotkey: "Ctrl+2".to_string(),
-            ..AppConfig::default()
-        };
-
-        config.normalize_for_runtime();
-
-        assert_eq!(config.mode_auto_hotkey, "Alt+2");
-        assert_eq!(config.mode_verbatim_hotkey, "Ctrl+2");
-        assert!(validate_hotkey_collisions(&config).is_ok());
+        assert_eq!(config.mode_auto_hotkey, "", "an empty slot stays disabled");
+        assert_eq!(config.mode_agent_hotkey, "Ctrl+5");
+        assert_eq!(config.shortcut_schema_version, SHORTCUT_SCHEMA_VERSION);
     }
 
     #[test]
     fn collision_validation_sees_normalized_values() {
-        // D7: `ctrl_l+f9` and `Ctrl+F9` are the same grab. Validating raw
+        // D7: `ControlLeft+F9` and `Ctrl+F9` are the same grab. Validating raw
         // values let two spellings of one combination through.
         let config = AppConfig {
             hotkey: "Ctrl+F9".to_string(),
-            mode_agent_hotkey: "ctrl_l+f9".to_string(),
+            mode_agent_hotkey: "ControlLeft+F9".to_string(),
             ..AppConfig::default()
         };
 
@@ -2956,7 +2414,7 @@ mod tests {
     #[test]
     fn collision_validation_skips_unparsable_values() {
         let config = AppConfig {
-            mode_agent_hotkey: "ctrl_l+florp".to_string(),
+            mode_agent_hotkey: "ctrl+florp".to_string(),
             ..AppConfig::default()
         };
 
@@ -3107,59 +2565,6 @@ mod tests {
                 prompt_carry: true,
             }
         );
-    }
-
-    #[test]
-    fn migrates_legacy_text_rules_into_the_default_profile() {
-        let raw_value = serde_json::json!({
-            "prompt": "Product names and internal jargon",
-            "stt_hints": "status update\nincident review",
-            "dictionary_entries": [
-                {
-                    "id": "dict-brand",
-                    "phrase": "word script",
-                    "replace_with": "WordScript"
-                }
-            ],
-            "snippet_entries": [
-                {
-                    "id": "snippet-follow-up",
-                    "label": "Follow-up",
-                    "trigger": "follow up",
-                    "expansion": "Thanks for the update."
-                }
-            ]
-        });
-
-        let mut config = AppConfig {
-            active_text_profile_id: String::new(),
-            text_profiles: Vec::new(),
-            curated_profiles_seeded: false,
-            ..AppConfig::default()
-        };
-
-        apply_legacy_text_rules_from_value(&mut config, &raw_value);
-        config.normalize_for_runtime();
-
-        assert_eq!(config.active_text_profile_id, "general");
-        assert!(config.curated_profiles_seeded);
-        assert!(config.text_profiles.len() >= 6);
-
-        let general_profile = config
-            .text_profiles
-            .iter()
-            .find(|profile| profile.id == "general")
-            .expect("general profile");
-
-        assert_eq!(general_profile.label, "General writing");
-        assert_eq!(general_profile.prompt, "Product names and internal jargon");
-        assert_eq!(general_profile.stt_hints, "status update\nincident review");
-        assert_eq!(general_profile.dictionary_entries.len(), 1);
-        assert_eq!(general_profile.snippet_entries.len(), 1);
-        assert!(config
-            .text_profiles
-            .iter()
-            .any(|profile| profile.curation.curated));
     }
 
     #[test]
@@ -3404,48 +2809,42 @@ mod tests {
         );
     }
 
+    /// **The shape this build writes still round-trips** — the assertion
+    /// ADR 0112 asks for, because a removal must not touch it. The reported
+    /// "settings switch back to clipboard only" came from the global
+    /// `auto_paste` shadow field forcing a profile back on load; the field is
+    /// gone, and the delivery mode a save carries has to survive the trip
+    /// regardless.
     #[test]
-    fn frontend_save_roundtrip_without_legacy_auto_paste_keeps_auto_paste_profile() {
-        // The frontend AppConfig has no top-level `auto_paste` field (removed in
-        // the mode-hotkey commit); on the Rust side it is `#[serde(default =
-        // default_legacy_auto_paste, skip_serializing)]`. A save_config call
-        // therefore deserializes a config WITHOUT auto_paste, which must default
-        // to `true` so the legacy-migration branch (`if !self.auto_paste`) does
-        // NOT force an auto_paste profile back to clipboard_only. This test
-        // reproduces the reported "settings switch back to clipboard only" by
-        // round-tripping through JSON the way save_config does.
-        let raw = serde_json::json!({
-            "active_text_profile_id": "general",
-            "text_profiles": [{
-                "id": "general",
-                "label": "General writing",
-                "prompt": "",
-                "stt_hints": "",
-                "work_mode": {
-                    "rewrite_style": "polished",
-                    "insert_behavior": "auto_paste",
-                    "recovery_behavior": "standard",
-                    "processing_mode": "auto",
-                },
-                "curation": { "curated": false, "audience": "", "summary": "", "highlights": [] },
-                "dictionary_entries": [],
-                "snippet_entries": [],
-                "speech": null,
-                "modes": null,
-                "capture": null,
-            }],
-            "result_actions_timeout_s": 9,
-            "mode_select_timeout_s": 6,
-        });
+    fn a_config_written_by_this_build_round_trips_unchanged() {
+        let mut written = AppConfig::default();
+        written.text_profiles[0].work_mode.insert_behavior = "auto_paste".to_string();
+        written.normalize_for_runtime();
 
-        let mut config: AppConfig = serde_json::from_value(raw).unwrap();
-        // auto_paste must have defaulted to true (absent in JSON).
-        assert!(config.auto_paste, "legacy auto_paste must default to true when absent");
-        config.normalize_for_runtime();
-        let active = config.active_text_profile();
+        let raw = serde_json::to_value(written.without_secrets()).expect("serialize config");
+        let mut reloaded: AppConfig = serde_json::from_value(raw).expect("deserialize config");
+
+        assert!(
+            !reloaded.normalize_for_runtime(),
+            "a config this build wrote must need no rewrite on the next load",
+        );
         assert_eq!(
-            active.work_mode.insert_behavior, "auto_paste",
-            "auto_paste profile must NOT be migrated to clipboard_only on a frontend save roundtrip"
+            reloaded.active_text_profile().work_mode.insert_behavior,
+            "auto_paste",
+        );
+        assert_eq!(reloaded.hotkey, written.hotkey);
+        assert_eq!(
+            reloaded.result_actions_timeout_s,
+            written.result_actions_timeout_s,
+        );
+        assert_eq!(
+            reloaded.shortcut_schema_version,
+            SHORTCUT_SCHEMA_VERSION,
+            "the counter this build stamps has to come back off disk",
+        );
+        assert_eq!(
+            reloaded.active_text_profile().schema_version,
+            TEXT_PROFILE_SCHEMA_VERSION,
         );
     }
 
@@ -3503,80 +2902,6 @@ mod tests {
     }
 
     #[test]
-    fn repairs_legacy_profile_configs_that_were_marked_seeded_too_early() {
-        let raw_value = serde_json::json!({
-            "active_text_profile_id": "general",
-            "text_profiles": [
-                {
-                    "id": "general",
-                    "label": "General writing",
-                    "prompt": "",
-                    "stt_hints": "",
-                    "curation": {
-                        "curated": false,
-                        "audience": "",
-                        "summary": "",
-                        "highlights": []
-                    },
-                    "dictionary_entries": [],
-                    "snippet_entries": []
-                }
-            ],
-            "curated_profiles_seeded": true
-        });
-
-        assert!(should_reseed_curated_text_profiles(&raw_value));
-
-        let mut config = serde_json::from_value::<AppConfig>(raw_value.clone()).unwrap_or_default();
-        apply_legacy_text_rules_from_value(&mut config, &raw_value);
-        if should_reseed_curated_text_profiles(&raw_value) {
-            config.curated_profiles_seeded = false;
-        }
-        config.normalize_for_runtime();
-
-        assert!(config.curated_profiles_seeded);
-        assert!(config
-            .text_profiles
-            .iter()
-            .any(|profile| profile.id == "curated-customer-success" && profile.curation.curated));
-        assert!(config
-            .text_profiles
-            .iter()
-            .any(|profile| profile.id == "curated-sales" && profile.curation.curated));
-    }
-
-    #[test]
-    fn does_not_reseed_current_shape_configs_after_curated_profiles_were_removed() {
-        let raw_value = serde_json::json!({
-            "active_text_profile_id": "general",
-            "text_profiles": [
-                {
-                    "id": "general",
-                    "label": "General writing",
-                    "prompt": "",
-                    "stt_hints": "",
-                    "work_mode": {
-                        "rewrite_style": "clean",
-                        "insert_behavior": "auto_paste",
-                        "recovery_behavior": "standard"
-                    },
-                    "curation": {
-                        "curated": false,
-                        "audience": "",
-                        "summary": "",
-                        "highlights": []
-                    },
-                    "dictionary_entries": [],
-                    "snippet_entries": []
-                }
-            ],
-            "curated_profiles_seeded": true
-        });
-
-        assert!(!should_reseed_curated_text_profiles(&raw_value));
-    }
-
-    #[test]
     fn active_text_profile_falls_back_to_first_profile_without_legacy_mirrors() {
         let config = AppConfig {
             active_text_profile_id: "missing".to_string(),
@@ -3603,67 +2928,6 @@ mod tests {
         assert_eq!(active_profile.prompt, "profile prompt");
         assert_eq!(active_profile.stt_hints, "profile hint");
         assert_eq!(active_profile.work_mode, TextProfileWorkMode::default());
-        assert!(active_profile.dictionary_entries.is_empty());
-        assert!(active_profile.snippet_entries.is_empty());
-    }
-
-    #[test]
-    fn ignores_legacy_text_rules_when_profiles_are_already_persisted() {
-        let raw_value = serde_json::json!({
-            "prompt": "legacy prompt should stay unused",
-            "stt_hints": "legacy hint",
-            "dictionary_entries": [
-                {
-                    "id": "legacy-dict",
-                    "phrase": "word script",
-                    "replace_with": "WordScript"
-                }
-            ],
-            "snippet_entries": [
-                {
-                    "id": "legacy-snippet",
-                    "label": "Status",
-                    "trigger": "status update",
-                    "expansion": "Legacy expansion"
-                }
-            ],
-            "text_profiles": [
-                {
-                    "id": "general",
-                    "label": "General writing",
-                    "prompt": "profile prompt",
-                    "stt_hints": "profile hint",
-                    "dictionary_entries": [],
-                    "snippet_entries": []
-                }
-            ]
-        });
-
-        let mut config = AppConfig {
-            active_text_profile_id: "general".to_string(),
-            text_profiles: vec![TextProfile {
-                id: "general".to_string(),
-                label: "General writing".to_string(),
-                prompt: "profile prompt".to_string(),
-                stt_hints: "profile hint".to_string(),
-                work_mode: TextProfileWorkMode::default(),
-                curation: TextProfileCuration::default(),
-                dictionary_entries: Vec::new(),
-                snippet_entries: Vec::new(),
-                    speech: None,
-                    modes: None,
-                    capture: None,
-                ..TextProfile::default()
-            }],
-            curated_profiles_seeded: true,
-            ..AppConfig::default()
-        };
-
-        apply_legacy_text_rules_from_value(&mut config, &raw_value);
-
-        let active_profile = config.active_text_profile();
-        assert_eq!(active_profile.prompt, "profile prompt");
-        assert_eq!(active_profile.stt_hints, "profile hint");
         assert!(active_profile.dictionary_entries.is_empty());
         assert!(active_profile.snippet_entries.is_empty());
     }
@@ -3753,60 +3017,30 @@ mod tests {
         assert_eq!(work_mode.effective_processing_mode(), ProcessingMode::Rewrite);
     }
 
+    /// The per-entry opt-in decides nothing about the recognizer's slots
+    /// (ADR 0035). It was the control a user set on their most important terms,
+    /// which are the long product names — exactly the ones `vocabulary_repair`
+    /// restores afterwards — so the runtime allocates the slots instead. The
+    /// field still round-trips because the surface writes it; nothing reads it.
     #[test]
-    fn vocabulary_migration_turns_free_text_hints_into_entries() {
-        let mut profile = TextProfile {
+    fn the_stored_opt_in_no_longer_decides_the_recognizer_slots() {
+        let build = |use_as_prompt_hint: bool| TextProfile {
             id: "support".to_string(),
-            stt_hints: "status update\ntriage summary".to_string(),
-            schema_version: 1,
+            vocabulary_hints: ["Kubernetes", "Statuspage"]
+                .iter()
+                .enumerate()
+                .map(|(index, phrase)| VocabularyHintEntry {
+                    id: format!("support-vocab-{index}"),
+                    phrase: (*phrase).to_string(),
+                    use_as_prompt_hint,
+                    ..VocabularyHintEntry::default()
+                })
+                .collect(),
             ..TextProfile::default()
         };
 
-        assert!(profile.migrate_to_current_schema());
-
-        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
-        assert_eq!(
-            profile
-                .vocabulary_hints
-                .iter()
-                .map(|entry| entry.phrase.as_str())
-                .collect::<Vec<_>>(),
-            vec!["status update", "triage summary"]
-        );
-        // Nothing was learning terms before schema 4, so every migrated row is
-        // the user's. Stated rather than inherited from a derive.
-        assert!(profile
-            .vocabulary_hints
-            .iter()
-            .all(|entry| entry.origin == VocabularyHintOrigin::User));
-    }
-
-    /// The old per-entry opt-in still round-trips so an older config loads, but
-    /// it no longer decides anything. A profile that had it switched on must
-    /// not get a different recognizer prompt than one that did not (ADR 0035).
-    #[test]
-    fn the_migrated_opt_in_no_longer_decides_the_recognizer_slots() {
-        let build = |bias_mode: BiasMode| {
-            let mut profile = TextProfile {
-                id: "support".to_string(),
-                stt_hints: "Kubernetes\nStatuspage".to_string(),
-                schema_version: 1,
-                work_mode: TextProfileWorkMode {
-                    bias_mode,
-                    manual_bias: ManualBias {
-                        cloud_include_profile_terms: true,
-                        ..ManualBias::default()
-                    },
-                    ..TextProfileWorkMode::default()
-                },
-                ..TextProfile::default()
-            };
-            profile.migrate_to_current_schema();
-            profile
-        };
-
-        let opted_in = build(BiasMode::Manual);
-        let opted_out = build(BiasMode::Conservative);
+        let opted_in = build(true);
+        let opted_out = build(false);
 
         assert!(opted_in.vocabulary_hints[0].use_as_prompt_hint);
         assert!(!opted_out.vocabulary_hints[0].use_as_prompt_hint);
@@ -3814,91 +3048,6 @@ mod tests {
             opted_in.recognizer_slot_phrases(),
             opted_out.recognizer_slot_phrases()
         );
-    }
-
-    #[test]
-    fn vocabulary_migration_runs_once() {
-        let mut profile = TextProfile {
-            id: "support".to_string(),
-            stt_hints: "status update".to_string(),
-            schema_version: 1,
-            ..TextProfile::default()
-        };
-
-        assert!(profile.migrate_to_current_schema());
-        profile.vocabulary_hints[0].phrase = "triage summary".to_string();
-
-        assert!(!profile.migrate_to_current_schema());
-        assert_eq!(profile.vocabulary_phrases(), vec!["triage summary"]);
-    }
-
-    #[test]
-    fn context_migration_restores_topics_on_an_untouched_lexical_seed() {
-        let mut profile = TextProfile {
-            id: "curated-product-engineering".to_string(),
-            prompt: "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri".to_string(),
-            schema_version: 2,
-            ..TextProfile::default()
-        };
-
-        assert!(profile.migrate_to_current_schema());
-
-        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
-        assert!(profile.prompt.contains("platform constraints"));
-        assert!(!profile.prompt.contains("SDK"));
-    }
-
-    /// The whole safety of this migration is the byte match. A user who edited
-    /// one character owns that field, and a template may not take it back.
-    #[test]
-    fn context_migration_never_touches_an_edited_field() {
-        let edited = "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri\nKubernetes";
-        let mut profile = TextProfile {
-            id: "curated-product-engineering".to_string(),
-            prompt: edited.to_string(),
-            schema_version: 2,
-            ..TextProfile::default()
-        };
-
-        profile.migrate_to_current_schema();
-
-        assert_eq!(profile.prompt, edited);
-        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
-    }
-
-    /// Installs seeded before 2026-05-25 already hold topics. They must be
-    /// left alone rather than matched by shape and rewritten.
-    #[test]
-    fn context_migration_leaves_a_profile_that_already_holds_topics() {
-        let topics = "feature names\nbug IDs\nrelease scope";
-        let mut profile = TextProfile {
-            id: "curated-product-engineering".to_string(),
-            prompt: topics.to_string(),
-            schema_version: 2,
-            ..TextProfile::default()
-        };
-
-        profile.migrate_to_current_schema();
-
-        assert_eq!(profile.prompt, topics);
-    }
-
-    #[test]
-    fn context_migration_runs_once() {
-        let mut profile = TextProfile {
-            id: "curated-sales".to_string(),
-            prompt: "WordScript\nCRM\nMRR\nACV\nPOC\nROI\nMSA\nMutual Action Plan".to_string(),
-            schema_version: 2,
-            ..TextProfile::default()
-        };
-
-        assert!(profile.migrate_to_current_schema());
-        let migrated = profile.prompt.clone();
-
-        // A user who types the old seed back in owns it from here on.
-        profile.prompt = "WordScript\nCRM\nMRR\nACV\nPOC\nROI\nMSA\nMutual Action Plan".to_string();
-        assert!(!profile.migrate_to_current_schema());
-        assert_ne!(profile.prompt, migrated);
     }
 
     fn vocabulary(entries: &[(&str, u32)]) -> Vec<VocabularyHintEntry> {
@@ -4001,35 +3150,39 @@ mod tests {
         assert_eq!(profile.recognizer_slot_phrases().len(), 4);
     }
 
+    /// **Serde's default, not a migration.** An entry with no `origin` in the
+    /// JSON is the user's, because nothing was promoting terms when that shape
+    /// was written — and the frontend mirror still writes entries, so this is a
+    /// live deserialization rule rather than a step that ran once.
     #[test]
-    fn an_entry_written_before_origins_existed_loads_as_the_users() {
+    fn an_entry_written_without_an_origin_loads_as_the_users() {
         let raw = r#"{
             "id": "support",
             "label": "Support",
             "prompt": "",
             "vocabulary_hints": [{"id": "support-vocab-0", "phrase": "Kubernetes"}],
-            "schema_version": 3,
+            "schema_version": 4,
             "dictionary_entries": [],
             "snippet_entries": []
         }"#;
 
-        let mut profile: TextProfile = serde_json::from_str(raw).expect("profile parses");
-        assert!(profile.migrate_to_current_schema());
+        let profile: TextProfile = serde_json::from_str(raw).expect("profile parses");
 
-        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
         assert_eq!(profile.vocabulary_hints[0].origin, VocabularyHintOrigin::User);
         assert_eq!(profile.vocabulary_hints[0].learned_at_ms, None);
         assert_eq!(profile.vocabulary_phrases(), vec!["Kubernetes"]);
     }
 
-    /// The frontend mirror writes profiles back at the version it can produce,
-    /// so this migration runs over configs that already hold learned rows. It
-    /// must not relabel them — an "overwrite to be sure" here would quietly
-    /// turn every learned term into a hand-typed one on the next load.
+    /// The counter is a gate, and a load that reaches it rewrites nothing —
+    /// which is the whole of what ADR 0112 left standing here. A learned row
+    /// stays learned, an edited context field stays edited, a vocabulary the
+    /// user emptied stays empty.
     #[test]
-    fn the_origin_migration_never_relabels_a_learned_term() {
+    fn landing_on_the_current_schema_rewrites_no_field() {
         let mut profile = TextProfile {
-            id: "support".to_string(),
+            id: "curated-product-engineering".to_string(),
+            prompt: "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri".to_string(),
+            stt_hints: "status update\ntriage summary".to_string(),
             vocabulary_hints: vec![VocabularyHintEntry {
                 id: "support-learned-1".to_string(),
                 phrase: "Kubernetes".to_string(),
@@ -4038,68 +3191,32 @@ mod tests {
                 hit_count: 3,
                 ..VocabularyHintEntry::default()
             }],
-            schema_version: 2,
+            schema_version: 1,
             ..TextProfile::default()
         };
+        let before = profile.clone();
 
-        profile.migrate_to_current_schema();
+        assert!(
+            profile.migrate_to_current_schema(),
+            "a profile below the current version reports the stamp",
+        );
 
+        assert_eq!(profile.schema_version, TEXT_PROFILE_SCHEMA_VERSION);
+        assert_eq!(profile.prompt, before.prompt);
+        assert_eq!(profile.stt_hints, before.stt_hints);
         assert_eq!(
             profile.vocabulary_hints[0].origin,
-            VocabularyHintOrigin::Learned
+            VocabularyHintOrigin::Learned,
         );
         assert_eq!(
             profile.vocabulary_hints[0].learned_at_ms,
-            Some(1_700_000_000_000)
+            Some(1_700_000_000_000),
         );
         assert_eq!(profile.vocabulary_hints[0].hit_count, 3);
-    }
-
-    /// Every migration guards on its own version number rather than on the
-    /// constant. Without that, bumping the constant re-runs every earlier step:
-    /// the version-2 one would resurrect a deleted vocabulary from the legacy
-    /// blob, and the version-3 one would overwrite an edited context field.
-    #[test]
-    fn bumping_the_schema_does_not_rerun_the_earlier_migrations() {
-        let mut profile = TextProfile {
-            id: "curated-product-engineering".to_string(),
-            prompt: "WordScript\nAPI\nSDK\nSQL\nCI/CD\nSLO\nPR\nTauri".to_string(),
-            stt_hints: "status update\ntriage summary".to_string(),
-            vocabulary_hints: Vec::new(),
-            schema_version: 3,
-            ..TextProfile::default()
-        };
-
-        profile.migrate_to_current_schema();
 
         assert!(
-            profile.vocabulary_hints.is_empty(),
-            "the version-2 step re-ran and resurrected a deleted vocabulary"
-        );
-        assert!(
-            profile.prompt.contains("SDK"),
-            "the version-3 step re-ran over a field the user owns: {}",
-            profile.prompt
-        );
-    }
-
-    /// A version-2 profile has already had its vocabulary migrated. Bumping the
-    /// schema constant must not re-run that step over an emptied hint list.
-    #[test]
-    fn bumping_the_schema_does_not_rerun_the_vocabulary_migration() {
-        let mut profile = TextProfile {
-            id: "support".to_string(),
-            stt_hints: "status update\ntriage summary".to_string(),
-            vocabulary_hints: Vec::new(),
-            schema_version: 2,
-            ..TextProfile::default()
-        };
-
-        profile.migrate_to_current_schema();
-
-        assert!(
-            profile.vocabulary_hints.is_empty(),
-            "a deleted vocabulary must not be resurrected from the legacy blob"
+            !profile.migrate_to_current_schema(),
+            "a profile already at the current version must report nothing",
         );
     }
 
@@ -4226,12 +3343,7 @@ mod tests {
         config.agent_name = "GlobalName".to_string();
         config.auto_detect_mode = true;
         config.active_text_profile_id = "p1".to_string();
-        config.text_profiles = vec![default_text_profile(
-            String::new(),
-            String::new(),
-            Vec::new(),
-            Vec::new(),
-        )];
+        config.text_profiles = vec![default_text_profile()];
         config.text_profiles[0].id = "p1".to_string();
         config.text_profiles[0].modes = Some(ProfileModesSettings {
             collect_workspace_context: false,
@@ -4255,15 +3367,6 @@ mod tests {
         config.text_profiles[0].modes = None;
         config.auto_detect_mode = false;
         assert!(!config.active_text_profile_collect_workspace_context());
-    }
-
-    #[test]
-    fn legacy_auto_detect_mode_key_still_deserializes() {
-        // The key was renamed when the context stopped being Auto-only.
-        let modes: ProfileModesSettings =
-            serde_json::from_value(serde_json::json!({ "auto_detect_mode": false }))
-                .expect("legacy key parses");
-        assert!(!modes.collect_workspace_context);
     }
 
     #[test]
@@ -4378,16 +3481,16 @@ mod tests {
     fn collision_test_config() -> AppConfig {
         // All distinct, non-empty hotkeys → no collisions.
         let mut config = AppConfig::default();
-        config.hotkey = "ctrl_l+f9".to_string();
-        config.pause_hotkey = "ctrl_l+f10".to_string();
-        config.abort_hotkey = "ctrl_l+alt_l+escape".to_string();
-        config.mode_picker_hotkey = "ctrl_l+alt_l+m".to_string();
-        config.mode_auto_hotkey = "ctrl_l+f6".to_string();
-        config.mode_verbatim_hotkey = "ctrl_l+f1".to_string();
-        config.mode_cleanup_hotkey = "ctrl_l+f2".to_string();
-        config.mode_rewrite_hotkey = "ctrl_l+f3".to_string();
-        config.mode_agent_hotkey = "ctrl_l+f4".to_string();
-        config.mode_prompt_enhance_hotkey = "ctrl_l+f5".to_string();
+        config.hotkey = "ctrl+f9".to_string();
+        config.pause_hotkey = "ctrl+f10".to_string();
+        config.abort_hotkey = "ctrl+alt+escape".to_string();
+        config.mode_picker_hotkey = "ctrl+alt+m".to_string();
+        config.mode_auto_hotkey = "ctrl+f6".to_string();
+        config.mode_verbatim_hotkey = "ctrl+f1".to_string();
+        config.mode_cleanup_hotkey = "ctrl+f2".to_string();
+        config.mode_rewrite_hotkey = "ctrl+f3".to_string();
+        config.mode_agent_hotkey = "ctrl+f4".to_string();
+        config.mode_prompt_enhance_hotkey = "ctrl+f5".to_string();
         config
     }
 
@@ -4445,9 +3548,9 @@ mod tests {
     #[test]
     fn validate_hotkey_collisions_normalizes_equivalent_forms() {
         let mut config = collision_test_config();
-        // Raw `ctrl_l+alt_l+m` and canonical `Ctrl+Alt+M` must be treated as
+        // Raw `ctrl+alt+m` and canonical `Ctrl+Alt+M` must be treated as
         // the same shortcut.
-        config.mode_auto_hotkey = "ctrl_l+alt_l+m".to_string();
+        config.mode_auto_hotkey = "ctrl+alt+m".to_string();
         config.mode_verbatim_hotkey = "Ctrl+Alt+M".to_string();
         let error = validate_hotkey_collisions(&config).unwrap_err();
         assert!(

@@ -32,7 +32,7 @@ function createProfileId() {
  *  `transform.rs`), and `analyze_text_rules` routes every issue back through
  *  `rule_ids`. Two entries sharing an id make both of those point at the wrong
  *  row, which the analysis reports as `duplicate_rule_id`. */
-function createRuleId(prefix: "dict" | "snippet") {
+function createRuleId(prefix: "dict" | "snippet" | "vocab") {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `${prefix}-${crypto.randomUUID()}`;
   }
@@ -182,16 +182,14 @@ function cloneProfileSpeechSettings(settings?: ProfileSpeechSettings | null): Pr
 function cloneProfileModesSettings(settings?: ProfileModesSettings | null): ProfileModesSettings {
   const defaults = createDefaultProfileModesSettings();
   if (!settings) return defaults;
-  // Configs written before the rename carry `auto_detect_mode`. Rust accepts it
-  // as a serde alias; the UI has to accept the same shape so a profile loaded
-  // from such a config does not read the toggle as undefined and render it off.
-  const legacy = (settings as ProfileModesSettings & { auto_detect_mode?: boolean })
-    .auto_detect_mode;
   return {
     ...defaults,
     ...settings,
+    // Absent in a block written before the toggle existed. The pre-rename key
+    // `auto_detect_mode` was read here too until ADR 0112; the runtime no
+    // longer accepts it either, so there is no second name to fall back to.
     collect_workspace_context:
-      settings.collect_workspace_context ?? legacy ?? defaults.collect_workspace_context,
+      settings.collect_workspace_context ?? defaults.collect_workspace_context,
     // Absent in every config written before the communication style existed.
     // Spreading `settings` over the defaults would put `undefined` back on top
     // of them, and a Select bound to `undefined` renders as uncontrolled.
@@ -303,51 +301,14 @@ export function describeTextProfileWorkMode(
   }`;
 }
 
-/** The version this mirror can honestly produce, which is deliberately not the
- *  runtime's current one (`config.rs` is at 4).
+/** The profile shape this build writes, mirroring `config.rs`.
  *
- *  This file mirrors one migration: the free-text hint blob to per-entry
- *  vocabulary. The later steps — restoring a curated context field to topics,
- *  and the origin field — belong to the runtime and are not reproduced here.
- *  Claiming a higher number would tell the runtime those steps had run. */
-export const TEXT_PROFILE_SCHEMA_VERSION = 2;
-
-/** Mirrors `TextProfile::migrate_vocabulary_hints` in `config.rs`, so unsaved
- *  client state matches what a disk load would produce. Lines the hint filter
- *  would reject are dropped there too; this side only has to agree on shape. */
-export function migrateLegacyBiasPolicyToVocabularyHints(profile: TextProfile): TextProfile {
-  if ((profile.schema_version ?? 1) >= TEXT_PROFILE_SCHEMA_VERSION) {
-    return profile;
-  }
-
-  // Conservative and Off never forwarded profile terms; only Manual with the
-  // cloud flag opted in.
-  const defaultUseAsPromptHint =
-    profile.work_mode?.bias_mode === "manual" &&
-    Boolean(profile.work_mode?.manual_bias?.cloud_include_profile_terms);
-
-  const vocabulary_hints =
-    profile.vocabulary_hints?.length
-      ? profile.vocabulary_hints
-      : (profile.stt_hints ?? "")
-          .split("\n")
-          .map((line) => line.split(/\s+/).filter(Boolean).join(" "))
-          .filter((phrase) => phrase.length > 0 && phrase.length <= 48 && phrase.split(" ").length <= 4)
-          .slice(0, 4)
-          .map((phrase, index) => ({
-            id: `${profile.id}-vocab-${index}`,
-            phrase,
-            use_as_prompt_hint: defaultUseAsPromptHint,
-            // Nothing was learning terms before this migration existed, so a
-            // row it produces is the user's by definition.
-            origin: "user" as const,
-            learned_at_ms: null,
-            hit_count: 0,
-            observation_count: 0,
-          }));
-
-  return { ...profile, vocabulary_hints, schema_version: TEXT_PROFILE_SCHEMA_VERSION };
-}
+ *  It read `2` until ADR 0112, because this file could honestly perform only
+ *  the first of the runtime's four migrations and claiming a higher number
+ *  would have told the runtime the later steps had run. There are no migrations
+ *  left on either side, so a profile the UI creates is a current-shape profile
+ *  and says so. */
+export const TEXT_PROFILE_SCHEMA_VERSION = 4;
 
 export function cloneTextProfile(profile: TextProfile, overrides: Partial<TextProfile> = {}): TextProfile {
   return {
@@ -503,14 +464,16 @@ export function textRulesDocumentFromProfile(profile: TextProfile): {
  * collision would look like a copy to whoever eventually reads the runtime's
  * applied-rules line.
  *
- * IT RUNS THE LEGACY MIGRATION RATHER THAN CONVERTING THE WORDS ITSELF. An
- * imported document IS a v1-shaped payload — terms in the newline string,
- * nothing in `vocabulary_hints` — and the product already owns exactly one
- * function that turns that shape into the current one, mirroring
- * `TextProfile::migrate_vocabulary_hints` in `config.rs`. Converting the string
- * here would be a second copy of the recognizer's own limits (48 characters,
- * four words, four slots), and the copy that drifts is the one that decides an
- * imported word reaches the recognizer when the runtime says it does not.
+ * IT CONVERTS THE WORDS HERE, AND THIS IS THE ONLY PLACE LEFT THAT DOES. The
+ * conversion used to be `migrateLegacyBiasPolicyToVocabularyHints`, a mirror of
+ * `TextProfile::migrate_vocabulary_hints` in `config.rs`, and the import ran it
+ * because a document IS a v1-shaped payload. ADR 0112 removed the runtime
+ * migration — nothing on this machine's disk needs it — but an archive arrives
+ * from somebody else's, and the newline string is still the only home its
+ * schema has for terms. So the conversion moved to the door it was always
+ * really serving. A document whose words stayed in `stt_hints` would reach no
+ * recognizer (ADR 0035); dropping them here would be the import quietly
+ * discarding half of what the file carries.
  */
 export function textProfileFromRulesDocument(
   document: {
@@ -521,15 +484,15 @@ export function textProfileFromRulesDocument(
   },
   label: string,
 ): TextProfile {
-  const imported: TextProfile = {
+  return {
     ...createTextProfile(),
     label,
     prompt: document.prompt,
+    // Kept beside the converted terms rather than cleared: it is what the file
+    // said, and `text_rules.rs` still reads it for a document that carries its
+    // phrases nowhere else.
     stt_hints: document.stt_hints,
-    vocabulary_hints: [],
-    // The migration is a no-op at or above the current schema version, so the
-    // profile has to declare the version its payload actually is.
-    schema_version: 1,
+    vocabulary_hints: vocabularyHintsFromDocumentTerms(document.stt_hints),
     dictionary_entries: document.dictionary_entries.map((entry) => ({
       ...entry,
       id: createRuleId("dict"),
@@ -539,8 +502,32 @@ export function textProfileFromRulesDocument(
       id: createRuleId("snippet"),
     })),
   };
+}
 
-  return migrateLegacyBiasPolicyToVocabularyHints(imported);
+/** The document schema's newline string as per-entry vocabulary.
+ *
+ *  The three limits are the recognizer's own — 48 characters, four words, four
+ *  slots — and this is a copy of them, which is a cost the import pays
+ *  knowingly: the runtime resolves what actually reaches the recognizer
+ *  (`select_recognizer_slots`), so a drift here changes what an import creates
+ *  and never what a capture sends. */
+function vocabularyHintsFromDocumentTerms(sttHints: string): TextProfile["vocabulary_hints"] {
+  return (sttHints ?? "")
+    .split("\n")
+    .map((line) => line.split(/\s+/).filter(Boolean).join(" "))
+    .filter((phrase) => phrase.length > 0 && phrase.length <= 48 && phrase.split(" ").length <= 4)
+    .slice(0, 4)
+    .map((phrase) => ({
+      id: createRuleId("vocab"),
+      phrase,
+      // Nothing about a file says a term was learned, and an imported row is
+      // one somebody wrote down.
+      use_as_prompt_hint: false,
+      origin: "user" as const,
+      learned_at_ms: null,
+      hit_count: 0,
+      observation_count: 0,
+    }));
 }
 
 export function buildTextProfilesPatch(

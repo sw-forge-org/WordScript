@@ -690,24 +690,6 @@ fn credential_target_roles(
     Ok(targets)
 }
 
-/// Moves a key out of the config file and into the per-role store.
-///
-/// The legacy field held one string for a whole provider, which is what every
-/// role of that provider used; it therefore lands on each of them rather than
-/// on a role picked here. A migration that guessed one would silently disable
-/// the other.
-pub fn migrate_legacy_provider_api_key(
-    provider: &str,
-    api_key: &str,
-) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    save_provider_api_key(SaveProviderApiKeyRequest {
-        provider: provider.to_string(),
-        api_key: api_key.to_string(),
-        role: None,
-        kind: None,
-    })
-}
-
 #[tauri::command]
 pub fn provider_status(
     request: ProviderStatusRequest,

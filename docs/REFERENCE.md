@@ -464,9 +464,16 @@ The UI carries no key table: it reads the vocabulary over
   `NumpadMultiply`, `NumpadDivide`, `NumpadDecimal`, `NumpadEnter`, `NumLock`.
 - System: `PrintScreen`, `ScrollLock`, `Pause`.
 
-Legacy pynput spellings (`ctrl_l`, `alt_l`, `win`, `cmd`, `esc`) are accepted on
-read and rewritten to the canonical form on save. Parts are separated by `+`;
-a comma is accepted and converted.
+Alternate spellings are accepted on read and rewritten to the canonical form on
+save: the plain modifier word (`ctrl`, `alt`, `shift`), the platform words for
+Super (`win`, `cmd`, `command`, `meta`), browser `event.code` names
+(`ControlLeft`, `KeyM`) and common key abbreviations (`esc`, `del`, `pgup`).
+Parts are separated by `+`; a comma is accepted and converted.
+
+The pynput dialect (`ctrl_l`, `alt_r`, `shift_l`) was accepted until ADR 0112
+and is not any more — it was written only by the removed Python sidecar
+(ADR 0091), so a value in that form now stores unchanged and is surfaced as
+"not registerable" like any other unparsable string.
 
 ### Validity rules
 

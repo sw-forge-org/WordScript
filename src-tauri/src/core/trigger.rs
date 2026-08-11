@@ -2193,17 +2193,17 @@ mod tests {
     use tauri_plugin_global_shortcut::{Code, Modifiers};
 
     #[test]
-    fn normalizes_legacy_hotkey_names() {
-        assert_eq!(normalize_shortcut("ctrl_l+f9", true).unwrap(), "Ctrl+F9");
+    fn normalizes_alternate_hotkey_spellings() {
+        assert_eq!(normalize_shortcut("ctrl+f9", true).unwrap(), "Ctrl+F9");
         assert_eq!(
-            normalize_shortcut("ctrl_l, alt_l, escape", false).unwrap(),
+            normalize_shortcut("ControlLeft, AltLeft, escape", false).unwrap(),
             "Ctrl+Alt+Escape"
         );
     }
 
     #[test]
     fn allows_modifier_only_start_shortcuts() {
-        let binding = build_shortcut_binding("ctrl_l+win", true).unwrap();
+        let binding = build_shortcut_binding("ctrl+win", true).unwrap();
         assert_eq!(binding.display, "Ctrl+Super");
         assert_eq!(binding.shortcuts.len(), 2);
         assert!(binding
@@ -2216,14 +2216,14 @@ mod tests {
 
     #[test]
     fn rejects_modifier_only_secondary_shortcuts() {
-        assert!(normalize_shortcut("ctrl_l+win", false).is_err());
-        assert!(normalize_shortcut("ctrl_l+alt_l", false).is_err());
+        assert!(normalize_shortcut("ctrl+win", false).is_err());
+        assert!(normalize_shortcut("ctrl+alt", false).is_err());
     }
 
     #[test]
     fn allows_modifier_only_pause_and_abort_shortcuts() {
-        let pause = build_shortcut_binding("ctrl_l+alt_l", true).unwrap();
-        let abort = build_shortcut_binding("shift_l+win", true).unwrap();
+        let pause = build_shortcut_binding("ctrl+alt", true).unwrap();
+        let abort = build_shortcut_binding("shift+win", true).unwrap();
         assert!(pause
             .shortcuts
             .contains(&Shortcut::new(Some(Modifiers::CONTROL), Code::AltLeft)));
@@ -2254,18 +2254,18 @@ mod tests {
         let interruption_reported =
             shortcut::session_has_interruption_signal(shortcut::shortcut_platform().kind);
 
-        assert_eq!(build_shortcut_binding("ctrl_l", true).is_ok(), interruption_reported);
+        assert_eq!(build_shortcut_binding("ctrl", true).is_ok(), interruption_reported);
         assert_eq!(build_shortcut_binding("win", true).is_ok(), interruption_reported);
 
         // What no session ever allows: a bare letter, and a modifier-only value
         // in a slot that forbids modifier-only at all.
         assert!(build_shortcut_binding("a", true).is_err());
-        assert!(build_shortcut_binding("ctrl_l+alt_l", false).is_err());
+        assert!(build_shortcut_binding("ctrl+alt", false).is_err());
     }
 
     #[test]
     fn binding_carries_both_canonical_and_human_forms() {
-        let binding = build_shortcut_binding("ctrl_l+f9", true).unwrap();
+        let binding = build_shortcut_binding("ctrl+f9", true).unwrap();
         assert_eq!(binding.display, "Ctrl+F9");
         assert_eq!(binding.human, "Ctrl + F9");
     }

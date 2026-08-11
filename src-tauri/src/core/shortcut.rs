@@ -226,10 +226,16 @@ impl ShortcutParse {
 
 /// Parses a raw shortcut string into the canonical contract form.
 ///
-/// Accepts legacy pynput tokens (`ctrl_l+f9`), the previous canonical form
-/// (`Ctrl+F9`), browser `event.code` names (`Ctrl+KeyM`) and comma separators.
-/// Rejects anything that could not be registered, and anything the contract
-/// forbids (single bare modifier, bare letter or digit).
+/// Accepts the canonical form (`Ctrl+F9`), browser `event.code` names
+/// (`ControlLeft+KeyM`), the platform words for a modifier (`cmd`, `win`),
+/// common key abbreviations (`esc`, `pgup`) and comma separators. Rejects
+/// anything that could not be registered, and anything the contract forbids
+/// (single bare modifier, bare letter or digit).
+///
+/// **This is a boundary, and its tolerance is a feature** — a shortcut arrives
+/// from the recorder, from an IPC payload and from a hand-edited config, none
+/// of which is this build's own writing. What went with ADR 0112 is the one
+/// dialect that was: pynput's `ctrl_l`, produced only by the removed sidecar.
 pub fn parse(input: &str, policy: Policy) -> Result<ShortcutParse, String> {
     let raw_parts = input
         .split(['+', ','])
@@ -490,11 +496,18 @@ pub fn display_key(token: &str) -> String {
     }
 }
 
+/// Maps any accepted spelling of a modifier onto its canonical token.
+///
+/// The plain word, the platform word and the browser `event.code` — the three
+/// forms that reach this function from a live surface. The pynput dialect
+/// (`ctrl_l`, `alt_r`, `shift_l`) went with ADR 0112: it was written by the
+/// Python sidecar, the sidecar is gone (ADR 0091), and no config outside this
+/// machine ever carried it.
 fn normalize_modifier_token(part: &str) -> Option<&'static str> {
     match part.to_ascii_lowercase().as_str() {
-        "ctrl" | "ctrl_l" | "ctrl_r" | "control" | "controlleft" | "controlright" => Some("Ctrl"),
-        "alt" | "alt_l" | "alt_r" | "option" | "altleft" | "altright" => Some("Alt"),
-        "shift" | "shift_l" | "shift_r" | "shiftleft" | "shiftright" => Some("Shift"),
+        "ctrl" | "control" | "controlleft" | "controlright" => Some("Ctrl"),
+        "alt" | "option" | "altleft" | "altright" => Some("Alt"),
+        "shift" | "shiftleft" | "shiftright" => Some("Shift"),
         "win" | "cmd" | "command" | "super" | "meta" | "metaleft" | "metaright" | "oskey" => {
             Some("Super")
         }
@@ -503,7 +516,7 @@ fn normalize_modifier_token(part: &str) -> Option<&'static str> {
 }
 
 /// Maps any accepted spelling of a non-modifier key onto its canonical token.
-/// Covers legacy pynput names, bare characters and browser `event.code`.
+/// Covers common abbreviations, bare characters and browser `event.code`.
 pub fn normalize_key_token(part: &str) -> Option<&'static str> {
     let lower = part.trim().to_ascii_lowercase();
 
@@ -1419,11 +1432,22 @@ mod tests {
         }
     }
 
+    /// The dialect a live surface can still produce: the plain word, the comma
+    /// separator, the platform name for Super. The pynput spellings that used
+    /// to be asserted here went with the sidecar that wrote them (ADR 0112).
     #[test]
-    fn accepts_legacy_pynput_tokens() {
-        assert_eq!(valid("ctrl_l+f9").canonical, "Ctrl+F9");
-        assert_eq!(valid("ctrl_l, alt_l, escape").canonical, "Ctrl+Alt+Escape");
-        assert_eq!(valid("ctrl_l+alt_l+m").canonical, "Ctrl+Alt+M");
+    fn accepts_the_spellings_a_live_surface_produces() {
+        assert_eq!(valid("ctrl+f9").canonical, "Ctrl+F9");
+        assert_eq!(valid("ctrl, alt, escape").canonical, "Ctrl+Alt+Escape");
+        assert_eq!(valid("cmd+shift+m").canonical, "Shift+Super+M");
+    }
+
+    #[test]
+    fn a_pynput_modifier_is_no_longer_a_modifier() {
+        // It parses as far as the key table and fails there, which is the same
+        // answer any other unknown token gets — not a silent pass-through.
+        let error = parse("ctrl_l+f9", Policy::default()).unwrap_err();
+        assert!(error.contains("ctrl_l"), "unexpected reason: {error}");
     }
 
     #[test]
@@ -1435,7 +1459,7 @@ mod tests {
 
     #[test]
     fn canonicalization_is_idempotent() {
-        for input in ["ctrl_l+f9", "Ctrl+Alt+KeyM", "Ctrl+Alt+M", "shift_l+ctrl_l+space", "alt_l+win"] {
+        for input in ["ctrl+f9", "Ctrl+Alt+KeyM", "Ctrl+Alt+M", "shift+ctrl+space", "alt+win"] {
             let once = valid(input).canonical;
             let twice = valid(&once).canonical;
             assert_eq!(once, twice, "canonical form drifted for '{input}'");
@@ -1444,7 +1468,7 @@ mod tests {
 
     #[test]
     fn modifiers_are_sorted_into_canonical_order() {
-        assert_eq!(valid("shift_l+ctrl_l+alt_l+f9").canonical, "Ctrl+Alt+Shift+F9");
+        assert_eq!(valid("shift+ctrl+alt+f9").canonical, "Ctrl+Alt+Shift+F9");
     }
 
     #[test]
@@ -1464,7 +1488,7 @@ mod tests {
     fn single_bare_modifier_is_rejected() {
         // D2: this used to be expanded into Shortcut::new(None, ControlLeft),
         // a desktop-wide grab on Ctrl.
-        let error = parse("ctrl_l", Policy::default()).unwrap_err();
+        let error = parse("ctrl", Policy::default()).unwrap_err();
         assert!(error.contains("single"), "unexpected reason: {error}");
         // The reason has to be the current one: not the retired grab argument,
         // and not "cannot be told apart" as an absolute — it is a property of the
@@ -1489,7 +1513,7 @@ mod tests {
             interruption_signal: true,
         };
 
-        let parsed = match parse("shift_l", policy).expect("a single modifier should parse") {
+        let parsed = match parse("shift", policy).expect("a single modifier should parse") {
             ShortcutParse::Valid(parsed) => *parsed,
             ShortcutParse::Disabled => panic!("expected a shortcut"),
         };
@@ -1520,9 +1544,9 @@ mod tests {
         // ADR 0009: the delivery mechanism follows from the shortcut itself, and
         // it is what decides whether the key stays available to other
         // applications.
-        assert_eq!(valid("ctrl_l+win").delivery, Delivery::Observe);
-        assert_eq!(valid("ctrl_l+alt_l").delivery, Delivery::Observe);
-        assert_eq!(valid("ctrl_l+f9").delivery, Delivery::Grab);
+        assert_eq!(valid("ctrl+win").delivery, Delivery::Observe);
+        assert_eq!(valid("ctrl+alt").delivery, Delivery::Observe);
+        assert_eq!(valid("ctrl+f9").delivery, Delivery::Grab);
         assert_eq!(valid("F1").delivery, Delivery::Grab);
         assert_eq!(Delivery::Observe.as_token(), "observe");
         assert_eq!(Delivery::Grab.as_token(), "grab");
@@ -1548,7 +1572,7 @@ mod tests {
 
     #[test]
     fn two_modifiers_are_accepted_and_never_grab_a_bare_modifier() {
-        let parsed = valid("ctrl_l+win");
+        let parsed = valid("ctrl+win");
         assert_eq!(parsed.canonical, "Ctrl+Super");
         assert_eq!(parsed.shortcuts.len(), 2);
         for shortcut in parsed.shortcuts {
@@ -1579,30 +1603,30 @@ mod tests {
     fn space_combination_is_not_truncated() {
         // D6: persist-time normalization used to drop the trailing key of these
         // three, which silently rewrote the Windows default hotkey.
-        assert_eq!(valid("ctrl_l+alt_l+space").canonical, "Ctrl+Alt+Space");
-        assert_eq!(valid("ctrl_l+win+space").canonical, "Ctrl+Super+Space");
-        assert_eq!(valid("ctrl_l+cmd+space").canonical, "Ctrl+Super+Space");
+        assert_eq!(valid("ctrl+alt+space").canonical, "Ctrl+Alt+Space");
+        assert_eq!(valid("ctrl+win+space").canonical, "Ctrl+Super+Space");
+        assert_eq!(valid("ctrl+cmd+space").canonical, "Ctrl+Super+Space");
     }
 
     #[test]
     fn unsupported_token_is_an_error_not_a_pass_through() {
         // D5: the config normalizer used to lowercase unknown tokens and store
         // a value that could never register.
-        let error = parse("ctrl_l+florp", Policy::default()).unwrap_err();
+        let error = parse("ctrl+florp", Policy::default()).unwrap_err();
         assert!(error.contains("florp"), "unexpected reason: {error}");
     }
 
     #[test]
     fn unparsable_value_survives_storage_normalization_untouched() {
         assert_eq!(
-            normalize_for_storage("ctrl_l+florp", Policy::default()),
-            "ctrl_l+florp"
+            normalize_for_storage("ctrl+florp", Policy::default()),
+            "ctrl+florp"
         );
     }
 
     #[test]
     fn two_non_modifier_keys_are_rejected() {
-        assert!(parse("ctrl_l+a+b", Policy::default()).is_err());
+        assert!(parse("ctrl+a+b", Policy::default()).is_err());
     }
 
     #[test]
@@ -1611,23 +1635,23 @@ mod tests {
             allow_modifier_only: false,
             ..Policy::default()
         };
-        assert!(parse("ctrl_l+alt_l", policy).is_err());
-        assert!(parse("ctrl_l+alt_l+f9", policy).is_ok());
+        assert!(parse("ctrl+alt", policy).is_err());
+        assert!(parse("ctrl+alt+f9", policy).is_ok());
     }
 
     #[test]
     fn display_strings_are_human() {
-        assert_eq!(valid("ctrl_l+f9").display, "Ctrl + F9");
-        assert_eq!(valid("ctrl_l+alt_l+m").display, "Ctrl + Alt + M");
-        assert_eq!(valid("ctrl_l+digit4").display, "Ctrl + 4");
-        assert_eq!(valid("ctrl_l+arrowup").display, "Ctrl + Up");
+        assert_eq!(valid("ctrl+f9").display, "Ctrl + F9");
+        assert_eq!(valid("ctrl+alt+m").display, "Ctrl + Alt + M");
+        assert_eq!(valid("ctrl+digit4").display, "Ctrl + 4");
+        assert_eq!(valid("ctrl+arrowup").display, "Ctrl + Up");
     }
 
     #[test]
     fn display_for_falls_back_to_the_raw_value() {
-        assert_eq!(display_for("ctrl_l+f9", Policy::default()), "Ctrl + F9");
+        assert_eq!(display_for("ctrl+f9", Policy::default()), "Ctrl + F9");
         assert_eq!(display_for("", Policy::default()), "");
-        assert_eq!(display_for("ctrl_l+florp", Policy::default()), "ctrl_l+florp");
+        assert_eq!(display_for("ctrl+florp", Policy::default()), "ctrl+florp");
     }
 
     #[test]
@@ -1653,7 +1677,7 @@ mod tests {
         // interrupted hold, so the command is asserted against the same helper
         // rather than against a fixed expectation.
         let single = validate_shortcut(ValidateShortcutRequest {
-            value: "ctrl_l".to_string(),
+            value: "ctrl".to_string(),
             allow_modifier_only: true,
         });
         assert_eq!(
@@ -1671,7 +1695,7 @@ mod tests {
         assert!(rejected.reason.is_some());
 
         let accepted = validate_shortcut(ValidateShortcutRequest {
-            value: "ctrl_l+f9".to_string(),
+            value: "ctrl+f9".to_string(),
             allow_modifier_only: true,
         });
         assert!(accepted.ok);

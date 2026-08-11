@@ -182,19 +182,15 @@ function normalizeToken(part: string): { modifier?: string; key?: string } | nul
   const lower = part.toLowerCase();
   const modifier = MODIFIER_CODES.find(([code]) => code.toLowerCase() === lower)?.[1];
   if (modifier) return { modifier };
+  // Mirrors `normalize_modifier_token` in `core/shortcut.rs`. The pynput
+  // spellings (`ctrl_l`, `alt_r`, …) stood here too and went with ADR 0112.
   switch (lower) {
     case "ctrl":
-    case "ctrl_l":
-    case "ctrl_r":
     case "control":
       return { modifier: "Ctrl" };
     case "alt":
-    case "alt_l":
-    case "alt_r":
       return { modifier: "Alt" };
     case "shift":
-    case "shift_l":
-    case "shift_r":
       return { modifier: "Shift" };
     case "win":
     case "cmd":
