@@ -53,6 +53,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the transcript that stops before the audio does
+
+- **`TranscriptionCoverage` reads the two fields the response already carried
+  and nobody compared.** `verbose_json` returns `duration` and a segment list;
+  both were parsed and then only `text` was read. On 2026-08-12 a 72.1 s
+  dictation came back as 424 characters ending mid-sentence while the capture
+  stage read `missing_ratio=0.0004 verdict=Intact` and the provider itself
+  reported `duration=72.144437248`. **The audio was complete and the transcript
+  was not**, and nothing downstream had any evidence the rest was ever spoken —
+  a truncated transcript is fluent and plausible, which is what makes it worse
+  than a dropout.
+- **It is the same instrument as `CaptureIntegrity`, one stage later.** One
+  answers whether the audio reached the file, the other whether the file reached
+  the transcript, and both write one line in the same shape so a reader
+  comparing the two stages of one dictation compares like with like. The 10 %
+  threshold is deliberately `CAPTURE_GAP_THRESHOLD`'s: the user who reports
+  *half my dictation is gone* does not know which side of the seam lost it, and
+  two thresholds would put that sentence on two numbers.
+- **A ratio alone would call an ordinary pause a truncation**, so a finding also
+  needs two absolute seconds uncovered, and clips under two seconds are not
+  measured at all. `NotMeasured` is deliberately not `Complete` — *we did not
+  look* and *we looked and it was fine* are different facts. An empty segment
+  list over real audio is the strongest form of the finding, not a missing one.
+- Five tests, including the observed case and the false positive that would make
+  the instrument useless. `cargo test` 747 passed / 3 ignored.
+
 ### Added — two records from the model-identity question, and a lane renamed
 
 Documentation only. **No source file is in this stage** — the change is five

@@ -433,6 +433,7 @@ impl GroqClient {
             payload.text.len(),
             payload.duration,
         ));
+        runtime_log::record(payload.coverage().log_line());
 
         Ok(payload)
     }

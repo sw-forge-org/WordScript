@@ -589,6 +589,144 @@ pub struct TranscriptionResponse {
     pub segments: Option<Vec<TranscriptionSegment>>,
 }
 
+/// The fraction of the audio a recognizer may leave uncovered before the
+/// transcript has to say so.
+///
+/// Deliberately the same 10 % as `CAPTURE_GAP_THRESHOLD` in `core::capture`.
+/// The user who reports "half of my dictation is gone" does not know which
+/// side of the seam lost it, and two thresholds would put the same sentence on
+/// two different numbers.
+const TRANSCRIPTION_GAP_THRESHOLD: f64 = 0.10;
+
+/// Below this the ratio carries no information, for the same reason
+/// `CAPTURE_INTEGRITY_MIN_WALL_SECONDS` exists: on a short clip a single
+/// trailing breath is already several percent.
+const TRANSCRIPTION_COVERAGE_MIN_SECONDS: f64 = 2.0;
+
+/// A ratio alone would call an ordinary pause a truncation, so the gap must
+/// also be large in absolute terms.
+///
+/// The exported file is silence-trimmed before it is uploaded
+/// (`trim_leading_trailing_silence`), so a healthy transcript's last segment
+/// ends within a breath of the audio. Two seconds sits above what a trim
+/// leaves behind and an order of magnitude below the observed case: 72.1 s of
+/// audio whose transcript stopped mid-sentence.
+const TRANSCRIPTION_UNCOVERED_FLOOR_SECONDS: f64 = 2.0;
+
+/// Whether a transcript reaches the end of the audio it was made from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionCoverageVerdict {
+    /// The segments run to the end of the audio.
+    Complete,
+    /// The recognizer stopped before the audio did. The transcript is of the
+    /// beginning of the dictation, it is fluent and plausible, and nothing
+    /// downstream has any evidence that the rest was ever spoken.
+    Truncated,
+    /// No segments, no duration, or audio too short for the ratio to mean
+    /// anything. Deliberately not `Complete`: "we did not look" and "we looked
+    /// and it was fine" are different facts.
+    NotMeasured,
+}
+
+/// The comparison the response already carried and nobody made: how long the
+/// audio was against how far the segments got.
+///
+/// `verbose_json` returns `duration` and a segment list, and both were parsed
+/// and then only `text` was read. On 2026-08-12 a 72.1 s dictation came back as
+/// 424 characters ending mid-sentence while the capture read
+/// `missing_ratio=0.0004 verdict=Intact` and the provider itself reported
+/// `duration=72.144437248` — the audio was complete and the transcript was not.
+///
+/// This is the same instrument as `CaptureIntegrity` one stage later: it names
+/// a loss at the moment it stops being recoverable, on the other side of the
+/// seam. `CaptureIntegrity` answers whether the audio reached the file;
+/// this answers whether the file reached the transcript.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct TranscriptionCoverage {
+    pub duration_seconds: f64,
+    /// Where the last segment ends. Whisper segments are contiguous from zero,
+    /// so the end of the last one is how far the recognizer got.
+    pub covered_seconds: f64,
+    /// The fraction of the audio no segment covers, clamped to 0..=1.
+    pub uncovered_ratio: f64,
+    /// The last segment's own confidence. A decoder that stopped early tends to
+    /// end on a poor one, which is what separates a truncation from a dictation
+    /// that simply ended in silence.
+    pub last_segment_avg_logprob: Option<f64>,
+    pub verdict: TranscriptionCoverageVerdict,
+}
+
+impl TranscriptionCoverage {
+    fn new(duration: Option<f64>, segments: Option<&[TranscriptionSegment]>) -> Self {
+        let Some(duration_seconds) = duration.filter(|value| *value > 0.0) else {
+            return Self::unmeasured();
+        };
+        let Some(segments) = segments else {
+            return Self::unmeasured();
+        };
+
+        let last = segments.last();
+        let covered_seconds = last.map(|segment| segment.end).unwrap_or(0.0).max(0.0);
+        let uncovered_seconds = (duration_seconds - covered_seconds).max(0.0);
+        let uncovered_ratio = (uncovered_seconds / duration_seconds).clamp(0.0, 1.0);
+
+        let verdict = if duration_seconds < TRANSCRIPTION_COVERAGE_MIN_SECONDS {
+            TranscriptionCoverageVerdict::NotMeasured
+        } else if uncovered_ratio >= TRANSCRIPTION_GAP_THRESHOLD
+            && uncovered_seconds >= TRANSCRIPTION_UNCOVERED_FLOOR_SECONDS
+        {
+            TranscriptionCoverageVerdict::Truncated
+        } else {
+            TranscriptionCoverageVerdict::Complete
+        };
+
+        Self {
+            duration_seconds,
+            covered_seconds,
+            uncovered_ratio,
+            last_segment_avg_logprob: last.and_then(|segment| segment.avg_logprob),
+            verdict,
+        }
+    }
+
+    fn unmeasured() -> Self {
+        Self {
+            duration_seconds: 0.0,
+            covered_seconds: 0.0,
+            uncovered_ratio: 0.0,
+            last_segment_avg_logprob: None,
+            verdict: TranscriptionCoverageVerdict::NotMeasured,
+        }
+    }
+
+    pub fn is_truncated(&self) -> bool {
+        self.verdict == TranscriptionCoverageVerdict::Truncated
+    }
+
+    /// One line, in the shape `Capture integrity` already writes, so a reader
+    /// comparing the two stages of one dictation is comparing like with like.
+    /// It lives here rather than in an adapter because every adapter that
+    /// returns segments answers the same question.
+    pub fn log_line(&self) -> String {
+        let logprob = self
+            .last_segment_avg_logprob
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "n/a".to_string());
+
+        format!(
+            "[WordScript] Transcription coverage duration_seconds={:.3} covered_seconds={:.3} uncovered_ratio={:.4} last_segment_avg_logprob={} verdict={:?}",
+            self.duration_seconds, self.covered_seconds, self.uncovered_ratio, logprob, self.verdict,
+        )
+    }
+}
+
+impl TranscriptionResponse {
+    pub fn coverage(&self) -> TranscriptionCoverage {
+        TranscriptionCoverage::new(self.duration, self.segments.as_deref())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
@@ -959,5 +1097,97 @@ mod tests {
             local_setup.user_action,
             ProviderErrorAction::CheckLocalSetup
         );
+    }
+
+    fn segment(start: f64, end: f64, avg_logprob: Option<f64>) -> TranscriptionSegment {
+        TranscriptionSegment {
+            id: 0,
+            start,
+            end,
+            text: "…".to_string(),
+            avg_logprob,
+            no_speech_prob: None,
+            compression_ratio: None,
+        }
+    }
+
+    fn response(duration: Option<f64>, segments: Option<Vec<TranscriptionSegment>>) -> TranscriptionResponse {
+        TranscriptionResponse {
+            text: "…".to_string(),
+            language: Some("de".to_string()),
+            duration,
+            segments,
+        }
+    }
+
+    #[test]
+    fn a_transcript_that_reaches_the_end_of_the_audio_is_complete() {
+        let coverage = response(
+            Some(72.144),
+            Some(vec![segment(0.0, 36.0, Some(-0.21)), segment(36.0, 71.8, Some(-0.19))]),
+        )
+        .coverage();
+
+        assert_eq!(coverage.verdict, TranscriptionCoverageVerdict::Complete);
+        assert!(!coverage.is_truncated());
+        assert!(coverage.uncovered_ratio < 0.01, "{coverage:?}");
+    }
+
+    /// The observed case, 2026-08-12: 72.1 s of audio the capture read as
+    /// `Intact`, and a transcript that stopped mid-sentence.
+    #[test]
+    fn a_recognizer_that_stopped_early_is_named_rather_than_delivered_whole() {
+        let coverage = response(
+            Some(72.144),
+            Some(vec![segment(0.0, 38.1, Some(-0.94))]),
+        )
+        .coverage();
+
+        assert_eq!(coverage.verdict, TranscriptionCoverageVerdict::Truncated);
+        assert!(coverage.uncovered_ratio > 0.45, "{coverage:?}");
+        assert_eq!(coverage.last_segment_avg_logprob, Some(-0.94));
+
+        let line = coverage.log_line();
+        assert!(line.contains("verdict=Truncated"), "{line}");
+        assert!(line.contains("covered_seconds=38.100"), "{line}");
+        assert!(line.contains("last_segment_avg_logprob=-0.940"), "{line}");
+    }
+
+    /// The false positive that would make the instrument useless: a dictation
+    /// that simply ends on a pause must not be reported as a loss.
+    #[test]
+    fn an_ordinary_trailing_pause_is_not_a_truncation() {
+        let coverage = response(Some(14.0), Some(vec![segment(0.0, 12.6, Some(-0.18))])).coverage();
+
+        assert_eq!(coverage.verdict, TranscriptionCoverageVerdict::Complete);
+
+        // Ten percent of a short clip is under the absolute floor, so the ratio
+        // alone must not carry the verdict.
+        assert!(coverage.uncovered_ratio >= TRANSCRIPTION_GAP_THRESHOLD, "{coverage:?}");
+    }
+
+    #[test]
+    fn a_response_without_segments_is_not_reported_as_complete() {
+        let no_segments = response(Some(72.144), None).coverage();
+        assert_eq!(no_segments.verdict, TranscriptionCoverageVerdict::NotMeasured);
+
+        let no_duration = response(None, Some(vec![segment(0.0, 10.0, None)])).coverage();
+        assert_eq!(no_duration.verdict, TranscriptionCoverageVerdict::NotMeasured);
+
+        let too_short = response(Some(1.4), Some(vec![])).coverage();
+        assert_eq!(too_short.verdict, TranscriptionCoverageVerdict::NotMeasured);
+
+        assert!(no_segments.log_line().contains("verdict=NotMeasured"));
+    }
+
+    /// A recognizer that returned nothing at all for minutes of audio is the
+    /// strongest form of the finding, not a missing measurement.
+    #[test]
+    fn an_empty_segment_list_over_real_audio_is_a_truncation() {
+        let coverage = response(Some(197.5), Some(vec![])).coverage();
+
+        assert_eq!(coverage.verdict, TranscriptionCoverageVerdict::Truncated);
+        assert_eq!(coverage.covered_seconds, 0.0);
+        assert!((coverage.uncovered_ratio - 1.0).abs() < f64::EPSILON, "{coverage:?}");
     }
 }
