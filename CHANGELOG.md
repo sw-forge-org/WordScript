@@ -53,8 +53,165 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`docs/PROVIDERS.md` — the provider matrix, read against each vendor's own
+  documentation rather than from memory.** **Ten providers across four lanes**,
+  plus the local and self-hosted ones and the voice-only vendors outside the
+  drawn set, each row dated and sourced: which of the nine jobs it serves,
+  whether recognition is batch or streaming, whether the response names the
+  language it heard, and what the credential shape is. It exists because the
+  provider stack turned out to be what blocks the surfaces above it, and because
+  three of its findings contradict what a search result says. **Nothing in it is
+  a claim about this codebase** — the runtime still integrates exactly two
+  providers.
+- **A ChatGPT subscription can pay for OpenAI's text jobs, and it is the only
+  vendor where that is still allowed** (ADR 0102). The API key stays the default
+  and stays available; what is added is a second credential kind on the same
+  Cloud row. **It reaches five of the nine jobs.** The backend a subscription
+  authenticates against serves `/v1/chat/completions` and `/v1/responses` and
+  has **no `/v1/audio/transcriptions` and no `/v1/audio/speech`** — so it can
+  pay for `cleanup`, `rewrite`, `translate`, `enhance` and `assistant`, and for
+  none of `dictation`, `meetings`, `upload` or `voice`. A subscription pays for
+  what happens to a transcript, never for producing one. **The equivalents for
+  the other vendors exist and two were shut off this year**: Anthropic added the
+  prohibition to its terms on 2026-02-19 and enforced it on 2026-04-04, Google
+  suspended accounts in February 2026 including paying Ultra subscribers, and
+  Groq, Mistral, xAI and Deepgram sell no subscription at all. That refusal is
+  part of the record rather than an omission — the cost of getting it wrong is
+  the user's account, not a failed request. Auth is planned as a native Rust
+  OAuth + PKCE flow, **not a bundled Node proxy**, which would reverse ADR 0001
+  and ADR 0091. Planned; not implemented.
+- **The four decision gates the roadmap put in front of streaming recognition
+  now have answers, and two of them are closed** (ADR 0095, ADR 0097).
+  **Groq — the only integrated cloud lane — does not stream at all**: one file
+  in, one result out, no websocket, no `stream=true`, no partials, and language
+  is a hint rather than a detection. OpenAI, xAI, Mistral and Azure OpenAI do.
+  So the roadmap's conditional resolved to something its entry did not
+  anticipate: it is neither a pure Phase 4 nor a pure Phase 5 question, because
+  streaming exists on several lanes the product intends to carry and none it
+  carries today.
+- **A streaming contract that stands beside the batch one rather than replacing
+  it** (ADR 0095), so ADR 0018 and ADR 0019 are untouched and no partial result
+  reaches the session reducer. Its first implementation emits **no partials at
+  all** — a segmenter marks the utterance and the adapter transcribes it as a
+  file — which is what lets one contract serve a lane that streams and a lane
+  that cannot. **Turn boundaries and partial results are separate requirements**,
+  and the two surfaces waiting behind this need different ones: a conversation
+  at a table needs turns, a caption strip needs partials.
+- **The direction of a spoken turn is read off the recogniser, never off a
+  button** (ADR 0099) — the gate the roadmap calls the feature's real one. The
+  signal exists on four lanes and not on Groq. The rule that carries it is the
+  no-match case: an unrecognised turn keeps the direction it had **and says so**
+  rather than being silently turned around. Not to be confused with
+  `hallucination_detect.rs`'s language-switch signal, which is quality control
+  on one finished batch; wiring the two together would make a conversation's
+  normal behaviour look like a hallucination.
+- **Speech gets a second output stream on a device the user picks** (ADR 0097),
+  extending ADR 0010 without weakening a single cue rule. The difference that
+  forced a second object rather than a shared one: a cue pre-empts the running
+  cue, because a stale cue is a lie about state — **an utterance cut mid-sentence
+  is the other person's half of the conversation**.
+- **Every drawn lane gets a real adapter** (ADR 0096, superseding ADR 0065),
+  documented before it is written. Three of ADR 0065's terms carry over
+  unchanged, including the one most likely to be dropped in a build-out: a lane
+  that is not yet integrated stays inert **and still says why**.
+- **The provider contract becomes three traits plus a registry** (ADR 0094).
+  The closed `enum ProviderId { Groq, LocalPreview }` is two match arms in eight
+  functions today and eighty at the drawn target. A provider that cannot serve a
+  role does not stub it, which moves the absence somewhere the compiler can see
+  it — and the provider axis splits per role, because Anthropic transcribes
+  nothing and one `provider` field per profile cannot express that.
+- **A window class whose geometry belongs to the user** (ADR 0100), for the four
+  drawn windows with no runtime host. `DESIGN_SYSTEM.md` has named a five-member
+  window family for two legs and **none of the five exists**: three windows are
+  declared statically and there is no `WebviewWindowBuilder` in the tree. The
+  class is explicitly *not* the path ADR 0089 abandoned — that was content
+  height driving repeated `set_size`, and no generic resize command returns.
+- **A credential resolves per role, and a job never inherits one its role cannot
+  use** (ADR 0105). ADR 0094 wrote its credential rule for the *overriding* job,
+  which makes inheritance the operating case for every other one — and ADR 0102
+  broke that premise the same day by making the credential kind per role. Set
+  the connection to OpenAI, pay by subscription, and `dictation` would inherit a
+  credential whose backend serves no recognition, **without the user touching
+  that job**. So *follow the connection* follows the provider and never the
+  credential; a role with no credential makes the job inert and **names what is
+  missing** rather than borrowing the other kind, which would be the role-shaped
+  version of the host mistake ADR 0094's security rule exists to prevent.
+- **A turn is a recording, and the stream that carries a conversation outlives
+  every one of them** (ADR 0107) — the capture half ADR 0095 assumed and did not
+  price. `start_native_capture` opens the device *and* begins the recording;
+  samples land in one `max_samples`-bounded buffer; `stop_native_capture` takes
+  it whole. **There is no way to lift a segment out of a running capture**, and
+  a conversation is nothing but segments. Separating the two keeps every
+  instrument applying per turn unchanged — `CaptureIntegrity`, `capture_budget`,
+  `transcribe_audio_file` — and makes ADR 0095's sentence about transcribing an
+  utterance as a file literally true instead of aspirational.
+- **`voice` becomes the ninth `JobKey`, and no adapter lands before the row that
+  operates it** (ADR 0109). Four records already write contracts against a job
+  the type does not carry. The second half is the rule the build-out order
+  needed: ADR 0096 schedules Groq voice second while the drawn `Speaking` row
+  offers `Cartesia Sonic-3` and `Kokoro-82M` and nothing else, with no provider
+  mark and no credential control — **an adapter written under that order is code
+  with no control that reaches it**. An inert lane that says so is honest; a
+  capability with no drawn control is not visible as missing at all.
+- **A machine-wide setting drawn on a surface that stands more than once needs
+  an echo the runtime does not have** (ADR 0108). ADR 0097's per-language
+  routing is a property of the desk and is drawn inside a window ADR 0064 lets
+  stand several times, in webviews that share no state — and **nothing in the
+  runtime announces that a setting changed**. The config is the only holder, a
+  write is announced, the card states its own scope, and the event takes the
+  same `without_secrets()` scrubbing every disk write does.
+
 ### Changed
 
+- **Streaming is a property of a model, not of a provider** (ADR 0110). ADR 0094
+  named OpenRouter *"the exception that proves the axes are per provider"*; a
+  second read of the donor's model registry shows **it is a constant nowhere**.
+  One OpenAI key and one endpoint serve `gpt-4o-transcribe` and
+  `gpt-4o-mini-transcribe` with `streaming: true` and `whisper-1` without it,
+  and the local lane says it again — two of four Parakeet models carry
+  `runtime: "online"` and stream, the other two do not, same binary family and
+  same installation. **The role is the provider's and the shape is the
+  model's**: `speech_synthesis` stays a provider-level role question,
+  `transcription_streaming`, `reports_detected_language` and
+  `synthesis_streaming` move onto the model entry — which is the axis the user
+  is already standing on, since they pick a model per job and never pick a
+  "streaming provider". `docs/PROVIDERS.md` had the evidence in its own OpenAI
+  section and its sixth open disagreement before the axis was chosen.
+- **Bedrock model ids are up to four parts, and the drawn ones are wrong in
+  two.** The survey recorded an `anthropic.` prefix; a shipped implementation
+  uses `us.anthropic.claude-sonnet-5` and
+  `us.anthropic.claude-haiku-4-5-20251001-v1:0` — a cross-region inference
+  profile prefix, then the vendor prefix, then optionally a date and a `-v1:0`
+  version. The drawn `LANES.Enterprise` rows carry `anthropic.claude-sonnet-4-6`:
+  no region prefix **and** a generation behind. Also recorded: all three
+  enterprise lanes need a typed model id rather than only Azure, and Azure ships
+  with no model list at all — which is the working answer to *the deployment
+  name is the model id*.
+- **No surface reads a runtime capability, and a record claimed one did**
+  (ADR 0106). ADR 0094's first draft called the `ProviderCapabilities` mirror
+  *"the seam that stops a surface from claiming a capability the lane behind it
+  does not have"*. The struct is mirrored and returned by `provider_status`, and
+  **no field of it is read anywhere in `src/`** — `Models.test.tsx` mocks it as
+  `{}` and the suite passes, which is the proof nothing consumes it. Every
+  capability answer on `AI Models` comes from the hand-maintained `PROVIDERS`
+  table in `src/screens/data.ts`, the same booleans `docs/PROVIDERS.md` runs
+  three of its open disagreements against. **The drawing states an intent and
+  the runtime answers a capability**; the code that makes the second govern the
+  first is a step before the first adapter and is asserted by a test rather than
+  by a sentence. The false clause is corrected in ADR 0094 and `SPEC.md` in
+  place and recorded rather than deleted — asserting a capability the runtime
+  does not have is the defect class this repo has a six-leg scar from.
+- **`muted` does not do what its name suggests, and a duplex mute cannot reuse
+  it** (ADR 0098). Read against `process_samples`: `paused` gates the sample
+  push and is subtracted from the effective wall clock; **`muted` gates only the
+  level statistics, the voice-activity timestamp and the emitted meter, and the
+  audio keeps being recorded**. So the runtime mute that lets the machine speak
+  over an open microphone is a third state, and the stretch it holds must come
+  off `CaptureIntegrity`'s clock — otherwise every spoken reply pushes a
+  conversation toward ADR 0079's `short` verdict and the one instrument this
+  repo has for the open capture defect starts crying wolf on its own behaviour.
 - **The copy budget is measured now, and `≤ 90 characters, one line` was wrong
   for every row on the surface** (ADR 0092). `.ws-row-ctl` is `flex: none` and
   `.ws-sel` is `width: auto`, so a Select is as wide as the longest option the

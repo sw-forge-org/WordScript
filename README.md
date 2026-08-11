@@ -162,6 +162,7 @@ profile contracts, guided local setup, and release engineering.
 - [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md): active UI rules
 - [docs/STATUS.md](docs/STATUS.md): product state and gaps
 - [docs/PLATFORMS.md](docs/PLATFORMS.md): platform diagnostics
+- [docs/PROVIDERS.md](docs/PROVIDERS.md): what each provider serves, per lane and per date
 - [docs/REFERENCE.md](docs/REFERENCE.md): limits and mode semantics
 - [docs/ROADMAP.md](docs/ROADMAP.md): V1 phases
 - [docs/RELEASE_RUNBOOK.md](docs/RELEASE_RUNBOOK.md): release build-up

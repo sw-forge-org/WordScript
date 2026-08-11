@@ -22,6 +22,25 @@ Naming: `HANDOFF_<branch-or-slug>.md`
   the measurement that came back negative and why that is a result rather than
   an absence, and the order for the next one. The two tracks ran concurrently on
   2026-08-10 without colliding.
+- [The Speech Track](KICKOFF_speech-track.md): **active, opened 2026-08-11.** A
+  third track, beside the port relay and core hardening, on the capability layer
+  four drawn surfaces wait on — providers, streaming recognition, the spoken
+  output path, and the window class that carries them. **Its first stage was
+  documentation only**: `docs/PROVIDERS.md` and ADR 0094-0102 plus ADR
+  0105-0110, no code. Carries the findings the next stage rests on, the adapter
+  order and what gates each step, the two owner questions that must not be
+  settled quietly, **what a review of its own first pass found false in it**,
+  and why a frontend test count is not a valid check for a documentation stage
+  while another track is live in the same tree.
+- [Speech Track — Implementation Plan](PLAN_speech-track-implementation.md):
+  **the sequence, opened 2026-08-11.** Seven stages from the runtime contract to
+  the conversation surface, each step carrying what it requires, what it
+  touches, what validates it and what *done* observably means. It exists because
+  the records order the **adapters** and not the work in front of them —
+  ADR 0094 is the precondition of both named preconditions and had no position.
+  Also carries the dependency graph, the baseline every step measures against,
+  and which of the two live owner questions blocks which step. **This is the
+  page a stage-two session starts on.**
 - [Per-Mode Activation Gestures and Shortcut Defaults](HANDOFF_activation-mode-gestures-and-defaults.md):
   **open — nothing built yet**, written 2026-07-29. The only forward-looking
   document in this folder. Why one set of shortcut defaults cannot serve three

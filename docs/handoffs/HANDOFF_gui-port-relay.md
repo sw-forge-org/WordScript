@@ -159,6 +159,8 @@ gallery of four sections.
 | **10** | *(to be decided — see the Leg 10 prompt)* | The two capabilities the drift pass surfaced without settling: text-rules import/export has a complete runtime and no UI, and the session command shells SPEC names as contract have no caller |
 | **11** | The row width pass, and the drift sweep | *Done.* The copy budget MEASURED across 123 rows in WebKitGTK rather than asserted — one line holds 12 to 73 characters and `≤ 90` was wrong in all four places it was written (ADR 0092); three port-authored rows fixed, 62 prototype rows left alone; three commands ADR 0089's fourteen had missed, recorded undecided (ADR 0093) |
 
+| **12** | The rows no instrument had reached, and the sweep's other direction | *Done.* The three unmeasured classes measured — Diagnostics' non-default tabs are clean, the Models jobs' three-line rows are the drawing's, and the editor panel's foot note drew **six lines in 68 px** under a comment saying it never wraps (fixed, re-measured at two). The sweep run the other way found **a caller with no command**: the overlay's retry has rejected on every press since 2026-08-03 (ADR 0103). Every budget is a budget at a **CSS viewport**, and the window's declared minimum is never reached (ADR 0104) |
+
 Legs 2 and 4 are large and may split into sub-legs (2a, 2b, …). A leg that
 splits says so in its record and writes the prompt for the next sub-leg.
 
@@ -274,6 +276,22 @@ window under this compositor. A human with a mouse can.
   consecutive briefs re-carried it as owed** — including the Leg 9 prompt, which
   is what sent a leg to fix something that had been fixed for six legs. An owed
   list nobody marks off manufactures debt.
+
+**The audio entries on this list now have records, and none of them has code.**
+Added 2026-08-11 by the speech track, which did documentation only. The four
+§2.5 bullets about per-language output routing, the mute of the recogniser,
+speech in two directions and a voice that speaks are answered by
+ADR 0095 (a streaming contract beside the batch one), ADR 0097 (a second output
+stream on a selectable device), ADR 0098 (the mute, and the finding that `muted`
+is not the primitive it looks like) and ADR 0099 (the direction of a turn) --
+plus ADR 0107 (where a turn's audio comes from, since the cpal stream currently
+lives exactly as long as the recording) and ADR 0108 (the routing is
+machine-wide, is drawn on a window that may stand several times, and the runtime
+announces no config change at all).
+**Nothing is struck.** A §2.5 entry is closed by the runtime growing the fact,
+not by a record saying it should — and the whole point of the striking rule is
+that it marks work done rather than work decided. The capability survey behind
+those records is `docs/PROVIDERS.md`.
 
 ### 2.6 What the demo GUI did NOT settle, and it is not the same gap as §2.5
 
@@ -1838,6 +1856,132 @@ declined lines would be a second place for style rules to live.
 `cargo test` 645 (from 623), `npm run build` green, `port:diff` 26 of 28 at
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.
+
+### Leg 12 — the rows nobody had measured, and the button that had never worked
+
+**BOTH ENTRIES ARE DONE.** Two ADRs (0103, 0104). One commit.
+
+**THE THING TO TAKE FROM THIS LEG: THE SWEEP HAD ONLY EVER BEEN RUN IN THE
+DIRECTION WHOSE ANSWERS ARE HARMLESS.** ADR 0089 asks which registered command
+has no `invoke(`; ADR 0093 sharpened it; every answer either way is dead weight
+to be triaged. Run the other way — **every `invoke("name")` against the
+registered list** — it produced one name, and that one is a live defect.
+`load_transcription_history` is invoked by `OverlayWindow.tsx` and **was never
+registered anywhere**. `git log --all -S` finds it in exactly one commit, the
+one that introduced the caller. The overlay's *Retry from the recording* has
+rejected on every press since **2026-08-03** — offered by `1fda91d`, the commit
+whose whole subject was that a 679-second dictation was lost and the audio must
+survive the failure so it can be retried. `useTranscriptionHistory` has always
+used the right name (`transcription_history_entries`), with the identical
+payload shape, which is why the same retry works from the History list.
+
+**NO CHECK IN THIS REPOSITORY COULD SEE IT.** `cargo check` is happy — the Rust
+side is complete. `npm run build` is happy — the string is a string. And the
+test suite asserted the retry button **appears** when the runtime kept the audio
+and never pressed it, so the invoke mock's `default` arm — which throws on an
+unknown command — was never reached. **A control asserted only to exist is not
+tested.** The new case clicks it, and it was verified to FAIL against the old
+name before it was kept.
+
+**THE FIRST PASS OF THE SWEEP REPORTED FIVE FALSE ORPHANS AND I ALMOST BELIEVED
+IT.** `export_full_backup`, `import_full_backup`, `export_text_rules`,
+`import_text_rules`, `reset_all_settings` — all five alive, all five called from
+`Privacy.tsx` with the command name on the line **after** `invoke(`. A
+line-based grep cannot see a call it does not fit on one line. Trusting it would
+have triaged both halves of the backup path as dead weight inside the leg
+running the sweep. The check reads whole files now (ADR 0103).
+
+**THE THREE UNREACHED ROW CLASSES ARE MEASURED AND TWO OF THEM ARE CLEAN.**
+The instrument was rebuilt in ten minutes from ADR 0092's description, walked
+**25 surface states in 37 seconds** and reported 286 runs. Diagnostics' Preview
+and Logs draw every run at **one line** at 429–467 px — nothing to fix. Every
+`Models` job opened (`details.open = true`, since a closed `<details>` measures
+zero) and its three-line rows are all the prototype's. **The one defect is in
+Profiles' editor panel**, which is the surface the port designed rather than
+carried: `.ws-edit-note` had `min-width: 0` beside 110 px of Cancel and Save,
+which left it **68 px for a 59-character sentence — six lines**, under a CSS
+comment claiming *"the panel's height does not change when a rule has something
+to say."* A comment asserting a control, one layer below where ADR 0090 named
+it. With a `26ch` floor and a wrapping foot it measures **two lines at 194 px**.
+
+**AND MY OWN FIX MADE A CLAIM I HAD TO GO BACK AND MEASURE.** The comment I
+wrote said `margin-right: auto` still holds the buttons to the trailing edge
+once the foot wraps. It does not — an auto margin only holds a line it shares.
+The instrument reported the foot's geometry: note `537..731`, buttons
+`613..731`, foot ends at `731`. That is `justify-content: flex-end` doing it,
+not the auto margin, and the comment says so now.
+
+**THE PROTOTYPE PRINTS A CONTROL'S OWN TEXT IN THE HINT BESIDE IT, ON PURPOSE.**
+Profiles → Defaults `Ceiling` reads `hint: "13:39 — the 25 MiB upload size on
+your plan. Past it, nothing transcribes."` beside `ctl: badge("13:39")`. I had
+it queued as this leg's instance of ADR 0092's defect class and the drawing
+stopped it. **The class is narrower than its sentence**: the control must be
+width-auto AND runtime-filled, so that the string and the width have one cause.
+A badge quoting five characters spends nothing twice. `Auto-stop`'s six-line
+hint is the drawing's copy verbatim too. Reading `demo.js` for the screen cost
+two minutes and saved rewriting a card of the donor's copy (ADR 0104).
+
+**THE WINDOW IS THE FRAME AROUND EVERY NUMBER AND NOBODY HAD RECORDED IT.**
+The workspace reports **800 × 608 CSS px at dpr 1.25**. `xdotool` reports the
+same window as **1000 × 760**, which is exactly what `tauri.conf.json` declares
+— nobody had resized anything, and `Xft.dpi: 120` is the 1.25. So the config's
+pixels and the stylesheet's are different units with the display scale between
+them, and `"minWidth": 880` describes a viewport of 704 px that the layout never
+sees. The floor moved from ADR 0092's 12 characters to **10** between two passes
+at the same window. Recorded, not acted on: geometry is ADR 0100's, and that is
+the core-hardening track's (ADR 0104).
+
+**Findings for Leg 13.**
+
+1. **THE INDEX ENTRIES AND THIS RECORD ARE NOT IN MY COMMIT.** By the end of
+   this leg the other track had uncommitted work in `docs/decisions/README.md`,
+   `DESIGN_SYSTEM.md`, `STATUS.md`, `CHANGELOG.md`, `REFERENCE.md`,
+   `ARCHITECTURE.md`, `ROADMAP.md`, `spec/SPEC.md`, `AGENTS.md`, `README.md`
+   **and this relay** — ~250 lines of it. Staging any of those paths commits
+   their prose under my message, so I committed only what is exclusively mine:
+   `src/`, ADR 0103 and ADR 0104. **My ADR index entries, this record, the map
+   row and the DESIGN_SYSTEM additions are sitting in the working tree**, and
+   whichever track commits those files next carries them. Check `git status`
+   before assuming anything in `docs/` is on `main`.
+2. **`npm run port:diff` CANNOT DO ALL 25 IN ONE INVOCATION.** It crashed at
+   screen 8 (`translate`, `TypeError: Illegal invocation`) on the first attempt
+   and at screen 23 (`onboarding#4`, `getBoundingClientRect` of null) on the
+   second, with different exceptions — and **every screen that crashed is exact
+   when run alone**. A crashed run also leaves its browser holding 9333, which
+   is where Leg 11's finding 6 came from: the stale browser is the *symptom*.
+   Run it in two or three batches and kill the leftover by PID between them.
+   The full picture still checks out: **24 of 25 at structural 0 | style 0,
+   `models` at 6 | 6, 33 in the soft text column.**
+3. **PROFILES → STYLE IS THE ONE CARD WHERE THE PORT WROTE THE COPY AND THE
+   WIDTH IS SMALLEST.** `Writes to`, `Length`, `Your rules`, `Writing sample`
+   and the `Communication style` card description appear **nowhere in
+   `demo.js`** — only the string "Communication style" does, as a row label on
+   Onboarding. They draw **7, 5, 7 and 3 lines at 86, 114, 226 and 226 px**.
+   `Writes to`'s hint is `REGISTER_DESCRIPTIONS[register]`, so it changes with
+   its own Select's value and gets whatever that Select's longest option leaves.
+   Deliberately not touched: rewriting five rows to fit 86 px would be carrying
+   a number that ADR 0104 says is about to move.
+4. **THE INSTRUMENT NEEDS A GUARD AND MINE DID NOT HAVE ONE AT FIRST.** Fast
+   Refresh re-runs the hook on every edit, so a second walk starts while the
+   first is still navigating and the two drive and measure each other — three
+   payloads were silently interleaved before I noticed a surface labelled
+   `hotkeys` full of `models` rows. Guard on `window.__…` with a timestamp
+   (a boolean latches forever when a module swap kills a walk mid-way), and
+   record the DOM-observed surface beside the loop variable.
+5. **The three `never used` warnings are still not this leg's:**
+   `should_oscillate_flat_reveal`, `NativeInsertionState::configure`,
+   `ModeHotkeys::for_mode`. Unchanged since Leg 9's finding 5.
+6. **ADR numbers rotted again, twice in one session.** The brief said 0101 was
+   free; by the time I filed, the core-hardening track had taken 0101 and 0102
+   while I was running checks. Mine are **0103 and 0104**. Grep the tree.
+
+**Checks at the close.** **474 frontend tests across 39 files** (473 + the one
+that presses the retry button), `cargo test` **740 unchanged**, `cargo check`
+**15 warnings unchanged**, `npm run build` green, `port:diff` **24 of 25 at
+structural 0 | style 0** with `models` at 6 | 6 and 33 in the text column — in
+three batches, for the reason in finding 2. Load ran 1.8–2.5 and the suite did
+not flake. The editor-panel fix was measured before and after in the native
+host, and the comment I wrote about it was measured too and was wrong.
 
 ### Leg 11 — the budget nobody had measured, and the rule that turned out to describe one card
 
@@ -3408,7 +3552,144 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 12
+## The prompt for Leg 13
+
+You are picking up WordScript after Leg 12. Work in the repo root on `main`. Do
+not create a branch. **The core-hardening and speech tracks are working in the
+same tree and had ~250 uncommitted lines across ten documents when Leg 12
+closed** — run `git status` and `git log --oneline -5` before you start, and
+stage your own paths.
+
+### What is already true
+
+**Leg 12's documentation is in the working tree, not on `main`** — its ADR index
+entries, its leg record, its map row and its `DESIGN_SYSTEM.md` additions. It
+committed only `src/`, ADR 0103 and ADR 0104, because every doc it would have
+touched had another track's uncommitted prose in it. **Check whether those
+landed before you write anything near them**, and if a doc still carries them,
+whoever commits that file next carries them too.
+
+**The sweep is two directions now** (ADR 0103). Caller-with-no-command is the
+one that finds defects, and it found the overlay's retry invoking a command that
+never existed. The scan must read whole files: a line-based grep reported five
+live commands as orphans.
+
+**Every copy budget is a budget at a CSS viewport** (ADR 0104). The workspace
+lays out at **800 CSS px** while `tauri.conf.json` declares 1000 and a minimum
+of 880, because the display scale is 1.25 — the config's pixels and the
+stylesheet's are different units. The floor moved from 12 characters to 10
+between two passes at the same window.
+
+**`port:diff` is 24 of 25 at structural 0 | style 0**, `models` the one
+departure at 6 | 6. `cargo test` 740, `cargo check` 15 warnings, **474 frontend
+tests across 39 files**.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 12's record is your starting
+state, and its findings 1 and 2 are the two that will cost you if you skip
+them**: its docs may not be committed, and `port:diff` cannot do 25 screens in
+one invocation. Then ADR 0103, ADR 0104, ADR 0092, `CLAUDE.md` and
+`docs/spec/SPEC.md`.
+
+### The order
+
+1. **The caller sweep, in both directions, over the whole tree.** Leg 12 ran it
+   once and found one live defect on the first attempt. Run it again — the
+   overlay is not the only window that invokes, and `RebuildLabWindow` and the
+   gallery were never in scope. Whole-file scan, not `grep`. Then the ADR 0089
+   direction with ADR 0093's third question.
+2. **Whatever the row instrument reaches that Leg 12's did not.** It walked
+   views, sections, sub-tabs, `<details>` jobs and the two Add panels. It did
+   **not** open a row menu, a `ConfirmPanel`, a `FlagPanel`, an `AnswerPanel`,
+   the export answer, or any error state — `.ws-edit-question`,
+   `.ws-edit-issues p` and `.ws-flag-what p` returned zero samples because
+   nothing on the walk rendered them. Those are the next unmeasured classes, and
+   the panel plane is where the port designs rather than carries.
+
+### The rules you will be judged on
+
+**READ THE DRAWING FOR THE SCREEN BEFORE YOU CALL ANYTHING A DEFECT.** Leg 12
+had `Ceiling` queued as a port defect — a hint whose first token is the badge
+beside it — and `demo.js` draws exactly that, on purpose. ADR 0092's class needs
+the control to be **width-auto AND runtime-filled**; a badge quoting five
+characters is not it.
+
+**A CONTROL ASSERTED ONLY TO EXIST IS NOT TESTED.** The overlay's retry test
+passed for eight legs while the retry did nothing, because it never pressed the
+button. Where a control's whole purpose is the call it makes, press it — and
+check the new test FAILS before you keep it.
+
+**MEASURE THE BUDGET, DO NOT CARRY IT**, and now: **quote the viewport with it.**
+`window.innerWidth` and `devicePixelRatio`, not the number in `tauri.conf.json`.
+
+**A COMMENT ASSERTING A CONTROL IS INDISTINGUISHABLE FROM THE CONTROL** (ADR
+0090). Leg 12 found one in `shell.css` claiming a foot never wraps, and then
+wrote a replacement comment that was also wrong until it measured it.
+
+**STRIKE THE ITEM WHEN YOU DO IT.** Leg 10 struck both of Leg 9's; Leg 11 struck
+both of Leg 10's; Leg 12 struck both of Leg 11's.
+
+### What you must NOT do
+
+- **Do not rewrite the prototype's copy.** ADR 0092 lists the rows drawing three
+  lines and they are the drawing's.
+- **Do not rewrite Profiles → Style either**, though it IS port-authored (Leg 12
+  finding 3). Its rows draw 7, 5 and 7 lines at 86–226 px, and that is the width
+  question ADR 0104 hands to whoever settles ADR 0100.
+- **Do not touch the window geometry.** ADR 0100 is the core-hardening track's
+  and is explicitly a planning direction.
+- **Do not widen the Context opening** beyond the drawn gesture lifted on
+  2026-08-11 — ask.
+- **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
+  roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not edit an existing ADR.** Append-only. The next free number is **0105**
+  — 0101 and 0102 went to the core-hardening track while Leg 12's checks ran,
+  which is the third leg in a row that sentence went stale. Grep the tree.
+- **Do not rename the `settings` window label** without being asked.
+- **Do not migrate a config without a backup path.** `core::backup` is the
+  pattern.
+- **The overlay is still rule 5.** The two commands that resized it dynamically
+  are gone (ADR 0089).
+- **Leave a temporary instrument out of the commit** and grep for it. Leg 12's
+  was `src/dev/rowAudit.ts` with one hook in `WorkspaceWindow.tsx`, and it needs
+  a timestamped run guard or Fast Refresh interleaves two walks.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the TOTAL,
+  not the colour.** Leg 12 closed at 474 frontend across 39 files, `cargo test`
+  740, `cargo check` 15 warnings. Under load the suite flakes by about 5;
+  `npx vitest run --no-file-parallelism` is the tiebreaker and `uptime` says
+  whether to reach for it.
+- **`npm run port:diff` TAKES GALLERY IDS OR IT MEASURES NOTHING**, and a name
+  that is not one is dropped in silence. The 25 are the **16 ids in
+  `src/windows/gallery/registry.tsx` except `ds`** plus `models#1 agents#1
+  agents#2 onboarding#1`–`#6`. **Run it in two or three batches** — it crashed
+  at screen 8 and at screen 23 of a single 25-id invocation, and every screen
+  that crashed is exact alone. **Check `ss -ltn | grep 9333` before each batch**
+  and kill a leftover by PID: a crashed run is what creates the stale browser.
+- **The native host is the only instrument for a drawn state.** Rebuild the row
+  instrument from ADR 0092 and Leg 12's record: walk `VIEWS` and `SECTIONS`,
+  click every `button[role=tab]`, set `details.ws-job { open = true }` (a closed
+  `<details>` measures zero), read each run's height against its computed
+  line-height, and POST to a loopback collector — `csp` is `null`, so `fetch`
+  needs no permission. Report the window size in the payload.
+- **Check whether a host and a dev server are ALREADY running before starting
+  one.** `tauri dev` starts its own Vite. `ps -o lstart=` shows whose is whose,
+  `xprop -id <win> _NET_WM_PID` maps a window to its process, and
+  `xdotool getwindowgeometry` is good enough for a width (`xwininfo` is not
+  installed).
+- **Do not raise the window past somebody working at the machine — ask.**
+- **Never `pkill`.** Kill by PID, and stop what you started.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 14
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 12 (spent — kept for the chain's record)
 
 You are picking up WordScript after Leg 11. Work in the repo root on `main`. Do
 not create a branch. `src-tauri/` is open, and **the core-hardening track is

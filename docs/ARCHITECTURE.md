@@ -71,6 +71,30 @@ Three windows in the Tauri config:
 - `rebuild-lab`: native-decorated diagnostics pop-out mounting the **same**
   Diagnostics section the sheet does, rather than a second implementation of it.
 
+**All three are declared statically in `tauri.conf.json`, and there is no
+`WebviewWindowBuilder` anywhere in the Rust tree.** Windows are fetched with
+`get_webview_window(label)`, revealed with `.show()`, and hidden rather than
+destroyed — `install_hide_on_close` intercepts `CloseRequested`, calls
+`prevent_close()` and hides. The `/gallery` route has no window at all and opens
+inside one that is already there.
+
+*Planned and not built* (ADR 0100): a second window class whose geometry belongs
+to the user — moved, resized and remembered — for the four drawn windows that
+have no host (the translation pop-out, the meeting HUD, the agent window,
+ADR 0043's notification). It does not reopen the overlay's fixed per-surface
+geometry and brings back no generic resize command; ADR 0089 removed that path
+because `set_size` is asynchronous on WebKitGTK and content-driven resizes clip
+the pill.
+
+**Two windows share no state, and the runtime announces no setting change.**
+There is no config-changed channel: `AppConfig::save_to_disk` writes and
+`save_config` returns to its caller. With one settings window that has never
+mattered; several pop-outs drawing one machine-wide value (ADR 0097's
+per-language routing) makes it a defect designed in. *Planned and not built*
+(ADR 0108): the config is the only holder, a write is announced on a channel
+every window re-reads from, and the event is scrubbed by `without_secrets()`
+like every disk write.
+
 Key frontend building blocks:
 
 - `src/windows/OverlayWindow.tsx`
@@ -177,15 +201,60 @@ The active product core lives in `src-tauri/src/core/`.
   all under two seconds. It travels on `AudioReadyEvent` to the history record
   and to the overlay's result surface. It reports the defect in
   `known-issues/capture-loses-half-the-recording.md`; it does not fix it.
+- **The cpal stream's lifetime *is* the recording.** `start_native_capture`
+  opens the device and begins the recording in one call and refuses a second;
+  samples accumulate in one `shared.samples` bounded by `max_samples` (derived
+  from `max_recording_seconds`); `stop_native_capture` pauses the stream, takes
+  the buffer whole and produces one outcome with one integrity verdict. **There
+  is no way to lift a segment out of a running capture**, which is the shape a
+  conversation is made of.
+
+  *Planned and not built* (ADR 0107): the two are separated -- the stream is
+  held for a session, a recording window opens per turn, and `CaptureIntegrity`,
+  `capture_budget` and `transcribe_audio_file` all apply per turn unchanged.
+  `max_samples` becomes a turn ceiling. The runtime mute (ADR 0098) holds the
+  segmenter as well as the recording, so a deaf stretch is not a turn boundary.
 - `sound/`: startup signature plus listen/handoff/done/abort/error cues.
   `cue.rs` owns the score, `pack.rs` the timbre, `synth.rs` renders at the
   device sample rate, `engine.rs` owns the one persistent output stream
-  (see ADR 0010).
+  (see ADR 0010). **There is no speech synthesis here or anywhere else**, and
+  the stream is bound to the OS default device — the runtime enumerates input
+  devices only.
+
+  *Planned and not built* (ADR 0097): a second, named output stream for speech
+  on a device selected by name, leaving every cue rule intact. The two differ in
+  the rule that matters — a cue pre-empts the running cue, an utterance must not
+  be cut.
+- **`muted` and `paused` are not two names for one thing**, and the difference
+  decides what a duplex mute can reuse. `paused` gates the sample push and is
+  subtracted from the effective wall clock in `effective_elapsed`; `muted` gates
+  the level statistics, the voice-activity timestamp and the emitted meter, and
+  **the audio keeps being recorded**. ADR 0098 adds a third state rather than
+  overloading either.
 
 ### Provider and text processing
 
 - `providers/mod.rs`: shared provider contract, dispatch and typed
-  command surface (modes, capabilities, errors).
+  command surface (modes, capabilities, errors). **Dispatch is a closed
+  `enum ProviderId { Groq, LocalPreview }`**, matched in each top-level
+  capability function — two providers, eight functions.
+
+  *Planned and not built* (ADR 0094, ADR 0095, ADR 0096): the enum becomes three
+  traits plus a registry, the provider axis splits per role, and a streaming
+  recognition contract stands beside `transcribe_audio_file` without touching
+  it. What each vendor can actually serve is surveyed per row and per date in
+  [PROVIDERS.md](PROVIDERS.md) — that document is a capability reference and not
+  a claim about this codebase.
+
+  **`ProviderCapabilities` crosses the seam and nothing on the other side reads
+  it.** The struct is mirrored in `src/types/providers.ts` and returned by
+  `provider_status`; no field of it is consumed anywhere in `src/`, and
+  `AI Models` draws its capability answers from the hand-maintained `PROVIDERS`
+  table in `src/screens/data.ts` instead. **The drawing states an intent and the
+  runtime answers a capability**; the code that makes the second govern the
+  first does not exist and is ADR 0106 — a step before the first adapter, not
+  with it. A credential resolves per `(provider, role)` rather than per provider
+  (ADR 0105), which is what a second credential kind on one vendor forces.
 - `providers/groq.rs`: cloud-first production implementation (BYOK, secret
   store, Groq-specific HTTP errors).
 - `providers/local_preview.rs`: local runtime lane with `whisper-cli` for

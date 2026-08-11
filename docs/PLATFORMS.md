@@ -261,6 +261,45 @@ than as a stream that flickers in and out for 300 ms per cue.
 | Windows | Yes | Own entry in the Volume Mixer, remembered per application |
 | macOS | **No** | macOS offers no per-application volume at all. The in-app slider is the only control there |
 
+### Output devices are not enumerated, and speech will need them to be
+
+**The runtime enumerates input devices only.** `list_native_input_devices`
+(`core/capture.rs`) walks `cpal::default_host().input_devices()`, dedupes by
+name, marks the OS default and sorts default-first; **it has no counterpart on
+the output side**. The cue stream opens with
+`DeviceSinkBuilder::from_default_device()` -- deliberately, rather than
+`open_default_sink()`, which falls back to arbitrary non-default devices.
+
+ADR 0097 adds a second, named output stream for speech on a device the user
+picks. That is not built, and three things about it are platform questions this
+document will have to answer once it is:
+
+- **Selection is by name, not by index.** The input side already stores a name
+  (`AppConfig.audio_device`) and resolves it with a case-insensitive substring
+  match, falling back to the default. A device name survives a restart; a cpal
+  index does not, and its meaning changes when a device is plugged in.
+- **Device names are not stable across platforms or across sessions.** What
+  PipeWire, WASAPI and CoreAudio call the same headset differs, and a
+  Bluetooth device that is asleep may not be enumerated at all. **A routing that
+  points at a device which is not present must degrade to the default and say
+  so**, not fail silently and not fail loudly mid-sentence.
+- **The per-application volume table above still applies, per stream.** Two
+  streams means two mixer entries on Linux and Windows, and still none on
+  macOS.
+
+**The sentence a missing device needs has nowhere to go yet.** The routing is
+drawn inside the translation window as two `Select`s over two fixed device
+names, with the selected value repeated at the head of each list -- a prototype
+artifact, not an enumeration (`PROVIDERS.md`, open disagreement 9). A wired
+implementation lists each device once, marks one selected, and can say that the
+remembered one is absent. That row is a drawing and grows in the gallery first
+(ADR 0057, ADR 0108) -- and the same record fixes the scope underneath it: the
+routing is machine-wide while the window it is drawn in may stand several times,
+so the config is the only holder and a write is announced.
+
+Nothing here is measured yet. It is written down so the first implementation
+measures rather than assumes.
+
 ### How WordScript is named in the mixer
 
 WordScript shows up with two streams: a playback stream for the sound cues and

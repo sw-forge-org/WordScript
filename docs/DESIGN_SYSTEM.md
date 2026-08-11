@@ -373,6 +373,13 @@ it. "One line" is therefore a different number on every row. Leg 11 measured all
 of them in WebKitGTK across 123 rows (ADR 0092); the `≤ 90` this table carried
 until then had never been measured and is wrong for every case in it.
 
+**AND EVERY NUMBER BELOW IS A NUMBER AT A CSS VIEWPORT** (ADR 0104). Both passes
+measured at **800 × 608 CSS px** — the workspace at its configured 1000 × 760
+physical pixels on a 1.25 display scale, which is what `tauri.conf.json`'s
+`minWidth: 880` never reaches. The same rows gave 12 characters as the floor in
+one pass and 10 in the next. Re-measure in the host; do not carry a figure from
+this table into a judgement about a row.
+
 | Element | Budget, measured |
 | --- | --- |
 | Section header | 1–4 words |
@@ -396,6 +403,22 @@ name, a monitor label, a release summary: that text is what sets the control's
 width, so the row spends its text column on the string and then tries to print
 the string in what is left. This is not a length mistake and no length rule
 catches it — the string and the width have the same cause.
+
+**The control has to be WIDTH-AUTO AND RUNTIME-FILLED for that rule to bite**,
+which is narrower than the sentence above reads (ADR 0104). The prototype prints
+a control's own text in the row beside it deliberately: Profiles → Defaults
+draws `Ceiling` as *"13:39 — the 25 MiB upload size on your plan. Past it,
+nothing transcribes."* next to `badge("13:39")`. A badge is as wide as the five
+characters the hint quotes, so nothing is spent twice. Read the drawing for the
+screen before calling an echo a defect.
+
+**A PANEL'S FOOT IS A ROW WITH THE SAME PROBLEM.** `.ws-edit-note` sat on
+`min-width: 0` beside Cancel and Save, which in the Profiles pane left it 68 px
+for a 59-character sentence: **six lines**, under a comment claiming the panel's
+height does not change when a rule has something to say. It now has a `26ch`
+floor and the foot wraps, which measured **two lines at 194 px** — and
+`justify-content: flex-end` is what keeps the commit at the trailing edge once
+there is a second line for it to sit on.
 
 **jsdom cannot check any of this.** It reports the string and is structurally
 unable to report the wrap. The instrument is the native host: measure
@@ -436,6 +459,25 @@ implementation with two sets of props, and a component that exists only under
   of them draws traffic lights, and the differences between them are width,
   height and content. A sixth window that reaches for its own header is the
   defect this family exists to prevent.
+- **The grip means the geometry belongs to the user** (ADR 0100), and that is
+  what separates this family from the overlay rather than the chrome. The
+  overlay is fixed per surface because it inserts at a cursor in somebody else's
+  application and must not take focus; a family member inserts nothing, so it
+  may be moved, resized and focused, and it remembers where it was put. **This
+  is not the path ADR 0089 abandoned** — that was content height driving
+  repeated `set_size` on a compositor that applies it asynchronously. A user
+  dragging a corner is one change per gesture, initiated outside the webview.
+  There is still no generic resize command, for either class.
+- **None of the five windows exists.** The runtime declares three windows
+  statically and contains no `WebviewWindowBuilder`; the family is a drawing
+  waiting on a runtime class, and `ChatWinDeco` and the grip are reachable only
+  through screens the product mounts nowhere.
+- **Two kinds of persistence live in one member and must not be conflated**
+  (ADR 0108). What you dragged is yours and is remembered per window; what you
+  routed is the machine's and is remembered once. A member that may stand
+  several times draws the second as a view onto one config value, never as its
+  own copy — and the runtime has no channel to announce that value changing,
+  which is why this is written down before a second pop-out exists.
 - **THE HANDOFF CARD IS DELIBERATELY NOT A MEMBER OF IT.** No title bar, no
   close control, no resize grip: it is one question with two answers, on screen
   for about four seconds. Window chrome would invite the user to move it, which

@@ -102,6 +102,22 @@ constants themselves were not re-derived and carry their own provenance
   `retryable` and a `user_action`; settings and runtime events must relay
   this semantics, not build their own error categories.
 - There is no WordScript proxy or hosted mode.
+- **Neither lane streams, and neither speaks.** Both take a file and return one
+  result; there is no speech synthesis anywhere in the runtime. Which vendors
+  serve which role -- batch, streaming, detected language, voice -- is surveyed
+  per row and per date in [PROVIDERS.md](PROVIDERS.md), and the planned contracts
+  are ADR 0094 through ADR 0097 plus ADR 0105 through ADR 0109. **None of that
+  is built**; this section describes what runs today.
+- **`ProviderCapabilities` is returned and is read by nothing.** The struct
+  crosses to `src/types/providers.ts` on `provider_status`, and no field of it
+  is consumed in `src/` -- the capability answers drawn on `AI Models` come from
+  the `PROVIDERS` table in `src/screens/data.ts`, which is a drawing. So a
+  capability stated on a surface today is a drawn intent, not a runtime answer
+  (ADR 0106).
+- **Groq's recognition path takes a language as a hint, not as a question.**
+  Supplying ISO-639-1 improves accuracy and latency; the response does not tell
+  you what it heard. That matters wherever a surface wants to route by language
+  rather than assume one (ADR 0099).
 
 ### Mode semantics today
 

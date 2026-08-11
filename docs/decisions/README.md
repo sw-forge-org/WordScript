@@ -560,6 +560,16 @@ Status: Proposed | Accepted | Superseded by NNNN
   row** -- a rule used to go on one click while the profile holding it asked
   twice. A swipe-to-reveal was raised and rejected with reasons. Costs
   `profiles` two measured differences and `context` none.
+- [0083](0083-a-capture-reports-the-cadence-of-its-own-input-stream-and-the-level-it-was-given.md):
+  filed by the core-hardening track, and **missing from this index until
+  2026-08-11** — added by the speech track, which found the gap while checking
+  its own entries resolved. ADR 0079 made a short capture say so and
+  deliberately not why; this is the *why* instrumentation. `CallbackCadence`
+  counts every callback and every stretch over **200 ms** in which the stream
+  delivered nothing — roughly ten missed ALSA periods, far outside scheduling
+  jitter and far below the multi-second gaps the defect implies. **Nothing
+  writes to the log from the audio callback**: gaps accumulate under the lock
+  the callback already takes and flush at `stop_native_capture`.
 - [0084](0084-the-defect-that-needed-no-dictation-gets-a-binary-that-needs-no-app.md):
   filed by the core-hardening track. `capture-soak` opens the device WordScript
   opens and holds it open for hours, so the loss in
@@ -635,6 +645,150 @@ Status: Proposed | Accepted | Superseded by NNNN
   fourteen, because a command whose name survives in a test mock looks called to
   a name-grep. `append_diag_log` still writes a log nothing can read. Recorded,
   not deleted: the devtools door has no shell substitute and the other two do.
+
+- [0094](0094-the-provider-contract-is-a-trait-with-a-registry-and-the-axis-splits-per-role.md):
+  the closed `enum ProviderId` dispatch does not survive ten providers — two
+  arms in eight functions becomes eighty. Three traits plus a registry;
+  a provider that cannot serve a role **does not implement it**, so the absence
+  is where the compiler can see it. And the provider axis splits per role: a
+  resolved default plus a sparse override per job, because Anthropic
+  transcribes nothing and one `provider` field cannot say so.
+
+- [0095](0095-a-streaming-recogniser-stands-beside-the-batch-one-and-its-first-implementation-is-a-turn.md):
+  streaming sits **beside** batch and never reaches the session reducer, so
+  ADR 0018/0019 are untouched. `Partial`* then exactly one `Final` per
+  utterance — and the **first implementation emits no partials**: a segmenter
+  marks the turn, the adapter transcribes it as a file. Turn boundaries and
+  partial results are separate requirements, and the two waiting surfaces need
+  different ones.
+
+- [0096](0096-every-drawn-lane-gets-an-adapter-and-groq-stops-being-the-only-one.md):
+  supersedes ADR 0065. Every drawn lane gets a real adapter, documented before
+  it is written. The three terms that carry over: the UI does not change, an
+  un-integrated lane stays inert **and says so**, and the screen keeps its
+  banner until it is whole. ADR 0065's open `local_preview` point is
+  **dissolved rather than answered** — and returns as written if the build-out
+  stalls with Local unbuilt.
+
+- [0097](0097-speech-gets-a-second-output-stream-on-a-device-the-user-picks.md):
+  extends ADR 0010 without weakening it. A second, named output stream for
+  speech on a device selected by name, because a cue is 300 ms and pre-empts
+  while an utterance is seconds and must not be cut. Output enumeration mirrors
+  `list_native_input_devices`; the enumeration is the small part and the routing
+  is not.
+
+- [0098](0098-the-recogniser-goes-deaf-while-the-machine-speaks-and-that-stretch-is-not-a-shortfall.md):
+  a runtime mute is a **third state**, beside the user's mute and the user's
+  pause. The obvious primitive is the wrong one: `muted` is a *level* mute and
+  does not stop recording — `paused` does, and is also what `effective_elapsed`
+  subtracts. A deliberate deaf stretch must come off that clock, or every spoken
+  reply pushes a conversation toward ADR 0079's `short` verdict.
+
+- [0099](0099-the-direction-of-a-turn-is-read-off-the-recogniser-never-off-a-button.md):
+  a turn's direction is whatever the recogniser said it heard, matched against
+  the session's pair; **no match leaves the direction where it was and says so**
+  rather than silently turning the turn around. Not to be confused with
+  `hallucination_detect.rs`'s language switch, which is quality control on one
+  finished batch — wiring them together would make a conversation's normal
+  behaviour look like a hallucination. The reliability half stays a measurement.
+
+- [0100](0100-the-window-family-is-a-class-with-user-owned-geometry.md):
+  `DESIGN_SYSTEM.md` names a five-member window family and **none of the five
+  exists** — three windows are declared statically and there is no
+  `WebviewWindowBuilder` in the tree. The class is defined by who owns the
+  geometry: the user, by dragging, remembered. That is not the path ADR 0089
+  abandoned, which was *content height driving repeated `set_size`* — and no
+  generic resize command returns.
+
+- [0101](0101-the-translation-window-runs-the-translate-mode-and-gains-no-mode-of-its-own.md):
+  closes the **second** of ADR 0064's two open points, answered by the owner:
+  the window runs `ProcessingMode::Translate` and there is no eighth mode,
+  because a second one would be redundant. What the surface changes is its
+  inputs — the target language comes from the session's pair rather than the
+  profile — not its transform. The cycle keeps seven entries; a window is not a
+  mode. ADR 0064's **first** point, whether a view plus a pop-out is enough
+  interaction at a table, stays open.
+
+- [0102](0102-a-subscription-is-a-second-way-to-pay-for-openai-text-and-openai-is-the-only-vendor-left-where-it-is-allowed.md):
+  OpenAI's Cloud row accepts a **second credential kind** — an OAuth token set
+  against the user's ChatGPT plan — beside the API key, which stays the default.
+  The upstream that credential reaches serves no transcription and no synthesis,
+  so it is admissible for the five chat jobs and inadmissible for the three
+  speech jobs and `voice`. **No other vendor gets it**: Anthropic forbade it on
+  2026-02-19 and enforced on 2026-04-04, Google suspended paying accounts in
+  February 2026, and the rest sell no subscription. Auth is a native Rust
+  OAuth + PKCE flow, not a bundled sidecar.
+- [0103](0103-the-sweep-only-ever-asked-which-command-has-no-caller-and-the-other-direction-is-the-one-that-breaks.md):
+  The caller sweep has always asked which registered command has no `invoke(`,
+  and every answer is dead weight. Run in **the other direction** it found
+  `load_transcription_history` — invoked by the overlay's *Retry from the
+  recording*, registered nowhere, and never registered: the control has rejected
+  on every press since `1fda91d`, the commit that kept the audio so a failed
+  dictation could be retried. The sweep is now two directions, the caller one
+  first, and **it must span lines** — a line-based grep reported five live
+  commands as orphans because their name sits on the line after `invoke(`.
+- [0104](0104-the-window-is-a-thousand-pixels-the-layout-gets-eight-hundred-and-the-minimum-is-never-reached.md):
+  The workspace lays out at **800 CSS px** while `tauri.conf.json` declares 1000
+  and a minimum of 880, because the display scale is 1.25. The config's pixels
+  and the stylesheet's are different units and the scale is between them, so the
+  declared minimum is never reached. Every copy budget in ADR 0092 and after it
+  is a budget at a CSS viewport, which is what a measurement is now quoted with.
+  Also: ADR 0092's defect class is narrower than its sentence — the prototype
+  itself prints a badge's text in the hint beside it.
+
+- [0105](0105-a-credential-is-resolved-per-role-and-a-job-never-inherits-one-its-role-cannot-use.md):
+  ADR 0094 states its credential rule for the *overriding* job, so a following
+  job inherits the default's — which ADR 0102 broke the same day by making the
+  kind per role. **"Follow the connection" follows the provider, never the
+  credential.** A role with no credential makes the job inert and names what is
+  missing, rather than borrowing the other kind the same provider holds: that is
+  the role-shaped version of the host mistake ADR 0094's security rule forbids.
+  The store is keyed `(provider, role, kind)`, so clearing chat cannot clear
+  speech.
+
+- [0106](0106-the-drawn-matrix-states-an-intent-the-runtime-answers-a-capability-and-the-seam-between-them-is-not-built.md):
+  corrects a claim ADR 0094 made and `SPEC.md` repeated. `ProviderCapabilities`
+  is mirrored and returned and **read by nothing** — `Models.test.tsx` mocks it
+  as `{}` and the suite passes, while every capability answer on the screen comes
+  from the hand-maintained table in `data.ts`. The drawing states an intent, the
+  runtime answers a capability, and the code making the second govern the first
+  is a step **before** the first adapter, **asserted by a test rather than by a
+  sentence**.
+
+- [0107](0107-an-utterance-is-a-recording-and-the-stream-that-carries-a-conversation-outlives-every-one-of-them.md):
+  supplies the capture half ADR 0095 assumed and did not price.
+  `start_native_capture` couples the cpal stream to the recording and
+  `stop_native_capture` takes one `max_samples`-bounded buffer whole, so no
+  segment can be lifted out of a running capture. **The stream is held for the
+  session and a turn is a recording** — which keeps `CaptureIntegrity`,
+  `capture_budget` and `transcribe_audio_file` applying per turn unchanged, and
+  makes `max_samples` a turn ceiling rather than a session one.
+
+- [0108](0108-a-machine-wide-setting-drawn-on-a-surface-that-stands-more-than-once-needs-an-echo-the-runtime-does-not-have.md):
+  ADR 0097's routing is machine-wide and is drawn inside a window ADR 0064 lets
+  stand several times, in webviews that share no state. The config is the only
+  holder, **a write is announced on a channel the runtime does not have**, and
+  the card states its own scope. The event is scrubbed by `without_secrets()`
+  like every disk write, because a second path out of the runtime is how a
+  secret leaks.
+
+- [0109](0109-voice-is-the-ninth-job-and-no-adapter-lands-before-the-row-that-operates-it.md):
+  `voice` becomes the ninth `JobKey` — bookkeeping, since ADR 0042, 0064, 0094
+  and 0102 all already write contracts against it. **Where** the translation
+  voice sits on `AI Models` stays the owner's question. And the rule the
+  build-out order needed and did not have: **no adapter lands before the row
+  that operates it**, which gates ADR 0096's second step and moves Local up if
+  the answer is not there when OpenAI lands.
+
+- [0110](0110-streaming-is-a-property-of-a-model-not-of-a-provider-and-openrouter-was-never-the-exception.md):
+  corrects ADR 0094's capability axes. It called OpenRouter *"the exception that
+  proves the axes are per provider"* — **it is a constant nowhere.** One OpenAI
+  key serves `gpt-4o-transcribe` (streams) and `whisper-1` (documented as not
+  streaming); the local lane repeats it with `runtime: "online"` on two of four
+  Parakeet models. **The role is the provider's and the shape is the model's**:
+  `speech_synthesis` stays provider-level, `transcription_streaming`,
+  `reports_detected_language` and `synthesis_streaming` move to the model. This
+  repo's own survey held the evidence before the axis was chosen.
 
 ## Resolved: the number 0011 was used twice
 

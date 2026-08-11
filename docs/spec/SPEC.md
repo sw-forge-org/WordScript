@@ -7,6 +7,22 @@ shipped product is Leg 9's, the same day — the first since Leg 3's shell
 overwrite, and it found the Architecture and Contracts sections and the
 deviation list all still describing the pre-port surface)
 
+Amended 2026-08-11 by the speech track, which added the streaming-recognition
+contract, widened the provider contract and added six deviation entries. **It
+read `core/providers/mod.rs`, `core/capture.rs`, `core/sound/engine.rs`,
+`core/config.rs`, `tauri.conf.json`, `src/types/providers.ts`,
+`src/screens/data.ts` and `src/screens/Models.tsx` against what those sections
+claim, and nothing else** — it is not a drift check on this file and does not
+inherit Leg 10's date for the parts it did not read. Every clause it added is a
+planned contract and says so; none of it is implemented.
+
+**Re-read the same day under review, which found one claim in the first pass
+false**: that `ProviderCapabilities` is read by `AI Models` and therefore stops
+a surface claiming a capability its lane lacks. Nothing reads it. The clause is
+corrected below and ADR 0106 carries the derivation — recorded rather than
+quietly fixed, because asserting a capability the runtime does not have is the
+defect class this file exists to prevent.
+
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
 The living overview docs (`ARCHITECTURE.md`, `VISION.md`, `REFERENCE.md`,
@@ -167,6 +183,86 @@ UI implementation details, not Rust event names or Tauri channels.
   `user_action`. UI must relay this, never invent its own error categories.
 - `local` (on-device, current `local_preview` lane) and `self_hosted`
   (user-run remote/LAN, reserved, not active) are not interchangeable labels.
+- **Dispatch is a closed `enum ProviderId { Groq, LocalPreview }` today**, and
+  ADR 0094 replaces it with three traits (`SpeechProvider`, `ChatProvider`,
+  `VoiceProvider`) plus a registry, with the provider axis split per role — a
+  resolved default plus a sparse override per job, not a provider/model pair per
+  job. A provider that cannot serve a role does not implement it. Planned; not
+  built.
+- **Capability axes split between provider and model** (ADR 0110). `speech_synthesis`
+  is a provider-level role question and joins `transcription` and
+  `chat_completion` on `ProviderCapabilities`; **`transcription_streaming`,
+  `reports_detected_language` and `synthesis_streaming` are model-level**,
+  because one OpenAI key serves `gpt-4o-transcribe` (streams) and `whisper-1`
+  (does not), and the local lane repeats the split across Parakeet's online and
+  offline models. A job asks its resolved `(provider, model)` pair, never its
+  lane's name. Planned; not built.
+- **The four fields ADR 0094 named land on those two axes** rather than all on
+  the provider struct. The struct is mirrored into `src/types/providers.ts`
+  and travels on `provider_status`. **It is not read by any surface**: no field
+  of `status.capabilities` is consumed in `src/`, and `AI Models` draws its
+  capability answers from the hand-maintained `PROVIDERS` table in
+  `src/screens/data.ts`. The mirror is a precondition for a guard, not a guard;
+  ADR 0106 makes building that seam a step before the first adapter, asserted by
+  a test rather than by a sentence. Planned; not built.
+- **`voice` is the ninth `JobKey`** (ADR 0109). The union carries eight and four
+  records already write contracts against the ninth; the drawn `Speaking` job
+  sits outside the lane axis and that is the shape the type follows. Where the
+  translation voice sits on `AI Models` is an open owner question and is not
+  decided by the type. Planned; not built.
+- **A provider may carry more than one credential kind, and the kind is per
+  role.** A credential is one opaque string today
+  (`SaveProviderApiKeyRequest { provider, api_key }`); the registry must carry
+  credential *shape* alongside role, because self-hosted needs a base URL plus a
+  model id, the enterprise three each need something different, and OpenAI takes
+  either an API key or an OAuth token set. ADR 0102 fixes the one case that is a
+  policy question rather than a shape question: the **subscription** credential
+  is admissible for the five chat jobs (`cleanup`, `rewrite`, `translate`,
+  `enhance`, `assistant`) and inadmissible for `dictation`, `meetings`, `upload`
+  and `voice`, because the backend it reaches serves no recognition and no
+  synthesis. The restriction lives in the type, as ADR 0094's role rule does --
+  it is not a runtime "unsupported" error. **No vendor other than OpenAI carries
+  this kind.** Planned; not built.
+- **The credential resolves from `(provider, role)`, and "follow the connection"
+  follows the provider only** (ADR 0105). ADR 0094 states its credential rule
+  for the *overriding* job; the following job is the case a per-role credential
+  kind breaks, because a speech job on a subscription-paid connection would
+  otherwise inherit a credential its role cannot use. A role with no credential
+  makes the job **inert and named** -- never a silent fall back to the other
+  kind the same provider holds, which is the role-shaped version of the host
+  mistake ADR 0094's security rule prevents. The secret-store entry is keyed
+  `(provider, role, kind)` so clearing one role's credential cannot clear
+  another's. Planned; not built.
+- Which vendor serves which role is surveyed in `docs/PROVIDERS.md`, dated per
+  row. That document is the capability reference; it is not a statement of what
+  is integrated.
+
+### Streaming recognition contract
+
+**Planned, not built.** ADR 0095. It stands **beside** the batch contract and
+does not alter it: `transcribe_audio_file` remains the dictation path, no
+partial result reaches the session reducer, and ADR 0018/0019 are untouched.
+
+- The unit is an **utterance**: zero or more `Partial { text, language,
+  confidence }` followed by exactly one `Final { text, language, segments }`.
+- **Its first implementation emits no partials.** A voice-activity segmenter
+  marks the utterance and the adapter transcribes it as a file, so the same
+  contract serves a lane that streams and one that does not; a surface asks
+  `ProviderCapabilities` rather than the lane's name.
+- Every streaming result is guarded against the active `processing` session id,
+  per utterance, on the pattern `sessions::is_processing_session_current`
+  establishes.
+- Turn segmentation and partial results are **separate requirements**. A
+  conversation needs the first; a caption strip needs the second.
+- **A turn is a recording and the stream is not** (ADR 0107). `core::capture`
+  couples the cpal stream's lifetime to one bounded buffer taken whole at
+  `stop_native_capture`, and a conversation needs them separated: the stream is
+  held for the session, a recording window opens per turn, and
+  `CaptureIntegrity`, `capture_budget` and `transcribe_audio_file` all apply per
+  turn unchanged. `max_samples` is therefore a turn ceiling, not a session one.
+  The runtime mute (ADR 0098) holds the segmenter as well as the recording, so
+  the deaf stretch is not a turn boundary. A provider needing a sample rate
+  other than `TRANSCRIPTION_SAMPLE_RATE` converts inside its own adapter.
 
 ### Insert contract
 
@@ -481,7 +577,42 @@ result surface (ADR 0011a).
 - Full live-preview / controlled-commit overlay across all delivery modes is
   not built (only `clipboard_only` preview exists).
 - No second production provider; `fast`/`quality`/`local`/`self_hosted` mode
-  model is not yet a real multi-provider system.
+  model is not yet a real multi-provider system. **Widened to the complete
+  build-out on 2026-08-11** (ADR 0096, superseding ADR 0065): every drawn lane
+  gets an adapter, speech and voice are built out alongside chat, and the
+  capability survey behind it is `docs/PROVIDERS.md`. Until an adapter lands, a
+  lane stays drawn and inert and says so.
+- **No speech synthesis anywhere in the runtime**, and no output-device
+  enumeration — `list_native_input_devices` has no counterpart, and
+  `core::sound` runs one persistent output stream bound to the OS default by
+  decision (ADR 0010). ADR 0097 adds a second, named stream for speech on a
+  selectable device and leaves every cue rule intact.
+- **No streaming recognition.** One speech entry point, `transcribe_audio_file`;
+  `capture.rs` records to a file, stops and uploads. See the streaming contract
+  above for the planned shape, and `docs/PROVIDERS.md` for which lanes could
+  serve it — Groq, the lane the product runs on, cannot.
+- **The runtime declares three windows statically** (`overlay`, `settings`,
+  `rebuild-lab`) and contains no `WebviewWindowBuilder`. Four drawn windows —
+  the translation pop-out, the meeting HUD, the agent window and ADR 0043's
+  notification — wait on a second window class whose geometry belongs to the
+  user (ADR 0100). This does not reopen the overlay's fixed per-surface
+  geometry, and no generic resize command returns (ADR 0089).
+- **No surface reads a runtime capability.** `provider_status` returns
+  `ProviderCapabilities` and no field of it is consumed anywhere in `src/`;
+  `Models.test.tsx` mocks it as `{}` and the suite passes. `AI Models` draws
+  every capability answer from the hand-maintained `PROVIDERS` table in
+  `src/screens/data.ts`, whose `stt`/`llm` booleans are a drawing and are the
+  subject of three open disagreements in `docs/PROVIDERS.md`. The seam that
+  makes a drawn row inert when the runtime denies its role is ADR 0106 and is a
+  step before the first adapter, asserted by a test.
+- **Nothing announces that a setting changed.** `AppConfig::save_to_disk` writes
+  and `save_config` returns to its caller; there is no config-changed channel
+  among `wordscript-event`, `wordscript-native-event`, `wordscript-mode-event`,
+  `wordscript-audio` and the rest. It has never been needed with one settings
+  window. ADR 0100's window class plus ADR 0097's machine-wide routing make it
+  necessary, and ADR 0108 records the shape: the config is the only holder, a
+  write is announced, and the event carries no secret because it takes the same
+  `without_secrets()` scrubbing every disk write does.
 - No guided setup/packaging path from install to first useful dictation.
 - Chat, Upload and Account are gone from the product's information
   architecture; the pre-port shell's previews of them were deleted with the
@@ -509,7 +640,10 @@ result surface (ADR 0011a).
   unimplemented: a context object with an `origin` and five states, folders that
   are directories on disk, four speaker-confidence statuses, actions as files in
   `_actions/`, a second capture window, a spoken agent channel, and per-language
-  audio routing. The full list is §2.5 of
+  audio routing. The last two now have records — ADR 0097 for the routing and
+  the second output stream, ADR 0098 for the mute that lets a machine speak over
+  an open microphone without transcribing itself — but a record is not an
+  implementation and neither entry leaves this list yet. The full list is §2.5 of
   `docs/handoffs/HANDOFF_gui-port-relay.md`. **A drawn surface may not be read
   as implemented**; the six undecided surfaces (ADRs 0060-0064 plus the roadmap
   candidate) are mounted in no window at all.

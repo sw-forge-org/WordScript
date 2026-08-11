@@ -100,7 +100,8 @@ than relying on this file, which deliberately carries no detail.
 | `docs/spec/SPEC.md` | Any runtime contract, session semantics or delivery mode |
 | `docs/ARCHITECTURE.md` | Module boundaries or the UI/runtime seam |
 | `docs/DEVELOPMENT.md` | Setup, or when unsure which validation a change needs |
-| `docs/PLATFORMS.md` | Insert, recovery, shortcuts, capture, Wayland, the Windows vendor patch |
+| `docs/PLATFORMS.md` | Insert, recovery, shortcuts, capture, audio devices, Wayland, the Windows vendor patch |
+| `docs/PROVIDERS.md` | Any provider, lane, credential shape or model name -- what a vendor serves, per row and per date |
 | `docs/REFERENCE.md` | Overlay sizes and CSS invariants, provider lanes, mode semantics |
 | `docs/DESIGN_SYSTEM.md` | Settings UI, tokens, motion, scroll and compositing behavior |
 | `docs/known-issues/` | Areas with failure history: overlay placement, ghosting, shortcuts, transcription |

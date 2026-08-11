@@ -40,14 +40,19 @@ spoken, only the prompt argument is dictated, and a visible keyed confirmation
 precedes the start (ADR 0030).
 
 Unscheduled work with an open decision gate is filed below the phases, not
-inside them — currently five items: a second paste mechanism on Wayland,
-streaming recognition and the spoken-output path, meeting capture, live
-subtitles, and the live-translation window. Two were added on 2026-08-05 by
-relay Leg 4a, which decided the lifecycle of six drawn surfaces and found that
-three of them had no roadmap home at all. The fifth was added on 2026-08-10 for
-the same reason one level down: the audio capabilities three of those surfaces
-wait on were named only as each other's blockers, and half of them turned out to
-be inside Phase 8 already.
+inside them — currently four items: a second paste mechanism on Wayland,
+meeting capture, live subtitles, and the live-translation window. Two were added
+on 2026-08-05 by relay Leg 4a, which decided the lifecycle of six drawn surfaces
+and found that three of them had no roadmap home at all.
+
+**A fifth was added on 2026-08-10 and promoted on 2026-08-11.** *Streaming
+recognition and the spoken-output path* was filed as a candidate because the
+audio capabilities three surfaces wait on were named only as each other's
+blockers. Its first gate — *does any provider on the roadmap stream at all* —
+has since been answered against the vendors' own documentation
+([PROVIDERS.md](PROVIDERS.md)), and its second by ADR 0095. It is no longer a
+candidate; it lands inside Phase 4 and Phase 5, and its entry below records what
+the gates returned.
 
 ## Phase 1 - Transcription Bias, Profile Health, Corpus
 
@@ -115,13 +120,55 @@ native insert or recovery path.
 
 ## Phase 4 - Provider Stack Expansion
 
-**Status:** planned
+**Status:** planned. **Widened 2026-08-11** from "a second production provider"
+to the complete build-out, by the owner, on the finding that the provider stack
+is what blocks the surfaces above it — *no half measures*. The capability survey
+that decision produced is [PROVIDERS.md](PROVIDERS.md); the shape is ADR 0094
+and the scope decision is ADR 0096, which supersedes ADR 0065.
 
 **Goal:** Evolve from one production adapter to clear `fast`, `quality`,
-`local`, and future `self_hosted` semantics.
+`local`, and future `self_hosted` semantics — and, since 2026-08-11, to every
+lane the surface draws, with the **speech and voice roles built out alongside
+chat rather than after it**.
 
 **Scope:**
 
+- **Documented first, then integrated.** A provider's capabilities are read
+  against its own documentation and written down before an adapter is written,
+  because a capability guessed from a search result is how a surface comes to
+  claim something the lane behind it cannot do.
+- **The sequence is
+  [handoffs/PLAN_speech-track-implementation.md](handoffs/PLAN_speech-track-implementation.md)**,
+  which orders every record in this phase — including the two below, which had
+  no position relative to each other, and ADR 0094, which is the precondition of
+  both and had none at all. The window class (ADR 0100) and the config echo
+  (ADR 0108) were filed unscheduled while no sequence existed; they are stage E
+  there, not optional.
+- **Two things come before the first adapter and neither is one.**
+  **The capability seam** (ADR 0106): `provider_status` returns
+  `ProviderCapabilities`, nothing in `src/` reads a field of it, and every
+  capability answer on `AI Models` comes from a hand-maintained table. The code
+  that makes the runtime govern the drawing has to exist before ten rows depend
+  on it, and it is asserted by a test rather than by a sentence. **And the
+  credential resolving per role** (ADR 0105), because a second credential kind
+  on one vendor breaks the rule that a job following the connection inherits the
+  default's credential.
+- **The contract becomes a trait plus a registry** (ADR 0094). The closed
+  `enum ProviderId` dispatch does not survive ten providers, and a provider that
+  cannot serve a role does not stub it.
+- **No adapter lands before the row that operates it** (ADR 0109). An inert lane
+  that says so is honest; a capability with no drawn control is not visible as
+  missing at all. This is what gates Groq voice: `voice` is not in `JobKey`, and
+  the drawn `Speaking` row offers `Cartesia Sonic-3` and `Kokoro-82M` with no
+  provider mark and no credential control.
+- **Speech gains a streaming contract beside the batch one** (ADR 0095), and
+  **voice becomes the ninth job** (ADR 0109) — drawn on `AI Models` today and
+  absent from the `JobKey` union.
+- **A turn becomes a recording and the stream outlives it** (ADR 0107). This is
+  the capture half the streaming contract needs and did not have: today the cpal
+  stream's lifetime *is* the recording, bounded by one `max_samples` buffer, so
+  there is no way to produce the per-utterance file the first streaming
+  implementation transcribes.
 - Add a second production provider through the shared Rust provider contract.
 - **Split the provider axis per role.** A profile currently holds one
   `provider` field and several models, one per role. The obvious second chat
@@ -147,6 +194,21 @@ native insert or recovery path.
   says otherwise. The config has to support that shape directly -- a resolved
   default plus a sparse override per job -- rather than storing a full
   provider/model pair per job and reconstructing what "default" meant.
+- **OpenAI takes a second credential kind, and it lands with the OpenAI
+  adapter** (ADR 0102). A ChatGPT subscription pays for the five chat jobs; the
+  API key stays the default and remains the only path for the three speech jobs
+  and `voice`, because the backend a subscription reaches serves no recognition
+  and no synthesis. It costs a native OAuth + PKCE flow, a loopback listener and
+  a capability entry -- **none of which exist in the tree** -- so it is scheduled
+  behind the OpenAI adapter rather than beside it. **No other vendor gets this
+  path**: Anthropic and Google both prohibited theirs in February 2026 and the
+  remaining vendors sell no subscription, which makes this the one place in the
+  ten-provider set where the credential shape is a policy question rather than a
+  data-shape one. **It also forces the credential to resolve per role**
+  (ADR 0105): *follow the connection* follows the provider and never the
+  credential, or a speech job on a subscription-paid connection inherits a
+  credential that cannot pay for it. That resolution is a precondition for the
+  build-out and not a detail of this vendor.
 
 The motivation for a stronger chat lane is **instruction following, not cost**.
 Real usage sits below a cent, so caching and price are not the argument. The
@@ -203,6 +265,18 @@ guided on-device runtime lane.
   a crash -- the pattern the donor uses for its own sidecars, and a real piece
   of packaging work rather than a flag. **Which server, and whether to bundle
   at all, is open and belongs to this phase.**
+- **Local streaming recognition, and it is the same decision one level down.**
+  `whisper-cli` takes a file and cannot stream. whisper.cpp offers three shapes
+  instead -- the `stream` example, `whisper-server`, or linking the documented C
+  API -- and picking one is the same question as the paragraph above, asked
+  about the speech runtime rather than the language one. **Take it once**
+  (ADR 0096). Silero VAD ships with whisper.cpp and the runtime already passes
+  its flags here; the cloud lane has no VAD at all.
+- **Local voice, priced with the local runtime and not separately.** Kokoro-82M
+  is Apache-2.0 and 82M parameters, but its documented runtime is Python --
+  a package, `soundfile` and `espeak-ng`, with no ONNX or Rust build on the
+  model card. That is the same shape of cost as the local decoder
+  ([PROVIDERS.md](PROVIDERS.md)).
 - **Detected acceleration, reported rather than configured.** A CPU-only
   machine runs the small models and struggles above 7B, and that has to be
   visible before a 4 GB download rather than after it.
@@ -331,7 +405,16 @@ decision, and the user starts work by speaking without opening a repository.
   window, open questions confirmed before they leave with `edit` retained.
 - Text-to-speech chosen by time-to-first-byte, not by price: Cartesia Sonic-3 as
   the default preset with the measured TTFB shown, local Kokoro-82M as an
-  honestly labelled privacy mode.
+  honestly labelled privacy mode. **The candidates are surveyed in
+  [PROVIDERS.md](PROVIDERS.md) as of 2026-08-11, and it found two things this
+  line should absorb.** Cartesia publishes **no** time-to-first-byte in its API
+  reference — whatever the figure drawn on the agent window came from, it is not
+  the vendor's reference, and `AI Models` already reads `Not measured`, which is
+  the honest state. And its websocket buffering **defaults to 3000 ms**, which
+  would put three seconds in front of every spoken reply if nobody changed it.
+  Groq now serves speech synthesis on the connection the product already holds,
+  which makes a first audible sentence cost no new credential — at the price of
+  covering English and Saudi Arabic only.
 - Cascaded barge-in implemented natively in Rust -- Silero VAD plus Smart Turn
   v3, cancelling playback and generation on detected speech, recording with
   pre-roll. The answer window after a question is the default and needs no mode;
@@ -480,56 +563,65 @@ reliable; and any per-paste privilege prompt, under any mechanism.
 "Copy and insert at cursor" with at most one authorization dialog for the
 lifetime of the restore token.
 
-## Candidate - Streaming recognition and the spoken-output path
+## Streaming recognition and the spoken-output path
 
-**Status:** candidate, not scheduled. Added 2026-08-10, after Leg 5 found that
-the three capabilities below are named in four different places as somebody
-else's blocker and nowhere as work with an owner.
+**Status:** **scheduled.** Filed as a candidate 2026-08-10; promoted 2026-08-11
+once its first two gates were answered. **It is not a phase of its own** — the
+recognition half lands with Phase 4 and Phase 5, and the spoken half is Phase
+8's, which already owned it. What this entry keeps is the map, because four
+other entries read it.
 
-**This entry exists to be read before the three that wait on it**, and its first
-finding is that most of it is not homeless at all.
+**This entry exists to be read before the ones that wait on it**, and its first
+finding was that most of it was never homeless.
 
-| Capability | Who owns it today | What waits on it |
+| Capability | Owner | What waits on it |
 | --- | --- | --- |
-| **Streaming recognition** | **nobody** | live subtitles' echo, the translation window's `Conversation` tab |
-| Text-to-speech | **Phase 8**, already scoped: Cartesia Sonic-3 by measured TTFB, local Kokoro-82M as the labelled privacy mode | the translation window's spoken output |
-| Not speaking over the open microphone | **Phase 8**, already scoped and better than the alternative: cascaded barge-in in Rust (Silero VAD plus Smart Turn v3), cancelling playback on detected speech with pre-roll | the translation window, which asks for a plain mute of the recogniser |
-| Per-language output-device routing | nobody, and it is the small one | the translation window |
+| **Streaming recognition** | **Phase 4** (cloud lanes that stream) and **Phase 5** (local) — ADR 0095 | live subtitles' echo, the translation window's `Conversation` tab |
+| **Utterance segmentation** | the same, and it is a *separate* requirement — ADR 0095 | the translation window's turns |
+| Text-to-speech | **Phase 8**, already scoped; the candidates are surveyed in [PROVIDERS.md](PROVIDERS.md) | the translation window's spoken output |
+| Not speaking over the open microphone | **Phase 8**, already scoped and better than the alternative: cascaded barge-in in Rust (Silero VAD plus Smart Turn v3), cancelling playback on detected speech with pre-roll. A hard mute is the first implementation behind the same seam — ADR 0098 | the translation window, which asks for a plain mute of the recogniser |
+| Per-language output-device routing | **Phase 4**, with the voice — ADR 0097 | the translation window |
+| A second window class | **Phase 4**, stage E2 — ADR 0100 | all four drawn windows |
+| **A turn that is a recording** | **Phase 4**, stage C1 — ADR 0107 | anything that transcribes per utterance |
+| **A config change that reaches every window** | **Phase 4**, stage E1 — ADR 0108 | any machine-wide setting drawn on a pop-out |
+| **A surface that reads a runtime capability** | **Phase 4, before the first adapter** — ADR 0106 | every row that claims a lane can do something |
 
-**So the thing that is genuinely missing is one capability, not three.** Phase 8
-owns the voice and owns the barge-in, and the live-translation candidate asks
-for a cruder version of the same thing without knowing Phase 8 answers it. A
-reader pricing the translation window from its own entry prices the spoken half
-twice; a reader building Phase 8's voice builds it without knowing three
-surfaces are waiting behind it. That is the drift this record closes.
-
-**Streaming recognition is the one with no owner and no precedent in the
-runtime.** `providers/mod.rs` has exactly one speech entry point --
+**Streaming recognition had no owner and no precedent in the runtime.**
+`providers/mod.rs` has exactly one speech entry point --
 `transcribe_audio_file` -- and `capture.rs` records to a file, stops, uploads
 and gets text back. There is no partial result anywhere in the contract, and the
 session model is built on the batch shape: one recording ends in exactly one
 authoritative result and one reducer commit (ADR 0018, ADR 0019).
 
-**Decision gate - answer before writing code:**
+**Decision gate — what the four questions returned:**
 
-1. **Does any provider on the roadmap stream at all?** If the cloud lane does
-   not, this stops being a Phase 4 question and becomes a Phase 5 one -- the
-   local runtime already runs a decoder this process owns. Which phase inherits
-   it follows from the answer, and nothing should be built before it is taken.
-2. **Does a streaming path replace the batch path or sit beside it?** A dictation
-   still has to end in one authoritative result; partial results that also have
-   to converge on one commit are a second contract, not a swap. ADR 0018 and
-   ADR 0019 are what a wrong answer here breaks.
-3. **Is the language switch detectable without a button per turn?** Already the
-   translation window's own gate and already called *the feature's real gate*
-   there. It is a measurement, and it is the one that decides whether a
-   conversation at a table works or only demonstrates.
-4. **Two output devices reopen ADR 0010.** `core::sound` runs one persistent
-   output stream by decision, and the runtime enumerates input devices only --
-   `list_native_input_devices` has no counterpart. Routing one language to the
-   room and the other to an earpiece is a second stream plus output enumeration,
-   which is small work against a deliberate decision, so it needs the ADR rather
-   than a patch.
+1. ~~**Does any provider on the roadmap stream at all?**~~ **Answered
+   2026-08-11** against the vendors' own documentation
+   ([PROVIDERS.md](PROVIDERS.md)). **Groq does not** — one file in, one result
+   out, no websocket, no `stream=true`, no partials. OpenAI does, in two shapes;
+   xAI does, with partials about every 500 ms; Mistral does, configurable below
+   200 ms; Azure OpenAI does. Locally it is possible and not on today's path:
+   whisper.cpp ships a `stream` example, a `whisper-server` and a C API, and the
+   runtime shells out to `whisper-cli`, which takes a file. **So it is neither a
+   pure Phase 4 nor a pure Phase 5 question** — it is both, on different lanes,
+   which is why this entry has two owners.
+2. ~~**Does a streaming path replace the batch path or sit beside it?**~~
+   **Answered by ADR 0095: beside.** `transcribe_audio_file` stays the dictation
+   path, no partial reaches the session reducer, and ADR 0018/0019 are untouched.
+   The contract is `Partial`* then exactly one `Final` per utterance, and its
+   **first implementation emits no partials at all** — a segmenter marks the
+   turn and the adapter transcribes it as a file.
+3. **Is the language switch detectable without a button per turn?** **Half
+   answered.** *Where the answer comes from* is settled — the recogniser's own
+   detected language, never a button (ADR 0099), and OpenAI, xAI, ElevenLabs and
+   Azure all report it while Groq does not. *Whether it is reliable enough*
+   remains a measurement, against bilingual fixtures in the regression corpus,
+   and it is still the feature's real gate.
+4. ~~**Two output devices reopen ADR 0010.**~~ **Answered by ADR 0097.** A
+   second, named output stream for speech, on a device selected by name, beside
+   the cue stream whose rules are unchanged. `list_native_output_devices` mirrors
+   `list_native_input_devices`. The enumeration is the small part; the routing is
+   not.
 
 **Out of scope:** the surfaces themselves. Meeting capture, live subtitles and
 the live-translation window keep their own entries and their own gates; this one
@@ -662,10 +754,16 @@ mechanism the product has rather than inventing one:
 2. Does system-audio capture work without a per-session authorization prompt on
    the target platforms? Shared verbatim with meeting capture — the same gate,
    answered once.
-3. **Does the recognition path emit partial results?** The pipeline transcribes
-   a finished recording. An echo needs the recogniser to emit as it goes, and
-   the local and cloud lanes expose streaming differently — so this is a
-   provider-contract question, not a UI one.
+3. ~~**Does the recognition path emit partial results?**~~ **Answered
+   2026-08-11.** Not today, and **not ever on the lane the product currently
+   runs** — Groq's speech path is one file in, one result out. OpenAI, xAI,
+   Mistral and Azure OpenAI stream; locally whisper.cpp can, on a path the
+   runtime does not use. ADR 0095 puts a `Partial`/`Final` contract beside the
+   batch one. **The echo is the surface that genuinely needs partials** — the
+   translation window's conversation needs turn boundaries instead, which is a
+   different requirement and is priced separately. So this entry now waits on a
+   streaming-capable lane being integrated, which is Phase 4, and on
+   system-audio capture for its captions half, which is not.
 
 **Scope, if it goes ahead:** the caption strip as its own always-on-top,
 content-protected, click-through window carrying its own opaque ground (never
@@ -705,33 +803,63 @@ voice is a model row in AI Models like every other model choice (ADR 0042).
 
 **Scope, if it goes ahead:**
 
-- **Speech recognition per direction, streaming, with a detected switch between
-  the two languages.** The switch is the one interaction that decides whether
-  this works at a table or only in a demo — a button per turn is a demo.
+- **Speech recognition per direction, with a detected switch between the two
+  languages.** The switch is the one interaction that decides whether this works
+  at a table or only in a demo — a button per turn is a demo. **It needs turn
+  boundaries rather than partial results**, which ADR 0095 separates: a
+  segmenter marks the utterance and one authoritative result closes it. Where
+  the direction comes from is ADR 0099 — the recogniser's own detected language,
+  matched against the pair, never a button.
 - **Text-to-speech with per-language output-device routing.** Their language out
   loud to the room, yours in your ear. Routing per language is the whole design
   and is the reason this is a desktop product: a phone has one speaker and one
-  screen, so both people share both. **The voice itself is Phase 8's** — see
-  *Streaming recognition and the spoken-output path*, added 2026-08-10, which
-  found that half of this list already has an owner. Only the routing is new.
+  screen, so both people share both. **The voice itself is Phase 8's** and the
+  candidates are surveyed in [PROVIDERS.md](PROVIDERS.md); **the second output
+  stream and the device enumeration are ADR 0097**, and they land with Phase 4.
 - **A mute of the recogniser for the length of each spoken utterance.** Out loud
   plus an open microphone is the machine transcribing itself. **Phase 8 already
   scopes a better answer** — cascaded barge-in in Rust, cancelling playback on
   detected speech with pre-roll — so this line is a cruder version of work that
-  is already planned rather than a requirement of its own.
+  is already planned rather than a requirement of its own; ADR 0098 puts both
+  behind one seam and records that the existing `muted` flag is not the
+  primitive it looks like.
 - **`Silent` as a real setting**, not a broken one — somebody translating a menu
-  at the next table wants no sound at all, and it is the same window.
+  at the next table wants no sound at all, and it is the same window. A `Silent`
+  routing opens no stream rather than opening one and muting it (ADR 0097).
 - The consent field on a conversation object, and a fifth workspace view.
+- **The pop-out is a member of a window class that does not exist** (ADR 0100).
+  Four drawn windows wait on it, and the runtime declares three windows
+  statically with no builder anywhere.
+- **The routing is machine-wide and the window it is drawn in may stand several
+  times** (ADR 0108). The config is the only holder and a write is announced —
+  a channel the runtime does not have, because one settings window never needed
+  one. The same row is where a device that has disappeared has to say so.
+- **A turn has to be a recording before any of this transcribes** (ADR 0107).
+  The cpal stream currently lives exactly as long as the recording does.
 
 **Decision gate — answer before writing code:**
 
 1. Is a view plus a pop-out enough interaction for a conversation held at a
    table, where nobody is looking at a workspace? Named as open by the owner
    when the lifecycle was decided.
-2. Does this need a processing mode of its own beyond ADR 0041's? Also named as
-   open by the owner, and it must not be settled quietly by an implementation.
+2. ~~Does this need a processing mode of its own beyond ADR 0041's?~~
+   **Closed 2026-08-11 by the owner — no** (ADR 0101). `ProcessingMode::Translate`
+   already exists and a second would be redundant. The window changes the mode's
+   *inputs* — the target language comes from the session's pair rather than the
+   profile — not its transform. The cycle keeps seven entries.
 3. Does the language switch detect reliably enough to take no button per turn?
-   A measurement, and the feature's real gate.
+   **Still the feature's real gate, and still a measurement** — but no longer a
+   question about whether the signal exists. It does, on OpenAI, xAI, ElevenLabs
+   and Azure, and it does not on Groq ([PROVIDERS.md](PROVIDERS.md)). What is
+   unmeasured is the error rate, against bilingual fixtures in the regression
+   corpus.
+4. **New, 2026-08-11: has `capture-soak` run a night?** A conversation is the
+   longest capture this product would ever run, on the input stream that carries
+   an open, uncaused loss of 12–52 % across 11 recordings
+   ([known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)).
+   The tool exists (ADR 0084) and has not been run for longer than seconds.
+   Shipping a table conversation on that stream before the soak night is the
+   fake-readiness rule one layer down.
 
 **Out of scope:** practice or language drilling. Evaluated on the drawn screen
 and argued down there — VISION names what this product is not, and a drill

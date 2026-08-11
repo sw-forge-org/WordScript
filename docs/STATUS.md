@@ -438,6 +438,65 @@ Additional rules:
 
 ## Known open product gaps
 
+- **the speech stack is one lane wide, and that lane cannot stream.** Groq is
+  the only integrated cloud provider and its recognition path takes a file and
+  returns a result -- no websocket, no partials, no automatic language
+  detection. `local_preview` exists beside it and shells out to `whisper-cli`,
+  which also takes a file. The capability survey is `docs/PROVIDERS.md`
+  (2026-08-11); the decision to build the rest out is ADR 0096. **Nothing of
+  that build-out is implemented**, and until an adapter lands the surface keeps
+  saying so
+- **there is no speech synthesis anywhere in the runtime**, no output-device
+  enumeration, and one output stream bound to the OS default (ADR 0010). Three
+  drawn surfaces depend on all three -- the translation window, the agent
+  window's voice and its notification cue. ADR 0097 records the shape; nothing
+  is built
+- **the machine cannot speak while listening without hearing itself.** ADR 0098
+  records the third capture state that would fix it, and the finding that the
+  existing `muted` flag is a *level* mute and does not stop recording. Echo
+  cancellation is a separate component that also does not exist (ADR 0063)
+- **four drawn windows have no runtime host.** Three windows are declared
+  statically and there is no `WebviewWindowBuilder`; the translation pop-out,
+  the meeting HUD, the agent window and ADR 0043's notification all wait on the
+  window class ADR 0100 defines
+- **a cloud credential is one API key and is billed per request.** ADR 0102
+  admits a second kind for OpenAI -- an OAuth token set against the user's
+  ChatGPT plan -- for the five chat jobs only, because the backend it reaches
+  serves no transcription and no synthesis. **Nothing of it is implemented**:
+  there is no OAuth flow, no PKCE, no loopback listener and no
+  `tauri-plugin-oauth` in the tree, and `SaveProviderApiKeyRequest` carries a
+  single string. Speech stays billed per use on every vendor, and no other
+  vendor gets a subscription path at all -- Anthropic and Google both forbade
+  theirs in February 2026. ADR 0105 fixes what a second kind forces: the
+  credential resolves per `(provider, role)`, *follow the connection* follows
+  the provider and never the credential, and a role with no credential makes the
+  job inert and names what is missing
+- **no surface reads a runtime capability, and one record claimed otherwise.**
+  `provider_status` returns `ProviderCapabilities`, the struct is mirrored into
+  `src/types/providers.ts`, and **no field of it is read anywhere in `src/`** --
+  `Models.test.tsx` mocks it as `{}` and the suite passes. Every capability
+  answer on `AI Models` comes from the hand-maintained `PROVIDERS` table in
+  `src/screens/data.ts`, which `docs/PROVIDERS.md` runs three open
+  disagreements against. ADR 0094's first draft called that mirror the guard
+  that stops a surface over-claiming; ADR 0106 corrects it and makes building
+  the seam a step before the first adapter, asserted by a test
+- **the runtime announces no setting change.** `AppConfig::save_to_disk` writes
+  and `save_config` returns to its caller; no event channel carries a config
+  change. It has never mattered with one settings window, and ADR 0100's window
+  class plus ADR 0097's machine-wide routing drawn inside a pop-out that may
+  stand three times make it necessary. ADR 0108 records the shape; nothing is
+  built
+- **a turn cannot be cut out of a running capture.** `start_native_capture`
+  couples the cpal stream to the recording, samples land in one buffer bounded
+  by `max_samples`, and `stop_native_capture` takes it whole. A conversation is
+  nothing but segments, so ADR 0107 separates the stream from the recording and
+  makes a turn a recording -- keeping `CaptureIntegrity`, `capture_budget` and
+  `transcribe_audio_file` applicable per turn unchanged. Planned; not built
+- **`voice` is drawn and is not a job in the type.** `JobKey` carries eight
+  entries and four records write contracts against a ninth. ADR 0109 adds it,
+  and gates a voice adapter on a drawn row that can operate it -- the drawn
+  `Speaking` row offers two presets, neither of them the vendor ADR 0096
+  schedules second
 - transcription reliability outside `General Writing` or no profile is still
   not robust enough; individual curated profiles like `Customer Success
   Replies` can still visibly worsen raw transcripts with multilingual
