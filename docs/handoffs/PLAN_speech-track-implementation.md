@@ -205,6 +205,39 @@ file this step shrinks. Doing it second is a smaller edit against a smaller
 file, and A4 then inherits the licence this step establishes — fall back to
 defaults rather than build a rescue path.
 
+### A6. `local_preview` becomes `local` (ADR 0121)
+
+**Added 2026-08-12.** A rename, not a behaviour change — and it belongs in
+Stage A because the provider id *is* the runtime contract A1 built the registry
+around.
+
+- **Requires** — nothing. **Independent of A4**, which rewrites the provider
+  axis in `core/config.rs` while this renames a value moving through it. Doing
+  A4 first means one fewer string to rename; doing this first means A4 is
+  written against the final name. Either order works, neither blocks.
+- **Touches** — 177 references across 43 files: the registry id (the existing
+  `aliases: &["local"]` becomes the id and the alias list empties), the
+  `local_preview` module and its `LOCAL_PREVIEW` static, `ProviderId` in
+  `src/types/providers.ts`, the `local-preview-{model}-{preset}` profile prefix
+  in `local_profile_selection_from_id` and its emitter, and the living docs.
+  **The ADRs keep the old name** — records are append-only and correct as of
+  their dates.
+- **Validates** — `cargo test`, `npm test`, `npm run build`. The rename is
+  mechanical, so the signal is that no count moves.
+- **Done when** — no live path spells `local_preview`, and the preview badge is
+  exactly where ADR 0067 put it.
+
+**No compatibility alias and no dual profile prefix**, on the owner's
+instruction: this is a development install and the stored data does not matter.
+A5 removed every on-disk compatibility path, so adding one back here would
+reverse that decision within the same plan. A stale profile id resolves to
+`None` and falls through to `"base"` at the default preset; a stale
+`provider` value is re-picked once.
+
+**What this step does not do:** publish the lane. ADR 0067's presentation rule
+is untouched and the badge stays until Phase 5. The point of the rename is that
+when Phase 5 lands, the badge comes off and **nothing gets renamed**.
+
 ---
 
 ## Stage B — the seam and the ninth job
@@ -301,6 +334,40 @@ retrofit of the thing the catalogue exists to prevent.
 a vendor documents, the other what an adapter asserts; a catalogued model with
 no adapter answers `unknown`. ADR 0115 states the distinction and ADR 0106 is
 the record of what happens when a mirror gets described as a guard.
+
+**Scope narrowed 2026-08-12 by ADR 0120.** The catalogue is no longer *every id
+a vendor serves* but *every id this build routes to, defaults to, or makes a
+statement about*. The long tail arrives live in B4 instead. **The file format,
+the loader and the source/date test are unchanged** — this is fewer rows at
+landing, not a different step.
+
+### B4. The live model fetch (ADR 0120)
+
+**Added 2026-08-12** on the owner's objection that curating eighteen vendors by
+hand is stress for no gain. It is the layer above B3, not a replacement for it.
+
+- **Requires** — **B3** (there has to be something to merge into), A1 (the
+  registry to ask per provider), A3 (the credential the call carries).
+- **Touches** — an optional listing method on `Provider`, implemented only by
+  the lanes that have an endpoint; the settings surface calling it on open; the
+  merge that unions fetched ids over catalogue rows.
+- **Validates** — `cargo test`: a fetched id absent from the catalogue answers
+  `ModelSupport::Unknown` and never `supported`; an empty, failed or
+  unauthenticated fetch leaves the catalogue list standing; a late result is
+  discarded against the surface that asked. `npm test`, `npm run build`.
+- **Done when** — a lane with an endpoint shows ids this repo never typed, a
+  lane without one is unchanged, and no lane shows an empty picker because a
+  call failed.
+
+**What has no endpoint is not a gap.** Azure OpenAI serves no model list by
+construction — the deployment name is the model id — and Bedrock and Vertex need
+cloud SDK credentials. Those rows show the catalogue plus the typed field, which
+is what ADR 0115 already specified for them.
+
+**The precedent is the local lane, and all of it is adopted.**
+`local_preview.rs` fetches, then reconciles the request against what came back
+(`resolve_local_chat_model`), then falls back. The reconcile step is the part
+that is easy to drop and the part that makes the fetch safe.
 
 ---
 
@@ -705,7 +772,9 @@ Speaking row, so it is flagged rather than assumed.
 | A3 | **done** 2026-08-11 — the secret-store entry keyed `(provider, role, kind)`, `provider_status` per role, the pre-role key adopted onto both roles, +12 Rust tests |
 | A5 | **done** 2026-08-11 — every on-disk compatibility path removed, both schema counters kept, the import door kept, −18 Rust tests |
 | A4 | **not started** — added to this page 2026-08-11; it is the step no record had a position for. **A5 has landed, so it inherits the smaller file and the licence to fall back to defaults** |
-| B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for |
+| A6 | **not started** — added 2026-08-12 (ADR 0121); a mechanical rename, **not gated**, independent of A4 |
+| B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for. **Scope narrowed 2026-08-12 by ADR 0120** — fewer rows, same schema |
+| B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |

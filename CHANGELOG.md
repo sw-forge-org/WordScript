@@ -53,6 +53,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — two records from the model-identity question, and a lane renamed
+
+Documentation only. **No source file is in this stage** — the change is five
+markdown files, which `git diff --stat` shows directly. No test count is quoted
+because the working tree carries a concurrent track's uncommitted Rust, and a
+number measured across both would be a claim about somebody else's work.
+
+- **ADR 0120 — a vendor serves its model ids, the catalogue keeps the columns
+  no endpoint answers.** Raised as an objection to ADR 0115: curating eighteen
+  vendors that rename on their own calendar is stress for no gain. Right about
+  volume, wrong about substitution — `/models` returns the id and **none of the
+  other columns**. Not the role, which this repo already wrote down at
+  `groq.rs:774` (*"`/models` is neither recognition nor completion"*); not
+  streaming, which ADR 0110 put on the model axis on purpose; not the languages
+  that separate `eleven_flash_v2_5` from `eleven_flash_v2`. Azure OpenAI has no
+  listing endpoint **by construction**, because the deployment name is the model
+  id. So: the catalogue keeps the typed columns and **shrinks to what this build
+  has a position on**, a live fetch merges the long tail when the settings
+  surface opens, and a fetched id with no row answers `Unknown` rather than
+  `supported`. A failed, empty or unauthenticated fetch falls back to the
+  catalogue — **never to an empty picker**, which is what a pure fetch would
+  have shown on every lane before its key exists.
+- **ADR 0121 — the local lane is named for what it does.** `local_preview`
+  becomes `local` everywhere it is spelled, including the serialized provider id
+  and the `local-preview-*` profile prefix. **A release status belongs on the
+  badge, not in an identifier**: ADR 0067 already states it once with the
+  preview badge, and stating it a second time inside a string that reaches
+  config and history is why the id would have to change when the status does.
+  The word also collides with the session pipeline's own `previewStaged`. The
+  badge stays until Phase 5 and ADR 0067's presentation rule is untouched — the
+  point is that when Phase 5 lands, the badge comes off and **nothing gets
+  renamed**. No compatibility alias and no dual prefix, on the owner's
+  instruction and because A5 removed every on-disk compatibility path days
+  earlier; a stale profile id resolves to `None` and falls through to `"base"`.
+- **The plan gains A6, B4 and a narrowed B3.** A6 is the rename, gated on
+  nothing and independent of A4. B4 is the fetch, gated on B3 because there has
+  to be something to merge into. B3 keeps its file format, loader and
+  source/date test and loses rows.
+
 ### Removed — the on-disk compatibility layers, while removing them is still free (speech track, stage A5, ADR 0112)
 
 `cargo test` 742 passed / 3 ignored (**−18**: every case that held a migration,

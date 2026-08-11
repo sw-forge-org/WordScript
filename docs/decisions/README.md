@@ -886,6 +886,26 @@ Status: Proposed | Accepted | Superseded by NNNN
   route is per language (ADR 0064), the model is not. It also names a defect —
   `Translate.tsx` already sends the user to a group whose only row is about
   coding agents.
+- [0120](0120-a-vendor-serves-its-model-ids-and-the-catalogue-keeps-the-columns-no-endpoint-answers.md):
+  answers the owner's maintenance objection to ADR 0115 — eighteen vendors
+  renaming on their own calendar is not worth curating by hand — and finds the
+  objection right about volume and wrong about substitution. **`/models` serves
+  the id and none of the other columns**: not role (`groq.rs:774` already says
+  it), not streaming (ADR 0110 put it on the model axis), not languages. Azure
+  has no listing endpoint by construction. So the catalogue keeps the typed
+  columns and **shrinks to what the build has a position on**, a live fetch
+  merges the long tail on settings-open, and a fetched id with no row answers
+  `Unknown`. A failed fetch falls back to the catalogue, never to an empty
+  picker.
+- [0121](0121-the-local-lane-is-named-for-what-it-does-and-its-release-status-stays-on-the-badge.md):
+  renames `local_preview` to `local` everywhere it is spelled, including the
+  serialized provider id and the `local-preview-*` profile prefix. **A release
+  status belongs on the badge, not in an identifier** — ADR 0067 stated it once
+  with the preview badge, and stating it a second time inside a serialized
+  string is why the id would have to change when the status does. The badge
+  stays until Phase 5; ADR 0067's presentation rule is untouched. No
+  compatibility alias, on the owner's instruction and because A5 removed every
+  on-disk compatibility path days earlier.
 
 ## Resolved: the number 0011 was used twice
 
