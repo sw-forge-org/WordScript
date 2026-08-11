@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Icon, Menu, NavRow, type MenuEntry } from "@/components/shell";
+import { Icon, Menu, NavRow, useNavCollapsed, type MenuEntry } from "@/components/shell";
 import {
   APP_DISCORD_URL,
   APP_DOCS_URL,
@@ -45,6 +45,30 @@ const HELP_LINKS: { label: string; hint: string; icon: MenuEntry["icon"]; url: s
 export function HelpMenu() {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
+  const collapsed = useNavCollapsed();
+  /* THE RAIL IS 56 PX AND THE PANEL IS 190, so in that state the panel cannot
+     be a box inside the sidebar: `.ws-nav` scrolls, a scrolling box clips both
+     axes whatever the other one is declared as, and the reader gets a menu with
+     its right half sliced off. Reported against the rail, 2026-08-11.
+
+     It takes the same way out `RowMenu` already takes for the pane's head, and
+     for the identical reason the note on `Menu`'s `at` gives: the caller
+     measures, the panel places itself at viewport coordinates, and no ancestor
+     can clip it. It flies out beside the rail rather than above the row,
+     because to the right is where the width is.
+
+     ONLY IN THE RAIL. Expanded, the sidebar is wider than the panel and nothing
+     clips it, and an anchored panel is the better one — it moves with its row
+     when the sidebar scrolls, which a measured coordinate does not. */
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open || !collapsed || !anchor.current) {
+      setAt(null);
+      return;
+    }
+    const box = anchor.current.getBoundingClientRect();
+    setAt({ x: box.right + 8, y: box.bottom });
+  }, [open, collapsed]);
 
   /* A popover closes on the next thing you do, and there are two of those: a
      press somewhere else, and Escape. Both listen in the BUBBLE phase, which is
@@ -89,7 +113,9 @@ export function HelpMenu() {
         current={open}
         onClick={() => setOpen((shown) => !shown)}
       />
-      {open && <Menu items={items} align="start" label="Help" />}
+      {open && (
+        <Menu items={items} align="start" label="Help" at={at ?? undefined} />
+      )}
     </div>
   );
 }

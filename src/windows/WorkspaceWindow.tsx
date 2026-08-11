@@ -1,11 +1,11 @@
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
-  BrandMark,
   Icon,
   Nav,
   NavFoot,
   NavGroup,
+  NavHead,
   NavRow,
   NavSearch,
   ProfileSwitcher,
@@ -16,6 +16,7 @@ import {
 } from "@/components/shell";
 import { useColorScheme, type ColorScheme } from "@/hooks/useColorScheme";
 import { useConfigDraft } from "@/hooks/useConfigDraft";
+import { useNavRail } from "@/hooks/useNavRail";
 import { useProvider } from "@/hooks/useProvider";
 import { useRuntime } from "@/hooks/useRuntime";
 import { resolveActiveTextProfile, textProfileInitials } from "@/lib/textProfiles";
@@ -82,6 +83,18 @@ export default function WorkspaceWindow() {
   const [section, setSection] = useState<SectionId | null>(null);
   const [palette, setPalette] = useState(false);
   const [, startTransition] = useTransition();
+  /* THE SIDEBAR'S WIDTH (ADR 0111). The preference is read off the draft and
+     the toggle writes it back through the same `patch` every other discrete
+     control uses, so the sidebar has no second store and cannot disagree with
+     the config. The window's own narrow-width rail is the hook's, and it is
+     deliberately NOT written back — see `useNavRail`. */
+  const { railed, toggle: toggleRail } = useNavRail(
+    form?.workspace_nav_rail,
+    useCallback(
+      (next: boolean) => patch({ workspace_nav_rail: next }),
+      [patch],
+    ),
+  );
 
 
   /* The stored scheme, adopted when the runtime answers and whenever it changes
@@ -332,8 +345,8 @@ export default function WorkspaceWindow() {
       <div className="ws-frost-stack">
         <div className="ws-frost-shell">
           <WindowBody>
-            <Nav label="Workspace">
-              <BrandMark scheme={resolved} />
+            <Nav label="Workspace" collapsed={railed}>
+              <NavHead scheme={resolved} collapsed={railed} onToggle={toggleRail} />
 
               {/* MOUNTED IN LEG 4D, AFTER THREE LEGS OF DELIBERATE ABSENCE.
                   `NavSearch` was ported 1:1 in Leg 2 and stood in no window,
@@ -417,11 +430,7 @@ export default function WorkspaceWindow() {
             closeOnEscape={!palette}
             onSearch={() => setPalette(true)}
             searchShortcut={SEARCH_SHORTCUT}
-            profile={{ initials: textProfileInitials(activeProfile), name: activeProfile.label }}
-            onOpenProfiles={() => {
-              setSection(null);
-              startTransition(() => setView("profiles"));
-            }}
+            sessionActive={sessionActive}
           />
         )}
 

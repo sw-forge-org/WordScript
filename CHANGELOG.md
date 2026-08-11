@@ -55,6 +55,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The workspace sidebar has a second width, and the window may choose it**
+  (ADR 0111). A toggle at the top of the sidebar — drawn in both states, never
+  on hover — collapses it to a **56 px rail**: the app icon in place of the
+  wordmark, the search field as the icon it already carries, every navigation
+  row as its own tile, the active profile as its avatar. It is the same sidebar
+  with its labels withheld, not a second sidebar: every rule about a row's
+  tile, its active ground, its accent and its hover is untouched, and the label
+  stays in the DOM so a row keeps its accessible name and gains the tooltip a
+  label would have been. **The choice is remembered** in
+  `AppConfig.workspace_nav_rail`, for the reason `color_scheme` is remembered
+  there. **The window rails on its own below 760 CSS px** and that is *not*
+  written down — dragging a window narrow and wide again expresses nothing, so
+  the breakpoint fires on a crossing and the toggle is the authority in
+  between.
+- **The icon set gains its 79th glyph, and it is the first that is not the
+  prototype's.** `demo.js`'s `ICONS` and `iconPaths.ts` were name-for-name
+  identical; the prototype's sidebar has one width and therefore no control to
+  change it, so `sidebar` is drawn at this set's radii and stroke rather than
+  borrowed from lucide.
+
+### Fixed — the workspace at the widths it is actually used at
+
+ADR 0104 closed with a finding and did not act on it: *"The workspace has no
+width breakpoint at all. Below the width the design assumes, the layout does not
+rearrange — it compresses, and the text column is what pays."* ADR 0111 is that
+finding answered. Reported from the running host on 2026-08-11.
+
+- **Every responsive rule measures the column it is drawn in, never the
+  window.** `.ws-content`, the settings sheet's scroller and **a pane's detail
+  column** all declare `container: ws-column / inline-size`, and the nearest one
+  wins. The rail is what makes this the only correct choice: the content column
+  is the window minus a sidebar of one of two widths, so two windows of the same
+  width can hand their content a column 176 px apart. The four `@container`
+  rules that already existed resolved against `.ws-content-inner`, which in a
+  pane is the full column and not the half the row sits in — they now measure
+  the half.
+- **Three tiers, each giving up the cheapest thing left.** At 620 px the inset
+  falls from 32 to 24; at 460 px it falls to 16, **`.ws-row` becomes a stack**
+  (the control takes its own line, the text column takes the whole row — the
+  arrangement `data-layout="stack"` already draws by hand), and **fixed-track
+  grids collapse to one column**. A fixed grid track does not degrade, it
+  collides: an `auto` track will not shrink below its content, so a legend row
+  came out as `sets / how / a / sentence / is / built` with the badge column
+  drawn over the top of it.
+- **The pane's list column is a range, not a number.**
+  `clamp(176px, 32cqi, 236px)`. It was a flat 236 px, which left the detail
+  beside it **227 px** at a 695 px window — a profile's whole settings surface
+  at three words to a line.
+- **`Change in profile` on Home hung 5 px past the content column.** `.ws-grow`
+  was `flex: 1` with a zero basis, so on a wrapping row it never took a line of
+  its own; an `auto` basis is what lets the wrap the row already declares
+  actually happen.
+- **AI Models: every control in an open job's well sat hard against the well's
+  right edge** while its label sat 25 px in from the left one. The well pays its
+  inset on both sides now. The job's model badge also got a shrinkable track,
+  so `whisper-large-v3-turbo default` reaches the ellipsis it already had
+  instead of pushing itself off the card.
+- **The segment control and the note tab strip wrap** rather than running off
+  the card; a section head stacks its title and its sentence; and `.ws-cmd`
+  gained the `min-width: 0` that makes the scroller inside it reachable.
+
+### Fixed — the profile control
+
+- **The settings sheet's profile control was a link wearing a popup button's
+  chevron.** `ProfileSwitcher`'s own note has claimed since Leg 3 that it is
+  "the same control in the workspace sidebar and in the settings sheet's
+  header"; it was a `SheetProfile` that navigated to Profiles and closed the
+  sheet. It is the same component now, in a `sheet` variant — one runtime call,
+  one refusal path, two grounds. `SheetProfile` is deleted rather than aliased
+  (ADR 0054); the door to Profiles is not lost with it, because every scoped row
+  on those screens carries its own.
+- **A refused profile switch is visible.** `.catch(() => {})` swallowed the
+  runtime's refusal, so the `<select>` sprang back to where it started with
+  nothing said — the whole of "sometimes it just does not switch". The sidebar
+  prints the sentence; the sheet's header strip draws the refusal on the row and
+  carries the sentence in its tooltip.
+
+### Fixed — two things found on the way
+
+- **The Help panel looked transparent and was never transparent.**
+  `.ws-menu` carried no `z-index`, and a positioned box with `z-index: auto`
+  paints in DOM order among its siblings' positioned descendants — the sidebar
+  comes before the content column, so every positioned box in a pane painted
+  over an opaque `--bg-surface` panel. It sits at 8 now: above the note's float
+  bar and the chat window, below the settings sheet's scrim.
+- **The Help panel was clipped to 56 px in the rail.** `.ws-nav` scrolls, and a
+  scrolling box clips both axes whatever the other is declared as. It takes the
+  same way out `RowMenu` already takes for the pane's head — the caller
+  measures, the panel places itself at viewport coordinates — and only in the
+  rail, because expanded, an anchored panel is the better one.
+
+### Added
+
 - **`docs/PROVIDERS.md` — the provider matrix, read against each vendor's own
   documentation rather than from memory.** **Ten providers across four lanes**,
   plus the local and self-hosted ones and the voice-only vendors outside the

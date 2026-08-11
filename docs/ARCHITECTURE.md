@@ -112,6 +112,10 @@ Key frontend building blocks:
 - `src/hooks/useProvider.ts`
 - `src/hooks/useNativeInsertion.ts`
 - `src/hooks/useRuntimeLogs.ts`
+- `src/hooks/useNavRail.ts` — the sidebar's width, and the one place the
+  distinction between a preference and window state is enforced: the toggle
+  writes `AppConfig.workspace_nav_rail`, a window crossing 760 CSS px changes
+  the live value and writes nothing (ADR 0111)
 
 The UI is responsible for: displaying runtime status, waveform and errors;
 the guarded in-pill action state after a run; config maintenance; the global

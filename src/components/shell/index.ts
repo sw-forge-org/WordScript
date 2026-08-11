@@ -40,13 +40,16 @@ export { Toolbar, ToolbarSearch } from "./Toolbar";
 export { ScopeTag } from "./ScopeTag";
 
 /* ── The shell itself — demo.css §3 and §4, ported by Leg 2 ── */
-export { Nav, NavFoot, NavGroup, NavRow, NavSearch, BrandMark } from "./Nav";
+export {
+  Nav, NavFoot, NavGroup, NavRow, NavSearch, NavHead, NavCollapseToggle, BrandMark,
+  useNavCollapsed,
+} from "./Nav";
 export { ViewTop } from "./ViewTop";
 
 /* ── The window and the sheet over it — demo.css §2 and §2b, Leg 3 ── */
 export { WindowShell, WindowBody, StatusStrip } from "./Window";
 export {
-  Sheet, SheetHead, SheetProfile, SheetBody, SheetNav, SheetContent, SheetFoot,
+  Sheet, SheetHead, SheetBody, SheetNav, SheetContent, SheetFoot,
 } from "./Sheet";
 
 /* ── The palette over both of them — demo.css §"The command palette", Leg 4d ── */

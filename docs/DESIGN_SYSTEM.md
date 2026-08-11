@@ -292,7 +292,8 @@ light scheme at all.
 | Row grammar | The item carries the horizontal inset; the stack spans the card so its separators reach the group edge ([ADR 0052](decisions/0052-the-item-carries-the-inset-so-the-separator-reaches-the-edge.md)) |
 | Card elevation | Background step plus the top-edge highlight. No drop shadow, no hairline in the proposed palette, and no hover transition on a card border |
 | Scrollbars | Not drawn anywhere, and nothing replaces them. The edge fade was built and removed: a static mask dims every scroller's first and last 20 px permanently, and the scroll-driven variant keeps the surface animating |
-| Sidebar | 232 px (`--nav-w`), grouped, its icons in rounded tiles |
+| Sidebar | 232 px (`--nav-w`), grouped, its icons in rounded tiles. It has a second width — 56 px (`--nav-w-rail`), icons only — chosen by its toggle or by a window narrower than 760 CSS px ([ADR 0111](decisions/0111-the-sidebar-has-two-widths-and-the-layout-measures-the-column-it-is-drawn-in.md)) |
+| Responsive | Every rule is an `@container ws-column` query, never a viewport media query: the content column is the window minus a sidebar of one of two widths, so the window stopped predicting the layout. `.ws-content`, the sheet's scroller and a pane's detail column all carry the name, and the nearest one wins. Three tiers — 620 px drops `--content-pad` to 24; 460 px drops it to 16, turns `.ws-row` into a stack and collapses fixed-track grids to one column |
 | Long lists | `content-visibility: auto` and intrinsic-size utilities |
 
 ### The radius ladder

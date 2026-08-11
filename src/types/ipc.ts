@@ -464,6 +464,12 @@ export interface AppConfig {
   /// time, so what lands on `<html data-theme>` is always `light` or `dark`
   /// (ADR 0048). Machine-wide: it belongs to the window, not to a profile.
   color_scheme?:            ColorScheme;
+  /// Whether the workspace sidebar stands as a rail — icons only, no labels.
+  /// Machine-wide for the same reason `color_scheme` is. Only the toggle writes
+  /// it: the window rails on its own below the width at which a 232 px column
+  /// stops being affordable, and that is state rather than preference
+  /// (ADR 0111).
+  workspace_nav_rail?:      boolean;
   /// Global fallback for profiles that predate the per-profile modes block. The
   /// real control is `ProfileModesSettings.collect_workspace_context`.
   auto_detect_mode?:        boolean;

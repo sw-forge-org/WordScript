@@ -90,4 +90,14 @@ export const ICON_PATHS = {
   handoff: "<circle cx=\"5\" cy=\"12\" r=\"2.5\"/><circle cx=\"19\" cy=\"12\" r=\"2.5\"/><path d=\"M8 12h6.5\"/><path d=\"m12.5 9.5 2.5 2.5-2.5 2.5\"/>",
   pending: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9.8 9.6a2.3 2.3 0 1 1 2.9 2.2c-.5.2-.7.6-.7 1.1v.3\"/><path d=\"M12 16.4h.01\"/>",
   calendar: "<rect x=\"3.5\" y=\"5.5\" width=\"17\" height=\"15\" rx=\"2\"/><path d=\"M3.5 10h17\"/><path d=\"M8 3.5v4\"/><path d=\"M16 3.5v4\"/>",
+  /* THE ONE GLYPH THE PROTOTYPE DOES NOT HAVE, and it is here rather than
+     borrowed from lucide for the reason the header above gives: the set is one
+     stroke weight and one geometry, and a 79th shape from a package would be
+     visibly a guest in a column of 78 drawings.
+
+     It exists because the rail does (ADR 0111). The prototype's sidebar has one
+     width and therefore needs no control to change it, so there is nothing to
+     port — the glyph is the panel with its leading column marked, which is what
+     the control acts on, drawn at this set's radii and stroke. */
+  sidebar: "<rect x=\"3\" y=\"4.5\" width=\"18\" height=\"15\" rx=\"2\"/><path d=\"M9.5 4.5v15\"/>",
 } as const;

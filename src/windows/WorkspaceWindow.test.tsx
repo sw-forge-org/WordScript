@@ -158,6 +158,131 @@ describe("WorkspaceWindow", () => {
 });
 
 /**
+ * THE SIDEBAR'S TWO WIDTHS — ADR 0111.
+ *
+ * What a unit test can hold is the SEAM, not the pixels: which state the
+ * sidebar opens in, that the toggle changes it, and that the change reaches the
+ * config rather than a store of its own. The rail's own drawing is CSS and is
+ * judged in the running host, where `--nav-w-rail` is a width and jsdom has
+ * none.
+ *
+ * jsdom's `matchMedia` reports `matches: false` for everything, so the window
+ * these cases run in is a WIDE one — which is exactly the half that has to be
+ * tested here, because the narrow half is a media query and jsdom cannot have
+ * an opinion about it.
+ */
+describe("WorkspaceWindow · the sidebar's two widths", () => {
+  it("opens expanded, and the toggle rails it and writes the choice down", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<WorkspaceWindow />);
+    const nav = container.querySelector(".ws-nav")!;
+    expect(nav).not.toHaveAttribute("data-collapsed");
+
+    await user.click(screen.getByRole("button", { name: "Collapse the sidebar" }));
+
+    expect(nav).toHaveAttribute("data-collapsed");
+    /* A preference, not window state: it goes through the same instant-save
+       path every other discrete control uses. */
+    await waitFor(() =>
+      expect(saveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ workspace_nav_rail: true }),
+      ),
+    );
+  });
+
+  it("opens railed when that is what the config remembers", async () => {
+    runtimeConfig = createAppConfig({ workspace_nav_rail: true });
+    const { container } = render(<WorkspaceWindow />);
+
+    await waitFor(() =>
+      expect(container.querySelector(".ws-nav")).toHaveAttribute("data-collapsed"),
+    );
+    // The toggle is the way back out and says so, in both states.
+    expect(screen.getByRole("button", { name: "Expand the sidebar" })).toBeInTheDocument();
+  });
+
+  /* THE LABEL IS WITHHELD, NOT DELETED. It stays in the DOM so the row keeps
+     its accessible name from its own content — a rail whose rows are unnamed
+     to a screen reader is a rail nobody can use. */
+  it("keeps every row named in the rail, and adds the tooltip a label would be", async () => {
+    runtimeConfig = createAppConfig({ workspace_nav_rail: true });
+    render(<WorkspaceWindow />);
+    const nav = screen.getByRole("navigation", { name: "Workspace" });
+
+    await waitFor(() => expect(nav).toHaveAttribute("data-collapsed"));
+    for (const label of ["Home", "History", "Profiles", "Context"]) {
+      const row = within(nav).getByRole("button", { name: new RegExp(label) });
+      expect(row).toHaveAttribute("title", label);
+    }
+  });
+});
+
+/**
+ * THE PROFILE CONTROL — ADR 0111.
+ *
+ * The sheet's header drew a popup button's double chevron and navigated
+ * instead of opening one. Both surfaces carry the same component now, so what
+ * is held here is that both of them actually switch.
+ */
+describe("WorkspaceWindow · switching the active profile", () => {
+  it("carries a real picker in the sidebar and in the sheet's header", async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceWindow />);
+
+    const inNav = screen.getByRole("combobox", { name: "Switch active profile" });
+    expect(inNav).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    const pickers = screen.getAllByRole("combobox", { name: "Switch active profile" });
+    expect(pickers).toHaveLength(2);
+    // Every profile the config holds, on both of them.
+    for (const picker of pickers) {
+      expect(picker.querySelectorAll("option")).toHaveLength(CONFIG.text_profiles!.length);
+    }
+  });
+
+  it("asks the runtime first and applies the patch only once it agrees", async () => {
+    const user = userEvent.setup();
+    invoke.mockResolvedValue(undefined);
+    render(<WorkspaceWindow />);
+
+    const picker = screen.getByRole("combobox", { name: "Switch active profile" });
+    const other = CONFIG.text_profiles!.find((entry) => entry.id !== "general")!;
+    await user.selectOptions(picker, other.id);
+
+    expect(invoke).toHaveBeenCalledWith("switch_active_text_profile", { profileId: other.id });
+    await waitFor(() =>
+      expect(saveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ active_text_profile_id: other.id }),
+      ),
+    );
+  });
+
+  /* THE HALF THAT WAS SWALLOWED. `.catch(() => {})` stood where this assertion
+     is: the runtime declined, the `<select>` sprang back to where it started,
+     and nothing on the surface said why — reported as "sometimes it just does
+     not switch". */
+  it("states a refusal instead of springing back in silence", async () => {
+    const user = userEvent.setup();
+    invoke.mockImplementation((command: string) =>
+      command === "switch_active_text_profile"
+        ? Promise.reject("Another window is recording.")
+        : Promise.resolve(undefined),
+    );
+    render(<WorkspaceWindow />);
+
+    const other = CONFIG.text_profiles!.find((entry) => entry.id !== "general")!;
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Switch active profile" }),
+      other.id,
+    );
+
+    expect(await screen.findByText("Another window is recording.")).toBeInTheDocument();
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * THE PALETTE, AS THE WINDOW MOUNTS IT. The index and the scoring are
  * `workspace/palette.test.ts`; what is held here is that the field opens it,
  * that the chord opens it, that a row navigates, and that the two layers

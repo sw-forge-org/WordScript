@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { AppConfig } from "@/types/ipc";
 import {
   buildTextProfilesPatch,
@@ -9,6 +9,7 @@ import {
   textProfileInitials,
 } from "@/lib/textProfiles";
 import { Icon } from "./Icon";
+import { useNavCollapsed } from "./Nav";
 
 interface ProfileSwitcherProps {
   config: AppConfig;
@@ -18,6 +19,14 @@ interface ProfileSwitcherProps {
   subtitle?: ReactNode;
   /** True while a capture or its pipeline is running. */
   sessionActive?: boolean;
+  /**
+   * WHICH GROUND IT IS DRAWN ON, not which control it is. `nav` is the
+   * sidebar's footer row; `sheet` is the settings header's, which is shorter
+   * and carries no sub-line because the header has no room for one. The
+   * mechanism, the refusal and the runtime call are identical — that is the
+   * whole point of the prop existing instead of a second component.
+   */
+  variant?: "nav" | "sheet";
 }
 
 /** Mirrors `sessions::PROFILE_LOCKED_DURING_SESSION`. Shown before the attempt
@@ -47,28 +56,102 @@ export function ProfileSwitcher({
   onChange,
   subtitle,
   sessionActive = false,
+  variant = "nav",
 }: ProfileSwitcherProps) {
   const profiles = config.text_profiles?.length
     ? config.text_profiles.map((profile) => cloneTextProfile(profile))
     : [resolveActiveTextProfile(config)];
   const active = resolveActiveTextProfile(config);
+  /* IN THE RAIL THE ROW IS THE AVATAR, and the two things it stops saying are
+     said by the tooltip instead — which profile is active, and why it cannot be
+     switched right now. Dropping the lock sentence without replacing it would
+     leave a control that silently refuses, which is the failure `[data-locked]`
+     was added to prevent. */
+  const collapsed = useNavCollapsed();
+  const railTitle = sessionActive
+    ? `${active.label} — ${LOCKED_HINT}`
+    : `${active.label} — switch the active profile`;
+
+  /* A REFUSAL THE USER CAN SEE. `.catch(() => {})` stood here, and it is the
+     whole of the "sometimes it just does not switch" the owner reported on
+     2026-08-11: the runtime is the authority and it declines — during a session
+     by `sessions::PROFILE_LOCKED_DURING_SESSION`, and on any other error too —
+     the promise rejects, the swallow eats it, and the `<select>` springs back
+     to the profile it started on with nothing said. A control that silently
+     undoes what you did is worse than one that refuses out loud.
+
+     It is held in state rather than logged, because the log is not on screen.
+     It clears on the next attempt, so a refusal cannot outlive the condition
+     that caused it. */
+  const [refused, setRefused] = useState<string | null>(null);
 
   // The runtime is the authority and rejects this during a session, so the
   // local patch has to wait for it. Applying it first and invoking afterwards
   // left the UI showing a profile the runtime had refused to switch to.
   const handleSwitch = (id: string) => {
     if (sessionActive) return;
+    setRefused(null);
     void invoke("switch_active_text_profile", { profileId: id })
       .then(() => onChange(buildTextProfilesPatch(config, profiles, id)))
-      .catch(() => {});
+      .catch((error) =>
+        setRefused(
+          typeof error === "string" ? error : "The runtime refused the switch.",
+        ),
+      );
   };
+
+  const sheet = variant === "sheet";
+  /* ONE `<select>`, TWO GROUNDS. The picker below is byte for byte the same in
+     both variants — the same options, the same handler, the same refusal — and
+     what the variant chooses is the row drawn under it. A second component
+     would be a second place for the runtime call to drift. */
+  const picker = (
+    <select
+      className={sheet ? "ws-modal-profile-select" : "ws-nav-profile-select"}
+      value={active.id}
+      onChange={(event) => handleSwitch(event.target.value)}
+      aria-label="Switch active profile"
+      disabled={sessionActive}
+    >
+      {profiles.map((profile) => (
+        <option key={profile.id} value={profile.id}>
+          {displayTextProfileLabel(profile)}
+        </option>
+      ))}
+    </select>
+  );
+
+  if (sheet) {
+    return (
+      <div
+        className="ws-modal-profile"
+        data-locked={sessionActive ? "" : undefined}
+        /* The header strip has no line to spend on a paragraph, so a refusal is
+           drawn on the row itself and carried in full by the tooltip. The
+           sidebar, which does have the line, prints it. */
+        data-refused={refused && !sessionActive ? "" : undefined}
+        title={
+          sessionActive
+            ? LOCKED_HINT
+            : refused ?? `${active.label} — switch the active profile`
+        }
+      >
+        <span className="ws-av" aria-hidden>
+          {textProfileInitials(active)}
+        </span>
+        <span className="ws-modal-profile-name">{active.label}</span>
+        <Icon name="updown" />
+        {picker}
+      </div>
+    );
+  }
 
   return (
     <>
       <div
         className="ws-nav-profile"
         data-locked={sessionActive ? "" : undefined}
-        title={sessionActive ? LOCKED_HINT : undefined}
+        title={collapsed ? railTitle : sessionActive ? LOCKED_HINT : undefined}
       >
         <span className="ws-av" aria-hidden>
           {textProfileInitials(active)}
@@ -80,24 +163,18 @@ export function ProfileSwitcher({
         <span className="ws-caret" aria-hidden>
           <Icon name="updown" />
         </span>
-        <select
-          className="ws-nav-profile-select"
-          value={active.id}
-          onChange={(event) => handleSwitch(event.target.value)}
-          aria-label="Switch active profile"
-          disabled={sessionActive}
-        >
-          {profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {displayTextProfileLabel(profile)}
-            </option>
-          ))}
-        </select>
+        {picker}
       </div>
-      {sessionActive && (
+      {sessionActive && !collapsed && (
         <p className="ws-nav-lock">
           <Icon name="lock" />
           <span>{LOCKED_HINT}</span>
+        </p>
+      )}
+      {refused && !sessionActive && !collapsed && (
+        <p className="ws-nav-lock" role="status">
+          <Icon name="alert" />
+          <span>{refused}</span>
         </p>
       )}
     </>

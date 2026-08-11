@@ -790,6 +790,19 @@ Status: Proposed | Accepted | Superseded by NNNN
   `reports_detected_language` and `synthesis_streaming` move to the model. This
   repo's own survey held the evidence before the axis was chosen.
 
+- [0111](0111-the-sidebar-has-two-widths-and-the-layout-measures-the-column-it-is-drawn-in.md):
+  answers the finding ADR 0104 closed with — *"the workspace has no width
+  breakpoint at all"*. The sidebar gains a **56 px rail** beside its 232 px
+  column, chosen by its toggle (a preference, stored in
+  `AppConfig.workspace_nav_rail`) or by a window narrower than **760 CSS px**
+  (state, stored nowhere). And because the content column is now the window
+  minus a sidebar of one of two widths, **every responsive rule measures the
+  column it is drawn in** — `@container ws-column`, carried by `.ws-content`,
+  the sheet's scroller and a pane's detail column, nearest one winning. Three
+  tiers: 620 px drops the inset, 460 px stacks the row and collapses
+  fixed-track grids, because **a fixed grid track does not degrade, it
+  collides**.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

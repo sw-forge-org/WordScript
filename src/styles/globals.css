@@ -180,9 +180,22 @@
   --gap-block: var(--s7);
   --gap-row: var(--s3);
   --nav-w: 232px;
+  /* The rail (ADR 0111). 28 px icon tile plus `--s2` of breathing room on each
+     side plus the sidebar's own 10 px walls — the width the row's existing tile
+     needs and not a pixel chosen to look right. */
+  --nav-w-rail: 56px;
   --nav-row-h: 32px;
   --content-pad: var(--s7);
   --content-max: 760px;
+  /* THE PANE'S LIST COLUMN, AND IT IS THE ONE STRUCTURE TOKEN THAT IS A RANGE
+     RATHER THAN A NUMBER (ADR 0111). 236 px is what the drawing asks for and
+     what it gets whenever the column can afford it; below that it gives ground
+     to the detail beside it, down to a floor at which a two-line row still
+     reads. `cqi` measures the content column the pane actually sits in, which
+     is the same argument `.ws-content-inner`'s container makes — a viewport
+     query would be measuring the window and the window is not what changed
+     when the sidebar railed. */
+  --pane-list-w: clamp(176px, 32cqi, 236px);
 
   /* Accent reach at Standard: the primary action, the selected radio, the
      active nav icon and the segment thumb's label. Nothing else. */

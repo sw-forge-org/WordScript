@@ -758,6 +758,31 @@
     transition: background-color var(--dur-fast) var(--ease);
   }
   .ws-modal-profile:hover { background: var(--bg-elevated); color: var(--fg); }
+  /* THE HEADER'S CONTROL IS THE SIDEBAR'S CONTROL, and the four rules below are
+     what the change from a `<button>` to a picker costs: a positioned row, the
+     transparent native `<select>` over it, a name that ellipsises instead of
+     pushing the close control, and the two refusal states. Everything else is
+     the rule above, untouched. */
+  .ws-modal-profile { position: relative; }
+  .ws-modal-profile-name {
+    min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-modal-profile-select {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .ws-modal-profile-select:disabled { cursor: default; }
+  .ws-modal-profile[data-locked] { opacity: 0.55; }
+  /* A refusal the header has no line to print. The tooltip carries the
+     sentence; this is what makes a reader look for it. */
+  .ws-modal-profile[data-refused] {
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    color: var(--danger);
+  }
+  .ws-modal-profile[data-refused] .ws-av { color: var(--danger); }
   .ws-modal-profile .ws-av {
     width: 18px; height: 18px; border-radius: 5px;
     display: grid; place-items: center;
@@ -833,6 +858,14 @@
     border-right: 1px solid var(--border);
     padding: var(--s3) 10px;
     overflow-y: auto;
+    /* The rail is a width change and nothing else moves, so it is the one
+       transition in the shell that animates a box dimension. It is cheap
+       because the column is `flex: none` — the content beside it reflows once,
+       at the end, rather than on every frame of a layout animation. */
+    transition: width var(--dur-base) var(--ease);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ws-nav { transition: none; }
   }
 
   /* THE ONE PLACE IN THE SURFACE THAT CARRIES BRAND RATHER THAN STATE, so it
@@ -847,6 +880,79 @@
     display: block;
     width: 100%; max-width: 180px; height: auto;
     object-fit: contain;
+  }
+
+  /* ── The head: the mark, and the control that changes the column's width ───
+     ADR 0111. The brand keeps its own padding when it stands alone — the
+     gallery mounts it that way — and gives it up to the head when the head is
+     there, so the toggle's hit area reaches the sidebar's own wall instead of
+     stopping at an inset the mark was paying for both of them. */
+  .ws-nav-head {
+    display: flex; align-items: flex-start; gap: var(--s2);
+    padding: var(--s3) var(--s2) var(--s5);
+  }
+  .ws-nav-head > .ws-brand { padding: 0; flex: 1; min-width: 0; }
+  .ws-nav-collapse {
+    flex: none;
+    width: 26px; height: 26px;
+    display: grid; place-items: center;
+    border-radius: var(--r-control);
+    color: var(--fg-muted);
+    transition: background-color var(--dur-fast) var(--ease),
+                color var(--dur-fast) var(--ease);
+  }
+  .ws-nav-collapse:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-nav-collapse svg { width: 15px; height: 15px; }
+
+  /* ── THE RAIL — the same sidebar with its labels withheld ──────────────────
+     ADR 0111. Every rule below either hides a label or centres what is left;
+     none of them redraws a control. That is the test that this is one sidebar
+     in two states rather than two sidebars: a row's tile, its active ground,
+     its accent and its hover are the rules above, untouched.
+
+     WHAT THE RAIL OWES IN RETURN FOR THE LABEL IT TOOK is a name the pointer
+     and the screen reader can still reach. The label stays in the DOM and is
+     hidden here; `NavRow` adds `title` in this state and only in this state. */
+  .ws-nav[data-collapsed] {
+    width: var(--nav-w-rail);
+    padding-left: var(--s2); padding-right: var(--s2);
+    overflow-x: hidden;
+  }
+  /* Column-reverse, so the toggle keeps the top of the column in both states
+     and the mark moves under it instead. */
+  .ws-nav[data-collapsed] .ws-nav-head {
+    flex-direction: column-reverse; align-items: center;
+    gap: var(--s3);
+    padding: var(--s1) 0 var(--s4);
+  }
+  .ws-nav[data-collapsed] .ws-nav-head > .ws-brand { flex: none; width: auto; }
+  .ws-nav[data-collapsed] .ws-brand img { width: 26px; height: 26px; border-radius: 7px; }
+  /* A group title is three words that no longer fit; the grouping it states is
+     carried by the space above the group, which the rail keeps. */
+  .ws-nav[data-collapsed] .ws-nav-group > h3 { display: none; }
+  .ws-nav[data-collapsed] .ws-nav-label,
+  .ws-nav[data-collapsed] .ws-nav-tag,
+  .ws-nav[data-collapsed] .ws-nav-search > span,
+  .ws-nav[data-collapsed] .ws-nav-search kbd,
+  .ws-nav[data-collapsed] .ws-nav-profile .ws-who,
+  .ws-nav[data-collapsed] .ws-nav-profile .ws-caret,
+  .ws-nav[data-collapsed] .ws-nav-lock { display: none; }
+  .ws-nav[data-collapsed] .ws-nav-row,
+  .ws-nav[data-collapsed] .ws-nav-search,
+  .ws-nav[data-collapsed] .ws-nav-profile {
+    justify-content: center;
+    padding-left: 0; padding-right: 0;
+    gap: 0;
+  }
+  /* The search field's border is what made it read as a field, and a 36 px
+     square of border reads as a disabled button instead. In the rail it is the
+     icon control the row grammar already draws. */
+  .ws-nav[data-collapsed] .ws-nav-search {
+    background: none; border-color: transparent;
+    min-height: var(--nav-row-h);
+  }
+  .ws-nav[data-collapsed] .ws-nav-search:hover {
+    background: var(--bg-elevated); border-color: transparent; color: var(--fg);
   }
   /* The two windows are told apart by their sidebar, not by a title bar the OS
      draws (ADR 0003), so the mark gains a qualifier rather than a chrome. */
@@ -906,6 +1012,11 @@
     transition: background-color var(--dur-fast) var(--ease),
                 color var(--dur-fast) var(--ease);
   }
+  /* The label is a span rather than a bare text node so the rail has something
+     to withhold (ADR 0111). It takes the slack the tag does not, and it WRAPS
+     rather than truncating: `Notes & Meetings` is a destination, and a
+     destination read as `Notes & …` is one the reader has to guess at. */
+  .ws-nav-row .ws-nav-label { flex: 1; min-width: 0; }
   .ws-nav-row:hover { color: var(--fg); }
   .ws-nav-row:hover svg { color: var(--fg-dim); }
   .ws-nav-row[aria-current="true"] {
@@ -1102,6 +1213,48 @@
   .ws-content-inner[data-layout="pane"] .ws-screen-stage > .ws-view-top {
     padding: var(--content-pad) var(--content-pad) var(--s4);
   }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE WIDTHS THE WORKSPACE ACTUALLY LIVES AT — ADR 0111.
+
+     ADR 0104 closed with the finding this section answers: "The workspace has
+     no width breakpoint at all. [...] Below the width the design assumes, the
+     layout does not rearrange — it compresses, and the text column is what
+     pays, because it is the only flexible thing in the row." It also supplied
+     the numbers: the shipped window is 1000 physical px at a 1.25 display
+     scale, so the layout gets 800 CSS px, and the declared `minWidth: 880`
+     lands at 704. Everything below is quoted in CSS pixels, with its viewport,
+     as that record requires.
+
+     THE QUERY IS ON THE COLUMN, NOT ON THE WINDOW, and `--nav-w-rail` is why
+     that stopped being a preference and became the only correct choice. The
+     content column is the window minus a sidebar that is now 232 px OR 56 px,
+     so two windows of the same width can hand their content a column 176 px
+     apart. A viewport media query would be measuring the one quantity that no
+     longer predicts the layout.
+
+     `ws-column` IS NAMED SO THE NEAREST ONE WINS. `.ws-content`, the sheet's
+     scroller and a pane's detail column all carry the name; a rule inside a
+     pane therefore measures the detail column it is actually drawn in, and the
+     same rule on a plain view measures the whole content column. That is what
+     the four `@container` rules already in this file were reaching for and
+     could not have — they resolved against `.ws-content-inner`, which in a pane
+     is the full column and not the half the row sits in.
+
+     THE CONTAINERS ARE DECLARED HERE AND THE TIERS ARE AT THE FOOT OF THIS
+     FILE, which is not tidiness. A container query adds NO specificity: inside
+     one, `.ws-mcp-row` is still one class, so a base rule for the same selector
+     appearing later in the file wins and the tier silently does nothing. That
+     is not a hypothetical — it is how the first build of this section shipped,
+     and the MCP row went on drawing `188px 84px 0px` at a 426 px column with
+     its third track empty and its text hanging out of the card. Source order
+     is the only thing deciding it, so every tier lives after every rule it
+     overrides.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  .ws-content,
+  .ws-modal-content,
+  .ws-pane-detail { container: ws-column / inline-size; }
 
   /* The gallery's screen stage. It is a handle, not a box: the prototype's
      screen blocks are direct children of its content column, and a wrapper with
@@ -1945,9 +2098,20 @@
      Selection in the column governs everything to the right of that hairline.
      ═════════════════════════════════════════════════════════════════════════ */
 
+  /* THE LIST COLUMN IS A RANGE, NOT A NUMBER — ADR 0111. It was a flat 236 px,
+     which is the width the drawing asks for and the right one whenever the
+     column can afford it. What it cannot do is stay 236 while the content
+     column shrinks: at 463 px — the workspace at 695 CSS px, which is the
+     window the owner reported this from — a fixed list leaves the detail beside
+     it 227 px, and a profile's whole settings surface was drawing three words
+     to a line.
+
+     So it gives ground proportionally and stops at 176 px, which is the width
+     at which a row's two lines — a name and `Auto · Clipboard only` under it —
+     still both read. `--pane-list-w` carries the derivation; see globals.css. */
   .ws-pane {
     display: grid;
-    grid-template-columns: minmax(0, 236px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--pane-list-w)) minmax(0, 1fr);
     align-items: stretch;
     min-height: 0;
     border-top: 1px solid var(--border);
@@ -2323,8 +2487,14 @@
   .ws-srv-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; }
 
   /* A command you copy, not a code block you read. */
+  /* `min-width: 0` is what makes the `code` below's own `min-width: 0` reachable
+     (ADR 0111). A flex item's automatic minimum size is its min-content, so the
+     box held the full width of the path it carries and hung off the card in a
+     narrow column while the scroller inside it — which exists precisely so a
+     long path costs no width — was never asked to scroll. */
   .ws-cmd {
     display: flex; align-items: center; gap: var(--s2);
+    min-width: 0;
     background: var(--bg-inset);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -3020,17 +3190,24 @@
      summary's hover ground floating between the two. The nesting is stated by
      the chevron and by the ground the open body sits on; it does not need to
      be stated a second time in millimetres. */
+  /* THE BADGE TRACK IS `minmax(0, auto)`, NOT `auto`. A bare `auto` track never
+     shrinks below its content, so `whisper-large-v3-turbo default` held its
+     full width and pushed itself off the card — the `max-width: 100%` and the
+     ellipsis on `.ws-jobmodel-name`, which exist for exactly this, were never
+     reached because the track never asked the badge to be narrower (ADR 0111).
+     The chevron's track stays `auto`: it is 13 px of mark and has nothing to
+     give. */
   .ws-job > summary,
   .ws-job[data-none] {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
     align-items: center;
     gap: var(--s3);
     padding: 11px 0;
     cursor: pointer;
     list-style: none;
   }
-  .ws-job[data-none] { grid-template-columns: minmax(0, 1fr) auto; cursor: default; }
+  .ws-job[data-none] { grid-template-columns: minmax(0, 1fr) minmax(0, auto); cursor: default; }
   .ws-job > summary::-webkit-details-marker { display: none; }
   .ws-job > summary:hover { background: var(--bg-elevated); }
   .ws-job > summary > svg {
@@ -3048,7 +3225,10 @@
     font-stretch: var(--w-micro); letter-spacing: var(--ls-micro);
     font-size: var(--t-micro); color: var(--fg-muted); line-height: 1.5;
   }
-  .ws-job-ctl { flex: none; display: flex; align-items: center; gap: var(--s2); }
+  /* `min-width: 0` is the other half of the badge track above: without it the
+     grid item's automatic minimum size is its content and the track's `minmax`
+     has nothing to shrink. */
+  .ws-job-ctl { flex: none; min-width: 0; display: flex; align-items: center; gap: var(--s2); }
   /* Not a badge: it qualifies the badge beside it, and two badges on one row
      read as two independent facts. */
   .ws-job-prov { font-size: 10px; color: var(--fg-dim); }
@@ -3056,6 +3236,10 @@
     padding: 0 0 var(--s2);
     background: var(--bg-inset);
     border-top: 1px solid var(--border);
+    /* THE WELL'S OWN INSET, DECLARED ONCE AND PAID ON BOTH SIDES. The width is
+       the summary's chevron column — 13 px mark plus `--s3` — so an open row's
+       label starts on the same vertical line as the closed row's name. */
+    --job-well-inset: calc(13px + var(--s3));
   }
   /* THE BODY ROWS ALIGN WITH THE LABEL, NOT WITH THE CHEVRON.
      This rule read `padding-left: 0`, which aligned the open body's rows with
@@ -3064,15 +3248,28 @@
      "Sub-mode" began exactly on the left wall of their own well while "Prompt
      Enhance" sat 25 px in. Text touching the edge of the ground it sits on is
      the defect ADR 0052 removed from every other stack, and the well made it
-     more visible rather than less, because the well has a visible edge. */
+     more visible rather than less, because the well has a visible edge.
+
+     AND THE RIGHT WALL IS THE SAME WALL. `padding-right: 0` stood here for the
+     opposite alignment — an open row's control flush with the closed row's
+     model badge — and it cost the thing the left half of this rule was written
+     to buy: every select, toggle and stepper in the well sat hard against a
+     visible edge while its label sat 25 px in from the other one. The badge is
+     on the card plane and the controls are in the well, so they were never on
+     one ground to be aligned across; the well is, and a ground pays its inset
+     on both sides. Reported against AI Models, 2026-08-11. */
   .ws-job-body > .ws-rows > .ws-row {
-    padding-left: calc(13px + var(--s3));
-    padding-right: 0;
+    padding-left: var(--job-well-inset);
+    padding-right: var(--job-well-inset);
   }
   /* Same column as the rows above it, for the same reason — a note is the one
      piece of prose in the well and was the most obvious thing touching the
      wall. */
-  .ws-job-body .ws-note { margin: 0 0 var(--s2); padding-left: calc(13px + var(--s3)); }
+  .ws-job-body .ws-note {
+    margin: 0 0 var(--s2);
+    padding-left: var(--job-well-inset);
+    padding-right: var(--job-well-inset);
+  }
   .ws-job[data-none] .ws-job-text > span { color: var(--fg-muted); }
 
   /* ── A downloadable model ─────────────────────────────────────────────────
@@ -3193,7 +3390,14 @@
   }
   .ws-hero-facts b { color: var(--fg-dim); font-weight: 550; }
   .ws-hero-facts .ws-sep { opacity: 0.5; }
-  .ws-hero-facts .ws-grow { margin-left: auto; }
+  /* THE ACTION WRAPS INSTEAD OF OVERFLOWING. `.ws-grow` is `flex: 1` with a
+     zero basis, so on a wrapping row it never took a line of its own — it took
+     whatever the facts left and its button, which does not shrink, hung over
+     the column's right edge by however much was missing. Five pixels at 702 CSS
+     px, and more the narrower the window. An `auto` basis is what lets the
+     wrap the row already declares actually happen; `margin-left: auto` keeps
+     the button at the trailing edge on whichever line it lands. */
+  .ws-hero-facts .ws-grow { flex: 0 0 auto; margin-left: auto; }
 
   /* ═════════════════════════════════════════════════════════════════════════
      THE LIST — history, profiles, targets, notes, uploads.
@@ -3883,6 +4087,20 @@
     border: 1px solid var(--border-strong);
     box-shadow: var(--elev-pop);
     display: flex; flex-direction: column; gap: 1px;
+    /* IT LOOKED TRANSPARENT AND IT WAS NEVER TRANSPARENT. `--bg-surface` is an
+       opaque hex in both schemes; what showed through the Help panel was the
+       Profiles list PAINTING ON TOP OF IT. A positioned box with `z-index:
+       auto` paints in DOM order among its siblings' positioned descendants,
+       and the sidebar comes before the content column — so every positioned
+       thing in a pane (`.ws-pane-detail-main` and the rows it carries) painted
+       after this panel and over it. Reported as an opacity fault against the
+       rail's Help menu, 2026-08-11, which is exactly what it looks like.
+
+       8 is where a popover belongs on this window's ladder: above the note's
+       float bar (4) and the chat window (6), below the settings sheet's scrim
+       (10) — a menu opened in the workspace must not float over the sheet laid
+       on top of it — and far below the command palette (60). */
+    z-index: 8;
   }
   .ws-menu button {
     display: flex; align-items: flex-start; gap: 9px;
@@ -5796,5 +6014,106 @@
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     font-family: var(--font); font-size: 10px; color: var(--fg-dim);
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE TIERS — ADR 0111, and they are LAST ON PURPOSE.
+
+     A container query adds no specificity. Inside `@container`, `.ws-mcp-row`
+     is still one class, so any base rule for the same selector further down the
+     file wins on source order and the tier does nothing at all. Everything
+     below therefore sits after every rule it overrides, and a new tier rule
+     belongs here rather than beside the component it adjusts.
+
+     Three tiers, each giving up the cheapest thing left. The derivation, the
+     window arithmetic and why the query is on the column rather than on the
+     viewport are in the section header further up this file.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* THE INSET IS THE FIRST THING TO GIVE, because it is the only thing on the
+     screen that is pure margin. 32 px on each side of a 470 px column is 14% of
+     the window spent on nothing, and the row hint below it is drawing five
+     lines. It falls to the sheet's own 24 and then to 16, and no further: below
+     that the card stops reading as a card on a ground. */
+  @container ws-column (max-width: 620px) {
+    .ws-content-inner { --content-pad: var(--s6); }
+  }
+
+  @container ws-column (max-width: 460px) {
+    .ws-content-inner { --content-pad: var(--s4); }
+
+    /* THE ROW TURNS INTO A STACK BEFORE ITS TEXT COLUMN TURNS INTO A RIBBON.
+       `.ws-row-ctl` is `flex: none` and every pixel it takes comes off the text
+       column (ADR 0092), which is exactly why the row cannot simply be left to
+       compress: ADR 0104 measured a Profiles row whose text column was 79 px
+       wide, holding ten characters to a line. Here the control gets its own
+       line and the text column gets the whole row — the arrangement
+       `.ws-row[data-layout="stack"]` already draws by hand for the rows that
+       always need it. Nothing is hidden and nothing is truncated; the row is
+       taller and every word of it is readable. */
+    .ws-row {
+      flex-direction: column; align-items: stretch; gap: var(--s2);
+    }
+    .ws-row > .ws-row-ctl { flex-wrap: wrap; justify-content: flex-start; }
+
+    /* AND THE COLUMNS STOP BEING COLUMNS. A FIXED GRID TRACK DOES NOT DEGRADE,
+       IT COLLIDES. The row above is flex and the worst it does under pressure
+       is compress; a `grid-template-columns` with an `auto` track does
+       something else entirely, because an `auto` track will not shrink below
+       its content. Every pixel it is short comes out of the flexible track
+       beside it, and past a point that track is narrower than one word: the
+       owner's report of this carried a legend row drawing `sets / how / a /
+       sentence / is / built` one word to a line with the badge column drawn
+       over the top of it (2026-08-11). It is the same failure mode ADR 0104
+       described for the flex row, one order of magnitude worse.
+
+       They are named rather than swept, because a blanket rule would also
+       flatten the grids that are a SHAPE rather than a layout — the job
+       summary's chevron/text/badge, and the pane itself, which has its own
+       answer in `--pane-list-w`. */
+
+    /* Profiles → Words: name and destination keep one line, the sentence takes
+       its own, because the badge IS the answer the name asks for. */
+    .ws-legend-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "name where" "what what";
+      gap: var(--s1) var(--s3);
+      align-items: baseline;
+    }
+    .ws-legend-row > b { grid-area: name; }
+    .ws-legend-row > span { grid-area: what; }
+    .ws-legend-row > .ws-badge { grid-area: where; }
+
+    /* Integrations → the MCP table; Delivery & Insert's driver chain and its
+       stage list. Three columns each, of which two are fixed. */
+    .ws-mcp-row,
+    .ws-klass-row,
+    .ws-stage-row { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
+
+    /* The two-up blocks. Side by side is a comparison; stacked is a list, and
+       a list of two is what a 200 px track was going to be anyway. */
+    .ws-diff,
+    .ws-srvl,
+    .ws-hoff-grid,
+    .ws-hoff-pair,
+    .ws-cross { grid-template-columns: minmax(0, 1fr); }
+
+    /* THE SEGMENT AND THE TAB STRIP WRAP RATHER THAN RUN OFF THE CARD. Both
+       are `inline-flex` with `white-space: nowrap` on every button, which is
+       right — `Self-hosted` broken across two lines is not a word. What was
+       missing is the strip's own permission to take a second line: four lanes
+       measure about 300 px and the card at this tier holds 240. Wrapped, the
+       control is two rows of buttons and every label is still one line, which
+       is the degradation the sub-tab row already makes. */
+    .ws-seg,
+    .ws-note-tabs { flex-wrap: wrap; }
+
+    /* A SECTION HEAD IS A TITLE AND A SENTENCE ON ONE BASELINE, and one
+       baseline is a luxury of width. Sharing 240 px, the title took what the
+       sentence left and `Where notes live` came out as `Where / notes / live`
+       — three lines of heading beside three lines of prose. Stacked, the title
+       is one line and the sentence is the paragraph it always was. */
+    .ws-sec-head { flex-direction: column; align-items: flex-start; gap: 5px; }
+    .ws-sec-head .ws-sec-action { margin-left: 0; align-self: flex-start; }
   }
 }

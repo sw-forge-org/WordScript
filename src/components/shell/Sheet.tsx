@@ -112,36 +112,13 @@ export function SheetHead({
   );
 }
 
-/** The active profile, stated once for the whole sheet. */
-export function SheetProfile({
-  initials,
-  name,
-  onOpen,
-  disabled,
-  title,
-}: {
-  initials: string;
-  name: React.ReactNode;
-  onOpen?: () => void;
-  disabled?: boolean;
-  title?: string;
-}) {
-  return (
-    <button
-      type="button"
-      className="ws-modal-profile"
-      onClick={onOpen}
-      disabled={disabled}
-      title={title}
-    >
-      <span className="ws-av" aria-hidden>
-        {initials}
-      </span>
-      <span>{name}</span>
-      <Icon name="updown" />
-    </button>
-  );
-}
+/* `SheetProfile` STOOD HERE AND IS GONE (ADR 0054: a replaced surface is
+   deleted in the commit that replaces it, not aliased). It drew the double
+   chevron that announces a popup button and navigated instead of opening one,
+   which is the fake-affordance defect rule 7 names, on the one control in the
+   sheet that is always on screen. What stands in its place is
+   `ProfileSwitcher variant="sheet"` — the same control the sidebar has, which
+   is what this file's own note claimed it already was. */
 
 export function SheetBody({ children }: { children: React.ReactNode }) {
   return <div className="ws-modal-body">{children}</div>;

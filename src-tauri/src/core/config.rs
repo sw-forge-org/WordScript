@@ -1139,6 +1139,18 @@ pub struct AppConfig {
     /// keep something that has to survive a restart.
     #[serde(default = "default_color_scheme")]
     pub color_scheme: String,
+    /// Whether the workspace sidebar stands as a rail — icons only, no labels.
+    /// Stored here for the same reason `color_scheme` is: the choice belongs to
+    /// the machine rather than to a profile, and a window is not a place to
+    /// keep something that has to survive a restart.
+    ///
+    /// IT IS THE USER'S CHOICE, NOT THE WINDOW'S STATE. The window collapses
+    /// the sidebar on its own below the width at which a 232 px column stops
+    /// being affordable, and that is not written here — otherwise dragging a
+    /// window narrow and wide again would rewrite a preference the user never
+    /// touched. Only the toggle writes (ADR 0111).
+    #[serde(default)]
+    pub workspace_nav_rail: bool,
     #[serde(default)]
     pub auto_detect_mode: bool,
     #[serde(default)]
@@ -1241,6 +1253,7 @@ impl Default for AppConfig {
             enhance_sub_mode: None,
             enhance_target: PromptTarget::default(),
             color_scheme: default_color_scheme(),
+            workspace_nav_rail: false,
             translate_same_language: TranslateSameLanguage::default(),
             translate_address_form: TranslateAddressForm::default(),
             auto_detect_mode: true,

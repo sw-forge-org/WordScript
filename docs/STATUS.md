@@ -19,6 +19,14 @@ Status: 2026-08-11
   `Cmd+,` / `Ctrl+,` and closed with Escape, the scrim or its close control.
   The ported shell grammar throughout: `.ws-nav` sidebar, native title bar on
   every OS, the status strip along the bottom edge.
+- **The sidebar has two widths as of 2026-08-11** (ADR 0111): 232 px, or a
+  56 px rail of icons. Its toggle sits at the top of the column in both states
+  and the choice is remembered in `AppConfig.workspace_nav_rail`; a window
+  narrower than 760 CSS px rails on its own and does not write that down. Every
+  responsive rule in the shell is an `@container ws-column` query against the
+  column the content is drawn in, which is the window minus a sidebar of one of
+  two widths — three tiers, at 620 px and 460 px. This is the answer to
+  ADR 0104's closing finding that the workspace had no width breakpoint at all.
 - Active views and sections: WORKSPACE (Home, History, Profiles, Context) and,
   in the sheet, APP (General, Hotkeys, Notes & Meetings) -- AI (AI Models,
   Agents, Integrations) -- SYSTEM (Delivery & Insert, Privacy & Data,

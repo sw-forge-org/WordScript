@@ -4,13 +4,13 @@ import {
   NavGroup,
   NavRow,
   NavSearch,
+  ProfileSwitcher,
   Sheet,
   SheetBody,
   SheetContent,
   SheetFoot,
   SheetHead,
   SheetNav,
-  SheetProfile,
 } from "@/components/shell";
 import type { WorkspaceRuntime } from "@/screens/props";
 import { SECTIONS, SECTION_GROUPS, findSection, type SectionId } from "./ia";
@@ -42,8 +42,7 @@ export function SettingsSheet({
   closeOnEscape,
   onSearch,
   searchShortcut,
-  profile,
-  onOpenProfiles,
+  sessionActive,
 }: {
   section: SectionId;
   runtime: Omit<WorkspaceRuntime, "active">;
@@ -53,8 +52,9 @@ export function SettingsSheet({
   closeOnEscape?: boolean;
   onSearch: () => void;
   searchShortcut: string;
-  profile: { initials: string; name: string };
-  onOpenProfiles: () => void;
+  /** True while a capture or its pipeline is running: the header's profile
+   *  control refuses during one, because the runtime does. */
+  sessionActive?: boolean;
 }) {
   // P2, the sheet's half: a section the user comes back to is not rebuilt.
   // Bounded to what was actually opened, so a sheet opened on General costs one
@@ -70,16 +70,25 @@ export function SettingsSheet({
   return (
     <Sheet onClose={onClose} closeOnEscape={closeOnEscape} label="WordScript Settings">
       <SheetHead title="Settings" onClose={onClose}>
-        {/* The profile the whole sheet is read in. Every value carrying a scope
-            tag on these screens belongs to it, so it is stated once here rather
-            than repeated per section — and pressing it goes to where a profile
-            is actually edited, which is a workspace view and therefore closes
-            the sheet. */}
-        <SheetProfile
-          initials={profile.initials}
-          name={profile.name}
-          onOpen={onOpenProfiles}
-          title="Open Profiles"
+        {/* THE PROFILE THE WHOLE SHEET IS READ IN, AND IT SWITCHES.
+
+            It was a link: a `SheetProfile` drawing the double chevron that
+            announces a macOS popup button, which on press navigated to the
+            Profiles view and closed the sheet. `ProfileSwitcher`'s own note has
+            said since Leg 3 that this is "the same control in the workspace
+            sidebar and in the settings sheet's header" — it was not, and the
+            owner found it the way the drawing predicts anyone would, by
+            pressing it and getting no list (2026-08-11).
+
+            It is the same component now, in its `sheet` variant: one runtime
+            call, one refusal path, two grounds. The door to Profiles is not
+            lost with it — every scoped row on these screens carries its own,
+            which is where a reader is when they want it. */}
+        <ProfileSwitcher
+          config={runtime.config}
+          onChange={runtime.patch}
+          sessionActive={sessionActive}
+          variant="sheet"
         />
       </SheetHead>
 
