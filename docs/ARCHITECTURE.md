@@ -97,12 +97,22 @@ visibility from workflow-internal draft handoffs); visible recovery actions and
 diagnostics; separate rendering of transient runtime logs and durable native
 transcript history with filters, export and the visible history store path.
 
-**Text-rules import and export are NOT among them, and this line used to claim
-they were.** `export_text_rules` and `import_text_rules` are complete in the
-runtime and have had no caller since Leg 3's shell overwrite; the full backup on
-Privacy & Data writes the whole config, which is a different artifact. The doc
-asserting a capability the product had lost is how it stayed invisible for six
-legs (ADR 0089).
+**Text-rules import and export are among them again as of Leg 10, and the two
+halves are on different screens on purpose** (ADR 0090). Export acts on a thing:
+`Export rules` is the fourth verb on the profile's own row menu and writes the
+profile the menu was opened on. Import creates one: it is on Privacy & Data
+beside the full backup, it lands as a **new** profile and replaces nothing, and
+the profile it makes does not exist yet — which is why it has no row to act on
+and no target to choose. Privacy & Data also carries the export with a profile
+picker, for a reader who is there to move data rather than to edit a profile.
+
+For six legs this line claimed the capability while `export_text_rules` and
+`import_text_rules` had no caller at all — complete in the runtime, compiled
+into every build, and reachable from nothing since Leg 3's shell overwrite. The
+full backup was never the replacement: it writes the whole config, the history
+index and the transcript files as one archive, which is what you keep rather
+than what you send. **A doc asserting a capability the product had lost is how
+it stayed invisible** (ADR 0089).
 
 The UI is **not** responsible for: global shortcut registration, microphone
 capture, session state machine, insert decisions.

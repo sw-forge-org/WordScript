@@ -55,6 +55,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Text rules can be shared again, and the two halves are on different screens
+  on purpose** (ADR 0090). `export_text_rules` and `import_text_rules` have been
+  complete in the runtime — schema version, conflict resolution, merge,
+  analysis — and reachable from nothing since Leg 3's shell overwrite deleted
+  the surface that called them, while `ARCHITECTURE.md` went on asserting the UI
+  did it. **Export acts on a thing and import creates one**, so they are not
+  drawn as a pair: `Export rules` is the fourth verb on the profile's own row
+  menu, where it writes the profile the menu was opened on and needs no picker;
+  import is on Privacy & Data beside the full backup, where it lands as a **new**
+  profile and replaces nothing — the profile it makes does not exist yet, so
+  there is no row for it to act on and no target to choose. Privacy & Data
+  carries the export too, with a profile picker, for a reader who is there to
+  move data rather than to edit a profile. The import re-mints the file's rule
+  ids and runs the legacy vocabulary migration, or every word in an imported
+  file would be drawn in the profile and reach no recognizer (ADR 0035).
+
 - **AI Models has a row for the title call** (ADR 0088). ADR 0077 spends a
   chat-model call on every dictation to name the transcript file, and until now
   it was stated in a decision record and on no surface. Titles is a row in the
@@ -140,6 +156,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **The four session commands, which were the Python sidecar's contract**
+  (ADR 0091). `start_native_session`, `stop_native_session`,
+  `native_session_status` and `complete_native_session` were named in
+  `docs/spec/SPEC.md` as the UI surface and had never been invoked from `src/`
+  in any commit. The pre-rewrite `wordscript/ipc.py` documents the Tauri →
+  Python channel as `start_recording` / `stop_recording` / `abort_recording`:
+  the sidecar owned the session state in another process, so the host had to
+  drive it from outside. `febc452` carried that command set across and, in the
+  same commit, moved trigger, capture and pipeline into the Rust process — so
+  the caller became `start_from_native`, `processing_from_native` and
+  `complete_processing_session`, which are untouched. `abort_native_session`
+  stays, because abort is the one lifecycle transition a user makes.
+  `complete_current_transcription` goes with its only caller: it completed
+  whichever session happened to be processing instead of the one the result
+  belongs to, and the command emitted only `wordscript-native-event`, so any
+  caller would have left the overlay in `processing` until ADR 0018's fallback
+  fired. `cargo test` unchanged at 740, `cargo check` unchanged at 15 warnings —
+  a `pub` item with no user compiles silently, which is why a sweep is the only
+  instrument.
+
 - **Six registered Tauri commands that no caller ever reached** (ADR 0089). A
   sweep of the whole `invoke_handler` list against every `invoke(` in `src/`
   found fourteen caller-less commands, not the two the leg was sent for, so they
@@ -162,6 +198,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command shells (`start_native_session`, `stop_native_session`,
   `native_session_status`, `complete_native_session`) plus
   `transcribe_audio_file`, whose functions the Rust pipeline drives directly.
+
+  **Both kept-and-listed entries were settled by Leg 10 the same day**, in
+  opposite directions: the text-rules pair got its surface (ADR 0090) and the
+  four session commands were removed as sidecar residue (ADR 0091). What
+  separated them was not whether they had a caller — neither did — but *why*,
+  which is the question ADR 0089 exists to ask. `transcribe_audio_file` remains
+  in this class: its function has live Rust callers and only the registration is
+  unreached.
 
   Corrects Leg 8's premise while keeping its rule: `PromptsTab.tsx` never called
   the acknowledge commands — it held acknowledgements in React state and passed

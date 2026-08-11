@@ -1,9 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-11 (Leg 9, and the first
-one to read this file against the shipped product since Leg 3's shell
-overwrite — the Architecture and Contracts sections and the deviation list all
-still described the pre-port surface)
+Status: created 2026-07-24, last drift check 2026-08-11 (Leg 10, and it read
+only what it changed: the Contracts command list against `invoke_handler`, and
+the two deviation-list entries it closed. The whole-file check against the
+shipped product is Leg 9's, the same day — the first since Leg 3's shell
+overwrite, and it found the Architecture and Contracts sections and the
+deviation list all still describing the pre-port surface)
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -92,12 +94,16 @@ Rust core modules in `src-tauri/src/core/`:
 
 ### Tauri commands (UI -> Rust), key surface
 
-- `abort_native_session` (the overlay draws an abort; start and stop come from
-  the native trigger). `start_native_session`, `stop_native_session`,
-  `native_session_status` and `complete_native_session` are registered and have
-  **no UI caller** — they are command shells over `start_from_native`,
-  `processing_from_native` and the session state machine, which the Rust trigger
-  path drives directly. Kept as contract, listed as unreached (ADR 0089).
+- `abort_native_session`, and it is the **only** session command, because abort
+  is the only lifecycle transition a user makes: the overlay draws it, and start,
+  stop and completion are transitions the runtime derives from a hotkey, an
+  auto-stop or a provider answering. `start_native_session`,
+  `stop_native_session`, `native_session_status` and `complete_native_session`
+  were removed in Leg 10 (ADR 0091). They were the Python sidecar's IPC command
+  set, carried into `febc452` by the rewrite that made them unnecessary, and no
+  commit in the repository's history invoked any of them from `src/`. The
+  operations live on as Rust: `start_from_native`, `processing_from_native`,
+  `complete_processing_session`.
 - `sync_overlay_window_visibility`. `reveal_overlay_window` and
   `park_overlay_window` are **not commands** and never were: they are
   Rust-internal functions in `lib.rs`, listed here in error until Leg 9.
@@ -507,12 +513,12 @@ result surface (ADR 0011a).
   `docs/handoffs/HANDOFF_gui-port-relay.md`. **A drawn surface may not be read
   as implemented**; the six undecided surfaces (ADRs 0060-0064 plus the roadmap
   candidate) are mounted in no window at all.
-- **Text-rules import and export have a runtime and no caller.**
-  `export_text_rules` and `import_text_rules` are complete — schema version,
-  conflict resolution, merge, analysis — and their UI went with Leg 3's shell
-  overwrite. `export_full_backup` is not a replacement: it writes the whole
-  config, not a shareable rules document. A capability the pre-port surface had
-  (ADR 0089).
+- ~~**Text-rules import and export have a runtime and no caller.**~~ **CLOSED by
+  Leg 10** (ADR 0090). `export_text_rules` is the fourth verb on the profile's
+  row menu and `import_text_rules` is on Privacy & Data, where it lands as a new
+  profile. The two halves are split across two screens because export acts on a
+  thing and import creates one — a row menu can target the row it opened on and
+  cannot target a profile that does not exist yet.
 - Sync/accounts/cloud workspaces are planned (ADR 0005, local-first,
   WordScript-owned) but not built. Docs and UI must not present them as
   active product reality outside clearly labeled preview surfaces.

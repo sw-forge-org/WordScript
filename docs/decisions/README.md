@@ -603,6 +603,23 @@ Status: Proposed | Accepted | Superseded by NNNN
   (kept — the function is alive). Corrects Leg 8's premise: the acknowledge
   commands never had a caller in any commit.
 
+- [0090](0090-export-acts-on-a-thing-import-creates-one-so-they-are-not-drawn-as-a-pair.md):
+  the lost text-rules capability gets its surface, and the pair is split because
+  **export acts on a thing and import creates one**. `Export rules` is the fourth
+  verb on the profile's row menu, where it writes the row the menu opened on;
+  import is on Privacy & Data and lands as a new profile, because the profile it
+  makes does not exist yet and has no row to act on. Also: the ≤ 90-character
+  one-line copy budget is a function of the control's width — a row with a
+  `Select` plus a button has roughly thirty characters, and 79 drew three lines.
+
+- [0091](0091-the-session-commands-are-the-sidecars-contract-and-the-sidecar-is-gone.md):
+  the four caller-less session commands are the **Python sidecar's IPC command
+  set**, carried into the Tauri rewrite by the same commit that made them
+  unnecessary. Removed; `abort_native_session` stays because abort is the one
+  lifecycle transition a user makes. `complete_native_session` also emitted only
+  the mirror channel and dropped the session-id guard, so any caller would have
+  hung the overlay until ADR 0018's fallback fired.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
@@ -629,8 +646,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-11 the filed range runs through 0089; the next
-decision takes 0090. 0082 through 0089 were filed on one day by two tracks
+takes 0021. (As of 2026-08-11 the filed range runs through 0091; the next
+decision takes 0092. 0082 through 0091 were filed on one day by two tracks
 running concurrently on `main` — the GUI port relay and the core-hardening pass
 — which is why a leg claims its number early rather than at the end, and why a
 handoff sentence naming "the next free number" is the first thing to go stale.

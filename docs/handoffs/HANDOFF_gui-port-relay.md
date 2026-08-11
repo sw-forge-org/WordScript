@@ -1837,6 +1837,129 @@ declined lines would be a second place for style rules to live.
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.
 
+### Leg 10 — the question the drawing had already answered, and the budget that turned out to be a variable
+
+**BOTH ENTRIES ARE DONE.** Two ADRs (0090, 0091). Two commits, plus the
+documentation commit.
+
+**THE THING TO TAKE FROM THIS LEG: A CONTROL'S WIDTH IS PART OF ITS COPY
+BUDGET, AND NOTHING IN THE TOOLCHAIN KNOWS THAT.** The Privacy & Data rules rows
+shipped their first build at **79 and 71 characters** — both comfortably inside
+the ≤ 90 one-line budget every other row on the surface is written to, both
+measured against it before the host was opened — and WebKitGTK drew them at
+**three lines and two** against neighbours that drew one. `.ws-row-ctl` is
+`flex: none`, so every pixel the control takes comes off the text column: a row
+whose control is a `Select` plus a button has roughly **thirty** characters per
+line where a row with a single button has fifty. Leg 9's defect was a string too
+long for a constant budget. This one was a string inside the budget and a budget
+that was not a constant. The fix is the donor's own rule — the explanation
+belongs on the section header, a row gets at most one line — and the finding is
+that **the budget must be quoted with the control it is for**.
+
+**THE PROTOTYPE HAD ANSWERED HALF THE LEG'S QUESTION IN A SENTENCE NOBODY HAD
+READ AS A SPECIFICATION.** Where text-rules export goes was framed as three open
+placements. The prototype's Profiles section already says *"Duplicate and Export
+are things you do to a profile rarely and from the list, not from the header of
+the one you are editing — they are on the row's own menu."* Leg 7 built that menu
+with three verbs and `Profiles.tsx`'s docblock carried the sentence naming four.
+**A comment asserting a control is indistinguishable from the control** — ADR
+0089's finding at the scale of a source file, found the same way: by checking
+the claim instead of reading it.
+
+**THE OWNER ANSWERED THE OTHER HALF BY REJECTING THE OBVIOUS FIX.** Asked to
+confirm export and import together on the row menu, they said an Import there
+makes no sense — *what am I supposed to do with it then*. That is the design in
+one question. **Export ACTS ON a thing; import CREATES one**, so they are not a
+pair and must not be drawn as one: export is the fourth verb on the row menu and
+writes the row it opened on; import is on Privacy & Data, lands as a **new**
+profile and replaces nothing, because the profile it makes does not exist yet
+and has no row to act on (ADR 0090). Privacy & Data carries the export too, with
+a picker, for a reader who is there to move data rather than to edit a profile.
+
+**THE SESSION COMMANDS WERE THE PYTHON SIDECAR'S CONTRACT** (ADR 0091). The
+owner refused a deletion on a grep and asked why they were integrated in the
+first place — which was the right instinct and produced the answer.
+`wordscript/ipc.py` documents the Tauri → Python channel as `start_recording` /
+`stop_recording` / `abort_recording`: the sidecar owned session state in another
+process, so the host genuinely had to drive it from outside. `febc452` carried
+that command set across as `#[tauri::command]`s and, **in the same commit**,
+moved trigger, capture and pipeline into the Rust process — so the caller they
+existed for became `start_from_native`, `processing_from_native` and
+`complete_processing_session` before the commit creating them had finished
+landing. They read as a designed UI contract for six legs, and the thing that
+distinguished them from one was not in the code at all: it was in a deleted
+Python file's docstring.
+
+`abort_native_session` stays, because abort is the one lifecycle transition a
+**user** makes. `complete_native_session` was worse than unreached: it emitted
+only `wordscript-native-event`, the channel `AGENTS.md` says may never end a
+session, and its `complete_current_transcription` completed whichever session
+happened to be processing rather than the one the result belongs to — the
+session-id guard, removed one frame after `complete_processing_session` applies
+it. `useRuntime.ts`'s fallback comment names the caller it was guarding against.
+
+**NO PLANNED CALLER LOSES ANYTHING, AND THAT IS CHECKABLE RATHER THAN ASSUMED.**
+A `#[tauri::command]` is reachable only from this app's own webviews — no CLI
+plugin is configured, no test names any of the four — so the roadmap's MCP
+bridge, specified to run *in the Tauri process, no daemon*, could never have
+reached them. It calls the same Rust functions the trigger path calls.
+
+**WHAT LEG 10 CLOSES.** Both of Leg 9's additions, in opposite directions:
+text-rules import/export got its surface, the four session commands were
+removed. What separated them was never whether they had a caller — neither
+did — but *why*, which is the question ADR 0089 exists to ask.
+
+**Findings for Leg 11.**
+
+1. **THE SAME WIDTH DEFECT IS ALREADY SHIPPING ON `General`, AND IT IS A
+   PATTERN RATHER THAN AN INCIDENT.** `Input device` pairs a wide `Select` with
+   a `Rescan` button and a runtime-conditional hint — *"Saved microphone is not
+   available right now. WordScript will fall back to default on the next
+   capture."* — which draws at **six lines** in the host. It was visible in this
+   leg's own screenshots. It is conditional copy, so a default-state check never
+   sees it, and `General` is nobody's this leg. Worth a pass over every `Row`
+   whose control is more than one button.
+2. **`port:diff` TAKES GALLERY IDS, AND A NAME THAT IS NOT ONE MEASURES NOTHING
+   SILENTLY.** Leg 9 recorded that no arguments prints `ALL EXACT` over an empty
+   set. The sharper version: passing the *retired* screen names — `profiles`,
+   `privacy`, `history`, `general`, `hotkeys`, `delivery`, `diagnostics`,
+   `about`, `notes` — produces no measurement and no error either, so a run can
+   look full and be short. The 25 are the **16 ids in `SCREEN_GROUPS` except
+   `ds`** plus `models#1 agents#1 agents#2 onboarding#1`–`#6`. Read
+   `src/windows/gallery/registry.tsx` for the list rather than a prose one; the
+   prose list in a prompt goes stale every time a screen is wired.
+3. **A `pub` Rust item with no user compiles silently, and that is the same
+   property that hides a caller-less command.** `StartNativeSessionRequest` and
+   `CompleteNativeSessionRequest` survived the command deletion with no warning
+   at all — `cargo check` stayed at exactly 15. The sweep ADR 0089 put in the
+   drift pass has to cover types reached only by a deleted command, not just the
+   `invoke_handler` list.
+4. **The three `never used` warnings are still not this leg's:**
+   `should_oscillate_flat_reveal`, `NativeInsertionState::configure`,
+   `ModeHotkeys::for_mode`. Unchanged from Leg 9's finding 5, still the
+   core-hardening track's.
+5. **The host reached its own defect through the palette in about a dozen
+   keystrokes**, which is cheaper than Leg 9's 34 Tabs and worth reusing: the
+   palette's `GO TO` block lists the four workspace views first, so `ctrl+k`,
+   two `Down`s and `Return` is Profiles from Home. `Tab` is still the only way
+   to reach a control — the row menu opened from the `More` button at Tab 16
+   from the view's first focusable, and `Return` opens it. **Escape must be sent
+   to the ACTIVE window with a bare `xdotool key`**; `xdotool key --window <id>`
+   was silently dropped by the webview and cost one round trip.
+6. **The settings sheet reopens on `General`, not on the section it was closed
+   on.** Not investigated and possibly deliberate; noted because it made
+   restoring the owner's session to where it was found impossible without
+   navigating.
+
+**Checks at the close.** 473 frontend tests across 39 files (from 470 — three
+added, none removed), `cargo test` **740 unchanged**, `cargo check` **15
+warnings unchanged**, `npm run build` green, `port:diff` **24 of 25 at
+structural 0 | style 0** with `models` at 6 | 6 and 33 in the soft text column.
+Both screens this leg touched had already left the gallery, so no measurement
+moved. Load was 1.3–1.4 throughout and the suite did not flake. Both drawn
+states were confirmed in the native host, which is where the copy defect was
+found and where the fix was confirmed.
+
 ### Leg 9 — the doors nobody walked through, and the debt that had been paid six legs ago
 
 **ALL THREE ENTRIES ARE DONE.** Two ADRs (0088, 0089). Three commits, plus the
@@ -3150,7 +3273,138 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 10
+## The prompt for Leg 11
+
+You are picking up WordScript after Leg 10. Work in the repo root on `main`. Do
+not create a branch. `src-tauri/` is open, and **the core-hardening track is
+working in the same tree** — check `git log --oneline -5` before you start and
+stage your own paths when you commit.
+
+### What is already true
+
+**Text-rules import and export have a surface again** (ADR 0090), and the two
+halves are on different screens because **export acts on a thing and import
+creates one**: `Export rules` is the fourth verb on the profile's row menu,
+import is on Privacy & Data and lands as a new profile. The capability had been
+complete in the runtime and reachable from nothing since Leg 3.
+
+**The four session commands are gone** (ADR 0091). They were the Python
+sidecar's IPC command set, carried into `febc452` by the rewrite that made them
+unnecessary, and no commit in the repository's history invoked one from `src/`.
+`abort_native_session` stays. Both of Leg 9's open items are now closed.
+
+**`port:diff` is 24 of 25 at structural 0 | style 0**, `models` the one
+departure at 6 | 6 (ADR 0088). `cargo test` 740, `cargo check` 15 warnings, 473
+frontend tests across 39 files.
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 10's record is your starting
+state, and its findings 1 and 2 are the two that will cost you if you skip
+them**: a row's one-line copy budget is a function of its control's width, and
+`port:diff` accepts a screen name that is not a gallery id without complaining.
+Then ADR 0090, ADR 0091, `CLAUDE.md` and `docs/spec/SPEC.md`.
+
+### The order
+
+1. **The width defect on `General`, and it is a pass rather than a fix.**
+   `Input device` pairs a `Select` with a `Rescan` button and a
+   runtime-conditional hint that draws at **six lines** in WebKitGTK. Leg 10
+   found it in its own screenshots while fixing the same defect one screen over,
+   and left it because `General` was not its scope. The value here is not the
+   one row: it is **every `Row` whose control is more than one button**, checked
+   in the host, against the rule that a section header carries the explanation
+   and a row carries at most one line. Conditional copy is the part a
+   default-state check never sees, so enumerate the states rather than opening
+   the screen once.
+2. **Whatever the drift pass turns up in `src-tauri/`.** ADR 0089 put the
+   `invoke_handler`-against-`invoke(` sweep into every leg that touches the
+   runtime, and Leg 10 found it has a blind spot: `StartNativeSessionRequest`
+   and `CompleteNativeSessionRequest` outlived the commands that deserialized
+   them with **no warning at all**, because a `pub` item with no user compiles
+   silently. Extend the sweep to types reached only through a command you are
+   deleting.
+
+### The rules you will be judged on
+
+**A COPY BUDGET IS QUOTED WITH THE CONTROL IT IS FOR.** 79 characters is inside
+the ≤ 90 one-line budget and drew three lines, because `.ws-row-ctl` is
+`flex: none` and a `Select` plus a button leaves the text column about thirty
+characters. jsdom reports the string and cannot report the wrap.
+
+**ASK WHY IT IS THERE BEFORE YOU ASK WHETHER ANYTHING CALLS IT.** The owner
+refused a deletion on a grep and that is what produced ADR 0091: the four
+session commands looked exactly like a designed contract, and the fact that
+separated them from one was in a deleted Python file's docstring, not in the
+code. `git log -S` over the commit that introduced a primitive answers *why*.
+
+**THE PROTOTYPE IS A SPECIFICATION EVEN IN ITS PROSE.** Where the rules export
+goes had been written down since before the port, in a comment, and three legs
+read past it. Read the drawing for the screen you are changing before you
+design anything for it.
+
+**A COMMENT ASSERTING A CONTROL IS INDISTINGUISHABLE FROM THE CONTROL.**
+`Profiles.tsx` named four verbs over a menu of three for three legs — the same
+defect as `ARCHITECTURE.md`'s, one layer down.
+
+**STRIKE THE ITEM WHEN YOU DO IT.** Leg 9 struck a bullet six briefs had
+re-carried. Leg 10 struck both of the entries Leg 9 added. Keep it that way.
+
+### What you must NOT do
+
+- **Do not widen the Context opening.** One drawn gesture was lifted, on
+  2026-08-11, and the screen is still going to be done differently.
+- **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
+  roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not edit an existing ADR.** Append-only. The next free number is **0092**
+  and that sentence is the first thing to go stale — grep the tree, source as
+  well as `docs/`.
+- **Do not rename the `settings` window label** without being asked.
+- **Do not migrate a config without a backup path.** `core::backup` is the
+  pattern. ADR 0090's rules import is *not* an exception to it: it appends and
+  replaces nothing, which is why it snapshots nothing, and it says so.
+- **The overlay is still rule 5.** The two commands that resized it dynamically
+  are gone (ADR 0089) — do not bring that path back.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the TOTAL,
+  not the colour.** Leg 10 closed at 473 frontend across 39 files, `cargo test`
+  740, `cargo check` 15 warnings. Under load the suite flakes by about 5;
+  `npx vitest run --no-file-parallelism` is the tiebreaker and `uptime` says
+  whether to reach for it. Leg 10 ran at 1.3–1.4 and saw none.
+- **`npm run port:diff` TAKES GALLERY IDS OR IT MEASURES NOTHING**, and a name
+  that is not one is dropped in silence — Leg 10 passed nine retired screen
+  names and got a run that looked full and was short. The 25 are the **16 ids in
+  `src/windows/gallery/registry.tsx` except `ds`** plus `models#1 agents#1
+  agents#2 onboarding#1`–`#6`. Read the registry, not a prose list: the prose
+  goes stale every time a screen is wired and leaves the gallery. Expect **24 of
+  25 at structural 0 | style 0** with `models` at 6 | 6 and 33 in the soft text
+  column.
+- **The native host is the only instrument for a drawn state**, and it has found
+  a defect in four consecutive legs. `spectacle -a -b -n -o <file>` captures the
+  active window and is the only reliable capture — do NOT crop a full-desktop
+  shot to an `xdotool` geometry. Pointer events (clicks AND wheel) do not reach
+  the webview; keys do, and **must be sent bare — `xdotool key --window <id>` is
+  dropped**. The palette opens on `ctrl+k` and its `GO TO` block lists the four
+  workspace views first, so two `Down`s and `Return` is Profiles from Home; it
+  ignores `xdotool type`, so count rows. `Tab` reaches a control and drags the
+  viewport with it.
+- **Check whether a host and a dev server are ALREADY running before starting
+  one.** `tauri dev` starts its own Vite, so a `npm run dev` you start yourself
+  collides with it on 1420 and kills the host — and if the owner's session is
+  already up, `port:diff` needs nothing started at all, because 1420 and 8791
+  are both already served. `ps -o lstart=` on the pid shows whose is whose.
+- **Do not raise the window past somebody working at the machine — ask.**
+- **Never `pkill -f`.** Kill by PID, and stop what you started.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 12
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 10 (spent — kept for the chain's record)
 
 You are picking up WordScript after Leg 9. Work in the repo root on `main`. Do
 not create a branch. `src-tauri/` is open, and **the core-hardening track is
