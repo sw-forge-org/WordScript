@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::Path,
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
@@ -12,17 +13,29 @@ use tokio::time::sleep;
 use crate::core::runtime_log;
 
 use super::{
+    aggregate_credential,
     registry::{ChatProvider, Provider, ProviderFuture, SpeechProvider},
-    ChatCompletionRequest, ModelCapabilities, ModelSupport, ProviderCapabilities,
+    ChatCompletionRequest, CredentialKind, ModelCapabilities, ModelSupport, ProviderCapabilities,
     ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderErrorKind,
-    ProviderMode, ProviderProfile, ProviderStatus, ProviderStatusRequest, ProviderTier,
-    TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
+    ProviderMode, ProviderProfile, ProviderRole, ProviderStatus, ProviderStatusRequest,
+    ProviderTier, RoleCredentialStatus, TranscribeAudioFileRequest, TranscriptionResponse,
+    ValidateProviderApiKeyResponse,
 };
 
 const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
 const GROQ_KEY_SERVICE: &str = "io.github.sw-forge-org.wordscript";
 const LEGACY_GROQ_KEY_SERVICES: &[&str] = &["io.github.swbench.wordscript"];
-const GROQ_KEY_USER: &str = "groq_api_key";
+/// The entry name every build before the per-role split stored the one key
+/// under (ADR 0105). It is read and migrated, never written again.
+const LEGACY_GROQ_KEY_USER: &str = "groq_api_key";
+/// The roles Groq's key pays for. Held to the registry entry by a test in this
+/// module — the entry is the answer, this list is what the migration fans out
+/// across, and two lists that disagreed would strand a credential.
+const GROQ_CREDENTIAL_ROLES: &[ProviderRole] = &[ProviderRole::Speech, ProviderRole::Chat];
+/// **A bearer token is the only shape here, not the chosen one.** Groq sells no
+/// consumer subscription, so there is nothing for a second kind to authenticate
+/// against (`docs/PROVIDERS.md`, ADR 0102).
+const GROQ_CREDENTIAL_KINDS: &[CredentialKind] = &[CredentialKind::ApiKey];
 /// The model a recognition request runs on when the caller names none. One
 /// constant rather than two literals, because the capability answer and the
 /// request must describe the same run.
@@ -32,7 +45,10 @@ const DEFAULT_MAX_RETRIES: u8 = 2;
 const GROQ_FREE_TIER_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 const GROQ_DEV_TIER_MAX_AUDIO_BYTES: usize = 100 * 1024 * 1024;
 
-static GROQ_API_KEY_CACHE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+/// The stored keys, by the entry name they live under — one per `(role, kind)`
+/// rather than one per provider, so a cached chat credential cannot answer a
+/// speech lookup.
+static GROQ_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 #[derive(Debug)]
 struct GroqProviderError {
@@ -108,15 +124,32 @@ impl Provider for Groq {
         model_capabilities(model)
     }
 
-    fn save_api_key(
-        &self,
-        api_key: &str,
-    ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        save_api_key(api_key)
+    fn credential_kinds(&self) -> &'static [CredentialKind] {
+        GROQ_CREDENTIAL_KINDS
     }
 
-    fn clear_api_key(&self) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        clear_api_key()
+    fn credential_status(
+        &self,
+        role: ProviderRole,
+    ) -> Result<RoleCredentialStatus, ProviderCommandError> {
+        role_credential_status(role).map_err(ProviderCommandError::from)
+    }
+
+    fn save_api_key(
+        &self,
+        role: ProviderRole,
+        kind: CredentialKind,
+        api_key: &str,
+    ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+        save_api_key(role, kind, api_key)
+    }
+
+    fn clear_api_key(
+        &self,
+        role: ProviderRole,
+        kind: CredentialKind,
+    ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+        clear_api_key(role, kind)
     }
 
     fn validate_api_key(
@@ -152,28 +185,54 @@ impl ChatProvider for Groq {
 }
 
 fn provider_status(model: Option<&str>) -> Result<GroqProviderStatus, ProviderCommandError> {
+    let role_credentials = role_credentials().map_err(ProviderCommandError::from)?;
+
     Ok(GroqProviderStatus {
         provider: "groq".to_string(),
         default_profile: "cloud-fast".to_string(),
-        credential: credential_status().map_err(ProviderCommandError::from)?,
+        credential: aggregate_credential("groq", &role_credentials),
         profiles: provider_profiles(),
         capabilities: provider_capabilities(),
         model_capabilities: model_capabilities(model.unwrap_or_default()),
+        role_credentials,
         local_setup: None,
     })
 }
 
-fn save_api_key(api_key: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+fn save_api_key(
+    role: ProviderRole,
+    kind: CredentialKind,
+    api_key: &str,
+) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+    ensure_supported_kind(kind)?;
     let api_key = normalize_api_key(api_key)?;
-    write_api_key_to(&OsSecretStore, &api_key).map_err(secret_store_error)?;
-    cache_groq_api_key(Some(api_key));
+    write_api_key_to(&OsSecretStore, role, kind, &api_key).map_err(secret_store_error)?;
+    cache_api_key(&credential_entry_user(role, kind), Some(api_key));
     credential_status().map_err(ProviderCommandError::from)
 }
 
-fn clear_api_key() -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    clear_api_key_in(&OsSecretStore).map_err(secret_store_error)?;
-    cache_groq_api_key(None);
+fn clear_api_key(
+    role: ProviderRole,
+    kind: CredentialKind,
+) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+    ensure_supported_kind(kind)?;
+    clear_api_key_in(&OsSecretStore, role, kind).map_err(secret_store_error)?;
+    cache_api_key(&credential_entry_user(role, kind), None);
     credential_status().map_err(ProviderCommandError::from)
+}
+
+/// A kind this lane cannot authenticate with is refused where it would be
+/// stored, with the reason named. It is not a call that fails later: there is
+/// no Groq endpoint a subscription could reach, so there is no call to make.
+fn ensure_supported_kind(kind: CredentialKind) -> Result<(), ProviderCommandError> {
+    if GROQ_CREDENTIAL_KINDS.contains(&kind) {
+        return Ok(());
+    }
+
+    Err(ProviderCommandError::invalid_request(format!(
+        "Groq does not accept {}. It sells no consumer plan, so an API key is the only credential it has.",
+        kind.label(),
+    )))
 }
 
 async fn validate_api_key(
@@ -183,7 +242,7 @@ async fn validate_api_key(
         Some(value) if !value.trim().is_empty() => {
             (normalize_api_key(&value)?, "provided_key".to_string())
         }
-        _ => (load_groq_api_key()?, "stored_key".to_string()),
+        _ => (load_any_stored_api_key()?, "stored_key".to_string()),
     };
 
     let client = GroqClient::new(api_key, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_RETRIES)
@@ -203,7 +262,7 @@ async fn validate_api_key(
 async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<GroqTranscriptionResponse, ProviderCommandError> {
-    let api_key = load_groq_api_key()?;
+    let api_key = load_groq_api_key(ProviderRole::Speech)?;
     let client = GroqClient::new(
         api_key,
         request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
@@ -220,7 +279,7 @@ async fn transcribe_audio_file(
 async fn create_chat_completion(
     request: ChatCompletionRequest,
 ) -> Result<String, ProviderCommandError> {
-    let api_key = load_groq_api_key()?;
+    let api_key = load_groq_api_key(ProviderRole::Chat)?;
     let client = GroqClient::new(
         api_key,
         request.timeout_ms.unwrap_or(8_000),
@@ -641,43 +700,98 @@ fn resolve_speech_model(model: &str) -> String {
 }
 
 fn credential_status() -> Result<ProviderCredentialStatus, GroqProviderError> {
-    match read_api_key_from(&OsSecretStore).map_err(secret_store_error)? {
+    Ok(aggregate_credential("groq", &role_credentials()?))
+}
+
+fn role_credentials() -> Result<Vec<RoleCredentialStatus>, GroqProviderError> {
+    GROQ_CREDENTIAL_ROLES
+        .iter()
+        .map(|role| role_credential_status(*role))
+        .collect()
+}
+
+/// What answers for one role, or the name of what is missing.
+///
+/// The kind is `api_key` on every role because it is the only one this lane
+/// has; the field is still present rather than implied, because the surface
+/// that eventually draws two kinds reads it, and a lane that omitted it would
+/// be the one exception a reader has to special-case.
+fn role_credential_status(role: ProviderRole) -> Result<RoleCredentialStatus, GroqProviderError> {
+    let kind = CredentialKind::ApiKey;
+
+    match read_api_key_from(&OsSecretStore, role, kind).map_err(secret_store_error)? {
         Some(api_key) => {
-            cache_groq_api_key(Some(api_key.clone()));
-            Ok(ProviderCredentialStatus {
+            cache_api_key(&credential_entry_user(role, kind), Some(api_key.clone()));
+            Ok(RoleCredentialStatus {
                 provider: "groq".to_string(),
+                role,
+                kind: Some(kind),
                 configured: true,
                 storage: "os_secret_store".to_string(),
                 key_preview: Some(mask_api_key(&api_key)),
+                missing: None,
             })
         }
-        None => Ok(ProviderCredentialStatus {
+        None => Ok(RoleCredentialStatus {
             provider: "groq".to_string(),
+            role,
+            kind: Some(kind),
             configured: false,
             storage: "os_secret_store".to_string(),
             key_preview: None,
+            missing: Some(format!("{} for {}", kind.label(), role.label())),
         }),
     }
 }
 
-fn load_groq_api_key() -> Result<String, ProviderCommandError> {
-    if let Some(api_key) = cached_groq_api_key() {
+/// The key that pays for one role — **never another role's** (ADR 0105).
+fn load_groq_api_key(role: ProviderRole) -> Result<String, ProviderCommandError> {
+    let kind = CredentialKind::ApiKey;
+    let user = credential_entry_user(role, kind);
+
+    if let Some(api_key) = cached_api_key(&user) {
         return Ok(api_key);
     }
 
-    match read_api_key_from(&OsSecretStore).map_err(secret_store_error)? {
+    match read_api_key_from(&OsSecretStore, role, kind).map_err(secret_store_error)? {
         Some(api_key) => {
             let normalized = normalize_api_key(&api_key).map_err(ProviderCommandError::from)?;
-            cache_groq_api_key(Some(normalized.clone()));
+            cache_api_key(&user, Some(normalized.clone()));
             Ok(normalized)
         }
         None => Err(ProviderCommandError::from(GroqProviderError {
             kind: ProviderErrorKind::MissingApiKey,
-            message: "No Groq API key is stored for WordScript.".to_string(),
+            message: format!(
+                "No Groq API key is stored for {}. Save one for that job's role in AI Models.",
+                role.label(),
+            ),
             status: None,
             retry_after_seconds: None,
         })),
     }
+}
+
+/// The stored key a validation runs against.
+///
+/// Validation asks the vendor whether a key works, which is not a question
+/// about a role: `/models` is neither recognition nor completion. So it checks
+/// the first role that holds one and says nothing about the others — a key that
+/// authenticates for one role authenticates for all of them on this lane.
+fn load_any_stored_api_key() -> Result<String, ProviderCommandError> {
+    for role in GROQ_CREDENTIAL_ROLES {
+        match load_groq_api_key(*role) {
+            Ok(api_key) => return Ok(api_key),
+            Err(error) if error.kind == ProviderErrorKind::MissingApiKey => continue,
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(ProviderCommandError::from(GroqProviderError {
+        kind: ProviderErrorKind::MissingApiKey,
+        message: "No Groq API key is stored for WordScript.".to_string(),
+        status: None,
+        retry_after_seconds: None,
+    }))
 }
 
 fn normalize_api_key(api_key: &str) -> Result<String, GroqProviderError> {
@@ -709,74 +823,162 @@ fn normalize_api_key(api_key: &str) -> Result<String, GroqProviderError> {
 /// below sits behind this trait: the tests exercise it against an in-memory
 /// store instead of writing into the developer's real secret store.
 trait SecretStore {
-    fn read(&self, service: &str) -> Result<Option<String>, KeyringError>;
-    fn write(&self, service: &str, secret: &str) -> Result<(), KeyringError>;
-    fn delete(&self, service: &str) -> Result<(), KeyringError>;
+    fn read(&self, service: &str, user: &str) -> Result<Option<String>, KeyringError>;
+    fn write(&self, service: &str, user: &str, secret: &str) -> Result<(), KeyringError>;
+    fn delete(&self, service: &str, user: &str) -> Result<(), KeyringError>;
 }
 
 struct OsSecretStore;
 
 impl SecretStore for OsSecretStore {
-    fn read(&self, service: &str) -> Result<Option<String>, KeyringError> {
-        match Entry::new(service, GROQ_KEY_USER)?.get_password() {
+    fn read(&self, service: &str, user: &str) -> Result<Option<String>, KeyringError> {
+        match Entry::new(service, user)?.get_password() {
             Ok(secret) => Ok(Some(secret)),
             Err(KeyringError::NoEntry) => Ok(None),
             Err(error) => Err(error),
         }
     }
 
-    fn write(&self, service: &str, secret: &str) -> Result<(), KeyringError> {
-        Entry::new(service, GROQ_KEY_USER)?.set_password(secret)
+    fn write(&self, service: &str, user: &str, secret: &str) -> Result<(), KeyringError> {
+        Entry::new(service, user)?.set_password(secret)
     }
 
-    fn delete(&self, service: &str) -> Result<(), KeyringError> {
-        match Entry::new(service, GROQ_KEY_USER)?.delete_credential() {
+    fn delete(&self, service: &str, user: &str) -> Result<(), KeyringError> {
+        match Entry::new(service, user)?.delete_credential() {
             Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
             Err(error) => Err(error),
         }
     }
 }
 
-/// Reads the stored key and, when only a retired service name still holds it,
-/// moves it onto the current one. `Ok(None)` means no known service name holds
-/// a key -- which is a legitimate state, not a store failure.
-fn read_api_key_from(store: &impl SecretStore) -> Result<Option<String>, KeyringError> {
-    if let Some(api_key) = store.read(GROQ_KEY_SERVICE)? {
+/// The entry one credential lives under: the provider, the role and the kind.
+///
+/// **Changing one of these strings orphans every credential already stored**,
+/// which is why the parts come from `ProviderRole::as_str` and
+/// `CredentialKind::as_str` rather than from literals written twice.
+fn credential_entry_user(role: ProviderRole, kind: CredentialKind) -> String {
+    format!("groq.{}.{}", role.as_str(), kind.as_str())
+}
+
+/// Reads the key stored for one role, migrating a pre-role entry on the way.
+///
+/// `Ok(None)` means no entry this build knows holds a key for that role --
+/// which is a legitimate state, not a store failure, and it is the state that
+/// makes a job inert with a name rather than with a stack trace.
+fn read_api_key_from(
+    store: &impl SecretStore,
+    role: ProviderRole,
+    kind: CredentialKind,
+) -> Result<Option<String>, KeyringError> {
+    if let Some(api_key) = store.read(GROQ_KEY_SERVICE, &credential_entry_user(role, kind))? {
+        return Ok(Some(api_key));
+    }
+
+    // Only the API key ever existed as one string per provider. A kind that
+    // never had a pre-role form has nothing to inherit and must not adopt one.
+    if kind != CredentialKind::ApiKey {
+        return Ok(None);
+    }
+
+    let Some(api_key) = read_legacy_api_key(store)? else {
+        return Ok(None);
+    };
+
+    adopt_legacy_api_key(store, &api_key)?;
+    Ok(Some(api_key))
+}
+
+/// The one key a pre-role build stored, wherever it still sits: under the
+/// current service name or under a retired one.
+fn read_legacy_api_key(store: &impl SecretStore) -> Result<Option<String>, KeyringError> {
+    if let Some(api_key) = store.read(GROQ_KEY_SERVICE, LEGACY_GROQ_KEY_USER)? {
         return Ok(Some(api_key));
     }
 
     for legacy_service in LEGACY_GROQ_KEY_SERVICES {
-        let Some(api_key) = store.read(legacy_service)? else {
-            continue;
-        };
-
-        store.write(GROQ_KEY_SERVICE, &api_key)?;
-        store.delete(legacy_service)?;
-        runtime_log::record(format!(
-            "groq secret store: moved the stored API key from the retired service name '{legacy_service}' to '{GROQ_KEY_SERVICE}'"
-        ));
-        return Ok(Some(api_key));
+        if let Some(api_key) = store.read(legacy_service, LEGACY_GROQ_KEY_USER)? {
+            return Ok(Some(api_key));
+        }
     }
 
     Ok(None)
 }
 
-/// Retired service names are dropped on every write so no copy of the secret
-/// outlives the rename, and so a cleared key cannot be resurrected from an old
-/// entry by the next read.
-fn write_api_key_to(store: &impl SecretStore, api_key: &str) -> Result<(), KeyringError> {
-    store.write(GROQ_KEY_SERVICE, api_key)?;
-    clear_legacy_api_keys_in(store)
+/// Moves the pre-role key onto **every role it used to pay for**, then drops
+/// the old entries.
+///
+/// It lands on all of them rather than on the role being read, because that is
+/// what the single string meant: one key, entered once, that recognition and
+/// cleanup both spent. Migrating only the role that happened to ask first would
+/// leave the other silently inert on the next start. The writes come before the
+/// deletes, so an interrupted migration re-runs instead of losing the key, and
+/// the old entries go so a cleared role cannot be resurrected from them.
+fn adopt_legacy_api_key(store: &impl SecretStore, api_key: &str) -> Result<(), KeyringError> {
+    for role in GROQ_CREDENTIAL_ROLES {
+        store.write(
+            GROQ_KEY_SERVICE,
+            &credential_entry_user(*role, CredentialKind::ApiKey),
+            api_key,
+        )?;
+    }
+
+    clear_legacy_api_keys_in(store)?;
+    runtime_log::record(format!(
+        "groq secret store: moved the stored API key onto one entry per role ({}) and dropped the pre-role entry",
+        GROQ_CREDENTIAL_ROLES
+            .iter()
+            .map(|role| role.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+    ));
+
+    Ok(())
 }
 
-fn clear_api_key_in(store: &impl SecretStore) -> Result<(), KeyringError> {
-    store.delete(GROQ_KEY_SERVICE)?;
-    clear_legacy_api_keys_in(store)
+/// Writes one role's credential.
+///
+/// A pre-role entry still on disk is adopted **first**: it is somebody's key
+/// for every role, and overwriting one role's entry while it sat there would
+/// drop the other role's credential the moment the old entry is cleaned up.
+fn write_api_key_to(
+    store: &impl SecretStore,
+    role: ProviderRole,
+    kind: CredentialKind,
+    api_key: &str,
+) -> Result<(), KeyringError> {
+    if let Some(existing) = read_legacy_api_key(store)? {
+        adopt_legacy_api_key(store, &existing)?;
+    }
+
+    store.write(
+        GROQ_KEY_SERVICE,
+        &credential_entry_user(role, kind),
+        api_key,
+    )
+}
+
+/// Clears one role's credential and nothing else.
+///
+/// The pre-role entry is adopted before the delete for the same reason a write
+/// adopts it: left in place it would answer the next read for the role that was
+/// just cleared, and removed outright it would take the other role's key with
+/// it. **Clearing one role never clears another's** (ADR 0105).
+fn clear_api_key_in(
+    store: &impl SecretStore,
+    role: ProviderRole,
+    kind: CredentialKind,
+) -> Result<(), KeyringError> {
+    if let Some(existing) = read_legacy_api_key(store)? {
+        adopt_legacy_api_key(store, &existing)?;
+    }
+
+    store.delete(GROQ_KEY_SERVICE, &credential_entry_user(role, kind))
 }
 
 fn clear_legacy_api_keys_in(store: &impl SecretStore) -> Result<(), KeyringError> {
+    store.delete(GROQ_KEY_SERVICE, LEGACY_GROQ_KEY_USER)?;
     for legacy_service in LEGACY_GROQ_KEY_SERVICES {
-        store.delete(legacy_service)?;
+        store.delete(legacy_service, LEGACY_GROQ_KEY_USER)?;
     }
 
     Ok(())
@@ -955,20 +1157,27 @@ fn mask_api_key(api_key: &str) -> String {
     format!("{}...{}", &trimmed[..4], &trimmed[trimmed.len() - 4..])
 }
 
-fn groq_api_key_cache() -> &'static Mutex<Option<String>> {
-    GROQ_API_KEY_CACHE.get_or_init(|| Mutex::new(None))
+fn groq_api_key_cache() -> &'static Mutex<HashMap<String, String>> {
+    GROQ_API_KEY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn cached_groq_api_key() -> Option<String> {
+fn cached_api_key(user: &str) -> Option<String> {
     groq_api_key_cache()
         .lock()
         .ok()
-        .and_then(|value| value.clone())
+        .and_then(|cache| cache.get(user).cloned())
 }
 
-fn cache_groq_api_key(value: Option<String>) {
+fn cache_api_key(user: &str, value: Option<String>) {
     if let Ok(mut cache) = groq_api_key_cache().lock() {
-        *cache = value;
+        match value {
+            Some(api_key) => {
+                cache.insert(user.to_string(), api_key);
+            }
+            None => {
+                cache.remove(user);
+            }
+        }
     }
 }
 
@@ -980,39 +1189,53 @@ mod tests {
 
     #[derive(Default)]
     struct FakeSecretStore {
-        entries: RefCell<HashMap<String, String>>,
+        entries: RefCell<HashMap<(String, String), String>>,
     }
 
     impl FakeSecretStore {
-        fn with_entry(service: &str, secret: &str) -> Self {
+        /// A store holding the one pre-role entry, which is what every install
+        /// before ADR 0105 looks like.
+        fn with_legacy_entry(service: &str, secret: &str) -> Self {
             let store = Self::default();
-            store.set(service, secret);
+            store.set(service, LEGACY_GROQ_KEY_USER, secret);
             store
         }
 
-        fn set(&self, service: &str, secret: &str) {
+        fn set(&self, service: &str, user: &str, secret: &str) {
             self.entries
                 .borrow_mut()
-                .insert(service.to_string(), secret.to_string());
+                .insert((service.to_string(), user.to_string()), secret.to_string());
         }
 
-        fn get(&self, service: &str) -> Option<String> {
-            self.entries.borrow().get(service).cloned()
+        fn get(&self, service: &str, user: &str) -> Option<String> {
+            self.entries
+                .borrow()
+                .get(&(service.to_string(), user.to_string()))
+                .cloned()
+        }
+
+        fn role_key(&self, role: ProviderRole) -> Option<String> {
+            self.get(
+                GROQ_KEY_SERVICE,
+                &credential_entry_user(role, CredentialKind::ApiKey),
+            )
         }
     }
 
     impl SecretStore for FakeSecretStore {
-        fn read(&self, service: &str) -> Result<Option<String>, KeyringError> {
-            Ok(self.get(service))
+        fn read(&self, service: &str, user: &str) -> Result<Option<String>, KeyringError> {
+            Ok(self.get(service, user))
         }
 
-        fn write(&self, service: &str, secret: &str) -> Result<(), KeyringError> {
-            self.set(service, secret);
+        fn write(&self, service: &str, user: &str, secret: &str) -> Result<(), KeyringError> {
+            self.set(service, user, secret);
             Ok(())
         }
 
-        fn delete(&self, service: &str) -> Result<(), KeyringError> {
-            self.entries.borrow_mut().remove(service);
+        fn delete(&self, service: &str, user: &str) -> Result<(), KeyringError> {
+            self.entries
+                .borrow_mut()
+                .remove(&(service.to_string(), user.to_string()));
             Ok(())
         }
     }
@@ -1038,24 +1261,69 @@ mod tests {
 
     #[test]
     fn moves_a_key_stored_under_a_retired_service_name() {
-        let store = FakeSecretStore::with_entry("io.github.swbench.wordscript", "gsk_legacy_key");
+        let store =
+            FakeSecretStore::with_legacy_entry("io.github.swbench.wordscript", "gsk_legacy_key");
 
-        let api_key = read_api_key_from(&store).expect("read must succeed");
+        let api_key = read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+            .expect("read must succeed");
 
         assert_eq!(api_key.as_deref(), Some("gsk_legacy_key"));
         assert_eq!(
-            store.get(GROQ_KEY_SERVICE).as_deref(),
+            store.role_key(ProviderRole::Speech).as_deref(),
             Some("gsk_legacy_key")
         );
-        assert_eq!(store.get("io.github.swbench.wordscript"), None);
+        assert_eq!(
+            store.get("io.github.swbench.wordscript", LEGACY_GROQ_KEY_USER),
+            None
+        );
+    }
+
+    /// **The migration ADR 0105 owes**: one string per provider becomes one
+    /// entry per `(provider, role, kind)`, and it lands on every role that
+    /// string used to pay for. Migrating only the role that asked first would
+    /// leave the other inert on the next start, with no user action that
+    /// explains it.
+    #[test]
+    fn a_pre_role_key_lands_on_every_role_it_used_to_pay_for() {
+        let store = FakeSecretStore::with_legacy_entry(GROQ_KEY_SERVICE, "gsk_single_string");
+
+        let api_key = read_api_key_from(&store, ProviderRole::Chat, CredentialKind::ApiKey)
+            .expect("read must succeed");
+
+        assert_eq!(api_key.as_deref(), Some("gsk_single_string"));
+        assert_eq!(
+            store.role_key(ProviderRole::Speech).as_deref(),
+            Some("gsk_single_string"),
+            "the role that did not ask must still be paid for",
+        );
+        assert_eq!(
+            store.role_key(ProviderRole::Chat).as_deref(),
+            Some("gsk_single_string")
+        );
+        assert_eq!(store.get(GROQ_KEY_SERVICE, LEGACY_GROQ_KEY_USER), None);
+    }
+
+    /// The roles the migration fans out across are the roles the registry
+    /// registered. Two lists that drifted apart would strand a credential under
+    /// an entry nothing reads.
+    #[test]
+    fn the_migrated_roles_are_the_roles_the_registry_registered() {
+        let entry = crate::core::providers::registry::resolve_entry("groq").expect("groq entry");
+
+        assert_eq!(entry.roles(), GROQ_CREDENTIAL_ROLES.to_vec());
     }
 
     #[test]
-    fn prefers_the_current_service_over_a_retired_one() {
-        let store = FakeSecretStore::with_entry(GROQ_KEY_SERVICE, "gsk_current_key");
-        store.set("io.github.swbench.wordscript", "gsk_legacy_key");
+    fn prefers_the_role_entry_over_a_pre_role_one() {
+        let store = FakeSecretStore::with_legacy_entry(GROQ_KEY_SERVICE, "gsk_legacy_key");
+        store.set(
+            GROQ_KEY_SERVICE,
+            &credential_entry_user(ProviderRole::Speech, CredentialKind::ApiKey),
+            "gsk_current_key",
+        );
 
-        let api_key = read_api_key_from(&store).expect("read must succeed");
+        let api_key = read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+            .expect("read must succeed");
 
         assert_eq!(api_key.as_deref(), Some("gsk_current_key"));
     }
@@ -1064,32 +1332,110 @@ mod tests {
     fn reports_no_stored_key_instead_of_a_store_failure() {
         let store = FakeSecretStore::default();
 
-        assert_eq!(read_api_key_from(&store).expect("read must succeed"), None);
+        assert_eq!(
+            read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+                .expect("read must succeed"),
+            None
+        );
     }
 
+    /// **Clearing one role does not clear another** (ADR 0105). The bug this
+    /// prevents is a single provider-keyed delete taking the chat credential
+    /// with the speech one, which is the storage-shaped version of a job
+    /// spending a credential it was never given.
     #[test]
-    fn clearing_removes_the_retired_entry_so_the_key_cannot_return() {
-        let store = FakeSecretStore::with_entry(GROQ_KEY_SERVICE, "gsk_current_key");
-        store.set("io.github.swbench.wordscript", "gsk_legacy_key");
+    fn clearing_one_role_leaves_the_other_paid_for() {
+        let store = FakeSecretStore::default();
+        write_api_key_to(
+            &store,
+            ProviderRole::Speech,
+            CredentialKind::ApiKey,
+            "gsk_speech_key",
+        )
+        .expect("write must succeed");
+        write_api_key_to(
+            &store,
+            ProviderRole::Chat,
+            CredentialKind::ApiKey,
+            "gsk_chat_key",
+        )
+        .expect("write must succeed");
 
-        clear_api_key_in(&store).expect("clear must succeed");
-
-        assert_eq!(store.get(GROQ_KEY_SERVICE), None);
-        assert_eq!(store.get("io.github.swbench.wordscript"), None);
-        assert_eq!(read_api_key_from(&store).expect("read must succeed"), None);
-    }
-
-    #[test]
-    fn saving_leaves_no_copy_under_a_retired_service_name() {
-        let store = FakeSecretStore::with_entry("io.github.swbench.wordscript", "gsk_legacy_key");
-
-        write_api_key_to(&store, "gsk_current_key").expect("write must succeed");
+        clear_api_key_in(&store, ProviderRole::Chat, CredentialKind::ApiKey)
+            .expect("clear must succeed");
 
         assert_eq!(
-            store.get(GROQ_KEY_SERVICE).as_deref(),
+            store.role_key(ProviderRole::Speech).as_deref(),
+            Some("gsk_speech_key"),
+        );
+        assert_eq!(store.role_key(ProviderRole::Chat), None);
+        assert_eq!(
+            read_api_key_from(&store, ProviderRole::Chat, CredentialKind::ApiKey)
+                .expect("read must succeed"),
+            None,
+        );
+    }
+
+    #[test]
+    fn clearing_removes_the_pre_role_entry_so_the_key_cannot_return() {
+        let store =
+            FakeSecretStore::with_legacy_entry("io.github.swbench.wordscript", "gsk_legacy_key");
+
+        clear_api_key_in(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+            .expect("clear must succeed");
+
+        assert_eq!(store.role_key(ProviderRole::Speech), None);
+        assert_eq!(
+            store.get("io.github.swbench.wordscript", LEGACY_GROQ_KEY_USER),
+            None
+        );
+        assert_eq!(
+            read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+                .expect("read must succeed"),
+            None
+        );
+    }
+
+    /// A save while a pre-role entry is still on disk adopts it first. Without
+    /// that, storing a chat key would drop the speech credential the same
+    /// string was paying for.
+    #[test]
+    fn saving_one_role_adopts_the_pre_role_key_for_the_other() {
+        let store =
+            FakeSecretStore::with_legacy_entry("io.github.swbench.wordscript", "gsk_legacy_key");
+
+        write_api_key_to(
+            &store,
+            ProviderRole::Chat,
+            CredentialKind::ApiKey,
+            "gsk_current_key",
+        )
+        .expect("write must succeed");
+
+        assert_eq!(
+            store.role_key(ProviderRole::Chat).as_deref(),
             Some("gsk_current_key")
         );
-        assert_eq!(store.get("io.github.swbench.wordscript"), None);
+        assert_eq!(
+            store.role_key(ProviderRole::Speech).as_deref(),
+            Some("gsk_legacy_key"),
+        );
+        assert_eq!(
+            store.get("io.github.swbench.wordscript", LEGACY_GROQ_KEY_USER),
+            None
+        );
+    }
+
+    /// A kind this lane cannot authenticate with is refused where it would be
+    /// stored, and the message says why rather than failing a call later.
+    #[test]
+    fn groq_refuses_a_subscription_because_it_sells_none() {
+        let error = ensure_supported_kind(CredentialKind::Subscription)
+            .expect_err("groq must refuse a subscription");
+
+        assert!(matches!(error.kind, ProviderErrorKind::InvalidRequest));
+        assert!(error.message.contains("subscription"));
+        assert!(ensure_supported_kind(CredentialKind::ApiKey).is_ok());
     }
 
     #[test]

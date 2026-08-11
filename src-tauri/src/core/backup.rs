@@ -90,7 +90,12 @@ fn snapshot_path_for(kind: &str) -> PathBuf {
 /// Copies the FILE rather than re-serializing the loaded value: a snapshot's
 /// job is to be exactly what was there, including any field this build does not
 /// know about. A re-serialized config would silently drop those.
-fn snapshot_config(kind: &str) -> Result<PathBuf, String> {
+///
+/// **Visible to the rest of the crate because a migration is the third
+/// destructive door** (ADR 0094, ADR 0105): it replaces what is on disk with
+/// something this build prefers, and the rule that a config is never replaced
+/// without a backup path does not care whether the replacing was asked for.
+pub(crate) fn snapshot_config(kind: &str) -> Result<PathBuf, String> {
     let source = config_file_path();
     let target = snapshot_path_for(kind);
 

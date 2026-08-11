@@ -29,10 +29,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::{
-    groq, local_preview, ChatCompletionRequest, ModelCapabilities, ProviderCapabilities,
-    ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderStatus,
-    ProviderStatusRequest, ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse,
-    ValidateProviderApiKeyResponse, DEFAULT_PROVIDER_ID, LOCAL_PREVIEW_PROVIDER_ID,
+    groq, local_preview, ChatCompletionRequest, CredentialKind, ModelCapabilities,
+    ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus,
+    ProviderRole, ProviderStatus, ProviderStatusRequest, ProviderTier, RoleCredentialStatus,
+    TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
+    DEFAULT_PROVIDER_ID, LOCAL_PREVIEW_PROVIDER_ID,
 };
 
 /// What an asynchronous provider call returns.
@@ -46,10 +47,13 @@ pub type ProviderFuture<T> =
 
 /// What every provider answers, whichever roles it serves.
 ///
-/// The credential half lives here because a provider holds one credential
-/// today. ADR 0105 splits it per role, and this is the trait that grows the
-/// role argument when it does — not the three below, which are the roles
-/// themselves.
+/// The credential half lives here rather than on the three role traits below,
+/// and it now takes the role as an argument (ADR 0105): a provider holds a
+/// credential *set*, and which member answers is a property of the pair
+/// `(provider, role)`. Putting it on the role traits instead would put the same
+/// three methods in three places and still leave a provider unable to say what
+/// it holds for a role it does not serve — which is exactly the answer the
+/// registry already gives.
 pub trait Provider: Send + Sync {
     fn status(
         &self,
@@ -74,12 +78,43 @@ pub trait Provider: Send + Sync {
     /// decides the matter answers for every id, including ids it does not ship.
     fn model_capabilities(&self, model: &str) -> ModelCapabilities;
 
+    /// Which credential kinds this vendor accepts, in preference order.
+    ///
+    /// Empty means the lane needs none at all — Local is not a lane missing a
+    /// credential, it is a lane with nothing to authenticate against. A kind
+    /// absent from this list is refused at the door with the vendor named,
+    /// which is where ADR 0102's *no vendor but OpenAI carries a subscription*
+    /// is enforced for storage.
+    fn credential_kinds(&self) -> &'static [CredentialKind];
+
+    /// What answers for one role, or the name of what is missing (ADR 0105).
+    ///
+    /// Asked per role and never folded here: the fold is
+    /// `providers::aggregate_credential`, and it is conservative on purpose.
+    fn credential_status(
+        &self,
+        role: ProviderRole,
+    ) -> Result<RoleCredentialStatus, ProviderCommandError>;
+
+    /// Stores a credential for exactly one `(role, kind)`.
+    ///
+    /// Fanning one save across several roles is the resolver's job
+    /// (`providers::credential_target_roles`), because which roles exist is the
+    /// registry's answer and not an adapter's.
     fn save_api_key(
         &self,
+        role: ProviderRole,
+        kind: CredentialKind,
         api_key: &str,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError>;
 
-    fn clear_api_key(&self) -> Result<ProviderCredentialStatus, ProviderCommandError>;
+    /// Clears exactly one `(role, kind)`. **Clearing one role must not clear
+    /// another's**, which is the single bug this signature exists to prevent.
+    fn clear_api_key(
+        &self,
+        role: ProviderRole,
+        kind: CredentialKind,
+    ) -> Result<ProviderCredentialStatus, ProviderCommandError>;
 
     fn validate_api_key(
         &self,
@@ -153,6 +188,26 @@ impl std::fmt::Debug for ProviderEntry {
 }
 
 impl ProviderEntry {
+    /// The roles this id registered, in the order a credential is looked for.
+    ///
+    /// **The one answer to "which roles exist here"**, so a credential cannot
+    /// be stored for a role with no implementation any more than a job can be
+    /// dispatched to one. Derived from the entry rather than declared beside
+    /// it, because a second declaration is a second thing to drift.
+    pub fn roles(&self) -> Vec<ProviderRole> {
+        let mut roles = Vec::new();
+        if self.speech.is_some() {
+            roles.push(ProviderRole::Speech);
+        }
+        if self.chat.is_some() {
+            roles.push(ProviderRole::Chat);
+        }
+        if self.voice.is_some() {
+            roles.push(ProviderRole::Voice);
+        }
+        roles
+    }
+
     /// The speech role, or the reason there is none.
     ///
     /// Unreachable for the two providers registered today, and that is the
@@ -264,6 +319,87 @@ mod tests {
         }
     }
 
+    /// **A credential set is keyed by the roles the entry registered**, and the
+    /// entry is the only place that answer comes from. A table walked here
+    /// rather than two entries checked, so the tenth adapter is held to it
+    /// without editing the test.
+    #[test]
+    fn every_entry_answers_a_credential_for_exactly_the_roles_it_registered() {
+        for entry in REGISTRY {
+            let roles = entry.roles();
+
+            assert_eq!(
+                roles.contains(&ProviderRole::Speech),
+                entry.speech.is_some(),
+                "{} registers speech={} and lists it as a credential role={}",
+                entry.id,
+                entry.speech.is_some(),
+                roles.contains(&ProviderRole::Speech),
+            );
+            assert_eq!(roles.contains(&ProviderRole::Chat), entry.chat.is_some());
+            assert_eq!(roles.contains(&ProviderRole::Voice), entry.voice.is_some());
+
+            for role in &roles {
+                let credential = entry
+                    .provider
+                    .credential_status(*role)
+                    .expect("a registered role answers for its credential");
+                assert_eq!(credential.role, *role);
+                assert_eq!(credential.provider, entry.id);
+                assert_eq!(
+                    credential.configured,
+                    credential.missing.is_none(),
+                    "{} answers configured={} for {} while naming missing={:?}",
+                    entry.id,
+                    credential.configured,
+                    role.label(),
+                    credential.missing,
+                );
+            }
+        }
+    }
+
+    /// **A lane that needs no credential says so, and one that needs a key says
+    /// which kind.** `requires_api_key` and the accepted kinds are the same
+    /// claim from two directions, and a lane that disagreed with itself would
+    /// draw a key row nothing can be stored in — or hide one that is required.
+    #[test]
+    fn the_accepted_kinds_agree_with_the_stated_credential_requirement() {
+        for entry in REGISTRY {
+            let kinds = entry.provider.credential_kinds();
+
+            assert_eq!(
+                entry.provider.capabilities().requires_api_key,
+                kinds.contains(&CredentialKind::ApiKey),
+                "{} states requires_api_key={} and accepts {:?}",
+                entry.id,
+                entry.provider.capabilities().requires_api_key,
+                kinds,
+            );
+        }
+    }
+
+    /// ADR 0102's refusal, held by the table rather than by a sentence: **no
+    /// vendor but OpenAI carries a subscription kind**, until one permits it in
+    /// writing. The cost of being wrong is the user's account, not a failed
+    /// request, so this fails on the entry rather than at the call.
+    #[test]
+    fn no_lane_but_openai_may_carry_a_subscription() {
+        for entry in REGISTRY {
+            if entry
+                .provider
+                .credential_kinds()
+                .contains(&CredentialKind::Subscription)
+            {
+                assert_eq!(
+                    entry.id, "openai",
+                    "{} claims a subscription credential; ADR 0102 permits one vendor",
+                    entry.id,
+                );
+            }
+        }
+    }
+
     /// One vendor, one credential, one endpoint, **two answers**.
     ///
     /// This is the shape ADR 0110 corrects, and OpenAI is the real case: it
@@ -317,14 +453,31 @@ mod tests {
             }
         }
 
+        fn credential_kinds(&self) -> &'static [CredentialKind] {
+            &[CredentialKind::ApiKey]
+        }
+
+        fn credential_status(
+            &self,
+            _role: ProviderRole,
+        ) -> Result<RoleCredentialStatus, ProviderCommandError> {
+            Err(ProviderCommandError::invalid_request("fixture"))
+        }
+
         fn save_api_key(
             &self,
+            _role: ProviderRole,
+            _kind: CredentialKind,
             _api_key: &str,
         ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
             Err(ProviderCommandError::invalid_request("fixture"))
         }
 
-        fn clear_api_key(&self) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+        fn clear_api_key(
+            &self,
+            _role: ProviderRole,
+            _kind: CredentialKind,
+        ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
             Err(ProviderCommandError::invalid_request("fixture"))
         }
 

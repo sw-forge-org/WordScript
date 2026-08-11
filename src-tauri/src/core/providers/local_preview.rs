@@ -11,17 +11,20 @@ use crate::core::confidence_gate::{MAX_NO_SPEECH_PROB, MIN_AVG_LOGPROB};
 use crate::core::runtime_log;
 
 use super::{
+    aggregate_credential,
     registry::{ChatProvider, Provider, ProviderFuture, SpeechProvider},
-    ChatCompletionRequest, LocalProviderIssueCode, LocalProviderReadiness,
+    ChatCompletionRequest, CredentialKind, LocalProviderIssueCode, LocalProviderReadiness,
     LocalProviderSetupStatus, ModelCapabilities, ModelSupport, ProviderCapabilities,
     ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderErrorKind,
-    ProviderMode, ProviderProfile, ProviderStatus, ProviderStatusRequest, ProviderTier,
-    TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
-    LOCAL_PREVIEW_PROVIDER_ID,
+    ProviderMode, ProviderProfile, ProviderRole, ProviderStatus, ProviderStatusRequest,
+    ProviderTier, RoleCredentialStatus, TranscribeAudioFileRequest, TranscriptionResponse,
+    ValidateProviderApiKeyResponse, LOCAL_PREVIEW_PROVIDER_ID,
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 90_000;
 const LOCAL_STORAGE_LABEL: &str = "local_runtime";
+/// The roles this lane serves. Held to the registry entry by a test below.
+const LOCAL_CREDENTIAL_ROLES: &[ProviderRole] = &[ProviderRole::Speech, ProviderRole::Chat];
 const LOCAL_WHISPER_BINARY_ENV: &str = "WORDSCRIPT_LOCAL_WHISPER_CLI";
 const LOCAL_MODEL_PATH_ENV: &str = "WORDSCRIPT_LOCAL_MODEL_PATH";
 const LOCAL_MODEL_DIR_ENV: &str = "WORDSCRIPT_LOCAL_MODEL_DIR";
@@ -158,14 +161,36 @@ impl Provider for LocalPreview {
         model_capabilities(model)
     }
 
+    /// **Empty, and that is what this lane is.** Local is not a lane missing a
+    /// credential — it authenticates against nothing, so there is no kind to
+    /// accept and no key row for a surface to draw.
+    fn credential_kinds(&self) -> &'static [CredentialKind] {
+        &[]
+    }
+
+    fn credential_status(
+        &self,
+        role: ProviderRole,
+    ) -> Result<RoleCredentialStatus, ProviderCommandError> {
+        let setup = inspect_local_setup(default_status_model().as_str(), &resolve_local_chat_model_name(None));
+
+        Ok(role_credential_status(role, &setup))
+    }
+
     fn save_api_key(
         &self,
+        _role: ProviderRole,
+        _kind: CredentialKind,
         api_key: &str,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
         save_api_key(api_key)
     }
 
-    fn clear_api_key(&self) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+    fn clear_api_key(
+        &self,
+        _role: ProviderRole,
+        _kind: CredentialKind,
+    ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
         clear_api_key()
     }
 
@@ -248,20 +273,64 @@ fn provider_status(
         local_setup.guidance.clone()
     });
 
+    // Built from the inspection already in hand rather than by asking per role:
+    // `inspect_local_setup` probes the runner and the chat backend, and a
+    // status call must not run those probes once per role.
+    let role_credentials: Vec<RoleCredentialStatus> = LOCAL_CREDENTIAL_ROLES
+        .iter()
+        .map(|role| RoleCredentialStatus {
+            provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            role: *role,
+            kind: None,
+            configured,
+            storage: LOCAL_STORAGE_LABEL.to_string(),
+            key_preview: status_detail.clone(),
+            missing: (!configured).then(|| local_setup.guidance.clone()),
+        })
+        .collect();
+
     Ok(ProviderStatus {
         provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
         default_profile: default_profile_id,
-        credential: ProviderCredentialStatus {
-            provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
-            configured,
-            storage: LOCAL_STORAGE_LABEL.to_string(),
-            key_preview: status_detail,
-        },
+        credential: aggregate_credential(LOCAL_PREVIEW_PROVIDER_ID, &role_credentials),
         profiles,
         capabilities: provider_capabilities(),
         model_capabilities,
+        role_credentials,
         local_setup: Some(local_setup),
     })
+}
+
+/// The model a status question means when the caller named none.
+fn default_status_model() -> String {
+    provider_profiles()
+        .into_iter()
+        .find(|profile| profile.default)
+        .map(|profile| profile.model)
+        .unwrap_or_else(|| "base".to_string())
+}
+
+/// What answers for one role on a lane that authenticates against nothing.
+///
+/// `kind: None` is the statement — not "no credential stored", but "no
+/// credential exists to store". What stands in for one is the runtime being
+/// installed, so `missing` carries the setup guidance the surface already
+/// shows: the next action, in the place a missing key would be named.
+fn role_credential_status(
+    role: ProviderRole,
+    setup: &LocalProviderSetupStatus,
+) -> RoleCredentialStatus {
+    let configured = matches!(setup.readiness, LocalProviderReadiness::Ready);
+
+    RoleCredentialStatus {
+        provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+        role,
+        kind: None,
+        configured,
+        storage: LOCAL_STORAGE_LABEL.to_string(),
+        key_preview: None,
+        missing: (!configured).then(|| setup.guidance.clone()),
+    }
 }
 
 fn save_api_key(_api_key: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
@@ -2080,6 +2149,45 @@ whisper_print_timings: total time = 1337.00 ms
                 .as_ref()
                 .and_then(|setup| setup.issue_code.clone()),
             Some(LocalProviderIssueCode::RunnerProbeTimedOut)
+        );
+    }
+
+    /// **This lane has no credential, and that is not the same as missing
+    /// one.** `kind: None` says there is nothing to authenticate against; what
+    /// stands in its place is the runtime being installed, so a role that
+    /// cannot run names the setup guidance where a missing key would be named.
+    #[test]
+    fn the_local_lane_answers_no_credential_kind_and_names_its_setup_instead() {
+        let entry = crate::core::providers::registry::resolve_entry(LOCAL_PREVIEW_PROVIDER_ID)
+            .expect("local entry");
+        assert_eq!(entry.roles(), LOCAL_CREDENTIAL_ROLES.to_vec());
+        assert!(
+            entry.provider.credential_kinds().is_empty(),
+            "a lane that authenticates against nothing accepts no kind",
+        );
+
+        let missing = role_credential_status(
+            ProviderRole::Speech,
+            &LocalProviderSetupStatus {
+                readiness: LocalProviderReadiness::SetupRequired,
+                runner_ready: false,
+                model_ready: false,
+                chat_ready: false,
+                issue_code: Some(LocalProviderIssueCode::MissingRunner),
+                resolved_runner: None,
+                resolved_model: None,
+                resolved_chat_base_url: None,
+                resolved_chat_model: None,
+                available_chat_models: Vec::new(),
+                guidance: "Install whisper-cli and a local model.".to_string(),
+            },
+        );
+
+        assert_eq!(missing.kind, None);
+        assert!(!missing.configured);
+        assert_eq!(
+            missing.missing.as_deref(),
+            Some("Install whisper-cli and a local model."),
         );
     }
 

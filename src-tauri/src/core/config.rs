@@ -4,6 +4,7 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
+use super::backup;
 use super::communication_style::{
     CommunicationLength, CommunicationRegister, CommunicationStyle,
 };
@@ -1432,11 +1433,21 @@ impl AppConfig {
         !self.legacy_groq_api_key.trim().is_empty()
     }
 
+    /// Moves a key out of the config file and into the per-role credential
+    /// store (ADR 0105).
+    ///
+    /// **The snapshot comes first and the migration does not run without one.**
+    /// This is the step that removes a secret from a file the user can read and
+    /// re-keys it under entries only this build knows the names of; if any part
+    /// of that is wrong, the copy next to the config is the only way back. The
+    /// order is `backup`'s own: snapshot, then act.
     fn try_migrate_legacy_secret(&mut self) -> Result<bool, String> {
         let legacy_key = self.legacy_groq_api_key.trim().to_string();
         if legacy_key.is_empty() {
             return Ok(false);
         }
+
+        let snapshot = backup::snapshot_config("credential-migration")?;
 
         self.provider = normalize_provider_value(&self.provider);
         let credential = migrate_legacy_provider_api_key(&self.provider, &legacy_key)
@@ -1444,8 +1455,10 @@ impl AppConfig {
         self.legacy_groq_api_key.clear();
 
         runtime_log::record(format!(
-            "[WordScript] Migrated legacy {} API key to {}",
-            self.provider, credential.storage,
+            "[WordScript] Migrated legacy {} API key to {} snapshot={}",
+            self.provider,
+            credential.storage,
+            snapshot.display(),
         ));
 
         Ok(true)

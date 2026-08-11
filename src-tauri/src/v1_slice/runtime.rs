@@ -835,6 +835,10 @@ mod tests {
                     LOCAL_PREVIEW_PROVIDER_ID,
                     "large-v3-q5_0",
                 ),
+                // The slice reads the folded connection answer above; the
+                // unfolded per-role one travels beside it and is exercised
+                // where it is built (ADR 0105).
+                role_credentials: Vec::new(),
                 local_setup: Some(LocalProviderSetupStatus {
                     readiness: LocalProviderReadiness::Ready,
                     runner_ready: true,

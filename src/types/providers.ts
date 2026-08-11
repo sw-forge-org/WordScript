@@ -32,11 +32,56 @@ export interface ProviderCommandError {
   user_action: ProviderErrorAction;
 }
 
+/**
+ * Which role a credential answers for (ADR 0105).
+ *
+ * A credential resolves from the pair `(provider, role)` and never from the
+ * provider alone: one account may hold an API key for recognition and a
+ * subscription for chat at the same time. Mirrors
+ * `core::providers::ProviderRole`.
+ */
+export type ProviderRole = "speech" | "chat" | "voice";
+
+/**
+ * How a role is paid for (ADR 0102).
+ *
+ * Admissibility lives in the runtime's type, not in a request that fails: a
+ * subscription reaches the five chat jobs and there is no speech call to make
+ * with it. Mirrors `core::providers::CredentialKind`.
+ */
+export type CredentialKind = "api_key" | "subscription";
+
+/**
+ * The connection-level answer, folded from the per-role ones.
+ *
+ * `configured` is conservative: it means every role this provider serves has a
+ * credential. Which role is missing is answered by
+ * `ProviderStatus.role_credentials`, never by widening this block.
+ */
 export interface ProviderCredentialStatus {
   provider: string;
   configured: boolean;
   storage: string;
   key_preview: string | null;
+}
+
+/**
+ * What answers for one `(provider, role)` pair — or the name of what does not.
+ *
+ * A role with no credential is inert and says which one it is missing; it never
+ * falls back to the kind the same provider holds for another role. `kind` is
+ * `null` when the lane needs no credential at all, which is what Local *is*
+ * rather than a Local that is missing one. Mirrors
+ * `core::providers::RoleCredentialStatus`.
+ */
+export interface RoleCredentialStatus {
+  provider: string;
+  role: ProviderRole;
+  kind: CredentialKind | null;
+  configured: boolean;
+  storage: string;
+  key_preview: string | null;
+  missing: string | null;
 }
 
 export type ProviderMode = "fast" | "quality" | "local" | "self_hosted";
@@ -135,6 +180,14 @@ export interface ProviderStatus {
   capabilities: ProviderCapabilities;
   /** Answered for the model the request named — ask again to ask about another. */
   model_capabilities: ModelCapabilities;
+  /**
+   * One entry per role this provider registered (ADR 0105).
+   *
+   * `credential` above is the fold of exactly these. A surface drawing a key
+   * row for chat and a missing-key row for speech on one provider reads this;
+   * until such a row is drawn in the gallery, it travels unread on purpose.
+   */
+  role_credentials: RoleCredentialStatus[];
   local_setup: LocalProviderSetupStatus | null;
 }
 

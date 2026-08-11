@@ -245,7 +245,8 @@ The active product core lives in `src-tauri/src/core/`.
   capabilities, errors). The eight top-level capability functions are **thin
   resolvers**: each looks the id up in the registry and calls a role.
 - `providers/registry.rs`: the role split (ADR 0094, built 2026-08-11).
-  `Provider` carries status and the credential; `SpeechProvider` carries
+  `Provider` carries status and the credential set — per role since ADR 0105;
+  `SpeechProvider` carries
   recognition, the account plans and the capture ceiling; `ChatProvider` carries
   completions; `VoiceProvider` carries synthesis and **is implemented by
   nobody** — it is declared so the third role is a role rather than an exception
@@ -284,11 +285,31 @@ The active product core lives in `src-tauri/src/core/`.
   two models disagree is not integrated yet**, so that shape is proved by a
   fixture in `registry.rs` rather than left unproved until D1.
 
+  **A credential is resolved per `(provider, role)`** (ADR 0105, ADR 0102's
+  storage half, built 2026-08-11). `ProviderRole` and `CredentialKind` are the
+  two axes as values: `Provider` carries `credential_status(role)`,
+  `save_api_key(role, kind, key)`, `clear_api_key(role, kind)` and
+  `credential_kinds()`, and the secret-store entry is keyed
+  `(provider, role, kind)` so **clearing one role cannot clear another's**. The
+  roles a save may reach come from `ProviderEntry::roles()` — a credential
+  cannot be stored for a role with no implementation, the storage-shaped version
+  of the rule above. A save that names no role reaches every role the kind can
+  pay for, because a key is a way into an account and the drawn key row sits on
+  the connection; a subscription is filtered out of that fan-out for every role
+  but chat, in the type rather than at a call (ADR 0102). `ProviderStatus`
+  answers per role in `role_credentials` and folds them into the one
+  connection-level `credential` block, conservatively: configured means every
+  role has one. A pre-role key on disk is adopted onto each role before any
+  write or delete touches it, and `try_migrate_legacy_secret` takes a
+  `core::backup` snapshot first — **a migration without a snapshot path is not
+  written**.
+
   *Planned and not built* (ADR 0094's second half, ADR 0095, ADR 0096): the
   provider axis in the config still holds one `provider` field per profile
-  rather than a resolved default plus a sparse override per job, no streaming
-  recognition contract stands beside `transcribe_audio_file`, and no adapter
-  beyond these two is registered. What each vendor can actually serve is
+  rather than a resolved default plus a sparse override per job, so
+  `resolve_role_credential` is asked for the connection's provider and the job's
+  role rather than for an override; no streaming recognition contract stands
+  beside `transcribe_audio_file`; and no adapter beyond these two is registered. What each vendor can actually serve is
   surveyed per row and per date in [PROVIDERS.md](PROVIDERS.md) — that document
   is a capability reference and not a claim about this codebase.
 
@@ -301,8 +322,9 @@ The active product core lives in `src-tauri/src/core/`.
   table in `src/screens/data.ts` instead. **The drawing states an intent and the
   runtime answers a capability**; the code that makes the second govern the
   first does not exist and is ADR 0106 — a step before the first adapter, not
-  with it. A credential resolves per `(provider, role)` rather than per provider
-  (ADR 0105), which is what a second credential kind on one vendor forces.
+  with it. `role_credentials` crosses the same seam and is read by nobody for
+  the same reason: the per-role credential row is drawn vocabulary and grows in
+  the gallery first (ADR 0057, ADR 0102).
 - `providers/groq.rs`: cloud-first production implementation (BYOK, secret
   store, Groq-specific HTTP errors).
 - `providers/local_preview.rs`: local runtime lane with `whisper-cli` for

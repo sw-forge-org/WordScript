@@ -8,6 +8,136 @@ pub use registry::{
     ChatProvider, Provider, ProviderEntry, ProviderFuture, SpeechProvider, VoiceProvider,
 };
 
+/// Which role a credential answers for (ADR 0105).
+///
+/// The three roles are the three traits, as a value: a credential is resolved
+/// from the pair `(provider, role)` and never from the provider alone, because
+/// one account may hold an API key for recognition and a subscription for chat
+/// at the same time (ADR 0102). It is the same axis `registry.rs` splits in the
+/// type — stated as data here because a stored secret has to be keyed by it.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderRole {
+    Speech,
+    Chat,
+    Voice,
+}
+
+impl ProviderRole {
+    /// Registry order, and the order a credential is looked for in.
+    pub const ALL: [ProviderRole; 3] = [Self::Speech, Self::Chat, Self::Voice];
+
+    /// The stable id a secret-store entry is keyed by. Changing one of these
+    /// strings orphans every credential already stored under it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Speech => "speech",
+            Self::Chat => "chat",
+            Self::Voice => "voice",
+        }
+    }
+
+    /// Phrased for a sentence on a settings row, not for a log line.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Speech => "speech recognition",
+            Self::Chat => "chat completion",
+            Self::Voice => "speech synthesis",
+        }
+    }
+}
+
+/// How a role is paid for (ADR 0102).
+///
+/// **Admissibility is decided here, in the type, and never as a runtime
+/// "unsupported" reply.** A ChatGPT subscription reaches
+/// `chatgpt.com/backend-api/codex`, which serves no `/v1/audio/transcriptions`
+/// and no `/v1/audio/speech` — so there is no speech call to make with it and
+/// no error to return from one.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialKind {
+    ApiKey,
+    Subscription,
+}
+
+impl CredentialKind {
+    /// What a caller that named no kind means. ADR 0102 keeps the API key the
+    /// default and the only path for every provider but one.
+    pub const DEFAULT: CredentialKind = CredentialKind::ApiKey;
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ApiKey => "api_key",
+            Self::Subscription => "subscription",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::ApiKey => "an API key",
+            Self::Subscription => "a subscription",
+        }
+    }
+
+    /// Whether this kind can pay for that role at all (ADR 0102).
+    pub fn is_admissible_for(&self, role: ProviderRole) -> bool {
+        match self {
+            Self::ApiKey => true,
+            Self::Subscription => matches!(role, ProviderRole::Chat),
+        }
+    }
+}
+
+/// What answers for one `(provider, role)` pair — or the name of what does not.
+///
+/// **A role with no credential is inert and says which one it is missing**
+/// (ADR 0105). It never falls back to the kind the same provider holds for
+/// another role: that is the role-shaped version of the mistake ADR 0094's
+/// security rule prevents, and it is not softer for happening inside one vendor.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RoleCredentialStatus {
+    pub provider: String,
+    pub role: ProviderRole,
+    /// The kind that answers for this role, or `None` when the lane needs no
+    /// credential at all — which is what Local *is*, rather than a Local that
+    /// is missing one.
+    pub kind: Option<CredentialKind>,
+    pub configured: bool,
+    pub storage: String,
+    pub key_preview: Option<String>,
+    /// What is missing, named, and `None` while the role is configured.
+    pub missing: Option<String>,
+}
+
+/// The connection-level answer, folded from the per-role ones.
+///
+/// **Conservative on purpose**: configured means *every* role this provider
+/// serves has a credential. A vendor holding one for recognition and none for
+/// chat is genuinely half-usable, and a `bool` cannot say so — so it says the
+/// half that is safe to be wrong about. Claiming ready and then failing a
+/// transform silently is the fake-state defect; claiming not-ready while
+/// dictation would have run is a visible, correctable understatement. Which
+/// role is missing is answered by `ProviderStatus::role_credentials`, not by
+/// widening this block, because a third state here would decide a drawing that
+/// does not exist yet (ADR 0057, ADR 0106).
+pub(crate) fn aggregate_credential(
+    provider: &str,
+    roles: &[RoleCredentialStatus],
+) -> ProviderCredentialStatus {
+    ProviderCredentialStatus {
+        provider: provider.to_string(),
+        configured: !roles.is_empty() && roles.iter().all(|role| role.configured),
+        storage: roles
+            .first()
+            .map(|role| role.storage.clone())
+            .unwrap_or_default(),
+        key_preview: roles
+            .iter()
+            .find_map(|role| role.key_preview.clone()),
+    }
+}
+
 pub const DEFAULT_PROVIDER_ID: &str = "groq";
 pub const LOCAL_PREVIEW_PROVIDER_ID: &str = "local_preview";
 
@@ -348,6 +478,15 @@ pub struct ProviderStatus {
     /// repo has swept for twice (ADR 0089, ADR 0103). A caller asking about a
     /// second model asks again with that model.
     pub model_capabilities: ModelCapabilities,
+    /// One entry per role this provider registered (ADR 0105).
+    ///
+    /// `credential` above is the connection-level fold of exactly these, and it
+    /// is what the one drawn credential row reads today. A surface that draws a
+    /// key row for chat and a missing-key row for speech on the same provider
+    /// cannot be fed by one block, so the unfolded answer travels beside it —
+    /// available before the drawing that needs it exists, and not pretending to
+    /// be that drawing.
+    pub role_credentials: Vec<RoleCredentialStatus>,
     pub local_setup: Option<LocalProviderSetupStatus>,
 }
 
@@ -362,11 +501,31 @@ pub struct ProviderStatusRequest {
 pub struct SaveProviderApiKeyRequest {
     pub provider: String,
     pub api_key: String,
+    /// Which role this credential is being stored for.
+    ///
+    /// **Absent means every role this provider serves that the kind can pay
+    /// for**, which is what the one drawn key row on a connection card means: a
+    /// key is a way into an account, not into a job. A save that landed on one
+    /// role would leave the user having done everything the surface asked while
+    /// half the jobs stayed inert.
+    #[serde(default)]
+    pub role: Option<ProviderRole>,
+    /// Absent means `api_key` — the default, and the only kind any registered
+    /// provider accepts today (ADR 0102).
+    #[serde(default)]
+    pub kind: Option<CredentialKind>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ClearProviderApiKeyRequest {
     pub provider: String,
+    /// Absent means every role this provider serves, for the named kind only.
+    /// **Clearing one role never clears another's** (ADR 0105), and clearing a
+    /// key never reaches a subscription: "remove the key" is not "sign out".
+    #[serde(default)]
+    pub role: Option<ProviderRole>,
+    #[serde(default)]
+    pub kind: Option<CredentialKind>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -458,23 +617,95 @@ pub fn default_provider_id() -> &'static str {
     DEFAULT_PROVIDER_ID
 }
 
+/// Whether every role this provider serves has a credential.
+///
+/// The fold `aggregate_credential` states, without building the whole status:
+/// the local lane's status probes the runner and the model, and this question
+/// does not need either.
 pub fn provider_credentials_configured(provider: &str) -> Result<bool, ProviderCommandError> {
-    Ok(provider_status(ProviderStatusRequest {
-        provider: provider.to_string(),
-        model: None,
-        correction_model: None,
-    })?
-    .credential
-    .configured)
+    let entry = registry::resolve_entry(provider)?;
+    let roles = role_credentials(entry)?;
+
+    Ok(aggregate_credential(entry.id, &roles).configured)
 }
 
+/// Every role this provider registered, answered.
+fn role_credentials(
+    entry: &'static ProviderEntry,
+) -> Result<Vec<RoleCredentialStatus>, ProviderCommandError> {
+    entry
+        .roles()
+        .into_iter()
+        .map(|role| entry.provider.credential_status(role))
+        .collect()
+}
+
+/// Which roles one save or clear touches.
+///
+/// A named role must be one the provider registered — storing a credential for
+/// a role that has no implementation is the storage-shaped version of a lane
+/// claiming a role it cannot serve, and the registry is the same answer in both
+/// cases. A named role must also be one the kind can pay for, and an unnamed
+/// role means every registered role that passes both tests: a subscription
+/// therefore reaches chat and stops, with or without the caller saying so.
+fn credential_target_roles(
+    entry: &'static ProviderEntry,
+    role: Option<ProviderRole>,
+    kind: CredentialKind,
+) -> Result<Vec<ProviderRole>, ProviderCommandError> {
+    let registered = entry.roles();
+
+    if let Some(role) = role {
+        if !registered.contains(&role) {
+            return Err(ProviderCommandError::invalid_request(format!(
+                "Provider '{}' does not perform {}. There is no credential to store for it.",
+                entry.id,
+                role.label(),
+            )));
+        }
+        if !kind.is_admissible_for(role) {
+            return Err(ProviderCommandError::invalid_request(format!(
+                "{} cannot pay for {} on '{}'. That backend serves no such call.",
+                kind.label(),
+                role.label(),
+                entry.id,
+            )));
+        }
+        return Ok(vec![role]);
+    }
+
+    let targets: Vec<ProviderRole> = registered
+        .into_iter()
+        .filter(|role| kind.is_admissible_for(*role))
+        .collect();
+
+    if targets.is_empty() {
+        return Err(ProviderCommandError::invalid_request(format!(
+            "Provider '{}' has no role {} can pay for.",
+            entry.id,
+            kind.label(),
+        )));
+    }
+
+    Ok(targets)
+}
+
+/// Moves a key out of the config file and into the per-role store.
+///
+/// The legacy field held one string for a whole provider, which is what every
+/// role of that provider used; it therefore lands on each of them rather than
+/// on a role picked here. A migration that guessed one would silently disable
+/// the other.
 pub fn migrate_legacy_provider_api_key(
     provider: &str,
     api_key: &str,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    registry::resolve_entry(provider)?
-        .provider
-        .save_api_key(api_key)
+    save_provider_api_key(SaveProviderApiKeyRequest {
+        provider: provider.to_string(),
+        api_key: api_key.to_string(),
+        role: None,
+        kind: None,
+    })
 }
 
 #[tauri::command]
@@ -490,18 +721,52 @@ pub fn provider_status(
 pub fn save_provider_api_key(
     request: SaveProviderApiKeyRequest,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    registry::resolve_entry(&request.provider)?
-        .provider
-        .save_api_key(&request.api_key)
+    let entry = registry::resolve_entry(&request.provider)?;
+    let kind = request.kind.unwrap_or(CredentialKind::DEFAULT);
+
+    for role in credential_target_roles(entry, request.role, kind)? {
+        entry.provider.save_api_key(role, kind, &request.api_key)?;
+    }
+
+    Ok(aggregate_credential(entry.id, &role_credentials(entry)?))
 }
 
 #[tauri::command]
 pub fn clear_provider_api_key(
     request: ClearProviderApiKeyRequest,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    registry::resolve_entry(&request.provider)?
-        .provider
-        .clear_api_key()
+    let entry = registry::resolve_entry(&request.provider)?;
+    let kind = request.kind.unwrap_or(CredentialKind::DEFAULT);
+
+    for role in credential_target_roles(entry, request.role, kind)? {
+        entry.provider.clear_api_key(role, kind)?;
+    }
+
+    Ok(aggregate_credential(entry.id, &role_credentials(entry)?))
+}
+
+/// What answers for one job's role on one provider (ADR 0105).
+///
+/// **"Follow the connection" follows the provider and never the credential**,
+/// so the caller resolves the provider first — from the job's override, or from
+/// the connection when there is none — and asks this for the role the job runs
+/// in. A role with no credential answers `configured: false` and names what is
+/// missing; it never returns the other kind the same provider holds.
+pub fn resolve_role_credential(
+    provider: &str,
+    role: ProviderRole,
+) -> Result<RoleCredentialStatus, ProviderCommandError> {
+    let entry = registry::resolve_entry(provider)?;
+
+    if !entry.roles().contains(&role) {
+        return Err(ProviderCommandError::invalid_request(format!(
+            "Provider '{}' does not perform {}. Route this job to one that does.",
+            entry.id,
+            role.label(),
+        )));
+    }
+
+    entry.provider.credential_status(role)
 }
 
 #[tauri::command]
@@ -580,6 +845,110 @@ mod tests {
         let unknown_lane = model_capabilities("openai", "gpt-4o-transcribe");
         assert_eq!(unknown_lane.model, "gpt-4o-transcribe");
         assert_eq!(unknown_lane.transcription_streaming, ModelSupport::Unknown);
+    }
+
+    /// **A subscription cannot pay for recognition, and the type is where that
+    /// is said** (ADR 0102). The backend a ChatGPT plan reaches serves no
+    /// `/v1/audio/transcriptions`, so there is no call to fail — which means
+    /// nothing downstream may be allowed to make one.
+    #[test]
+    fn a_subscription_is_admissible_for_chat_and_for_nothing_else() {
+        assert!(CredentialKind::Subscription.is_admissible_for(ProviderRole::Chat));
+        assert!(!CredentialKind::Subscription.is_admissible_for(ProviderRole::Speech));
+        assert!(!CredentialKind::Subscription.is_admissible_for(ProviderRole::Voice));
+
+        for role in ProviderRole::ALL {
+            assert!(
+                CredentialKind::ApiKey.is_admissible_for(role),
+                "a key pays for every role a provider serves",
+            );
+        }
+    }
+
+    /// A save that names no role means the connection, which is what the one
+    /// drawn key row means: a key is a way into an account. It fans out across
+    /// the roles the provider registered — and an inadmissible kind is filtered
+    /// out of that fan-out rather than riding along with it.
+    #[test]
+    fn a_save_without_a_role_reaches_every_role_the_kind_can_pay_for() {
+        let entry = registry::resolve_entry("groq").expect("groq entry");
+
+        assert_eq!(
+            credential_target_roles(entry, None, CredentialKind::ApiKey).expect("api key targets"),
+            vec![ProviderRole::Speech, ProviderRole::Chat],
+        );
+        assert_eq!(
+            credential_target_roles(entry, None, CredentialKind::Subscription)
+                .expect("subscription targets"),
+            vec![ProviderRole::Chat],
+            "a subscription reaches chat with or without the caller saying so",
+        );
+        assert_eq!(
+            credential_target_roles(entry, Some(ProviderRole::Chat), CredentialKind::ApiKey)
+                .expect("named role"),
+            vec![ProviderRole::Chat],
+        );
+    }
+
+    /// Two refusals with different reasons, and neither is a generic failure:
+    /// a role with no implementation has nothing to store a credential for, and
+    /// a kind that cannot pay for a role must not be stored against it even
+    /// when the vendor serves that role.
+    #[test]
+    fn a_credential_cannot_be_stored_for_a_role_that_cannot_use_it() {
+        let entry = registry::resolve_entry("groq").expect("groq entry");
+
+        let no_such_role =
+            credential_target_roles(entry, Some(ProviderRole::Voice), CredentialKind::ApiKey)
+                .expect_err("groq registers no voice role");
+        assert!(no_such_role.message.contains("speech synthesis"));
+        assert_eq!(no_such_role.user_action, ProviderErrorAction::ChangeRequest);
+
+        let inadmissible = credential_target_roles(
+            entry,
+            Some(ProviderRole::Speech),
+            CredentialKind::Subscription,
+        )
+        .expect_err("a subscription cannot pay for recognition");
+        assert!(inadmissible.message.contains("speech recognition"));
+    }
+
+    /// The fold is conservative: half a connection reads as not ready, because
+    /// claiming ready and then failing a transform silently is the defect, and
+    /// understating readiness is visible and correctable.
+    #[test]
+    fn the_connection_answer_is_configured_only_when_every_role_is() {
+        let configured = |role: ProviderRole, configured: bool| RoleCredentialStatus {
+            provider: "groq".to_string(),
+            role,
+            kind: Some(CredentialKind::ApiKey),
+            configured,
+            storage: "os_secret_store".to_string(),
+            key_preview: configured.then(|| "gsk_...4f2a".to_string()),
+            missing: (!configured).then(|| "an API key for chat completion".to_string()),
+        };
+
+        let both = [
+            configured(ProviderRole::Speech, true),
+            configured(ProviderRole::Chat, true),
+        ];
+        assert!(aggregate_credential("groq", &both).configured);
+
+        let half = [
+            configured(ProviderRole::Speech, true),
+            configured(ProviderRole::Chat, false),
+        ];
+        let folded = aggregate_credential("groq", &half);
+        assert!(
+            !folded.configured,
+            "a connection whose chat role cannot pay is not a configured connection",
+        );
+        assert_eq!(folded.key_preview.as_deref(), Some("gsk_...4f2a"));
+
+        assert!(
+            !aggregate_credential("groq", &[]).configured,
+            "a provider with no roles has no credential to be configured",
+        );
     }
 
     #[test]
