@@ -474,11 +474,13 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                 measurement rather than a preference: `.ws-row-ctl` is
                 `flex: none`, so every pixel the control takes comes off the
                 text column. The first build of this row ran 79 characters —
-                inside the ≤ 90 one-line budget the other rows are written to —
-                and drew THREE lines in WebKitGTK against neighbours that drew
-                one, because the budget is a function of what the control costs
-                and the neighbours' control is a single button. jsdom reports
-                the string and cannot report the wrap. */}
+                inside the ≤ 90 one-line budget every row on the surface was
+                then written to — and drew THREE lines in WebKitGTK against
+                neighbours that drew one, because the budget is a function of
+                what the control costs and the neighbours' control is a single
+                button. That is the measurement ADR 0092 came out of, and the
+                `≤ 90` it names is no longer a rule anywhere. jsdom reports the
+                string and cannot report the wrap. */}
             <Row
               label="Profile rules"
               hint={rulesExported ?? "Prompt, words and snippets."}

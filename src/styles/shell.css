@@ -3427,10 +3427,30 @@
     .ws-flag-row { flex-direction: column; align-items: stretch; }
   }
 
-  /* The note sits on the same line as the buttons and takes the slack, so the
-     panel's height does not change when a rule has something to say. */
+  /* The note sits on the same line as the buttons WHERE THERE IS A LINE FOR IT,
+     and takes its own where there is not.
+
+     IT TOOK THE SLACK AND THE SLACK WAS 68 PIXELS (Leg 12). `min-width: 0` let
+     the note compress to whatever the two buttons left, and in the Profiles
+     pane that is 68 px against 110 px of Cancel and Add: the 59-character
+     `ORDER_NOTE` drew SIX lines, and the comment here claimed the panel's
+     height does not change when a rule has something to say. Measured in
+     WebKitGTK, in the panel, with the row instrument.
+
+     The floor is what makes the claim true instead of stating it. Below `26ch`
+     the note stops competing and the foot wraps: the note takes the panel's
+     full width on the first line and the buttons keep the second, which is the
+     same degradation `.ws-flag-row` already makes at its own container width.
+
+     `justify-content` IS WHAT KEEPS THE COMMIT AT THE TRAILING EDGE ONCE THE
+     FOOT CAN WRAP. The note's `margin-right: auto` only holds a line it shares
+     with the buttons; on a wrapped foot the buttons have a line to themselves
+     and would start at its leading edge. An auto margin is resolved before
+     `justify-content`, so the note still sits left on its own line and the
+     unwrapped arrangement is unchanged. */
   .ws-edit-foot {
     display: flex; align-items: center; gap: var(--s2);
+    flex-wrap: wrap; justify-content: flex-end;
     padding-top: var(--s2);
     border-top: 1px solid var(--border);
   }
@@ -3438,8 +3458,9 @@
     margin-right: auto;
     font-stretch: var(--w-micro); letter-spacing: var(--ls-micro); font-size: var(--t-micro);
     color: var(--fg-muted);
-    /* It explains; it never pushes the commit off the panel. */
-    min-width: 0;
+    /* It explains; it never pushes the commit off the panel — and it is never
+       squeezed under the width at which explaining stops working. */
+    min-width: 26ch;
   }
   @container (max-width: 560px) {
     .ws-edit-fields { grid-template-columns: minmax(0, 1fr); }

@@ -1231,9 +1231,12 @@ function ModelsTab({
                     SO. It first shipped at 228 — the Verbatim ruling and the
                     fallback both in the row — which jsdom sees as a correct
                     string and WebKitGTK draws as four lines against neighbours
-                    that take one. The copy budget is ≤ 90 on one line, and the
-                    two facts that went are in ADR 0087 and ADR 0077, which is
-                    where a fact that does not fit belongs. */}
+                    that take one. It was cut to a number the host approved of
+                    rather than to a budget — the `≤ 90` this comment used to
+                    quote was never measured and ADR 0092 retired it; what
+                    actually fits is whatever the control leaves. The two facts
+                    that went are in ADR 0087 and ADR 0077, which is where a
+                    fact that does not fit belongs. */}
                 <JobNone
                   name="Titles"
                   why="Names the transcript file — one extra model call per dictation, in every mode."

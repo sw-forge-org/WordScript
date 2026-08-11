@@ -139,7 +139,24 @@ export function CardRows({
 
 export interface RowProps {
   label?: React.ReactNode;
-  /** One line, at most 90 characters. It sits on `--fg-dim`, never on muted. */
+  /**
+   * The row's own sentence. It sits on `--fg-dim`, never on muted.
+   *
+   * THERE IS NO CHARACTER BUDGET HERE, AND THIS DOCBLOCK ASSERTED ONE FOR
+   * TWELVE LEGS. It said "one line, at most 90 characters" — the number ADR
+   * 0092 measured as wrong for every case in its table, and this is the
+   * docblock on the element that table was measured against. `.ws-row-ctl` is
+   * `flex: none`, so what one line holds is whatever the control leaves: **10
+   * characters where a Select and a Button share the row, 74 where a badge
+   * does** (Leg 12, at 800 CSS px; Leg 11 measured 12 and 73 at the same
+   * window, which is how much a number here moves between two runs).
+   *
+   * So the rule is not a length. It is ADR 0092's table, read for the control
+   * this row actually has — and its named defect: **a row must not print the
+   * runtime text its own control displays**, where that control is width-auto
+   * and runtime-filled. A badge quoting a five-character duration is not that
+   * defect and is what the drawing does on Profiles → Defaults.
+   */
   hint?: React.ReactNode;
   /** The control. One per kind of value: a bounded number with a unit is a
    *  stepper, a proportion is a slider, a measurement with a decision threshold

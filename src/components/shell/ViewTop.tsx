@@ -24,7 +24,11 @@ export function ViewTop({
   className,
 }: {
   title: React.ReactNode;
-  /** One line. At most 90 characters. */
+  /** One line. That is about **78 CHARACTERS**, not the 90 this said until Leg
+   *  12 measured it — the lead is the widest prose run the product has (460 to
+   *  467 px, the whole content column) because it shares its line with nothing,
+   *  and it is still short of 90. ADR 0092 corrected four sites and this
+   *  docblock was a fifth. */
   lead?: React.ReactNode;
   /** A `PreviewBanner`, when this view is one. */
   banner?: React.ReactNode;

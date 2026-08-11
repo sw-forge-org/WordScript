@@ -1374,11 +1374,20 @@ export default function OverlayWindow() {
   // `retry_transcription_history_entry` means the overlay and the history list
   // run the identical path. A retry that behaves differently depending on which
   // button started it is two behaviours to keep true.
+  //
+  // THE FIRST CALL NAMED A COMMAND THAT NEVER EXISTED. It read
+  // `load_transcription_history`; the registered command is
+  // `transcription_history_entries` and takes exactly this `query`. `invoke`
+  // rejects an unknown name, the `.catch` below logged it, and the button did
+  // nothing from `1fda91d` — the commit whose whole subject was keeping the
+  // audio so a failed dictation could be retried. `useTranscriptionHistory`
+  // has always used the right name, which is why the History list works and
+  // this one did not.
   const handleRetryFromRecording = useCallback(async () => {
     setRetryPending(true);
     try {
       const entries = await invoke<{ id: string; audio_path: string | null }[]>(
-        "load_transcription_history",
+        "transcription_history_entries",
         { query: { limit: 1, include_errors_only: true } },
       );
       const retryable = entries.find((entry) => Boolean(entry.audio_path));

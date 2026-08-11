@@ -252,6 +252,10 @@ describe("OverlayWindow", () => {
             recovery_message: "Inserted at the cursor. No recovery action is needed.",
             clipboard_restore: "scheduled",
           });
+        case "transcription_history_entries":
+          return Promise.resolve([
+            { id: "history-1", audio_path: "/tmp/wordscript/history-1.wav" },
+          ]);
         case "retry_transcription_history_entry":
           return Promise.resolve({
             id: "history-2",
@@ -2077,6 +2081,41 @@ describe("OverlayWindow", () => {
         expect(
           screen.queryByRole("button", { name: /retry from the recording/i }),
         ).not.toBeInTheDocument(),
+      );
+    });
+
+    /* THE BUTTON EXISTING IS NOT THE BUTTON WORKING, and the test above only
+       ever asserted the first. It read `load_transcription_history` — a name no
+       `invoke_handler` has ever carried — from `1fda91d` until Leg 12, so the
+       control offered by the commit that kept the audio rejected on every
+       press and logged into its own `.catch`. The mock's `default` arm throws
+       on an unknown command, so this case is what makes a wrong name fail
+       loudly instead of silently. */
+    it("retries through the history entry the runtime kept", async () => {
+      useRuntimeMock.mockReturnValue(
+        buildIdleResultState({
+          status: "idle",
+          lastResult: null,
+          lastTranscription: null,
+          error: "Groq request timed out after 35000ms",
+          errorAudioRetained: true,
+        }),
+      );
+      render(<OverlayWindow />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: /retry from the recording/i }),
+      );
+
+      await waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith("transcription_history_entries", {
+          query: { limit: 1, include_errors_only: true },
+        }),
+      );
+      await waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith("retry_transcription_history_entry", {
+          request: { id: "history-1" },
+        }),
       );
     });
   });

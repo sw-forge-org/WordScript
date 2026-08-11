@@ -7,7 +7,12 @@ export interface LaneOption {
   /** A 15 px glyph. It sits in a 30 px tile that tints with the selection. */
   icon?: React.ReactNode;
   name: React.ReactNode;
-  /** One line, at most 90 characters. */
+  /** One line — and how long that is has never been measured, because nothing
+   *  outside the gallery mounts this component. It said "at most 90
+   *  characters", which ADR 0092 measured as wrong everywhere it could reach;
+   *  the number is not carried forward here rather than replaced with a second
+   *  unmeasured one. Measure it in the native host on the surface that first
+   *  ships a lane card. */
   description?: React.ReactNode;
   /** A status that is NOT expected. An expected status is a dot and a word, or
    *  nothing (§11.20). The selected lane's own `Active` mark is drawn by this
