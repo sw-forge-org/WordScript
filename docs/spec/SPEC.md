@@ -30,6 +30,12 @@ corrected below and ADR 0106 carries the derivation — recorded rather than
 quietly fixed, because asserting a capability the runtime does not have is the
 defect class this file exists to prevent.
 
+Amended 2026-08-11 by stage A2, which built the capability axes (ADR 0110). **It
+read `core/providers/` and `src/types/providers.ts` and moved only the two
+clauses that said the axes were planned**; it read nothing else. The model axis
+now exists and is answered per `(provider, model)`, and **the seam is still not
+built** — no surface reads either axis, which is ADR 0106 and stage B1.
+
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
 The living overview docs (`ARCHITECTURE.md`, `VISION.md`, `REFERENCE.md`,
@@ -184,9 +190,10 @@ UI implementation details, not Rust event names or Tauri channels.
 ### Provider contract
 
 - `ProviderStatus`: typed modes (`fast`, `quality`, `local`, later
-  `self_hosted`), capabilities (Transcription, Chat-Cleanup, Local,
-  API-Key-Required, Prompt-Bias, Language, Segments), `local_setup` typed
-  status for the local lane.
+  `self_hosted`), capabilities (Transcription, Chat-Cleanup, Speech-Synthesis,
+  Local, API-Key-Required, Prompt-Bias, Language, Segments), the model-axis
+  answer for the model the request named, and `local_setup` typed status for
+  the local lane.
 - `ProviderCommandError`: `kind`, HTTP status, `retryable`, `Retry-After`,
   `user_action`. UI must relay this, never invent its own error categories.
 - `local` (on-device, current `local_preview` lane) and `self_hosted`
@@ -204,22 +211,36 @@ UI implementation details, not Rust event names or Tauri channels.
   and implemented by nobody. **ADR 0094's other half is not built** — the
   provider axis in the config is still one `provider` field per profile, not a
   resolved default plus a sparse override per job.
-- **Capability axes split between provider and model** (ADR 0110). `speech_synthesis`
-  is a provider-level role question and joins `transcription` and
-  `chat_completion` on `ProviderCapabilities`; **`transcription_streaming`,
-  `reports_detected_language` and `synthesis_streaming` are model-level**,
-  because one OpenAI key serves `gpt-4o-transcribe` (streams) and `whisper-1`
-  (does not), and the local lane repeats the split across Parakeet's online and
-  offline models. A job asks its resolved `(provider, model)` pair, never its
-  lane's name. Planned; not built.
+- **Capability axes split between provider and model** (ADR 0110), built
+  2026-08-11. `speech_synthesis` is a provider-level role question and joins
+  `transcription` and `chat_completion` on `ProviderCapabilities`;
+  **`transcription_streaming`, `reports_detected_language` and
+  `synthesis_streaming` live on `ModelCapabilities`**, because one OpenAI key
+  serves `gpt-4o-transcribe` (streams) and `whisper-1` (does not), and the local
+  lane repeats the split across Parakeet's online and offline models. The
+  `Provider` trait answers both — `capabilities()` and
+  `model_capabilities(model)` — and `providers::model_capabilities(provider,
+  model)` is the resolver, taking **both arguments always**, on the shape
+  `capture_limits` already had. A job asks its resolved `(provider, model)`
+  pair, never its lane's name.
+- **A model answer is three-valued**, not a boolean: `supported`,
+  `unsupported`, `unknown`. A model list that belongs to the vendor cannot be
+  enumerated ahead of time, and **a model whose capability is unknown is not a
+  model that streams**; an unresolvable provider answers `unknown` on every
+  field rather than lending the default lane's answer. Both registered lanes
+  answer `unsupported` on every field today — Groq because its speech endpoint
+  is batch only, the local lane because it shells out to `whisper-cli` and
+  echoes the language it was told. **A provider cannot claim a role it did not
+  register**: a registry test holds `speech_synthesis` to `voice.is_some()`
+  across the whole table, so a lane with no `VoiceProvider` cannot state a voice.
 - **The four fields ADR 0094 named land on those two axes** rather than all on
-  the provider struct. The struct is mirrored into `src/types/providers.ts`
-  and travels on `provider_status`. **It is not read by any surface**: no field
-  of `status.capabilities` is consumed in `src/`, and `AI Models` draws its
-  capability answers from the hand-maintained `PROVIDERS` table in
-  `src/screens/data.ts`. The mirror is a precondition for a guard, not a guard;
-  ADR 0106 makes building that seam a step before the first adapter, asserted by
-  a test rather than by a sentence. Planned; not built.
+  the provider struct. Both structs are mirrored into `src/types/providers.ts`
+  and travel on `provider_status`. **Neither is read by any surface**: no field
+  of `status.capabilities` or `status.model_capabilities` is consumed in `src/`,
+  and `AI Models` draws its capability answers from the hand-maintained
+  `PROVIDERS` table in `src/screens/data.ts`. The mirror is a precondition for a
+  guard, not a guard; ADR 0106 makes building that seam a step before the first
+  adapter, asserted by a test rather than by a sentence. Planned; not built.
 - **`voice` is the ninth `JobKey`** (ADR 0109). The union carries eight and four
   records already write contracts against the ninth; the drawn `Speaking` job
   sits outside the lane axis and that is the shape the type follows. Where the
@@ -263,7 +284,9 @@ partial result reaches the session reducer, and ADR 0018/0019 are untouched.
 - **Its first implementation emits no partials.** A voice-activity segmenter
   marks the utterance and the adapter transcribes it as a file, so the same
   contract serves a lane that streams and one that does not; a surface asks
-  `ProviderCapabilities` rather than the lane's name.
+  `ModelCapabilities` for its resolved `(provider, model)` pair rather than the
+  lane's name (ADR 0095 as ADR 0110 corrects it — the question moved one level
+  down, from the provider struct to the model's).
 - Every streaming result is guarded against the active `processing` session id,
   per utterance, on the pattern `sessions::is_processing_session_current`
   establishes.
@@ -614,8 +637,9 @@ result surface (ADR 0011a).
   user (ADR 0100). This does not reopen the overlay's fixed per-surface
   geometry, and no generic resize command returns (ADR 0089).
 - **No surface reads a runtime capability.** `provider_status` returns
-  `ProviderCapabilities` and no field of it is consumed anywhere in `src/`;
-  `Models.test.tsx` mocks it as `{}` and the suite passes. `AI Models` draws
+  `ProviderCapabilities` **and, since 2026-08-11, `ModelCapabilities`**, and no
+  field of either is consumed anywhere in `src/`; `Models.test.tsx` mocks
+  capabilities as `{}` and the suite passes. `AI Models` draws
   every capability answer from the hand-maintained `PROVIDERS` table in
   `src/screens/data.ts`, whose `stt`/`llm` booleans are a drawing and are the
   subject of three open disagreements in `docs/PROVIDERS.md`. The seam that

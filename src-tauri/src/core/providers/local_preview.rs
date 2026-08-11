@@ -13,10 +13,11 @@ use crate::core::runtime_log;
 use super::{
     registry::{ChatProvider, Provider, ProviderFuture, SpeechProvider},
     ChatCompletionRequest, LocalProviderIssueCode, LocalProviderReadiness,
-    LocalProviderSetupStatus, ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError,
-    ProviderCredentialStatus, ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus,
-    ProviderStatusRequest, ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse,
-    ValidateProviderApiKeyResponse, LOCAL_PREVIEW_PROVIDER_ID,
+    LocalProviderSetupStatus, ModelCapabilities, ModelSupport, ProviderCapabilities,
+    ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderErrorKind,
+    ProviderMode, ProviderProfile, ProviderStatus, ProviderStatusRequest, ProviderTier,
+    TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
+    LOCAL_PREVIEW_PROVIDER_ID,
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 90_000;
@@ -149,6 +150,14 @@ impl Provider for LocalPreview {
         )
     }
 
+    fn capabilities(&self) -> ProviderCapabilities {
+        provider_capabilities()
+    }
+
+    fn model_capabilities(&self, model: &str) -> ModelCapabilities {
+        model_capabilities(model)
+    }
+
     fn save_api_key(
         &self,
         api_key: &str,
@@ -213,6 +222,7 @@ fn provider_status(
         })
         .unwrap_or("base");
     let requested_chat_model = resolve_local_chat_model_name(correction_model);
+    let model_capabilities = model_capabilities(requested_model);
     let local_setup = inspect_local_setup(requested_model, &requested_chat_model);
     let configured = matches!(local_setup.readiness, LocalProviderReadiness::Ready);
     let status_detail = Some(if configured {
@@ -249,6 +259,7 @@ fn provider_status(
         },
         profiles,
         capabilities: provider_capabilities(),
+        model_capabilities,
         local_setup: Some(local_setup),
     })
 }
@@ -702,12 +713,39 @@ fn provider_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
         transcription: true,
         chat_completion: true,
+        // Kokoro-82M is the surveyed local voice and carries a Python runtime
+        // this build does not host. No `VoiceProvider`, so no claim.
+        speech_synthesis: false,
         local: true,
         requires_api_key: false,
         supports_prompt_bias: true,
         supports_language: true,
         supports_segments: false,
         model_management: true,
+    }
+}
+
+/// What the local models do **on the path this runtime actually drives**.
+///
+/// whisper.cpp can stream — its `stream` example samples every ~0.5 s — and
+/// sherpa-onnx ships online Parakeet models that both stream and report a
+/// detected language. **None of that is what runs here.** This lane shells out
+/// to `whisper-cli`, one file in and one transcript out, and the `language` on
+/// the response is the one the request passed in, echoed back (see
+/// `transcribe_audio_file` below). Both answers are therefore `Unsupported`,
+/// and they are answers about this build rather than about whisper.cpp.
+///
+/// **F3 is the step that changes them**, by picking one of the four local
+/// shapes (ADR 0096 step 3). When it lands, an online model and an offline one
+/// will disagree on the same runtime — which is the local half of ADR 0110's
+/// evidence, and the reason this answer takes a model at all today, when every
+/// model on the lane still agrees.
+fn model_capabilities(model: &str) -> ModelCapabilities {
+    ModelCapabilities {
+        model: normalize_local_model_name(model),
+        transcription_streaming: ModelSupport::Unsupported,
+        reports_detected_language: ModelSupport::Unsupported,
+        synthesis_streaming: ModelSupport::Unsupported,
     }
 }
 
@@ -2057,6 +2095,42 @@ whisper_print_timings: total time = 1337.00 ms
         assert!(capabilities.supports_prompt_bias);
         assert!(!capabilities.supports_segments);
         assert!(capabilities.model_management);
+        assert!(
+            !capabilities.speech_synthesis,
+            "nothing in this build synthesises; Kokoro is surveyed, not hosted",
+        );
+    }
+
+    /// The model axis on the path this lane actually drives.
+    ///
+    /// whisper.cpp streams in its `stream` example and sherpa-onnx ships online
+    /// Parakeet models that report a detected language; **this runtime shells
+    /// out to `whisper-cli` and echoes the requested language back**, so both
+    /// answers are no. The test names the reason so that F3 has to change it
+    /// deliberately rather than discover it.
+    #[test]
+    fn the_local_lane_denies_both_recognition_shapes_on_todays_path() {
+        for model in ["base", "large-v3", "ggml-medium.en"] {
+            let capabilities = model_capabilities(model);
+
+            assert_eq!(capabilities.model, model);
+            assert_eq!(
+                capabilities.transcription_streaming,
+                ModelSupport::Unsupported,
+                "{model} runs through whisper-cli, one file in and one transcript out",
+            );
+            assert_eq!(
+                capabilities.reports_detected_language,
+                ModelSupport::Unsupported,
+                "{model} echoes the language it was told, and never names one",
+            );
+        }
+    }
+
+    #[test]
+    fn an_unnamed_local_model_answers_for_the_one_that_would_run() {
+        assert_eq!(model_capabilities("").model, "base");
+        assert_eq!(model_capabilities("large").model, "large-v3");
     }
 
     #[test]

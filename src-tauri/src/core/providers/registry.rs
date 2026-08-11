@@ -11,6 +11,14 @@
 //! cannot be turned into a `Some` without an implementation the compiler has
 //! seen. `VoiceProvider` is declared here and implemented by nobody.
 //!
+//! **A capability is asked on one of two axes, and they are not the same
+//! question.** *Which roles does this vendor serve* is the provider's
+//! (`capabilities`); *what does this model do inside one of them* is the
+//! model's (`model_capabilities`, ADR 0110). One OpenAI key serves a model that
+//! streams and a model that does not, so a contract that answered the second
+//! question from the provider alone would force a lie on whichever model lost
+//! the vote.
+//!
 //! Dispatch stays static in the sense ADR 0094 means: no dynamic loading, no
 //! plugin surface, no configuration file that names a Rust type. `REGISTRY` is
 //! a frozen table of `&'static` implementations, and the many-to-one shape the
@@ -21,10 +29,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::{
-    groq, local_preview, ChatCompletionRequest, ProviderCaptureLimits, ProviderCommandError,
-    ProviderCredentialStatus, ProviderStatus, ProviderStatusRequest, ProviderTier,
-    TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
-    DEFAULT_PROVIDER_ID, LOCAL_PREVIEW_PROVIDER_ID,
+    groq, local_preview, ChatCompletionRequest, ModelCapabilities, ProviderCapabilities,
+    ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderStatus,
+    ProviderStatusRequest, ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse,
+    ValidateProviderApiKeyResponse, DEFAULT_PROVIDER_ID, LOCAL_PREVIEW_PROVIDER_ID,
 };
 
 /// What an asynchronous provider call returns.
@@ -47,6 +55,24 @@ pub trait Provider: Send + Sync {
         &self,
         request: &ProviderStatusRequest,
     ) -> Result<ProviderStatus, ProviderCommandError>;
+
+    /// Which roles this provider serves, and how it must be talked to.
+    ///
+    /// Separate from `status()` because `status()` reads the OS secret store
+    /// and probes the local runtime, and **a capability question must be
+    /// answerable without either** — including by a test that must not touch a
+    /// developer's keyring. `status()` carries the same answer for the surface.
+    fn capabilities(&self) -> ProviderCapabilities;
+
+    /// What one of this provider's models does inside a role it serves
+    /// (ADR 0110).
+    ///
+    /// The model is an argument and never a default the caller cannot see:
+    /// answering *does this stream* from the provider alone is precisely the
+    /// mistake that record corrects. A provider whose model list is somebody
+    /// else's answers `Unknown` for an id it has not seen; one whose endpoint
+    /// decides the matter answers for every id, including ids it does not ship.
+    fn model_capabilities(&self, model: &str) -> ModelCapabilities;
 
     fn save_api_key(
         &self,
@@ -192,4 +218,165 @@ fn role_unavailable(provider: &str, role: &str) -> ProviderCommandError {
     ProviderCommandError::invalid_request(format!(
         "Provider '{provider}' does not perform {role}. Route this job to one that does.",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::providers::ModelSupport;
+
+    /// **The role axis cannot be claimed, only implemented.**
+    ///
+    /// `speech_synthesis: true` on a provider with `voice: None` would be a
+    /// surface offering a job the registry cannot dispatch — the same defect
+    /// class as a drawn row that looks settable and does nothing. This runs
+    /// over the whole table rather than over the two entries registered today,
+    /// so the tenth adapter is held to it without editing the test.
+    #[test]
+    fn every_entry_states_exactly_the_roles_it_registered() {
+        for entry in REGISTRY {
+            let capabilities = entry.provider.capabilities();
+
+            assert_eq!(
+                capabilities.transcription,
+                entry.speech.is_some(),
+                "{} states transcription={} and registers speech={}",
+                entry.id,
+                capabilities.transcription,
+                entry.speech.is_some(),
+            );
+            assert_eq!(
+                capabilities.chat_completion,
+                entry.chat.is_some(),
+                "{} states chat_completion={} and registers chat={}",
+                entry.id,
+                capabilities.chat_completion,
+                entry.chat.is_some(),
+            );
+            assert_eq!(
+                capabilities.speech_synthesis,
+                entry.voice.is_some(),
+                "{} states speech_synthesis={} and registers voice={}",
+                entry.id,
+                capabilities.speech_synthesis,
+                entry.voice.is_some(),
+            );
+        }
+    }
+
+    /// One vendor, one credential, one endpoint, **two answers**.
+    ///
+    /// This is the shape ADR 0110 corrects, and OpenAI is the real case: it
+    /// serves `gpt-4o-transcribe` (streams, names the languages it heard) and
+    /// `whisper-1` (documented as not streaming) on one key. ADR 0096 schedules
+    /// that adapter first and it is not built, so the shape is proved here
+    /// against a fixture rather than left unproved until the vendor lands —
+    /// **the axis has to be right before an adapter hard-codes the wrong one**,
+    /// which is the whole reason this step precedes D1.
+    struct TwoModelVendor;
+
+    impl Provider for TwoModelVendor {
+        fn status(
+            &self,
+            _request: &ProviderStatusRequest,
+        ) -> Result<ProviderStatus, ProviderCommandError> {
+            Err(ProviderCommandError::invalid_request(
+                "the fixture answers capability questions and nothing else",
+            ))
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities {
+                transcription: true,
+                chat_completion: false,
+                speech_synthesis: false,
+                local: false,
+                requires_api_key: true,
+                supports_prompt_bias: true,
+                supports_language: true,
+                supports_segments: true,
+                model_management: false,
+            }
+        }
+
+        fn model_capabilities(&self, model: &str) -> ModelCapabilities {
+            match model.trim() {
+                "gpt-4o-transcribe" => ModelCapabilities {
+                    model: model.trim().to_string(),
+                    transcription_streaming: ModelSupport::Supported,
+                    reports_detected_language: ModelSupport::Supported,
+                    synthesis_streaming: ModelSupport::Unsupported,
+                },
+                "whisper-1" => ModelCapabilities {
+                    model: model.trim().to_string(),
+                    transcription_streaming: ModelSupport::Unsupported,
+                    reports_detected_language: ModelSupport::Unsupported,
+                    synthesis_streaming: ModelSupport::Unsupported,
+                },
+                other => ModelCapabilities::unknown(other),
+            }
+        }
+
+        fn save_api_key(
+            &self,
+            _api_key: &str,
+        ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+            Err(ProviderCommandError::invalid_request("fixture"))
+        }
+
+        fn clear_api_key(&self) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+            Err(ProviderCommandError::invalid_request("fixture"))
+        }
+
+        fn validate_api_key(
+            &self,
+            _api_key: Option<String>,
+        ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
+            Box::pin(async { Err(ProviderCommandError::invalid_request("fixture")) })
+        }
+    }
+
+    #[test]
+    fn the_two_axes_answer_differently_for_one_provider() {
+        let vendor = TwoModelVendor;
+
+        // The role axis says the same thing for both models: this vendor
+        // listens. It is the only question it can answer.
+        assert!(vendor.capabilities().transcription);
+
+        let streaming = vendor.model_capabilities("gpt-4o-transcribe");
+        let batch = vendor.model_capabilities("whisper-1");
+
+        assert_eq!(
+            streaming.transcription_streaming,
+            ModelSupport::Supported,
+            "one model on this key streams",
+        );
+        assert_eq!(
+            batch.transcription_streaming,
+            ModelSupport::Unsupported,
+            "and the other, on the same key, does not",
+        );
+        assert_eq!(
+            streaming.reports_detected_language,
+            ModelSupport::Supported
+        );
+        assert_eq!(
+            batch.reports_detected_language,
+            ModelSupport::Unsupported
+        );
+    }
+
+    /// The OpenRouter case, which ADR 0110 stops treating as an exception: the
+    /// model list is somebody else's, so an id this build has not seen is not
+    /// an id that streams, and it is not an id that refuses to either.
+    #[test]
+    fn a_model_this_build_has_not_seen_answers_unknown_rather_than_no() {
+        let answer = TwoModelVendor.model_capabilities("some-vendors-newest-model");
+
+        assert_eq!(answer.model, "some-vendors-newest-model");
+        assert_eq!(answer.transcription_streaming, ModelSupport::Unknown);
+        assert_eq!(answer.reports_detected_language, ModelSupport::Unknown);
+        assert_eq!(answer.synthesis_streaming, ModelSupport::Unknown);
+    }
 }

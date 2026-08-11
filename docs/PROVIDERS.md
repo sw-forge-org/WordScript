@@ -304,8 +304,13 @@ One key, many models -- it reaches vendors that have no adapter of their own.
   `delta.audio`, base64 with transcripts.
 - **No streaming transcription of audio input is documented.**
 - Single bearer token. **Format support varies by the model behind it**, which
-  means a capability answer on this lane is per-model and not per-provider --
-  the one lane where `ProviderCapabilities` cannot be a constant.
+  means a capability answer on this lane is per-model and not per-provider.
+  *This section originally called that "the one lane where `ProviderCapabilities`
+  cannot be a constant". It is a constant nowhere* (ADR 0110): OpenAI's own key
+  serves `gpt-4o-transcribe` and `whisper-1` with opposite answers, and the
+  contract built on 2026-08-11 puts the shape on `ModelCapabilities` for every
+  lane. What is particular here is only that the values cannot be enumerated
+  ahead of time, which is why the third answer -- `unknown` -- exists.
 
 ---
 

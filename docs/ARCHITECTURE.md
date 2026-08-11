@@ -260,6 +260,30 @@ The active product core lives in `src-tauri/src/core/`.
   `Groq: VoiceProvider` is not satisfied. There is no "unsupported" error to
   return, because there is no call to make.
 
+  **A capability is asked on one of two axes** (ADR 0110, built 2026-08-11), and
+  they are different questions. *Which roles does this vendor serve* is the
+  provider's — `Provider::capabilities()`, carrying `speech_synthesis` beside
+  `transcription` and `chat_completion`. *What does this model do inside one of
+  them* is the model's — `Provider::model_capabilities(model)`, carrying
+  `transcription_streaming`, `reports_detected_language` and
+  `synthesis_streaming`, resolved through
+  `providers::model_capabilities(provider, model)`, which takes **both
+  arguments always**. One OpenAI key serves a model that streams and one that
+  does not, so a contract answering the second question from the provider alone
+  forces a lie on whichever model loses the vote. Each field is three-valued —
+  `supported`, `unsupported`, `unknown` — because a model list that belongs to
+  the vendor cannot be enumerated ahead of time, and **a model whose capability
+  is unknown is not a model that streams**.
+
+  A provider cannot claim a role it did not register: a registry test holds
+  `speech_synthesis` to `voice.is_some()` over the whole table, so the role
+  axis and the registry cannot drift. Both registered lanes answer
+  `unsupported` on every model field today — Groq because its speech endpoint
+  takes a file and returns a result, the local lane because it shells out to
+  `whisper-cli` and echoes back the language it was told. **The vendor where
+  two models disagree is not integrated yet**, so that shape is proved by a
+  fixture in `registry.rs` rather than left unproved until D1.
+
   *Planned and not built* (ADR 0094's second half, ADR 0095, ADR 0096): the
   provider axis in the config still holds one `provider` field per profile
   rather than a resolved default plus a sparse override per job, no streaming
@@ -268,9 +292,11 @@ The active product core lives in `src-tauri/src/core/`.
   surveyed per row and per date in [PROVIDERS.md](PROVIDERS.md) — that document
   is a capability reference and not a claim about this codebase.
 
-  **`ProviderCapabilities` crosses the seam and nothing on the other side reads
-  it.** The struct is mirrored in `src/types/providers.ts` and returned by
-  `provider_status`; no field of it is consumed anywhere in `src/`, and
+  **Both capability structs cross the seam and nothing on the other side reads
+  them.** `ProviderCapabilities` and `ModelCapabilities` are mirrored in
+  `src/types/providers.ts` and returned by `provider_status` — the model axis
+  answered for the model the request named, since asking without one is half a
+  question. No field of either is consumed anywhere in `src/`, and
   `AI Models` draws its capability answers from the hand-maintained `PROVIDERS`
   table in `src/screens/data.ts` instead. **The drawing states an intent and the
   runtime answers a capability**; the code that makes the second govern the
@@ -674,8 +700,9 @@ Rules:
   config is scrubbed on save; legacy JSON Groq secrets are migrated natively
   into the secret store.
 - `ProviderStatus` carries typed modes (`fast`, `quality`, `local`, later
-  `self_hosted`) and capabilities (Transcription, Chat-Cleanup, Prompt-Bias,
-  Language, Segments, Local, API-Key-Required).
+  `self_hosted`), provider-axis capabilities (Transcription, Chat-Cleanup,
+  Speech-Synthesis, Prompt-Bias, Language, Segments, Local, API-Key-Required)
+  and the model-axis answer for the model the request named.
 - `local` and `self_hosted` are not interchangeable labels: `local` is the
   current on-device path, `self_hosted` is reserved for later user-run
   remote/LAN services and is not an active lane today.

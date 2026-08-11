@@ -51,15 +51,49 @@ export interface ProviderProfile {
   requires_api_key: boolean;
 }
 
+/**
+ * The provider axis: which roles this vendor serves, as this build operates it.
+ *
+ * What a particular model does inside one of those roles is the other axis and
+ * lives on `ModelCapabilities` (ADR 0110). Mirrors
+ * `core::providers::ProviderCapabilities`.
+ */
 export interface ProviderCapabilities {
   transcription: boolean;
   chat_completion: boolean;
+  /** Whether this vendor speaks at all here. False for every lane today. */
+  speech_synthesis: boolean;
   local: boolean;
   requires_api_key: boolean;
   supports_prompt_bias: boolean;
   supports_language: boolean;
   supports_segments: boolean;
   model_management: boolean;
+}
+
+/**
+ * What a model does, or whether the runtime knows.
+ *
+ * Three states and not a boolean: one drawn lane serves a model list that
+ * belongs to somebody else, and **a model whose capability is unknown is not a
+ * model that streams** (ADR 0110). A surface reading this says "unknown"
+ * rather than resolving it to either answer.
+ */
+export type ModelSupport = "supported" | "unsupported" | "unknown";
+
+/**
+ * The model axis: what one model does inside a role its provider serves.
+ *
+ * One OpenAI key serves `gpt-4o-transcribe`, which streams, and `whisper-1`,
+ * which does not — so a caller holding only the provider is holding half a
+ * question. Mirrors `core::providers::ModelCapabilities`.
+ */
+export interface ModelCapabilities {
+  /** The model this answer describes — the resolved one, not the requested. */
+  model: string;
+  transcription_streaming: ModelSupport;
+  reports_detected_language: ModelSupport;
+  synthesis_streaming: ModelSupport;
 }
 
 export type LocalProviderReadiness = "ready" | "setup_required";
@@ -99,6 +133,8 @@ export interface ProviderStatus {
   credential: ProviderCredentialStatus;
   profiles: ProviderProfile[];
   capabilities: ProviderCapabilities;
+  /** Answered for the model the request named — ask again to ask about another. */
+  model_capabilities: ModelCapabilities;
   local_setup: LocalProviderSetupStatus | null;
 }
 

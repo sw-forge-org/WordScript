@@ -90,8 +90,18 @@ constants themselves were not re-derived and carry their own provenance
 - The JSON config is scrubbed on save; old JSON Groq secrets are migrated
   natively into the secret store.
 - `ProviderStatus` carries typed modes (`fast`, `quality`, `local`, later
-  `self_hosted`) and capabilities for Transcription, Chat-Cleanup, Local,
-  API-Key-Required, Prompt-Bias, Language, Segments and model management.
+  `self_hosted`), provider-axis capabilities for Transcription, Chat-Cleanup,
+  Speech-Synthesis, Local, API-Key-Required, Prompt-Bias, Language, Segments
+  and model management, plus the model-axis answer for the model the request
+  named.
+- **Two capability axes, and they answer different questions** (ADR 0110).
+  *Which roles does this vendor serve* is the provider's; *what does this model
+  do inside one of them* — `transcription_streaming`,
+  `reports_detected_language`, `synthesis_streaming` — is the model's, resolved
+  by `providers::model_capabilities(provider, model)`, which takes both
+  arguments always. Each model field is `supported`, `unsupported` or
+  **`unknown`**: a lane whose model list belongs to the vendor cannot be
+  enumerated ahead of time, and an unknown answer is never rendered as a no.
 - The Segments capability is load-bearing, not informational: a provider that
   declares it returns typed `TranscriptionSegment` values with `avg_logprob`,
   `no_speech_prob` and `compression_ratio`, and the confidence gate uses them to
@@ -108,19 +118,26 @@ constants themselves were not re-derived and carry their own provenance
   same thing. Which vendors serve which role -- batch, streaming, detected
   language, voice -- is surveyed per row and per date in
   [PROVIDERS.md](PROVIDERS.md), and the planned contracts are ADR 0094 through
-  ADR 0097 plus ADR 0105 through ADR 0109. **Only ADR 0094's trait-and-registry
-  half is built** (2026-08-11); the rest describes what does not run yet, and
-  this section describes what does.
-- **`ProviderCapabilities` is returned and is read by nothing.** The struct
-  crosses to `src/types/providers.ts` on `provider_status`, and no field of it
-  is consumed in `src/` -- the capability answers drawn on `AI Models` come from
+  ADR 0097 plus ADR 0105 through ADR 0109. **ADR 0094's trait-and-registry half
+  and ADR 0110's capability axes are built** (2026-08-11); the rest describes
+  what does not run yet, and this section describes what does. Both lanes
+  answer `unsupported` to streaming and to detected language on every model,
+  which is the same statement the two sentences above make, in the type.
+- **Both capability structs are returned and read by nothing.**
+  `ProviderCapabilities` and `ModelCapabilities` cross to
+  `src/types/providers.ts` on `provider_status`, and no field of either is
+  consumed in `src/` -- the capability answers drawn on `AI Models` come from
   the `PROVIDERS` table in `src/screens/data.ts`, which is a drawing. So a
   capability stated on a surface today is a drawn intent, not a runtime answer
   (ADR 0106).
 - **Groq's recognition path takes a language as a hint, not as a question.**
   Supplying ISO-639-1 improves accuracy and latency; the response does not tell
   you what it heard. That matters wherever a surface wants to route by language
-  rather than assume one (ADR 0099).
+  rather than assume one (ADR 0099), and it is why every Groq model answers
+  `unsupported` to `reports_detected_language`. The local lane answers the same
+  and for a sharper reason: it passes `-l` to `whisper-cli` and puts the
+  requested language back on the response, so a caller reading it learns what it
+  asked for and never what was heard.
 
 ### Mode semantics today
 

@@ -13,16 +13,20 @@ use crate::core::runtime_log;
 
 use super::{
     registry::{ChatProvider, Provider, ProviderFuture, SpeechProvider},
-    ChatCompletionRequest, ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError,
-    ProviderCredentialStatus, ProviderErrorKind, ProviderMode, ProviderProfile, ProviderStatus,
-    ProviderStatusRequest, ProviderTier, TranscribeAudioFileRequest, TranscriptionResponse,
-    ValidateProviderApiKeyResponse,
+    ChatCompletionRequest, ModelCapabilities, ModelSupport, ProviderCapabilities,
+    ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderErrorKind,
+    ProviderMode, ProviderProfile, ProviderStatus, ProviderStatusRequest, ProviderTier,
+    TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
 };
 
 const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
 const GROQ_KEY_SERVICE: &str = "io.github.sw-forge-org.wordscript";
 const LEGACY_GROQ_KEY_SERVICES: &[&str] = &["io.github.swbench.wordscript"];
 const GROQ_KEY_USER: &str = "groq_api_key";
+/// The model a recognition request runs on when the caller names none. One
+/// constant rather than two literals, because the capability answer and the
+/// request must describe the same run.
+const GROQ_DEFAULT_SPEECH_MODEL: &str = "whisper-large-v3-turbo";
 const DEFAULT_TIMEOUT_MS: u64 = 55_000;
 const DEFAULT_MAX_RETRIES: u8 = 2;
 const GROQ_FREE_TIER_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
@@ -86,13 +90,22 @@ pub struct Groq;
 pub static GROQ: Groq = Groq;
 
 impl Provider for Groq {
-    /// The request carries a model and a correction model for the lane that
-    /// needs them to answer. Groq's status does not depend on either.
+    /// The request's model is read for the model axis and nothing else: Groq's
+    /// credential, profiles and roles do not vary by it. The correction model
+    /// names a chat model, and no field on either axis is a chat question.
     fn status(
         &self,
-        _request: &ProviderStatusRequest,
+        request: &ProviderStatusRequest,
     ) -> Result<ProviderStatus, ProviderCommandError> {
-        provider_status()
+        provider_status(request.model.as_deref())
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        provider_capabilities()
+    }
+
+    fn model_capabilities(&self, model: &str) -> ModelCapabilities {
+        model_capabilities(model)
     }
 
     fn save_api_key(
@@ -138,13 +151,14 @@ impl ChatProvider for Groq {
     }
 }
 
-fn provider_status() -> Result<GroqProviderStatus, ProviderCommandError> {
+fn provider_status(model: Option<&str>) -> Result<GroqProviderStatus, ProviderCommandError> {
     Ok(GroqProviderStatus {
         provider: "groq".to_string(),
         default_profile: "cloud-fast".to_string(),
         credential: credential_status().map_err(ProviderCommandError::from)?,
         profiles: provider_profiles(),
         capabilities: provider_capabilities(),
+        model_capabilities: model_capabilities(model.unwrap_or_default()),
         local_setup: None,
     })
 }
@@ -276,9 +290,7 @@ impl GroqClient {
                 retry_after_seconds: None,
             })?;
 
-        let model = request
-            .model
-            .unwrap_or_else(|| "whisper-large-v3-turbo".to_string());
+        let model = resolve_speech_model(request.model.as_deref().unwrap_or_default());
         let language = request.language.filter(|value| !value.trim().is_empty());
         let prompt = request.prompt.filter(|value| !value.trim().is_empty());
         let response_format = request
@@ -579,12 +591,52 @@ fn provider_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
         transcription: true,
         chat_completion: true,
+        // Groq sells the Orpheus voices; this build registers no `VoiceProvider`
+        // for it, and a capability answers what can be operated here. The row
+        // that says why is ADR 0096's missing adapter, not a model answer.
+        speech_synthesis: false,
         local: false,
         requires_api_key: true,
         supports_prompt_bias: true,
         supports_language: true,
         supports_segments: true,
         model_management: false,
+    }
+}
+
+/// What Groq's models do — and why every one of them says the same thing.
+///
+/// **Groq's speech endpoint is batch only**: one file in, one result out, no
+/// websocket, no `stream=true`, no partial results (`docs/PROVIDERS.md`, read
+/// 2026-08-11). That is a property of the endpoint rather than of the weights,
+/// so an id this build has never heard of answers exactly like the two it
+/// ships, and the answer is `Unsupported` rather than `Unknown`: nothing that
+/// arrives on this URL will stream.
+///
+/// **This is not a counter-example to ADR 0110.** The axis is the model on
+/// every lane; on this one every model happens to agree, and the vendor
+/// scheduled next is the one where they do not.
+///
+/// Language is a hint here and never an answer — supplying ISO-639-1 improves
+/// accuracy and latency, and the response does not say what it heard. Synthesis
+/// is `Unsupported` because these are recognition models; the Orpheus voices
+/// are not listed at all, because no voice job can route to them until an
+/// adapter exists (ADR 0109), and a model answer is the wrong place to say so.
+fn model_capabilities(model: &str) -> ModelCapabilities {
+    ModelCapabilities {
+        model: resolve_speech_model(model),
+        transcription_streaming: ModelSupport::Unsupported,
+        reports_detected_language: ModelSupport::Unsupported,
+        synthesis_streaming: ModelSupport::Unsupported,
+    }
+}
+
+fn resolve_speech_model(model: &str) -> String {
+    let model = model.trim();
+    if model.is_empty() {
+        GROQ_DEFAULT_SPEECH_MODEL.to_string()
+    } else {
+        model.to_string()
     }
 }
 
@@ -1051,6 +1103,44 @@ mod tests {
         assert!(capabilities.supports_segments);
         assert!(!capabilities.local);
         assert!(!capabilities.model_management);
+        assert!(
+            !capabilities.speech_synthesis,
+            "Groq sells the Orpheus voices and this build registers no voice role for it",
+        );
+    }
+
+    /// **The lane decides this one, so an id this build never heard of gets the
+    /// same answer as the two it ships.** Groq's speech endpoint takes a file
+    /// and returns a result; there is no socket to open and no `stream=true` to
+    /// send, which is why the unlisted id answers `Unsupported` rather than
+    /// `Unknown`. The vendor where the models disagree is the next one.
+    #[test]
+    fn every_groq_model_denies_streaming_including_one_it_does_not_ship() {
+        for model in [
+            "whisper-large-v3",
+            "whisper-large-v3-turbo",
+            "whisper-large-v9-imaginary",
+        ] {
+            let capabilities = model_capabilities(model);
+
+            assert_eq!(capabilities.model, model);
+            assert_eq!(
+                capabilities.transcription_streaming,
+                ModelSupport::Unsupported,
+            );
+            assert_eq!(
+                capabilities.reports_detected_language,
+                ModelSupport::Unsupported,
+                "language is a hint on this lane and the response never names one",
+            );
+        }
+    }
+
+    #[test]
+    fn an_unnamed_model_answers_for_the_one_a_request_would_run() {
+        assert_eq!(model_capabilities("").model, GROQ_DEFAULT_SPEECH_MODEL);
+        assert_eq!(resolve_speech_model("  "), GROQ_DEFAULT_SPEECH_MODEL);
+        assert_eq!(resolve_speech_model(" whisper-large-v3 "), "whisper-large-v3");
     }
 
     #[test]

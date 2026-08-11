@@ -30,6 +30,12 @@ files, `cargo test` 740 passed / 3 ignored, `cargo check` 15 warnings (read the
 summary line, not a count of `^warning` matches — it is always one high). A step
 that changes a count says by how much and why, in its commit.
 
+**The baseline moves as steps land, and only for what they moved.** After A2:
+`cargo test` **748 passed / 3 ignored**, and the frontend suite reads **480
+across 39 files** — the six extra cases are `b330815`'s sidebar work, not this
+track's. `cargo check` stays at 15. A step compares against the last line here,
+not against the opening one.
+
 **The rules no step may break**, restated from the records because a plan is
 where they get quietly dropped: no partial result reaches the session reducer
 (ADR 0018, 0019, 0095); no generic resize command returns (ADR 0089, 0100);
@@ -367,7 +373,8 @@ table* blocks G2's surface. Neither blocks A, B, C, D or E.
 | Step | State |
 | --- | --- |
 | A1 | **done** 2026-08-11 — `core/providers/registry.rs`, the enum gone, four counts unchanged |
-| A2–A3, B1–B2, C1–C3, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
+| A2 | **done** 2026-08-11 — `ModelCapabilities` per `(provider, model)`, `speech_synthesis` on the provider, +8 Rust tests |
+| A3, B1–B2, C1–C3, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.
@@ -386,3 +393,56 @@ on a base trait, so "a module plus a registry line" is literally one line, and
 the donor's many-to-one shape is two entries pointing at one static. Futures are
 boxed (`ProviderFuture<T>`) because an `async fn` in a trait is not
 dyn-compatible and no new dependency was worth a pure refactor.
+
+**A2, as it landed.** Four choices the records leave open, and the reasoning
+each turned on.
+
+**The model answer is three-valued.** `supported`, `unsupported`, `unknown`
+rather than a `bool`, because ADR 0110 requires OpenRouter's per-model answer to
+be *a lookup whose values cannot be enumerated ahead of time* and says the
+surface must state unknown rather than assume. A `bool` resolves that case at
+the point where the value is written, and every reader downstream then treats a
+guess as a measurement; the enum makes the mistake need a `match` arm. Adding
+the third state later would be a contract change touching every adapter and the
+mirror — which is what this stage exists to prevent.
+
+**Both trait methods sit on `Provider`, not on the three role traits.** A model
+capability spans roles — synthesis streaming is a voice question and
+`VoiceProvider` still carries no method — and a provider that serves one role
+lists the models of that role. `capabilities()` is separate from `status()`
+because `status()` reads the OS secret store and probes the local runtime, and
+**a registry-wide test must be able to ask what a lane can do without touching a
+developer's keyring.** That test is the one that holds `speech_synthesis` to
+`voice.is_some()` for every entry, which is the property ADR 0094 wanted from
+the type and could not get from a struct field.
+
+**The answer travels on `provider_status`, not on a command of its own.**
+`ProviderStatusRequest` already carries `model`, so the pair is already there;
+and a registered command with no caller is the defect ADR 0089 and ADR 0103
+each swept for. A caller asking about a second model asks again with that model.
+
+**Neither registered lane needed a table, and that is the finding.** Groq
+answers `unsupported` for every id including ids it does not ship, because the
+endpoint decides the matter — batch only, no socket to open. The local lane
+answers the same because it shells out to `whisper-cli` and puts the *requested*
+language back on the response; ADR 0094 defines `reports_detected_language` as
+naming the language heard *rather than echoing the one it was told*, and that
+line is `local_preview.rs`'s literal behaviour. So the (provider, model) pair
+differentiates nothing yet, and the fixture in `registry.rs` is what proves the
+shape — one vendor reached one way, whose `gpt-4o-transcribe` streams and whose
+`whisper-1` does not. It stands in for D1 rather than waiting for it.
+
+**What A2 deliberately did not do:** list Groq's Orpheus voices. A model answer
+is the wrong place to say a lane has no adapter — ADR 0106 keeps *no adapter*,
+*role denied* and *credential missing* as three separate sentences, and folding
+one into a model field is how they get conflated. The voices land with F1.
+
+Counts: `cargo test` 748 passed / 3 ignored (**+8**, all new: three in
+`registry.rs`, two each in `groq.rs` and `local_preview.rs`, one in `mod.rs`),
+`cargo check` 15 warnings unchanged. Nothing in `src/` changed but
+`types/providers.ts`, which is types only; `npm run build` passes and the
+frontend suite is unmoved by this step. **Its absolute number is no longer the
+baseline's 474**: the sidebar work that landed the same day (`b330815`, ADR
+0111) added six cases to `WorkspaceWindow.test.tsx`, so the tree reads 480
+across 39 files with or without A2 — a change from another track, measured here
+so the next step does not read it as this one's.

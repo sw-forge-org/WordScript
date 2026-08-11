@@ -176,6 +176,20 @@ Status: 2026-08-11
   declared and implemented by nobody, because nothing in this runtime speaks. It
   registered no new adapter and changed no behaviour: 740 Rust tests and 474
   frontend tests unchanged
+- capability answers on two axes (ADR 0110, 2026-08-11): *which roles does this
+  vendor serve* is the provider's question and now carries `speech_synthesis`
+  beside transcription and chat; *does this model stream, does it name the
+  language it heard, does its voice stream* is the model's, answered per
+  `(provider, model)` and never from a provider alone. Each model field is
+  `supported`, `unsupported` or **`unknown`**, because one drawn lane's model
+  list belongs to the vendor and a capability nobody has looked up is not a
+  capability that is absent. A registry test holds every entry's role claims to
+  the implementations it registered, so no lane can state a voice it has none
+  for. **Both lanes answer `unsupported` everywhere on the model axis today** —
+  Groq's speech endpoint takes a file and returns a result, and the local lane
+  echoes back the language it was told — so the vendor whose models disagree is
+  proved by a fixture rather than left unproved until it is integrated. Nothing
+  reads either axis yet; that seam is ADR 0106
 - recording limits that agree with what the pipeline can do (ADR 0038): a
   processing limit resolved per provider, account plan and model; an auto-stop
   the user sets under it with a recommended safety margin; and the silence stop
@@ -489,9 +503,11 @@ Additional rules:
   the provider and never the credential, and a role with no credential makes the
   job inert and names what is missing
 - **no surface reads a runtime capability, and one record claimed otherwise.**
-  `provider_status` returns `ProviderCapabilities`, the struct is mirrored into
-  `src/types/providers.ts`, and **no field of it is read anywhere in `src/`** --
-  `Models.test.tsx` mocks it as `{}` and the suite passes. Every capability
+  `provider_status` returns `ProviderCapabilities` and `ModelCapabilities`, both
+  mirrored into `src/types/providers.ts`, and **no field of either is read
+  anywhere in `src/`** -- `Models.test.tsx` mocks capabilities as `{}` and the
+  suite passes. Building the axes (ADR 0110) did not change that: it gave the
+  runtime a second answer to be ignored, not a reader. Every capability
   answer on `AI Models` comes from the hand-maintained `PROVIDERS` table in
   `src/screens/data.ts`, which `docs/PROVIDERS.md` runs three open
   disagreements against. ADR 0094's first draft called that mirror the guard

@@ -823,6 +823,7 @@ mod tests {
                 capabilities: crate::core::providers::ProviderCapabilities {
                     transcription: true,
                     chat_completion: false,
+                    speech_synthesis: false,
                     local: true,
                     requires_api_key: false,
                     supports_prompt_bias: true,
@@ -830,6 +831,10 @@ mod tests {
                     supports_segments: false,
                     model_management: true,
                 },
+                model_capabilities: crate::core::providers::model_capabilities(
+                    LOCAL_PREVIEW_PROVIDER_ID,
+                    "large-v3-q5_0",
+                ),
                 local_setup: Some(LocalProviderSetupStatus {
                     readiness: LocalProviderReadiness::Ready,
                     runner_ready: true,

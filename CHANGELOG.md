@@ -258,6 +258,33 @@ finding answered. Reported from the running host on 2026-08-11.
 
 ### Changed
 
+- **A capability is asked on two axes, and "does this stream" needs a model**
+  (ADR 0110, plan stage A2). *Which roles does this vendor serve* stays on
+  `ProviderCapabilities` and gains `speech_synthesis`; *does this model stream,
+  does it name the language it heard, does its voice stream* moved onto
+  `ModelCapabilities`, answered by `providers::model_capabilities(provider,
+  model)` — **both arguments always**, the shape `capture_limits` already had.
+  One OpenAI key serves `gpt-4o-transcribe`, which streams, and `whisper-1`,
+  which does not, so a contract answering that from the provider alone forces a
+  lie on whichever model loses the vote.
+  **A model answer is three-valued** — `supported`, `unsupported`, `unknown` —
+  because one drawn lane's model list belongs to the vendor and cannot be
+  enumerated ahead of time. A capability nobody has looked up is not a
+  capability that is absent, and a `bool` would have settled that at the point
+  where the value is written, where no reader can tell a guess from a
+  measurement.
+  **A lane cannot claim a role it did not register**: a registry test holds
+  `speech_synthesis` to `voice.is_some()` across the whole table, which is the
+  property ADR 0094 wanted from the type and could not get from a struct field.
+  Both lanes answer `unsupported` on every model field today — Groq's speech
+  endpoint takes a file and returns a result, and the local lane passes `-l` to
+  `whisper-cli` and puts the *requested* language back on the response, which is
+  echoing rather than reporting. **So the pair differentiates nothing yet**, and
+  the vendor whose two models disagree is proved by a fixture in `registry.rs`
+  rather than left unproved until its adapter lands. `cargo test` 748 passed / 3
+  ignored (**+8**, all new tests); `cargo check` 15 warnings unchanged. Nothing
+  in `src/` changed but the type mirror, and **no surface reads either axis** —
+  that seam is ADR 0106.
 - **The provider enum is gone; dispatch is a registry over three role traits**
   (ADR 0094, plan stage A1 — the first step of the speech track to change code).
   `core/providers/registry.rs` declares `Provider`, `SpeechProvider`,

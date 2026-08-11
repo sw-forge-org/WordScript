@@ -160,6 +160,15 @@ chat rather than after it**.
   the id table, and `VoiceProvider` is declared with no implementation. The
   record's other half — the provider axis splitting per role in the config — is
   not built and is not A1.
+- **A capability is asked on two axes** (ADR 0110). *Which roles does this
+  vendor serve* is the provider's question; *does this model stream, does it
+  name the language it heard* is the model's, because one OpenAI key serves
+  `gpt-4o-transcribe` and `whisper-1` and the local lane repeats it across
+  Parakeet's online and offline models. **Built 2026-08-11** as plan stage A2 —
+  `speech_synthesis` on the provider struct, the other three on
+  `ModelCapabilities`, resolved per `(provider, model)` and three-valued so an
+  unlooked-up capability is not reported as an absent one. Nothing reads either
+  axis yet; that is ADR 0106 and stage B1.
 - **No adapter lands before the row that operates it** (ADR 0109). An inert lane
   that says so is honest; a capability with no drawn control is not visible as
   missing at all. This is what gates Groq voice: `voice` is not in `JobKey`, and
