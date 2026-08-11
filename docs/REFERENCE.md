@@ -88,7 +88,18 @@ constants themselves were not re-derived and carry their own provenance
   lane with `whisper-cli` for STT and Ollama for cleanup.
 - The user stores their own Groq API key locally in the OS secret store.
 - The JSON config is scrubbed on save; old JSON Groq secrets are migrated
-  natively into the secret store.
+  natively into the secret store, after the config is copied aside.
+- **A credential is stored per `(provider, role, kind)`** (ADR 0105, built
+  2026-08-11), so clearing the chat credential leaves the speech one standing
+  and a role with no credential names what it is missing instead of spending
+  another role's. A save that names no role reaches every role the kind can pay
+  for — a key is a way into an account, and the drawn key row sits on the
+  connection. The key an older build stored as one string is adopted onto both
+  of Groq's roles on first read.
+- **A kind is `api_key` or `subscription`, and only the first exists in this
+  build.** A subscription is inadmissible for speech and voice in the type
+  (ADR 0102), Groq accepts an API key alone, and the local lane accepts no kind
+  at all — it authenticates against nothing rather than missing something.
 - `ProviderStatus` carries typed modes (`fast`, `quality`, `local`, later
   `self_hosted`), provider-axis capabilities for Transcription, Chat-Cleanup,
   Speech-Synthesis, Local, API-Key-Required, Prompt-Bias, Language, Segments
@@ -118,8 +129,10 @@ constants themselves were not re-derived and carry their own provenance
   same thing. Which vendors serve which role -- batch, streaming, detected
   language, voice -- is surveyed per row and per date in
   [PROVIDERS.md](PROVIDERS.md), and the planned contracts are ADR 0094 through
-  ADR 0097 plus ADR 0105 through ADR 0109. **ADR 0094's trait-and-registry half
-  and ADR 0110's capability axes are built** (2026-08-11); the rest describes
+  ADR 0097, ADR 0105 through ADR 0110, and ADR 0113 through ADR 0117.
+  **ADR 0094's trait-and-registry half,
+  ADR 0110's capability axes and ADR 0105's per-role credential are built**
+  (2026-08-11); the rest describes
   what does not run yet, and this section describes what does. Both lanes
   answer `unsupported` to streaming and to detected language on every model,
   which is the same statement the two sentences above make, in the type.
@@ -148,7 +161,11 @@ constants themselves were not re-derived and carry their own provenance
   local runner, local model path and local cleanup endpoint.
 - `self_hosted` is not an active product lane yet; the term stays reserved
   for later user-run remote or LAN services that would not be WordScript's
-  own hosted mode.
+  own hosted mode. **When it becomes one it carries speech as well as chat**
+  (ADR 0113): `/v1/audio/transcriptions` is a de-facto standard that
+  whisper.cpp's own `whisper-server` answers, so the lane's drawn refusal of
+  the listening jobs is a wrong sentence waiting on the gallery, not a
+  property of the lane. Synthesis on that lane is unread and unclaimed.
 - these terms must not be conflated in UI and docs while the second
   production lane and the guided setup path are still missing.
 

@@ -803,6 +803,90 @@ Status: Proposed | Accepted | Superseded by NNNN
   fixed-track grids, because **a fixed grid track does not degrade, it
   collides**.
 
+- [0112](0112-a-migration-with-no-installation-behind-it-is-ballast-and-the-import-door-is-not-the-config-door.md):
+  removes the on-disk compatibility layer instead of carrying it. Stage A3 had
+  to hold **three** layers over one API key at once to re-key it safely, and
+  `docs/STATUS.md` says there is nothing behind any of them — **no published
+  versioned releases**, which `check_app_update` reports honestly. So a path
+  that exists only to read an older *local* stored shape goes, together with its
+  field and the tests that hold it. **Three lookalikes stay**: normalization,
+  which canonicalizes every value including a fresh one; tolerance at a boundary
+  where something foreign arrives — an imported archive, an IPC payload, a
+  shortcut string from the UI; and a name that says *legacy* about a state
+  rather than a format. **The import door is not the config door**, which is why
+  `stt_hints` survives as a field a foreign document may carry while the
+  migration that rewrote this machine's profiles does not. The window closes at
+  the first published release, and the record says so rather than becoming a
+  precedent.
+- [0113](0113-the-openai-compatible-audio-shape-is-already-in-the-tree-and-it-reaches-two-more-lanes-for-a-base-url.md):
+  makes the OpenAI-compatible audio and chat shape one implementation
+  parameterized by base URL rather than one per vendor, and gives the
+  Self-hosted lane the three listening jobs. The finding is in this repo's own
+  code: `GROQ_API_BASE` is `https://api.groq.com/openai/v1` and `groq.rs:407`
+  posts to `{GROQ_API_BASE}/audio/transcriptions` — **the one integrated cloud
+  adapter is the OpenAI shape with a Groq host.** Two claims in
+  `docs/PROVIDERS.md` were corrected to get here, both the same mistake: a page
+  read correctly and a *"not"* written from it. A free base URL takes the
+  donor's `isSecureEndpoint` rule — HTTPS **or** a private host. Self-hosted
+  *synthesis* was not read and is not claimed.
+- [0114](0114-a-voice-provider-synthesises-through-one-method-and-streaming-grows-beside-it.md):
+  gives `VoiceProvider` its first method. ADR 0094 declared it empty because no
+  vendor shape had been read; fourteen have now been, across four protocol
+  shapes, and they agree that synthesis takes text plus an identifier plus a
+  format and returns audio. So **one method, `synthesize_speech`**, and
+  streaming grows beside it when a transport and a caller exist — the order
+  ADR 0095 already set for recognition. The voice is an optional field because
+  Azure puts it inside the model id and ElevenLabs beside it. The method
+  produces audio; ADR 0097 and ADR 0098 own what plays it.
+- [0115](0115-a-model-name-is-a-dated-row-in-one-catalogue-and-neither-runtime-spells-it-alone.md):
+  moves model identity into one versioned data file that Rust reads through
+  `include_str!` and TypeScript imports, held by a test — the shape
+  `regression_transcripts.json` plus `core::regression_corpus` already has.
+  Today a model id lives in three uncoordinated places and open disagreement 5
+  records that they have drifted. **Every lane keeps a free-typed id** beside
+  the list, because a catalogue is a snapshot. **The catalogue is not
+  `ModelCapabilities`**: one records what a vendor documents, the other what an
+  adapter asserts, and a catalogued-but-unadapted model answers `unknown`.
+- [0116](0116-a-vendor-comes-in-because-it-serves-a-job-better-and-its-own-module-needs-a-reason.md):
+  the admission rule for vendors. Only five of the ten drawn vendors transcribe,
+  and the four best at it were an aside headed *"for completeness"* — while
+  `known-issues/stt-prompt-leaks-into-the-transcript.md` stays open because
+  **Whisper's only bias channel is prompt text in the decoder context**, the
+  limitation ADR 0017, ADR 0080 and ADR 0081 all exist to contain. Deepgram,
+  ElevenLabs and AssemblyAI bias through a parameter that never becomes decoder
+  text. So they come in — and **a vendor gets its own module only for a reason
+  OpenRouter cannot already answer.** Surveying is not drawing is not building.
+- [0117](0117-azure-speech-is-a-cloud-credential-not-a-second-ladder-on-azure-openais-enterprise-row.md):
+  files Azure Speech (MAI-Voice-2) on **Cloud**, not on the Enterprise row Azure
+  OpenAI owns. Different host, header, body format, resource and key; no
+  deployment and no tenant, which is what this repo's own lane definition makes
+  the deciding test. It is the same relationship Polly has to Bedrock, and the
+  shared brand is what makes the wrong answer look right. The direct adapter is
+  **optional** — OpenRouter already serves `microsoft/mai-voice-2` — and buys
+  exactly one thing: SSML, and the eighteen emotion styles the two German voices
+  carry.
+- [0118](0118-the-speaking-set-is-complete-and-the-four-vendors-openrouter-does-not-carry-get-their-own-modules.md):
+  answers ADR 0116's test per vendor and ADR 0117's *optional*, on the owner's
+  instruction that the palette is offered whole — **the second time *no half
+  measures* has widened a scope**, after ADR 0096 did it for the lanes.
+  Cartesia, Bland and MiniMax get modules because OpenRouter does not carry
+  them; **Azure Speech gets one because OpenRouter carries it flattened**, and
+  SSML is where `mstts:express-as` and the eighteen German styles live. The
+  build order follows a **measurement on this machine**, not the vendors' pages,
+  because not one of them publishes a figure this repo will repeat. Cartesia's
+  3000 ms default buffer is named in advance as the trap it is.
+- [0119](0119-the-speaking-group-has-two-rows-because-a-persona-and-a-channel-are-not-the-same-job.md):
+  answers the drawing question ADR 0109 left with the owner, who delegated it.
+  **Two rows**: the desk speaks *as* WordScript (ADR 0043's one voice, one
+  body), the translation speaks somebody else's words in a language that is by
+  definition not the user's — different personas, different languages
+  (8 to 70+ across the candidates), different latencies, different budgets. So
+  `JobKey` gains `voice` **and** `translation_voice`, both on the `Voice` role
+  and one credential. **One row for translation, not one per language**: the
+  route is per language (ADR 0064), the model is not. It also names a defect —
+  `Translate.tsx` already sends the user to a group whose only row is about
+  coding agents.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

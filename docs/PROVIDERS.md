@@ -4,6 +4,19 @@ Status: 2026-08-11. Every capability row was read against the vendor's own
 documentation on that date and carries its source. Nothing here is measured on
 this machine.
 
+**Second pass, same day.** Seven vendors joined the survey (*Cloud, off the
+drawn set*), a section on **what a vendor actually costs to adapt** was added
+(*Adapter shapes*), and **two claims in the first pass were corrected**: that
+OpenRouter has no audio endpoint, and that speech has no OpenAI-compatible shape
+for the Self-hosted lane. Both were wrong in the same way and both made the
+build-out look more expensive than it is. The corrections stand where the claims
+did, with the reasoning, rather than being edited away -- and each grew a
+disagreement (10 and 11) because the drawing repeats them.
+
+**If you read one section, read *Adapter shapes*.** It is the one that answers
+*can this vendor be implemented*, and the answer is per protocol shape rather
+than per vendor or per model.
+
 > This is the reference for **what a provider offers**. It is not a statement of
 > what WordScript integrates. Today the runtime integrates exactly two
 > providers -- `groq` and `local_preview` -- and `AI Models` says so on itself.
@@ -76,11 +89,16 @@ actually serves behind it. **No other vendor on this page has this shape**, and
 for most of them it is not obtainable rather than merely absent -- see the same
 section.
 
-**So a credential is held per role, not per provider** (ADR 0105). One account
-may hold a key for recognition and a subscription for chat at once, which is why
-*follow the connection* follows the provider and never the credential: a speech
-job on a subscription-paid OpenAI connection resolves to no credential at all
-and names the one it needs, rather than borrowing one that cannot pay for it.
+**So a credential is held per role, not per provider** (ADR 0105, built
+2026-08-11). One account may hold a key for recognition and a subscription for
+chat at once, which is why *follow the connection* follows the provider and
+never the credential: a speech job on a subscription-paid OpenAI connection
+resolves to no credential at all and names the one it needs, rather than
+borrowing one that cannot pay for it. The runtime now stores one entry per
+`(provider, role, kind)` and refuses a kind a lane cannot authenticate with,
+with the vendor named. **The shapes in the table above are still not carried** —
+a base URL, three enterprise ladders and a token set are storage this build has
+no room for yet.
 
 ## The nine jobs
 
@@ -293,16 +311,61 @@ on the drawn set.
 
 ### OpenRouter
 
-Source: `openrouter.ai/docs/features/multimodal/audio`, read 2026-08-11.
+Source: `openrouter.ai/docs/guides/overview/multimodal/audio`, `/tts` and
+`/stt`, plus `openrouter.ai/blog/announcements/announcing-audio-apis`, read
+2026-08-11.
 
 One key, many models -- it reaches vendors that have no adapter of their own.
 
-- **Audio rides the chat endpoint**, not an audio endpoint: `/api/v1/chat/completions`
-  with an `input_audio` content type going in, and `modalities: ["text", "audio"]`
-  coming out.
-- **Audio output requires `stream: true`**; it arrives as SSE chunks on
-  `delta.audio`, base64 with transcripts.
-- **No streaming transcription of audio input is documented.**
+**This entry was written from one of three pages and understated the lane.**
+The multimodal page is correct about what it describes and was read correctly;
+the sentence built on it -- *"Audio rides the chat endpoint, **not** an audio
+endpoint"* -- was the wrong half. **There are two ways in, not one**, and the
+second is the one that matters to this product. Corrected 2026-08-11, same day,
+against the vendor's own audio-API pages.
+
+**The way in that this entry missed: dedicated audio endpoints.**
+
+- `POST /api/v1/audio/speech` (since 2026-04-18) and
+  `POST /api/v1/audio/transcriptions` (since 2026-07-22).
+- **They are OpenAI-SDK compatible against base URL
+  `https://openrouter.ai/api/v1`** -- the vendor documents pointing an OpenAI
+  client at that base URL as the supported path. **That is the same shape
+  `groq.rs` already builds** (`GROQ_API_BASE` is
+  `https://api.groq.com/openai/v1`, and the call at `groq.rs:407` posts to
+  `{GROQ_API_BASE}/audio/transcriptions`), which is why this lane costs a base
+  URL rather than an adapter.
+- Speech out returns a raw byte stream rather than JSON, MP3 or PCM, and
+  **streams** via the SDK's streaming response. Provider-specific options pass
+  through, including OpenAI's `instructions` field.
+- Transcription in takes base64 JSON on `input_audio` **or** an OpenAI-style
+  multipart file upload. Optional `language` hint.
+- **Operational ceilings, and they are tighter than the chat lane's:** a
+  60-second upstream timeout, no audio URLs, 25 MB on the multipart path, and
+  no SRT/VTT output. A meeting does not fit through this door.
+- Models are discovered with `?output_modalities=transcription` rather than
+  from the default catalogue. Named on the vendor's pages:
+  `openai/gpt-4o-mini-tts-2025-12-15`, `google/gemini-3.1-flash-tts-preview`,
+  `mistralai/voxtral-mini-tts-2603`, `microsoft/mai-voice-2`,
+  `fish-audio/s2.1-pro` for speech out; `openai/whisper-large-v3`,
+  `openai/gpt-4o-transcribe`, `openai/gpt-4o-mini-transcribe`,
+  `mistralai/voxtral-mini-transcribe`, `google/chirp-3` for transcription.
+- **Streaming transcription is still not documented**, and that half of the
+  original entry stands.
+
+**The way in that this entry described, and which is still true:** audio also
+rides `/api/v1/chat/completions` with an `input_audio` content type going in and
+`modalities: ["text", "audio"]` coming out, where **audio output requires
+`stream: true`** and arrives as SSE chunks on `delta.audio`, base64 with
+transcripts. That path reaches audio-native chat models
+(`google/gemini-2.5-flash`, `openai/gpt-4o-audio-preview`); the dedicated
+endpoints reach dedicated speech models. **They are two different product
+surfaces behind one key, and a reader who knows only the first concludes this
+lane cannot do the listening jobs.**
+
+- **The consequence for the drawing: `OpenRouter` is drawn `stt: false`**
+  (`src/screens/data.ts`), and that is now provably wrong on both paths. It is
+  recorded as open disagreement 10 rather than edited here.
 - Single bearer token. **Format support varies by the model behind it**, which
   means a capability answer on this lane is per-model and not per-provider.
   *This section originally called that "the one lane where `ProviderCapabilities`
@@ -311,6 +374,173 @@ One key, many models -- it reaches vendors that have no adapter of their own.
   contract built on 2026-08-11 puts the shape on `ModelCapabilities` for every
   lane. What is particular here is only that the values cannot be enumerated
   ahead of time, which is why the third answer -- `unknown` -- exists.
+
+---
+
+## Cloud, off the drawn set
+
+**Seven vendors that are not in `PROVIDERS` and belong in this survey.** The
+drawn ten were chosen when the question was *which language model cleans up a
+transcript*. Four of the seven below answer a different question -- *which
+recogniser hears correctly* -- and it is the one this product's most acute open
+defect turns on. Added 2026-08-11; the decision to survey them is ADR 0116, and
+surveying is not integrating.
+
+**Why they are here and not a footnote.** The two entries under the shape table
+already named ElevenLabs and Deepgram *"for completeness"*. That framing was
+wrong: `docs/known-issues/stt-prompt-leaks-into-the-transcript.md` is open,
+its cause is that **Whisper's only bias channel is free prompt text in the
+decoder context**, and every vendor in the first group below biases through a
+dedicated parameter that never enters the decoder's text. That is not a nicer
+feature. It is the absence of the defect class.
+
+### Deepgram
+
+Source: `developers.deepgram.com/docs/models-languages-overview` and
+`/docs/keyterm`, read 2026-08-11.
+
+| Job | Model | Notes |
+| --- | --- | --- |
+| speech, batch + stream | `nova-3`, `nova-3-general`, `nova-3-medical` | 60+ languages, interim results |
+| speech, stream | `flux-general-en`, `flux-general-multi` | 10 languages; **end-of-turn detection inside the model** |
+| speech, batch + stream | `nova-2`, `nova-2-general` plus nine domain variants | 40+ languages |
+
+- **Keyterm prompting is a query parameter, not a prompt.** `keyterm=` repeated
+  per term, up to 100 terms bounded by 500 tokens per request, on Nova-3 and
+  Flux. It takes **plain terms only** -- the legacy `keywords` weight and
+  intensifier syntax is gone. **It never enters the decoder's text**, which is
+  the whole reason this vendor is in this document.
+- Flux's end-of-turn detection is the capability *What this means for a language
+  pair* calls a segmenter, served by the recogniser rather than bolted in front
+  of it.
+- **Self-hosted exists and is not this product's self-hosted lane.** Deepgram
+  ships containers, but they speak Deepgram's protocol, need a GPU and an
+  enterprise licence, and **Flux must run in its own deployment, separate from
+  every other Deepgram model including Nova-3**. That is S3 against a different
+  base URL and an enterprise procurement, not the user-run OpenAI-compatible
+  server the Self-hosted lane describes. **Drawing it as a cell on that lane
+  would be a fiction.**
+- **The credential shape for a self-hosted deployment was not read.** Licence
+  key, per-request key or mTLS -- unverified, and not claimed.
+
+### ElevenLabs
+
+Source: `elevenlabs.io/docs/overview/models`, read 2026-08-11. The one vendor
+here that serves both listening and speaking well.
+
+| Job | Model | Notes |
+| --- | --- | --- |
+| speech, batch | `scribe_v2` | 90+ languages, **no streaming**, diarization to 32 speakers, keyterm prompting to 1000 terms |
+| speech, stream | `scribe_v2_realtime` | 90+ languages, **~150 ms published**, automatic language detection, VAD segmentation on silence |
+| voice | `eleven_v3`, `eleven_ttv_v3` | 70+ languages |
+| voice | `eleven_flash_v2_5` | 32 languages, **~75 ms published**, excluding application and network latency |
+| voice | `eleven_multilingual_v2` | 29 languages |
+| voice | `eleven_flash_v2` | English only, ~75 ms published |
+
+- **A thousand keyterms is an order of magnitude more than Deepgram's hundred**,
+  and this product's vocabulary is a list of names it already keeps.
+- Automatic language detection on the realtime model is the second lane after
+  OpenAI and xAI that can answer ADR 0099's question without a separate
+  detector.
+- **On-premise and on-device are early access, not general availability**
+  (announced for the first half of 2026), alongside VPC deployment on AWS
+  SageMaker and GCP Vertex. **Nothing should be scheduled against it as if it
+  had shipped.**
+
+### AssemblyAI and Speechmatics
+
+**Read from secondary sources only, and recorded as such.** Both belong in this
+survey on capability; neither has been read against its own documentation, which
+is this file's standard. **The rows below are therefore leads, not entries**,
+and each is a source-and-date line short of the bar every other row here meets.
+
+- **AssemblyAI** -- Universal-3.5 Pro, published 7.0 % aggregate WER;
+  `keyterms_prompt` documented up to 1500 words on the Pro tier, 200 to 1000 on
+  the older Universal-2 depending on tier; async and realtime tiers priced
+  separately, realtime the more expensive.
+- **Speechmatics** -- Melia-1, published 6.4 % aggregate WER, the best figure
+  in the comparison read; on-premises deployment offered; priced above the
+  others.
+
+**Before either is drawn or adapted, it gets a real read.** Two of this
+document's findings -- that Groq's speech path does not stream, and that
+Cartesia publishes no TTFB -- exist precisely because a search result said
+otherwise.
+
+### Microsoft Azure Speech -- the MAI-Voice family
+
+Source: `learn.microsoft.com/azure/ai-services/speech-service/mai-voices`, read
+2026-08-11. **Public preview**, without an SLA, and Microsoft says not to run
+production on it yet.
+
+| Model | What it is |
+| --- | --- |
+| `MAI-Voice-2` | highest fidelity, long-form with speaker consistency, 15 languages across 18 locales |
+| `MAI-Voice-2-Flash` | low latency, built for interactive agents, same language coverage |
+
+- **This is not Azure OpenAI, and the difference is the whole entry.** The host
+  is `https://{region}.tts.speech.microsoft.com/cognitiveservices/v1`, the
+  header is `Ocp-Apim-Subscription-Key`, the body is **SSML**, and the
+  credential is a Speech resource key plus a region. No deployment name, no
+  tenant. **It is a different service that shares a corporate name** -- the
+  same trap this document already flagged for Amazon Transcribe and Google
+  Cloud Speech-to-Text, and the reason ADR 0117 puts it on Cloud rather than
+  Enterprise.
+- **The voice id carries the model**: `de-DE-Klaus:MAI-Voice-2`,
+  `en-US-Harper:MAI-Voice-2-Flash`. A model picker on this lane picks a voice
+  and a model in one string, which is a shape the catalogue (ADR 0115) and the
+  voice contract (ADR 0114) both have to accommodate.
+- **German is served by two voices with eighteen emotion styles each**
+  (`de-DE-Klaus`, `de-DE-Mia`), addressed through `mstts:express-as` with a
+  `styledegree`. **No other vendor on this page carries German expressive
+  synthesis at that granularity**, and this product's owner works in German.
+- Instant voice cloning from a 5-60 second clip exists and is **gated** behind
+  Microsoft's Limited Access review with consent safeguards.
+- **`microsoft/mai-voice-2` is also on OpenRouter**, on S2, with no SSML and
+  therefore no emotion styles. That is the cheap door; this section is the
+  expensive one, and the difference between them is exactly the style control.
+
+### MiniMax
+
+Source: `platform.minimax.io/docs`, release notes and the T2A WebSocket guide,
+read 2026-08-11.
+
+| Job | Model | Notes |
+| --- | --- | --- |
+| voice | `speech-2.8-hd` | high fidelity |
+| voice | `speech-2.8-turbo` | the low-latency half of the pair |
+
+- **`speech-02-hd` is legacy.** The vendor's own model page files the Speech-02
+  series under legacy models; a request naming it is naming last generation.
+- `POST /v1/t2a_v2` on a **region-specific host** -- `api-uw.minimax.io` for the
+  western United States, `api.minimaxi.chat` for mainland China. A single base
+  URL does not serve both, which is a constant per deployment rather than per
+  vendor.
+- A T2A **WebSocket** path exists for real-time playback. 40 languages, voice
+  cloning from ~10 seconds, MP3/WAV/FLAC/PCM at selectable sample rates,
+  10 000 characters per request.
+
+### Bland
+
+Source: `bland.ai/speech` and `docs.bland.ai`, read 2026-08-11.
+
+| Job | Model | Notes |
+| --- | --- | --- |
+| voice | Bland Speech v3 | trained on conversational rather than studio audio |
+
+- **`POST /v1/speak`, bearer token, HTTP chunked *and* WebSocket streaming**,
+  PCM16 WAV at 44,1 kHz, $0,015 per 1000 characters pay-as-you-go. **It is a
+  standalone TTS API**, not only a component of the phone-agent platform it is
+  sold beside -- worth stating, because the vendor's own front page reads as a
+  call-centre product.
+- Stock voices are `Karen`, `Valentine`, `David`, `Allie`. Instant cloning from
+  about ten seconds; professional cloning wants thirty minutes or more.
+- **Neither a language list nor a latency figure is published on the pages
+  read.** For a product whose voice job is a short spoken reply, an unpublished
+  time-to-first-byte is the number that decides it, and this vendor does not
+  state one. Recorded as absent, not as slow.
+- **Not on OpenRouter.** So unlike the four vendors above, reaching it means S6
+  and a module of its own.
 
 ---
 
@@ -467,14 +697,47 @@ separately.
 
 ## Self-hosted
 
-An OpenAI-compatible chat server the user operates, on another machine. Base
-URL, a typed model id, an optional token.
+An OpenAI-compatible server the user operates, on another machine. Base URL, a
+typed model id, an optional token.
 
-**It does not transcribe, and the drawn screen already says the true thing:**
+**This section said speech has nothing to talk to here, and that contradicted
+this same file eleven paragraphs earlier.** The drawn sentence it endorsed --
 *"Speech has no OpenAI-compatible shape to talk to. Use Cloud or Local for the
-listening jobs."* A self-hosted chat endpoint is a chat endpoint. The listening
-jobs and the `voice` job say so and name the lane that can run them, rather than
-offering a picker with nothing in it.
+listening jobs."* -- reads as a fact about the world and is one about a
+2026-08-11 reading. The Local section above already records that whisper.cpp
+ships `whisper-server`, *"an HTTP server with an OpenAI-compatible API"*.
+Both cannot be true. Corrected 2026-08-11, same day.
+
+**`/v1/audio/transcriptions` is a de-facto standard, and a user-run server can
+speak it.**
+
+| Server | How it answers on that path | Source, read 2026-08-11 |
+| --- | --- | --- |
+| whisper.cpp `whisper-server` | serves `/inference` by default; `--inference-path /v1/audio/transcriptions` remaps it, and any client speaking the OpenAI audio API then works unmodified | `github.com/ggml-org/whisper.cpp` |
+| faster-whisper-server / speaches | OpenAI-compatible transcription and translation, word-level timestamps, SSE | project docs |
+| LocalAI | OpenAI-compatible `/v1/audio/transcriptions` | project docs |
+
+- **So the listening jobs get this lane, and the refusal has to go.** The drawn
+  `none:` sentences on `dictation`, `meetings` and `upload`
+  (`src/screens/data.ts`) are the correction's other half; a drawing changes in
+  the gallery first (ADR 0057), so this file records the disagreement --
+  number 10 below -- rather than pretending the screen already says it.
+- **The credential shape does not change.** Base URL, typed model id, optional
+  token is what the lane already carries, and it is what a transcription call on
+  this path needs. This is the cheapest capability this document found.
+- **A free base URL is a security question, and the donor already answered it.**
+  `src/utils/urlUtils.ts`'s `isSecureEndpoint` accepts HTTPS **or** a private
+  host, so a LAN server on plain HTTP works without licensing a bearer token
+  over the open internet.
+
+**What is not verified, and is therefore not claimed.** Only the transcription
+path was read. Whether a user-run server answers `/v1/audio/speech` for the
+`voice` job with the same reliability is **not established here** -- some do,
+the coverage was not surveyed, and the empty cell would otherwise read as a no.
+Recorded as unverified.
+
+**Chat is unchanged.** A self-hosted chat endpoint is a chat endpoint, and the
+five writing jobs already reach it.
 
 ---
 
@@ -500,17 +763,57 @@ row offers `Cartesia Sonic-3` and `Kokoro-82M (local)` and nothing else, with no
 provider mark and no credential control. So that step is gated on the drawing,
 and if the answer is not there when OpenAI lands, Local moves up.
 
+**The drawing question was answered on 2026-08-11 (ADR 0119), and the count was
+wrong.** It is the ninth job **and the tenth**: `voice` for the desk,
+`translation_voice` for the conversation. A job is the unit at which a provider,
+a model and a credential resolve, and two rows that pick different models are
+two jobs by that definition. The reasons are in the record -- a persona is not a
+channel, the target language is by definition not the user's, and a shared row
+would force one model to satisfy an 8-language local option and a 70-language
+conversation at once. **So F1 is no longer gated on an owner answer**; what
+remains is drawing two rows, which is the gallery's step.
+
+**And the palette behind those rows is now whole** (ADR 0118). Cartesia, Bland
+and MiniMax get modules because OpenRouter does not carry them; Azure Speech
+gets one because OpenRouter carries it without SSML, and SSML is the whole of
+what it is worth. **The order follows a measurement**, not this table: no vendor
+below publishes a figure this document will repeat as fact, so the output stream
+lands first (ADR 0097), then a time-to-first-byte on this machine, then the
+modules in the order that measurement justifies.
+
 The candidates, all read 2026-08-11:
 
-| Voice | Streaming | Languages | Published latency | Source |
-| --- | --- | --- | --- | --- |
-| Groq Orpheus | on the existing connection | English, Saudi Arabic | none published | Groq docs |
-| OpenAI `gpt-4o-mini-tts` | chunked transfer | 99+, voices English-optimized | none published | OpenAI docs |
-| xAI TTS | bidirectional websocket | 20, with `auto` | none published | xAI docs |
-| Mistral Voxtral TTS | not stated | 9, cross-lingual | none published | Mistral docs |
-| Cartesia Sonic | websocket | 34 | **none in the API reference** | Cartesia docs |
-| ElevenLabs `eleven_flash_v2_5` | websocket | 32 | ~75 ms, vendor-published, excluding application and network latency | ElevenLabs docs |
-| Kokoro-82M | local | 8 | n/a | model card |
+| Voice | Shape | Streaming | Languages | Published latency | Source |
+| --- | --- | --- | --- | --- | --- |
+| Groq Orpheus | S1/S2 | on the existing connection | English, Saudi Arabic | none published | Groq docs |
+| OpenAI `gpt-4o-mini-tts` | S2 | chunked transfer | 99+, voices English-optimized | none published | OpenAI docs |
+| xAI TTS | S4 | bidirectional websocket | 20, with `auto` | none published | xAI docs |
+| Mistral `voxtral-mini-tts-2603` | S2 via OpenRouter, else S3 | not stated | 9, cross-lingual | none published | Mistral docs |
+| Cartesia Sonic | S4 | websocket | 34 | **none in the API reference** | Cartesia docs |
+| ElevenLabs `eleven_flash_v2_5` | S4 | websocket | 32 | ~75 ms, vendor-published, excluding application and network latency | ElevenLabs docs |
+| ElevenLabs `eleven_v3` | S4 | websocket | 70+ | none published | ElevenLabs docs |
+| **`microsoft/mai-voice-2`, via OpenRouter** | **S2** | per the endpoint | 15 languages, 18 locales | none published | OpenRouter docs |
+| **Azure Speech `MAI-Voice-2-Flash`** | **S5** | via the Speech SDK | 15 languages, 18 locales | none published; the vendor calls it low-latency | Microsoft Learn |
+| **Azure Speech `MAI-Voice-2`** | **S5** | via the Speech SDK | 15 languages, 18 locales | none published; **the vendor states it prioritises naturalness over latency** | Microsoft Learn |
+| **`google/gemini-3.1-flash-tts-preview`, via OpenRouter** | **S2** | per the endpoint | multilingual, not enumerated on the page read | none published | OpenRouter docs |
+| **MiniMax `speech-2.8-turbo`** | **S4/S6** | T2A websocket | 40 | none published | MiniMax docs |
+| **MiniMax `speech-2.8-hd`** | **S4/S6** | T2A websocket | 40 | none published | MiniMax docs |
+| **Bland Speech v3** | **S6** | chunked and websocket | **not published** | **not published** | bland.ai/speech |
+| Kokoro-82M | S7 | local | 8 | n/a | model card |
+
+**Fourteen candidates and not one published time-to-first-byte that this
+document will repeat as fact.** Two vendors now say something adjacent --
+Microsoft calls Flash low-latency and says plainly that MAI-Voice-2 trades
+latency for naturalness -- which is a vendor's ranking of its own pair, not a
+number. **The row that decides this job is still a measurement nobody has
+taken**, and that has not changed since the seven-row version of this table.
+
+**The shape column is the new information here.** Four of the seven additions
+cost no adapter at all, because OpenRouter serves them on S2. That is the
+difference between *fourteen candidates* reading as fourteen build decisions and
+reading as what it is: **one adapter, plus four modules** — Cartesia, Bland and
+MiniMax because OpenRouter does not carry them, Azure Speech because it carries
+it without the SSML that is the point of it (ADR 0118).
 
 - **Cartesia publishes no time-to-first-byte in its API reference.** ADR 0030
   and the drawn agent window both carry a figure for Sonic-3; whatever its
@@ -556,21 +859,93 @@ talking.
 | GCP Vertex AI | no | no | n/a | n/a |
 | Self-hosted | no | no | n/a | n/a |
 | Local (whisper.cpp) | yes, today | possible, not on today's path | per-result | no |
+| **Deepgram** | yes | yes, interim results | not documented on the page read | not documented on the page read |
+| **ElevenLabs** | yes, `scribe_v2` | yes, `scribe_v2_realtime` | **yes, on the realtime model** | to 32 speakers, batch |
+| **AssemblyAI** | yes | yes | not read | not read |
+| **Speechmatics** | yes | yes | not read | not read |
 
-For completeness, two vendors outside the drawn set that ADR 0030 named for the
-spoken half and that turn out to serve recognition as well:
+**The four new rows were an aside under this table and are now sections of their
+own** (*Cloud, off the drawn set*), because *"for completeness"* was the wrong
+frame for the vendors that answer this product's most acute open defect. The
+two right-hand columns carry *not documented on the page read* and *not read* as
+different statements: the first means a page was read and did not say, the
+second means no vendor page was read at all.
 
-- **ElevenLabs** -- `scribe_v2` (90+ languages, batch, keyterm prompting up to
-  1000 terms, entity detection across 65 types, diarization up to 32 speakers)
-  and `scribe_v2_realtime` (90+ languages, streaming, ~150 ms published,
-  automatic language detection, VAD-based segmentation on silence).
-- **Deepgram** -- `flux-general-en` / `flux-general-multi` with
-  **model-integrated end-of-turn detection**, built for voice-agent pipelines;
-  `nova-3` / `nova-3-general` / `nova-3-medical` at 60+ languages with realtime
-  multilingual transcription; `nova-2-*` variants at 40+. The models overview
-  page did **not** document interim results, language detection, diarization or
-  the Aura text-to-speech family -- those are absent from the page read, not
-  known to be absent from the product. Recorded as unverified rather than as no.
+**And one column this table does not have: how the recogniser is biased.** It is
+the column that matters most to a dictation product and it does not fit an
+axis-per-capability table, so it is stated here instead. Whisper -- on Groq,
+on OpenAI, and locally -- takes bias as **free prompt text in the decoder
+context**, which is why `docs/known-issues/stt-prompt-leaks-into-the-transcript.md`
+exists and why ADR 0017, ADR 0080 and ADR 0081 all exist to contain one defect
+class. Deepgram (`keyterm=`, to 100 terms), ElevenLabs (to 1000 terms) and
+AssemblyAI (`keyterms_prompt`) take it as **a parameter that never becomes
+decoder text**. The defect cannot occur on those lanes. That is a capability
+difference this table would otherwise hide.
+
+---
+
+## Adapter shapes, and what a vendor actually costs
+
+**The question this table answers is the one a vendor list cannot.** *Can these
+models be implemented* has no answer per model and no useful answer per vendor.
+It has an answer per **protocol shape**, because a shape is what an adapter
+implements and a vendor is only a set of constants on top of one. The eighteen
+vendors on this page collapse into seven shapes, and two of those already exist
+in the tree.
+
+Read this before pricing any vendor request. Added 2026-08-11.
+
+| Shape | What it is | Who is behind it | Roles | Cost |
+| --- | --- | --- | --- | --- |
+| **S1** | OpenAI-compatible batch speech -- `POST {base}/audio/transcriptions`, multipart or base64, JSON back | Groq (**built**), OpenAI, OpenRouter, Self-hosted (`whisper-server`, speaches, LocalAI) | `dictation`, `meetings`, `upload` | **the shape is already written.** `groq.rs:407` posts to `{GROQ_API_BASE}/audio/transcriptions`. Parameterize the base URL and each further vendor is a registry line |
+| **S2** | OpenAI-compatible synthesis -- `POST {base}/audio/speech`, JSON in, audio bytes out | OpenAI, OpenRouter | `voice` | one module, and it is S1's twin. Through OpenRouter it reaches **five TTS vendors on one key** |
+| **S3** | Vendor-proprietary REST speech, bearer token, own JSON | Deepgram, ElevenLabs, AssemblyAI, Speechmatics, xAI, Mistral | `dictation`, `meetings`, `upload` | one module per vendor, reusing S1's HTTP client. No new credential shape |
+| **S4** | Duplex websocket, own framing | xAI, Deepgram, ElevenLabs, AssemblyAI, Mistral Voxtral Realtime, Cartesia, MiniMax, Bland, OpenAI Realtime | streaming `dictation`, streaming `voice` | **one transport, built once** -- `reqwest` carries no websocket, so it is a dependency decision (plan step D2) -- then one module per vendor for handshake and framing |
+| **S5** | SSML over a region-scoped host, non-bearer header | Azure Speech (MAI-Voice-2, MAI-Voice-2-Flash) | `voice` | one module **plus a new credential ladder**. The only shape here that costs more than a module -- and avoidable, see below |
+| **S6** | Vendor-proprietary REST synthesis, bearer token | Bland, MiniMax | `voice` | one module per vendor, reusing S1's client |
+| **S7** | Local process, no network, no credential | whisper.cpp (**built**), sherpa-onnx/Parakeet, Kokoro-82M | speech, `voice` | module plus a managed runtime and its dependency chain -- the cost Phase 5 already prices |
+
+### The three sentences this table exists to make
+
+**1. S1 is already in this codebase, and nobody noticed.** Groq's speech call
+is not a Groq shape; it is the OpenAI shape against a Groq host, and the
+constant says so. The distance between *one integrated cloud lane* and *four*
+is a base URL, a credential and a registry line -- **not four adapters.** This
+is the single cheapest capability on this page and it was hidden behind the two
+corrected sentences above.
+
+**2. Several vendors need no adapter at all.** Every model OpenRouter serves is
+reachable through S1 and S2 once one registry entry exists. That includes
+`microsoft/mai-voice-2`, `google/gemini-3.1-flash-tts-preview`,
+`mistralai/voxtral-mini-tts-2603` and `openai/gpt-4o-mini-tts-2025-12-15` --
+four vendors' synthesis, on one key, for zero further modules.
+
+**And four do need one, which the owner scoped on 2026-08-11: the palette is
+offered whole** (ADR 0118). **Cartesia, Bland and MiniMax are not on OpenRouter
+at all**, so there is no substitute door. **Azure Speech is on it and arrives
+flattened** -- OpenRouter carries `microsoft/mai-voice-2` without SSML, and SSML
+is where `mstts:express-as` lives, so the eighteen emotion styles on
+`de-DE-Klaus` and `de-DE-Mia` are reachable only through the ladder. That is
+what its module buys, stated so a later reader does not have to re-derive it.
+**The test in ADR 0116 still governs the next vendor**: a complete palette today
+is not a licence to add a module per name later.
+
+**3. The expensive-looking category is one cost, not nine.** S4 reads as nine
+vendors of websocket work. It is one transport decision plus nine thin framing
+modules, and the transport is already owed to plan step D2 for OpenAI Realtime
+alone. A streaming vendor added after that one is a module, not an
+infrastructure project.
+
+### What this does not say
+
+- **It does not rank vendors**, and it does not say which to build. That is
+  ADR 0116's job and the roadmap's.
+- **It does not claim a shape is easy because it is shared.** S1 covers four
+  lanes and still owes each of them a credential, a capability answer and a
+  model list.
+- **It prices modules, not correctness.** A vendor whose adapter is one module
+  can still be the wrong vendor for a job, and every latency figure on this page
+  is still published rather than measured.
 
 ---
 
@@ -612,6 +987,11 @@ record narrows a disagreement; it does not close one. **All nine are still
 open**, because each is closed by the drawing and the runtime agreeing, which is
 code, and none of this is built.
 
+**The list grew to eleven later the same day**, when this document's two
+corrected sentences turned out to have counterparts in the drawing. A wrong
+sentence in a survey is an edit; the same sentence on a surface is a
+disagreement, because the gallery owns it (ADR 0057).
+
 1. **`xAI` is drawn `llm: false`.** It serves chat models. Either the drawing
    scopes the entry to speech deliberately, or it is short a capability.
 2. **`Gemini` is drawn `stt: false`.** It processes audio through the
@@ -628,13 +1008,26 @@ code, and none of this is built.
    comes first (ADR 0057). *ADR 0109 adds the ninth `JobKey` and gates the voice
    adapter on the row; the drawing question is unchanged and still the
    owner's.*
+   **Answered 2026-08-11 (ADR 0119), and it was worse than undecided.**
+   `Translate.tsx` already tells the user the voice is *"chosen on AI Models
+   like the rest"* and draws a button there -- pointing at a group whose only
+   row is explicitly about coding agents. **Two rows**: a persona and a channel
+   are different jobs, they need different languages, different latencies and
+   different budgets. So `JobKey` gains `voice` **and** `translation_voice`,
+   both on the `Voice` role and therefore on one credential. The route stays per
+   language; the model does not. **What remains is the drawing**, which is the
+   gallery's, and the disagreement stays open until the two rows stand.
 5. **The drawn `LANES` model names are a generation behind.**
    `Cloud.translate` and `Cloud.assistant` both default to `claude-sonnet-4-6`
    and offer `claude-opus-4-7`; the whole Enterprise lane carries the same two
    ids under an `anthropic.` prefix. The current ids are `claude-sonnet-5` and
    `claude-opus-5`. A model name on a surface goes stale on the vendor's
    schedule, not this repo's, which is an argument about **where model names
-   should live** rather than about these particular strings.
+   should live** rather than about these particular strings. *That argument now
+   has an answer: ADR 0115 makes a model a dated row in one catalogue that Rust
+   and the drawing both read. The particular strings are deliberately still
+   wrong here -- correcting them by hand is the same work twice, at the place
+   the catalogue replaces.*
 6. **`Cloud.upload` already draws a per-job provider override to OpenAI**, and
    the model it defaults to is `whisper-1` -- the one OpenAI documents as
    explicitly not supporting streaming. The override itself is the shape Phase 4
@@ -666,6 +1059,20 @@ code, and none of this is built.
    default is playing instead, which `PLATFORMS.md` requires and no drawn row
    can currently carry -- and it fixes the scope confusion underneath, since
    this is a machine-wide setting drawn on a window that may stand three times.*
+10. **The Self-hosted lane's drawn refusal of the listening jobs is wrong.**
+    `src/screens/data.ts` carries *"Speech has no OpenAI-compatible shape to
+    talk to. Use Cloud or Local for the listening jobs."* on `dictation`,
+    `meetings` and `upload`. `/v1/audio/transcriptions` is a de-facto standard
+    and a user-run `whisper-server` answers on it -- see *Self-hosted* above,
+    where this document corrected its own half of the same sentence. **The
+    surface's half is a drawing and grows in the gallery** (ADR 0057). Until
+    then a lane that can hear says it cannot. ADR 0113 carries the decision.
+11. **`OpenRouter` is drawn `stt: false`.** It serves transcription on a
+    dedicated endpoint *and* through the chat surface -- see *OpenRouter*
+    above. The boolean is wrong on both paths, and it is the one that keeps the
+    cheapest additional speech lane on this page invisible on the screen that
+    picks between lanes. Same shape as disagreement 1 (xAI's `llm: false`), and
+    it resolves the same way: the drawing decides, not an implementation.
 
 ---
 
@@ -713,7 +1120,10 @@ Enterprise section above, and the model-versus-provider axis in ADR 0110.
 TTS helper, and no voice family in a registry that otherwise enumerates
 transcription, chat, enterprise, local and diarization models. So for `voice`
 (ADR 0109) there is no worked implementation to read here, and the survey's
-seven candidates are the whole of what this repo has to go on.
+candidates -- fourteen after the second pass, seven when this paragraph was
+written -- are the whole of what this repo has to go on. **That absence is why
+ADR 0114 writes the voice contract from vendor documentation rather than from a
+working example**, and why it commits to one method instead of guessing four.
 
 ## Maintaining this document
 
@@ -726,5 +1136,18 @@ seven candidates are the whole of what this repo has to go on.
   you.
 - **State what does not work as a sentence.** An empty cell is indistinguishable
   from an unresearched one; `src/screens/data.ts:264` is the pattern to follow.
+- **One page is not one API, and a negation is the sentence to distrust.** Both
+  corrections made on 2026-08-11 were the same mistake in two places: a page was
+  read correctly and a *"not"* was written from it. OpenRouter's multimodal page
+  is true and simply does not mention the two dedicated audio endpoints; the
+  Self-hosted claim was contradicted eleven paragraphs earlier **in this same
+  file**. So: before writing that a vendor cannot do something, look for the
+  second page -- and before writing it about a lane, grep this file for the
+  opposite claim.
+- **A model id belongs in the catalogue; a reason belongs here** (ADR 0115).
+  When the catalogue lands, the model tables above become its source rows rather
+  than a second copy of them. What this document keeps is what a data row cannot
+  carry: why a lane behaves as it does, what a vendor does not serve, and what
+  was read but not verified.
 - When a lane becomes integrated, this file does not record that. STATUS.md
   does, and `AI Models` stops greying the control out.

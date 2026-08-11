@@ -34,7 +34,8 @@ that changes a count says by how much and why, in its commit.
 `cargo test` **748 passed / 3 ignored**, and the frontend suite reads **480
 across 39 files** — the six extra cases are `b330815`'s sidebar work, not this
 track's. `cargo check` stays at 15. A step compares against the last line here,
-not against the opening one.
+not against the opening one. After A3: `cargo test` **760 passed / 3 ignored**,
+frontend **480 across 39 files** unmoved, `cargo check` still 15.
 
 **The rules no step may break**, restated from the records because a plan is
 where they get quietly dropped: no partial result reaches the session reducer
@@ -116,6 +117,91 @@ existing shape rather than inventing one.
 **Not in this step:** the OAuth flow. A3 is the shape a token set will be stored
 in; acquiring one is D3.
 
+### A4. The provider axis in the config (ADR 0094's second half)
+
+**Added 2026-08-11, while A3 was being planned.** It is the one record this page
+carried no position for and did not notice: ADR 0094 splits the provider axis in
+the config as well as in the dispatch, `docs/spec/SPEC.md` has said *not built*
+about it since A1, and no step here claimed it. A3's *config migration* line
+reads as if it did, and it does not — A3 re-keys a **credential**, which is a
+different thing in a different store.
+
+- **Requires** — A1, A3. The credential resolution has to exist first, because
+  an override is exactly the case where a job's provider and the connection's
+  differ, and resolving a credential across that difference is the security rule
+  (ADR 0094). **A5 is not a precondition and still runs first** — see its own
+  entry for why.
+- **The migration may fall back to defaults.** The owner scoped this on
+  2026-08-11 (ADR 0112): this machine's `config.json` is disposable, so a stored
+  value that does not map cleanly onto the new shape is dropped rather than
+  rescued. The `core::backup` snapshot stays anyway; it costs two lines and the
+  record requires it.
+- **Touches** — a profile stops holding one `provider` field and starts holding
+  a resolved default plus a **sparse override per job**; the resolver returns
+  the provider and, through A3, which credential answers for it. Every call site
+  that reads `config.provider` today — `transform`, `translate`, `agent`,
+  `prompt_enhance`, `transcript_store`, `history`, `lib.rs`'s transcription —
+  asks for its job's provider instead. A config migration, therefore a
+  `core::backup` snapshot.
+- **Validates** — `cargo test`; a migration test that a config holding one
+  provider lands on the same resolved default with no override; a test that an
+  overriding job takes its own credential and **never the default's**.
+- **Done when** — *recognize with Groq, transform with something stronger* is
+  expressible, and a job that overrides names both its provider and its
+  credential.
+
+**Not in this step:** the drawing. `Models.tsx` already draws the override and
+the per-job key row (`Follows`, the `override && ...` branch) — this is the
+runtime catching up to a drawing that has been ahead of it since Leg 6.
+
+**Where it sits:** it blocks nothing scheduled before D1 and D1 does not need
+it — one connection is enough for one adapter. It is a precondition for the
+*second* adapter being useful, which is where "one provider per profile" stops
+expressing what the user has.
+
+### A5. Drop the on-disk compatibility layer (ADR 0112)
+
+**Added 2026-08-11, and it runs before A4.** A3 had to carry three
+compatibility layers over one API key to re-key it safely; the owner's answer
+was that nothing is behind any of them. `docs/STATUS.md` says it in the tree —
+**no published versioned releases**, and `check_app_update` reports the same —
+so every one of these paths serves a case that exists on one machine whose owner
+has written it off.
+
+- **Requires** — A3. The adoption of a pre-role credential entry is one of the
+  paths being removed, so removing it first would have meant re-keying without
+  one.
+- **Touches** — `core/config.rs` loses the legacy secret field and its three
+  helpers, the millisecond timeout fields, the global `auto_paste`, the shortcut
+  and profile migration bodies, `LegacyTextRules`,
+  `should_reseed_curated_text_profiles` and
+  `migrate_global_settings_to_active_profile`; `providers/groq.rs` loses the
+  retired service names, the pre-role entry and the adoption path;
+  `core/shortcut.rs` stops accepting pynput tokens, a form only the removed
+  sidecar produced (ADR 0091); `src/lib/textProfiles.ts` loses its bias-policy
+  migration and the `auto_detect_mode` fallback. **The schema counters stay**
+  and so does `without_secrets()` — read ADR 0112's consequences before deleting
+  either.
+- **Validates** — `cargo test` and `npm test`, both **down** by the cases that
+  held a migration and unchanged in every case that holds a rule; the difference
+  is which sentence the test name makes, and the step states the count and the
+  reason per suite. `npm run build`. A test that a config written by *this*
+  build still round-trips, because that is the shape the removal must not touch.
+- **Done when** — no field exists whose only purpose is to read a shape this
+  build does not write, and `stt_hints` still applies to an imported document
+  (ADR 0112's import door).
+
+**Not in this step:** any tolerance at a boundary where something foreign
+arrives — the archive import, IPC payloads, a shortcut string typed into the UI
+— and any name that says *legacy* about a state rather than a format
+(`insert_transcription_from_legacy` is on the live path). A sweep matching the
+word takes all three; ADR 0112 separates them and is the brief.
+
+**Why before A4:** A4 rewrites the provider axis in `core/config.rs`, the same
+file this step shrinks. Doing it second is a smaller edit against a smaller
+file, and A4 then inherits the licence this step establishes — fall back to
+defaults rather than build a rescue path.
+
 ---
 
 ## Stage B — the seam and the ninth job
@@ -142,20 +228,76 @@ exists (0096), because the runtime denies the role (this step), or because a
 credential is missing for that role (A3). One greyed control with one hint
 conflates them, and the surface has drawn vocabulary for all three.
 
-### B2. `voice` becomes the ninth job (ADR 0109, type half)
+### B2. `voice` and `translation_voice` become the ninth and tenth jobs (ADR 0109, ADR 0119)
+
+**Widened 2026-08-11.** It was one job; ADR 0119 answered the drawing question
+it deferred and the answer is two.
 
 - **Requires** — nothing technical. **Independent of A and B1** and can run in
   parallel.
-- **Touches** — `JobKey` gains `voice`; `LANES`'s `Record<JobKey, LaneJob>`
-  either gains a ninth entry per lane or the type says the job is off the lane
-  axis. **The `Speaking` group is already drawn off-axis, so the type follows
-  the drawing** — inventing four lane rows for it is the failure mode.
-- **Validates** — `npm test`, `npm run build`, `port:diff` at 6 | 6.
+- **Touches** — `JobKey` gains **`voice` and `translation_voice`**; `LANES`'s
+  `Record<JobKey, LaneJob>` either gains entries per lane or the type says these
+  jobs are off the lane axis. **The `Speaking` group is already drawn off-axis,
+  so the type follows the drawing** — inventing four lane rows apiece is the
+  failure mode. Both resolve the `Voice` role, so **one credential per provider
+  serves both** (ADR 0105) and neither is admissible for a subscription
+  (ADR 0102) — those rules need no change, only a second name to hold.
+- **Validates** — `npm test`, `npm run build`, `port:diff` at 6 | 6 **until the
+  second row is drawn**, and at whatever the gallery settles on after.
 - **Done when** — ADR 0094's `VoiceProvider`, ADR 0102's inadmissibility rule
-  and ADR 0105's role resolution all name a job that exists.
+  and ADR 0105's role resolution all name jobs that exist, and
+  `Translate.tsx`'s *Open AI Models* button has a row to point at.
 
-**Not in this step:** where the translation voice sits. That is the open owner
-question and it gates F1, not this.
+**Where the translation voice sits is no longer open** (ADR 0119): two rows in
+the `Speaking` group, because a persona and a channel need different languages,
+different latencies and different budgets. **The route stays per language; the
+model does not** — one connection serves both directions of one conversation,
+and the per-language voice is chosen on that row because on some lanes the voice
+*is* the model id.
+
+**Not in this step:** the drawing. Two rows is a decision; two rows on a screen
+is a gallery change (ADR 0057), and the preset select outgrows two options the
+moment it carries seven providers.
+
+### B3. The model catalogue (ADR 0115)
+
+**Added 2026-08-11 by the vendor-intake pass.** It is the step open disagreement
+5 has been asking for since the survey was written, and the one no record had a
+position for.
+
+- **Requires** — A1 (provider ids to key rows on), A2 (`ModelCapabilities`'s
+  vocabulary exists, so the schema does not invent a second one). **Independent
+  of B1 and B2** — runs beside either.
+- **Touches** — one versioned data file carrying `(provider, role, model_id,
+  documented streaming, languages, source, read_date)`; a Rust loader over
+  `include_str!` behind a version constant — **the shape
+  `core::regression_corpus` already has, including the schema file beside it**;
+  the frontend importing the same file so `LANES[lane].jobs[job].models` stops
+  being a literal array. Every lane keeps its free-typed model id **beside** the
+  catalogue list, not instead of it. `core/config.rs`'s
+  `DEFAULT_CORRECTION_MODEL` and its neighbours resolve from the catalogue.
+- **Validates** — `cargo test`: every row's provider resolves against the
+  registry; **every row carries a non-empty source and read-date**, which is the
+  rule `docs/PROVIDERS.md` states in prose and nothing enforces; a model absent
+  from the catalogue still round-trips as a typed override rather than being
+  refused. `npm test`, `npm run build`. `npm run port:diff` moves with the
+  drawing, at whatever count the gallery settles on.
+- **Done when** — no Rust adapter and no `data.ts` entry spells a model id as a
+  literal outside that file, and adding a model to a lane is a data row rather
+  than an edit in two languages.
+
+**Why Stage B and not Stage A.** Stage A is the runtime contract, and none of
+A1–A5 names a real vendor's model. This step names dozens, and it changes
+`LANES` — so it is drawing-adjacent and grows in the gallery, which is what
+Stage B is for. **Why not later:** D1 is the first step that would otherwise
+hardcode a vendor's model ids the old way, and a catalogue landing after D1 is a
+retrofit of the thing the catalogue exists to prevent.
+
+**The trap this step must not fall into.** The catalogue is not
+`ModelCapabilities` and must not be derived from it or into it. One records what
+a vendor documents, the other what an adapter asserts; a catalogued model with
+no adapter answers `unknown`. ADR 0115 states the distinction and ADR 0106 is
+the record of what happens when a mirror gets described as a guard.
 
 ---
 
@@ -214,13 +356,62 @@ and ADR 0098 says so in its own consequences.
 
 ### D1. OpenAI, batch speech and chat (ADR 0096 step 1)
 
-- **Requires** — A1, A2, A3, B1.
+- **Requires** — A1, A2, A3, B1, **B3** (its model ids are catalogue rows, not
+  literals — added 2026-08-11).
 - **Touches** — one new provider module plus one registry line. **If it touches
-  anything else, stage A was incomplete** and the fix belongs there.
+  anything else, stage A was incomplete** and the fix belongs there. **One
+  addition from ADR 0113:** the request building for
+  `/audio/transcriptions`, `/audio/speech` and `/chat/completions` lands as a
+  helper parameterized by base URL and credential rather than inline, because
+  `groq.rs` already builds the same three paths against `GROQ_API_BASE` and D1a
+  needs the third and fourth caller. **Extracting it here costs a parameter;
+  extracting it after D1a costs a refactor of three call sites.**
 - **Validates** — `cargo test`, `npm run audit` after the dependency change, and
-  the surface still says what is true for every lane that is still inert.
+  the surface still says what is true for every lane that is still inert. **Plus
+  one from ADR 0113:** a test that Groq and OpenAI reach the shared helper
+  rather than each building the request themselves.
 - **Done when** — a second lane can be operated, and `AI Models` **keeps its
   banner**, because the screen is whole only when the last lane lands.
+
+### D1a. OpenRouter and Self-hosted speech, on the shape D1 extracted (ADR 0113)
+
+**Added 2026-08-11.** It is not a new adapter shape. It is D1's shape reaching
+two more lanes for a base URL, which is what ADR 0113 found in `groq.rs:407`.
+
+- **Requires** — D1 (the shared helper), A3 (both resolve a credential per
+  role), B3 (both lanes' model ids are catalogue rows). **Not gated on a drawing
+  answer** — unlike F1.
+- **Touches** — two registry entries: `openrouter`, and the Self-hosted lane
+  gaining `SpeechProvider`. Both call D1's helper with a different base URL.
+  OpenRouter's is `https://openrouter.ai/api/v1`; Self-hosted's is the URL the
+  user typed, gated by `isSecureEndpoint` — HTTPS **or** a private host.
+  **Their operational ceilings are not shared**: OpenRouter documents a
+  60-second upstream timeout and 25 MB multipart, which `capture_limits` already
+  answers per provider and model and must keep answering separately.
+  `src/screens/data.ts`'s Self-hosted `none:` sentences on `dictation`,
+  `meetings` and `upload`, and `OpenRouter`'s `stt: false`, are corrected in the
+  same commit — **a drawing, so the gallery first** (ADR 0057, open
+  disagreements 10 and 11).
+- **Validates** — `cargo test`: a fixture per lane proving the helper is called
+  rather than copied; a test that a self-hosted URL failing `isSecureEndpoint`
+  is refused **before** a token is attached to it. `npm run port:diff` at the
+  settled count.
+- **Done when** — two lanes the drawn matrix currently calls deaf can
+  transcribe, and a third OpenAI-compatible vendor after them costs a base URL
+  and a registry line.
+
+**Why this step matters more than its size.** ADR 0096 pins OpenAI, Groq voice
+and Local, and leaves the rest unordered; this recommends where OpenRouter's and
+Self-hosted's *speech* role lands inside that remainder. **If F1 stays gated on
+the owner's drawing answer, this is the ungated path to a second and third
+working speech lane** — and through OpenRouter it is also the path to four
+vendors' synthesis without a module each. It does not touch their *chat* role,
+which stays in G3, and it does not amend ADR 0096.
+
+**Not in this step:** self-hosted *synthesis*. ADR 0113 is scoped to
+`/v1/audio/transcriptions` because that is what was read; whether a user-run
+server answers `/v1/audio/speech` as reliably is unverified, and a `voice` role
+on that lane needs its own reading first.
 
 ### D2. The streaming contract (ADR 0095)
 
@@ -292,12 +483,33 @@ work has a shape and before any surface tries to use a window.
 
 ## Stage F — voice and the local lane
 
-### F1. Groq voice (ADR 0096 step 2) — **gated**
+### F1. Groq voice (ADR 0096 step 2) — **ungated 2026-08-11**
 
-- **Requires** — B2, **plus the owner answering where the translation voice sits
-  on `AI Models`**, plus the gallery growing whatever row that answer implies.
-- **If the answer is not there when D closes, F3 moves up.** Nothing about the
-  local lane depends on it.
+**It was gated on an owner question and no longer is.** ADR 0119 answers where
+the translation voice sits: two rows. What remains is drawing them, which is a
+gallery step rather than a question waiting on somebody.
+
+- **Requires** — B2, **B3** (Orpheus's ids are catalogue rows), plus the gallery
+  growing the two rows ADR 0119 decided. **ADR 0109's rule is untouched** — no
+  adapter before the row that operates it — so the row is still a precondition;
+  it is simply a known one now.
+- **Touches** — one addition from ADR 0114: **`VoiceProvider` grows its first
+  method here**, `synthesize_speech`, and gets its first implementation in the
+  same step. The contract is designed — ADR 0114 wrote it from fourteen vendors'
+  documented request shapes — but a trait method with no implementation behind
+  it is the defect ADR 0089 and ADR 0103 each swept for, so the signature lands
+  with its first caller rather than ahead of it.
+- **Validates** — `cargo test`; a test that a provider registering `voice:
+  Some(..)` is the only kind that can answer `speech_synthesis: true`, which is
+  the registry-wide invariant A2 already holds and this is the first step that
+  makes it non-vacuous.
+- **Done when** — the desk can speak on the lane the product already runs, and
+  `VoiceProvider` has one method and one implementation rather than neither.
+
+**Groq voice is a first implementation, not a recommendation.** It serves
+English and Saudi Arabic and nothing else, so it cannot carry
+`translation_voice` for any pair this product realistically translates. **It
+proves the contract; F4 and F5 fill the palette.**
 
 ### F2. The second output stream (ADR 0097)
 
@@ -321,6 +533,64 @@ work has a shape and before any surface tries to use a window.
 - **Note** — this is the same decision Phase 5 carries as *does WordScript ship
   an OpenAI-compatible server*. **Take it once** (ADR 0096).
 
+### F4. The time-to-first-byte measurement — **a gate, not a step**
+
+**Added 2026-08-11 (ADR 0118).** Both voice rows are chosen on TTFB, and
+`docs/PROVIDERS.md` records that **not one of the fourteen candidates publishes
+a figure this product will repeat as fact.** Cartesia's own API reference
+carries none, and the `240 ms` on the agent window has no source behind it.
+
+- **Requires** — F1 (something has to speak) and F2 (it has to come out of a
+  device this product opened).
+- **Touches** — no product code. A measurement across the candidates already
+  reachable: Groq Orpheus, and through D1a's OpenRouter entry
+  `openai/gpt-4o-mini-tts-2025-12-15`, `google/gemini-3.1-flash-tts-preview`,
+  `mistralai/voxtral-mini-tts-2603` and `microsoft/mai-voice-2`.
+- **Done when** — the `Not measured` badge on `AI Models` can be replaced by a
+  number this machine produced, and F5's order is justified by it rather than by
+  a datasheet.
+
+**This is why it is a gate.** F5 builds four modules chosen on latency. Building
+them before the measurement is picking four vendors by reading their marketing
+pages, which is the failure `docs/PROVIDERS.md` exists one layer up to prevent.
+**Cartesia's 3000 ms default buffer is the specific trap** — configurable 0 to
+5000, defaulting to 3000, and shipped unchanged it puts three seconds in front
+of every spoken reply.
+
+### F5. The four modules OpenRouter does not cover (ADR 0118)
+
+- **Requires** — F4 (which orders them), B2 and B3, and the two rows drawn.
+- **Touches** — four provider modules, **in the order F4's measurement
+  justifies**, each one module plus a registry line:
+  - **Cartesia** (S6/S4) — `sonic-3.5`, `sonic-3` over
+    `wss://api.cartesia.ai/tts/websocket`, `cartesia_version` required. It is
+    the drawn default for the desk, so the one voice this product already names
+    has no other door.
+  - **MiniMax** (S4/S6) — `speech-2.8-hd` and `speech-2.8-turbo`, 40 languages,
+    an HD/turbo pair that can answer a quality row and a latency row from one
+    vendor. **Region-scoped**: `api-uw.minimax.io` or `api.minimaxi.chat`, a
+    constant per deployment, and the credential is issued against one of them.
+  - **Bland** (S6) — `POST /v1/speak`, bearer, chunked **and** websocket, PCM16
+    at 44,1 kHz. **It publishes neither a language list nor a latency figure**,
+    so it lands with a measurement or it does not land.
+  - **Azure Speech** (S5, ADR 0117) — the one entrant needing a new credential
+    ladder: region plus subscription key, SSML body,
+    `Ocp-Apim-Subscription-Key`. **What it buys is `mstts:express-as`** and the
+    eighteen styles on `de-DE-Klaus` and `de-DE-Mia`; without SSML, OpenRouter
+    already serves the model. **Public preview, no SLA** — the row says so.
+- **Validates** — `cargo test` and `npm audit` **per module, not once at the
+  end**; a test per vendor that the voice-vs-model-id split is read from the
+  catalogue rather than hardcoded (ADR 0115); and for Azure, a test that its
+  credential is resolved separately from Azure OpenAI's and cannot be borrowed
+  from it (ADR 0117, ADR 0105).
+- **Done when** — every candidate in `docs/PROVIDERS.md`'s voice table is
+  reachable, either through OpenRouter or through its own module, and the
+  `Speaking` rows offer a picker rather than two options.
+
+**The palette is complete here and the rule that governs the next vendor is
+not suspended.** ADR 0116's test still applies: a module needs a reason
+OpenRouter cannot already answer.
+
 ---
 
 ## Stage G — the conversation
@@ -340,10 +610,39 @@ defect, for longer than any other capture this product performs.
   the target skips the step. **ADR 0064's first open point — whether a view plus
   a pop-out is enough interaction at a table — is still the owner's** and gates
   the surface, not the runtime beneath it.
-- **G3. The remaining adapters** — Anthropic, Gemini, Mistral, xAI, OpenRouter,
-  Self-hosted, the enterprise three, the remaining voices. `npm audit` and the
-  Rust advisory sweep run **per adapter**, not once at the end. `AI Models`
-  loses its banner when the last one lands, not before.
+- **G3. The remaining adapters.** **Rewritten 2026-08-11** — it was one bullet
+  naming nine adapters, which is a list rather than a route. Grouped by
+  `docs/PROVIDERS.md`'s adapter-shape table, because that is what decides the
+  cost:
+  - **Costs nothing further** — every vendor OpenRouter serves, once D1a has
+    landed. That includes `microsoft/mai-voice-2`,
+    `google/gemini-3.1-flash-tts-preview`, `mistralai/voxtral-mini-tts-2603`
+    and `openai/gpt-4o-mini-tts-2025-12-15`. **Four vendors' synthesis, zero
+    modules.**
+  - **Chat, one module each** — Anthropic (S2 in the survey's numbering:
+    `x-api-key` plus `anthropic-version`), Gemini (`generateContent`),
+    OpenRouter's and Self-hosted's chat role.
+  - **Speech, one module each, no new credential shape** (S3) — Deepgram,
+    ElevenLabs, AssemblyAI, Speechmatics, xAI, Mistral. **Read AssemblyAI and
+    Speechmatics against their own documentation first**; they entered the
+    survey on secondary sources and ADR 0116 forbids drawing them until then.
+  - **Streaming, one transport then one module each** (S4) — the transport is
+    already owed to D2 for OpenAI Realtime, so a streaming vendor added after
+    D2 is a module, not an infrastructure project.
+  - **Synthesis moved out of this bullet on 2026-08-11.** Cartesia, Bland,
+    MiniMax and Azure Speech are **F5**, because the owner scoped the palette
+    whole (ADR 0118) and four modules ordered by a measurement is a step rather
+    than a line in a list of leftovers.
+  - **The enterprise three** — Bedrock's three-rung ladder, Vertex's
+    service-account JSON, Azure OpenAI's endpoint-plus-deployment. Chat only,
+    except Azure OpenAI, which is the one enterprise lane that transcribes.
+
+  `npm audit` and the Rust advisory sweep run **per adapter**, not once at the
+  end. `AI Models` loses its banner when the last one lands, not before.
+
+  **What this list is not.** It is not an order and not a commitment to build
+  every row. ADR 0116 admits a vendor to the survey; the drawing decides which
+  earn a row, and ADR 0109 keeps every adapter behind the row that operates it.
 
 ---
 
@@ -352,21 +651,47 @@ defect, for longer than any other capture this product performs.
 ```
 A1 ──┬── A2 ──┬── B1 ──┐
      │        │        │
-     └── A3 ──┴────────┼── D1 ── D2 ──┬── F3
-                       │       │      │
-              B2 ──────┴── D3  │      │
-                               │      │
-C1 ── C2                       │      │
- └─────────────────────────────┴──────┴── G1 ── G2
+     │        └── B3 ──┤
+     │                 │
+     └── A3 ──┴────────┼── D1 ──┬── D1a
+          ├── A5       │        │
+          └── A4       │        ├── D2 ──┬── F3
+                       │        │        │
+              B2 ──────┴────────┴── D3   │
+                                         │
+C1 ── C2                                 │
+ └───────────────────────────────────────┴── G1 ── G2
 C3 (soak, gates all of G)
-E1 ── E2 ──────────────────────────────────┘
-E1 ── F2 ──────────────────────────────────┘
-B2 + owner answer ── F1
+E1 ── E2 ────────────────────────────────────┘
+E1 ── F2 ──┬─────────────────────────────────┘
+           │
+B2 + B3 ── F1 ──┴── F4 (measure) ── F5 (the four modules)
 ```
 
-**Two owner questions are live**, and only one blocks a step: *where the
-translation voice sits* blocks F1; *whether a view plus a pop-out is enough at a
-table* blocks G2's surface. Neither blocks A, B, C, D or E.
+**A5 and A4 are drawn as siblings because that is the truth: A5 blocks
+nothing.** It runs first anyway — both rewrite `core/config.rs`, and doing the
+subtraction before the addition is a smaller edit against a smaller file.
+
+**B3 sits under A2 rather than under A1 alone**, because the catalogue's schema
+borrows `ModelCapabilities`' vocabulary rather than inventing a second one. It
+blocks D1, which is the point: D1 is the first step that would otherwise write a
+vendor's model ids as literals.
+
+**D1a hangs off D1 and nothing hangs off D1a.** That is what makes it the
+cheapest step in Stage D and the one to reach for when F1 is stuck.
+
+**One owner question is live, and it blocks no step in A through F.** *Whether a
+view plus a pop-out is enough at a table* blocks G2's surface (ADR 0064).
+**The other was answered on 2026-08-11**: where the translation voice sits is
+ADR 0119, two rows, delegated by the owner and decided against ADR 0043's one
+voice, ADR 0064's per-language route and the language coverage the survey
+measured. F1 lost its gate with it.
+
+**One recommendation is not a decision.** D1a's placement inside ADR 0096's
+unordered *rest* is this page's suggestion, not that record's instruction.
+ADR 0096 permits it — it pins only OpenAI, Groq voice and Local — but a plan
+quietly reordering a record is the thing ADR 0109 refused to do about the
+Speaking row, so it is flagged rather than assumed.
 
 ## Status
 
@@ -374,10 +699,42 @@ table* blocks G2's surface. Neither blocks A, B, C, D or E.
 | --- | --- |
 | A1 | **done** 2026-08-11 — `core/providers/registry.rs`, the enum gone, four counts unchanged |
 | A2 | **done** 2026-08-11 — `ModelCapabilities` per `(provider, model)`, `speech_synthesis` on the provider, +8 Rust tests |
-| A3, B1–B2, C1–C3, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
+| A3 | **done** 2026-08-11 — the secret-store entry keyed `(provider, role, kind)`, `provider_status` per role, the pre-role key adopted onto both roles, +12 Rust tests |
+| A5 | **not started** — added 2026-08-11 (ADR 0112); **runs before A4** |
+| A4 | **not started** — added to this page 2026-08-11; it is the step no record had a position for |
+| B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for |
+| D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |
+| F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
+| F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
+| B1–B2, C1–C3, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.
+
+**Stage one had a second pass, the same day, and it moved three things.** The
+vendor-intake pass re-read `docs/PROVIDERS.md` against the vendors and found two
+of its own claims wrong — that OpenRouter has no audio endpoint, and that speech
+has no OpenAI-compatible shape for the Self-hosted lane. Both were the same
+mistake: a page read correctly and a *"not"* written from it, the second one
+contradicting this same file eleven paragraphs earlier. The finding underneath
+is in the tree: **`GROQ_API_BASE` is `https://api.groq.com/openai/v1`, so the
+one integrated cloud adapter is already the OpenAI shape with a Groq host**
+(`groq.rs:25,407`). Seven vendors joined the survey, an adapter-shape table was
+added, ADR 0113–0117 landed, and this page gained B3 and D1a. **No code**, and
+the counts below are the proof: `cargo test` 760 passed / 3 ignored and
+`cargo check` 15 warnings, both unchanged, because a documentation stage that
+moves a test count has done something it did not say it would.
+
+**And a third pass, the same day, on the owner's instruction.** *The full
+palette, no half measures* — the second time that sentence has widened a scope,
+after ADR 0096 did it for the lanes. ADR 0118 makes Cartesia, Bland, MiniMax and
+Azure Speech committed modules rather than options, and adds F4 (a measurement
+gate) and F5 (the four modules). **The owner also delegated the open drawing
+question**, which ADR 0119 answers: two rows in the `Speaking` group, so
+`JobKey` gains `translation_voice` beside `voice` and **F1 loses its gate**. The
+decision was taken against ADR 0043's one voice, ADR 0064's per-language route
+and the 8-to-70 language spread the survey measured — not against a preference.
+Counts unchanged again.
 
 **A1, as it landed.** Three role traits plus a fourth (`Provider`) for what is
 not a role today — status and the credential — because ADR 0105 is where that
@@ -446,3 +803,74 @@ baseline's 474**: the sidebar work that landed the same day (`b330815`, ADR
 0111) added six cases to `WorkspaceWindow.test.tsx`, so the tree reads 480
 across 39 files with or without A2 — a change from another track, measured here
 so the next step does not read it as this one's.
+
+**A3, as it landed.** Two choices the records leave to whoever implements them,
+and both were decided on what the alternative would do to somebody using this.
+
+**A save that names no role reaches every role the kind can pay for.** The
+records fix the key shape and say nothing about what the command means without
+one, and the surface sends none: `Models.tsx` draws one key row per connection.
+The everyday act is *I gave WordScript my Groq key*, not *I paid for
+recognition but not for cleanup* — a key is a way into an account, and the jobs
+are downstream of that. A save landing on one role would leave the user having
+done everything the screen asked while half the jobs stayed silently inert,
+which is the fake-state defect with the user's own action as its cause.
+Requiring an explicit role instead would force the UI to send one it has no
+control for, which is a drawing question settled quietly (ADR 0057). So `role:
+None` fans out across `ProviderEntry::roles()` **intersected with what the kind
+can pay for** — which is where ADR 0102 does its work without a special case: a
+subscription reaches chat and stops, said once, whether or not the caller named
+a role. `kind: None` means `api_key` for save and clear alike, so *remove the
+key* cannot become *sign out* once a second kind exists.
+
+**The connection block stays and is folded conservatively.** A provider holding
+a key for recognition and none for chat is genuinely half usable, and a `bool`
+cannot say so — the same shape A2 answered with a third value. But a third state
+here would need a drawing that does not exist, so the fold says configured only
+when **every** role has one: the cost is a connection that reads not-ready while
+dictation would have run, which is visible and correctable, against a connection
+that reads ready and drops a transform silently, which is not. Which role is
+missing is answered by `role_credentials` beside it, not by widening the block
+— `Models.tsx`, `WorkspaceWindow` and the v1 slice read the fold unchanged, and
+the unfolded answer waits for the row that draws it (ADR 0106's three sentences).
+
+**The bug that is not in the records: a pre-role key is adopted before it is
+touched.** The single string on disk is what *both* Groq roles were spending. A
+save for chat that simply wrote the chat entry, or a clear that simply deleted
+the old one, would take the speech credential with it — and the user's next
+dictation would fail with no action of theirs to explain it. So `write_api_key_to`
+and `clear_api_key_in` both adopt the old entry onto every role first, and only
+then act on the one they were asked about. The writes precede the deletes, so an
+interrupted migration re-runs rather than losing the key.
+
+**A kind a lane cannot authenticate with is refused where it would be stored.**
+ADR 0102 puts the restriction in the type rather than in a runtime error, and
+that holds for jobs: no speech call is reachable with a subscription. A command
+is a different surface — it takes a kind from outside — so it is refused at the
+door, with the vendor and the reason named. Two tests hold the two halves: the
+type answers `is_admissible_for` and the registry holds the subscription kind to
+OpenAI, so the vendor a later reader adds cannot inherit ADR 0102's exception by
+omission.
+
+**What A3 deliberately did not do:** touch a drawing, add the `role`/`kind`
+arguments to `useProvider` (a parameter no caller passes is the defect ADR 0089
+and ADR 0103 swept for — it arrives with the row that needs it), introduce a job
+type in Rust (that is B2 and A4), or acquire a token set (D3). The role at each
+call site is known statically inside the adapter — `transcribe_audio_file` loads
+the speech credential, `create_chat_completion` the chat one — so nothing needed
+a job enum to route correctly.
+
+**And the finding: A4 did not exist.** ADR 0094's config half has been marked
+*not built* in the spec since A1 and had no step on this page. A3's own
+*config migration with a backup path* reads as though it covered it; it does
+not, and it was the last place the gap could have hidden. A4 is written above
+rather than folded into A3, because a credential migration and a settings
+migration are different files, different stores and different risks.
+
+Counts: `cargo test` 760 passed / 3 ignored (**+12**: three in `registry.rs`,
+four in `mod.rs`, four in `groq.rs`, one in `local_preview.rs` — and two
+existing `groq.rs` cases were rewritten onto the per-role store rather than
+added to). `cargo check` 15 warnings unchanged. In `src/` only
+`types/providers.ts` moved, types only, so the frontend suite reads 480 across
+39 files and `npm run port:diff` is `ALL EXACT` — no drawing moved, which for
+this step is the point rather than a side effect.

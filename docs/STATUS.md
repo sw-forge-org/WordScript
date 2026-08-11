@@ -190,6 +190,20 @@ Status: 2026-08-11
   echoes back the language it was told — so the vendor whose models disagree is
   proved by a fixture rather than left unproved until it is integrated. Nothing
   reads either axis yet; that seam is ADR 0106
+- a credential resolved per `(provider, role)` (ADR 0105 and ADR 0102's storage
+  half, 2026-08-11): the secret-store entry is keyed `(provider, role, kind)`,
+  so **clearing the chat credential leaves the speech one standing**, and a role
+  with no credential says which one it is missing instead of spending another
+  role's. A save that names no role reaches every role the kind can pay for —
+  the one drawn key row sits on the connection, and a key is a way into an
+  account rather than into a job — while a subscription is filtered out of that
+  fan-out for every role but chat, in the type. `provider_status` answers per
+  role and folds the answers into the one connection block conservatively:
+  configured means every role has one. The single key a previous build stored is
+  adopted onto both of Groq's roles on first read, and the config migration
+  copies the file aside first. **No vendor accepts a subscription yet** — a
+  registry test holds that kind to OpenAI, which is not integrated, and
+  acquiring a token set is ADR 0102's other half
 - recording limits that agree with what the pipeline can do (ADR 0038): a
   processing limit resolved per provider, account plan and model; an auto-stop
   the user sets under it with a recommended safety margin; and the silence stop
@@ -469,6 +483,15 @@ Additional rules:
 
 ## Known open product gaps
 
+- **the config still carries compatibility with shapes nothing writes**, and the
+  decision to stop is recorded rather than done (ADR 0112, plan stage A5). A
+  legacy plaintext key field, millisecond timeout fields, a global `auto_paste`,
+  two schema gates with their migration bodies, a pre-profile text-rules reader
+  and two retired secret-store entry names all serve a case that exists on one
+  developer machine, because **no published versioned release exists**. The
+  record separates them from the three things that look identical and stay --
+  normalization, tolerance at a boundary where something foreign arrives, and a
+  name that says *legacy* about a state rather than a format
 - **the speech stack is one lane wide, and that lane cannot stream.** Groq is
   the only integrated cloud provider and its recognition path takes a file and
   returns a result -- no websocket, no partials, no automatic language
@@ -481,7 +504,12 @@ Additional rules:
   enumeration, and one output stream bound to the OS default (ADR 0010). Three
   drawn surfaces depend on all three -- the translation window, the agent
   window's voice and its notification cue. ADR 0097 records the shape; nothing
-  is built
+  is built. **And until 2026-08-11 the role had no contract either**:
+  `VoiceProvider` carried zero methods, so every synthesis vendor was
+  unexpressible rather than merely unimplemented. ADR 0114 writes that contract
+  from fourteen surveyed candidates -- one method, `synthesize_speech`, with
+  streaming grown beside it later. Designed; still not built, and the method
+  lands with its first implementation rather than ahead of it
 - **the machine cannot speak while listening without hearing itself.** ADR 0098
   records the third capture state that would fix it, and the finding that the
   existing `muted` flag is a *level* mute and does not stop recording. Echo
@@ -490,18 +518,18 @@ Additional rules:
   statically and there is no `WebviewWindowBuilder`; the translation pop-out,
   the meeting HUD, the agent window and ADR 0043's notification all wait on the
   window class ADR 0100 defines
-- **a cloud credential is one API key and is billed per request.** ADR 0102
-  admits a second kind for OpenAI -- an OAuth token set against the user's
-  ChatGPT plan -- for the five chat jobs only, because the backend it reaches
-  serves no transcription and no synthesis. **Nothing of it is implemented**:
-  there is no OAuth flow, no PKCE, no loopback listener and no
-  `tauri-plugin-oauth` in the tree, and `SaveProviderApiKeyRequest` carries a
-  single string. Speech stays billed per use on every vendor, and no other
-  vendor gets a subscription path at all -- Anthropic and Google both forbade
-  theirs in February 2026. ADR 0105 fixes what a second kind forces: the
-  credential resolves per `(provider, role)`, *follow the connection* follows
-  the provider and never the credential, and a role with no credential makes the
-  job inert and names what is missing
+- **a cloud credential is still only an API key, and now it is one per role.**
+  ADR 0102 admits a second kind for OpenAI -- an OAuth token set against the
+  user's ChatGPT plan -- for the five chat jobs only, because the backend it
+  reaches serves no transcription and no synthesis. **The storage half is built
+  and the acquisition half is not**: the kind exists in the type and is
+  inadmissible for speech and voice by construction, but there is no OAuth flow,
+  no PKCE, no loopback listener and no `tauri-plugin-oauth` in the tree, and a
+  registry test holds the subscription kind to a vendor this build does not
+  register. Speech stays billed per use on every vendor, and no other vendor
+  gets a subscription path at all -- Anthropic and Google both forbade theirs in
+  February 2026. What a second kind forces is done (ADR 0105); what pays for it
+  is stage D3
 - **no surface reads a runtime capability, and one record claimed otherwise.**
   `provider_status` returns `ProviderCapabilities` and `ModelCapabilities`, both
   mirrored into `src/types/providers.ts`, and **no field of either is read
@@ -529,7 +557,12 @@ Additional rules:
   entries and four records write contracts against a ninth. ADR 0109 adds it,
   and gates a voice adapter on a drawn row that can operate it -- the drawn
   `Speaking` row offers two presets, neither of them the vendor ADR 0096
-  schedules second
+  schedules second. **Widened 2026-08-11: it is two jobs, not one** (ADR 0119).
+  `voice` for the desk and `translation_voice` for the conversation, because
+  they pick different models -- and the drawn `Speaking` group has one row while
+  `Translate.tsx` already sends the user there for a voice it does not carry.
+  The drawing question that gated the adapter is answered; drawing the second
+  row is not
 - transcription reliability outside `General Writing` or no profile is still
   not robust enough; individual curated profiles like `Customer Success
   Replies` can still visibly worsen raw transcripts with multilingual

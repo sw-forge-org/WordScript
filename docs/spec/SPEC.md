@@ -36,6 +36,15 @@ clauses that said the axes were planned**; it read nothing else. The model axis
 now exists and is answered per `(provider, model)`, and **the seam is still not
 built** — no surface reads either axis, which is ADR 0106 and stage B1.
 
+Amended 2026-08-11 by stage A3, which built the per-role credential (ADR 0105
+and ADR 0102's storage half). **It read `core/providers/`, `core/config.rs`,
+`core/backup.rs` and `src/types/providers.ts` and moved only the two clauses
+that said the credential work was planned**; it read nothing else. A credential
+is now keyed `(provider, role, kind)` and clearing one role leaves the others
+standing. **ADR 0094's other half is still not built** — the provider half of a
+resolution is still the connection's single field — and ADR 0102's acquisition
+half (the OAuth flow) is stage D3, so no vendor accepts a subscription today.
+
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
 The living overview docs (`ARCHITECTURE.md`, `VISION.md`, `REFERENCE.md`,
@@ -211,6 +220,51 @@ UI implementation details, not Rust event names or Tauri channels.
   and implemented by nobody. **ADR 0094's other half is not built** — the
   provider axis in the config is still one `provider` field per profile, not a
   resolved default plus a sparse override per job.
+- **`VoiceProvider`'s contract is designed and its method is not written**
+  (ADR 0114). The trait carried no methods because no vendor shape had been
+  read; fourteen synthesis candidates across four protocol shapes have now been
+  surveyed, and they agree that synthesis takes text, a model or voice
+  identifier and a format, and returns audio. The contract is therefore **one
+  method, `synthesize_speech`**, with the voice as an optional field because
+  Azure Speech puts it inside the model id and ElevenLabs beside it; streaming
+  synthesis grows beside it later, the order ADR 0095 set for recognition. The
+  signature lands with its first implementation (plan step F1), not ahead of it.
+  Planned; not built.
+- **Speech synthesis is two jobs, not one** (ADR 0119). `JobKey` gains `voice`
+  for the desk and `translation_voice` for the conversation, because a job is
+  the unit at which a provider, a model and a credential resolve, and the two
+  rows pick different models: the desk speaks **as** WordScript in the user's
+  language (ADR 0043's one voice, one body), the translation speaks somebody
+  else's words in a language that is by definition not the user's, at
+  conversational tempo. Both resolve the `Voice` role, so **one credential per
+  provider serves both** (ADR 0105) and neither admits a subscription
+  (ADR 0102). The output route stays per language and per machine (ADR 0064);
+  the model does not. Planned; not built.
+- **The synthesis palette is committed, not surveyed** (ADR 0118). Cartesia,
+  Bland and MiniMax get their own modules because OpenRouter does not carry
+  them; Azure Speech gets one because OpenRouter carries it without SSML, which
+  is where its emotion styles live. The build order follows a
+  time-to-first-byte measurement taken on this machine, because no candidate
+  publishes one this repo will repeat. Planned; not built.
+- **The OpenAI-compatible audio shape is one implementation, not one per
+  vendor** (ADR 0113). `GROQ_API_BASE` is `https://api.groq.com/openai/v1` and
+  the speech call posts to `{GROQ_API_BASE}/audio/transcriptions`, so the one
+  integrated cloud adapter is already this shape with a Groq host. Parameterized
+  by base URL and credential it also serves OpenAI, OpenRouter and a user-run
+  server, which is why **the Self-hosted lane gains `dictation`, `meetings` and
+  `upload`** rather than refusing them. A free base URL is gated on HTTPS **or**
+  a private host. Self-hosted *synthesis* was not read and is not claimed.
+  Planned; not built.
+- **A model id resolves from one dated catalogue** (ADR 0115). Today a model
+  name is a literal in `core/config.rs`, a literal in `src/screens/data.ts` and
+  a prose row in `docs/PROVIDERS.md`, and those three have already drifted. The
+  catalogue is one versioned data file carrying provider, role, model id,
+  documented streaming, languages, source and read-date, loaded by Rust through
+  `include_str!` and imported by TypeScript, with a test holding the mirror —
+  the shape `core::regression_corpus` already has. **It is not
+  `ModelCapabilities`**: one records what a vendor documents, the other what an
+  adapter asserts, and a catalogued model with no adapter answers `unknown`.
+  Every lane keeps a free-typed model id beside the list. Planned; not built.
 - **Capability axes split between provider and model** (ADR 0110), built
   2026-08-11. `speech_synthesis` is a provider-level role question and joins
   `transcription` and `chat_completion` on `ProviderCapabilities`;
@@ -247,28 +301,43 @@ UI implementation details, not Rust event names or Tauri channels.
   translation voice sits on `AI Models` is an open owner question and is not
   decided by the type. Planned; not built.
 - **A provider may carry more than one credential kind, and the kind is per
-  role.** A credential is one opaque string today
-  (`SaveProviderApiKeyRequest { provider, api_key }`); the registry must carry
-  credential *shape* alongside role, because self-hosted needs a base URL plus a
-  model id, the enterprise three each need something different, and OpenAI takes
-  either an API key or an OAuth token set. ADR 0102 fixes the one case that is a
-  policy question rather than a shape question: the **subscription** credential
-  is admissible for the five chat jobs (`cleanup`, `rewrite`, `translate`,
-  `enhance`, `assistant`) and inadmissible for `dictation`, `meetings`, `upload`
-  and `voice`, because the backend it reaches serves no recognition and no
-  synthesis. The restriction lives in the type, as ADR 0094's role rule does --
-  it is not a runtime "unsupported" error. **No vendor other than OpenAI carries
-  this kind.** Planned; not built.
+  role** (ADR 0102's storage half), built 2026-08-11. `CredentialKind` is
+  `api_key` or `subscription`, and **admissibility is decided in the type**, as
+  ADR 0094's role rule is: `CredentialKind::is_admissible_for(role)` answers
+  false for a subscription against `speech` and `voice`, so the five chat jobs
+  (`cleanup`, `rewrite`, `translate`, `enhance`, `assistant`) are the only ones
+  it can pay for and there is no runtime "unsupported" error, because there is
+  no call to make. `Provider::credential_kinds()` states what a vendor accepts
+  and a kind absent from it is refused where it would be stored, with the vendor
+  named; **a registry test holds the subscription kind to OpenAI alone**, which
+  is ADR 0102's refusal enforced by the table rather than by a sentence. Groq
+  accepts an API key and nothing else; the local lane accepts none at all, which
+  is what that lane *is* rather than a lane missing one. Still open: credential
+  *shape* — self-hosted's base URL plus model id, the enterprise three's three
+  ladders, and the OAuth token set itself, which is ADR 0102's acquisition half.
 - **The credential resolves from `(provider, role)`, and "follow the connection"
-  follows the provider only** (ADR 0105). ADR 0094 states its credential rule
-  for the *overriding* job; the following job is the case a per-role credential
-  kind breaks, because a speech job on a subscription-paid connection would
-  otherwise inherit a credential its role cannot use. A role with no credential
-  makes the job **inert and named** -- never a silent fall back to the other
-  kind the same provider holds, which is the role-shaped version of the host
-  mistake ADR 0094's security rule prevents. The secret-store entry is keyed
-  `(provider, role, kind)` so clearing one role's credential cannot clear
-  another's. Planned; not built.
+  follows the provider only** (ADR 0105), built 2026-08-11. `ProviderRole` is
+  `speech`, `chat` or `voice` — the three traits as a value. The secret-store
+  entry is keyed `(provider, role, kind)`, and **clearing one role's credential
+  cannot clear another's**; a role with no credential answers `configured:
+  false` and names what is missing, never the other kind the same provider
+  holds. Which roles exist is `ProviderEntry::roles()`, so a credential cannot
+  be stored for a role with no implementation. A save that names no role reaches
+  every role the kind can pay for, because the one drawn key row sits on the
+  connection and a key is a way into an account rather than into a job; a
+  subscription is filtered out of that fan-out for every role but chat. The
+  command surface is `SaveProviderApiKeyRequest { provider, api_key, role?,
+  kind? }` and `ClearProviderApiKeyRequest { provider, role?, kind? }`, both
+  optional so no surface has to send a role it has no control for.
+  `ProviderStatus` answers per role in `role_credentials` and folds them into
+  the one `credential` block **conservatively**: configured means every role has
+  one, because overstating readiness is the fake-state defect and understating
+  it is visible. A pre-role key is adopted onto every role it used to pay for
+  before any write or delete touches it, and the config migration takes a
+  `core::backup` snapshot first. **Still bound to one connection**: with
+  ADR 0094's config half unbuilt, the provider half of the resolution is the
+  connection's single `provider` field, so "follow the connection" is today the
+  only path a job takes.
 - Which vendor serves which role is surveyed in `docs/PROVIDERS.md`, dated per
   row. That document is the capability reference; it is not a statement of what
   is integrated.

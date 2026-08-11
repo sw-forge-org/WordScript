@@ -136,7 +136,25 @@ chat rather than after it**.
 - **Documented first, then integrated.** A provider's capabilities are read
   against its own documentation and written down before an adapter is written,
   because a capability guessed from a search result is how a surface comes to
-  claim something the lane behind it cannot do.
+  claim something the lane behind it cannot do. **Re-read on 2026-08-11 and it
+  caught two of its own**: the survey said OpenRouter has no audio endpoint and
+  that speech has no OpenAI-compatible shape for the Self-hosted lane, and both
+  were wrong the same way — a page read correctly and a *"not"* written from it.
+  ADR 0113 carries what follows. **The rule survives the exception**; what it
+  gains is a second clause, which is that a negation needs the second page.
+- **The set widened again, on capability rather than on brand** (ADR 0116).
+  Only five of the ten drawn vendors transcribe, and the four best at it were
+  not drawn at all. Deepgram, ElevenLabs, AssemblyAI and Speechmatics bias the
+  recogniser through a **parameter that never becomes decoder text**, which is
+  the defect class `known-issues/stt-prompt-leaks-into-the-transcript.md` stays
+  open on and that ADR 0017, ADR 0080 and ADR 0081 exist to contain. They enter
+  the survey; the synthesis vendors enter as catalogue rows; and **a vendor gets
+  its own module only for a reason OpenRouter cannot already answer.**
+- **Model names stop living in code** (ADR 0115), as plan stage B3. Three
+  uncoordinated places hold them today and they have already drifted a
+  generation. One dated catalogue, read by both runtimes, plus a free-typed id
+  per lane — so the cost of a new vendor's models is data rather than an edit in
+  two languages.
 - **The sequence is
   [handoffs/PLAN_speech-track-implementation.md](handoffs/PLAN_speech-track-implementation.md)**,
   which orders every record in this phase — including the two below, which had
@@ -152,7 +170,8 @@ chat rather than after it**.
   on it, and it is asserted by a test rather than by a sentence. **And the
   credential resolving per role** (ADR 0105), because a second credential kind
   on one vendor breaks the rule that a job following the connection inherits the
-  default's credential.
+  default's credential — **built 2026-08-11** as plan stage A3, so one of the
+  two is done and the seam is the one still outstanding.
 - **The contract becomes a trait plus a registry** (ADR 0094). The closed
   `enum ProviderId` dispatch does not survive ten providers, and a provider that
   cannot serve a role does not stub it. **Built 2026-08-11** as plan stage A1 —
@@ -173,7 +192,15 @@ chat rather than after it**.
   that says so is honest; a capability with no drawn control is not visible as
   missing at all. This is what gates Groq voice: `voice` is not in `JobKey`, and
   the drawn `Speaking` row offers `Cartesia Sonic-3` and `Kokoro-82M` with no
-  provider mark and no credential control.
+  provider mark and no credential control. **The gate is half lifted since
+  2026-08-11** (ADR 0119): the drawing question that blocked it — one row or two
+  — is answered, and the answer is **two**, `voice` and `translation_voice`.
+  What remains is drawing them, not deciding them.
+- **The speaking palette is committed, and it is four modules** (ADR 0118), on
+  the owner's *no half measures*. Cartesia, Bland and MiniMax because OpenRouter
+  does not carry them; Azure Speech because OpenRouter carries it without the
+  SSML its emotion styles live in. **Ordered by a measurement taken here**, not
+  by the vendors' pages — plan steps F4 and F5.
 - **Speech gains a streaming contract beside the batch one** (ADR 0095), and
   **voice becomes the ninth job** (ADR 0109) — drawn on `AI Models` today and
   absent from the `JobKey` union.
@@ -221,7 +248,11 @@ chat rather than after it**.
   (ADR 0105): *follow the connection* follows the provider and never the
   credential, or a speech job on a subscription-paid connection inherits a
   credential that cannot pay for it. That resolution is a precondition for the
-  build-out and not a detail of this vendor.
+  build-out and not a detail of this vendor — **built 2026-08-11** as plan stage
+  A3, together with this record's storage half: the kind exists, it is
+  inadmissible for speech and voice in the type, and a registry test holds it to
+  the one vendor permitted to carry it. What is left here is acquiring a token
+  set, which is stage D3.
 
 The motivation for a stronger chat lane is **instruction following, not cost**.
 Real usage sits below a cent, so caching and price are not the argument. The
@@ -427,7 +458,13 @@ decision, and the user starts work by speaking without opening a repository.
   would put three seconds in front of every spoken reply if nobody changed it.
   Groq now serves speech synthesis on the connection the product already holds,
   which makes a first audible sentence cost no new credential — at the price of
-  covering English and Saudi Arabic only.
+  covering English and Saudi Arabic only. **And the preset list stops being two
+  entries** (ADR 0118): Cartesia, Bland, MiniMax and Azure Speech get modules,
+  four more vendors arrive through OpenRouter without one, and the order is
+  decided by plan step F4's measurement rather than by this line. **The desk's
+  voice is now one of two rows** (ADR 0119) — this bullet is about the desk;
+  the conversation's voice has different languages and a different tempo and
+  answers on its own row.
 - Cascaded barge-in implemented natively in Rust -- Silero VAD plus Smart Turn
   v3, cancelling playback and generation on detected speech, recording with
   pre-roll. The answer window after a question is the default and needs no mode;

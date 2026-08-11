@@ -53,6 +53,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the provider survey's second pass, and five records from it
+
+Documentation only. `cargo test` 760 passed / 3 ignored and `cargo check` 15
+warnings, both unchanged, which is the whole claim a documentation stage gets to
+make.
+
+- **`docs/PROVIDERS.md` gains seven vendors and a section on what a vendor
+  actually costs.** The drawn set was chosen when the question was *which
+  language model cleans up a transcript*; only five of its ten members
+  transcribe. Deepgram, ElevenLabs, AssemblyAI, Speechmatics, Microsoft's
+  MAI-Voice family through Azure Speech, MiniMax and Bland are surveyed, each
+  with a source and a read-date. The voice candidate table goes from seven rows
+  to fourteen and **still has not one time-to-first-byte this document will
+  repeat as fact.**
+- **The adapter-shape table is the section that answers *can this be
+  implemented*.** Eighteen vendors collapse into seven protocol shapes, and the
+  answer is per shape rather than per vendor or per model. One module reaches
+  four lanes; one transport reaches nine streaming vendors; exactly one entrant
+  costs a credential ladder of its own.
+- **ADR 0113 — the OpenAI-compatible audio shape is already in the tree.**
+  `GROQ_API_BASE` is `https://api.groq.com/openai/v1` and the speech call posts
+  to `{GROQ_API_BASE}/audio/transcriptions`, so the one integrated cloud adapter
+  is the OpenAI shape with a Groq host. Parameterized by base URL it also serves
+  OpenAI, OpenRouter and a user-run `whisper-server` — which is why **the
+  Self-hosted lane gains the three listening jobs.** A free base URL is gated on
+  HTTPS or a private host. Self-hosted synthesis was not read and is not
+  claimed.
+- **ADR 0114 — `VoiceProvider` gets a contract.** It carried zero methods, so
+  every synthesis vendor was unexpressible rather than merely unimplemented.
+  Fourteen candidates across four shapes agree on the same request, so the
+  contract is **one method, `synthesize_speech`**, the voice an optional field
+  because Azure puts it inside the model id and ElevenLabs beside it. Streaming
+  grows beside it later — the order ADR 0095 already set for recognition.
+- **ADR 0115 — a model name is a dated row in one catalogue.** Model ids live in
+  `core/config.rs`, in `src/screens/data.ts` and in the survey's prose, and
+  those three have drifted a generation apart. One versioned data file, read by
+  Rust through `include_str!` and imported by TypeScript, held by a test — the
+  shape `core::regression_corpus` already has. **It is not `ModelCapabilities`**:
+  one records what a vendor documents, the other what an adapter asserts.
+- **ADR 0116 — a vendor comes in because it serves a job better.** The four STT
+  specialists bias the recogniser through a parameter that **never becomes
+  decoder text**, which is the defect class
+  `known-issues/stt-prompt-leaks-into-the-transcript.md` stays open on and that
+  three existing records exist to contain. And a vendor gets its own module only
+  for a reason OpenRouter cannot already answer.
+- **ADR 0117 — Azure Speech is a Cloud credential.** Different host, header,
+  body format, resource and key from Azure OpenAI; no deployment and no tenant,
+  which this repo's own lane definition makes the deciding test. Same
+  relationship Polly has to Bedrock — the shared brand is what makes the wrong
+  answer look right.
+- **`docs/handoffs/PLAN_speech-track-implementation.md` gains B3 and D1a**, and
+  G3 stops being one bullet naming nine adapters. **D1a is not gated on a
+  drawing answer**, which makes it the reachable path to a second and third
+  speech lane while F1 waits on the owner.
+
+### Added — the speaking palette, and the row question answered
+
+- **ADR 0118 — the palette is offered whole.** *No half measures*, the second
+  time that instruction has widened a scope after ADR 0096 did it for the lanes.
+  **Cartesia, Bland and MiniMax get their own modules because OpenRouter does
+  not carry them**; **Azure Speech gets one because OpenRouter carries it
+  flattened** — it serves `microsoft/mai-voice-2` without SSML, and SSML is
+  where `mstts:express-as` and the eighteen styles on `de-DE-Klaus` and
+  `de-DE-Mia` live. **The order follows a measurement on this machine**, not the
+  vendors' pages, because not one of the fourteen candidates publishes a figure
+  this repo will repeat as fact. Cartesia's 3000 ms default buffer is named in
+  advance rather than discovered in a shipped build.
+- **ADR 0119 — the `Speaking` group has two rows**, answering the question
+  ADR 0109 left with the owner, who delegated it. The desk speaks **as**
+  WordScript — ADR 0043's one voice, one body, and the orb has no meaning
+  outside agents. The translation speaks **somebody else's words**, in a
+  language that is by definition not the user's, at conversational tempo. They
+  need different languages (candidates run 8 to 70+), different latencies and
+  different budgets, so they are different jobs: `JobKey` gains `voice` **and**
+  `translation_voice`, both on the `Voice` role and therefore on one credential.
+  **One row for translation, not one per language** — the route is per language
+  (ADR 0064), the model is not, and two model rows for one dialogue would mean
+  two vendors and two keys inside a single exchange.
+- **A defect the question was hiding.** `Translate.tsx` already tells the user
+  the voice is *"chosen on AI Models like the rest"* and draws a button there —
+  pointing at a group whose only row is explicitly about coding agents. It was
+  recorded as *undecided*; one surface was already promising what the other does
+  not answer.
+- **Plan steps F4 and F5**, and **F1 loses its gate.** F4 is the
+  time-to-first-byte measurement that orders F5's four modules; F1 was blocked
+  on the owner's drawing answer and is now blocked only on drawing it.
+
+### Changed — two claims the survey made about itself
+
+- **"Audio rides the chat endpoint, not an audio endpoint" was half right.**
+  OpenRouter's multimodal page is correct and simply is not the whole API:
+  `/api/v1/audio/speech` has existed since 2026-04-18 and
+  `/api/v1/audio/transcriptions` since 2026-07-22, both OpenAI-SDK compatible.
+  They reach `microsoft/mai-voice-2`, `google/gemini-3.1-flash-tts-preview`,
+  `mistralai/voxtral-mini-tts-2603` and `openai/gpt-4o-mini-tts-2025-12-15` —
+  **four vendors' synthesis on one key, for no module each.** The drawn
+  `stt: false` on that lane is now provably wrong and is open disagreement 11.
+- **"Speech has no OpenAI-compatible shape to talk to" contradicted the same
+  file eleven paragraphs earlier**, which already recorded that whisper.cpp
+  ships `whisper-server`, *"an HTTP server with an OpenAI-compatible API"*.
+  `/v1/audio/transcriptions` is a de-facto standard. The drawn refusal on the
+  Self-hosted lane's three listening jobs is open disagreement 10 — a drawing,
+  so the gallery corrects it, not this pass.
+- **The survey's maintenance rules gain the lesson.** Both errors were one
+  mistake made twice: a page read correctly and a *"not"* written from it. So:
+  before writing that a vendor cannot do something, look for the second page —
+  and before writing it about a lane, grep the file for the opposite claim.
+
 ### Added
 
 - **The workspace sidebar has a second width, and the window may choose it**
@@ -256,8 +364,60 @@ finding answered. Reported from the running host on 2026-08-11.
   write is announced, the card states its own scope, and the event takes the
   same `without_secrets()` scrubbing every disk write does.
 
+- **The on-disk compatibility layer is dropped rather than carried** (ADR 0112,
+  planned as stage A5; not implemented). Stage A3 had to hold **three**
+  compatibility layers over one API key at once to re-key it safely — a retired
+  bundle identifier, a pre-role entry name and the plaintext key in the config
+  file — and there is nothing behind any of them: `docs/STATUS.md` records **no
+  published versioned releases** and `check_app_update` reports the same. So a
+  path that exists only to read an older *local* stored shape goes, with its
+  field and the tests that hold it. **Three lookalikes stay, and the record
+  names them** so a sweep matching the word does not take them: normalization,
+  which canonicalizes every value including one written a second ago; tolerance
+  at a boundary where something foreign arrives — an imported archive, an IPC
+  payload, a shortcut string typed into the UI; and a name that says *legacy*
+  about a session state rather than a file shape. **The import door is not the
+  config door**: `stt_hints` survives as a field a foreign document may carry,
+  while the migration that rewrote this machine's profiles into
+  `vocabulary_hints` does not. The window closes at the first published release,
+  and the record says so rather than becoming a precedent for deleting
+  migrations later.
+
 ### Changed
 
+- **A credential belongs to a role, not to a provider** (ADR 0105 and ADR 0102's
+  storage half, plan stage A3). The secret-store entry stopped being one string
+  per provider and became one per `(provider, role, kind)`, so **clearing the
+  chat credential leaves the speech one standing** — a single provider-keyed
+  delete was the bug this shape exists to prevent. A role with no credential
+  answers inert and **names what it is missing** rather than spending the kind
+  the same provider holds for another role, which is the role-shaped version of
+  the mistake ADR 0094's security rule prevents and is not softer for happening
+  inside one vendor.
+  **A save that names no role reaches every role the kind can pay for.** The one
+  drawn key row sits on a connection, and the everyday act is *I gave WordScript
+  my key* — not *I paid for recognition but not for cleanup*. A save landing on
+  one role would leave somebody having done everything the screen asked while
+  half the jobs stayed silently inert. Which roles exist is
+  `ProviderEntry::roles()`, so a credential cannot be stored for a role with no
+  implementation.
+  **A subscription is inadmissible for speech and voice in the type** — the
+  backend a ChatGPT plan reaches serves no `/v1/audio/transcriptions` and no
+  `/v1/audio/speech`, so there is no call to fail — and it is filtered out of
+  that fan-out whether or not a caller names a role. Groq accepts an API key and
+  says so; the local lane accepts no kind at all, which is what that lane *is*
+  rather than a lane missing one. **A registry test holds the subscription kind
+  to OpenAI**, so a later vendor cannot inherit ADR 0102's exception by omission.
+  `provider_status` answers per role in `role_credentials` and folds them into
+  the one connection block conservatively: configured means every role has one,
+  because overstating readiness fails a transform silently and understating it
+  is visible. The single key a previous build stored is adopted onto every role
+  it used to pay for **before** any write or delete touches it, and the config
+  migration copies the file aside through `core::backup` first. `cargo test` 760
+  passed / 3 ignored (**+12**); `cargo check` 15 warnings unchanged; in `src/`
+  only the type mirror moved and `npm run port:diff` reads `ALL EXACT`. **The
+  OAuth flow is not here** — acquiring a token set is stage D3, and no vendor
+  accepts a subscription today.
 - **A capability is asked on two axes, and "does this stream" needs a model**
   (ADR 0110, plan stage A2). *Which roles does this vendor serve* stays on
   `ProviderCapabilities` and gains `speech_synthesis`; *does this model stream,
