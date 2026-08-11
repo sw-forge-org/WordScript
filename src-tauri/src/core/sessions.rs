@@ -46,16 +46,11 @@ pub struct NativeSessionEvent {
     pub status: NativeSessionStatus,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct StartNativeSessionRequest {
-    pub trigger: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CompleteNativeSessionRequest {
-    pub text: String,
-    pub corrected: Option<bool>,
-}
+// `StartNativeSessionRequest` and `CompleteNativeSessionRequest` stood here
+// until 2026-08-11 and went with the two commands that deserialized them
+// (ADR 0091). Neither is a `#[warn(dead_code)]` candidate — a `pub` struct with
+// no user compiles silently — which is the same reason a registered command
+// with no caller survives a build: nothing in the toolchain asks who wants it.
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PendingTranscriptionPreviewTransform {
@@ -304,17 +299,12 @@ impl NativeSessionState {
         self.status()
     }
 
-    pub fn complete_current_transcription(
-        &mut self,
-        text: impl Into<String>,
-    ) -> Result<NativeSessionStatus, String> {
-        let Some(session_id) = self.processing_session_id() else {
-            return Err("No native session is waiting for transcription completion.".to_string());
-        };
-
-        self.complete_processing_session(&session_id, text)
-            .ok_or_else(|| "No native session is waiting for transcription completion.".to_string())
-    }
+    // `complete_current_transcription` stood here until 2026-08-11 and went
+    // with `complete_native_session`, its only caller (ADR 0091). It completed
+    // whichever session happened to be processing instead of the one the
+    // result belongs to — the session-id guard `AGENTS.md` requires, taken back
+    // out one frame after `complete_processing_session` applies it. Every
+    // completion path goes through the guarded method below.
 
     pub fn complete_processing_session(
         &mut self,
@@ -371,30 +361,23 @@ impl NativeSessionState {
     }
 }
 
-#[tauri::command]
-pub fn native_session_status(
-    state: State<'_, Mutex<NativeSessionState>>,
-) -> Result<NativeSessionStatus, String> {
-    let state = state.lock().map_err(|error| error.to_string())?;
-    Ok(state.status())
-}
-
-#[tauri::command]
-pub fn start_native_session(
-    app: AppHandle,
-    request: StartNativeSessionRequest,
-    _state: State<'_, Mutex<NativeSessionState>>,
-) -> Result<NativeSessionStatus, String> {
-    start_from_native(&app, &request.trigger)
-}
-
-#[tauri::command]
-pub fn stop_native_session(
-    app: AppHandle,
-    _state: State<'_, Mutex<NativeSessionState>>,
-) -> Result<NativeSessionStatus, String> {
-    processing_from_native(&app)
-}
+// `native_session_status`, `start_native_session`, `stop_native_session` and
+// `complete_native_session` stood here until 2026-08-11 and were removed by
+// Leg 10 (ADR 0091). They are the Python sidecar's IPC command set — the old
+// `wordscript/ipc.py` documents the Tauri -> Python channel as
+// `start_recording` / `stop_recording` / `abort_recording`, and the sidecar
+// owned the session state, so the host had to drive it from outside the
+// process. `febc452` carried that shape across as `#[tauri::command]`s and the
+// rewrite it belonged to moved trigger, capture and pipeline INTO this process,
+// so the caller became internal Rust: `start_from_native`,
+// `processing_from_native`, `complete_processing_session`. Those are unchanged
+// and are what a future in-process caller (the roadmap's MCP bridge) calls —
+// a Tauri command is reachable only from this app's own webviews.
+//
+// `git log --all -S` finds no commit in which any of the four was invoked from
+// `src/`. `abort_native_session` below is the one of the five that survives,
+// because abort is the one lifecycle transition a USER makes: the overlay draws
+// it, and the other four come from hotkeys the runtime already owns.
 
 #[tauri::command]
 pub fn abort_native_session(
@@ -402,26 +385,6 @@ pub fn abort_native_session(
     _state: State<'_, Mutex<NativeSessionState>>,
 ) -> Result<NativeSessionStatus, String> {
     abort_from_native(&app, "Capture aborted by native trigger.")
-}
-
-#[tauri::command]
-pub fn complete_native_session(
-    app: AppHandle,
-    request: CompleteNativeSessionRequest,
-    state: State<'_, Mutex<NativeSessionState>>,
-) -> Result<NativeSessionStatus, String> {
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    let status = state.complete_current_transcription(request.text)?;
-    emit_session_event(
-        &app,
-        if request.corrected.unwrap_or(false) {
-            "transcription_corrected"
-        } else {
-            "transcription"
-        },
-        &status,
-    );
-    Ok(status)
 }
 
 #[tauri::command]
