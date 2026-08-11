@@ -116,7 +116,6 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     label: "Profiles",
     icon: "profiles",
     layout: "pane",
-    banner: saysSo("Wired in part — the health flag counts and explains, and its click has nowhere to go: its four kinds point at three different tabs."),
     render: (props) => <ProfilesScreen {...props} />,
   },
   {

@@ -236,27 +236,43 @@ export function LegendRow({
 }
 
 /**
- * The one thing wrong with the selected profile, in its header. A flag is a
- * count AND a way in, so it is one control — not a badge beside a button.
+ * What is wrong with the selected profile, in its header. A flag is a count AND
+ * a way in, so it is one control — not a badge beside a button.
+ *
+ * **The tone is the runtime's `level` and not a restatement of the count**
+ * (ADR 0085). `derive_health_level` already separates a contradiction in the
+ * prompt from a heuristic about replacement lengths, and it drops to green when
+ * every flag standing has been acknowledged — three states the surface drew
+ * identically until the click had somewhere to go. Two flags in amber and one
+ * in red is the ordering a reader needs, and the number alone reverses it.
  */
 export function Flag({
   children,
   onClick,
   title,
   disabled,
+  tone = "yellow",
 }: {
   children: ReactNode;
   onClick?: () => void;
-  /** What the flags actually say. The count is the affordance; the sentences
-   *  are what a reader needs, and there is no drawn surface for them. */
+  /** The sentences behind the count, for the pointer that hovers before it
+   *  clicks. The panel is where they are read; this is the preview. */
   title?: string;
-  /** No drawn place for the click to go. It states the count and is inert
-   *  rather than a button that does nothing (ADR 0065). */
   disabled?: boolean;
+  /** `red` names a conflict the runtime says will produce inconsistent output,
+   *  `green` says every flag here has been read and accepted. */
+  tone?: "red" | "yellow" | "green";
 }) {
   return (
-    <button type="button" className="ws-flag" onClick={onClick} title={title} disabled={disabled}>
-      <Icon name="alert" />
+    <button
+      type="button"
+      className="ws-flag"
+      data-tone={tone}
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+    >
+      <Icon name={tone === "green" ? "check" : "alert"} />
       {children}
     </button>
   );

@@ -95,7 +95,7 @@ export { ProviderMark, ProviderSprite, ProviderChips, brandSymbolId } from "./Pr
 export { HomeOpen, HeroInvoke, HeroFacts, KeyCap } from "./HomeHero";
 export { ListRows, ListItem, RawPanel, AnswerPanel, Reorder } from "./ListItem";
 export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
-export { EditorPanel, ConfirmPanel } from "./EditorPanel";
+export { EditorPanel, ConfirmPanel, FlagPanel } from "./EditorPanel";
 export type { EditorFieldSpec, EditorIssue } from "./EditorPanel";
 export { TranscriptRow } from "./TranscriptRow";
 export { OwedList, Owed } from "./Owed";

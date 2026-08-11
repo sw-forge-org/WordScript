@@ -13,6 +13,7 @@ import {
   Field,
   FieldWrap,
   Flag,
+  FlagPanel,
   Icon,
   IconButton,
   Legend,
@@ -25,7 +26,6 @@ import {
   Pane,
   PaneDetailHead,
   PaneDetailMain,
-  PaneListFoot,
   PaneListHead,
   PaneRow,
   PaneScroll,
@@ -72,8 +72,8 @@ import type {
   TextProfileInsertBehavior,
   VocabularyHintEntry,
 } from "@/types/ipc";
-import type { ProfileHealthStatus, TextRulesAnalysis } from "@/types/textRules";
-import type { PartlyWiredScreenProps } from "./props";
+import type { ProfileHealthFlag, ProfileHealthStatus, TextRulesAnalysis } from "@/types/textRules";
+import type { WiredScreenProps } from "./props";
 
 /**
  * PROFILES — `SCREENS.profiles`, a pane view, WIRED IN PART.
@@ -127,14 +127,25 @@ import type { PartlyWiredScreenProps } from "./props";
  * folds one entry's output into the next, so their order is a value the reader
  * could neither see nor set.
  *
- * WHAT CANNOT ACT, AND IT IS WHY THE BANNER STAYS. One control, DISABLED with
- * the reason on it rather than deleted (ADR 0065): **the profile health flag's
- * click.** The count IS read (`get_profile_health`) and its sentences are the
- * button's tooltip, but the four flag kinds point at three different tabs —
- * `form_conflict` and `cleanup_interference` at Context, `length_bias` at
- * Replacements, `bias_policy_weak` at Words — so one click on an aggregate
- * count has no single destination. Picking one is a decision rather than a
- * repair, and it is the last thing between this screen and `WiredScreenProps`.
+ * THE FLAG'S CLICK WAS THE LAST INERT CONTROL AND LEG 8 GAVE IT THE ONLY
+ * DESTINATION THAT FITS FOUR KINDS (ADR 0085). One click on an aggregate count
+ * cannot route to three tabs, so it routes to none of them: it opens the panel
+ * that LISTS them, one row per flag, each with the door to the tab that holds
+ * its cause. `form_conflict` and `cleanup_interference` come from the prompt
+ * and open Context; `length_bias` comes from the replacements and opens
+ * Replacements; `bias_policy_weak` opens **Defaults**, where the processing
+ * mode is — not Words, which only shows the effect and sets nothing.
+ *
+ * Each row also acknowledges. `profile_health_acknowledged_flags` has been on
+ * the wire since before the port and had no reader here since Leg 3 deleted
+ * `PromptsTab.tsx`, so `derive_health_level` was computing a level out of a set
+ * nothing could write — a warning with no way to close it. The flag carries
+ * that level as its tone, which is what makes acknowledging visible at all.
+ *
+ * THE SCREEN IS WIRED AND HAS LEFT THE GALLERY (ADR 0057). Every fact on it has
+ * a source, so `runtime` is required, the drawn branch and its `DRAWN_*` rows
+ * are gone, and `npm run port:diff` no longer measures it — the departures
+ * ADR 0068 and ADR 0082 recorded are settled rather than carried.
  */
 
 /**
@@ -190,18 +201,6 @@ const LENGTH_OPTIONS: { value: CommunicationLength; label: string }[] = [
   { value: "normal", label: "Normal" },
   { value: "full", label: "Expansive" },
 ];
-
-/**
- * The gallery's number, and only the gallery's.
- *
- * With a runtime the meters read `analyze_communication_style`, which answers
- * what the prompt will actually cost rather than what was typed. Without one
- * there is nothing to ask, and a gallery screen may carry sample data and
- * assert nothing (ADR 0055), so the drawn meter counts characters against the
- * bound it is drawn with. The two agree on any input that needs no normalizing,
- * which is every input the gallery has.
- */
-const DRAWN_STYLE_BUDGET = 400;
 
 /** Rules and a sample stay inert while the register is Off — `is_active()` in
  *  `core::communication_style` gates the whole block, so a profile that has
@@ -280,37 +279,44 @@ const ORDER_NOTE = "Runs in order. A later rule sees what an earlier one wrote."
  * 230 px panel out of a list of three words, which the owner saw and said so.
  * An entry with no hint draws the menu narrow.
  */
-/* The drawing's own lists, which is what the gallery is measured against. */
-const DRAWN_PROFILES = [
-  { id: "d1", title: "General writing", sub: "Auto · Insert at cursor", active: true },
-  { id: "d2", title: "Support reply", sub: "Rewrite · Client register", active: false },
-  { id: "d3", title: "Customer success replies", sub: "Rewrite · Clipboard only", active: false },
-];
+/**
+ * WHAT EACH FLAG IS CALLED, AND WHICH TAB CAN DO ANYTHING ABOUT IT (ADR 0085).
+ *
+ * The runtime answers with a `kind` and a sentence; neither is a name a reader
+ * can scan a list by, and neither says where to go. The `where` column is the
+ * tab holding the value the detector READ — not the tab that displays its
+ * effect, which is the distinction that put `bias_policy_weak` on Defaults:
+ * `detect_bias_policy_weak` fires on `bias_mode` together with
+ * `processing_mode`, `bias_mode` has no control anywhere in the product, and
+ * the processing mode is a select on Defaults. Words draws the effective bias
+ * as a readout and sets nothing, so a door to it would promise a repair it
+ * cannot perform.
+ */
+const FLAG_KINDS: Record<
+  ProfileHealthFlag["kind"],
+  { name: string; where: (typeof TABS)[number]; severe: boolean }
+> = {
+  form_conflict: { name: "Contradictory style instructions", where: "Context", severe: true },
+  cleanup_interference: {
+    name: "Instructions that suppress the cleanup",
+    where: "Context",
+    severe: false,
+  },
+  length_bias: { name: "Replacements that all pull one way", where: "Replacements", severe: false },
+  bias_policy_weak: { name: "No transcription bias under this mode", where: "Defaults", severe: true },
+};
 
-const DRAWN_TERMS: TermChip[] = [
-  { term: "WordScript", origin: "learned" },
-  { term: "Tauri", origin: "learned" },
-  { term: "WebKitGTK", origin: "added" },
-  { term: "ydotool", origin: "added" },
-  { term: "Kundenanfrage", origin: "added" },
-  { term: "Groq", origin: "learned" },
-  { term: "whisper-cli", origin: "added" },
-  { term: "Ollama", origin: "learned" },
-];
-
-const DRAWN_REPLACEMENTS: Array<[string, string]> = [
-  ["KA", "Kundenanfrage"],
-  ["WS", "WordScript"],
-  ["asap", "as soon as possible"],
-];
-
-const DRAWN_SNIPPETS: Array<[string, string]> = [
-  ["standard closing", "Best regards,\nFelix"],
-  ["ticket header", "Ticket: \nStatus: \nNext step: "],
-];
-
-const DRAWN_CONTEXT =
-  "Tauri desktop runtime\nWhisper speech-to-text\nRust native insert chain\nSettings information architecture";
+/** The runtime's own name for the flag, with the one detail it carries beyond
+ *  its sentence: a length bias has a direction and a count, and "3 of 4
+ *  expanding" is what tells the reader whether the heuristic caught something
+ *  real or caught their whole list. */
+function flagName(flag: ProfileHealthFlag): string {
+  const base = FLAG_KINDS[flag.kind].name;
+  if (flag.kind !== "length_bias") return base;
+  return `${base} — ${flag.direction === "inflating" ? "expanding" : "shrinking"}, ${flag.entry_count} ${
+    flag.entry_count === 1 ? "entry" : "entries"
+  }`;
+}
 
 function termsOf(profile: TextProfile): TermChip[] {
   return profile.vocabulary_hints.map((hint) => ({
@@ -338,8 +344,8 @@ function newVocabularyHint(phrase: string): VocabularyHintEntry {
   };
 }
 
-export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
-  const config = runtime?.config;
+export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
+  const config = runtime.config;
   const [tab, setTab] = useState(TABS[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -347,49 +353,45 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   const [styleAnalysis, setStyleAnalysis] = useState<CommunicationStyleAnalysis | null>(null);
   const [term, setTerm] = useState("");
 
-  /* The drawn state, unchanged, for the gallery. */
-  const [drawnSelected, setDrawnSelected] = useState(DRAWN_PROFILES[0].id);
-  const [drawnDelivery, setDrawnDelivery] = useState("Insert at cursor");
-  const [drawnWorkspace, setDrawnWorkspace] = useState(true);
-  /* The Style tab's drawn state starts OFF, and that is not an empty default:
-     the drawn profile's own subline is `Auto · Insert at cursor`, which under
-     `describeTextProfileWorkMode` is exactly what "no register" produces. A
-     gallery that drew a register here would contradict the list beside it.
-     Switching it in the gallery brings the other three controls alive, which
-     is how both halves of the card are reachable without a runtime. */
-  const [drawnRegister, setDrawnRegister] = useState<CommunicationRegister>("off");
-  const [drawnLength, setDrawnLength] = useState<CommunicationLength>("normal");
-  const [drawnRules, setDrawnRules] = useState("");
-  const [drawnSample, setDrawnSample] = useState("");
-  /* The two Translate rows are drawn on their runtime defaults, which is what
-     the AI Models drawing shows for the same pair. They are only reachable in
-     the gallery by switching the mode select to Translate, which is how both
-     halves of the card stay measurable. */
-  const [drawnTargetLanguage, setDrawnTargetLanguage] = useState("en");
-  const [drawnKeepWords, setDrawnKeepWords] = useState(true);
-  const [drawnMode, setDrawnMode] = useState<ProcessingMode>("auto");
-
-  const profiles = config?.text_profiles ?? [];
+  const profiles = config.text_profiles;
   const profile =
     profiles.find((entry) => entry.id === selectedId) ??
-    profiles.find((entry) => entry.id === config?.active_text_profile_id) ??
+    profiles.find((entry) => entry.id === config.active_text_profile_id) ??
     profiles[0];
 
   const { budget } = useCaptureBudget(
-    config ? `${config.provider}:${config.provider_tier}:${config.local_model}` : undefined,
+    `${config.provider}:${config.provider_tier}:${config.local_model}`,
+  );
+
+  /** WHICH FLAGS THIS PROFILE HAS ALREADY READ AND ACCEPTED (ADR 0085).
+   *
+   *  Read straight off the config rather than kept beside it, because the
+   *  runtime merges the same map off disk when it grades the profile — two
+   *  copies of one set is how the flag and its level start disagreeing. */
+  const acknowledged = useMemo(
+    () => (profile ? (config.profile_health_acknowledged_flags?.[profile.id] ?? []) : []),
+    [config.profile_health_acknowledged_flags, profile?.id],
   );
 
   /* The runtime grades the profile from what it holds — the prompt, the
      replacements, the mode. Re-read when any of those change, because a flag
-     that survives an edit that fixed it is worse than no flag. */
+     that survives an edit that fixed it is worse than no flag.
+
+     THE ACKNOWLEDGED SET IS A DEPENDENCY AND IT IS THE ONE THAT ONLY BREAKS
+     ONCE A WRITE COMES BACK. Acknowledging changes nothing the detectors look
+     at, so without it in this list the level would keep the value it had before
+     the write — a flag acknowledged and still amber until something unrelated
+     re-ran the effect. The set is also PASSED rather than left to the disk read
+     inside the command: the config write is in flight when this fires, and the
+     copy in hand is the newer of the two. */
   useEffect(() => {
-    if (!runtime?.active || !profile) return;
+    if (!runtime.active || !profile) return;
     let cancelled = false;
     void invoke<ProfileHealthStatus>("get_profile_health", {
       request: {
         prompt: profile.prompt,
         dictionary_entries: profile.dictionary_entries,
-        acknowledged_flags: [],
+        acknowledged_flags: acknowledged,
         bias_mode: profile.work_mode?.bias_mode ?? null,
         processing_mode: profile.work_mode?.processing_mode ?? null,
         profile_id: profile.id,
@@ -404,7 +406,14 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
     return () => {
       cancelled = true;
     };
-  }, [runtime?.active, profile?.id, profile?.prompt, profile?.dictionary_entries, profile?.work_mode]);
+  }, [
+    runtime.active,
+    profile?.id,
+    profile?.prompt,
+    profile?.dictionary_entries,
+    profile?.work_mode,
+    acknowledged,
+  ]);
 
   /** Every write on this screen targets the SELECTED profile, which is not
    *  necessarily the active one — `buildProfile*Patch` in `lib/textProfiles`
@@ -415,7 +424,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
     update: (current: TextProfile) => TextProfile,
     kind: "discrete" | "text" = "discrete",
   ) => {
-    if (!runtime || !config || !profile) return;
+    if (!profile) return;
     const next = config.text_profiles.map((entry) =>
       entry.id === profile.id ? clearTextProfileCuration(update(entry)) : entry,
     );
@@ -453,6 +462,18 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
     id: string | null;
   } | null>(null);
 
+  /**
+   * WHICH ANSWER IS UNFOLDED, AND EXACTLY ONE IS — the readout half of the same
+   * rule `editing` holds for the commit half (ADR 0082).
+   *
+   * `health` joined the two `analyze_text_rules` answers in Leg 8 rather than
+   * getting a flag of its own, because they are the same kind of thing: a panel
+   * the runtime fills, opened from the control that asked, closed by Close. One
+   * state is also what keeps the sample answer from standing open behind a
+   * health panel two cards above it.
+   */
+  const [answer, setAnswer] = useState<"sample" | "bias" | "health" | null>(null);
+
   /** Where a row menu is open, on which row, and of which kind. One at a time,
    *  and the point is measured rather than derived: `.ws-menu` leaves the flow
    *  so no ancestor can clip it. */
@@ -484,6 +505,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
    */
   useEffect(() => {
     setEditing(null);
+    setAnswer(null);
   }, [tab]);
 
   const saveReplacement = (id: string | null, values: Record<string, string>) => {
@@ -529,10 +551,6 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
      surface that can make a thing and not name it leaves the naming to whoever
      finds it later. Selecting it and opening the rename is one gesture. */
   const newProfile = () => {
-    if (!runtime || !config) {
-      setEditing({ kind: "profile", id: "drawn" });
-      return;
-    }
     const created = createTextProfile();
     runtime.patch(
       buildTextProfilesPatch(
@@ -557,7 +575,6 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
    * capture is unaffected: it keeps what it started with (ADR 0025).
    */
   const deleteProfile = (id: string) => {
-    if (!runtime || !config) return;
     const rest = config.text_profiles.filter((entry) => entry.id !== id);
     if (rest.length === 0) return;
     runtime.patch(
@@ -572,7 +589,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
   };
 
   const duplicateProfile = () => {
-    if (!runtime || !config || !profile) return;
+    if (!profile) return;
     const copy = duplicateTextProfile(profile, `${profile.label} copy`);
     runtime.patch(
       buildTextProfilesPatch(
@@ -599,22 +616,14 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
 
   const snippetRows = useMemo(
     () =>
-      runtime && profile
-        ? profile.snippet_entries.map((item) => ({
-            id: item.id,
-            title: item.label || item.trigger,
-            trigger: item.trigger,
-            label: item.label,
-            expansion: item.expansion,
-          }))
-        : DRAWN_SNIPPETS.map(([name, body]) => ({
-            id: name,
-            title: name,
-            trigger: name,
-            label: name,
-            expansion: body,
-          })),
-    [runtime, profile],
+      (profile?.snippet_entries ?? []).map((item) => ({
+        id: item.id,
+        title: item.label || item.trigger,
+        trigger: item.trigger,
+        label: item.label,
+        expansion: item.expansion,
+      })),
+    [profile?.snippet_entries],
   );
 
   /**
@@ -633,10 +642,9 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
    */
   const [analysis, setAnalysis] = useState<TextRulesAnalysis | null>(null);
   const [sample, setSample] = useState("");
-  const [answer, setAnswer] = useState<"sample" | "bias" | null>(null);
 
   useEffect(() => {
-    if (!runtime?.active || !profile) {
+    if (!runtime.active || !profile) {
       setAnalysis(null);
       return;
     }
@@ -650,8 +658,8 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
         snippet_entries: profile.snippet_entries,
         sample_text: sample.trim().length > 0 ? sample : null,
         bias_mode: profile.work_mode?.bias_mode ?? null,
-        local_prompt_strength: config?.local_prompt_strength ?? null,
-        local_prompt_carry: config?.local_prompt_carry ?? null,
+        local_prompt_strength: config.local_prompt_strength ?? null,
+        local_prompt_carry: config.local_prompt_carry ?? null,
         manual_bias: profile.work_mode?.manual_bias ?? null,
       },
     })
@@ -665,7 +673,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
       cancelled = true;
     };
   }, [
-    runtime?.active,
+    runtime.active,
     profile?.id,
     profile?.prompt,
     profile?.stt_hints,
@@ -673,8 +681,8 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
     profile?.dictionary_entries,
     profile?.snippet_entries,
     profile?.work_mode,
-    config?.local_prompt_strength,
-    config?.local_prompt_carry,
+    config.local_prompt_strength,
+    config.local_prompt_carry,
     sample,
   ]);
 
@@ -780,7 +788,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
      and a meter that lags the field it measures is the defect it exists
      against. */
   useEffect(() => {
-    if (!runtime?.active || !modes) {
+    if (!runtime.active || !modes) {
       setStyleAnalysis(null);
       return;
     }
@@ -805,32 +813,48 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
       cancelled = true;
     };
   }, [
-    runtime?.active,
+    runtime.active,
     modes?.communication_register,
     modes?.communication_length,
     modes?.style_instructions,
     modes?.style_sample,
   ]);
   const capture = profile ? resolveProfileCaptureSettings(profile) : null;
-  const isActive = Boolean(profile && profile.id === config?.active_text_profile_id);
-  const flagCount = health?.flags.length ?? 0;
+  const isActive = Boolean(profile && profile.id === config.active_text_profile_id);
+  const flags = health?.flags ?? [];
 
-  /* ONE READ AND ONE WRITE PER VALUE, and the branch is where the value comes
-     FROM rather than how the card is drawn — the discipline `PartlyWiredScreenProps`
-     exists for. The two selects are discrete and take `patch`; the two
-     textareas are prose and take `patchText` (plan P1). */
-  const register = runtime ? (modes?.communication_register ?? "off") : drawnRegister;
-  const length = runtime ? (modes?.communication_length ?? "normal") : drawnLength;
-  const styleRules = runtime ? (modes?.style_instructions ?? "") : drawnRules;
-  const styleSample = runtime ? (modes?.style_sample ?? "") : drawnSample;
+  /**
+   * READ AND ACCEPTED, OR READ AND ACCEPTED NO LONGER (ADR 0085).
+   *
+   * It writes through `patch` — the seam every other discrete control on this
+   * screen uses — rather than through `acknowledge_profile_health_flag`, which
+   * is the same operation as a targeted config edit and predates the seam. One
+   * write, one path, and the config comes back through the channel the health
+   * effect is already watching.
+   */
+  const acknowledge = (kind: string, next: boolean) => {
+    if (!profile) return;
+    const all = { ...(config.profile_health_acknowledged_flags ?? {}) };
+    const mine = new Set(all[profile.id] ?? []);
+    if (next) mine.add(kind);
+    else mine.delete(kind);
+    /* An empty entry is dropped rather than stored empty, which is what the
+       runtime's own `unacknowledge_profile_health_flag` does with the last one
+       out — a map full of empty sets is a config that grows with every flag
+       anybody ever looked at. */
+    if (mine.size === 0) delete all[profile.id];
+    else all[profile.id] = [...mine];
+    runtime.patch({ profile_health_acknowledged_flags: all });
+  };
+
+  const register = modes?.communication_register ?? "off";
+  const length = modes?.communication_length ?? "normal";
+  const styleRules = modes?.style_instructions ?? "";
+  const styleSample = modes?.style_sample ?? "";
   const styleActive = register !== "off";
-  const mode = runtime ? (work?.processing_mode ?? "auto") : drawnMode;
-  const targetLanguage = runtime
-    ? (modes?.translate_target_language ?? "en")
-    : drawnTargetLanguage;
-  const keepProfileWords = runtime
-    ? (modes?.translate_keep_profile_words ?? true)
-    : drawnKeepWords;
+  const mode = work?.processing_mode ?? "auto";
+  const targetLanguage = modes?.translate_target_language ?? "en";
+  const keepProfileWords = modes?.translate_keep_profile_words ?? true;
 
   const writeModes = (next: Partial<ProfileModesSettings>, kind: "discrete" | "text" = "discrete") =>
     write(
@@ -843,16 +867,14 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
 
   const listRows = useMemo(
     () =>
-      runtime
-        ? profiles.map((entry) => ({
-            id: entry.id,
-            title: entry.label,
-            sub: describeTextProfileWorkMode(entry),
-          }))
-        : DRAWN_PROFILES.map((entry) => ({ id: entry.id, title: entry.title, sub: entry.sub })),
-    [runtime, profiles],
+      profiles.map((entry) => ({
+        id: entry.id,
+        title: entry.label,
+        sub: describeTextProfileWorkMode(entry),
+      })),
+    [profiles],
   );
-  const currentId = runtime ? profile?.id : drawnSelected;
+  const currentId = profile?.id;
 
   const ceilingLabel = budget ? formatBudgetDuration(budget.ceiling_seconds) : null;
   const autoStopMaxMinutes = budget ? Math.max(1, Math.floor(budget.ceiling_seconds / 60)) : 30;
@@ -884,8 +906,8 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                   current={row.id === currentId}
                   onClick={() => {
                     setEditing(null);
-                    if (runtime) setSelectedId(row.id);
-                    else setDrawnSelected(row.id);
+                    setAnswer(null);
+                    setSelectedId(row.id);
                   }}
                   /* The row is picked as well as targeted: a menu that acts on
                      something other than what the detail is showing is how you
@@ -893,8 +915,8 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                   onContextMenu={(event) => {
                     event.preventDefault();
                     setEditing(null);
-                    if (runtime) setSelectedId(row.id);
-                    else setDrawnSelected(row.id);
+                    setAnswer(null);
+                    setSelectedId(row.id);
                     setMenu({ x: event.clientX, y: event.clientY, kind: "profile", id: row.id });
                   }}
                 />
@@ -909,23 +931,32 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                 visible on all six. Duplicate and Export went with it — they
                 are things you do to a profile rarely and from the list. */}
             <PaneDetailHead
-              title={runtime ? (profile?.label ?? "No profile") : "General writing"}
+              title={profile?.label ?? "No profile"}
               description={
-                runtime
-                  ? isActive
-                    ? "Active in this session"
-                    : (profile && describeTextProfileWorkMode(profile)) || ""
-                  : "Active in this session"
+                isActive
+                  ? "Active in this session"
+                  : (profile && describeTextProfileWorkMode(profile)) || ""
               }
               actions={
                 <>
-                  {(!runtime || isActive) && <StatusBadge tone="success">Active</StatusBadge>}
-                  {(!runtime || flagCount > 0) && (
+                  {isActive && <StatusBadge tone="success">Active</StatusBadge>}
+                  {/* THE COUNT IS EVERY FLAG AND THE TONE IS THE RUNTIME'S
+                      LEVEL, WHICH ARE TWO DIFFERENT FACTS (ADR 0085). An
+                      acknowledged flag is still true — the prompt still
+                      contradicts itself — so it stays in the count and in the
+                      list; what acknowledging changes is whether it colours the
+                      profile. Dropping it from the count instead would leave
+                      the panel that lists it unreachable at zero. */}
+                  {flags.length > 0 && (
                     <Flag
-                      disabled={Boolean(runtime)}
-                      title={health?.flags.map((flag) => flag.hint).join(" ") || undefined}
+                      tone={health?.level === "red" ? "red" : health?.level === "green" ? "green" : "yellow"}
+                      title={flags.map((flag) => flag.hint).join(" ")}
+                      onClick={() => {
+                        setEditing(null);
+                        setAnswer(answer === "health" ? null : "health");
+                      }}
                     >
-                      {runtime ? `${flagCount} ${flagCount === 1 ? "flag" : "flags"}` : "1 flag"}
+                      {`${flags.length} ${flags.length === 1 ? "flag" : "flags"}`}
                     </Flag>
                   )}
                   {/* The same menu, from the header, for a pointer that has
@@ -954,6 +985,32 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
               }
             />
             <PaneDetailMain>
+              {/* THE FLAG'S PANEL OPENS UNDER THE HEAD IT SITS IN (ADR 0085),
+                  where the rename already opens — the head hides its overflow,
+                  so a panel drawn INSIDE it would be clipped at its second row,
+                  which is the defect the owner found in the running app in
+                  Leg 7 and no test could see.
+
+                  It is above the sub-tabs on purpose. A flag is a property of
+                  the profile rather than of any one tab, and its rows send the
+                  reader to three different tabs — a panel below the tab row
+                  would look like it belonged to whichever tab was open. */}
+              {answer === "health" && flags.length > 0 && (
+                <FlagPanel
+                  flags={flags.map((flag) => ({
+                    kind: flag.kind,
+                    name: flagName(flag),
+                    hint: flag.hint,
+                    where: FLAG_KINDS[flag.kind].where,
+                    severe: FLAG_KINDS[flag.kind].severe,
+                    acknowledged: acknowledged.includes(flag.kind),
+                  }))}
+                  onOpen={(where) => setTab(where)}
+                  onAcknowledge={acknowledge}
+                  onClose={() => setAnswer(null)}
+                />
+              )}
+
               {/* THE RENAME OPENS UNDER THE TITLE IT CHANGES. It is the same
                   panel the rule lists use, in the one place on this screen
                   where the value being edited is the heading above it — which
@@ -984,11 +1041,11 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                 />
               )}
 
-              {editing?.kind === "profile" && (!runtime || profile?.id === editing.id) && (
+              {editing?.kind === "profile" && profile?.id === editing.id && (
                 <EditorPanel
                   key={editing.id ?? "new"}
                   fields={PROFILE_FIELDS}
-                  initial={{ label: runtime ? (profile?.label ?? "") : "General writing" }}
+                  initial={{ label: profile?.label ?? "" }}
                   saveLabel="Rename"
                   onSave={(values) => {
                     write((current) => ({ ...current, label: values.label }));
@@ -1019,10 +1076,6 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             value={mode}
                             onChange={(event) => {
                               const next = event.target.value as ProcessingMode;
-                              if (!runtime) {
-                                setDrawnMode(next);
-                                return;
-                              }
                               write((current) => ({
                                 ...current,
                                 work_mode: {
@@ -1063,13 +1116,9 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             control={
                               <Select
                                 value={targetLanguage}
-                                onChange={(event) => {
-                                  if (!runtime) {
-                                    setDrawnTargetLanguage(event.target.value);
-                                    return;
-                                  }
-                                  writeModes({ translate_target_language: event.target.value });
-                                }}
+                                onChange={(event) =>
+                                  writeModes({ translate_target_language: event.target.value })
+                                }
                                 aria-label="Into"
                               >
                                 {TRANSLATE_LANGUAGES.map((language) => (
@@ -1086,13 +1135,9 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             control={
                               <Toggle
                                 checked={keepProfileWords}
-                                onCheckedChange={(next) => {
-                                  if (!runtime) {
-                                    setDrawnKeepWords(next);
-                                    return;
-                                  }
-                                  writeModes({ translate_keep_profile_words: next });
-                                }}
+                                onCheckedChange={(next) =>
+                                  writeModes({ translate_keep_profile_words: next })
+                                }
                                 aria-label="Keep this profile's words"
                               />
                             }
@@ -1106,17 +1151,11 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                           <SegmentControl
                             aria-label="Delivery"
                             value={
-                              runtime
-                                ? work?.insert_behavior === "clipboard_only"
-                                  ? "Clipboard only"
-                                  : "Insert at cursor"
-                                : drawnDelivery
+                              work?.insert_behavior === "clipboard_only"
+                                ? "Clipboard only"
+                                : "Insert at cursor"
                             }
                             onChange={(next) => {
-                              if (!runtime) {
-                                setDrawnDelivery(next);
-                                return;
-                              }
                               const behavior: TextProfileInsertBehavior =
                                 next === "Clipboard only" ? "clipboard_only" : "auto_paste";
                               write((current) => ({
@@ -1139,12 +1178,8 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                         hint="Tells the AI which app you are writing into. Never adds content."
                         control={
                           <Toggle
-                            checked={runtime ? Boolean(modes?.collect_workspace_context) : drawnWorkspace}
+                            checked={Boolean(modes?.collect_workspace_context)}
                             onCheckedChange={(next) => {
-                              if (!runtime) {
-                                setDrawnWorkspace(next);
-                                return;
-                              }
                               write((current) => ({
                                 ...current,
                                 modes: {
@@ -1174,7 +1209,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                         hint="When you stop talking. 0 disables it."
                         control={
                           <Stepper
-                            value={runtime ? (capture?.silence_timeout_seconds ?? 0) : 3}
+                            value={capture?.silence_timeout_seconds ?? 0}
                             onChange={(next) =>
                               write((current) => ({
                                 ...current,
@@ -1201,23 +1236,19 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                         id={settingsAnchorElementId(SETTINGS_ANCHOR_AUTO_STOP)}
                         label="Auto-stop"
                         hint={
-                          !runtime
-                            ? "At this length. Up to 12:18 keeps headroom under the ceiling."
-                            : budget
-                              ? budget.auto_stop_clamped
-                                ? `At this length. Your saved value is longer than this setup can process, so recordings stop at ${formatBudgetDuration(
-                                    budget.auto_stop_seconds,
-                                  )} instead.`
-                                : `At this length. Up to ${formatBudgetDuration(
-                                    budget.recommended_auto_stop_seconds,
-                                  )} keeps headroom under the ceiling.`
-                              : "At this length. Reading the current processing limit…"
+                          budget
+                            ? budget.auto_stop_clamped
+                              ? `At this length. Your saved value is longer than this setup can process, so recordings stop at ${formatBudgetDuration(
+                                  budget.auto_stop_seconds,
+                                )} instead.`
+                              : `At this length. Up to ${formatBudgetDuration(
+                                  budget.recommended_auto_stop_seconds,
+                                )} keeps headroom under the ceiling.`
+                            : "At this length. Reading the current processing limit…"
                         }
                         control={
                           <Stepper
-                            value={
-                              runtime ? Math.round((capture?.max_recording_seconds ?? 720) / 60) : 10
-                            }
+                            value={Math.round((capture?.max_recording_seconds ?? 720) / 60)}
                             onChange={(next) =>
                               write((current) => ({
                                 ...current,
@@ -1229,7 +1260,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             }
                             suffix="min"
                             min={1}
-                            max={runtime ? autoStopMaxMinutes : 13}
+                            max={autoStopMaxMinutes}
                             aria-label="Auto-stop"
                           />
                         }
@@ -1237,15 +1268,11 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                       <Row
                         label="Ceiling"
                         hint={
-                          !runtime
-                            ? "13:39 — the 25 MiB upload size on your plan. Past it, nothing transcribes."
-                            : budget
-                              ? `${ceilingLabel} — ${budget.ceiling_detail}. Past it, nothing transcribes.`
-                              : "The runtime has not answered with a processing limit."
+                          budget
+                            ? `${ceilingLabel} — ${budget.ceiling_detail}. Past it, nothing transcribes.`
+                            : "The runtime has not answered with a processing limit."
                         }
-                        control={
-                          <StatusBadge>{runtime ? (ceilingLabel ?? "Not read") : "13:39"}</StatusBadge>
-                        }
+                        control={<StatusBadge>{ceilingLabel ?? "Not read"}</StatusBadge>}
                       />
                     </CardRows>
                   </Card>
@@ -1284,14 +1311,7 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             },
                             {
                               label: "Written",
-                              body: (
-                                <p>
-                                  {analysis?.preview.output ||
-                                    (runtime
-                                      ? "Nothing yet."
-                                      : "Type in the runtime to see this.")}
-                                </p>
-                              ),
+                              body: <p>{analysis?.preview.output || "Nothing yet."}</p>,
                             },
                           ]}
                           /* THE RULES THAT FIRED, BY NAME. An empty run is
@@ -1348,14 +1368,11 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                         control={
                           <Select
                             value={register}
-                            onChange={(event) => {
-                              const next = event.target.value as CommunicationRegister;
-                              if (!runtime) {
-                                setDrawnRegister(next);
-                                return;
-                              }
-                              writeModes({ communication_register: next });
-                            }}
+                            onChange={(event) =>
+                              writeModes({
+                                communication_register: event.target.value as CommunicationRegister,
+                              })
+                            }
                             aria-label="Communication register"
                           >
                             {REGISTER_OPTIONS.map((option) => (
@@ -1373,14 +1390,11 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                           <Select
                             value={length}
                             disabled={!styleActive}
-                            onChange={(event) => {
-                              const next = event.target.value as CommunicationLength;
-                              if (!runtime) {
-                                setDrawnLength(next);
-                                return;
-                              }
-                              writeModes({ communication_length: next });
-                            }}
+                            onChange={(event) =>
+                              writeModes({
+                                communication_length: event.target.value as CommunicationLength,
+                              })
+                            }
                             aria-label="Communication length"
                           >
                             {LENGTH_OPTIONS.map((option) => (
@@ -1403,19 +1417,24 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             disabled={!styleActive}
                             placeholder={"no emoji\nkeep it under five sentences"}
                             aria-label="Style rules"
-                            onChange={(event) => {
-                              if (!runtime) {
-                                setDrawnRules(event.target.value);
-                                return;
-                              }
-                              writeModes({ style_instructions: event.target.value }, "text");
-                            }}
-                            onBlur={runtime ? () => runtime.flushText() : undefined}
+                            onChange={(event) =>
+                              writeModes({ style_instructions: event.target.value }, "text")
+                            }
+                            onBlur={() => runtime.flushText()}
                           />
-                          <BudgetMeter
-                            used={styleAnalysis?.instructions.used_chars ?? styleRules.trim().length}
-                            max={styleAnalysis?.instructions.max_chars ?? DRAWN_STYLE_BUDGET}
-                          />
+                          {/* THE BOUND IS THE RUNTIME'S OR THERE IS NO METER
+                              (rule 7). `analyze_communication_style` answers
+                              both numbers; until it has, a meter drawn against
+                              a constant copied out of `core::communication_style`
+                              would be a measurement this screen invented — and
+                              it would keep reading right on the day the runtime
+                              changed the budget. */}
+                          {styleAnalysis && (
+                            <BudgetMeter
+                              used={styleAnalysis.instructions.used_chars}
+                              max={styleAnalysis.instructions.max_chars}
+                            />
+                          )}
                         </FieldWrap>
                       </Row>
                       <Row
@@ -1430,19 +1449,17 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                             disabled={!styleActive}
                             placeholder="morning, pushing the call to monday, hope that works"
                             aria-label="Writing sample"
-                            onChange={(event) => {
-                              if (!runtime) {
-                                setDrawnSample(event.target.value);
-                                return;
-                              }
-                              writeModes({ style_sample: event.target.value }, "text");
-                            }}
-                            onBlur={runtime ? () => runtime.flushText() : undefined}
+                            onChange={(event) =>
+                              writeModes({ style_sample: event.target.value }, "text")
+                            }
+                            onBlur={() => runtime.flushText()}
                           />
-                          <BudgetMeter
-                            used={styleAnalysis?.sample.used_chars ?? styleSample.trim().length}
-                            max={styleAnalysis?.sample.max_chars ?? DRAWN_STYLE_BUDGET}
-                          />
+                          {styleAnalysis && (
+                            <BudgetMeter
+                              used={styleAnalysis.sample.used_chars}
+                              max={styleAnalysis.sample.max_chars}
+                            />
+                          )}
                         </FieldWrap>
                       </Row>
                     </CardRows>
@@ -1480,14 +1497,11 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                         rows={5}
                         placeholder="One topic per line"
                         aria-label="Profile context"
-                        {...(runtime
-                          ? {
-                              value: profile?.prompt ?? "",
-                              onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
-                                write((current) => ({ ...current, prompt: event.target.value }), "text"),
-                              onBlur: () => runtime.flushText(),
-                            }
-                          : { defaultValue: DRAWN_CONTEXT })}
+                        value={profile?.prompt ?? ""}
+                        onChange={(event) =>
+                          write((current) => ({ ...current, prompt: event.target.value }), "text")
+                        }
+                        onBlur={() => runtime.flushText()}
                       />
                     </Row>
                   </CardRows>
@@ -1510,51 +1524,44 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                         <Field
                           placeholder="Add a word or name…"
                           aria-label="Add a word or name"
-                          value={runtime ? term : undefined}
-                          onChange={runtime ? (event) => setTerm(event.target.value) : undefined}
-                          onKeyDown={
-                            runtime
-                              ? (event) => {
-                                  if (event.key !== "Enter") return;
-                                  event.preventDefault();
-                                  const phrase = term.trim();
-                                  if (!phrase) return;
-                                  /* Adding a term is discrete — one word, one
-                                     write — so it takes `patch` even though it
-                                     was typed into a text field. */
-                                  write((current) =>
-                                    current.vocabulary_hints.some((hint) => hint.phrase === phrase)
-                                      ? current
-                                      : {
-                                          ...current,
-                                          vocabulary_hints: [
-                                            ...current.vocabulary_hints,
-                                            newVocabularyHint(phrase),
-                                          ],
-                                        },
-                                  );
-                                  setTerm("");
-                                }
-                              : undefined
-                          }
+                          value={term}
+                          onChange={(event) => setTerm(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+                            event.preventDefault();
+                            const phrase = term.trim();
+                            if (!phrase) return;
+                            /* Adding a term is discrete — one word, one write —
+                               so it takes `patch` even though it was typed into
+                               a text field. */
+                            write((current) =>
+                              current.vocabulary_hints.some((hint) => hint.phrase === phrase)
+                                ? current
+                                : {
+                                    ...current,
+                                    vocabulary_hints: [
+                                      ...current.vocabulary_hints,
+                                      newVocabularyHint(phrase),
+                                    ],
+                                  },
+                            );
+                            setTerm("");
+                          }}
                         />
                         <TermChips
-                          items={runtime && profile ? termsOf(profile) : DRAWN_TERMS}
-                          onRemove={
-                            runtime
-                              ? (phrase) =>
-                                  write((current) => ({
-                                    ...current,
-                                    vocabulary_hints: current.vocabulary_hints.filter(
-                                      (hint) => hint.phrase !== phrase,
-                                    ),
-                                  }))
-                              : undefined
+                          items={profile ? termsOf(profile) : []}
+                          onRemove={(phrase) =>
+                            write((current) => ({
+                              ...current,
+                              vocabulary_hints: current.vocabulary_hints.filter(
+                                (hint) => hint.phrase !== phrase,
+                              ),
+                            }))
                           }
                         />
                         <p className="ws-muted">
                           Outlined chips were learned from repairs.{" "}
-                          {runtime ? (profile?.vocabulary_hints.length ?? 0) : DRAWN_TERMS.length} terms.
+                          {profile?.vocabulary_hints.length ?? 0} terms.
                         </p>
                       </Row>
                     </CardRows>
@@ -1638,12 +1645,9 @@ export function ProfilesScreen({ banner, runtime }: PartlyWiredScreenProps = {})
                     }
                   >
                     <ListRows>
-                      {(runtime && profile
-                        ? profile.dictionary_entries.map(
-                            (item) => [item.phrase, item.replace_with, item.id] as const,
-                          )
-                        : DRAWN_REPLACEMENTS.map(([from, to]) => [from, to, from] as const)
-                      ).map(([from, to, id], index, all) => (
+                      {(profile?.dictionary_entries ?? [])
+                        .map((item) => [item.phrase, item.replace_with, item.id] as const)
+                        .map(([from, to, id], index, all) => (
                         <Fragment key={id}>
                           <ListItem
                             title={`${from}  →  ${to}`}

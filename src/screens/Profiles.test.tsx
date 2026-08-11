@@ -12,12 +12,17 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() =
 const invoked = vi.mocked(invoke);
 
 /**
- * WHAT A PARTLY WIRED SCREEN'S TEST IS FOR. Profiles is still in the gallery,
- * so its fidelity is still measured in `screens.test.tsx` against the drawing.
- * This file is which facts come from the runtime, which controls write, and —
- * since Leg 7 — that the five that could not act now open a surface and carry
- * no reason any more. One control is still inert and has its own case: the
- * health flag's click, whose four kinds point at three different tabs.
+ * WHAT A WIRED SCREEN'S TEST IS FOR. Profiles left the gallery in Leg 8
+ * (ADR 0057), so nothing above measures it against the drawing any more: this
+ * file is which facts come from the runtime, which controls write, and that
+ * every control on the screen can act.
+ *
+ * THE FIVE FIDELITY CASES CAME DOWN FROM `screens.test.tsx` RATHER THAN BEING
+ * DROPPED, re-expressed against a runtime — the pane's shape, the flag's place
+ * in the head, the two headings Defaults splits into, the legend that sets
+ * nothing, the word list as chips. A screen retiring from the gallery is the
+ * one commit where those assertions could quietly disappear, so they are here
+ * and they say the same things about a real config.
  *
  * It is also the first place `patchText` is called from a screen. The debounce
  * itself is `useConfigDraft.test.tsx`; what is asserted here is that the text
@@ -113,6 +118,71 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+/**
+ * THE FIVE THAT CAME DOWN FROM `screens.test.tsx` (ADR 0057).
+ *
+ * They were written against the drawn branch and they are not about the drawn
+ * branch: every one of them holds a decision about how this screen is BUILT
+ * that a computed-style diff would accept either way, because both sides would
+ * have moved together. A pane rather than two cards, the flag in the head
+ * rather than in a card on one tab, two headings rather than six equal rows, a
+ * legend that sets nothing, a word list as chips. None of that stopped being
+ * true when the screen got a runtime.
+ */
+describe("Profiles, as it is built", () => {
+  it("is a pane — one surface, not two cards side by side", () => {
+    const { container } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />,
+    );
+    expect(container.querySelector(".ws-pane")).not.toBeNull();
+    expect(container.querySelector(".ws-pane-list")).not.toBeNull();
+    expect(container.querySelector(".ws-pane-detail")).not.toBeNull();
+    /* The list column is not a card. Two cards side by side read as two
+       unrelated boxes, which is how the first build of this screen failed. */
+    expect(container.querySelector(".ws-pane-list .ws-card")).toBeNull();
+  });
+
+  it("carries the health flag in the detail header, visible from all six tabs", async () => {
+    const { container } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />,
+    );
+    await screen.findByRole("button", { name: /1 flag/ });
+    const head = container.querySelector(".ws-pane-detail-head")!;
+    expect(head.querySelector(".ws-flag")).not.toBeNull();
+    /* It was a card on Defaults, which made a property of the profile look like
+       a property of one tab. */
+    expect(container.querySelector(".ws-card .ws-flag")).toBeNull();
+  });
+
+  it("splits Defaults into two decisions rather than six equal rows", () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+    expect(screen.getByRole("heading", { name: "How this profile writes" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "When a recording stops" })).toBeInTheDocument();
+  });
+
+  /* FIVE ROWS, NOT FOUR, SINCE ADR 0068. Four of them are the four content
+     tabs; the fifth is Style, and it is there to state the one scope on this
+     screen that is not "every mode" — Rewrite and the assistant. */
+  it("draws the tabs as a legend, which sets nothing", () => {
+    const { container } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />,
+    );
+    const legend = container.querySelector(".ws-legend")!;
+    expect(legend.querySelectorAll(".ws-legend-row")).toHaveLength(5);
+    expect(legend.querySelector("input, select, button")).toBeNull();
+  });
+
+  it("keeps a word list as chips rather than as rows with hover actions", async () => {
+    const { container } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />,
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Words" }));
+    /* Rows with hover actions imply a record with fields; a term has none. */
+    expect(container.querySelectorAll(".ws-chip-x")).toHaveLength(1);
+    expect(container.querySelector(".ws-list-item")).toBeNull();
+  });
+});
+
 describe("Profiles, wired", () => {
   it("lists this machine's profiles rather than the drawing's three", async () => {
     render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
@@ -196,8 +266,148 @@ describe("Profiles, wired", () => {
 
     const flag = await screen.findByRole("button", { name: /1 flag/ });
     expect(flag).toHaveAttribute("title", "The prompt asks for two different address forms.");
-    /* The count is a fact; the click has nowhere drawn to go (ADR 0065). */
-    expect(flag).toBeDisabled();
+    /* ADR 0085, and the assertion is the opposite of the one it carried for
+       four legs: the click has a destination now, so the control acts. */
+    expect(flag).not.toBeDisabled();
+  });
+
+  /* ADR 0085. The click could not route because the four kinds point at three
+     tabs, so it does not route: it opens the list, and each row carries the
+     door to the tab that holds ITS cause. */
+  it("opens the flags themselves, each with the door to the tab that holds its cause", async () => {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "resolve_capture_budget") return BUDGET;
+      if (command === "analyze_communication_style") return STYLE_ANALYSIS;
+      if (command === "get_profile_health") {
+        return {
+          level: "red",
+          flags: [
+            { kind: "form_conflict", hint: "“formal” vs “casual”." },
+            { kind: "length_bias", direction: "inflating", entry_count: 3, hint: "3 of 4 expand." },
+          ],
+        };
+      }
+      return undefined;
+    });
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /2 flags/ }));
+
+    expect(screen.getByText("Contradictory style instructions")).toBeInTheDocument();
+    expect(screen.getByText("“formal” vs “casual”.")).toBeInTheDocument();
+    /* The runtime's extra detail on a length bias: the direction and how many
+       entries, which is what says whether the heuristic caught the whole list. */
+    expect(
+      screen.getByText("Replacements that all pull one way — expanding, 3 entries"),
+    ).toBeInTheDocument();
+
+    /* Two flags, two different doors — the thing one click on a count could
+       never have done. */
+    expect(screen.getByRole("button", { name: "Open Context" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Open Replacements" }));
+    expect(screen.getByRole("tab", { name: "Replacements" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    /* The door closes the panel behind it, because the panel's own rows point
+       away from where the reader now is. */
+    expect(screen.queryByText("“formal” vs “casual”.")).not.toBeInTheDocument();
+  });
+
+  /* `bias_policy_weak` is the one the Leg 7 record got wrong. It reads
+     `bias_mode` and `processing_mode`; `bias_mode` has no control anywhere in
+     the product, and the processing mode is on Defaults. Words draws the
+     effective bias as a READOUT and sets nothing, so a door to it would promise
+     a repair it cannot perform. */
+  it("sends the bias flag to the tab that can change it, not to the one that displays it", async () => {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "resolve_capture_budget") return BUDGET;
+      if (command === "analyze_communication_style") return STYLE_ANALYSIS;
+      if (command === "get_profile_health") {
+        return {
+          level: "red",
+          flags: [{ kind: "bias_policy_weak", hint: "Bias Mode is Off under an agent mode." }],
+        };
+      }
+      return undefined;
+    });
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /1 flag/ }));
+    expect(screen.getByRole("button", { name: "Open Defaults" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Words" })).not.toBeInTheDocument();
+  });
+
+  /* The runtime computes `level` from the acknowledged set and nothing drew it,
+     so a red profile and an amber one looked identical (ADR 0085). */
+  it("carries the runtime's level as the flag's tone rather than restating the count", async () => {
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+    expect(await screen.findByRole("button", { name: /1 flag/ })).toHaveAttribute(
+      "data-tone",
+      "yellow",
+    );
+
+    cleanup();
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "resolve_capture_budget") return BUDGET;
+      if (command === "analyze_communication_style") return STYLE_ANALYSIS;
+      if (command === "get_profile_health") {
+        return { level: "red", flags: [{ kind: "form_conflict", hint: "Two address forms." }] };
+      }
+      return undefined;
+    });
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+    expect(await screen.findByRole("button", { name: /1 flag/ })).toHaveAttribute("data-tone", "red");
+  });
+
+  /* THE WRITE HAS TO COME BACK, AND THIS IS THE CASE THAT PROVES IT. Nothing
+     the detectors read changes when a flag is acknowledged — the prompt still
+     contradicts itself — so the only thing that can move is `level`, and it
+     only moves once the config write returns and the screen re-asks. A spy that
+     swallows the patch would leave this test asserting the state before it
+     (Leg 7's finding, one layer down). */
+  it("acknowledges a flag through the config, and the level follows the write back", async () => {
+    const patch = vi.fn();
+    const current = config();
+    const { rerender } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: current, patch })} />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /1 flag/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Acknowledge" }));
+
+    expect(patch.mock.calls[0][0].profile_health_acknowledged_flags).toEqual({
+      general: ["form_conflict"],
+    });
+
+    /* The runtime grades it green once it sees the set, and the flag stays in
+       the list: it is still true, it just stops colouring the profile. */
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "resolve_capture_budget") return BUDGET;
+      if (command === "analyze_communication_style") return STYLE_ANALYSIS;
+      if (command === "get_profile_health") {
+        const request = (args as { request: { acknowledged_flags: string[] } }).request;
+        return {
+          level: request.acknowledged_flags.includes("form_conflict") ? "green" : "yellow",
+          flags: [{ kind: "form_conflict", hint: "The prompt asks for two different address forms." }],
+        };
+      }
+      return undefined;
+    });
+    rerender(
+      <ProfilesScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: { ...current, ...patch.mock.calls[0][0] },
+          patch,
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /1 flag/ })).toHaveAttribute("data-tone", "green"),
+    );
+    expect(await screen.findByRole("button", { name: "Acknowledged" })).toBeInTheDocument();
   });
 
   /* ADR 0082. The five that could not act now open a panel, and the assertion

@@ -113,6 +113,109 @@ export function ConfirmPanel({
   );
 }
 
+/**
+ * THE SAME PANEL AGAIN, LISTING WHAT IS WRONG AND WHERE EACH OF IT LIVES
+ * (ADR 0085).
+ *
+ * The third member of the plane `ConfirmPanel` and `EditorPanel` share, and it
+ * exists because the profile health flag counts four kinds of problem that
+ * point at three different tabs. One click on an aggregate count cannot route
+ * anywhere honestly, so it routes HERE: the flags themselves, each with the
+ * door to the tab holding its cause.
+ *
+ * WHY NOT `AnswerPanel`, WHICH IS ALSO A READOUT. That one is a two-column grid
+ * for a COMPARISON — heard against written, opted-in against repaired — where
+ * the point is reading one against the other. These are independent records,
+ * one to four of them, each a name with a sentence and two controls; laid into
+ * two columns, a single flag would sit in half a panel beside nothing, and two
+ * would ask the reader to compare things that have nothing to do with each
+ * other. Rows degrade where that grid does not.
+ *
+ * ACKNOWLEDGING IS A TOGGLE AND NEVER A DISMISSAL. The flag stays in the list
+ * and in the count afterwards, because it is still true; what it stops doing is
+ * colouring the profile. That is the runtime's own distinction — `derive_health_level`
+ * skips acknowledged flags and keeps them in `flags` — and drawing it as a
+ * removal would leave a reader unable to find what they had accepted.
+ */
+export function FlagPanel({
+  flags,
+  onOpen,
+  onAcknowledge,
+  onClose,
+}: {
+  flags: {
+    kind: string;
+    name: string;
+    hint: string;
+    /** The tab that holds the value this flag was computed from. Named rather
+     *  than an id, because the label on the door is the label on the tab. */
+    where: string;
+    severe: boolean;
+    acknowledged: boolean;
+  }[];
+  onOpen: (where: string) => void;
+  onAcknowledge: (kind: string, next: boolean) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="ws-list-edit"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }}
+    >
+      <div className="ws-flag-list">
+        {flags.map((flag) => (
+          <div key={flag.kind} className="ws-flag-row" data-acknowledged={flag.acknowledged ? "" : undefined}>
+            <div className="ws-flag-what">
+              <span className="ws-flag-name">
+                <StatusBadge tone={flag.severe ? "danger" : "warning"}>
+                  {flag.severe ? "Conflict" : "Warning"}
+                </StatusBadge>
+                {flag.name}
+              </span>
+              <p>{flag.hint}</p>
+            </div>
+            <div className="ws-flag-acts">
+              {/* THE DOOR IS THE TAB'S OWN NAME. A button called "Fix" would
+                  promise a repair this panel cannot perform — it can only put
+                  the reader in front of the control that holds the cause. */}
+              <Button variant="ghost" onClick={() => onOpen(flag.where)}>
+                Open {flag.where}
+              </Button>
+              {/* A GHOST IN ITS `on` STATE, NEVER A PRIMARY. This is a toggle
+                  that is currently engaged, which is what `on` means everywhere
+                  else in this library — and a filled primary on a row that has
+                  deliberately receded would be the loudest thing in the panel,
+                  arguing for the action the reader has already taken. Seen in
+                  the native host and by no test. */}
+              <Button
+                variant="ghost"
+                on={flag.acknowledged}
+                onClick={() => onAcknowledge(flag.kind, !flag.acknowledged)}
+              >
+                {flag.acknowledged ? "Acknowledged" : "Acknowledge"}
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="ws-edit-foot">
+        <span className="ws-edit-note">
+          An acknowledged flag stops colouring the profile and stays in the list.
+        </span>
+        <Button variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export type EditorFieldSpec = {
   key: string;
   label: string;

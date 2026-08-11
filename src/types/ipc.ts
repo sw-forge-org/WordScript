@@ -467,6 +467,16 @@ export interface AppConfig {
   /// Global fallback for profiles that predate the per-profile modes block. The
   /// real control is `ProfileModesSettings.collect_workspace_context`.
   auto_detect_mode?:        boolean;
+  /// Which health flags a profile's owner has read and decided to live with,
+  /// by profile id (ADR 0085). `get_profile_health` merges this off disk into
+  /// whatever the caller passes and derives `level` from the union, so an
+  /// acknowledged flag stops colouring the profile while staying in the list —
+  /// the runtime's own distinction between "not true" and "true and known".
+  ///
+  /// It has been on the wire since the pre-port surface and had no reader here
+  /// for four legs: `PromptsTab.tsx` wrote it, Leg 3's shell overwrite deleted
+  /// that file, and the field kept round-tripping through every config write.
+  profile_health_acknowledged_flags?: Record<string, string[]>;
   mode_picker_hotkey?:      string;
   mode_auto_hotkey?:        string;
   mode_verbatim_hotkey?:    string;

@@ -2143,6 +2143,24 @@
   .ws-flag svg { width: 12px; height: 12px; }
   .ws-flag:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
   .ws-flag[disabled] { pointer-events: none; }
+  /* THE RUNTIME'S THREE LEVELS, AND ONLY TWO OF THEM NEED A RULE. Amber is the
+     base above, because a flag that needs attention is the ordinary case and
+     `--accent` is the colour this product spends on exactly that. Red is a
+     contradiction the model will act on; green is every flag read and accepted,
+     which is the only state where the control is a receipt rather than a task.
+     The soft backgrounds are mixed at the same 16% `--accent-soft` carries, so
+     the three read as one control at three temperatures rather than as three
+     badges. */
+  .ws-flag[data-tone="red"] {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    color: var(--danger);
+  }
+  .ws-flag[data-tone="red"]:hover { background: color-mix(in srgb, var(--danger) 26%, transparent); }
+  .ws-flag[data-tone="green"] {
+    background: color-mix(in srgb, var(--success) 16%, transparent);
+    color: var(--success);
+  }
+  .ws-flag[data-tone="green"]:hover { background: color-mix(in srgb, var(--success) 26%, transparent); }
 
   /* ── The runtime log ──────────────────────────────────────────────────────
      Buffered while the runtime is active. The level column is fixed-width so
@@ -3373,6 +3391,40 @@
     display: flex; align-items: flex-start; gap: var(--s2);
     font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
     line-height: 1.5; color: var(--fg-dim);
+  }
+
+  /* ── The flags, unfolded ──────────────────────────────────────────────────
+     ADR 0085. Rows rather than the two-column grid above, because these are
+     independent records and there may be one of them: a single flag in a
+     half-width cell reads as a panel that failed to load its other half. Each
+     row is a verdict on the left taking the slack and its two doors on the
+     right, so the buttons line up down the panel however long the sentences
+     run.
+
+     AN ACKNOWLEDGED ROW DIMS AND STAYS. It is not struck through and not
+     removed: the flag is still true, and the reader has to be able to find what
+     they accepted in order to change their mind about it. */
+  .ws-flag-list { display: flex; flex-direction: column; gap: var(--s3); }
+  .ws-flag-row {
+    display: flex; align-items: flex-start; gap: var(--s3);
+  }
+  .ws-flag-row + .ws-flag-row { padding-top: var(--s3); border-top: 1px solid var(--border); }
+  .ws-flag-row[data-acknowledged] { opacity: 0.62; }
+  .ws-flag-what { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; }
+  .ws-flag-name {
+    display: flex; align-items: center; gap: var(--s2);
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 550; color: var(--fg);
+  }
+  .ws-flag-what p {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    line-height: 1.5; color: var(--fg-dim);
+  }
+  /* Never wraps under the sentence: the two doors are the row's actions and a
+     reader scanning four flags reads them as a column. */
+  .ws-flag-acts { display: flex; align-items: center; gap: var(--s2); flex: none; }
+  @container (max-width: 560px) {
+    .ws-flag-row { flex-direction: column; align-items: stretch; }
   }
 
   /* The note sits on the same line as the buttons and takes the slack, so the

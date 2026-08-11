@@ -13,7 +13,9 @@ import {
   Button,
   Card,
   CardRows,
+  AnswerPanel,
   ConfirmPanel,
+  FlagPanel,
   Disclosure,
   EditorPanel,
   EmptyState,
@@ -472,6 +474,67 @@ export function Components() {
           Cancel takes focus when this opens, never the danger button. A panel that opens with the
           destructive control focused turns a stray Return into the deletion it exists to prevent.
         </Note>
+
+        {/* THE THIRD PANEL ON THE PLANE (ADR 0085), and the states a screen
+            cannot show at once: a severe flag, an ordinary one, and one already
+            acknowledged. Only the gallery can stand all three side by side —
+            the runtime answers with whatever this machine's profile happens to
+            have. */}
+        <Card
+          title="What is wrong, and where each of it lives"
+          description="The health flag counts four kinds of problem that point at three tabs, so the click opens the list rather than picking one."
+        >
+          <ListRows>
+            <FlagPanel
+              flags={[
+                {
+                  kind: "form_conflict",
+                  name: "Contradictory style instructions",
+                  hint: 'Contradictory style instructions detected: "formal" vs "casual". The model receives conflicting signals and will produce inconsistent output.',
+                  where: "Context",
+                  severe: true,
+                  acknowledged: false,
+                },
+                {
+                  kind: "length_bias",
+                  name: "Replacements that all pull one way — expanding, 3 entries",
+                  hint: "3 of 4 replacements expand text to 2x or more. The cleanup will see consistently longer raw text than you dictated.",
+                  where: "Replacements",
+                  severe: false,
+                  acknowledged: true,
+                },
+              ]}
+              onOpen={() => {}}
+              onAcknowledge={() => {}}
+              onClose={() => {}}
+            />
+          </ListRows>
+        </Card>
+
+        <Note>
+          An acknowledged row dims and stays. The flag is still true — what acknowledging changes is
+          whether it colours the profile, which is the runtime's own distinction rather than a
+          dismissal.
+        </Note>
+
+        {/* The readout half of the same grammar. Two columns because it is a
+            COMPARISON: what the reader is doing is holding one against the
+            other, which is the difference from the rows above. */}
+        <Card
+          title="An answer, unfolded where it was asked for"
+          description="A command with nowhere to put its answer put it on a screen of its own. This opens under the card that asked."
+        >
+          <ListRows>
+            <AnswerPanel
+              columns={[
+                { label: "Heard", body: <p>send them the KA by friday</p> },
+                { label: "Written", body: <p>send them the Kundenanfrage by friday</p> },
+              ]}
+              foot="KA → Kundenanfrage"
+              onClose={() => {}}
+            />
+          </ListRows>
+        </Card>
       </SectionHeader>
 
       {/* The menu is `fixed` at a measured point, so a gallery that rendered it
