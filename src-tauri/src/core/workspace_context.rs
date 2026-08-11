@@ -585,10 +585,12 @@ pub fn detect_ide_context(project_root: &Option<std::path::PathBuf>) -> Option<(
     None
 }
 
-#[tauri::command]
-pub fn get_workspace_context() -> Result<WorkspaceContext, String> {
-    Ok(detect_active_app())
-}
+// `get_workspace_context` stood here until 2026-08-11 and was removed by Leg 9
+// (ADR 0089): a one-line command wrapper around `detect_active_app`, whose only
+// frontend caller went with the process-global override layer ADR 0024 removed.
+// The module is untouched and very much alive — `detect_active_app` runs once
+// per session from the pipeline, and `WorkspaceContext` reaches agent, transform
+// and prompt_enhance. What went is the door the UI stopped using, not the room.
 
 #[cfg(test)]
 mod tests {

@@ -587,6 +587,22 @@ Status: Proposed | Accepted | Superseded by NNNN
   a ninth row was measured at **structural 18 | style 6** on a screen that stands
   at 0 | 0. The owner ruled the call deliberate in every mode, Verbatim included.
 
+- [0088](0088-the-row-that-states-is-a-flat-row-and-costs-a-third-of-what-was-priced.md):
+  the row ADR 0087 owed, drawn. A row that states rather than sets does not open,
+  because `<details>` onto an empty body is the affordance that opens nothing —
+  so it is a flat `JobNone` and costs `models` **structural 6 | style 6**, not
+  the 18 | 6 priced for the `LaneJobRow` shape that trial had measured. An
+  appended flat row shifts no sibling path.
+
+- [0089](0089-a-registered-command-with-no-caller-is-triaged-by-why-it-lost-one.md):
+  the sweep of `invoke_handler` against `invoke(` found **fourteen** caller-less
+  commands, not two. They triage into superseded (deleted — six, including the
+  two overlay resize commands that would reintroduce the ghosting), owed a
+  surface (kept — ADR 0065 defers it), lost capability (kept and listed — the
+  text-rules import/export a shell overwrite orphaned) and command shell only
+  (kept — the function is alive). Corrects Leg 8's premise: the acknowledge
+  commands never had a caller in any commit.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
@@ -613,8 +629,8 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-11 the filed range runs through 0087; the next
-decision takes 0088. 0082 through 0087 were filed on one day by two tracks
+takes 0021. (As of 2026-08-11 the filed range runs through 0089; the next
+decision takes 0090. 0082 through 0089 were filed on one day by two tracks
 running concurrently on `main` — the GUI port relay and the core-hardening pass
 — which is why a leg claims its number early rather than at the end, and why a
 handoff sentence naming "the next free number" is the first thing to go stale.

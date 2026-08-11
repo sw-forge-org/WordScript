@@ -1950,50 +1950,15 @@ pub fn switch_active_text_profile<R: Runtime>(
     Ok(config.without_secrets())
 }
 
-#[tauri::command]
-pub fn acknowledge_profile_health_flag(
-    profile_id: String,
-    flag_kind: String,
-) -> Result<AppConfig, String> {
-    let trimmed_profile = profile_id.trim();
-    let trimmed_flag = flag_kind.trim();
-    if trimmed_profile.is_empty() || trimmed_flag.is_empty() {
-        return Err("profile_id and flag_kind must be non-empty".to_string());
-    }
-    with_config_file_lock(|| {
-        let mut config = AppConfig::load_from_disk_within_lock();
-        config
-            .profile_health_acknowledged_flags
-            .entry(trimmed_profile.to_string())
-            .or_default()
-            .insert(trimmed_flag.to_string());
-        config.save_to_disk()?;
-        Ok::<AppConfig, String>(config.without_secrets())
-    })?
-}
-
-#[tauri::command]
-pub fn unacknowledge_profile_health_flag(
-    profile_id: String,
-    flag_kind: String,
-) -> Result<AppConfig, String> {
-    let trimmed_profile = profile_id.trim();
-    let trimmed_flag = flag_kind.trim();
-    if trimmed_profile.is_empty() || trimmed_flag.is_empty() {
-        return Err("profile_id and flag_kind must be non-empty".to_string());
-    }
-    with_config_file_lock(|| {
-        let mut config = AppConfig::load_from_disk_within_lock();
-        if let Some(set) = config.profile_health_acknowledged_flags.get_mut(trimmed_profile) {
-            set.remove(trimmed_flag);
-            if set.is_empty() {
-                config.profile_health_acknowledged_flags.remove(trimmed_profile);
-            }
-        }
-        config.save_to_disk()?;
-        Ok::<AppConfig, String>(config.without_secrets())
-    })?
-}
+// `acknowledge_profile_health_flag` and `unacknowledge_profile_health_flag`
+// stood here until 2026-08-11 and were removed by Leg 9 (ADR 0089). They were
+// registered commands writing `profile_health_acknowledged_flags`, and they had
+// **no caller in any commit** — not the deleted `PromptsTab.tsx`, which kept its
+// acknowledgements in React state and passed them to `get_profile_health` as a
+// request field rather than persisting them. ADR 0085 gave the write a real
+// caller through the config seam, which is where it stays: these two took no
+// `AppHandle` and so could not emit `ready`, meaning a second window would never
+// have learned about an acknowledgement made through them.
 
 /// Tells every mode listener that the effective mode may have changed.
 ///

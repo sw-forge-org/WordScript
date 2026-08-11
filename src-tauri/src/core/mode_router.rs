@@ -3,8 +3,9 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 use super::config::ProcessingMode;
 
-/// Cycle order mirrors Settings → Modes and the in-overlay tap cycler
-/// (`MODE_CYCLE` in OverlayWindow.tsx / OverlayGallery.tsx):
+/// Cycle order mirrors AI Models' job list and the in-overlay tap cycler
+/// (`MODE_CYCLE` in `OverlayWindow.tsx`; `OverlayGallery.tsx` was folded into
+/// `/gallery` by ADR 0055 and this line outlived it by six legs):
 /// Auto → Verbatim → Cleanup → Rewrite → Translate → Agent → Prompt Enhance →
 /// Auto.
 ///

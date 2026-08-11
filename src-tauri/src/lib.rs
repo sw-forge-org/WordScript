@@ -25,11 +25,12 @@ use crate::core::sessions::NativeSessionState;
 use crate::core::trigger::{NativeTriggerConfig, NativeTriggerState, TriggerEffect};
 use crate::v1_slice::V1SliceState;
 
-const OVERLAY_EDIT_MODE_WINDOW_HEIGHT_MIN: f64 = 140.0;
-const OVERLAY_EDIT_MODE_WINDOW_HEIGHT_MAX: f64 = 280.0;
-const OVERLAY_EDIT_MODE_WINDOW_WIDTH_MIN: f64 = 380.0;
-const OVERLAY_EDIT_MODE_WINDOW_WIDTH_MAX: f64 = 560.0;
-const OVERLAY_EDIT_MODE_RESIZE_HEIGHT_MAX: f64 = 380.0;
+// The five `OVERLAY_EDIT_MODE_*` clamp bounds went with the resize commands in
+// Leg 9 (ADR 0089): they existed only to bound `resize_overlay_to_height` and
+// `resize_edit_overlay`, and `cargo check` named all five the moment those two
+// were removed. The edit surface's real size is the `EditMode` arm of
+// `OverlaySurface::dimensions`, which is the fixed-per-surface geometry that
+// replaced dynamic sizing.
 const OVERLAY_TOP_INSET: f64 = 34.0;
 const OVERLAY_SIDE_INSET: f64 = 28.0;
 const OVERLAY_BOTTOM_INSET: f64 = 94.0;
@@ -716,7 +717,9 @@ fn reveal_overlay_window_impl<R: Runtime>(
             // Pin min=max so the geometry is authoritative. GTK/WebKitGTK can
             // ignore a bare set_size and leave the window stuck at a stale size
             // (observed: req=(388,52) but window stays 256x200). Edit-mode keeps
-            // free sizing (user/programmatic resize via resize_edit_overlay).
+            // free sizing, so the user can drag it; the commands that resized it
+            // programmatically went in Leg 9 (ADR 0089) because nothing called
+            // them and a second resize path is what the ghosting came from.
             if matches!(surface, OverlaySurface::EditMode) {
                 let _ = window.set_min_size(None::<LogicalSize<f64>>);
                 let _ = window.set_max_size(None::<LogicalSize<f64>>);
@@ -2393,12 +2396,10 @@ async fn open_rebuild_lab_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn app_config_file_path() -> Result<String, String> {
-    Ok(core::paths::config_file_path()
-        .to_string_lossy()
-        .to_string())
-}
+// `app_config_file_path` stood here until 2026-08-11 and was removed by Leg 9
+// (ADR 0089). Its caller went with Leg 3's shell overwrite (`8f9077e`) and
+// nothing replaced it; `core::paths::config_file_path()` is unchanged and is
+// what any future surface would call through.
 
 #[tauri::command]
 async fn sync_overlay_window_visibility(
@@ -2423,31 +2424,15 @@ async fn sync_overlay_window_visibility(
     Ok(())
 }
 
-#[tauri::command]
-async fn resize_overlay_to_height(app: AppHandle, height: f64) -> Result<(), String> {
-    let clamped = height.clamp(OVERLAY_EDIT_MODE_WINDOW_HEIGHT_MIN, OVERLAY_EDIT_MODE_WINDOW_HEIGHT_MAX);
-    if let Some(window) = app.get_webview_window("overlay") {
-        let current_size = window.outer_size().map_err(|e| e.to_string())?;
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let current_width = current_size.width as f64 / scale;
-        let _ = window.set_size(LogicalSize::new(current_width, clamped));
-        // WebKitGTK leaves the resized backing opaque/black — re-assert transparency.
-        let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn resize_edit_overlay(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
-    let clamped_w = width.clamp(OVERLAY_EDIT_MODE_WINDOW_WIDTH_MIN, OVERLAY_EDIT_MODE_WINDOW_WIDTH_MAX);
-    let clamped_h = height.clamp(OVERLAY_EDIT_MODE_WINDOW_HEIGHT_MIN, OVERLAY_EDIT_MODE_RESIZE_HEIGHT_MAX);
-    if let Some(window) = app.get_webview_window("overlay") {
-        let _ = window.set_size(LogicalSize::new(clamped_w, clamped_h));
-        // WebKitGTK leaves the resized backing opaque/black — re-assert transparency.
-        let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-    }
-    Ok(())
-}
+// `resize_overlay_to_height` and `resize_edit_overlay` stood here until
+// 2026-08-11 and were removed by Leg 9 (ADR 0089). They are the dynamic overlay
+// sizing path, and it is not merely unused — it is the path this codebase
+// deliberately abandoned. `OverlayWindow.tsx` records why: `set_size` is applied
+// asynchronously on WebKitGTK/GTK, so back-to-back resizes leave the window a
+// tick behind and clip the pill, and a fixed size per surface means one
+// `set_size` on first reveal and no further churn. Leaving two registered
+// commands that reintroduce the ghosting in `docs/known-issues/overlay-ghosting.md`
+// is a loaded gun in a drawer, not dead weight.
 
 // ── Diagnose-Infrastruktur commands (plan 1784433288646, Phase 1.2) ──────────
 // Permanent, debug-only. The frontend only invokes these under
@@ -2748,11 +2733,8 @@ pub fn run() {
             resolve_provider_tiers,
             open_settings_window,
             open_rebuild_lab_window,
-            app_config_file_path,
             overlay_monitor_options,
             sync_overlay_window_visibility,
-            resize_overlay_to_height,
-            resize_edit_overlay,
             overlay_open_devtools,
             append_diag_log,
             read_diag_log,
@@ -2768,8 +2750,6 @@ pub fn run() {
             core::text_rules::export_text_rules,
             core::text_rules::import_text_rules,
             core::text_rules::get_profile_health,
-            core::config::acknowledge_profile_health_flag,
-            core::config::unacknowledge_profile_health_flag,
             core::sessions::native_session_status,
             core::sessions::start_native_session,
             core::sessions::stop_native_session,
@@ -2810,7 +2790,6 @@ pub fn run() {
             core::shortcut::shortcut_vocabulary,
             core::shortcut::shortcut_platform,
             core::trigger::shortcut_capabilities,
-            core::workspace_context::get_workspace_context,
             core::mode_router::resolve_current_processing_mode,
             core::mode_router::set_active_profile_processing_mode,
             core::mode_router::cycle_active_profile_translate_language,
