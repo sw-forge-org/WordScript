@@ -55,6 +55,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The profile health flag's click opens the flags** (ADR 0085). It had no
+  destination because its four kinds point at three different tabs, so it routes
+  to none of them: it opens a panel listing each flag with its sentence and the
+  door to the tab that holds its cause — `form_conflict` and
+  `cleanup_interference` to Context, `length_bias` to Replacements,
+  `bias_policy_weak` to **Defaults**, which corrects the Leg 7 record's "Words".
+  `bias_mode` has no control anywhere in the product and Words only displays the
+  effect, so a door there would have promised a repair it cannot perform. One
+  click on an aggregate count landing on the first of three would have been a
+  guess presented as a route.
+- **A health flag can be acknowledged, which it could not since Leg 3.**
+  `acknowledge_profile_health_flag` and its counterpart have been registered
+  commands writing a per-profile set that `get_profile_health` reads back and
+  derives `level` from — with no caller, because Leg 3's shell overwrite deleted
+  the `PromptsTab.tsx` that wrote it. `derive_health_level` was computing a level
+  out of a set nothing could write, so a heuristic warning could never be closed.
+  An acknowledged flag stays in the list and in the count, because it is still
+  true; what it stops doing is colouring the profile.
+- **The flag carries the runtime's `level` as its tone.** Red for a conflict the
+  model will act on, amber for the ordinary case, green for every flag read and
+  accepted. A red profile and an amber one had looked identical.
+- **A transcript states how long its audio is** (ADR 0086). `duration_ms` was
+  the one §11.23 frontmatter key with no source, and `render`'s own note said it
+  would go in "when the record grows a duration" — the record grew one three legs
+  earlier in ADR 0079 and nobody connected the two. It is
+  `capture_integrity.recorded_seconds`: the audio, not the clock, because that is
+  the length of the file the `audio:` key points at and the only one of the two a
+  reader can check. Absent on a retry, an upload and every record older than the
+  measurement, rather than written as zero.
 - **The defect that needed no dictation got a binary that needs no app**
   (ADR 0084). `capture-soak` opens the device WordScript opens, holds it open
   for hours and reports what it delivers — the loss of audio in
@@ -98,6 +127,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Profiles is wired and has left the gallery** (ADR 0057, ADR 0085). Every
+  fact on the screen has a source now, so `runtime` is required, the drawn
+  branch and its sample rows are gone, its banner and its gallery entry went in
+  the same commit, and `npm run port:diff` measures 25 screens instead of 26 —
+  all 25 at structural 0 | style 0. The two departures the screen carried,
+  ADR 0068's sixth sub-tab and ADR 0082's create control, are settled rather
+  than carried. Its five fidelity cases moved into the wired suite re-expressed
+  against a config rather than being dropped.
+- **The style meters wait for the runtime's bound instead of falling back to a
+  copy of it.** They fell back to a `400` duplicated out of
+  `core::communication_style`, which would have kept reading right on the day
+  the runtime changed the budget.
 - **Adding is `+` in the head of the list it adds to, everywhere** (ADR 0082).
   The product had three shapes for one job — a labelled button at the foot of
   the profile list, another at the foot of each rule card, and Context's `+` in

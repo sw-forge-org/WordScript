@@ -153,8 +153,9 @@ gallery of four sections.
 | **4c** | The remaining six wireable sections | Hotkeys, History, Profiles, AI Models wired; Home and Privacy & Data wired in part and still saying so. Context, Notes & Meetings, Agents and Integrations keep their banners — they are V2 or Phase 8 |
 | **5** | Runtime contracts | *Done.* The seventh `ProcessingMode` with its own prompt module (ADR 0041, 0071, 0072, 0073), `analyze_communication_style` over IPC, and `AppConfig.color_scheme`. Three §2.5 entries closed, three added. The native-host check is owed |
 | **6** | Runtime contracts, the second pass | *Done.* The Markdown transcript store with model-written filenames (ADR 0074, 0077), the reveal command on three surfaces, the retry routed by mode through one shared dispatch (ADR 0075), `core::backup`'s export/import/reset, Home's decision inbox (ADR 0076), and §15.3's native half. History and Privacy & Data are fully wired and left the gallery |
-| **7** | The five missing SURFACES | Add and Edit for replacements and snippets, New profile's rename, and where an `analyze_text_rules` answer goes. The gallery grows them first (ADR 0057) |
-| **8** | Documentation and drift | DESIGN_SYSTEM, STATUS, ROADMAP, SPEC, README, CHANGELOG, `spec-sync` |
+| **7** | The five missing SURFACES | *Done.* Add and Edit for replacements and snippets, New profile's rename, `More`'s menu and where an `analyze_text_rules` answer goes, all on one panel plane (ADR 0082) — plus one shape per job across both pane screens |
+| **8** | The health flag's click, and two fields waiting on a measurement | *Done.* The flag opens the flags with a door and an acknowledge each (ADR 0085); **Profiles is wired and out of the gallery**, 26 measurements become 25; `duration_ms` completes §11.23's frontmatter (ADR 0086); the title call's surface is decided and its cost measured (ADR 0087) |
+| **9** | Documentation and drift | DESIGN_SYSTEM, ROADMAP, README, ARCHITECTURE, `SETTINGS_REWORK_PLAN` §0, `spec-sync` — plus the two things Leg 8 measured and owed |
 
 Legs 2 and 4 are large and may split into sub-legs (2a, 2b, …). A leg that
 splits says so in its record and writes the prompt for the next sub-leg.
@@ -1830,6 +1831,115 @@ declined lines would be a second place for style rules to live.
 structural 0 | style 0. The suite was run after every commit and twice at the
 end.
 
+### Leg 8 — the click that could not route, and the two fields that had been waiting on a measurement each
+
+**ALL THREE ENTRIES ARE DONE.** Three ADRs (0085, 0086, 0087). **Profiles is
+wired and out of the gallery**, which was the point of entry 1.
+
+**THE THING TO TAKE FROM THIS LEG: THE RUNTIME HAD ALREADY BUILT THE HALF
+NOBODY COULD REACH, TWICE, AND BOTH TIMES SOMETHING SAID SO IN WRITING.**
+`acknowledge_profile_health_flag` and `unacknowledge_profile_health_flag` are
+registered commands writing a per-profile set that `get_profile_health` reads
+back off disk and derives `level` from — **with no caller since Leg 3 deleted
+`PromptsTab.tsx` in `8f9077e`**, which is the file that used to call them. So
+`derive_health_level` was computing a level out of a set nothing could write:
+a heuristic warning with no way to close it. And `transcript_store::render`'s
+own docstring said `duration_ms` *"goes in when the record grows a duration"* —
+ADR 0079 grew one three legs later and nobody read the note back. Leg 7's rule
+was *check whether the product already shipped it and something deleted it*.
+This leg's is one step further: **check whether the runtime already ships it and
+nothing calls it, and read your own TODOs back.**
+
+**THE ROUTING TABLE IN THE LEG 7 RECORD IS WRONG AND THIS LEG CORRECTS IT.**
+`bias_policy_weak` was written down as pointing at Words, in the leg log and in
+the screen's own docstring. `detect_bias_policy_weak` reads `bias_mode` together
+with `processing_mode`; **`bias_mode` has no control anywhere in the product** —
+AI Models draws it as an `InertSegment` — and the processing mode is a select on
+**Defaults**. Words has a row called *Effective transcription bias*, which is a
+readout that sets nothing. The door there would have been a door to a
+description of the problem. Three tabs, and one of them was the wrong three.
+
+**THE CLICK ROUTES TO THE LIST BECAUSE ROUTING TO A TAB WOULD BE A GUESS.** The
+brief offered three shapes. "One flag routes to its own tab, several route to
+the first" is the one worth naming as rejected: the reader clicks a count of
+three, lands on one of them, and is never told what the other two were — an
+answer picked by list order, presented as a destination. `FlagPanel` is the
+third member of the plane `ConfirmPanel` and `EditorPanel` share, in ROWS rather
+than `AnswerPanel`'s two-column grid, because that grid is for a comparison and
+these are independent records: with one flag a column sits in half a panel
+beside nothing.
+
+**THE NATIVE HOST FOUND ONE DEFECT AGAIN AND NO TEST COULD HAVE.** The
+acknowledged row dims, and its button was a filled `primary` — the loudest thing
+in the panel, on the one row that had deliberately receded, arguing for the
+action the reader had already taken. It is `ghost` with `on` now, which is what
+every other engaged toggle in this library is. jsdom sees the variant string and
+cannot see that it fights the row around it.
+
+**MEASURED RATHER THAN ASSERTED, AND IT CHANGED WHAT ENTRY 3 SHIPPED.** The
+claim "a ninth job row costs `models` its structural 0" was tested rather than
+argued: the row was built, `port:diff` run — **structural 18 | style 6**, from
+0 | 0 — and reverted, with `models` measured back at 0 | 0 afterwards. That
+number is in ADR 0087 and it is why Titles is decided-and-owed rather than
+drawn. Eighteen and not two, because the diff walks by path and an inserted
+element shifts every sibling index after it, which is ADR 0082's mechanic in the
+other direction.
+
+**WHAT LEG 8 REMOVES FROM §2.5.**
+
+- **The profile health flag's click has no destination** — closed. It was the
+  last thing between Profiles and `WiredScreenProps`.
+- **Context's row actions are drawn and act on nothing** — unchanged and still
+  open; nothing here touched Context.
+
+**WHAT LEG 8 ADDS TO §2.5.**
+
+- **AI Models has no row for the title model call**, and it is a drawn-design
+  debt rather than a runtime gap (ADR 0087). The cost of closing it is measured:
+  `models` goes to structural 18 | style 6.
+- **`acknowledge_profile_health_flag` and `unacknowledge_profile_health_flag`
+  have no caller.** They are the pre-port shape of an operation the config seam
+  now performs. By Leg 7's own rule a primitive with no user is not part of the
+  system, so they either become the seam or go — a runtime decision, in a tree
+  the core-hardening track is working in.
+
+**Findings for Leg 9.**
+
+1. **The owner ruled the title model call deliberate in EVERY processing mode,
+   Verbatim included** (2026-08-11). It looked like a defect against
+   `transform.rs`'s *"Verbatim does not reach an LLM at all"* and it is not:
+   naming a document is not rewriting it, and ADR 0077's fallback already covers
+   an absent or failing model. Recorded in ADR 0087 so the next reader who
+   notices it finds the answer rather than filing it again.
+2. **The Context do-not-touch still stands.** Leg 7's finding 1 lifted it for one
+   drawn gesture and nothing else; this leg touched Context in no direction. Ask
+   before widening it.
+3. **A wired screen's fidelity cases MOVE, and the retirement commit is the one
+   place they can vanish unnoticed.** The five in `screens.test.tsx` came down
+   into `Profiles.test.tsx` re-expressed against a config. `registry.test.tsx`
+   needed no edit at all — it derives the retired set from which screens the
+   product mounts without a banner, so the compiler and that test between them
+   made "wired" and "retired" one edit.
+4. **The style meters lost a fallback and that was rule 7, not tidying.** They
+   fell back to a `400` copied out of `core::communication_style`. A meter drawn
+   against the UI's own copy of a runtime constant reads right until the day the
+   runtime changes it. A wired screen draws no meter until the bound is answered.
+5. **ADR numbers: 0085, 0086 and 0087 are this leg's.** The core-hardening
+   kickoff said "next free is 0085" and that line is now updated to 0088, but the
+   line itself is the thing that goes stale — grep the tree.
+6. **`port:diff` after this leg: 25 measurements, every one structural 0 |
+   style 0.** `profiles` is gone from the list entirely. The 33 differences the
+   run still prints are all in the `text` column, which is the soft category Leg
+   2a recorded as false positives and which no leg has counted.
+7. **The suite did not flake this time and the reason is load.** `uptime` said
+   1.5–3.0 throughout, against Leg 7's 14. A plain `npx vitest run` was green;
+   `--no-file-parallelism` was used for the final count anyway.
+
+**Checks at the close.** 469 frontend tests across 39 files (from 465 — five
+fidelity cases moved rather than added, four health cases new), `cargo test`
+740, `npm run build` green, `port:diff` 25 of 25 at structural 0 | style 0. The
+flag panel and its acknowledged row were both confirmed in the native host.
+
 ### Leg 7 — the editors that had no drawing, and the manners the screen turned out to be missing
 
 **ALL THREE ENTRIES OF THE PROMPT ARE DONE FOR ENTRY 1, WHICH WAS THE WHOLE
@@ -2892,7 +3002,130 @@ entry point.
    The accessibility snapshot is still the cheaper instrument for copy and
    structure, but a leg that wants to *see* a screen now can.
 
-## The prompt for Leg 8
+## The prompt for Leg 9
+
+You are picking up WordScript after Leg 8. Work in the repo root on `main`. Do
+not create a branch. `src-tauri/` is open, and **the core-hardening track is
+working in the same tree** — check `git log --oneline -5` before you start and
+stage your own paths when you commit.
+
+### What is already true
+
+**Every screen that can be wired is wired, and the gallery is down to 25
+measurements at structural 0 | style 0.** Profiles left it in Leg 8 with its
+banner (ADR 0057, ADR 0085): the health flag opens a panel listing its flags,
+each with the door to the tab that holds its cause and an Acknowledge that
+reaches a per-profile set the runtime had been reading and nothing had written
+since Leg 3. Two surfaces are still `PartlyWiredScreenProps` and both say why on
+themselves — AI Models (one integrated lane of four) and Home (two of the
+decision inbox's three sources have no receiver). Neither gap is closable by a
+GUI leg: they are Phase 8 and V2.
+
+**§11.23's frontmatter is complete** (ADR 0086), and the title model call's
+surface is decided but not drawn (ADR 0087).
+
+### Read this first
+
+`docs/handoffs/HANDOFF_gui-port-relay.md`. **Leg 8's record is your starting
+state**, and its finding 2 binds you: the Context do-not-touch stands except for
+the one drawn gesture Leg 7 was given. Then ADR 0085 and ADR 0087, `CLAUDE.md`,
+`docs/spec/SPEC.md`, and `src/screens/props.ts`.
+
+### The order, and this leg is drift rather than features
+
+1. **The drift pass, and it is the leg's body.** Run the `spec-sync` skill and
+   then read, because a skill flags drift and does not know which side is
+   wrong. `DESIGN_SYSTEM.md`, `ARCHITECTURE.md`, `REFERENCE.md`, `ROADMAP.md`,
+   `README.md` and `SETTINGS_REWORK_PLAN.md` §0 have not been read against the
+   product since the shell overwrite in most cases. §0 still calls the prototype
+   mandatory reading with no horizon, which ADR 0057 ended — §2.5's last bullet
+   has been owed since Leg 2. **The spec wins over an overview doc; the overview
+   is the one that drifted.**
+2. **The Titles row on AI Models** (ADR 0087). The decision is filed and the
+   cost is measured: a ninth job row takes `models` from **structural 0 | style
+   0** to **structural 18 | style 6**, because `port:diff` walks by path and an
+   inserted element shifts every sibling index after it. That is a departure of
+   ADR 0068's kind and it needs its own record with its own before-and-after —
+   the expectation becomes 24 of 25 with `models` named. The row STATES and does
+   not set: ADR 0077 resolves the model through `chat_model_for_provider` and
+   adds no setting.
+3. **`acknowledge_profile_health_flag` and `unacknowledge_profile_health_flag`
+   have no caller.** Leg 8 wrote acknowledgement through the config seam, which
+   is what every other discrete control on that screen uses, and left these two
+   registered and unreachable. A primitive with no user is not part of the
+   system (Leg 7). Either they become the seam for this one write — they take
+   the config file lock, which `patch` does not — or they go. It is a runtime
+   decision in a tree another track is working in, so ask before deleting.
+
+### The rules you will be judged on
+
+**NEVER RENDER FAKE READINESS (rule 7)**, in both directions. Leg 8 is the leg
+that shows the second direction cheapest: a meter drawn against the UI's own
+copy of a runtime constant reads right until the day the runtime changes it, so
+it now draws nothing until the bound is answered.
+
+**READ YOUR OWN TODOs BACK.** `duration_ms` sat unwritten for three legs behind
+a docstring that said exactly when to write it, and ADR 0079 met that condition
+without anybody re-reading the note. `grep -rn "when the\|goes in when\|once the"
+src-tauri/src/` is a start; so is reading the record you are about to cite.
+
+**CHECK WHETHER THE RUNTIME ALREADY SHIPS IT AND NOTHING CALLS IT.** Leg 7's
+rule was the deleted implementation; Leg 8's is the orphaned command. Two
+registered `#[tauri::command]`s wrote a config field the frontend never touched,
+so a level nothing could change was being computed from it. `grep` the invoke
+handler list against the frontend's `invoke(` calls.
+
+**MEASURE THE ALTERNATIVE BEFORE YOU KEEP THE TIDY ONE.** Leg 8's entry 3 is
+decided-and-owed because the row was built, measured at 18 and 6, and reverted.
+An assertion about `port:diff` that has not been run is a guess.
+
+### What you must NOT do
+
+- **Do not widen the Context opening.** One drawn gesture was lifted, on
+  2026-08-11, so the two rails would not differ. The screen is still going to be
+  done differently and the owner still has not said how.
+- **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
+  roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
+- **Do not edit an existing ADR.** Append-only. The next free number is **0088**
+  and that sentence is the first thing that goes stale — grep the tree, source
+  as well as `docs/`, because a number is cited in code before its file lands.
+- **Do not migrate a config without a backup path.** `core::backup` is the
+  pattern: snapshot, act, answer with where the snapshot went.
+- **The overlay is still rule 5**, and its ghosting on a language change is
+  documented rather than worked around.
+
+### How to check yourself
+
+- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the TOTAL,
+  not the colour.** Under load the suite flakes and the number is about 5;
+  `npx vitest run --no-file-parallelism` is the tiebreaker and `uptime` tells you
+  whether to reach for it. Leg 8 ran at load 1.5–3.0 and saw no flake at all.
+- `npm run port:diff` after anything that could move a screen. Serve the
+  prototype on 8791, run `npm run dev`, and expect **25 of 25 at structural 0 |
+  style 0** — or 24 of 25 with `models` named, if you draw entry 2. The screen
+  list is every gallery id except `ds`, plus `models#1 agents#1 agents#2
+  onboarding#1`–`#6`. The `text` column is the soft category Leg 2a recorded as
+  false positives; no leg counts it.
+- **The native host is the only instrument for a drawn state.** Leg 7 found two
+  defects with it and Leg 8 one — a filled `primary` button on a row that had
+  deliberately receded, which jsdom sees as a correct variant string.
+  `xdotool key ctrl+k` opens the palette through XTEST; clicks are dead. Where
+  the palette cannot reach, use a temporary mount effect — set the tab in one
+  tick and open the panel in a `setTimeout`, or the clear-on-tab-change effect
+  wipes it. Take it out before the commit and grep for it.
+- **Check whether a host and a dev server are ALREADY running before starting
+  one.** Leg 8 started two that silently failed on a bound port; `ps -o lstart=`
+  on the pid is what showed they were not its own.
+- **Do not raise the window past somebody working at the machine — ask.**
+- **Never `pkill -f`.** Kill by PID.
+
+### When it is done
+
+Commit, push to `main`, append your record to the leg log, and write the Leg 10
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
+
+## The prompt for Leg 8 (spent — kept for the chain's record)
 
 You are picking up WordScript after Leg 7. Work in the repo root on `main`. Do
 not create a branch. `src-tauri/` is open, and **the core-hardening track is

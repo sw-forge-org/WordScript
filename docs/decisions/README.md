@@ -560,6 +560,32 @@ Status: Proposed | Accepted | Superseded by NNNN
   row** -- a rule used to go on one click while the profile holding it asked
   twice. A swipe-to-reveal was raised and rejected with reasons. Costs
   `profiles` two measured differences and `context` none.
+- [0084](0084-the-defect-that-needed-no-dictation-gets-a-binary-that-needs-no-app.md):
+  filed by the core-hardening track. `capture-soak` opens the device WordScript
+  opens and holds it open for hours, so the loss in
+  `capture-loses-half-the-recording.md` can be reproduced without anybody
+  speaking into it.
+- [0085](0085-a-count-that-points-at-three-tabs-opens-the-list-instead.md):
+  the profile health flag's click had no destination because its four kinds
+  point at three tabs, so it opens the flags themselves -- one row per flag with
+  its sentence and the door to the tab holding its cause, `bias_policy_weak` to
+  **Defaults** rather than the Words the Leg 7 record named. Each row
+  acknowledges through a per-profile set the runtime has read since before the
+  port and nothing had written since Leg 3 deleted `PromptsTab.tsx`, and the flag
+  carries the resulting `level` as its tone. **Profiles leaves the gallery in the
+  same commit** (ADR 0057): 26 measurements become 25, all at structural 0 |
+  style 0.
+- [0086](0086-the-field-that-was-waiting-for-a-measurement-got-one-three-legs-ago.md):
+  `duration_ms` was the one §11.23 frontmatter key with no source, and its own
+  note said it would go in when the record grew a duration. ADR 0079 gave it one
+  three legs earlier. It is `capture_integrity.recorded_seconds` -- the audio
+  rather than the clock -- and absent rather than zero wherever nothing measured
+  one.
+- [0087](0087-the-title-call-is-a-job-and-belongs-on-the-job-list.md):
+  ADR 0077 spends a model call per dictation and no screen says so. It belongs on
+  AI Models' job list by that screen's own rule, and is **not drawn yet** because
+  a ninth row was measured at **structural 18 | style 6** on a screen that stands
+  at 0 | 0. The owner ruled the call deliberate in every mode, Verbatim included.
 
 ## Resolved: the number 0011 was used twice
 
@@ -587,10 +613,13 @@ whose heading contradicts its own filename is worse than either.
 
 This is a one-time exception for a filing accident. It is **not** a licence to
 file two ADRs under one number: 0018, 0019 and 0020 are filed, the next decision
-takes 0021. (As of 2026-08-11 the filed range runs through 0083; the next
-decision takes 0084. 0082 and 0083 were filed the same day by two tracks running
-concurrently on `main` — the GUI port relay and the core-hardening pass — which
-is why a leg claims its number early rather than at the end.)
+takes 0021. (As of 2026-08-11 the filed range runs through 0087; the next
+decision takes 0088. 0082 through 0087 were filed on one day by two tracks
+running concurrently on `main` — the GUI port relay and the core-hardening pass
+— which is why a leg claims its number early rather than at the end, and why a
+handoff sentence naming "the next free number" is the first thing to go stale.
+Grep the tree, not this line: a number is cited in source before its file
+lands.)
 
 Reference state after the fix, re-checked 2026-07-29 across the whole repo. The
 earlier audit in this section was incomplete -- it claimed every "ADR 0011"

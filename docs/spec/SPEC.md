@@ -1,6 +1,6 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-10
+Status: created 2026-07-24, last drift check 2026-08-11
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -263,10 +263,15 @@ no account. Entities:
 - **Transcript file** (`transcript_store.rs`, ADR 0074): every record that
   produced text is also a Markdown file at
   `~/WordScript/transcripts/<YYYY>/<MM>/<DD-HHMM>-<slug>.md`, with frontmatter
-  (`id`, `created`, `profile`, `mode`, `provider`, `model`, `delivery`, and
-  `audio` while a capture is kept) and the written text as the body; the heard
-  text follows under `## Heard` only where the two differ. The slug comes from a
-  title the chat model writes, falling back to the first words (ADR 0077).
+  (`id`, `created`, `profile`, `mode`, `provider`, `model`, `duration_ms`,
+  `delivery`, and `audio` while a capture is kept) and the written text as the
+  body; the heard text follows under `## Heard` only where the two differ.
+  `duration_ms` is the capture's `recorded_seconds` — the audio rather than the
+  clock — and is left out rather than written as zero wherever nothing measured
+  one, which is a retry, an upload, and any record older than ADR 0079's
+  measurement (ADR 0086). The slug comes from a title the chat model writes,
+  falling back to the first words (ADR 0077) — asked on every processing mode
+  including Verbatim, which is deliberate (ADR 0087).
   Written from `record_entry_with_work_mode`, which is the one place a history
   record comes into existence, so no path can skip it. **The runtime creates a
   file once, never edits one, and deletes only paths a history entry named.**

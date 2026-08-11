@@ -24,19 +24,27 @@ Status: 2026-08-11
   Agents, Integrations) -- SYSTEM (Delivery & Insert, Privacy & Data,
   Diagnostics, About & Updates). Fourteen flat areas became four views and ten
   sections; the longest list anybody scans dropped from 14 to 4.
-- **What is wired, as of 2026-08-10: ten of the fourteen mounted surfaces.**
+- **What is wired, as of 2026-08-11: ten of the fourteen mounted surfaces.**
   The shell reads the runtime — the status strip states the session status, the
   lane and the delivery target; the profile row switches the active profile and
   refuses during a session because the runtime does; the overlay's deep link
   resolves. **Fully wired:** About & Updates, Diagnostics, General, Delivery &
-  Insert, Hotkeys, History, Privacy & Data. **Wired in part, each stating on
-  itself exactly what it cannot read:** Profiles (the health flag counts and
-  explains, and its click has nowhere to go: its four kinds point at three
-  different tabs), AI Models (one integrated lane of four), Home (two of
-  the decision inbox's three sources have no receiver). **Not wireable at all**,
-  and carrying a banner for that reason rather than for a missing commit:
-  Context (V2), Notes & Meetings (V2), Agents (Phase 8, ADR 0030), Integrations
-  (Phase 8).
+  Insert, Hotkeys, History, Privacy & Data, **Profiles**. **Wired in part, each
+  stating on itself exactly what it cannot read:** AI Models (one integrated
+  lane of four), Home (two of the decision inbox's three sources have no
+  receiver). **Not wireable at all**, and carrying a banner for that reason
+  rather than for a missing commit: Context (V2), Notes & Meetings (V2), Agents
+  (Phase 8, ADR 0030), Integrations (Phase 8).
+- **The profile health flag acts, and Profiles lost its banner with it**
+  (ADR 0085, 2026-08-11). The click had no destination because the four flag
+  kinds point at three tabs, so it opens the flags themselves: one row per flag
+  with its sentence and the door to the tab holding its cause — Context,
+  Replacements, or **Defaults** for `bias_policy_weak`, whose only settable half
+  is the processing mode. Each row acknowledges, through a per-profile set the
+  runtime has read since before the port and nothing had written since Leg 3
+  deleted `PromptsTab.tsx`; the flag carries the resulting `level` as its tone.
+  An acknowledged flag stays in the list and in the count, because it is still
+  true — it just stops colouring the profile.
 - **Profiles can be edited, not only read** (ADR 0082, 2026-08-11). Add and Edit
   on Replacements and Snippets, rename, duplicate and delete a profile, and both
   calls to `analyze_text_rules` all open a panel that unfolds under the row or
@@ -50,9 +58,13 @@ Status: 2026-08-11
   specifies. `history.json` stays the index and carries the path; Delete, Clear
   and the retention sweep take the file with the entry, and the runtime removes
   only paths an entry named. The filename is a title the chat model writes
-  (ADR 0077), falling back to the first words when no model answers.
-  `Show transcripts in file manager` acts on History, on Home and in the
-  palette.
+  (ADR 0077), falling back to the first words when no model answers — on every
+  processing mode including Verbatim, which the owner ruled deliberate on
+  2026-08-11 (ADR 0087). Since 2026-08-11 the frontmatter is complete: the last
+  key with no source, `duration_ms`, is the capture's `recorded_seconds`
+  (ADR 0086), and is absent rather than zero on a retry, an upload and every
+  record older than the measurement. `Show transcripts in file manager` acts on
+  History, on Home and in the palette.
 - **Full export, Full import and Reset all settings act** (`core::backup`). The
   archive is the config, the history index and the transcript files; import and
   reset copy the config aside first and answer with where it went. The API key
@@ -94,7 +106,10 @@ Status: 2026-08-11
   screen is *ported* when it stands in the gallery and *shipped* when it is
   wired; **all 25 are ported** as of 2026-08-04, each verified by computed-style
   diff against the running prototype in every state it has (`npm run
-  port:diff`), and as of 2026-08-10 **every screen that can be wired is**. The
+  port:diff`), and as of 2026-08-10 **every screen that can be wired is**. A
+  wired screen then RETIRES from the gallery and stops being measured (ADR 0057),
+  so the diff shrinks as the product grows: **25 measurements as of 2026-08-11,
+  all at structural 0 | style 0**, `profiles` having left with its banner. The
   two surfaces the port never carried landed the same day — the search field
   with the command palette behind it, and Help (ADR 0069) — together with the
   communication style, which had been running in the runtime with no surface

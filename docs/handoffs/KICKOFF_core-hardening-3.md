@@ -204,7 +204,9 @@ second pass:
   cited "ADR 0082" in `src/components/shell/EditorPanel.tsx` and `shell.css`
   while `docs/decisions/` still showed 0082 as free. Grep the whole tree —
   `grep -rn "ADR 008[0-9]" src/ src-tauri/src/ docs/` — before claiming one. The
-  next free number is **0085** — 0084 was taken by the soak on 2026-08-11.
+  next free number is **0088** — 0084 was taken by the soak on 2026-08-11, and
+  0085, 0086 and 0087 by the GUI track's Leg 8 the same day. This line is the
+  thing that goes stale: re-grep rather than trusting it.
 - **Stage explicitly, never `git add -A`.** The other track's unfinished files
   sit in the working tree the whole time. Check `git status` before committing
   and add your own paths by name.
