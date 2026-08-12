@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use super::config::AppConfig;
-use super::providers::{self, ProviderCaptureLimits};
+use super::providers::{self, JobKey, ProviderCaptureLimits};
 
 /// Bytes per second of the exported capture: 16 kHz, mono, i16.
 /// Mirrors `capture::TRANSCRIPTION_SAMPLE_RATE` and the export path's
@@ -143,7 +143,10 @@ pub fn resolve(config: &AppConfig) -> CaptureBudget {
     let profile = config.active_text_profile();
     let speech = profile.resolved_speech();
     let capture = profile.resolved_capture();
-    let provider = speech.provider.clone();
+    // The budget is the recogniser's ceiling, so it is `Dictation`'s vendor and
+    // never the connection's — a profile that routes listening to Local is
+    // bound by decode time even while its chat jobs sit on a cloud plan.
+    let provider = profile.job_provider(JobKey::Dictation).provider;
 
     // The model matters to lanes bound by decode time; the tier to lanes bound
     // by request size. Both are passed for every lane, and each lane uses what
@@ -248,9 +251,9 @@ mod tests {
             .iter_mut()
             .find(|profile| profile.id == active_id)
             .expect("active profile");
-        let mut speech = profile.speech.clone().unwrap_or_default();
-        speech.provider = provider.to_string();
-        profile.speech = Some(speech);
+        let mut providers = profile.resolved_providers();
+        providers.default = provider.to_string();
+        profile.providers = Some(providers);
     }
 
     #[test]

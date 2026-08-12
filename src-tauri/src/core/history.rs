@@ -12,6 +12,7 @@ use super::insertion::{
     NativeInsertMode, NativeInsertRecoveryAction, NativeInsertResult,
 };
 use super::paths::history_file_path;
+use super::providers::JobKey;
 use super::runtime_log;
 use super::sessions::now_ms;
 use super::transform::{finalize_with_text_rules, NativeTransformConfig, NativeTransformResult};
@@ -679,10 +680,19 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
     let retry_mode = resolve_retry_mode(&existing, &app_config);
     transform_config.apply_preset(retry_mode.transform_preset());
 
+    // The job the retry is about to run, resolved once so the log line, the
+    // empty-text record and the successful record all name the same vendor.
+    // They used to name one machine-wide field while the live session that
+    // produced the entry ran on the profile's — a retry could therefore reach a
+    // different provider than the dictation it was retrying (ADR 0094).
+    let retry_job = transform_config.mode_provider(&retry_mode);
+
     runtime_log::record(format!(
-        "[WordScript] History retry start entry_id={} provider={} mode={} post_process={}",
+        "[WordScript] History retry start entry_id={} job={} provider={} overridden={} mode={} post_process={}",
         existing.id,
-        transform_config.provider,
+        retry_job.job.as_str(),
+        retry_job.provider,
+        retry_job.overridden,
         retry_mode.as_str(),
         transform_config.post_process,
     ));
@@ -714,7 +724,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 status: TranscriptionHistoryStatus::Empty,
                 source: TranscriptionHistorySource::Retry,
                 retry_of: Some(existing.id.clone()),
-                provider: transform_config.provider,
+                provider: retry_job.provider.clone(),
                 model: Some(active_model_for_provider(&app_config)),
                 language: optional_non_empty(&app_config.language),
                 active_profile: app_config.active_text_profile_label(),
@@ -760,10 +770,14 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
         /* A retry produces a new record and therefore a new file, so it is
            titled like any other (ADR 0077). From the retried text, because that
            is what the file will hold. */
+        /* The title rides the assistant's resolution. ADR 0087 settled that the
+           row states rather than sets — it resolves through the same chat model
+           Agent, Translate and Prompt Enhance use and adds no setting of its
+           own — so it has no override until that row is drawn (ADR 0094). */
         let title = super::transcript_store::title_for(
             &transformed_text,
-            &app_config.provider,
-            &app_config.chat_model_for_provider(),
+            &app_config.job_provider(JobKey::Assistant).provider,
+            &app_config.chat_model_for_job(JobKey::Assistant),
         )
         .await;
 
@@ -856,7 +870,7 @@ pub fn history_entry_from_insert_result(
                 TranscriptionHistorySource::NativePipeline
             },
             retry_of: retry_of.map(ToString::to_string),
-            provider: app_config.provider.clone(),
+            provider: speech_provider(app_config),
             model: Some(active_model_for_provider(app_config)),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
@@ -909,7 +923,7 @@ pub fn record_insert_failure(
             status: TranscriptionHistoryStatus::Failed,
             source: TranscriptionHistorySource::NativePipeline,
             retry_of: None,
-            provider: app_config.provider.clone(),
+            provider: speech_provider(app_config),
             model: Some(active_model_for_provider(app_config)),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
@@ -1021,7 +1035,7 @@ pub fn record_empty_result(
             status: TranscriptionHistoryStatus::Empty,
             source: TranscriptionHistorySource::NativePipeline,
             retry_of: None,
-            provider: app_config.provider.clone(),
+            provider: speech_provider(app_config),
             model: Some(active_model_for_provider(app_config)),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
@@ -1065,13 +1079,20 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
     // two that no live session would ever produce.
     let preset = config.active_text_profile_transform_preset();
 
+    // The correction lane follows the correction's own vendor, not the
+    // connection's: the local runtime names its models differently, so asking
+    // "which correction model" before "which vendor for this job" is how a
+    // re-transform ends up sending a local model id to a cloud endpoint.
+    let correction_is_local = config.job_provider(preset.correction_job()).provider
+        == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
+
     NativeTransformConfig {
-        provider: config.provider.clone(),
+        providers: active_profile.resolved_providers(),
         profile_prompt: active_profile.prompt,
         dictionary_entries: active_profile.dictionary_entries,
         snippet_entries: active_profile.snippet_entries,
         post_process: preset.post_process,
-        correction_model: if config.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+        correction_model: if correction_is_local {
             config.local_correction_model.clone()
         } else {
             config.correction_model.clone()
@@ -1094,8 +1115,13 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
     }
 }
 
+/// The recogniser's model for the vendor `Dictation` runs on.
+///
+/// The speech job and nothing else: this names the model a record was
+/// transcribed with, and a profile that transforms on a different vendor does
+/// not change what listened.
 fn active_model_for_provider(config: &AppConfig) -> String {
-    if config.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+    if speech_provider(config) == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
         let trimmed = config.local_model.trim();
         if trimmed.is_empty() {
             "base".to_string()
@@ -1112,8 +1138,17 @@ fn active_model_for_provider(config: &AppConfig) -> String {
     }
 }
 
+/// Which vendor listened for this machine's active profile.
+///
+/// Every history field derived from "was this the local lane" asks this rather
+/// than a connection-wide field: the decode settings a record carries are the
+/// recogniser's, so the question is `Dictation`'s (ADR 0094).
+fn speech_provider(config: &AppConfig) -> String {
+    config.job_provider(JobKey::Dictation).provider
+}
+
 fn local_history_context(config: &AppConfig) -> LocalHistoryContext {
-    if config.provider != super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+    if speech_provider(config) != super::providers::LOCAL_PREVIEW_PROVIDER_ID {
         return LocalHistoryContext::default();
     }
 

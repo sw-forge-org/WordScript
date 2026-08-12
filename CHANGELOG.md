@@ -53,6 +53,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a provider per job, and the second field that meant the same thing
+
+- **A profile stops holding one provider and starts holding the axis.**
+  `providers: { default, overrides }` — a resolved default plus a **sparse** map
+  keyed by job. A job absent from the map is not a job without an answer; its
+  answer is *follow the connection*, which is the drawn select's first option,
+  stored as an absence so *Use the default* has something to write back to and
+  so the resolution happens at read time. This is ADR 0094's other half, marked
+  *not built* in the spec since stage A1.
+- **The finding underneath it: there were two `provider` fields and they could
+  disagree.** One per profile, which the live pipeline spent on the dictation
+  and every transform in that session; one machine-wide, which the history
+  retry, the mode router, the v1 slice and the transcript title spent. **A
+  config where they differed sent a dictation to one vendor and a retry of that
+  same record to another**, with no surface saying so. Nothing in the UI wrote
+  either, so on any real machine both read `groq` and the divergence never
+  showed. The machine-wide field is gone; the per-profile one won, because it is
+  the one the pipeline was actually running on.
+- **Every call site names its own job.** `JobKey` is the eight columns
+  `AI Models` has drawn since Leg 6, and `JobKey::role()` is the single bridge
+  to the credential axis — so *recognise with Groq, transform with something
+  stronger* is now a thing the config can express, and a job that overrides
+  takes the credential of the vendor it runs on and **never the connection's**.
+  That last rule is ADR 0094's one security property: a key resolved before the
+  override is a credential sent to a host it was never entered for.
+- **`meetings` and `upload` have no runtime path**, and that is stated rather
+  than hidden: there is one transcription path and it is `dictation`. They are
+  variants so an override stored against one survives the build that grows its
+  path. Titles rides the assistant's resolution and gains no override of its
+  own, because ADR 0087 settled that its row states rather than sets.
+- **Profile schema 5 lifts the stored value behind a `core::backup` snapshot**,
+  guarded on its own version rather than on the constant so it runs once instead
+  of firing again on every later bump. It ran end to end on the developer's own
+  config while `tauri dev` was live: snapshot first, six profiles v4 to v5, the
+  machine-wide key gone, no other key touched.
+- **Nothing was drawn.** `npm run port:diff` is `ALL EXACT`; the surface still
+  writes no provider, which is the seam ADR 0106 describes. `provider_tier`
+  stays machine-wide. `cargo test` 755 passed / 3 ignored (+8).
+
 ### Added — the transcript that stops before the audio does
 
 - **`TranscriptionCoverage` reads the two fields the response already carried

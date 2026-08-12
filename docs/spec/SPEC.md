@@ -1,6 +1,10 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-11 (Leg 10, and it read
+Status: created 2026-07-24, last drift check 2026-08-12 (stage A4, and it read
+only the provider axis; the previous whole-section pass is Leg 10's, below)
+
+Leg 10's line, kept because it is what the sections below were last measured
+against: last drift check 2026-08-11 (Leg 10, and it read
 only what it changed: the Contracts command list against `invoke_handler`, and
 the two deviation-list entries it closed. The whole-file check against the
 shipped product is Leg 9's, the same day — the first since Leg 3's shell
@@ -57,6 +61,17 @@ migration bodies, the pynput shortcut dialect, the `auto_detect_mode` alias.
 which now scrubs nothing and carries a promise instead. **A boundary where
 something foreign arrives kept its tolerance**: `stt_hints` still reaches an
 imported document. The window for this is one release wide and it closed here.
+
+Amended 2026-08-12 by stage A4, which built ADR 0094's other half — the
+provider axis in the config. **It read `core/config.rs`, `core/providers/`,
+`core/capture.rs`, `core/transform.rs`, `core/history.rs`, `core/backup.rs`,
+`src/types/ipc.ts` and `src/lib/textProfiles.ts` and moved only the clauses
+that said the config half was unbuilt**; it read nothing else. A profile now
+holds a resolved default plus a sparse override per job, every call site names
+its own job, and the credential resolves from the provider that job actually
+runs on. **The drawing did not move** — `npm run port:diff` is `ALL EXACT` —
+because `AI Models` has drawn the override since Leg 6 and this is the runtime
+catching up to it.
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -230,9 +245,26 @@ UI implementation details, not Rust event names or Tauri channels.
   serve a role does not implement it**: the absence is `voice: None` on the
   entry, never a stub returning "unsupported", and `Some(..)` does not compile
   without an implementation the compiler has seen. `VoiceProvider` is declared
-  and implemented by nobody. **ADR 0094's other half is not built** — the
-  provider axis in the config is still one `provider` field per profile, not a
-  resolved default plus a sparse override per job.
+  and implemented by nobody.
+- **The provider axis in the config is per job** (ADR 0094's other half), built
+  2026-08-12. A profile holds `providers: { default, overrides }` — a resolved
+  default plus a **sparse** map keyed by `JobKey`, where an absent job is not a
+  job without an answer but one whose answer is *follow the connection*. That
+  absence is the stored form of the drawn select's first option, and it
+  resolves at read time rather than being baked in at write time. `JobKey` is
+  the eight drawn columns (`dictation`, `meetings`, `upload`, `cleanup`,
+  `rewrite`, `translate`, `enhance`, `assistant`) and `JobKey::role()` is the
+  single bridge to `ProviderRole`, so which credential a job spends follows
+  from which job it is. **`meetings` and `upload` have no runtime path** —
+  there is one transcription path and it is `dictation` — and they are variants
+  so an override stored against one survives the build that grows its path.
+  **Two fields meant "the provider" before this** and could disagree:
+  `speech.provider` per profile, which the live pipeline spent, and a
+  machine-wide `AppConfig::provider`, which the retry and history paths spent.
+  The machine-wide one is gone; the schema-5 profile migration lifts the
+  per-profile one onto the axis behind a `core::backup` snapshot. Titles ride
+  the assistant's resolution and carry no override, because ADR 0087 settled
+  that its row states rather than sets. `provider_tier` stays machine-wide.
 - **`VoiceProvider`'s contract is designed and its method is not written**
   (ADR 0114). The trait carried no methods because no vendor shape had been
   read; fourteen synthesis candidates across four protocol shapes have now been
@@ -349,10 +381,12 @@ UI implementation details, not Rust event names or Tauri channels.
   second place to look**: the pre-role entry name, the retired bundle
   identifier and the adoption that fanned one string across both roles were
   removed by ADR 0112, together with the plaintext key an older build wrote
-  into `config.json`. **Still bound to one connection**: with
-  ADR 0094's config half unbuilt, the provider half of the resolution is the
-  connection's single `provider` field, so "follow the connection" is today the
-  only path a job takes.
+  into `config.json`. **The provider half of the resolution is now per job**
+  (ADR 0094, built 2026-08-12): `AppConfig::job_provider(job)` answers with a
+  `JobProvider { job, provider, overridden }`, and `JobProvider::credential()`
+  is the only door from it to a secret — so a job that overrides takes the
+  credential of the vendor it runs on and never the connection's, which is that
+  record's one security rule expressed as a type rather than as a convention.
 - Which vendor serves which role is surveyed in `docs/PROVIDERS.md`, dated per
   row. That document is the capability reference; it is not a statement of what
   is integrated.

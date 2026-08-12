@@ -342,7 +342,6 @@ fn corpus_drives_correction_guardrail_assertions() {
             &entry.raw_transcript,
             biased,
             &NativeTransformConfig {
-                provider: "groq".to_string(),
                 profile_prompt: entry.profile.prompt.clone(),
                 dictionary_entries: entry.profile.dictionary_entries.clone(),
                 post_process: preset.post_process,
@@ -405,7 +404,6 @@ fn corpus_drives_correction_prompt_assertions() {
         });
 
         let prompt = correction_system_prompt(&NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: entry.profile.prompt.clone(),
             dictionary_entries: entry.profile.dictionary_entries.clone(),
             post_process: preset.post_process,
@@ -499,7 +497,6 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
         "cleanup" | "rewrite" | "verbatim" => {
             let preset = ProcessingMode::from_str(mode).transform_preset();
             correction_system_prompt(&NativeTransformConfig {
-                provider: "groq".to_string(),
                 profile_prompt: entry.profile.prompt.clone(),
                 vocabulary: entry.profile.vocabulary.clone(),
                 dictionary_entries: entry.profile.dictionary_entries.clone(),

@@ -87,8 +87,11 @@ constants themselves were not re-derived and carry their own provenance
 - `local_preview` is the internal compatibility id for the local runtime
   lane with `whisper-cli` for STT and Ollama for cleanup.
 - The user stores their own Groq API key locally in the OS secret store.
-- The JSON config is scrubbed on save; old JSON Groq secrets are migrated
-  natively into the secret store, after the config is copied aside.
+- The JSON config is scrubbed on save. **It no longer carries a key to migrate**
+  — ADR 0112 removed the plaintext `config.json` field and the path that read
+  it, and `without_secrets()` scrubs nothing today and carries the promise
+  instead. (This line still described that migration after A5 removed it; the
+  correction lands with A4, which read the section next door.)
 - **A credential is stored per `(provider, role, kind)`** (ADR 0105, built
   2026-08-11), so clearing the chat credential leaves the speech one standing
   and a role with no credential names what it is missing instead of spending
@@ -96,6 +99,20 @@ constants themselves were not re-derived and carry their own provenance
   for — a key is a way into an account, and the drawn key row sits on the
   connection. The key an older build stored as one string is adopted onto both
   of Groq's roles on first read.
+- **A provider is resolved per job, not per connection** (ADR 0094's config
+  half, built 2026-08-12). A profile holds `providers: { default, overrides }`
+  — one resolved default plus a **sparse** override map keyed by `JobKey`
+  (`dictation`, `meetings`, `upload`, `cleanup`, `rewrite`, `translate`,
+  `enhance`, `assistant`). **An absent job means *follow the connection***, and
+  that absence is the stored form rather than a repeated copy of the default.
+  `AppConfig::job_provider(job)` answers with `JobProvider { job, provider,
+  overridden }`; `JobProvider::credential()` is the only door from it to a
+  secret, so **a job that overrides takes its own vendor's credential and never
+  the connection's** — a key resolved before the override is a key sent to a
+  host it was never entered for. `JobKey::role()` is the single bridge to the
+  credential axis above. `meetings` and `upload` are drawn columns with no
+  runtime path; titles rides the assistant's resolution and has no override
+  (ADR 0087). `provider_tier` stays machine-wide.
 - **A kind is `api_key` or `subscription`, and only the first exists in this
   build.** A subscription is inadmissible for speech and voice in the type
   (ADR 0102), Groq accepts an API key alone, and the local lane accepts no kind

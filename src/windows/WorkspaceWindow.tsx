@@ -19,7 +19,11 @@ import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useNavRail } from "@/hooks/useNavRail";
 import { useProvider } from "@/hooks/useProvider";
 import { useRuntime } from "@/hooks/useRuntime";
-import { resolveActiveTextProfile, textProfileInitials } from "@/lib/textProfiles";
+import {
+  resolveActiveTextProfile,
+  resolveJobProvider,
+  textProfileInitials,
+} from "@/lib/textProfiles";
 import {
   SETTINGS_ANCHOR_TARGETS,
   settingsAnchorElementId,
@@ -109,9 +113,16 @@ export default function WorkspaceWindow() {
     if (stored && stored !== scheme) setScheme(stored);
   }, [state.config?.color_scheme]);
 
-  const selectedProvider = (form?.provider ?? state.config?.provider) === "local_preview"
-    ? "local_preview"
-    : "groq";
+  /* The recogniser's vendor. This block decides whether the workspace reads
+     ready to dictate, so it is `dictation`'s job on the provider axis and not a
+     machine-wide field (ADR 0094) — a profile that cleans up locally does not
+     make the listening lane local. */
+  const providerSource = form ?? state.config;
+  const selectedProvider =
+    providerSource && resolveJobProvider(resolveActiveTextProfile(providerSource), "dictation")
+      .provider === "local_preview"
+      ? "local_preview"
+      : "groq";
   const selectedLocalModel =
     selectedProvider === "local_preview"
       ? form?.local_model ?? state.config?.local_model ?? "base"

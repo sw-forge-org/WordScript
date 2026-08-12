@@ -210,6 +210,10 @@ export interface TextProfile {
   curation:                TextProfileCuration;
   dictionary_entries:      DictionaryEntry[];
   snippet_entries:         SnippetEntry[];
+  /** Which vendor each of this profile's jobs runs on (ADR 0094). Absent means
+   *  every job follows the default connection — the answer a fresh profile
+   *  gives, and the one a profile written before schema 5 is migrated to. */
+  providers?:              ProfileProviderSettings;
   // Per-profile settings (tab-oriented sub-objects)
   speech?:                 ProfileSpeechSettings;
   modes?:                  ProfileModesSettings;
@@ -230,8 +234,25 @@ export interface LocalProfilePromptSettings {
 
 // ── Per-Profile Settings (tab-oriented sub-objects) ──────────────────────────
 
+/** One thing WordScript does with a provider. Mirrors the Rust `JobKey`.
+ *
+ *  `meetings` and `upload` are drawn columns whose runtime path does not exist
+ *  yet — the axis is the drawing's, so an override stored against one of them
+ *  survives the build that grows its path. */
+export type JobKey =
+  | "dictation" | "meetings" | "upload"
+  | "cleanup" | "rewrite" | "translate" | "enhance" | "assistant";
+
+/** The provider axis: a resolved default plus a sparse override per job
+ *  (ADR 0094). A job absent from `overrides` is not a job without an answer —
+ *  its answer is "follow the connection", which is why the absence is the
+ *  stored form rather than a repeated copy of `default`. */
+export interface ProfileProviderSettings {
+  default:                 string;
+  overrides:               Partial<Record<JobKey, string>>;
+}
+
 export interface ProfileSpeechSettings {
-  provider:                string;
   model:                   string;
   language:                string;
   /** Never enough on its own to discard text — it only lowers the
@@ -414,9 +435,12 @@ export interface AppConfig {
   local_correction_model:  string;
   filter_fillers:          boolean;
   professionalize:         boolean;
-  provider:                string;
   /// Which of the provider's account plans this machine is on. Plans come from
   /// `resolve_provider_tiers`; empty means the provider's default.
+  ///
+  /// Machine-wide, and it stayed that way when the provider axis went per
+  /// profile (ADR 0094): widening the tier is the tier's own axis and waits for
+  /// a surface that draws more than one.
   provider_tier:           string;
   local_model:             string;
   local_profile:           string;

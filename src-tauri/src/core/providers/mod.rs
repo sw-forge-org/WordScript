@@ -47,6 +47,141 @@ impl ProviderRole {
     }
 }
 
+/// One thing WordScript does with a provider (ADR 0094).
+///
+/// **The unit an override is stored at, and the unit a credential resolves
+/// for.** A role says *what kind of call this is*; a job says *which of this
+/// machine's uses of that kind* — three jobs run the `Speech` role and five run
+/// `Chat`, and the whole point of the axis is that they may run it on different
+/// vendors. The eight names are `src/screens/data.ts`'s `JobKey`, which the
+/// `AI Models` matrix has drawn one column per since Leg 6; ADR 0109 and
+/// ADR 0119 add the ninth and tenth with the row that operates them.
+///
+/// **Two of the eight have no call site in this build**, and that is the
+/// honest state rather than an omission: `Meetings` and `Upload` are drawn
+/// columns whose runtime path does not exist — there is one transcription path
+/// and it is `Dictation`. They are variants here because the axis is the
+/// drawing's and an override stored against one of them must survive the build
+/// that grows its path, not because something routes to them today.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum JobKey {
+    Dictation,
+    Meetings,
+    Upload,
+    Cleanup,
+    Rewrite,
+    Translate,
+    Enhance,
+    Assistant,
+}
+
+impl JobKey {
+    /// Drawn order — the order the `AI Models` matrix lists its rows in, and
+    /// the order an override map iterates in.
+    pub const ALL: [JobKey; 8] = [
+        Self::Dictation,
+        Self::Meetings,
+        Self::Upload,
+        Self::Cleanup,
+        Self::Rewrite,
+        Self::Translate,
+        Self::Enhance,
+        Self::Assistant,
+    ];
+
+    /// The stable id an override is keyed by on disk. Changing one of these
+    /// strings silently drops the override stored under it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dictation => "dictation",
+            Self::Meetings => "meetings",
+            Self::Upload => "upload",
+            Self::Cleanup => "cleanup",
+            Self::Rewrite => "rewrite",
+            Self::Translate => "translate",
+            Self::Enhance => "enhance",
+            Self::Assistant => "assistant",
+        }
+    }
+
+    /// Which kind of call this job makes, and therefore which credential
+    /// answers for it (ADR 0105).
+    ///
+    /// **This is the whole bridge between the two axes.** A job resolves a
+    /// provider; the role decides which of that provider's credentials is
+    /// spent. Nothing else may derive a role from a job, because a second
+    /// mapping is a second place for the two to disagree.
+    pub fn role(&self) -> ProviderRole {
+        match self {
+            Self::Dictation | Self::Meetings | Self::Upload => ProviderRole::Speech,
+            Self::Cleanup | Self::Rewrite | Self::Translate | Self::Enhance | Self::Assistant => {
+                ProviderRole::Chat
+            }
+        }
+    }
+
+    /// Phrased for a sentence on a settings row, not for a log line.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Dictation => "dictation",
+            Self::Meetings => "meetings",
+            Self::Upload => "uploads",
+            Self::Cleanup => "cleanup",
+            Self::Rewrite => "rewrite",
+            Self::Translate => "translate",
+            Self::Enhance => "prompt enhance",
+            Self::Assistant => "the assistant",
+        }
+    }
+}
+
+/// What one job runs on, and what pays for it (ADR 0094).
+///
+/// **The provider and the credential travel together and neither is available
+/// without the other.** That is the record's security rule expressed as a
+/// type: an override changes the host a request goes to, and a key resolved
+/// before that change is a credential sent to a host it was never entered for.
+/// A caller holding this value cannot take the provider and reach for a
+/// credential from somewhere else, because the only credential door on the
+/// resolution is [`JobProvider::credential`] and it reads the provider beside
+/// it.
+///
+/// The keyring is not touched to build one. `credential()` is a method rather
+/// than a field for the reason `Provider::capabilities` is separate from
+/// `Provider::status` (ADR 0110): every transform on the hot path needs the
+/// provider, and none of them needs a secret-store read to name it — the
+/// adapter behind the call loads the key itself, keyed by the very provider on
+/// the request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobProvider {
+    pub job: JobKey,
+    /// The id the job actually runs on: its own override, or the connection's
+    /// default when it has none.
+    pub provider: String,
+    /// Whether the job named this provider itself. It is what decides whether a
+    /// surface draws a key row of its own for the job (ADR 0094), and it is not
+    /// derivable afterwards — an override that happens to name the same vendor
+    /// as the connection is still an override.
+    pub overridden: bool,
+}
+
+impl JobProvider {
+    pub fn role(&self) -> ProviderRole {
+        self.job.role()
+    }
+
+    /// What answers for this job, resolved from the provider this job runs on.
+    ///
+    /// **Never the connection's credential when the job overrides**, and never
+    /// another role's when this one has none: both are `resolve_role_credential`'s
+    /// contract (ADR 0105), and this method exists so that no call site has to
+    /// restate the pair correctly on its own.
+    pub fn credential(&self) -> Result<RoleCredentialStatus, ProviderCommandError> {
+        resolve_role_credential(&self.provider, self.role())
+    }
+}
+
 /// How a role is paid for (ADR 0102).
 ///
 /// **Admissibility is decided here, in the type, and never as a runtime
@@ -749,6 +884,17 @@ pub fn normalize_provider_value(provider: &str) -> String {
         .map(|entry| entry.id)
         .unwrap_or(DEFAULT_PROVIDER_ID)
         .to_string()
+}
+
+/// Whether this build can resolve the id at all.
+///
+/// The half of `normalize_provider_value` that does *not* substitute the
+/// default. A per-job override needs it: an id this build cannot resolve has to
+/// be dropped so the job reads as *follow the connection*, and normalising it
+/// onto Groq instead would leave a row silently claiming the user chose the
+/// connection's vendor.
+pub fn resolves_to_a_known_provider(provider: &str) -> bool {
+    registry::resolve_entry(provider).is_ok()
 }
 
 pub fn default_provider_id() -> &'static str {

@@ -4,10 +4,13 @@ use regex::{Captures, NoExpand, Regex, RegexBuilder};
 
 use super::communication_style::CommunicationStyle;
 use super::config::{
-    DictionaryEntry, SnippetEntry, TransformPreset, TranslateSettings, DEFAULT_CORRECTION_MODEL,
+    DictionaryEntry, ProcessingMode, ProfileProviderSettings, SnippetEntry, TransformPreset,
+    TranslateSettings, DEFAULT_CORRECTION_MODEL,
 };
 use super::profile_context::{profile_context_line, truncate_line};
-use super::providers::{create_chat_completion, ChatCompletionRequest, ChatMessage};
+use super::providers::{
+    create_chat_completion, ChatCompletionRequest, ChatMessage, JobKey, JobProvider,
+};
 use super::runtime_log;
 use super::workspace_context::WorkspaceContext;
 
@@ -15,7 +18,13 @@ const MAX_DICTIONARY_HINTS: usize = 12;
 
 #[derive(Debug, Clone, Default)]
 pub struct NativeTransformConfig {
-    pub provider: String,
+    /// The provider axis this session runs under (ADR 0094).
+    ///
+    /// Carried whole rather than resolved to one id, because this struct feeds
+    /// five different jobs: the correction below, and Agent, Translate and
+    /// Prompt Enhance through `mode_router`. One id here is what let the
+    /// recogniser's vendor decide all of them.
+    pub providers: ProfileProviderSettings,
     pub profile_prompt: String,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
@@ -76,11 +85,7 @@ impl NativeTransformConfig {
         preset: TransformPreset,
     ) -> Self {
         Self {
-            provider: if config.provider.trim().is_empty() {
-                "groq".to_string()
-            } else {
-                config.provider.clone()
-            },
+            providers: config.providers.clone(),
             profile_prompt: config.prompt.clone(),
             profile_label: config.profile_label.clone(),
             stt_hints: config.stt_hints.clone(),
@@ -111,6 +116,38 @@ impl NativeTransformConfig {
         self.post_process = preset.post_process;
         self.filter_fillers = preset.filter_fillers;
         self.professionalize = preset.professionalize;
+    }
+
+    /// Which job the correction transform runs as.
+    ///
+    /// One derivation, on [`TransformPreset::correction_job`], reached from the
+    /// flattened switches this struct carries. A second `if professionalize`
+    /// here would be a second place for the two to disagree.
+    pub fn correction_job(&self) -> JobKey {
+        TransformPreset {
+            post_process: self.post_process,
+            filter_fillers: self.filter_fillers,
+            professionalize: self.professionalize,
+        }
+        .correction_job()
+    }
+
+    /// What the correction transform runs on, and what pays for it.
+    pub fn correction_provider(&self) -> JobProvider {
+        self.providers.resolve(self.correction_job())
+    }
+
+    /// What a given mode runs on under this config.
+    ///
+    /// The door for a caller holding a mode rather than a job — the history
+    /// retry is the one that exists. A mode that owns no job of its own
+    /// (Verbatim, an unresolved Auto) falls back to the correction family,
+    /// because that is what the retry path actually runs for it.
+    pub fn mode_provider(&self, mode: &ProcessingMode) -> JobProvider {
+        match mode.job_key() {
+            Some(job) => self.providers.resolve(job),
+            None => self.correction_provider(),
+        }
     }
 }
 
@@ -186,9 +223,13 @@ pub async fn apply_native_transform(
         };
         let timeout_ms = if word_count > 300 { 30_000 } else { 8_000 };
         let correction_started_at = Instant::now();
+        let job = config.correction_provider();
 
         runtime_log::record(format!(
-            "[WordScript] Native transform correction start words={} model={} timeout_ms={} filter_fillers={} professionalize={}",
+            "[WordScript] Native transform correction start job={} provider={} overridden={} words={} model={} timeout_ms={} filter_fillers={} professionalize={}",
+            job.job.as_str(),
+            job.provider,
+            job.overridden,
             word_count,
             model,
             timeout_ms,
@@ -197,7 +238,7 @@ pub async fn apply_native_transform(
         ));
 
         let request = ChatCompletionRequest {
-            provider: config.provider.clone(),
+            provider: job.provider,
             model,
             messages: vec![
                 ChatMessage {
@@ -1147,7 +1188,6 @@ mod tests {
     #[test]
     fn correction_prompt_carries_the_workspace_hint_as_a_weak_last_signal() {
         let prompt = correction_system_prompt(&NativeTransformConfig {
-            provider: "groq".to_string(),
             post_process: true,
             correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
@@ -1168,7 +1208,6 @@ mod tests {
     #[test]
     fn correction_prompt_omits_the_workspace_hint_when_detection_found_nothing() {
         let prompt = correction_system_prompt(&NativeTransformConfig {
-            provider: "groq".to_string(),
             post_process: true,
             filter_fillers: true,
             workspace_hint: Some(WorkspaceContext::default()),
@@ -1183,7 +1222,6 @@ mod tests {
     fn prompt_for(mode: ProcessingMode, style: CommunicationStyle) -> String {
         let preset = mode.transform_preset();
         correction_system_prompt(&NativeTransformConfig {
-            provider: "groq".to_string(),
             post_process: preset.post_process,
             filter_fillers: preset.filter_fillers,
             professionalize: preset.professionalize,
@@ -1305,7 +1343,6 @@ mod tests {
             ProcessingMode::Rewrite.transform_preset(),
         ] {
             let prompt = correction_system_prompt(&NativeTransformConfig {
-                provider: "groq".to_string(),
                 post_process: preset.post_process,
                 filter_fillers: preset.filter_fillers,
                 professionalize: preset.professionalize,
@@ -1326,7 +1363,6 @@ mod tests {
     #[test]
     fn correction_prompt_carries_every_profile_line_bounded() {
         let prompt = correction_system_prompt(&NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: "customer names\ncustomer follow-up\nWordScript\nrefund policy".to_string(),
             dictionary_entries: vec![DictionaryEntry {
                 id: "brand".to_string(),
@@ -1357,7 +1393,6 @@ mod tests {
         let result = apply_native_transform(
             "Thanks for watching",
             NativeTransformConfig {
-                provider: "groq".to_string(),
                 profile_prompt: String::new(),
                 dictionary_entries: Vec::new(),
                 snippet_entries: Vec::new(),
@@ -1378,7 +1413,6 @@ mod tests {
         let result = apply_native_transform(
             "wir shippen das morgen",
             NativeTransformConfig {
-                provider: "groq".to_string(),
                 profile_prompt: String::new(),
                 dictionary_entries: Vec::new(),
                 snippet_entries: Vec::new(),
@@ -1397,7 +1431,6 @@ mod tests {
 
     fn text_rules_config() -> NativeTransformConfig {
         NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: vec![DictionaryEntry {
                 id: "brand".to_string(),
@@ -1506,7 +1539,6 @@ mod tests {
     #[test]
     fn question_answered_guardrail_rejects_german_answer_to_dictated_question() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1533,7 +1565,6 @@ mod tests {
     #[test]
     fn question_answered_guardrail_rejects_english_answer_to_dictated_question() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1559,7 +1590,6 @@ mod tests {
 
     fn cleanup_config() -> NativeTransformConfig {
         NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1655,7 +1685,6 @@ mod tests {
     #[test]
     fn question_answered_guardrail_accepts_cleaned_question_that_keeps_question_mark() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1680,7 +1709,6 @@ mod tests {
     #[test]
     fn question_answered_guardrail_does_not_trigger_on_non_question_input() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1707,7 +1735,6 @@ mod tests {
     #[test]
     fn regression_profile_induced_length_explosion_rejected() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: "customer follow-up\nrefund\nWordScript".to_string(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1732,7 +1759,6 @@ mod tests {
     #[test]
     fn correction_system_prompt_includes_question_guardrail_instruction() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1753,7 +1779,6 @@ mod tests {
     #[test]
     fn imperative_answered_guardrail_rejects_execution_response_via_suspicious_start() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1784,7 +1809,6 @@ mod tests {
     #[test]
     fn imperative_answered_guardrail_rejects_gerne_response() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1815,7 +1839,6 @@ mod tests {
     #[test]
     fn imperative_cleaned_legitimately_is_accepted() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1842,7 +1865,6 @@ mod tests {
     #[test]
     fn polished_mode_first_person_action_start_is_rejected() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1874,7 +1896,6 @@ mod tests {
     #[test]
     fn polished_mode_legitimate_reformulation_is_accepted() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
@@ -1900,7 +1921,6 @@ mod tests {
     #[test]
     fn polished_mode_english_first_person_action_is_rejected() {
         let config = NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),

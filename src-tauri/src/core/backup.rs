@@ -91,13 +91,15 @@ fn snapshot_path_for(kind: &str) -> PathBuf {
 /// job is to be exactly what was there, including any field this build does not
 /// know about. A re-serialized config would silently drop those.
 ///
-/// **Private again, and deliberately.** A3 widened it to `pub(crate)` for the
-/// credential migration; ADR 0112 removed that migration, and a visibility with
-/// no caller behind it is the same defect class as a registered command with no
-/// caller (ADR 0089, ADR 0103). The next config migration — A4's provider axis
-/// — widens it back in the step that needs it, which is where the reader can
-/// see why.
-fn snapshot_config(kind: &str) -> Result<PathBuf, String> {
+/// **`pub(crate)` again, and this time with the caller in the tree.** A3
+/// widened it for a credential migration that ADR 0112 then removed, and a
+/// visibility with nothing behind it is the defect class of a registered
+/// command with no caller (ADR 0089, ADR 0103). A4's provider-axis migration is
+/// the caller the previous note promised: `AppConfig::load_from_disk_impl`
+/// snapshots here before a profile below the current schema is rewritten,
+/// because a config migration without a snapshot path is not written
+/// (ADR 0094).
+pub(crate) fn snapshot_config(kind: &str) -> Result<PathBuf, String> {
     let source = config_file_path();
     let target = snapshot_path_for(kind);
 

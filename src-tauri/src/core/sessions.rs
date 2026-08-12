@@ -8,6 +8,7 @@ use super::capture::{CaptureIntegrity, InputLevelSummary};
 use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::history;
 use super::insertion::{insert_transcription_from_legacy, NativeInsertResult};
+use super::providers::JobKey;
 use super::sound;
 use super::transform::NativeTransformResult;
 
@@ -419,10 +420,13 @@ pub async fn commit_pending_transcription_preview(
        overlay can edit a preview before it lands, and a file named after the
        text somebody just corrected would be named after the mistake
        (ADR 0077). */
+    /* On the assistant's resolution, for ADR 0087's reason: the title row
+       states rather than sets, so it follows the same chat job the assistant
+       does and carries no override of its own (ADR 0094). */
     let title = super::transcript_store::title_for(
         &final_text,
-        &preview.app_config.provider,
-        &preview.app_config.chat_model_for_provider(),
+        &preview.app_config.job_provider(JobKey::Assistant).provider,
+        &preview.app_config.chat_model_for_job(JobKey::Assistant),
     )
     .await;
     if final_text.is_empty() {

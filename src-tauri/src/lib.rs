@@ -1734,10 +1734,17 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 auto_signal = signal;
                             }
                             core::mode_router::AutoRoute::NeedsClassifier => {
+                                /* The classifier asks whether this was an
+                                   instruction for the assistant, so it runs on
+                                   the assistant's vendor and model — the job it
+                                   is deciding about (ADR 0094). */
+                                let assistant = transform_config
+                                    .providers
+                                    .resolve(core::providers::JobKey::Assistant);
                                 let classifier_config = core::agent::AgentConfig {
-                                    provider: transform_config.provider.clone(),
+                                    provider: assistant.provider.clone(),
                                     agent_name: agent_name.clone(),
-                                    agent_model: if transform_config.provider
+                                    agent_model: if assistant.provider
                                         == core::providers::LOCAL_PREVIEW_PROVIDER_ID
                                     {
                                         app_config.local_agent_model.clone()
@@ -1854,8 +1861,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                 } else {
                     core::transcript_store::title_for(
                         &text,
-                        &app_config.provider,
-                        &app_config.chat_model_for_provider(),
+                        &app_config
+                            .job_provider(core::providers::JobKey::Assistant)
+                            .provider,
+                        &app_config.chat_model_for_job(core::providers::JobKey::Assistant),
                     )
                     .await
                 };
@@ -2840,7 +2849,10 @@ mod tests {
 
     fn capture_config_for_prompt_tests(provider: &str) -> NativeCaptureConfig {
         NativeCaptureConfig {
-            provider: provider.to_string(),
+            providers: core::config::ProfileProviderSettings {
+                default: provider.to_string(),
+                ..Default::default()
+            },
             ..Default::default()
         }
     }

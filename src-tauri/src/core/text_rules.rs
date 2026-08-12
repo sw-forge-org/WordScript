@@ -1006,7 +1006,9 @@ fn preview_transform(
     vocabulary: &[String],
 ) -> (String, Vec<String>) {
     let config = NativeTransformConfig {
-        provider: "groq".to_string(),
+        // The preview runs no model call, so the axis only has to be present
+        // and not to name a lane this machine holds a key for.
+        providers: super::config::ProfileProviderSettings::default(),
         profile_prompt: String::new(),
         // Repair runs ahead of the explicit rules in the real transform, so a
         // preview without it would show a pipeline the runtime does not have.

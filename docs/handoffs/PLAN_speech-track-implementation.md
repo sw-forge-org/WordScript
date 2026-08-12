@@ -38,7 +38,19 @@ not against the opening one. After A3: `cargo test` **760 passed / 3 ignored**,
 frontend **480 across 39 files** unmoved, `cargo check` still 15. **After A5 the
 Rust baseline goes down for the first time**: `cargo test` **742 passed / 3
 ignored** (−18, every one a case that held a migration), frontend **480 across
-39 files** unmoved, `cargo check` still 15.
+39 files** unmoved, `cargo check` still 15. Then **747** (`69f8c75`'s
+transcription-coverage instrument, +5 — another track, measured here so the
+next step does not read it as its own). After A4: `cargo test` **755 passed / 3
+ignored** (+8), frontend **480 across 39 files** unmoved, `cargo check` still
+15, `npm run port:diff` `ALL EXACT`.
+
+**The frontend suite flakes under load on this machine, and it is not a step's
+doing.** A full run that starts cold can drop one to three cases to `waitFor`
+timeouts, in different files each time; measured on the clean tree at A4's
+baseline as three failures across `WorkspaceWindow`, `Profiles` and `screens`,
+and on A4's own tree as two in `WorkspaceWindow` — both green on every rerun.
+A step reporting a frontend failure should rerun before reading it as a
+finding.
 
 **The rules no step may break**, restated from the records because a plan is
 where they get quietly dropped: no partial result reaches the session reducer
@@ -780,7 +792,7 @@ Speaking row, so it is flagged rather than assumed.
 | A2 | **done** 2026-08-11 — `ModelCapabilities` per `(provider, model)`, `speech_synthesis` on the provider, +8 Rust tests |
 | A3 | **done** 2026-08-11 — the secret-store entry keyed `(provider, role, kind)`, `provider_status` per role, the pre-role key adopted onto both roles, +12 Rust tests |
 | A5 | **done** 2026-08-11 — every on-disk compatibility path removed, both schema counters kept, the import door kept, −18 Rust tests |
-| A4 | **not started** — added to this page 2026-08-11; it is the step no record had a position for. **A5 has landed, so it inherits the smaller file and the licence to fall back to defaults** |
+| A4 | **done** 2026-08-12 — a profile holds a resolved default plus a sparse override per job, `JobKey` bridges to `ProviderRole`, the machine-wide `provider` field is gone, schema 5 lifts the per-profile one behind a snapshot, +8 Rust tests, `port:diff` `ALL EXACT` |
 | A6 | **not started** — added 2026-08-12 (ADR 0121); a mechanical rename, **not gated**, independent of A4 |
 | B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for. **Scope narrowed 2026-08-12 by ADR 0120** — fewer rows, same schema |
 | B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
@@ -1004,3 +1016,105 @@ an entry without an origin loading as the user's, a role reading only its own
 entry, and — new, because ADR 0112 asks for it — that a config *this* build
 writes round-trips unchanged. `cargo check` 15 warnings unchanged. The frontend
 suite is unmoved at 480 across 39 files and `npm run port:diff` is `ALL EXACT`.
+
+**A4, as it landed.** Five choices the records leave open, and one finding that
+was sitting in the tree the whole time.
+
+**The finding first, because it changes what the step was for: there were two
+`provider` fields, and they could disagree.** `ProfileSpeechSettings::provider`
+per profile, which `capture.rs` read and therefore what every live dictation
+and every transform in that session spent; and `AppConfig::provider`
+machine-wide, which `history.rs`'s retry, `mode_router`, the v1 slice and the
+transcript title spent. Nothing in the UI wrote either — `Models.tsx` draws its
+lane picker out of `screens/data.ts` and persists nothing — so on this machine
+both read `groq` and the divergence was invisible. It is still a real defect: a
+config where they differed sent a dictation to one vendor and a **retry of that
+same record** to another, with no surface saying so. ADR 0094 names one field
+and `docs/spec/SPEC.md` said *one `provider` field per profile*; neither
+account had two. Collapsing them is most of what this step does, and the
+per-profile one wins because it is the one the pipeline was actually running
+on.
+
+**The axis is its own block, not a field inside `speech`.** `speech` is the
+Speech tab, and the axis governs the five chat jobs as well as the three
+listening ones; filing the assistant's vendor under the recogniser's settings
+is how the next reader concludes the connection is a speech setting.
+`TextProfile::providers` sits beside `speech`, `modes` and `capture`, and an
+absent block reads as the default connection with nothing overriding it — the
+same answer a fresh profile gives, which is what lets the migration leave a
+profile alone when the value it would lift is already the default.
+
+**The override map is sparse, and the absence is the value.** ADR 0094 fixes
+this and the donor is the argument: `INFERENCE_SCOPES` maps five jobs onto
+eight flat keys each, and `buildReasoningScopePatches` exists to fan one change
+back across four of them. Ten jobs on that shape is eighty keys. A job absent
+from `overrides` is not a job without an answer — its answer is *follow the
+connection*, which is the drawn select's first option, and it resolves at read
+time rather than being baked in at write time so *Use the default* has
+something to write back to.
+
+**`JobKey::role()` is the only bridge between the two axes, and each call site
+names its own job rather than deriving one.** The role decides which credential
+is spent (ADR 0105); the job decides which vendor. One mapping, in one place —
+and at the call sites the arm already knows what it is running, so
+`mode_router`'s Agent arm asks for `JobKey::Assistant` outright instead of
+looking a job up from the mode beside a `match` that just decided it. The one
+caller that genuinely holds a mode and not a job is the history retry, and it
+goes through `ProcessingMode::job_key()`, which answers `None` for Verbatim
+(reaches no model, which is its whole contract) and for an unresolved Auto.
+
+**The correction's job is read off the preset, not carried beside it.**
+`professionalize` *is* the distinction between Cleanup and Rewrite, so
+`TransformPreset::correction_job()` derives it and nothing stores a second
+copy. It also gives the retry path the right answer for free: a retried Agent,
+Translate or Prompt Enhance record runs the conservative arm, which is a
+cleanup, and the resolution says Cleanup instead of routing it to a job it is
+not running.
+
+**Two of the eight jobs have no runtime path, and they are variants anyway.**
+There is one transcription path and it is `Dictation`; `Meetings` and `Upload`
+are drawn columns. They are in the enum because the axis is the drawing's and
+an override stored against one has to survive the build that grows its path —
+the opposite call from ADR 0089's *a registered command with no caller*, because
+this is a data axis rather than a surface, and dropping a stored override on
+load is worse than carrying a variant nothing dispatches on. **Titles is not a
+variant**: ADR 0087 settled that its row states rather than sets, so it rides
+the assistant's resolution and gains an override when that row is drawn.
+
+**The migration is schema 5, and it is the first thing to use the place A5 kept
+open.** `TextProfile::migrate_to_current_schema` guards on
+`PROVIDER_AXIS_SCHEMA_VERSION` rather than on the constant, which is D6's
+defect: a migration keyed to the constant fires again on every later bump and
+rewrites what the user chose in between. `speech.provider` becomes a
+read-once door (`#[serde(rename = "provider", skip_serializing)]`) and leaves
+the file on the next save. **This is not the ballast ADR 0112 removed** — that
+record argues from *no installation carries this shape*, and this shape is the
+one every installation carries right now, one save old. `AppConfig::provider`
+is dropped without a rescue under the licence A4 inherited: it maps onto no
+per-profile answer when two profiles disagree with it and with each other.
+
+**And the migration ran end to end on real data before anything asked it to.**
+`npm run tauri dev` was running throughout, so the app rebuilt on each edit and
+loaded the developer's own `config.json` under the new code at 13:29. It did
+exactly what the step specifies, in the order `core::backup` requires: snapshot
+first (`config.backup-provider-axis-1786534196728.json`, logged), then six
+profiles v4 to v5, `speech.provider: "groq"` to
+`providers: {default: "groq", overrides: {}}`, the machine-wide `provider` key
+gone, and no other key touched. An unplanned verification is still a
+verification, and it is a better one than the fixtures because the input was
+not written to be migrated.
+
+Counts: `cargo test` 755 passed / 3 ignored (**+8**, all new and all in
+`config.rs`: three on the resolution and the security rule, one on the role
+map, four on the migration). `cargo check` 15 warnings unchanged. `npm test`
+480 across 39 files unmoved, `npm run build` passes, and `npm run port:diff` is
+`ALL EXACT` — the drawing has been ahead of this since Leg 6 and stays exactly
+where it was.
+
+**What A4 deliberately did not do:** draw anything. `Models.tsx` still writes
+no provider, so the axis is a shape the runtime honours and the surface cannot
+yet set — which is B1's seam and the row that ADR 0106 describes. It also did
+not widen `provider_tier`, still machine-wide: a plan belongs to a credential
+and two profiles on two vendors now share one field. That was already true when
+the provider was per profile, so this step neither introduces nor fixes it, and
+the tier's own axis waits for a surface that draws more than one.

@@ -12,7 +12,7 @@ use crate::core::{
     capture::{self, NativeCaptureStatus},
     config::{normalize_local_profile_id, AppConfig},
     providers::{
-        self, LocalProviderIssueCode, LocalProviderReadiness, LocalProviderSetupStatus,
+        self, JobKey, LocalProviderIssueCode, LocalProviderReadiness, LocalProviderSetupStatus,
         ProviderCommandError, ProviderStatus, ProviderStatusRequest, LOCAL_PREVIEW_PROVIDER_ID,
     },
 };
@@ -300,12 +300,18 @@ impl V1SliceState {
 
 pub fn runtime_contract_for_app<R: Runtime>(app: &AppHandle<R>) -> SliceRuntimeContract {
     let config = AppConfig::load_from_disk();
-    let provider = normalized_runtime_provider(&config).to_string();
+    let provider = normalized_runtime_provider(&config);
     let model = runtime_model_for_provider(&config, &provider).to_string();
+    // The correction model follows the correction's own job, which is where the
+    // local lane's model names live — asking the recogniser's vendor for it is
+    // how a local model id ends up beside a cloud endpoint (ADR 0094).
+    let correction_job = config.active_text_profile_transform_preset().correction_job();
+    let correction_is_local =
+        config.job_provider(correction_job).provider == LOCAL_PREVIEW_PROVIDER_ID;
     let provider_status = providers::provider_status(ProviderStatusRequest {
         provider,
         model: Some(model),
-        correction_model: Some(if config.provider == LOCAL_PREVIEW_PROVIDER_ID {
+        correction_model: Some(if correction_is_local {
             config.local_correction_model.clone()
         } else {
             config.correction_model.clone()
@@ -389,9 +395,9 @@ fn runtime_contract_from_sources(
     let provider_profile = runtime_provider_profile(config);
 
     SliceRuntimeContract {
-        provider: provider.to_string(),
+        provider: provider.clone(),
         provider_profile,
-        model: runtime_model_for_provider(config, provider).to_string(),
+        model: runtime_model_for_provider(config, &provider).to_string(),
         work_mode: config.resolved_active_text_profile_work_mode(),
         provider_status: map_provider_runtime_status(provider_status),
         capture_status: map_capture_runtime_status(capture_status),
@@ -410,12 +416,14 @@ fn runtime_contract_from_sources(
     }
 }
 
-fn normalized_runtime_provider(config: &AppConfig) -> &str {
-    if config.provider.trim().is_empty() {
-        "groq"
-    } else {
-        config.provider.trim()
-    }
+/// The vendor this machine listens with.
+///
+/// The slice's contract describes the recognition lane — `cloud_transcription`
+/// and `local_transcription` are read off it — so it is `Dictation`'s provider
+/// and not the connection's (ADR 0094). A profile whose chat jobs sit on
+/// another vendor does not make this slice read local.
+fn normalized_runtime_provider(config: &AppConfig) -> String {
+    config.job_provider(JobKey::Dictation).provider
 }
 
 fn normalized_cloud_model(config: &AppConfig) -> &str {
@@ -662,6 +670,20 @@ mod tests {
         crate::core::config::TextProfileWorkMode::default()
     }
 
+    /// Puts the active profile's whole provider axis on one vendor.
+    fn set_profile_connection(config: &mut AppConfig, provider: &str) {
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        profile.providers = Some(crate::core::config::ProfileProviderSettings {
+            default: provider.to_string(),
+            ..Default::default()
+        });
+    }
+
     #[test]
     fn transforms_text_for_the_first_slice() {
         let transcript = build_transcript(
@@ -786,8 +808,7 @@ mod tests {
 
     #[test]
     fn runtime_contract_surfaces_local_preview_settings() {
-        let config = AppConfig {
-            provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+        let mut config = AppConfig {
             local_model: "large-v3-q5_0".to_string(),
             local_profile: "local-preview-large-v3-q5_0-quality".to_string(),
             local_prompt_strength: "profile_and_terms".to_string(),
@@ -796,6 +817,9 @@ mod tests {
             local_best_of: 6,
             ..AppConfig::default()
         };
+        // The contract describes the recognition lane, so the local answer has
+        // to come from `Dictation`'s vendor and not from a machine-wide field.
+        set_profile_connection(&mut config, LOCAL_PREVIEW_PROVIDER_ID);
 
         let runtime_contract = runtime_contract_from_sources(
             &config,

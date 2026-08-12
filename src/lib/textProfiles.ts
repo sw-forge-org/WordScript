@@ -2,10 +2,12 @@ import type {
   AppConfig,
   CommunicationRegister,
   DictionaryEntry,
+  JobKey,
   LocalProfileDecodeSettings,
   LocalProfilePromptSettings,
   ProfileCaptureSettings,
   ProfileModesSettings,
+  ProfileProviderSettings,
   ProfileSpeechSettings,
   SnippetEntry,
   TextProfile,
@@ -127,9 +129,13 @@ export function createDefaultTextProfileWorkMode(): TextProfileWorkMode {
 
 // ── Per-Profile Settings Defaults ────────────────────────────────────────────
 
+/** The axis a fresh profile starts on: one connection, nothing overriding it. */
+export function createDefaultProfileProviderSettings(): ProfileProviderSettings {
+  return { default: "groq", overrides: {} };
+}
+
 export function createDefaultProfileSpeechSettings(): ProfileSpeechSettings {
   return {
-    provider: "groq",
     model: "whisper-large-v3-turbo",
     language: "",
     language_locked: false,
@@ -166,6 +172,13 @@ export function createDefaultProfileCaptureSettings(): ProfileCaptureSettings {
     max_recording_seconds: 720,
     silence_timeout_seconds: 30,
   };
+}
+
+function cloneProfileProviderSettings(
+  settings?: ProfileProviderSettings | null,
+): ProfileProviderSettings {
+  if (!settings) return createDefaultProfileProviderSettings();
+  return { default: settings.default, overrides: { ...(settings.overrides ?? {}) } };
 }
 
 function cloneProfileSpeechSettings(settings?: ProfileSpeechSettings | null): ProfileSpeechSettings {
@@ -214,6 +227,26 @@ function cloneProfileCaptureSettings(settings?: ProfileCaptureSettings | null): 
 
 export function resolveProfileSpeechSettings(profile: Pick<TextProfile, "speech">): ProfileSpeechSettings {
   return cloneProfileSpeechSettings(profile.speech);
+}
+
+export function resolveProfileProviderSettings(
+  profile: Pick<TextProfile, "providers">,
+): ProfileProviderSettings {
+  return cloneProfileProviderSettings(profile.providers);
+}
+
+/** What one job runs on: its own override, or the connection when it has none.
+ *  Mirrors `ProfileProviderSettings::resolve` — the runtime owns the decision
+ *  and this restates it for a surface that has to draw the answer. */
+export function resolveJobProvider(
+  profile: Pick<TextProfile, "providers">,
+  job: JobKey,
+): { provider: string; overridden: boolean } {
+  const axis = resolveProfileProviderSettings(profile);
+  const override = axis.overrides[job];
+  return override === undefined
+    ? { provider: axis.default, overridden: false }
+    : { provider: override, overridden: true };
 }
 
 export function resolveProfileModesSettings(profile: Pick<TextProfile, "modes">): ProfileModesSettings {
@@ -320,6 +353,7 @@ export function cloneTextProfile(profile: TextProfile, overrides: Partial<TextPr
     curation: cloneTextProfileCuration(overrides.curation ?? profile.curation),
     dictionary_entries: (overrides.dictionary_entries ?? profile.dictionary_entries).map((entry) => ({ ...entry })),
     snippet_entries: (overrides.snippet_entries ?? profile.snippet_entries).map((entry) => ({ ...entry })),
+    providers: cloneProfileProviderSettings(overrides.providers ?? profile.providers),
     speech: cloneProfileSpeechSettings(overrides.speech ?? profile.speech),
     modes: cloneProfileModesSettings(overrides.modes ?? profile.modes),
     capture: cloneProfileCaptureSettings(overrides.capture ?? profile.capture),
@@ -347,6 +381,17 @@ export function displayTextProfileLabel(profile: TextProfile): string {
     : profile.label;
 }
 
+/** What one job runs on for the machine's active profile, mirroring
+ *  `AppConfig::job_provider`. The one door a surface asks the provider axis
+ *  through — reaching into `providers.overrides` at a call site is how the
+ *  drawing and the runtime start answering differently. */
+export function resolveConfigJobProvider(
+  config: AppConfig,
+  job: JobKey,
+): { provider: string; overridden: boolean } {
+  return resolveJobProvider(resolveActiveTextProfile(config), job);
+}
+
 export function resolveActiveTextProfile(config: AppConfig): TextProfile {
   const profiles = config.text_profiles ?? [];
   const activeProfile = profiles.find((profile) => profile.id === config.active_text_profile_id);
@@ -370,6 +415,7 @@ export function resolveActiveTextProfile(config: AppConfig): TextProfile {
     curation: createEmptyTextProfileCuration(),
     dictionary_entries: [],
     snippet_entries: [],
+    providers: createDefaultProfileProviderSettings(),
     speech: createDefaultProfileSpeechSettings(),
     modes: createDefaultProfileModesSettings(),
     capture: createDefaultProfileCaptureSettings(),
@@ -388,6 +434,7 @@ export function createTextProfile(): TextProfile {
     curation: createEmptyTextProfileCuration(),
     dictionary_entries: [],
     snippet_entries: [],
+    providers: createDefaultProfileProviderSettings(),
     speech: createDefaultProfileSpeechSettings(),
     modes: createDefaultProfileModesSettings(),
     capture: createDefaultProfileCaptureSettings(),

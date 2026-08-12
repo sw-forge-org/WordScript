@@ -18,11 +18,11 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use super::{
     communication_style::CommunicationStyle,
     config::{
-        AppConfig, DictionaryEntry, SnippetEntry, TextProfileWorkMode, TranslateSettings,
-        DEFAULT_CORRECTION_MODEL,
+        AppConfig, DictionaryEntry, ProfileProviderSettings, SnippetEntry, TextProfileWorkMode,
+        TranslateSettings, DEFAULT_CORRECTION_MODEL,
     },
     paths::user_data_dir,
-    providers::default_provider_id,
+    providers::{JobKey, JobProvider},
     runtime_log,
 };
 
@@ -214,7 +214,16 @@ fn to_dbfs(amplitude: f32) -> f32 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeCaptureConfig {
-    pub provider: String,
+    /// The whole provider axis, not the recogniser's vendor (ADR 0094).
+    ///
+    /// **This struct is where the two used to be conflated.** It carried one
+    /// `provider`, the transcription request took it, and then
+    /// `NativeTransformConfig::from_capture_config` took the *same* string for
+    /// the cleanup, the rewrite, the translation and the assistant — so the
+    /// recogniser's vendor silently decided four chat jobs. Carrying the axis
+    /// instead means every stage downstream resolves its own job, from one
+    /// derivation taken once off the active profile.
+    pub providers: ProfileProviderSettings,
     pub model: String,
     pub local_profile: String,
     pub local_prompt_strength: String,
@@ -270,7 +279,7 @@ pub struct NativeCaptureConfig {
 impl Default for NativeCaptureConfig {
     fn default() -> Self {
         Self {
-            provider: default_provider_id().to_string(),
+            providers: ProfileProviderSettings::default(),
             model: "whisper-large-v3-turbo".to_string(),
             local_profile: "local-preview-base-fast".to_string(),
             local_prompt_strength: "profile".to_string(),
@@ -313,9 +322,13 @@ impl NativeCaptureConfig {
         let communication_style = app_config.active_text_profile_communication_style();
         let translate = app_config.active_text_profile_translate_settings();
 
-        let provider = speech.provider.clone();
-        let local_provider_selected = provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
-        let model = if provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+        // The recogniser's own job, resolved off the axis rather than read off
+        // a field of its own — the model and the correction lane below follow
+        // from which vendor *listens*, and that is `Dictation` and nothing else.
+        let providers = active_profile.resolved_providers();
+        let local_provider_selected =
+            providers.resolve(JobKey::Dictation).provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
+        let model = if local_provider_selected {
             if speech.local_model.trim().is_empty() {
                 "base".to_string()
             } else {
@@ -326,7 +339,7 @@ impl NativeCaptureConfig {
         };
 
         Self {
-            provider,
+            providers,
             model,
             local_profile: speech.local_profile,
             local_prompt_strength: speech.local_prompt_strength,
@@ -362,6 +375,19 @@ impl NativeCaptureConfig {
         }
     }
 
+    /// What one of this capture's jobs runs on, and what pays for it
+    /// (ADR 0094).
+    pub fn job_provider(&self, job: JobKey) -> JobProvider {
+        self.providers.resolve(job)
+    }
+
+    /// The vendor that listens. Every "is this the local lane" question on the
+    /// recognition path asks this, so the answer is derived in one place rather
+    /// than compared against a field eight call sites can drift from.
+    pub fn speech_provider(&self) -> String {
+        self.job_provider(JobKey::Dictation).provider
+    }
+
     /// The single place a transcription request is derived from a capture.
     ///
     /// Both the preview panel and the runtime used to build this independently
@@ -375,7 +401,8 @@ impl NativeCaptureConfig {
         audio_path: &str,
         timeout_ms: u64,
     ) -> super::providers::TranscribeAudioFileRequest {
-        let is_local = self.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
+        let provider = self.speech_provider();
+        let is_local = provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
         let context = super::transcription_hints::BiasRequestContext::from_work_mode(
             &self.work_mode,
             &self.local_prompt_strength,
@@ -388,7 +415,7 @@ impl NativeCaptureConfig {
         );
 
         super::providers::TranscribeAudioFileRequest {
-            provider: self.provider.clone(),
+            provider,
             audio_path: audio_path.to_string(),
             model: non_empty(&self.model),
             profile: is_local.then(|| non_empty(&self.local_profile)).flatten(),
@@ -2256,6 +2283,14 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// A profile whose whole axis sits on the local runtime.
+    fn local_lane_providers() -> ProfileProviderSettings {
+        ProfileProviderSettings {
+            default: super::super::providers::LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            ..Default::default()
+        }
+    }
+
     /// A level summary for the tests that are about the verdict rather than
     /// the mean. The sum of squares is derived from the peak so the fixture is
     /// at least physically possible: a capture cannot peak at 0.4 and have an
@@ -2297,7 +2332,7 @@ mod tests {
     #[test]
     fn audio_ready_round_trip_preserves_bias_policy_and_local_decode_settings() {
         let config = NativeCaptureConfig {
-            provider: super::super::providers::LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            providers: local_lane_providers(),
             local_profile: "local-preview-large-v3".to_string(),
             local_prompt_strength: "profile_and_terms".to_string(),
             local_prompt_carry: true,
@@ -2483,12 +2518,12 @@ mod tests {
     fn an_unconfigured_profile_still_sends_the_recognizer_the_blank_state_floor() {
         let cloud = NativeCaptureConfig::default();
         let local = NativeCaptureConfig {
-            provider: super::super::providers::LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            providers: local_lane_providers(),
             ..Default::default()
         };
 
         for config in [cloud, local] {
-            let provider = config.provider.clone();
+            let provider = config.speech_provider();
             let prompt = config
                 .resolve_transcription_request("/tmp/capture.wav", 20_000)
                 .prompt;

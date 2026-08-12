@@ -39,7 +39,6 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     local_correction_model: "llama3.2:latest",
     filter_fillers: true,
     professionalize: false,
-    provider: "groq",
     local_model: "base",
     local_profile: "local-preview-base-fast",
     local_prompt_strength: "profile",

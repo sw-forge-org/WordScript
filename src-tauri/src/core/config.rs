@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,10 @@ use super::communication_style::{
     CommunicationLength, CommunicationRegister, CommunicationStyle,
 };
 use super::paths::config_file_path;
-use super::providers::{default_provider_id, normalize_provider_value};
+use super::providers::{
+    default_provider_id, normalize_provider_value, resolves_to_a_known_provider, JobKey,
+    JobProvider,
+};
 use super::runtime_log;
 
 /// Serializes every load -> modify -> save sequence touching `config.json`.
@@ -180,6 +183,30 @@ impl ProcessingMode {
             | ProcessingMode::PromptEnhance => "clean",
         }
     }
+
+    /// Which job on the provider axis this mode runs, when it runs one of its
+    /// own (ADR 0094).
+    ///
+    /// **`None` is not an omission.** Verbatim reaches no model at all — the
+    /// one thing its contract promises — and Auto is resolved into a concrete
+    /// mode before anything runs, so neither has a job to name. A caller that
+    /// needs an answer for those two is running the correction family and takes
+    /// it from the preset, which is the only thing that knows.
+    ///
+    /// The three modes that own their own prompt map onto the drawn row that
+    /// operates them: Agent is the assistant's row, and Prompt Enhance is
+    /// `enhance`. The names differ because the mode is what the user selects
+    /// and the job is what the settings surface routes.
+    pub fn job_key(&self) -> Option<JobKey> {
+        match self {
+            ProcessingMode::Cleanup => Some(JobKey::Cleanup),
+            ProcessingMode::Rewrite => Some(JobKey::Rewrite),
+            ProcessingMode::Translate => Some(JobKey::Translate),
+            ProcessingMode::Agent => Some(JobKey::Assistant),
+            ProcessingMode::PromptEnhance => Some(JobKey::Enhance),
+            ProcessingMode::Verbatim | ProcessingMode::Auto => None,
+        }
+    }
 }
 
 /// The three correction-pipeline switches, resolved from the effective
@@ -188,7 +215,28 @@ impl ProcessingMode {
 pub struct TransformPreset {
     pub post_process: bool,
     pub filter_fillers: bool,
+    // `professionalize` below is what tells the two correction jobs apart; see
+    // `correction_job`.
     pub professionalize: bool,
+}
+
+impl TransformPreset {
+    /// Which job the correction transform runs as under this preset
+    /// (ADR 0094).
+    ///
+    /// **The preset is the only thing that can answer**, which is why the
+    /// derivation lives here rather than being carried as a field beside it: a
+    /// correction that reformulates is Rewrite and one that must stay near its
+    /// input is Cleanup, and that distinction *is* `professionalize`. The
+    /// conservative arm every non-correction mode retries under lands on
+    /// Cleanup, which is what it is running.
+    pub fn correction_job(&self) -> JobKey {
+        if self.professionalize {
+            JobKey::Rewrite
+        } else {
+            JobKey::Cleanup
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -574,7 +622,18 @@ pub struct VocabularyHintEntry {
 /// (ADR 0035) — and no installation carries any of them. What the number still
 /// buys is the *next* migration: a step that lands here guards on its own
 /// version, so it runs once instead of rewriting on every save.
-pub const TEXT_PROFILE_SCHEMA_VERSION: u32 = 4;
+///
+/// **Version 5 is that next migration and it is the first to use the place
+/// A5 kept.** It lifts the profile's one provider onto the provider axis
+/// (ADR 0094) and is guarded on `< 5` rather than on the constant, so it runs
+/// once per profile and a later version 6 does not re-run it.
+pub const TEXT_PROFILE_SCHEMA_VERSION: u32 = 5;
+
+/// The version that introduced the provider axis. The guard is on this number
+/// and not on [`TEXT_PROFILE_SCHEMA_VERSION`], which is D6's defect: a
+/// migration keyed to the constant fires again on every later bump and rewrites
+/// what the user chose in between.
+const PROVIDER_AXIS_SCHEMA_VERSION: u32 = 5;
 
 fn default_text_profile_schema_version() -> u32 {
     1
@@ -604,6 +663,14 @@ pub struct TextProfile {
     pub curation: TextProfileCuration,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
+    /// Which vendor each of this profile's jobs runs on (ADR 0094).
+    ///
+    /// Absent means the block has never been written and every job follows the
+    /// default connection — the same answer a fresh profile gives, and the
+    /// reason the schema-5 migration can leave a profile alone when the value
+    /// it lifts is already the default.
+    #[serde(default)]
+    pub providers: Option<ProfileProviderSettings>,
     // Per-profile settings (tab-oriented sub-objects)
     #[serde(default)]
     pub speech: Option<ProfileSpeechSettings>,
@@ -617,23 +684,64 @@ impl TextProfile {
     /// Lands the profile on the shape this build writes. Returns whether
     /// anything changed.
     ///
-    /// **It stamps and nothing else, and that is the whole of it after
-    /// ADR 0112.** Three steps used to run here — the hint blob to per-entry
+    /// **A5 left this function stamping and nothing else, and kept the
+    /// place.** Three steps used to run here — the hint blob to per-entry
     /// vocabulary, the curated context field back to topics, the origin field —
-    /// and each read a shape only this machine ever wrote. They are gone with
-    /// the installations behind them.
+    /// and each read a shape only this machine ever wrote. They went with the
+    /// installations behind them (ADR 0112).
     ///
-    /// What survives is the *place*: the next migration lands in this function,
-    /// behind a guard on its own version number rather than on the constant, so
-    /// it runs once instead of on every save. That distinction is D6's defect
-    /// and the reason the counter was worth keeping when its contents were not.
+    /// **A4 is what the place was kept for**: one step, guarded on its own
+    /// version rather than on the constant, so it runs once instead of on every
+    /// save. That distinction is D6's defect and the reason the counter was
+    /// worth keeping when its contents were not.
     pub(crate) fn migrate_to_current_schema(&mut self) -> bool {
         if self.schema_version >= TEXT_PROFILE_SCHEMA_VERSION {
             return false;
         }
 
+        if self.schema_version < PROVIDER_AXIS_SCHEMA_VERSION {
+            self.adopt_provider_axis();
+        }
+
         self.schema_version = TEXT_PROFILE_SCHEMA_VERSION;
         true
+    }
+
+    /// Lifts the profile's one provider onto the provider axis (ADR 0094).
+    ///
+    /// **The value read is the profile's, not the machine's, and that choice is
+    /// the point of the step.** Two fields meant *the provider* before this:
+    /// `speech.provider` per profile, which the live pipeline spent, and
+    /// `AppConfig::provider` machine-wide, which the retry and history paths
+    /// spent. A config where they disagreed sent a dictation to one vendor and
+    /// a retry of that same record to another. Only one can survive, and it is
+    /// the one the pipeline actually ran on; the machine-wide field is dropped
+    /// under the licence ADR 0112 established, because it maps onto no
+    /// per-profile answer when two profiles disagree with it and with each
+    /// other.
+    ///
+    /// A block already present is left alone. That is not defensive coding: a
+    /// profile written by this build carries one, and re-deriving it from a key
+    /// that is no longer written would replace a user's choice with a default.
+    fn adopt_provider_axis(&mut self) {
+        if self.providers.is_some() {
+            return;
+        }
+
+        let stored = self
+            .speech
+            .as_mut()
+            .and_then(|speech| speech.migrated_provider.take())
+            .unwrap_or_default();
+
+        // An unreadable id falls back to the default rather than to a rescue
+        // path, which is the scope the owner set for this migration on
+        // 2026-08-11 (ADR 0112): this machine's config is disposable, so a
+        // value that does not map cleanly onto the new shape is dropped.
+        self.providers = Some(ProfileProviderSettings {
+            default: normalize_provider_value(&stored),
+            overrides: BTreeMap::new(),
+        });
     }
 
     /// Every term in the profile's vocabulary, opted in or not.
@@ -667,6 +775,17 @@ impl TextProfile {
 
     pub(crate) fn resolved_speech(&self) -> ProfileSpeechSettings {
         self.speech.clone().unwrap_or_default()
+    }
+
+    /// The provider axis for this profile, with an absent block reading as the
+    /// default connection and no overrides.
+    pub(crate) fn resolved_providers(&self) -> ProfileProviderSettings {
+        self.providers.clone().unwrap_or_default()
+    }
+
+    /// What one of this profile's jobs runs on, and what pays for it.
+    pub(crate) fn job_provider(&self, job: JobKey) -> JobProvider {
+        self.resolved_providers().resolve(job)
     }
 
     // No `resolved_modes()` counterpart: both remaining fields need to know
@@ -736,12 +855,100 @@ pub struct LocalProfilePromptSettings {
     pub prompt_carry: bool,
 }
 
+// ── The provider axis (ADR 0094) ─────────────────────────────────────────────
+
+/// Which vendor each of this profile's jobs runs on.
+///
+/// **A resolved default plus a sparse override per job**, which is the shape
+/// ADR 0094 fixes and the one the `AI Models` matrix has drawn since Leg 6. Not
+/// a provider per job: nine full pairs would make *this follows the connection*
+/// unrepresentable, and the donor is the evidence — five jobs times eight flat
+/// keys, with a fan-out helper to keep them consistent, is a settings surface
+/// nobody can read.
+///
+/// **It sits beside `speech`, `modes` and `capture` rather than inside any of
+/// them.** The axis governs the five chat jobs as well as the three speech
+/// ones, so filing it under the Speech tab would put the assistant's vendor in
+/// the recogniser's block.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ProfileProviderSettings {
+    /// The connection every job follows unless it says otherwise.
+    pub default: String,
+    /// Sparse, and deliberately so: **a job absent here is not a job without an
+    /// answer**, it is a job whose answer is *follow the connection*. The drawn
+    /// select carries that as its first option and an overriding row carries a
+    /// `Use the default` button back, so the absence is a value the surface can
+    /// write and unwrite, and the resolution happens at read time rather than
+    /// being baked in at write time (ADR 0094).
+    pub overrides: BTreeMap<JobKey, String>,
+}
+
+impl Default for ProfileProviderSettings {
+    fn default() -> Self {
+        Self {
+            default: default_provider_id().to_string(),
+            overrides: BTreeMap::new(),
+        }
+    }
+}
+
+impl ProfileProviderSettings {
+    /// What one job runs on, and what pays for it.
+    ///
+    /// The one resolution. Every call site that used to read a `provider` field
+    /// asks this for its own job instead, so *recognise with Groq, transform
+    /// with something stronger* is a question the config can answer.
+    pub(crate) fn resolve(&self, job: JobKey) -> JobProvider {
+        match self.overrides.get(&job) {
+            Some(provider) => JobProvider {
+                job,
+                provider: provider.clone(),
+                overridden: true,
+            },
+            None => JobProvider {
+                job,
+                provider: self.default.clone(),
+                overridden: false,
+            },
+        }
+    }
+
+    /// Lands every id in the block on one this build knows.
+    ///
+    /// An override naming a vendor this build cannot resolve is dropped rather
+    /// than normalised onto the default: silently rewriting it to Groq would
+    /// make the row read *follow the connection* while the user's own choice
+    /// disappeared, and an absent override says exactly that in a form the
+    /// surface can restate.
+    fn normalize(&mut self) {
+        self.default = normalize_provider_value(&self.default);
+        self.overrides
+            .retain(|_, provider| resolves_to_a_known_provider(provider));
+    }
+}
+
 // ── Per-Profile Settings (tab-oriented sub-objects) ──────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProfileSpeechSettings {
-    pub provider: String,
+    /// **The migration door for the provider axis, read once and never
+    /// written** (ADR 0094's config half).
+    ///
+    /// Version 4 profiles carry the profile's one provider here, and it is the
+    /// value the live pipeline actually spent — `capture.rs` read it while the
+    /// retry paths read a second, machine-wide field that could disagree with
+    /// it. `migrate_to_current_schema` lifts it onto `TextProfile::providers`
+    /// and version 5 stops writing it, so the key leaves the file on the next
+    /// save.
+    ///
+    /// **This is not the ballast ADR 0112 removed.** That record's argument is
+    /// that no installation carries the shape behind a path; this shape is the
+    /// one every installation carries right now, one save old, and reading it
+    /// is the difference between a migration and a reset.
+    #[serde(rename = "provider", skip_serializing)]
+    pub(crate) migrated_provider: Option<String>,
     pub model: String,
     pub language: String,
     /// Whether the chosen language is treated as pinned. It never makes a
@@ -765,7 +972,7 @@ pub struct ProfileSpeechSettings {
 impl Default for ProfileSpeechSettings {
     fn default() -> Self {
         Self {
-            provider: default_provider_id().to_string(),
+            migrated_provider: None,
             model: "whisper-large-v3-turbo".to_string(),
             language: String::new(),
             language_locked: false,
@@ -895,13 +1102,19 @@ pub struct AppConfig {
     pub local_correction_model: String,
     pub filter_fillers: bool,
     pub professionalize: bool,
-    #[serde(alias = "backend")]
-    pub provider: String,
     /// Which of the provider's account plans this machine is on. Plans are
     /// declared by the provider (`providers::provider_tiers`), never listed
     /// here, and they bound how long a recording may be. Machine-wide rather
     /// than per-profile: the plan belongs to the credential, and every profile
     /// using that provider shares it. Empty means the provider's default plan.
+    ///
+    /// **It stays machine-wide across the provider axis** (ADR 0094), and the
+    /// question that raises is deliberately left open: a plan belongs to a
+    /// credential, a credential is keyed by provider, and two profiles on two
+    /// providers now share one plan field. That was already true when the
+    /// provider was per profile, so this step neither introduces nor fixes it —
+    /// widening the tier is the tier's own axis and it waits for a surface that
+    /// draws more than one.
     #[serde(default)]
     pub provider_tier: String,
     pub local_model: String,
@@ -1038,7 +1251,6 @@ impl Default for AppConfig {
             local_correction_model: DEFAULT_LOCAL_CORRECTION_MODEL.to_string(),
             filter_fillers: true,
             professionalize: false,
-            provider: default_provider_id().to_string(),
             provider_tier: String::new(),
             local_model: "base".to_string(),
             local_profile: default_local_profile.clone(),
@@ -1124,11 +1336,29 @@ impl AppConfig {
         self.active_text_profile().work_mode.normalized()
     }
 
-    /// The chat model this machine runs instruction-following jobs on — the
-    /// agent, the translation, the prompt enhancer, and the transcript titles
-    /// (ADR 0077). One resolution, so a lane switch moves all of them together.
-    pub(crate) fn chat_model_for_provider(&self) -> String {
-        if self.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+    /// What one job runs on, and what pays for it (ADR 0094).
+    ///
+    /// **The single door onto the provider axis.** Every call site that used to
+    /// read a `provider` field names its own job here instead, which is what
+    /// makes *recognise with Groq, transform with something stronger* a thing
+    /// the config can express. The answer comes from the active profile,
+    /// because the axis is per profile: two profiles are exactly the place two
+    /// different connections belong.
+    pub(crate) fn job_provider(&self, job: JobKey) -> JobProvider {
+        self.active_text_profile().job_provider(job)
+    }
+
+    /// The chat model this machine runs one instruction-following job on — the
+    /// agent, the translation, the prompt enhancer, or a transcript title
+    /// (ADR 0077).
+    ///
+    /// **It takes the job now rather than reading one machine-wide provider.**
+    /// The local lane names its models differently from every cloud one, so the
+    /// question *which model* cannot be answered before *which vendor*, and
+    /// that is per job since ADR 0094's config half. A job routed to Local
+    /// takes the local model even while the connection is on Groq.
+    pub(crate) fn chat_model_for_job(&self, job: JobKey) -> String {
+        if self.job_provider(job).provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
             self.local_agent_model.clone()
         } else {
             self.agent_model.clone()
@@ -1270,7 +1500,6 @@ impl AppConfig {
     /// recomputing it on every load. See `normalize_text_profiles`.
     pub(crate) fn normalize_for_runtime(&mut self) -> bool {
         let work_mode_rewritten = self.normalize_text_profiles();
-        self.provider = normalize_provider_value(&self.provider);
         self.local_model = normalize_local_model_value(&self.local_model);
         self.local_profile = normalize_local_profile_id(&self.local_profile, &self.local_model);
         self.local_model = local_model_from_profile_id(&self.local_profile)
@@ -1384,6 +1613,12 @@ impl AppConfig {
             // matches on it.
             profile.migrate_to_current_schema();
 
+            // Runs after the migration, so the block the lift just wrote is
+            // normalized on the same pass rather than on the next load.
+            if let Some(providers) = profile.providers.as_mut() {
+                providers.normalize();
+            }
+
             if profile.label.trim().is_empty() {
                 profile.label = if index == 0 {
                     default_text_profile_label().to_string()
@@ -1450,23 +1685,55 @@ impl AppConfig {
         Self::load_from_disk_impl()
     }
 
+    /// Whether any stored profile is below the shape this build writes, and a
+    /// schema migration is therefore about to run over it.
+    ///
+    /// Read on the raw config, before anything is normalized, because it is
+    /// what decides whether the load takes a snapshot first.
+    fn carries_a_profile_below_current_schema(&self) -> bool {
+        self.text_profiles
+            .iter()
+            .any(|profile| profile.schema_version < TEXT_PROFILE_SCHEMA_VERSION)
+    }
+
     fn load_from_disk_impl() -> Self {
         let mut config = Self::load_raw_from_disk();
-        let original_provider = config.provider.clone();
+
+        // **Snapshot before the migration, not before the save.** The order is
+        // the contract `core::backup` states for the import path and it holds
+        // here for the same reason: a copy taken after the rewrite is a copy of
+        // the rewrite. A failed snapshot does not block the load — the config
+        // this build cannot migrate is one it also cannot run on — but it is
+        // recorded, and on this path the file has not been touched yet.
+        let migrating = config.carries_a_profile_below_current_schema();
+        if migrating {
+            // Only the failure is logged here. `snapshot_config` records its own
+            // path on success, and a second line saying the same thing is the
+            // kind of noise that makes a runtime log unreadable — but it is
+            // silent when it fails, and a migration that rewrote the config
+            // without a copy behind it is the one fact this path must state.
+            if let Err(error) = super::backup::snapshot_config("provider-axis") {
+                runtime_log::record(format!(
+                    "[WordScript] Config snapshot before schema {TEXT_PROFILE_SCHEMA_VERSION} migration FAILED error={error}"
+                ));
+            }
+        }
+
         let original_hotkeys = (
             config.hotkey.clone(),
             config.pause_hotkey.clone(),
             config.abort_hotkey.clone(),
         );
 
-        let mut should_save = false;
+        // A migrated profile must reach disk, or the lift runs again on every
+        // load and the snapshot piles up beside it.
+        let mut should_save = migrating;
 
         // A `work_mode` rewrite counts towards `should_save`. It did not before,
         // which is why a non-canonical `insert_behavior` could be corrected in
         // memory on every load and never written back — see
         // `normalize_text_profiles`.
         should_save |= config.normalize_for_runtime();
-        should_save |= original_provider != config.provider;
 
         should_save |= original_hotkeys
             != (
@@ -2149,6 +2416,7 @@ fn default_text_profile() -> TextProfile {
         curation: TextProfileCuration::default(),
         dictionary_entries: Vec::new(),
         snippet_entries: Vec::new(),
+        providers: None,
         speech: None,
         modes: None,
         capture: None,
@@ -2210,6 +2478,9 @@ fn refresh_curated_text_profile_presentation(text_profiles: &mut [TextProfile]) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::providers::{
+        ProviderRole, DEFAULT_PROVIDER_ID, LOCAL_PREVIEW_PROVIDER_ID,
+    };
 
     /// **The promise, not the field it used to be about.** `without_secrets`
     /// scrubbed `legacy_groq_api_key` until ADR 0112 removed it, and an
@@ -2421,16 +2692,156 @@ mod tests {
         assert!(validate_hotkey_collisions(&config).is_ok());
     }
 
+    /// Puts the whole axis of the active profile on one provider.
+    fn set_profile_connection(config: &mut AppConfig, provider: &str) {
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        profile.providers = Some(ProfileProviderSettings {
+            default: provider.to_string(),
+            ..Default::default()
+        });
+    }
+
     #[test]
     fn normalizes_unknown_provider_to_default_runtime_provider() {
-        let mut config = AppConfig {
-            provider: "openai".to_string(),
-            ..AppConfig::default()
-        };
+        let mut config = AppConfig::default();
+        set_profile_connection(&mut config, "openai");
 
         config.normalize_for_runtime();
 
-        assert_eq!(config.provider, "groq");
+        assert_eq!(
+            config.job_provider(JobKey::Cleanup).provider,
+            "groq",
+            "a connection this build cannot resolve falls back to the default"
+        );
+    }
+
+    #[test]
+    fn an_override_naming_an_unknown_provider_is_dropped_rather_than_normalized() {
+        let mut config = AppConfig::default();
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        profile.providers = Some(ProfileProviderSettings {
+            default: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            overrides: BTreeMap::from([
+                (JobKey::Assistant, "openai".to_string()),
+                (JobKey::Translate, LOCAL_PREVIEW_PROVIDER_ID.to_string()),
+            ]),
+        });
+
+        config.normalize_for_runtime();
+
+        let assistant = config.job_provider(JobKey::Assistant);
+        assert!(
+            !assistant.overridden,
+            "an unresolvable override reads as following the connection"
+        );
+        assert_eq!(
+            assistant.provider, LOCAL_PREVIEW_PROVIDER_ID,
+            "and it falls to the connection, not to the registry default"
+        );
+        assert!(
+            config.job_provider(JobKey::Translate).overridden,
+            "a resolvable override beside it survives untouched"
+        );
+    }
+
+    #[test]
+    fn a_job_that_overrides_takes_its_own_credential_and_never_the_connections() {
+        let mut config = AppConfig::default();
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        profile.providers = Some(ProfileProviderSettings {
+            default: DEFAULT_PROVIDER_ID.to_string(),
+            overrides: BTreeMap::from([(
+                JobKey::Assistant,
+                LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            )]),
+        });
+
+        let assistant = config.job_provider(JobKey::Assistant);
+        let cleanup = config.job_provider(JobKey::Cleanup);
+
+        assert_eq!(assistant.provider, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(cleanup.provider, DEFAULT_PROVIDER_ID);
+
+        // ADR 0094's one security rule: the credential follows the provider the
+        // job actually runs on. Reading it off the connection would send a key
+        // to a host it was never entered for. The local lane is the one vendor
+        // whose answer can be asserted without a keyring — it needs no
+        // credential at all, and that is exactly what the override must produce
+        // where the connection would have produced Groq's.
+        let credential = assistant
+            .credential()
+            .expect("the local lane answers for chat");
+        assert_eq!(credential.provider, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(credential.role, ProviderRole::Chat);
+        assert!(
+            credential.kind.is_none(),
+            "the overriding job took the lane that needs no credential, not the connection's"
+        );
+    }
+
+    #[test]
+    fn a_job_resolves_the_role_its_call_is_made_in() {
+        assert_eq!(JobKey::Dictation.role(), ProviderRole::Speech);
+        assert_eq!(JobKey::Meetings.role(), ProviderRole::Speech);
+        assert_eq!(JobKey::Upload.role(), ProviderRole::Speech);
+        for job in [
+            JobKey::Cleanup,
+            JobKey::Rewrite,
+            JobKey::Translate,
+            JobKey::Enhance,
+            JobKey::Assistant,
+        ] {
+            assert_eq!(job.role(), ProviderRole::Chat, "{}", job.as_str());
+        }
+    }
+
+    #[test]
+    fn recognize_on_one_vendor_and_transform_on_another_is_expressible() {
+        let mut config = AppConfig::default();
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        // The sentence the config could not say before this step.
+        profile.providers = Some(ProfileProviderSettings {
+            default: DEFAULT_PROVIDER_ID.to_string(),
+            overrides: BTreeMap::from([(JobKey::Rewrite, LOCAL_PREVIEW_PROVIDER_ID.to_string())]),
+        });
+
+        assert_eq!(
+            config.job_provider(JobKey::Dictation).provider,
+            DEFAULT_PROVIDER_ID
+        );
+        assert_eq!(
+            config.job_provider(JobKey::Rewrite).provider,
+            LOCAL_PREVIEW_PROVIDER_ID
+        );
+        assert_eq!(
+            config.chat_model_for_job(JobKey::Rewrite),
+            config.local_agent_model,
+            "the model follows the job's vendor, not the connection's"
+        );
+        assert_eq!(
+            config.chat_model_for_job(JobKey::Cleanup),
+            config.agent_model,
+        );
     }
 
     #[test]
@@ -2450,7 +2861,6 @@ mod tests {
     #[test]
     fn normalizes_local_preview_controls_into_runtime_safe_values() {
         let mut config = AppConfig {
-            provider: "local_preview".to_string(),
             local_model: "large_v3".to_string(),
             local_profile: String::new(),
             local_prompt_strength: "strong".to_string(),
@@ -2495,7 +2905,6 @@ mod tests {
     #[test]
     fn selected_local_profile_overrides_stale_local_model() {
         let mut config = AppConfig {
-            provider: "local_preview".to_string(),
             local_model: "base".to_string(),
             local_profile: "local-preview-medium-fast".to_string(),
             ..AppConfig::default()
@@ -2510,7 +2919,6 @@ mod tests {
     #[test]
     fn selected_local_profile_uses_profile_specific_decode_settings() {
         let mut config = AppConfig {
-            provider: "local_preview".to_string(),
             local_model: "base".to_string(),
             local_profile: "local-preview-medium-quality".to_string(),
             local_beam_size: 1,
@@ -2540,7 +2948,6 @@ mod tests {
     #[test]
     fn selected_local_profile_uses_profile_specific_prompt_settings() {
         let mut config = AppConfig {
-            provider: "local_preview".to_string(),
             local_model: "base".to_string(),
             local_profile: "local-preview-medium-quality".to_string(),
             local_prompt_strength: "off".to_string(),
@@ -3220,6 +3627,135 @@ mod tests {
         );
     }
 
+    /// **The provider axis migration, on the shape version 4 actually wrote.**
+    /// A config holding one provider lands on the same resolved default with no
+    /// override — the plain reading of ADR 0094's config half, and the case
+    /// every profile on this machine is in.
+    #[test]
+    fn a_version_four_profile_lands_its_one_provider_on_the_axis() {
+        let raw = r#"{
+            "id": "general",
+            "label": "General",
+            "prompt": "",
+            "vocabulary_hints": [],
+            "schema_version": 4,
+            "dictionary_entries": [],
+            "snippet_entries": [],
+            "speech": {
+                "provider": "local_preview",
+                "model": "whisper-large-v3",
+                "local_model": "base"
+            }
+        }"#;
+
+        let mut profile: TextProfile = serde_json::from_str(raw).expect("profile parses");
+        assert!(
+            profile.providers.is_none(),
+            "the axis does not exist on the stored shape",
+        );
+
+        assert!(profile.migrate_to_current_schema());
+
+        assert_eq!(profile.schema_version, PROVIDER_AXIS_SCHEMA_VERSION);
+        let axis = profile.resolved_providers();
+        assert_eq!(
+            axis.default, LOCAL_PREVIEW_PROVIDER_ID,
+            "the value the live pipeline was spending survives the lift",
+        );
+        assert!(
+            axis.overrides.is_empty(),
+            "nothing on disk expressed an override, so the migration invents none",
+        );
+        for job in JobKey::ALL {
+            let resolved = profile.job_provider(job);
+            assert_eq!(resolved.provider, LOCAL_PREVIEW_PROVIDER_ID);
+            assert!(!resolved.overridden, "{} follows the connection", job.as_str());
+        }
+
+        // And the key it was read from leaves the file rather than lingering as
+        // a second answer beside the axis.
+        let written = serde_json::to_value(&profile).expect("profile serializes");
+        assert!(
+            written["speech"].get("provider").is_none(),
+            "version 5 stops writing the field the migration consumed",
+        );
+    }
+
+    /// A stored provider this build cannot resolve falls back to the default
+    /// rather than to a rescue path — the licence ADR 0112 established and
+    /// A4 inherited.
+    #[test]
+    fn a_version_four_provider_this_build_cannot_resolve_falls_back_to_the_default() {
+        let mut profile = TextProfile {
+            schema_version: 4,
+            speech: Some(ProfileSpeechSettings {
+                migrated_provider: Some("anthropic".to_string()),
+                ..Default::default()
+            }),
+            ..TextProfile::default()
+        };
+
+        profile.migrate_to_current_schema();
+
+        assert_eq!(profile.resolved_providers().default, DEFAULT_PROVIDER_ID);
+    }
+
+    /// The guard is on the axis's own version, not on the constant. A profile
+    /// already carrying an axis keeps it, so a later version 6 cannot replace a
+    /// user's connection with a default derived from a key nothing writes.
+    #[test]
+    fn the_lift_runs_once_and_never_over_an_axis_that_exists() {
+        let mut profile = TextProfile {
+            schema_version: 4,
+            providers: Some(ProfileProviderSettings {
+                default: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+                overrides: BTreeMap::from([(JobKey::Cleanup, DEFAULT_PROVIDER_ID.to_string())]),
+            }),
+            speech: Some(ProfileSpeechSettings {
+                migrated_provider: Some(DEFAULT_PROVIDER_ID.to_string()),
+                ..Default::default()
+            }),
+            ..TextProfile::default()
+        };
+
+        profile.migrate_to_current_schema();
+
+        let axis = profile.resolved_providers();
+        assert_eq!(axis.default, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(
+            axis.overrides.get(&JobKey::Cleanup).map(String::as_str),
+            Some(DEFAULT_PROVIDER_ID),
+            "the override the user set is not replaced by the lift",
+        );
+    }
+
+    /// An override survives a save and comes back as an override — the sparse
+    /// map is a stored shape, not an in-memory convenience.
+    #[test]
+    fn an_override_round_trips_through_the_stored_shape() {
+        let profile = TextProfile {
+            schema_version: TEXT_PROFILE_SCHEMA_VERSION,
+            providers: Some(ProfileProviderSettings {
+                default: DEFAULT_PROVIDER_ID.to_string(),
+                overrides: BTreeMap::from([(
+                    JobKey::Assistant,
+                    LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+                )]),
+            }),
+            ..TextProfile::default()
+        };
+
+        let raw = serde_json::to_string(&profile).expect("serializes");
+        let back: TextProfile = serde_json::from_str(&raw).expect("parses");
+
+        assert_eq!(
+            back.job_provider(JobKey::Assistant).provider,
+            LOCAL_PREVIEW_PROVIDER_ID,
+        );
+        assert!(back.job_provider(JobKey::Assistant).overridden);
+        assert!(!back.job_provider(JobKey::Cleanup).overridden);
+    }
+
     #[test]
     fn transform_preset_is_fixed_per_mode() {
         // The full table. Only three distinct presets exist across six modes,
@@ -3690,3 +4226,4 @@ mod tests {
         assert_eq!(normalize_color_scheme("solarized"), "dark");
     }
 }
+

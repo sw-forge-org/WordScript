@@ -122,7 +122,9 @@ fn correction_request(
     let timeout_ms = if word_count > 300 { 30_000 } else { 8_000 };
 
     ChatCompletionRequest {
-        provider: config.provider.clone(),
+        // It mirrors the correction call it measures, so it resolves the same
+        // job rather than a connection-wide field (ADR 0094).
+        provider: config.correction_provider().provider,
         model,
         messages: vec![
             ChatMessage {
@@ -153,7 +155,7 @@ async fn measure_profile_context_width() {
     let preset = ProcessingMode::Cleanup.transform_preset();
 
     let transform_config = NativeTransformConfig {
-        provider: "groq".to_string(),
+        providers: super::super::config::ProfileProviderSettings::default(),
         profile_prompt: profile_prompt.clone(),
         dictionary_entries: dictionary_entries(profile),
         snippet_entries: Vec::new(),

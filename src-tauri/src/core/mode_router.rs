@@ -2,6 +2,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
 use super::config::ProcessingMode;
+use super::providers::JobKey;
 
 /// Cycle order mirrors AI Models' job list and the in-overlay tap cycler
 /// (`MODE_CYCLE` in `OverlayWindow.tsx`; `OverlayGallery.tsx` was folded into
@@ -350,8 +351,14 @@ pub async fn apply_mode_transform(
     // The chat model, not the correction model. Agent, Translate and Prompt
     // Enhance are instruction-following jobs and are explicitly not on the
     // fastest path (ADR 0041, ADR 0042).
-    let chat_model = || {
-        if config.provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+    //
+    // **Each arm names its own job** (ADR 0094). It is not derived from the
+    // mode by a second mapping: the arm already knows which job it is running,
+    // and a lookup beside the match is a place for the two to disagree. The
+    // model follows the job's vendor rather than one connection, because the
+    // local lane names its models differently from every cloud one.
+    let chat_model = |job: JobKey| {
+        if config.providers.resolve(job).provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
             app_config.local_agent_model.clone()
         } else {
             app_config.agent_model.clone()
@@ -361,9 +368,9 @@ pub async fn apply_mode_transform(
     match mode {
         ProcessingMode::Agent => {
             let agent_config = super::agent::AgentConfig {
-                provider: config.provider.clone(),
+                provider: config.providers.resolve(JobKey::Assistant).provider,
                 agent_name: config.agent_name.clone(),
-                agent_model: chat_model(),
+                agent_model: chat_model(JobKey::Assistant),
                 profile_label: config.profile_label.clone(),
                 profile_prompt: config.profile_prompt.clone(),
                 vocabulary: config.vocabulary.clone(),
@@ -385,8 +392,8 @@ pub async fn apply_mode_transform(
         }
         ProcessingMode::Translate => {
             let translate_config = super::translate::TranslateConfig {
-                provider: config.provider.clone(),
-                model: chat_model(),
+                provider: config.providers.resolve(JobKey::Translate).provider,
+                model: chat_model(JobKey::Translate),
                 settings: config.translate.clone(),
                 profile_prompt: config.profile_prompt.clone(),
                 vocabulary: config.vocabulary.clone(),
@@ -409,8 +416,8 @@ pub async fn apply_mode_transform(
                 .or(Some(app_config.enhance_target.clone()))
                 .unwrap_or_default();
             let enhance_config = super::prompt_enhance::PromptEnhanceConfig {
-                provider: config.provider.clone(),
-                model: chat_model(),
+                provider: config.providers.resolve(JobKey::Enhance).provider,
+                model: chat_model(JobKey::Enhance),
                 sub_mode: enhance_sub_mode.as_str().to_string(),
                 target: enhance_target.as_str().to_string(),
                 profile_prompt: config.profile_prompt.clone(),

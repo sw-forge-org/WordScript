@@ -126,7 +126,6 @@ async fn resolves_native_session_transform_insert_chain_with_direct_paste() {
     let transformed = transform_like_pipeline(
         "word script follow up note",
         NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: vec![DictionaryEntry {
                 id: "dict-brand".to_string(),
@@ -213,7 +212,6 @@ async fn surfaces_direct_paste_failure_with_recovery_copy() {
     let transformed = transform_like_pipeline(
         "word script",
         NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: vec![DictionaryEntry {
                 id: "dict-brand".to_string(),
@@ -286,7 +284,6 @@ async fn skips_clipboard_restore_when_no_previous_clipboard_exists() {
     let transformed = transform_like_pipeline(
         "word script",
         NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: vec![DictionaryEntry {
                 id: "dict-brand".to_string(),
@@ -345,7 +342,6 @@ async fn surfaces_clipboard_write_failure_with_scratchpad_recovery() {
     let transformed = transform_like_pipeline(
         "word script",
         NativeTransformConfig {
-            provider: "groq".to_string(),
             profile_prompt: String::new(),
             dictionary_entries: vec![DictionaryEntry {
                 id: "dict-brand".to_string(),

@@ -56,6 +56,7 @@ import {
   describeTextProfileWorkMode,
   duplicateTextProfile,
   moveEntry,
+  resolveConfigJobProvider,
   resolveProfileCaptureSettings,
   resolveProfileModesSettings,
   resolveTextProfileWorkMode,
@@ -374,8 +375,11 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
     profiles.find((entry) => entry.id === config.active_text_profile_id) ??
     profiles[0];
 
+  /* Keyed on the recogniser's vendor, because that is what the ceiling is
+     bound by — a profile whose chat jobs sit elsewhere does not change what
+     one recording may cost (ADR 0094). */
   const { budget } = useCaptureBudget(
-    `${config.provider}:${config.provider_tier}:${config.local_model}`,
+    `${resolveConfigJobProvider(config, "dictation").provider}:${config.provider_tier}:${config.local_model}`,
   );
 
   /** WHICH FLAGS THIS PROFILE HAS ALREADY READ AND ACCEPTED (ADR 0085).
