@@ -1058,7 +1058,13 @@ and ADR 0109's rule points the same way.
    test walks `src/` to prove no file outside the catalogue spells a catalogued
    id. **This is the one disagreement on this list closed by code**, which is
    the bar the preamble sets for all of them.
-6. **`Cloud.upload` already draws a per-job provider override to OpenAI**, and
+6. **Scheduled 2026-08-13 as B7's** (ADR 0129), together with 12 — both live on
+   the `upload` row and the override is what carries them. Removing it dissolves
+   12 and reduces this one to *which model does upload take on the connection*,
+   which the catalogue answers. **Not closed until the code lands.** The
+   original entry follows.
+
+   **`Cloud.upload` already draws a per-job provider override to OpenAI**, and
    the model it defaults to is `whisper-1` -- the one OpenAI documents as
    explicitly not supporting streaming. The override itself is the shape Phase 4
    wants (a resolved default plus a sparse per-job override); the model choice
@@ -1116,7 +1122,11 @@ and ADR 0109's rule points the same way.
     cheapest additional speech lane on this page invisible on the screen that
     picks between lanes. Same shape as disagreement 1 (xAI's `llm: false`), and
     it resolves the same way: the drawing decides, not an implementation.
-12. **`Cloud.upload` offers a Groq model id under its OpenAI override.** Added
+12. **Scheduled 2026-08-13 as B7's** (ADR 0129), with 6. It dissolves rather
+    than being corrected: there is no override to be inconsistent with once the
+    picker moves to the point of upload. The original entry follows.
+
+    **`Cloud.upload` offers a Groq model id under its OpenAI override.** Added
     2026-08-12; **found by the catalogue rather than by a reading**, which is
     the first thing that step did that this survey could not have done for
     itself. The drawn list is `whisper-1`, `gpt-4o-transcribe`,

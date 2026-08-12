@@ -575,6 +575,44 @@ other three.
 **D1a loses its drawing half**, which this step spent. It is now the adapter
 alone, and that ordering is ADR 0109's — the row comes before the adapter.
 
+### B7. The provider picker at the point of use (ADR 0129)
+
+**Added 2026-08-13**, from the owner's reading of the donor's upload screen and
+the question ADR 0128 left open in its own last paragraph — whether `upload`
+should default to OpenAI at all. The answer is neither of the obvious two: **ask
+where the question can be answered**, with the file in hand and its size known.
+
+- **Requires** — B6 (the writable override and the reason-carrying option list
+  are what this draws in a second place). Nothing else; **not** gated on D1a.
+- **Touches** — the upload surface and the translation surface gain the rows
+  `Follows` already renders, behind a collapsed `Transcription settings`
+  disclosure, with the resolved answer above them as one line — *Using Groq ·
+  whisper-large-v3*. A second `InertReason` kind for a constraint the runtime
+  can compute, and `capture_limits` asked in the other direction: **which
+  `(provider, model, tier)` pairs accept N bytes**, against
+  `capture_budget.rs`'s existing `seconds_for_upload_limit` and
+  `CaptureCeilingReason::upload_limit`. `Cloud.upload` loses its drawn
+  `override`, and `screens.test.tsx`'s three-overridden-jobs case moves to two.
+- **Validates** — `cargo test` for the byte-direction limit, `npm test`,
+  `npm run build`, and **`port:diff` moves on `models`** — the gallery's own
+  inventory changes here, unlike B6's override half. Say by how much and why.
+- **Done when** — a file too large for the connection greys that vendor with the
+  reason, offers the one that fits, and **never reroutes the audio by itself**;
+  and the same picker on two surfaces writes one stored value.
+
+**Nothing new is stored.** `providers.overrides[job]` is A4's map, writable
+since B6; this is that value drawn a second time. `resolveConfigJobProvider`
+stays the one door, which is the rule A4 wrote when it refused to let call sites
+reach into the map.
+
+**It closes open disagreements 6 and 12**, both of which live on the `upload`
+row: 12 dissolves with the override, and 6 shrinks to which model upload takes
+on the connection.
+
+**The refusal to auto-switch is load-bearing** and the donor is the precedent,
+not a preference: `transcriptionFallback.js` has a fallback target of `skip` so
+that a signed-out user's audio is not diverted.
+
 ---
 
 ## Stage C — capture
@@ -634,6 +672,51 @@ input stream that carries
 [known-issues/capture-loses-half-the-recording.md](../known-issues/capture-loses-half-the-recording.md).
 Shipping it before this measurement is the fake-readiness defect one layer down,
 and ADR 0098 says so in its own consequences.
+
+### C4. What a two-hour recording costs (ADR 0130)
+
+**Added 2026-08-13**, on the owner's question about long meetings — and the
+finding is that the repository had no answer at all. `docs/ROADMAP.md`'s
+*Meeting capture* names system audio, echo cancellation, content protection and
+the window, and **never mentions transcribing the recording.**
+
+- **Requires** — C1 for the capture half. The two ceilings below are readable
+  now and need no code to establish.
+- **Touches** — nothing in capture that C1 does not already do. **A meeting is
+  C1's turns, not a chunker** (ADR 0130): segmented on silence, not on a clock,
+  so there is no overlap to stitch and therefore no seam at which a stitcher can
+  duplicate or drop a word. What this step adds is the two limits nobody has
+  written down, and a catalogue column for one of them.
+- **Validates** — for the catalogue half, the rule B3 already enforces: every
+  row carries a source and a read-date, and the column arrives as a
+  `CATALOGUE_VERSION` bump.
+- **Done when** — a surface can say why a two-hour meeting cannot be live
+  transcribed on this connection, and the notes pass over a long transcript has
+  a ceiling it can read rather than a failure it discovers.
+
+**The three limits, in the order they bind — and the upload size is the least
+of them.**
+
+1. **The default lane does not stream.** The catalogue records Groq speech as
+   `streaming: "unsupported"`, *batch only, no websocket, no `stream=true`*.
+   Live transcription during a meeting is **impossible on the connection this
+   product ships with**; it needs D2 and a streaming lane. No surface and no
+   roadmap entry says this today.
+2. **The notes pass hits a context window.** Two hours of speech is roughly
+   twenty thousand words, and that is a ceiling on the *chat* job expressed in
+   tokens. `capture_budget` bounds audio and has nothing to say about it.
+   **Nothing in this repo records a context window** — not `ModelCapabilities`,
+   not the catalogue. It belongs in the catalogue beside `streaming`, because it
+   is what a vendor documents per model rather than what an adapter asserts
+   (ADR 0115).
+3. **The per-turn request count** is already answered — ADR 0107 took the
+   donor's global in-flight ceiling for exactly this. Named here so it is not
+   rediscovered as a third problem.
+
+**The donor is not the reference for the file half, and that is worth stating
+once.** `UploadAudioView.tsx` refuses anything over 25 MB on a third-party key
+and says its own cloud handles *splitting, parallel processing, and reassembly*.
+That answer is a backend, and `docs/ROADMAP.md` rules one out.
 
 ---
 
@@ -955,8 +1038,16 @@ B2 + B3 ── F1 ──┴── F4 (measure) ── F5 (the four modules)
 B3 ──┬── B4 (the live fetch)
      └── B5 (the installation)
 
-B1 + D1 ── B6 (the inherited drawing)
+B1 + D1 ── B6 (the inherited drawing) ── B7 (the picker at the point of use)
+
+C1 ── C4 (what two hours costs) ── needs D2 for the streaming half
 ```
+
+**C4 is drawn hanging off C1 and reaching for D2, because that is exactly its
+finding**: the capture half is C1's turns and needs nothing new, and the half
+that is genuinely blocked is live transcription, which needs a lane that
+streams. The context-window ceiling hangs off neither and can be catalogued
+today.
 
 **A5 and A4 are drawn as siblings because that is the truth: A5 blocks
 nothing.** It runs first anyway — both rewrite `core/config.rs`, and doing the
@@ -981,6 +1072,14 @@ view plus a pop-out is enough at a table* blocks G2's surface (ADR 0064).
 **Open disagreement 13 was the second and lasted a day**: ADR 0128 answered it
 with a rule rather than with either of the two options it posed, and closed 10
 and 11 with the same rule.
+
+**Two more are live as of 2026-08-13, and both come from C4** (ADR 0130).
+*Whether a meeting is live-transcribed at all* is a product question with a real
+cost — it forces a streaming lane and therefore a second credential for anyone
+on Groq — and it blocks no step, because C1 delivers the after-the-fact path
+either way. *What happens to the audio of a meeting nobody keeps* is
+`docs/ROADMAP.md`'s own gate 2, still open since the meeting chapter was
+written, and ADR 0130 deliberately did not touch it.
 **The other was answered on 2026-08-11**: where the translation voice sits is
 ADR 0119, two rows, delegated by the owner and decided against ADR 0043's one
 voice, ADR 0064's per-language route and the language coverage the survey
@@ -1012,6 +1111,8 @@ Speaking row, so it is flagged rather than assumed.
 | B1 | **done** 2026-08-12 — `registered_providers()` answers for the whole table in one call, `src/lib/providerSeam.ts` is the third thing ADR 0106 named, five states rather than three, the two tests that record required both exist and both were made to fail before they were trusted (ADR 0124). +3 Rust tests, +25 frontend across 2 new files, `port:diff` unmoved at `structural 6 \| style 213 \| text 12` |
 | D1 | **done** 2026-08-12 — `core/providers/openai.rs` plus one registry line, on a transport and a credential store extracted from `groq.rs` in the same commit (ADR 0113, ADR 0126). `verbose_json` turned out to be `whisper-1`-only on this vendor, so the response format is per model and `ModelCapabilities` is non-vacuous for the first time. **The connection became writable** (ADR 0127) — the chip row, the credential row and every job row read one stored answer, so *a second lane can be operated* is a fact rather than a registry entry. +17 Rust tests, +3 frontend, `port:diff` **unmoved** at `structural 6 \| style 213 \| text 12`, no dependency moved |
 | B6 | **done** 2026-08-12 — added the same day on the owner's instruction. The override reads the config in the product and the drawn literal in the gallery, so `port:diff` is unmoved at `structural 6 \| style 213 \| text 12` for that half; the `stt` correction moves it to `structural 9 \| style 217 \| text 12` and that movement **is** the correction. The literal `Set` badge is gone, an unbuilt vendor is offered and disabled with its reason, and the provider select escapes its own inert reason. +6 frontend cases in `Models.test.tsx`, +3 in `providerSeam.test.ts`, all nine made to fail first. `PROVIDERS.md` disagreements 10, 11 and 13 closed |
+| B7 | **not started** — added 2026-08-13 (ADR 0129); the picker at the point of use, on B6 only. Closes disagreements 6 and 12 and answers the paragraph ADR 0128 left open |
+| C4 | **not started** — added 2026-08-13 (ADR 0130); the two ceilings a two-hour recording actually hits. The capture half is C1; what is new is that the default lane cannot stream and that nothing records a context window |
 | D3 | **not started, and not blocked** — its `Requires` line reads D1 and A3, both done. The graph below draws a `B2` line into its column that no `Requires` line supports; the line is decorative and the `Requires` is the contract |
 | B2, C1–C2, D2, E1–E2, F1–F3, G1–G3 | **not started** |
 

@@ -749,6 +749,30 @@ obligations.
 3. Does system-audio capture work without a per-session authorization prompt on
    the target platforms? Same gate, same reason, as the libei candidate above.
    **Still open.**
+4. **Is the meeting live-transcribed, or transcribed when it ends?** Added
+   2026-08-13 by [ADR 0130](decisions/0130-a-long-recording-is-a-sequence-of-turns-and-the-ceiling-that-binds-it-is-not-the-upload-size.md),
+   which found this chapter never mentioned transcribing the recording at all.
+   **Live is not free and not currently possible**: the catalogue records Groq
+   speech as batch only — no websocket, no `stream=true` — so live forces the
+   streaming contract (speech track D2) **and** a second credential for anyone
+   on the default connection. Transcribing at the end forces neither.
+   **Still open, and it is the owner's.**
+
+**How the recording becomes a transcript, since this chapter never said.**
+It is the speech track's C1 and nothing more: *a turn is a recording, the stream
+is not* ([ADR 0107](decisions/0107-an-utterance-is-a-recording-and-the-stream-that-carries-a-conversation-outlives-every-one-of-them.md)).
+Turns are cut **on silence rather than on a clock**, so there is no overlap to
+reconcile and no seam at which a stitcher can duplicate or drop a word —
+fixed-length windows were considered and refused on exactly that ground
+(ADR 0130). Every existing instrument then applies per turn unchanged, and the
+note is the concatenation. **A meeting needs C1 and system audio; it does not
+need a chunker.**
+
+**The ceiling that binds an hour is not the audio size.** It is the context
+window of the model that writes the notes over the finished transcript — roughly
+twenty thousand words for two hours — and **nothing in this repo records a
+model's context window today**. That is speech-track C4's, filed as a catalogue
+column beside `streaming`.
 
 **The detection half is separable, and do not build it early on that ground.**
 A microphone watch, a calendar read and a prompt window need none of the capture

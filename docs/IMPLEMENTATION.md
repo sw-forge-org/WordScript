@@ -73,7 +73,7 @@ The third pass's own page carries where each of the five records stands.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0128.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0130.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -86,10 +86,19 @@ catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
 adapter, and the connection that can now be chosen)**, and **B6 (what it means
 to wire a drawing inherited from the demo GUI)**.
 
-Next unblocked: **B2**, **B4**, **B5**, **C1**, **E1**, **D3** — whose
+Next unblocked: **B2**, **B4**, **B5**, **B7**, **C1**, **E1**, **D3** — whose
 `Requires` line has read D1 and A3 since it was written, both now done — and
 **D1a**, which since B6 spent its drawing half is the adapter alone and the
 cheapest step in Stage D.
+
+**Two steps were added on 2026-08-13 from a donor reading, and neither needs
+code to have been useful.** **B7** (ADR 0129) moves the provider choice to the
+point of use — the file's size is the fact that decides it, and it is not known
+in a settings table. **C4** (ADR 0130) answers how a two-hour meeting is
+transcribed, which no document in this repo did: it is C1's turns cut on silence
+rather than a chunker, and **the ceiling that binds it is neither the audio nor
+the upload size** — the default lane cannot stream at all, and nothing here
+records a model's context window.
 
 **What D1 left for somebody to decide was decided the next morning.** The drawn
 per-job override and A4's runtime resolution disagreed about what a fresh

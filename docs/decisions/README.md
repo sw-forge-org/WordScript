@@ -993,6 +993,32 @@ Status: Proposed | Accepted | Superseded by NNNN
   11 and 13. `port:diff` moves by exactly the one corrected boolean, and the
   ADR 0057 gate turns out to be *write it down*, not *do not touch*.
 
+- [0129](0129-the-provider-choice-belongs-where-the-file-is-and-it-is-the-same-stored-value.md):
+  ADR 0128 removed the surface's claim that `upload` overrides to OpenAI and
+  left open whether it should. **Neither obvious answer wins: the question is
+  asked where it can be answered**, with the file in hand and its size known.
+  The donor's upload screen carries the whole stack inline behind a disclosure
+  with the resolved answer above the drop zone — *Using Groq ·
+  whisper-large-v3* — and refuses a file its lane cannot take. **Nothing new is
+  stored**: `providers.overrides[job]` drawn a second time, one resolution door.
+  A constraint the runtime can compute greys the option and says why, and
+  **never reroutes the audio by itself** — the donor's own fallback target is
+  `skip`, so a signed-out user's audio is not diverted. Closes open
+  disagreements 6 and 12.
+
+- [0130](0130-a-long-recording-is-a-sequence-of-turns-and-the-ceiling-that-binds-it-is-not-the-upload-size.md):
+  how a two-hour meeting is actually transcribed, asked by the owner and
+  answered nowhere in the repo — `ROADMAP.md`'s meeting chapter names system
+  audio, echo cancellation and the window, and never mentions transcribing the
+  recording. **The donor is not the reference for the file half**, because its
+  answer is a backend WordScript rules out; **it is the reference for the live
+  half**, and its Silero constants are the decision: cut on silence, not on a
+  clock. Ten-minute windows with overlap were proposed and refused — a stitcher
+  duplicates or drops words at every seam, which is the exact failure class the
+  hardening track exists for. **A meeting is C1's turns, not a chunker.** And
+  the ceiling that binds it is neither: the default lane cannot stream at all,
+  and the notes pass hits a context window nothing in this repo records.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
