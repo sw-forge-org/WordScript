@@ -32,7 +32,7 @@ updated; a kick-off is spent when its unit closes.
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
-| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 9 of ~25 steps done, and the first adapter is unblocked | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
 ### GUI port
@@ -73,7 +73,7 @@ The third pass's own page carries where each of the five records stands.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0127.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0128.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -83,17 +83,21 @@ account and is not updated by later work.
 
 Done: A1–A6 (the runtime contract), B1 (the capability seam), B3 (the model
 catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
-adapter, and the connection that can now be chosen)**.
+adapter, and the connection that can now be chosen)**, and **B6 (what it means
+to wire a drawing inherited from the demo GUI)**.
 
-Next unblocked: **B2**, **B4**, **B5**, **C1**, **E1** and — now that D1 has
-extracted the shared request helper — **D1a**, which is the cheapest step in
-Stage D and reaches two more lanes for a base URL.
+Next unblocked: **B2**, **B4**, **B5**, **C1**, **E1**, **D3** — whose
+`Requires` line has read D1 and A3 since it was written, both now done — and
+**D1a**, which since B6 spent its drawing half is the adapter alone and the
+cheapest step in Stage D.
 
-**One thing D1 found is somebody's to decide, and it blocks a control.** The
-drawn per-job override and A4's runtime resolution disagree about what a fresh
-profile overrides, so the override select stays unwritable while the connection
-does not (ADR 0127, `PROVIDERS.md` open disagreement 13). It gates the row, not
-the adapter.
+**What D1 left for somebody to decide was decided the next morning.** The drawn
+per-job override and A4's runtime resolution disagreed about what a fresh
+profile overrides; ADR 0128 answers it with a rule rather than with either
+option — the config answers in the product, the drawn literal answers in the
+gallery — and closes `PROVIDERS.md` disagreements 10, 11 and 13 with it. The
+rule generalises past this screen: **an inherited drawing is an inventory of
+intent, and what is unbuilt stays visible and inert rather than tidied away.**
 
 ### Activation gestures
 

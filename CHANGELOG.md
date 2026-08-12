@@ -53,6 +53,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the screen stops claiming things it does not know (ADR 0128)
+
+- **A per-job provider override is now what is stored, not what was drawn.**
+  `AI Models` was taken whole from the demo GUI, and three job rows carried a
+  hardcoded override — `Upload` to OpenAI, `Translate` and `Assistant` to
+  Anthropic — that decided the row's shape while the runtime stored no override
+  at all. The row now states the stored answer, the select writes it, and *Use
+  the default* clears it rather than freezing the job onto today's connection.
+- **A green `Set` badge no longer appears over a key that does not exist.** The
+  override rows asserted a stored credential nothing had been asked about — on
+  two of them for a vendor with no adapter and therefore no secret-store entry.
+  The badge reads the runtime and has a third answer, *Not read*, for the case
+  where nothing was asked.
+- **A row that cannot run no longer disables the control that would fix it.**
+  The provider select is the way out of *this vendor has no adapter*, and it was
+  greyed out by the sentence saying so.
+- **The Self-hosted lane stops claiming it cannot hear.**
+  `/v1/audio/transcriptions` is a de-facto standard a user-run `whisper-server`
+  answers on; what is missing is WordScript's adapter, and the three rows say
+  that instead. `OpenRouter` is no longer drawn as unable to transcribe.
+- **Vendors without an adapter stay on the screen, greyed, with the reason.**
+  That is deliberate and is now written down: an inherited drawing is an
+  inventory of what the product intends to offer, so what is still missing stays
+  visible rather than being tidied away.
+
 ### Added — a second cloud lane, and a connection you can choose (ADR 0096 step 1, ADR 0126, ADR 0127)
 
 - **OpenAI transcribes and writes.** One module plus one registry line, which is

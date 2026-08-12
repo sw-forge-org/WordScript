@@ -208,7 +208,13 @@ export const PROVIDERS: Provider[] = [
   { name: "Gemini", lane: "Cloud", stt: false, llm: true, desc: "Language only." },
   { name: "Mistral", lane: "Cloud", stt: true, llm: true, desc: "Speech and language." },
   { name: "xAI", lane: "Cloud", stt: true, llm: false, desc: "Speech only." },
-  { name: "OpenRouter", lane: "Cloud", stt: false, llm: true, desc: "One key, many models. Reaches providers with no adapter of their own." },
+  /* `stt: true` since ADR 0128. It was `false`, and that was wrong on both
+     paths OpenRouter serves: a dedicated transcription endpoint AND the chat
+     surface (`docs/PROVIDERS.md`, open disagreement 11). The boolean kept the
+     cheapest additional speech lane invisible on the screen that picks between
+     lanes. Whether an adapter exists is a different question and the runtime
+     answers it — today it says no, and the row greys itself with that reason. */
+  { name: "OpenRouter", lane: "Cloud", stt: true, llm: true, desc: "One key, many models. Reaches providers with no adapter of their own." },
   { name: "AWS Bedrock", lane: "Enterprise", stt: false, llm: true, desc: "Access key, secret and region — or the ambient AWS credential chain." },
   { name: "Azure OpenAI", lane: "Enterprise", stt: true, llm: true, desc: "Endpoint, deployment and key. The deployment name is the model id." },
   { name: "GCP Vertex AI", lane: "Enterprise", stt: false, llm: true, desc: "Service account JSON, project and location." },
@@ -290,9 +296,16 @@ export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, La
        the user's and its model list belongs to whoever runs it, which is the
        free-typed field ADR 0115 keeps beside every catalogue list. */
     jobs: {
-      dictation: { none: "Speech has no OpenAI-compatible shape to talk to. Use Cloud or Local for the listening jobs." },
-      meetings: { none: "Same — a self-hosted chat endpoint does not transcribe." },
-      upload: { none: "Same — a self-hosted chat endpoint does not transcribe." },
+      /* THE REFUSAL WAS WRONG AND IS CORRECTED (ADR 0128, open disagreement
+         10). It read "Speech has no OpenAI-compatible shape to talk to", and
+         `/v1/audio/transcriptions` is a de-facto standard a user-run
+         `whisper-server` answers on — `docs/PROVIDERS.md` corrected its own
+         half of the same sentence and the surface kept saying a lane that can
+         hear cannot. What is true is narrower and it is about WordScript, not
+         about the lane: the adapter is not built yet (D1a). */
+      dictation: { none: "Not built yet — WordScript has no self-hosted speech adapter. The endpoint shape exists; the lane will hear once D1a lands." },
+      meetings: { none: "Same — the adapter is what is missing, not the endpoint." },
+      upload: { none: "Same — the adapter is what is missing, not the endpoint." },
       cleanup: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
       rewrite: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
       translate: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },

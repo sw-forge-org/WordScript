@@ -58,9 +58,11 @@ import {
   resolveActiveTextProfile,
   resolveConfigJobProvider,
   resolveProfileModesSettings,
+  resolveProfileProviderSettings,
 } from "@/lib/textProfiles";
 import {
   connectionCapabilitySentence,
+  credentialStateFor,
   drawnNameFor,
   NO_ANSWERS,
   resolveProviderAnswer,
@@ -69,6 +71,7 @@ import {
   selectableProviderNames,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
+import type { ProviderRole } from "@/types/providers";
 import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
 
 /**
@@ -133,6 +136,18 @@ const Wired = createContext<{
    */
   connection?: string;
   setConnection?: (drawnName: string) => void;
+  /**
+   * WHICH VENDOR ONE JOB OVERRIDES TO, written per job (ADR 0128).
+   *
+   * `null` clears the override, which is the stored form of *follow the
+   * connection* — the absence is the value (ADR 0094), so *Use the default*
+   * deletes a key rather than writing the connection's id into it. Writing the
+   * id would make the row stop following a connection the user later changes.
+   *
+   * `undefined` in the gallery, where the drawn literal keeps deciding the
+   * shape and there is no config to write to.
+   */
+  setJobOverride?: (job: JobKey, drawnName: string | null) => void;
 }>({ on: false, answers: NO_ANSWERS });
 
 function useWired() {
@@ -313,9 +328,48 @@ function WiredModels({
     [runtime],
   );
 
+  /* THE PER-JOB OVERRIDE, written through the same door as the connection
+     (ADR 0128). The map is read back off the active profile rather than kept
+     beside it, because two rows changed in one session must not each write a
+     map built from what they saw when the screen opened. */
+  const setJobOverride = useCallback(
+    (job: JobKey, drawnName: string | null) => {
+      const axis = resolveProfileProviderSettings(resolveActiveTextProfile(runtime.config));
+      const overrides = { ...axis.overrides };
+
+      if (drawnName === null) {
+        delete overrides[job];
+      } else {
+        const id = runtimeIdFor(drawnName);
+        if (!id) return;
+        /* Overriding to the connection's own vendor is not an override. Storing
+           it would freeze this job onto today's connection, so the row stops
+           following one the user changes later — which is the opposite of what
+           picking the connection's name means. */
+        if (id === axis.default) {
+          delete overrides[job];
+        } else {
+          overrides[job] = id;
+        }
+      }
+
+      runtime.patch(buildProfileProvidersPatch(runtime.config, { overrides }));
+    },
+    [runtime],
+  );
+
   return (
     <Wired.Provider
-      value={{ on: true, open: runtime.open, runtime, answers, refresh, connection, setConnection }}
+      value={{
+        on: true,
+        open: runtime.open,
+        runtime,
+        answers,
+        refresh,
+        connection,
+        setConnection,
+        setJobOverride,
+      }}
     >
       <InertBecause.Provider value={NOT_INTEGRATED}>{children}</InertBecause.Provider>
     </Wired.Provider>
@@ -810,6 +864,20 @@ function inertReasonFor(drawnName: string, answers: RuntimeAnswers): string | un
 }
 
 /**
+ * The drawn name of a job's STORED override, or `undefined` where it follows
+ * the connection (ADR 0128).
+ *
+ * A stored id with no drawn name is treated as no override rather than rendered
+ * as a storage key — the same call `WiredModels` makes for the connection, and
+ * for the same reason (ADR 0127).
+ */
+function storedOverrideName(runtime: WorkspaceRuntime, job: JobKey): string | undefined {
+  const resolved = resolveConfigJobProvider(runtime.config, job);
+  if (!resolved.overridden) return undefined;
+  return drawnNameFor(resolved.provider);
+}
+
+/**
  * THE OVERRIDE ROWS. Every job takes the same three, in the same order, and the
  * first one is the one that matters: this job either follows the connection or
  * it does not. Saying that explicitly is what lets the connection card above be
@@ -832,10 +900,10 @@ function Follows({
 }) {
   const wired = useWired();
   const answers = useAnswers();
+  const { runtime: wiredRuntime, setJobOverride } = useContext(Wired);
   const lj = jobKey ? LANES[lane].jobs[jobKey] : {};
   const model = lj.model ?? fallbackModel ?? "";
   const models = lj.models ?? (model ? [model] : []);
-  const override = lj.override;
   /* THE CONNECTION IS THE STORED ONE WHERE THERE IS ONE (D1). `Follow the
      connection · Groq` on a profile whose connection is OpenAI is a row stating
      a vendor the runtime is not using — and it is the sentence a user reads to
@@ -843,12 +911,32 @@ function Follows({
      why `port:diff` does not move for this. */
   const conn = useContext(Wired).connection ?? LANES[lane].provider;
 
+  /* WHETHER THIS JOB OVERRIDES, AND WHO ANSWERS THAT (ADR 0128).
+     The drawn `override` literal decides the row's SHAPE — a provider mark, a
+     *Use the default* button and an API-key row of its own. Three jobs carry
+     one, and they carry it because the demo GUI drew a plausible product
+     before there was a config axis to hold it. A4 then decided the runtime's
+     answer: a fresh profile overrides nothing.
+
+     So the config answers where there IS a config, and the drawing answers
+     where there is not. That is ADR 0127's own arrangement for `ProviderPick`
+     one axis over, and it is what keeps both true at once: the gallery still
+     shows the shape the product intends to offer — the inventory of what is
+     coming — while the product shows only what is stored. `port:diff` compares
+     the prototype against the GALLERY, so it does not move for this. */
+  const storedOverride =
+    wired && wiredRuntime && jobKey && lane === "Cloud"
+      ? storedOverrideName(wiredRuntime, jobKey)
+      : undefined;
+  const override = wired ? storedOverride : lj.override;
+
   /* WHICH VENDOR THIS JOB WOULD RUN ON, and therefore which answer applies:
      the override where the drawing gives one, the connection otherwise. The
      role comes from the job's own column — `stt` and `llm` are what the
      drawing calls its axes, `speech` and `chat` what a credential is keyed by
      (ADR 0105), and `roleForDrawnCapability` is the one translation. */
   const runsOn = override ?? conn;
+  const followOption = `Follow the connection · ${conn}`;
   const answer = wired
     ? resolveProviderAnswer(runsOn, roleForDrawnCapability(cap), answers)
     : null;
@@ -866,12 +954,11 @@ function Follows({
       ? answer.reason.sentence
       : undefined;
 
-  const modelRows = (
-    <>
-      {/* The provider row only exists where there is a provider to pick. On
-          Local the choice is a file and on Self-hosted it is a URL, so offering
-          "which company" there would be furniture with nothing behind it. */}
-      {lane === "Cloud" || lane === "Enterprise" ? (
+  /* The provider row only exists where there is a provider to pick. On
+     Local the choice is a file and on Self-hosted it is a URL, so offering
+     "which company" there would be furniture with nothing behind it. */
+  const providerRow =
+    lane === "Cloud" || lane === "Enterprise" ? (
         <Row
           label="Provider"
           hint={hint ?? "Follows the connection unless you change it here."}
@@ -879,22 +966,33 @@ function Follows({
             override ? (
               <span className="ws-rowflex">
                 <SelectMark name={override} />
-                <DrawnSelect defaultValue={override} aria-label="Provider">
-                  {providerNames(cap, lane).map((name) => (
-                    <option key={name}>{name}</option>
-                  ))}
-                </DrawnSelect>
-                <DrawnButton variant="ghost">Use the default</DrawnButton>
+                <ProviderChoice
+                  lane={lane}
+                  cap={cap}
+                  jobKey={jobKey}
+                  value={override}
+                  follow={followOption}
+                />
+                {/* CLEARS THE OVERRIDE, it does not write the connection's id
+                    (ADR 0094 — the absence is the value). In the gallery there
+                    is no override to clear and the button is the drawing. */}
+                <DrawnButton
+                  variant="ghost"
+                  onClick={jobKey && setJobOverride ? () => setJobOverride(jobKey, null) : undefined}
+                >
+                  Use the default
+                </DrawnButton>
               </span>
             ) : (
               <span className="ws-rowflex">
                 <SelectMark name={conn} />
-                <DrawnSelect defaultValue={`Follow the connection · ${conn}`} aria-label="Provider">
-                  <option>{`Follow the connection · ${conn}`}</option>
-                  {providerNames(cap, lane).map((name) => (
-                    <option key={name}>{name}</option>
-                  ))}
-                </DrawnSelect>
+                <ProviderChoice
+                  lane={lane}
+                  cap={cap}
+                  jobKey={jobKey}
+                  value={followOption}
+                  follow={followOption}
+                />
               </span>
             )
           }
@@ -918,8 +1016,10 @@ function Follows({
           hint="The server set on the connection above. Every job uses the same one; only the model id differs."
           control={<span className="ws-mono ws-muted">http://10.0.0.2:8080/v1</span>}
         />
-      )}
+      );
 
+  const modelAndKeyRows = (
+    <>
       {lane === "Self-hosted" ? (
         <Row
           label="Model id"
@@ -944,12 +1044,7 @@ function Follows({
           label="API key"
           hint="Its own, because this job is not on the connection above. Held in the OS secret store like every other."
           control={
-            <span className="ws-rowflex">
-              <StatusBadge tone="success">Set</StatusBadge>
-              <DrawnButton variant="ghost" icon={<Icon name="key" />}>
-                Replace
-              </DrawnButton>
-            </span>
+            <OverrideKeyBadge drawnName={override} role={roleForDrawnCapability(cap)} />
           }
         />
       )}
@@ -968,15 +1063,140 @@ function Follows({
      Provided to the subtree rather than passed to each control: this renders up
      to four and a prop threaded through all of them is the list this screen's
      own header calls "a list nobody keeps correct". */
+  const withReason = (children: ReactNode) =>
+    reason ? <InertBecause.Provider value={reason}>{children}</InertBecause.Provider> : children;
+
   return (
     <CardRows>
-      {reason ? (
-        <InertBecause.Provider value={reason}>{modelRows}</InertBecause.Provider>
+      {/* THE PROVIDER ROW IS THE WAY OUT OF THE REASON, so the reason may not
+          disable it (ADR 0128). A row inert because its vendor has no adapter
+          or no key is a row whose fix is *pick a different vendor* — and until
+          this step that control was disabled by the very sentence telling the
+          user what to do about it. The reason still governs the model and the
+          key below, which are choices ON the vendor rather than choices OF it.
+
+          Only where there is something to pick: the gallery inherits `null`
+          anyway, and the three unintegrated lanes keep ADR 0065's sentence. */}
+      {wired && lane === "Cloud" ? (
+        <InertBecause.Provider value={null}>{providerRow}</InertBecause.Provider>
       ) : (
-        modelRows
+        withReason(providerRow)
       )}
+      {withReason(modelAndKeyRows)}
       {extra}
     </CardRows>
+  );
+}
+
+/**
+ * WHERE ONE JOB RUNS — the select, and the one control on a job row that writes.
+ *
+ * **A vendor with no adapter stays in the list, disabled, carrying its reason**
+ * (ADR 0128). That is the rule this screen is built on: the drawing is the
+ * inventory of what the product intends to offer, so removing an unbuilt vendor
+ * would hide what is still owed, and enabling it would offer a routing that
+ * cannot run. Greyed with a sentence is the honest third answer.
+ *
+ * A missing credential does NOT disable an option. That vendor is integrated,
+ * correct about what it does and one action away from working — the row says so
+ * once it is chosen, which is ADR 0106's whole distinction.
+ */
+function ProviderChoice({
+  lane,
+  cap,
+  jobKey,
+  value,
+  follow,
+}: {
+  lane: LaneName;
+  cap: "stt" | "llm";
+  jobKey?: JobKey;
+  value: string;
+  follow: string;
+}) {
+  const wired = useWired();
+  const answers = useAnswers();
+  const { setJobOverride } = useContext(Wired);
+  const names = providerNames(cap, lane);
+
+  /* THE GALLERY RENDERS THE DRAWING, unchanged. `port:diff` compares the
+     prototype against the gallery, so the option list there is the one Leg 6
+     drew — the follow option only on a row that follows, and no reasons,
+     because nothing is inert where there is no runtime to be inert about. */
+  if (!wired) {
+    return (
+      <DrawnSelect defaultValue={value} aria-label="Provider">
+        {value === follow && <option>{follow}</option>}
+        {names.map((name) => (
+          <option key={name}>{name}</option>
+        ))}
+      </DrawnSelect>
+    );
+  }
+
+  const role = roleForDrawnCapability(cap);
+
+  return (
+    <DrawnSelect
+      value={value}
+      aria-label="Provider"
+      onChange={(event) => {
+        if (!jobKey || !setJobOverride) return;
+        const picked = event.target.value;
+        setJobOverride(jobKey, picked === follow ? null : picked);
+      }}
+    >
+      {/* Present on every row, including one that already overrides: the select
+          is how a row goes back to following, beside the button that does it. */}
+      <option>{follow}</option>
+      {names.map((name) => {
+        const answer = resolveProviderAnswer(name, role, answers);
+        const blocked = !answer.operable && answer.reason.kind !== "no_credential";
+        return (
+          <option
+            key={name}
+            value={name}
+            disabled={blocked}
+            title={blocked ? answer.reason.sentence : undefined}
+          >
+            {name}
+          </option>
+        );
+      })}
+    </DrawnSelect>
+  );
+}
+
+/**
+ * WHETHER THE OVERRIDING JOB'S OWN KEY IS STORED (ADR 0128).
+ *
+ * This row read `<StatusBadge tone="success">Set</StatusBadge>` from Leg 6
+ * until this step — a green badge asserting a stored credential that nothing
+ * had been asked about, and on two of the three drawn override rows for a
+ * vendor with no adapter and therefore no secret-store entry at all. A drawing
+ * may show the shape a row will have; it may not claim what is stored.
+ *
+ * `unknown` is its own answer and reads *Not read*, the word this screen
+ * already uses where a runtime did not answer (`WiredCeilingBadge`).
+ */
+function OverrideKeyBadge({ drawnName, role }: { drawnName: string; role: ProviderRole }) {
+  const wired = useWired();
+  const answers = useAnswers();
+  const state = wired ? credentialStateFor(drawnName, role, answers) : "set";
+
+  return (
+    <span className="ws-rowflex">
+      {state === "set" ? (
+        <StatusBadge tone="success">Set</StatusBadge>
+      ) : state === "missing" ? (
+        <StatusBadge tone="warning">Not set</StatusBadge>
+      ) : (
+        <StatusBadge tone="plan">Not read</StatusBadge>
+      )}
+      <DrawnButton variant="ghost" icon={<Icon name="key" />}>
+        {state === "missing" ? "Add key" : "Replace"}
+      </DrawnButton>
+    </span>
   );
 }
 

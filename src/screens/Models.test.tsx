@@ -560,6 +560,176 @@ describe("AI Models, choosing the connection", () => {
   });
 });
 
+/**
+ * THE PER-JOB OVERRIDE (ADR 0128).
+ *
+ * D1 wired the connection and left this unwritable rather than settle a drawing
+ * question quietly: `data.ts` draws three jobs with an `override` literal that
+ * decides the row's SHAPE, and A4 decided a fresh profile overrides nothing.
+ * The rule that resolves it is that the config answers where there is a config
+ * and the drawing answers where there is not — so the gallery keeps its
+ * inventory of what is coming and the product states only what is stored.
+ */
+describe("AI Models, the per-job override", () => {
+  function axisOf(patch: { text_profiles?: { id: string; providers?: unknown }[] }, id: string) {
+    return patch.text_profiles?.find((profile) => profile.id === id)?.providers;
+  }
+
+  function configWith(overrides: Record<string, string>) {
+    const config = createAppConfig();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "groq", overrides };
+    return config;
+  }
+
+  function rowOf(name: string): HTMLElement {
+    return (screen.getByText(name).closest(".ws-job") as HTMLElement) ?? screen.getByText(name);
+  }
+
+  it("follows the connection where nothing is stored, though the drawing overrides", async () => {
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: configWith({}) })} />);
+
+    /* `Upload` is one of the three rows `data.ts` draws with `override:
+       "OpenAI"`. The stored answer is that it overrides nothing, and the
+       product states the stored answer. */
+    const upload = rowOf("Upload");
+    await waitFor(() =>
+      expect(within(upload).getByLabelText("Provider")).toHaveValue(
+        "Follow the connection · Groq",
+      ),
+    );
+    /* And the key row belongs to the override, so it is not drawn at all —
+       the row is on the connection and the connection's key is above. */
+    expect(within(upload).queryByText(/^(Set|Not set|Not read)$/)).toBeNull();
+  });
+
+  it("draws the override shape only for the job that stores one", async () => {
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({ active: true, config: configWith({ upload: "openai" }) })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(within(rowOf("Upload")).getByLabelText("Provider")).toHaveValue("OpenAI"),
+    );
+    /* Translate is drawn with `override: "Anthropic"` and stores nothing. */
+    expect(within(rowOf("Translate")).getByLabelText("Provider")).toHaveValue(
+      "Follow the connection · Groq",
+    );
+  });
+
+  it("writes the override as a runtime id and clears it rather than storing the connection", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = configWith({});
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config, patch })} />);
+
+    const select = within(rowOf("Upload")).getByLabelText("Provider");
+    await waitFor(() => expect(select).not.toBeDisabled());
+    await user.selectOptions(select, "OpenAI");
+
+    expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
+      default: "groq",
+      overrides: { upload: "openai" },
+    });
+
+    /* *Use the default* DELETES the key. Writing the connection's id would
+       freeze the job onto today's connection (ADR 0094 — the absence is the
+       value), so the row would stop following one the user changes later. */
+    patch.mockClear();
+    cleanup();
+    const stored = configWith({ upload: "openai" });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: stored, patch })} />);
+    const useDefault = await within(rowOf("Upload")).findByRole("button", {
+      name: "Use the default",
+    });
+    await waitFor(() => expect(useDefault).not.toBeDisabled());
+    await user.click(useDefault);
+
+    expect(axisOf(patch.mock.calls[0][0], stored.active_text_profile_id)).toEqual({
+      default: "groq",
+      overrides: {},
+    });
+  });
+
+  it("offers a vendor with no adapter, disabled, carrying its reason", async () => {
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: configWith({}) })} />);
+
+    const select = within(rowOf("Translate")).getByLabelText("Provider");
+    await waitFor(() => expect(select).not.toBeDisabled());
+
+    /* THE RULE THIS CASE HOLDS: an unbuilt vendor stays visible so the screen
+       keeps showing what the product still owes, and is disabled so it cannot
+       be chosen. Deleting the option and enabling it are both wrong. */
+    const anthropic = within(select as HTMLElement).getByRole("option", { name: "Anthropic" });
+    expect(anthropic).toBeDisabled();
+    expect(anthropic).toHaveAttribute("title", expect.stringContaining("no adapter"));
+
+    const openai = within(select as HTMLElement).getByRole("option", { name: "OpenAI" });
+    expect(openai).not.toBeDisabled();
+  });
+
+  it("keeps the provider select operable on a row that is inert", async () => {
+    /* An override onto a vendor with no adapter: the row cannot run, and the
+       fix is this very select. Disabling it with the sentence that explains
+       the problem is the trap this case exists for. */
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: configWith({ translate: "anthropic" }),
+        })}
+      />,
+    );
+
+    const row = rowOf("Translate");
+    await waitFor(() => expect(within(row).getByLabelText("Provider")).toHaveValue("Anthropic"));
+    expect(within(row).getByLabelText("Provider")).not.toBeDisabled();
+    expect(within(row).getByRole("button", { name: "Use the default" })).not.toBeDisabled();
+    /* The model row is a choice ON the vendor, so it stays inert. */
+    expect(within(row).getByLabelText("Model")).toBeDisabled();
+  });
+
+  it("reads the overriding job's key from the runtime instead of claiming it is set", async () => {
+    /* THE DEFECT THIS CASE EXISTS FOR. The row read a literal
+       `StatusBadge tone="success">Set` from Leg 6 until ADR 0128 — a green
+       badge asserting a stored credential nothing had been asked about. */
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") {
+        const provider = (args as { request: { provider: string } }).request.provider;
+        if (provider === "openai") {
+          return {
+            ...STATUS,
+            provider: "openai",
+            role_credentials: [
+              { provider: "openai", role: "speech", kind: "api_key", configured: false, storage: "os_secret_store", key_preview: null, missing: "an API key" },
+              { provider: "openai", role: "chat", kind: "api_key", configured: false, storage: "os_secret_store", key_preview: null, missing: "an API key" },
+            ],
+          };
+        }
+        return STATUS;
+      }
+      if (command === "resolve_provider_tiers") return TIERS;
+      return undefined;
+    });
+
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({ active: true, config: configWith({ upload: "openai" }) })}
+      />,
+    );
+
+    const upload = rowOf("Upload");
+    await waitFor(() => expect(within(upload).getByText("Not set")).toBeInTheDocument());
+    expect(within(upload).queryByText("Set")).toBeNull();
+    expect(within(upload).getByRole("button", { name: "Add key" })).toBeInTheDocument();
+  });
+});
+
 describe("AI Models, in the gallery", () => {
   it("is the drawing, with every lane selectable and nothing read", () => {
     render(<ModelsScreen />);

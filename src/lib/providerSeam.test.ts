@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   connectionCapabilitySentence,
+  credentialStateFor,
   isCompleteCapabilityBlock,
   NO_ANSWERS,
   operableProviderNames,
@@ -90,6 +91,46 @@ function status(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
     ...overrides,
   };
 }
+
+/**
+ * ADR 0128. The drawn override rows carried a literal green `Set` since Leg 6,
+ * and the distinction that ends it is that **`unknown` is not `missing`** —
+ * a vendor the screen never asked about has not been found to be without a key.
+ */
+describe("whether a role's credential is stored", () => {
+  it("says `unknown` where no status was read, and never guesses", () => {
+    expect(credentialStateFor("Groq", "speech", NO_ANSWERS)).toBe("unknown");
+
+    /* Registered, and still unknown: `registered_providers` reads no keyring
+       at all (ADR 0124), so an entry in that list says nothing about a key. */
+    expect(
+      credentialStateFor("Groq", "speech", { registered: [registered()], statuses: {} }),
+    ).toBe("unknown");
+  });
+
+  it("reads the role's own entry rather than the connection's block", () => {
+    const answers = {
+      registered: [registered()],
+      statuses: {
+        groq: status({
+          role_credentials: [
+            { provider: "groq", role: "speech", kind: "api_key", configured: true, storage: "os_secret_store", key_preview: "gsk_…4f2a", missing: null },
+            { provider: "groq", role: "chat", kind: "api_key", configured: false, storage: "os_secret_store", key_preview: null, missing: "an API key" },
+          ],
+        }),
+      },
+    };
+
+    /* One vendor, two roles, two answers — which is A3's whole point and what
+       a folded `credential.configured` boolean cannot say (ADR 0105). */
+    expect(credentialStateFor("Groq", "speech", answers)).toBe("set");
+    expect(credentialStateFor("Groq", "chat", answers)).toBe("missing");
+  });
+
+  it("says `unknown` for a vendor this repo has no id for", () => {
+    expect(credentialStateFor("Nothing drawn by this name", "chat", NO_ANSWERS)).toBe("unknown");
+  });
+});
 
 describe("the drawn name and the runtime id", () => {
   /* Direction one: the drawing cannot outgrow the seam. A vendor added to

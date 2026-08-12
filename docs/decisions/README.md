@@ -979,6 +979,20 @@ Status: Proposed | Accepted | Superseded by NNNN
   and A4 decided a fresh profile overrides nothing, which cannot both drive the
   same branch. Recorded as open disagreement 13 rather than settled.
 
+- [0128](0128-a-drawing-inherited-from-the-demo-gui-is-an-inventory-and-the-config-is-the-answer.md):
+  what it means to wire a screen taken whole from the demo GUI, after three
+  steps in a row stepped around the same wall. **The drawing is an inventory of
+  intent, not a claim about what works** — it was drawn before anyone knew how
+  these things would be implemented, so it cannot answer a representation
+  question the runtime only just made answerable. Four rules: what works is
+  stated from the config; what is unbuilt stays visible and inert with its
+  reason, because that list is what the build is steered by; a false sentence is
+  corrected; what is missing is added. **The line is what is being claimed** —
+  greyed with a sentence shows a possibility and is required, a green `Set`
+  badge asserts a stored state and is forbidden. Closes open disagreements 10,
+  11 and 13. `port:diff` moves by exactly the one corrected boolean, and the
+  ADR 0057 gate turns out to be *write it down*, not *do not touch*.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

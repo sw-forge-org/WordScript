@@ -124,7 +124,13 @@ Status: 2026-08-12
   deleted** (ADR 0065, ADR 0067): three of four provider lanes, **five of seven
   Cloud provider chips** (Groq and OpenAI can be picked since D1, 2026-08-12),
   the profile-list editors, and every per-job model override.
-  Every one carries its reason. **Four things left that list on 2026-08-10.**
+  Every one carries its reason. **The per-job PROVIDER override left this list
+  on 2026-08-12** (B6, ADR 0128) and the model override did not — the provider
+  a job runs on is stored and writable, what model it runs there is still
+  drawing. **A vendor with no adapter stays on the list deliberately**: it is
+  offered, disabled and carries its reason, because an inherited drawing is the
+  inventory of what the product still owes.
+  **Four things left that list on 2026-08-10.**
   Translate is a mode you can select, bind and run (ADR 0041, ADR 0071), so the
   two controls naming its absence act. `Show transcripts in file manager` acts,
   on all three surfaces it is drawn on, because the file it reveals now exists

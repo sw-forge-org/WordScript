@@ -1,7 +1,10 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-12 (stage B1, and it read
-only the capability-seam clauses and the deviation entry that denied them; the
+Status: created 2026-07-24, last drift check 2026-08-12 (stage B6, and it read
+only the provider-axis clause it made false — *the per-job override is still
+writable by no surface* — plus the surface-truth clause beside it; the stage B1
+pass before it read only the capability-seam clauses and the deviation entry
+that denied them; the
 stage B3 pass before it read only the model-catalogue entry, the stage A4 pass
 before that only the provider axis, and the previous whole-section pass is
 Leg 10's, below)
@@ -104,9 +107,19 @@ resolution — is the adapter's own. `ModelCapabilities` differentiates two mode
 on one connection for the first time, which is what ADR 0110 was written for.
 **The connection is a stored value the surface writes** (`providers.default` on
 the active profile), so the chip row, the credential row and every job row read
-one answer. **The per-job override is still writable by no surface**, and that
-is a drawing question rather than a gap: `docs/PROVIDERS.md` open disagreement
-13. A model choice still writes nowhere.
+one answer. **The per-job override is writable since B6** (ADR 0128): the row's
+shape comes from `providers.overrides[job]` in the product and from `data.ts`'s
+drawn literal in the gallery, which is what closed open disagreement 13 without
+either side losing. A job with no stored override follows the connection, and
+*Use the default* deletes the key rather than storing the connection's id.
+**A model choice still writes nowhere** (ADR 0042).
+
+**No control on `AI Models` claims a state nothing stored.** The overriding
+job's key row read a literal `Set` from Leg 6 until 2026-08-12; it reads the
+runtime in three values now, because a vendor the screen never asked about has
+not been found to be without a key. A vendor with no adapter stays offered and
+disabled with its reason — an inherited drawing is an inventory of intent, and
+what is unbuilt stays visible rather than tidied away (ADR 0128).
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.

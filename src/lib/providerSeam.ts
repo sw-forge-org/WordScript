@@ -269,6 +269,38 @@ export function resolveProviderAnswer(
   return { operable: true, provider: providerId };
 }
 
+/**
+ * Whether one role of one drawn vendor has a credential — three-valued.
+ *
+ * **`unknown` is not `missing`, and that distinction is the whole reason this
+ * exists** (ADR 0128). The drawn override rows carried a literal
+ * `StatusBadge tone="success">Set` since Leg 6: a green badge asserting a
+ * stored credential for a vendor the screen had never asked about, and on
+ * `translate` and `assistant` for Anthropic, which has no adapter and therefore
+ * no secret-store entry at all. A drawing may show what a row WILL hold; it may
+ * not claim what is stored.
+ *
+ * `resolveProviderAnswer` cannot answer this on its own: it reports `operable`
+ * when no status was read, because a missing status is not a missing key. Here
+ * the absence of a status is exactly what has to be said out loud.
+ */
+export type CredentialState = "set" | "missing" | "unknown";
+
+export function credentialStateFor(
+  drawnName: string,
+  role: ProviderRole,
+  answers: RuntimeAnswers,
+): CredentialState {
+  const providerId = runtimeIdFor(drawnName);
+  if (!providerId) return "unknown";
+
+  const status = answers.statuses[providerId];
+  const credential = status?.role_credentials?.find((row) => row.role === role);
+  if (!credential) return "unknown";
+
+  return credential.configured ? "set" : "missing";
+}
+
 /** Which drawn vendors on a lane can be operated for a role, by drawn name. */
 export function operableProviderNames(
   lane: LaneName,

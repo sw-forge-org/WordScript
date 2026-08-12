@@ -53,6 +53,14 @@ step that moves it has to say what it moved. After B1: `cargo test` **770 passed
 inert and the gallery has no runtime, so a moved count there would have been the
 warning rather than the deliverable.
 
+After D1: `cargo test` **787 passed / 3 ignored** (+17), frontend **521 across
+42 files** (+4), `cargo check` 15, `port:diff` unmoved. **After B6 the frontend
+reads 530 across 42 files** (+9) with `cargo test` untouched at 787 — the step
+is frontend-only and a moved Rust count would have meant it did something it did
+not say it would. **B6 is also the first step on this page to move `port:diff`
+deliberately**, and it reports the two halves separately because they separate:
+see its entry.
+
 **Do not measure a baseline by stashing this tree.** B1 did, to get the
 before-number honestly, and `git stash push -u` swept the owner's live
 `shell.css`, `Nav.tsx` and `useConfigDraft.ts` edits in with the step's own; the
@@ -505,6 +513,68 @@ talking to the server the user runs.
 exists, the local lane is expert configuration and the surface says so* — that
 sentence has been live since 2026-08-03 and this is the step that owes it.
 
+### B6. What it means to wire an inherited drawing (ADR 0128)
+
+**Added and done 2026-08-12, on the owner's instruction**, after three steps in
+a row reached the same wall and stepped around it. B1 declined to give a job row
+a config target; D1 wired the connection and left the override select dead; and
+two false drawn sentences sat on `docs/PROVIDERS.md`'s list because correcting
+them read as a drawing change nobody was allowed to make.
+
+- **Requires** — B1 (the seam supplies the reasons) and D1 (a second vendor is
+  what makes the disagreement visible). Both done.
+- **Touches** — `Models.tsx`'s `Follows`, which stops reading `data.ts`'s
+  `override` literal in the product and reads `providers.overrides[job]`
+  instead; a writable select through `buildProfileProvidersPatch`;
+  `credentialStateFor` in the seam; the three Self-hosted `none:` sentences and
+  `OpenRouter`'s `stt` boolean in `data.ts`.
+- **Validates** — `npm test`, `npm run build`, `npm run port:diff`, and the
+  override half must leave `models` **unmoved** while the `stt` correction moves
+  it by exactly one option per row.
+- **Done when** — no control on this screen claims a state nothing stored, and
+  an unbuilt vendor is still visible with its reason rather than deleted.
+
+**The gate was misread, and that is the finding.** *The gallery owns the
+drawing* (ADR 0057) had hardened into *nothing inherited may be corrected*. That
+record says the opposite in its own decision: after Leg 2 the product wins over
+the prototype and a difference is **either an ADR or a bug**. Leg 13 is open.
+
+**The rule this step establishes, and the reason it is not local to one screen:**
+the demo GUI was drawn before anyone knew how any of it would be implemented, so
+it cannot answer a representation question the runtime only just made
+answerable. It is an inventory of intent. What works is stated from the config;
+what is unbuilt stays visible and inert with its reason, because that list is
+what the build is steered by; a false sentence is corrected; what is missing is
+added. **The line between the second rule and fake readiness is what is being
+claimed** — greyed with a sentence shows a possibility, a green `Set` badge
+asserts a stored state.
+
+**As it landed.** `port:diff` separated cleanly, which is what makes the two
+halves reportable apart: the override rework leaves `models` at
+`structural 6 | style 213 | text 12`, exactly where B3 left it, because the
+gallery has no config and keeps rendering the drawn literal. The `stt`
+correction moves it to `structural 9 | style 217 | text 12` — one option on each
+of three rows — and the movement was verified by reverting the single boolean
+and watching the count return exactly.
+
+Three things the plan did not ask for and the implementation owed anyway. **The
+provider select escapes its own row's inert reason**, because a row inert for
+want of an adapter is a row whose fix is that select, and it was disabled by the
+sentence explaining the problem. **A missing credential does not disable an
+option** while a missing adapter does — ADR 0106's distinction, load-bearing in
+a control for the first time. And **`credentialStateFor` is three-valued**:
+`registered_providers` reads no keyring, so a badge resolving absence to either
+*set* or *not set* invents one of them.
+
+**Six frontend cases were each made to fail before they were trusted**
+(ADR 0124), in two passes, because three of them assert a shape and three assert
+a capability that did not previously exist: reverting the shape source failed
+the first three, removing the writer and the reason-carrying options failed the
+other three.
+
+**D1a loses its drawing half**, which this step spent. It is now the adapter
+alone, and that ordering is ADR 0109's — the row comes before the adapter.
+
 ---
 
 ## Stage C — capture
@@ -884,6 +954,8 @@ B2 + B3 ── F1 ──┴── F4 (measure) ── F5 (the four modules)
 
 B3 ──┬── B4 (the live fetch)
      └── B5 (the installation)
+
+B1 + D1 ── B6 (the inherited drawing)
 ```
 
 **A5 and A4 are drawn as siblings because that is the truth: A5 blocks
@@ -906,6 +978,9 @@ inherits it rather than writing it again.
 
 **One owner question is live, and it blocks no step in A through F.** *Whether a
 view plus a pop-out is enough at a table* blocks G2's surface (ADR 0064).
+**Open disagreement 13 was the second and lasted a day**: ADR 0128 answered it
+with a rule rather than with either of the two options it posed, and closed 10
+and 11 with the same rule.
 **The other was answered on 2026-08-11**: where the translation voice sits is
 ADR 0119, two rows, delegated by the owner and decided against ADR 0043's one
 voice, ADR 0064's per-language route and the language coverage the survey
@@ -936,7 +1011,9 @@ Speaking row, so it is flagged rather than assumed.
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |
 | B1 | **done** 2026-08-12 — `registered_providers()` answers for the whole table in one call, `src/lib/providerSeam.ts` is the third thing ADR 0106 named, five states rather than three, the two tests that record required both exist and both were made to fail before they were trusted (ADR 0124). +3 Rust tests, +25 frontend across 2 new files, `port:diff` unmoved at `structural 6 \| style 213 \| text 12` |
 | D1 | **done** 2026-08-12 — `core/providers/openai.rs` plus one registry line, on a transport and a credential store extracted from `groq.rs` in the same commit (ADR 0113, ADR 0126). `verbose_json` turned out to be `whisper-1`-only on this vendor, so the response format is per model and `ModelCapabilities` is non-vacuous for the first time. **The connection became writable** (ADR 0127) — the chip row, the credential row and every job row read one stored answer, so *a second lane can be operated* is a fact rather than a registry entry. +17 Rust tests, +3 frontend, `port:diff` **unmoved** at `structural 6 \| style 213 \| text 12`, no dependency moved |
-| B2, C1–C2, D2–D3, E1–E2, F1–F3, G1–G3 | **not started** |
+| B6 | **done** 2026-08-12 — added the same day on the owner's instruction. The override reads the config in the product and the drawn literal in the gallery, so `port:diff` is unmoved at `structural 6 \| style 213 \| text 12` for that half; the `stt` correction moves it to `structural 9 \| style 217 \| text 12` and that movement **is** the correction. The literal `Set` badge is gone, an unbuilt vendor is offered and disabled with its reason, and the provider select escapes its own inert reason. +6 frontend cases in `Models.test.tsx`, +3 in `providerSeam.test.ts`, all nine made to fail first. `PROVIDERS.md` disagreements 10, 11 and 13 closed |
+| D3 | **not started, and not blocked** — its `Requires` line reads D1 and A3, both done. The graph below draws a `B2` line into its column that no `Requires` line supports; the line is decorative and the `Requires` is the contract |
+| B2, C1–C2, D2, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.

@@ -998,6 +998,14 @@ drawing and the runtime agreeing, in code. The same step opened number 12,
 which nothing on this page could have found: a drawn model list is three strings
 until a catalogue makes each of them name its vendor.
 
+**And three closed on 2026-08-12, all by ADR 0128 and all in code.** Numbers
+10, 11 and 13 — two false sentences and the override branch — went together
+because one rule answers all three: a drawing inherited from the demo GUI is an
+inventory of intent, the config is the answer about what is true, and what is
+unbuilt stays visible and inert rather than being tidied away. **Four of
+thirteen are now closed** (5, 10, 11, 13), and the nine that remain are still
+closed only by the drawing and the runtime agreeing.
+
 **Thirteen the same day, and this one was reached rather than read.** D1 landed
 the OpenAI adapter and made the connection writable (ADR 0126, ADR 0127), which
 put a step inside the per-job override for the first time -- and found the
@@ -1081,7 +1089,13 @@ and ADR 0109's rule points the same way.
    default is playing instead, which `PLATFORMS.md` requires and no drawn row
    can currently carry -- and it fixes the scope confusion underneath, since
    this is a machine-wide setting drawn on a window that may stand three times.*
-10. **The Self-hosted lane's drawn refusal of the listening jobs is wrong.**
+10. ~~**The Self-hosted lane's drawn refusal of the listening jobs is wrong.**~~
+    **Closed 2026-08-12 by ADR 0128**, in code, which is the bar this
+    preamble sets. The three rows now name what is actually missing — the
+    adapter, not the endpoint shape — and stay inert until D1a lands. The
+    original entry follows.
+
+    **The Self-hosted lane's drawn refusal of the listening jobs is wrong.**
     `src/screens/data.ts` carries *"Speech has no OpenAI-compatible shape to
     talk to. Use Cloud or Local for the listening jobs."* on `dictation`,
     `meetings` and `upload`. `/v1/audio/transcriptions` is a de-facto standard
@@ -1089,7 +1103,14 @@ and ADR 0109's rule points the same way.
     where this document corrected its own half of the same sentence. **The
     surface's half is a drawing and grows in the gallery** (ADR 0057). Until
     then a lane that can hear says it cannot. ADR 0113 carries the decision.
-11. **`OpenRouter` is drawn `stt: false`.** It serves transcription on a
+11. ~~**`OpenRouter` is drawn `stt: false`.**~~ **Closed 2026-08-12 by
+    ADR 0128.** The boolean is `true`, and it is the one correction on this list
+    that moved `npm run port:diff`: one extra option on each of the three `stt`
+    rows takes `models` from `structural 6 | style 213 | text 12` to
+    `structural 9 | style 217 | text 12`, verified by reverting the single
+    boolean and watching the count return exactly. The original entry follows.
+
+    **`OpenRouter` is drawn `stt: false`.** It serves transcription on a
     dedicated endpoint *and* through the chat surface -- see *OpenRouter*
     above. The boolean is wrong on both paths, and it is the one that keeps the
     cheapest additional speech lane on this page invisible on the screen that
@@ -1107,7 +1128,17 @@ and ADR 0109's rule points the same way.
     the alternative — catalogueing `whisper-large-v3` a second time under
     `openai` — would state that a vendor serves an id it does not. Neighbour of
     disagreement 6, which is about the same row's default.
-13. **A drawn per-job override is a product default the runtime does not
+13. ~~**A drawn per-job override is a product default the runtime does not
+    carry.**~~ **Closed 2026-08-12 by ADR 0128**, the same day it was opened,
+    and by neither of the two answers it posed. **The config answers in the
+    product and the literal answers in the gallery** — so the drawn override
+    stays exactly where it is as the record of an uncommitted product default,
+    the product states only what is stored, and `port:diff` does not move for
+    it. What the entry got wrong was treating *the gallery owns it* as a
+    prohibition; ADR 0057 says the product wins after Leg 2 and a difference is
+    an ADR or a bug. The original entry follows.
+
+    **A drawn per-job override is a product default the runtime does not
     carry.** Added 2026-08-12 by D1 (ADR 0127), and it is the one entry on this
     list that a step reached, looked at and stepped around. `data.ts` gives
     three of the eight jobs an `override` — `upload` to OpenAI, `translate` and
