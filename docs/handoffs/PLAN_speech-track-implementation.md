@@ -43,7 +43,10 @@ transcription-coverage instrument, +5 — another track, measured here so the
 next step does not read it as its own). After A4: `cargo test` **755 passed / 3
 ignored** (+8), frontend **480 across 39 files** unmoved, `cargo check` still
 15, `npm run port:diff` `ALL EXACT`. **After A6 not one of the four moved**,
-which for a rename is the whole signal.
+which for a rename is the whole signal. After B3: `cargo test` **767 passed / 3
+ignored** (+12), frontend **492 across 40 files** (+12), `cargo check` still 15,
+and `port:diff` moved on one screen — see the paragraph below, which is where a
+step that moves it has to say what it moved.
 
 **The frontend suite flakes under load on this machine, and it is not a step's
 doing.** A full run that starts cold can drop one to three cases to `waitFor`
@@ -52,6 +55,17 @@ baseline as three failures across `WorkspaceWindow`, `Profiles` and `screens`,
 and on A4's own tree as two in `WorkspaceWindow` — both green on every rerun.
 A step reporting a frontend failure should rerun before reading it as a
 finding.
+
+**`models` does not read `6 | 6` any more, and B3 is not why.** ADR 0088's
+figure is structural and style; measured on a stashed tree at `HEAD` before this
+step's files existed, the screen reads **structural 6 | style 191 | text 6**,
+twice, with 107 width, 43 padding, 29 height and 12 min-width differences and
+the two content columns 60 px apart after the harness's own compensation. B3
+left it at **structural 6 | style 213 | text 12**, and that movement is its own:
+the corrected Anthropic ids are shorter than the drawn ones, so they lay out
+narrower. **A step that quotes `6 | 6` from a record rather than measuring it is
+quoting a number that stopped being true**, and the structural half — the one
+ADR 0088, 0096 and 0109 each pin — is the half that has held.
 
 **The rules no step may break**, restated from the records because a plan is
 where they get quietly dropped: no partial result reaches the session reducer
@@ -356,6 +370,38 @@ a vendor serves* but *every id this build routes to, defaults to, or makes a
 statement about*. The long tail arrives live in B4 instead. **The file format,
 the loader and the source/date test are unchanged** — this is fewer rows at
 landing, not a different step.
+
+**Built 2026-08-12, and four choices this page left open were taken.**
+
+- **The file is `shared/model_catalogue.json`, outside both trees.** It has two
+  readers and neither owns it; putting it under `src-tauri/` would have had the
+  frontend importing across the seam, and under `src/` the reverse. The schema
+  sits beside it, as the regression corpus does.
+- **A row is named by a slug, never by its model id.** `anthropic-chat-sonnet`,
+  not `claude-sonnet-5`. Naming rows by the id would have moved the rename
+  problem instead of solving it: a vendor's next generation would still be an
+  edit in every referring file. This is the property that makes *adding a model
+  is a data row* true, and it is what let the stale Anthropic ids be corrected
+  in one place.
+- **`every row's provider resolves against the registry` was implemented in the
+  only direction that holds.** A catalogue that could name only registered
+  vendors could not carry the rows an adapter is written against, and ADR 0115
+  requires catalogued-but-unadapted to be expressible — three of the six vendors
+  in the file are exactly that. So: every row names a vendor the file declares,
+  every declared vendor carries rows, **every registered vendor carries a row
+  for every role it serves**, and every row on an unregistered vendor is
+  asserted to answer `ModelSupport::Unknown`.
+- **The drawing's half is validated in Rust as well as in TypeScript**, because
+  the file is compiled into the binary: a lane offering a row that does not
+  exist should fail `cargo test` rather than an npm run.
+
+**What it did not absorb.** The local speech *stem* — `base`, resolved by
+`core::providers::local` to `ggml-{stem}.bin` — stays a literal, because a file
+on this disk is not a vendor's model id. The drawn library's sizes and
+quantizations moved from JSX into `data.ts` beside the slug each row names and
+are B5's to take (ADR 0122, `CATALOGUE_VERSION` 2). Model ids in test
+assertions stay: a literal in an assertion is a check on what a surface renders,
+and one that breaks when a row moves generation is doing its job.
 
 ### B4. The live model fetch (ADR 0120)
 
@@ -867,7 +913,7 @@ Speaking row, so it is flagged rather than assumed.
 | A5 | **done** 2026-08-11 — every on-disk compatibility path removed, both schema counters kept, the import door kept, −18 Rust tests |
 | A4 | **done** 2026-08-12 — a profile holds a resolved default plus a sparse override per job, `JobKey` bridges to `ProviderRole`, the machine-wide `provider` field is gone, schema 5 lifts the per-profile one behind a snapshot, +8 Rust tests, `port:diff` `ALL EXACT` |
 | A6 | **done** 2026-08-12 — `core/providers/local.rs`, the id `local`, the alias list empty, the profile prefix `local-*`, four counts unchanged |
-| B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for. **Scope narrowed 2026-08-12 by ADR 0120** — fewer rows, same schema |
+| B3 | **done** 2026-08-12 — `shared/model_catalogue.json` plus its schema, `core::model_catalogue` and `src/lib/modelCatalogue.ts` on the same bytes, rows named by slug, twelve places stopped spelling a model id and a test walks `src/` for the thirteenth, +12 Rust tests and +12 frontend cases, `PROVIDERS.md` disagreement 5 closed and 12 opened |
 | B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
 | B5 | **not started** — added 2026-08-12 (ADR 0122) on the owner's instruction, out of ROADMAP Phase 5; the installation ADR 0042 drew and never got. Gated on B3 only — **B4 is not a precondition** |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |

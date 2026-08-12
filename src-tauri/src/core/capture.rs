@@ -19,7 +19,7 @@ use super::{
     communication_style::CommunicationStyle,
     config::{
         AppConfig, DictionaryEntry, ProfileProviderSettings, SnippetEntry, TextProfileWorkMode,
-        TranslateSettings, DEFAULT_CORRECTION_MODEL,
+        TranslateSettings, default_correction_model, default_speech_model,
     },
     paths::user_data_dir,
     providers::{JobKey, JobProvider},
@@ -280,7 +280,7 @@ impl Default for NativeCaptureConfig {
     fn default() -> Self {
         Self {
             providers: ProfileProviderSettings::default(),
-            model: "whisper-large-v3-turbo".to_string(),
+            model: default_speech_model().to_string(),
             local_profile: "local-base-fast".to_string(),
             local_prompt_strength: "profile".to_string(),
             local_prompt_carry: false,
@@ -298,7 +298,7 @@ impl Default for NativeCaptureConfig {
             work_mode: TextProfileWorkMode::default(),
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             audio_device: String::new(),
             max_recording_seconds: DEFAULT_MAX_RECORDING_SECONDS,
             silence_timeout_seconds: DEFAULT_SILENCE_TIMEOUT_SECONDS,

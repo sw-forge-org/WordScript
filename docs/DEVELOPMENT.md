@@ -131,6 +131,18 @@ case and matching synthetic coverage in transcription-hint and text-rule tests.
 When changing bias policy, update the preview, runtime request construction,
 UI analysis, and migration together.
 
+**Adding or renaming a model is a row in `shared/model_catalogue.json`, and
+nowhere else** (ADR 0115). Both runtimes read that file — `core::model_catalogue`
+through `include_str!`, `src/lib/modelCatalogue.ts` by import — and both name a
+row by its slug rather than by its model id, so a vendor's next generation is
+one edited `model_id`. A row needs a source and a read-date or the suite fails,
+and a source may be a path in this repo when the row's provenance is this repo's
+own drawing or runtime. A test walks `src/` and fails if any file outside the
+catalogue spells a catalogued id. What a row says about streaming is what the
+vendor documents; what this build can operate is
+`providers::model_capabilities`, and the two are deliberately allowed to
+disagree.
+
 Local decode and prompt-bias settings are profile-bound. Update the profile
 collection together with active mirror fields, or a profile switch will restore
 stale values.

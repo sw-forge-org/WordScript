@@ -1,7 +1,8 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-12 (stage A4, and it read
-only the provider axis; the previous whole-section pass is Leg 10's, below)
+Status: created 2026-07-24, last drift check 2026-08-12 (stage B3, and it read
+only the model-catalogue entry; the stage A4 pass before it read only the
+provider axis, and the previous whole-section pass is Leg 10's, below)
 
 Leg 10's line, kept because it is what the sections below were last measured
 against: last drift check 2026-08-11 (Leg 10, and it read
@@ -308,16 +309,25 @@ UI implementation details, not Rust event names or Tauri channels.
   `upload`** rather than refusing them. A free base URL is gated on HTTPS **or**
   a private host. Self-hosted *synthesis* was not read and is not claimed.
   Planned; not built.
-- **A model id resolves from one dated catalogue** (ADR 0115). Today a model
-  name is a literal in `core/config.rs`, a literal in `src/screens/data.ts` and
-  a prose row in `docs/PROVIDERS.md`, and those three have already drifted. The
-  catalogue is one versioned data file carrying provider, role, model id,
-  documented streaming, languages, source and read-date, loaded by Rust through
-  `include_str!` and imported by TypeScript, with a test holding the mirror —
-  the shape `core::regression_corpus` already has. **It is not
-  `ModelCapabilities`**: one records what a vendor documents, the other what an
-  adapter asserts, and a catalogued model with no adapter answers `unknown`.
-  Every lane keeps a free-typed model id beside the list. Planned; not built.
+- **A model id resolves from one dated catalogue** (ADR 0115, scoped by
+  ADR 0120), built 2026-08-12. `shared/model_catalogue.json` carries one row per
+  model this build routes to, defaults to or makes a statement about —
+  `(provider, role, model_id, documented streaming, languages, source,
+  read_date)` — with `shared/model_catalogue.schema.json` beside it.
+  `core::model_catalogue` loads it through `include_str!` behind
+  `CATALOGUE_VERSION`, the shape `core::regression_corpus` already has;
+  `src/lib/modelCatalogue.ts` imports the same file. **A consumer names a row by
+  a stable slug, never by the model name** (`anthropic-chat-sonnet`, not
+  `claude-sonnet-5`), so a vendor's next generation is a change to one
+  `model_id` and to nothing else. The runtime's five defaults resolve through
+  `runtime_defaults`; the `AI Models` matrix's per-lane lists resolve through
+  `lanes`. **It is not `ModelCapabilities`**: one records what a vendor
+  documents, the other what an adapter asserts, and a catalogued model with no
+  adapter answers `unknown` — the local rows are the live case, documented as
+  streaming while `core::providers::local` answers `Unsupported`. **It is not a
+  whitelist either**: a model absent from the file round-trips through the
+  config as a typed override, which is what Azure's deployment name and a
+  self-hosted server's model id depend on.
 - **Capability axes split between provider and model** (ADR 0110), built
   2026-08-11. `speech_synthesis` is a provider-level role question and joins
   `transcription` and `chat_completion` on `ProviderCapabilities`;

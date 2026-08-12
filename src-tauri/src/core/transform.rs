@@ -5,7 +5,7 @@ use regex::{Captures, NoExpand, Regex, RegexBuilder};
 use super::communication_style::CommunicationStyle;
 use super::config::{
     DictionaryEntry, ProcessingMode, ProfileProviderSettings, SnippetEntry, TransformPreset,
-    TranslateSettings, DEFAULT_CORRECTION_MODEL,
+    TranslateSettings, default_correction_model,
 };
 use super::profile_context::{profile_context_line, truncate_line};
 use super::providers::{
@@ -95,7 +95,7 @@ impl NativeTransformConfig {
             snippet_entries: config.snippet_entries.clone(),
             post_process: preset.post_process,
             correction_model: if config.correction_model.trim().is_empty() {
-                DEFAULT_CORRECTION_MODEL.to_string()
+                default_correction_model().to_string()
             } else {
                 config.correction_model.clone()
             },
@@ -217,7 +217,7 @@ pub async fn apply_native_transform(
     } else {
         let word_count = trimmed.split_whitespace().count();
         let model = if word_count > 300 {
-            DEFAULT_CORRECTION_MODEL.to_string()
+            default_correction_model().to_string()
         } else {
             config.correction_model.clone()
         };
@@ -1142,7 +1142,7 @@ mod tests {
         );
 
         assert_eq!(config.profile_prompt, "release freeze\ncustomer follow-up");
-        assert_eq!(config.correction_model, DEFAULT_CORRECTION_MODEL);
+        assert_eq!(config.correction_model, default_correction_model());
     }
 
     #[test]
@@ -1189,7 +1189,7 @@ mod tests {
     fn correction_prompt_carries_the_workspace_hint_as_a_weak_last_signal() {
         let prompt = correction_system_prompt(&NativeTransformConfig {
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             workspace_hint: Some(WorkspaceContext {
                 app_name: "Slack".to_string(),
@@ -1371,7 +1371,7 @@ mod tests {
             }],
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1397,7 +1397,7 @@ mod tests {
                 dictionary_entries: Vec::new(),
                 snippet_entries: Vec::new(),
                 post_process: true,
-                correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+                correction_model: default_correction_model().to_string(),
                 filter_fillers: true,
                 professionalize: false,
                 ..Default::default()
@@ -1417,7 +1417,7 @@ mod tests {
                 dictionary_entries: Vec::new(),
                 snippet_entries: Vec::new(),
                 post_process: false,
-                correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+                correction_model: default_correction_model().to_string(),
                 filter_fillers: true,
                 professionalize: false,
                 ..Default::default()
@@ -1444,7 +1444,7 @@ mod tests {
                 expansion: "Danke fuer das Update. Wir melden uns mit dem naechsten Stand."
                     .to_string(),
             }],
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             ..Default::default()
         }
     }
@@ -1543,7 +1543,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1569,7 +1569,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1594,7 +1594,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1689,7 +1689,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1713,7 +1713,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: false,
             professionalize: false,
             ..Default::default()
@@ -1739,7 +1739,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1763,7 +1763,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1783,7 +1783,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1813,7 +1813,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1843,7 +1843,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             ..Default::default()
@@ -1869,7 +1869,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: true,
             ..Default::default()
@@ -1900,7 +1900,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: true,
             ..Default::default()
@@ -1925,7 +1925,7 @@ mod tests {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
             filter_fillers: true,
             professionalize: true,
             ..Default::default()

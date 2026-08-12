@@ -8,6 +8,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 use crate::core::confidence_gate::{MAX_NO_SPEECH_PROB, MIN_AVG_LOGPROB};
+use crate::core::model_catalogue;
 use crate::core::runtime_log;
 
 use super::{
@@ -39,7 +40,14 @@ const VAD_SPEECH_PAD_MS: u32 = 200;
 const LOCAL_CHAT_BASE_URL_ENV: &str = "WORDSCRIPT_LOCAL_CHAT_BASE_URL";
 const LOCAL_CHAT_MODEL_ENV: &str = "WORDSCRIPT_LOCAL_CHAT_MODEL";
 const DEFAULT_LOCAL_CHAT_BASE_URL: &str = "http://127.0.0.1:11434";
-const DEFAULT_LOCAL_CHAT_MODEL: &str = "llama3.2:latest";
+/// The catalogue row this lane's chat requests fall back to (ADR 0115).
+///
+/// A slug rather than the tag itself, because the tag belongs to whichever
+/// OpenAI-compatible server the user runs and is a row with a source and a date
+/// like every other. The speech side keeps naming a *stem* (`base`) rather than
+/// a row: a local recogniser is a file this module resolves to
+/// `ggml-{stem}.bin`, and a file on this disk is not a vendor's model id.
+const LOCAL_CHAT_DEFAULT_ROW: &str = "local-chat-ollama-llama32";
 const LOCAL_CHAT_PROBE_TIMEOUT_MS: u64 = 1_500;
 
 #[derive(Debug, Deserialize)]
@@ -267,7 +275,7 @@ fn provider_status(
             local_setup
                 .resolved_chat_model
                 .as_deref()
-                .unwrap_or(DEFAULT_LOCAL_CHAT_MODEL),
+                .unwrap_or(model_catalogue::model_id(LOCAL_CHAT_DEFAULT_ROW)),
         )
     } else {
         local_setup.guidance.clone()
@@ -1432,7 +1440,7 @@ fn resolve_local_chat_model_name(model: Option<&str>) -> String {
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         })
-        .unwrap_or_else(|| DEFAULT_LOCAL_CHAT_MODEL.to_string())
+        .unwrap_or_else(|| model_catalogue::model_id(LOCAL_CHAT_DEFAULT_ROW).to_string())
 }
 
 fn resolve_local_chat_base_url() -> Result<String, LocalChatResolutionError> {

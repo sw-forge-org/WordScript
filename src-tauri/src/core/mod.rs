@@ -10,6 +10,7 @@ pub mod hallucination_detect;
 pub mod history;
 pub mod insertion;
 pub mod mode_router;
+pub mod model_catalogue;
 pub mod paths;
 pub mod portal;
 pub mod profile_context;

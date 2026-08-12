@@ -1,0 +1,402 @@
+{
+  "version": 1,
+  "description": "One versioned model catalogue, read by the Rust runtime and by the drawing (ADR 0115, scoped by ADR 0120). A row records what a vendor's documentation says about a model, with the source and the read-date that docs/PROVIDERS.md requires of every row it publishes. It is NOT a capability: what this build can operate is core::providers::model_capabilities, and neither answer is derived from the other. Nothing outside this file spells a model id; consumers name a row by its id, which is a stable slug rather than a model name, so a vendor's next generation is a change to model_id here and nowhere else.",
+  "providers": [
+    {
+      "id": "groq",
+      "label": "Groq",
+      "lane": "Cloud"
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "lane": "Cloud"
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "lane": "Cloud"
+    },
+    {
+      "id": "cartesia",
+      "label": "Cartesia",
+      "lane": "Cloud"
+    },
+    {
+      "id": "bedrock",
+      "label": "AWS Bedrock",
+      "lane": "Enterprise"
+    },
+    {
+      "id": "local",
+      "label": "Local runtime",
+      "lane": "Local"
+    }
+  ],
+  "models": [
+    {
+      "id": "groq-speech-turbo",
+      "provider": "groq",
+      "role": "speech",
+      "model_id": "whisper-large-v3-turbo",
+      "streaming": "unsupported",
+      "languages": "multilingual; ISO-639-1 is a hint that improves accuracy and latency, and no detection is documented",
+      "source": "console.groq.com/docs/speech-to-text, via docs/PROVIDERS.md § Groq",
+      "read_date": "2026-08-11",
+      "note": "Groq's speech endpoint is batch only: one file in, one result out, no websocket and no stream=true."
+    },
+    {
+      "id": "groq-speech-large-v3",
+      "provider": "groq",
+      "role": "speech",
+      "model_id": "whisper-large-v3",
+      "streaming": "unsupported",
+      "languages": "multilingual; same hint-only language handling as the turbo row",
+      "source": "console.groq.com/docs/speech-to-text, via docs/PROVIDERS.md § Groq",
+      "read_date": "2026-08-11"
+    },
+    {
+      "id": "groq-speech-distil-en",
+      "provider": "groq",
+      "role": "speech",
+      "model_id": "distil-whisper-large-v3-en",
+      "streaming": "unknown",
+      "languages": "English only, by the id",
+      "source": "docs/prototypes/settings-rework/demo.js § LANES, the drawn Cloud lane",
+      "read_date": "2026-08-12",
+      "note": "Offered by the drawing and absent from the vendor table docs/PROVIDERS.md § Groq read 2026-08-11. No vendor page has been read for this id, which is why its streaming column is unknown rather than borrowed from the two rows beside it."
+    },
+    {
+      "id": "groq-chat-instant",
+      "provider": "groq",
+      "role": "chat",
+      "model_id": "llama-3.1-8b-instant",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "console.groq.com/docs/models, via docs/PROVIDERS.md § Groq",
+      "read_date": "2026-08-11",
+      "note": "131,072 context. The streaming column is unknown because the survey read the speech endpoint's streaming and not the chat endpoint's; this build posts chat with stream false either way."
+    },
+    {
+      "id": "groq-chat-versatile",
+      "provider": "groq",
+      "role": "chat",
+      "model_id": "llama-3.3-70b-versatile",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "console.groq.com/docs/models, via docs/PROVIDERS.md § Groq",
+      "read_date": "2026-08-11",
+      "note": "131,072 context. The cleanup and agent default this build ships."
+    },
+    {
+      "id": "openai-speech-whisper-1",
+      "provider": "openai",
+      "role": "speech",
+      "model_id": "whisper-1",
+      "streaming": "unsupported",
+      "languages": "Whisper's 99+",
+      "source": "developers.openai.com/api/docs/guides/speech-to-text, via docs/PROVIDERS.md § OpenAI",
+      "read_date": "2026-08-11",
+      "note": "The vendor documents this model as explicitly not streaming, while gpt-4o-transcribe on the same key does. That pair is ADR 0110's evidence."
+    },
+    {
+      "id": "openai-speech-gpt-4o-transcribe",
+      "provider": "openai",
+      "role": "speech",
+      "model_id": "gpt-4o-transcribe",
+      "streaming": "supported",
+      "languages": "Whisper's 99+; the completion event names the detected languages",
+      "source": "developers.openai.com/api/docs/guides/speech-to-text, via docs/PROVIDERS.md § OpenAI",
+      "read_date": "2026-08-11",
+      "note": "stream=true emits transcript.text.delta then transcript.text.done. That streams the transcription of a finished recording; the Realtime endpoint is a second shape and a different model."
+    },
+    {
+      "id": "anthropic-chat-sonnet",
+      "provider": "anthropic",
+      "role": "chat",
+      "model_id": "claude-sonnet-5",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "the claude-api reference set, model table cached 2026-06-24, via docs/PROVIDERS.md § Anthropic",
+      "read_date": "2026-06-24",
+      "note": "1M context. Model ids are complete as written and take no date suffix."
+    },
+    {
+      "id": "anthropic-chat-haiku",
+      "provider": "anthropic",
+      "role": "chat",
+      "model_id": "claude-haiku-4-5",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "the claude-api reference set, model table cached 2026-06-24, via docs/PROVIDERS.md § Anthropic",
+      "read_date": "2026-06-24",
+      "note": "200K context."
+    },
+    {
+      "id": "anthropic-chat-opus",
+      "provider": "anthropic",
+      "role": "chat",
+      "model_id": "claude-opus-5",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "the claude-api reference set, model table cached 2026-06-24, via docs/PROVIDERS.md § Anthropic",
+      "read_date": "2026-06-24",
+      "note": "1M context. Also the model the desk reports for itself on the Agents screen, which is a reading and not a setting (ADR 0087)."
+    },
+    {
+      "id": "cartesia-voice-sonic-3",
+      "provider": "cartesia",
+      "role": "voice",
+      "model_id": "Sonic-3",
+      "streaming": "unknown",
+      "languages": "not read",
+      "source": "docs/prototypes/settings-rework/demo.js, the drawn agent voice preset",
+      "read_date": "2026-08-12",
+      "note": "The drawn name rather than a request id: there is no adapter and no request shape, and docs/PROVIDERS.md open disagreement 7 records that no published figure backs the 240 ms drawn beside it. The row exists so the three surfaces that draw this preset stop spelling it three times; each of them draws the vendor label in front of it."
+    },
+    {
+      "id": "local-voice-kokoro",
+      "provider": "local",
+      "role": "voice",
+      "model_id": "Kokoro-82M",
+      "streaming": "unknown",
+      "languages": "8 languages, 54 voices at v1.0",
+      "source": "huggingface.co/hexgrad/Kokoro-82M, via docs/PROVIDERS.md § Local voice",
+      "read_date": "2026-08-11",
+      "note": "82M parameters, Apache-2.0, StyleTTS 2 with an ISTFTNet vocoder. Its runtime is Python, which is a cost to price with the local speech runtime rather than separately — and the reason this row is drawn as an option and operated by nothing."
+    },
+    {
+      "id": "bedrock-chat-haiku",
+      "provider": "bedrock",
+      "role": "chat",
+      "model_id": "anthropic.claude-haiku-4-5",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "the claude-api reference set, model table cached 2026-06-24, via docs/PROVIDERS.md § Anthropic; the anthropic. prefix is the drawn Enterprise spelling",
+      "read_date": "2026-06-24",
+      "note": "Bedrock's own model-id form was not surveyed (docs/PROVIDERS.md § AWS Bedrock and GCP Vertex AI), so this row carries Anthropic's dated id under the prefix the drawing uses."
+    },
+    {
+      "id": "bedrock-chat-sonnet",
+      "provider": "bedrock",
+      "role": "chat",
+      "model_id": "anthropic.claude-sonnet-5",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "the claude-api reference set, model table cached 2026-06-24, via docs/PROVIDERS.md § Anthropic; the anthropic. prefix is the drawn Enterprise spelling",
+      "read_date": "2026-06-24"
+    },
+    {
+      "id": "bedrock-chat-opus",
+      "provider": "bedrock",
+      "role": "chat",
+      "model_id": "anthropic.claude-opus-5",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "the claude-api reference set, model table cached 2026-06-24, via docs/PROVIDERS.md § Anthropic; the anthropic. prefix is the drawn Enterprise spelling",
+      "read_date": "2026-06-24"
+    },
+    {
+      "id": "local-speech-base",
+      "provider": "local",
+      "role": "speech",
+      "model_id": "ggml-base",
+      "streaming": "supported",
+      "languages": "multilingual",
+      "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
+      "read_date": "2026-08-11",
+      "note": "whisper.cpp documents a streaming example and a whisper-server; this build shells out to whisper-cli, which takes a file. So the row says supported and core::providers::local answers Unsupported, and both are right. That gap is the whole reason ADR 0115 keeps the catalogue and the capability apart."
+    },
+    {
+      "id": "local-speech-base-en",
+      "provider": "local",
+      "role": "speech",
+      "model_id": "ggml-base.en",
+      "streaming": "supported",
+      "languages": "English only",
+      "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
+      "read_date": "2026-08-11"
+    },
+    {
+      "id": "local-speech-small",
+      "provider": "local",
+      "role": "speech",
+      "model_id": "ggml-small",
+      "streaming": "supported",
+      "languages": "multilingual",
+      "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
+      "read_date": "2026-08-11"
+    },
+    {
+      "id": "local-speech-medium",
+      "provider": "local",
+      "role": "speech",
+      "model_id": "ggml-medium",
+      "streaming": "supported",
+      "languages": "multilingual",
+      "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
+      "read_date": "2026-08-11"
+    },
+    {
+      "id": "local-speech-large-v3-turbo",
+      "provider": "local",
+      "role": "speech",
+      "model_id": "ggml-large-v3-turbo",
+      "streaming": "supported",
+      "languages": "multilingual",
+      "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
+      "read_date": "2026-08-11",
+      "note": "Same weights as the cloud lane's whisper-large-v3-turbo and not the same thing: this one is a file on this disk that costs 1.6 GB and a load, that one is billed per request and bounded by an upload ceiling."
+    },
+    {
+      "id": "local-chat-qwen-7b",
+      "provider": "local",
+      "role": "chat",
+      "model_id": "qwen2.5-7b-instruct",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "docs/prototypes/settings-rework/demo.js § LANES, the drawn Local lane",
+      "read_date": "2026-08-12"
+    },
+    {
+      "id": "local-chat-qwen-14b",
+      "provider": "local",
+      "role": "chat",
+      "model_id": "qwen2.5-14b-instruct",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "docs/prototypes/settings-rework/demo.js, the drawn language-model library",
+      "read_date": "2026-08-12"
+    },
+    {
+      "id": "local-chat-llama-3b",
+      "provider": "local",
+      "role": "chat",
+      "model_id": "llama-3.2-3b-instruct",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "docs/prototypes/settings-rework/demo.js § LANES, the drawn Local lane",
+      "read_date": "2026-08-12"
+    },
+    {
+      "id": "local-chat-gemma-4b",
+      "provider": "local",
+      "role": "chat",
+      "model_id": "gemma-3-4b-it",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "docs/prototypes/settings-rework/demo.js § LANES, the drawn Local lane",
+      "read_date": "2026-08-12"
+    },
+    {
+      "id": "local-chat-ollama-llama32",
+      "provider": "local",
+      "role": "chat",
+      "model_id": "llama3.2:latest",
+      "streaming": "unknown",
+      "languages": "multilingual",
+      "source": "src-tauri/src/core/config.rs, the local chat default this build ships",
+      "read_date": "2026-08-12",
+      "note": "An Ollama tag rather than a vendor model id, because the local chat lane talks to whatever OpenAI-compatible server the user runs (docs/PROVIDERS.md § Local language models). It is the only local chat id the runtime reaches today; the four rows above it are the drawing's."
+    }
+  ],
+  "runtime_defaults": {
+    "speech": "groq-speech-turbo",
+    "correction": "groq-chat-versatile",
+    "local_correction": "local-chat-ollama-llama32",
+    "agent": "groq-chat-versatile",
+    "local_agent": "local-chat-ollama-llama32"
+  },
+  "lanes": {
+    "Cloud": {
+      "dictation": {
+        "default": "groq-speech-turbo",
+        "offered": ["groq-speech-turbo", "groq-speech-large-v3", "groq-speech-distil-en"]
+      },
+      "meetings": {
+        "default": "groq-speech-large-v3",
+        "offered": ["groq-speech-large-v3", "groq-speech-turbo"]
+      },
+      "upload": {
+        "default": "openai-speech-whisper-1",
+        "offered": ["openai-speech-whisper-1", "openai-speech-gpt-4o-transcribe", "groq-speech-large-v3"]
+      },
+      "cleanup": {
+        "default": "groq-chat-instant",
+        "offered": ["groq-chat-instant", "groq-chat-versatile"]
+      },
+      "rewrite": {
+        "default": "groq-chat-versatile",
+        "offered": ["groq-chat-versatile", "groq-chat-instant"]
+      },
+      "translate": {
+        "default": "anthropic-chat-sonnet",
+        "offered": ["anthropic-chat-sonnet", "anthropic-chat-haiku", "anthropic-chat-opus"]
+      },
+      "enhance": {
+        "default": "groq-chat-versatile",
+        "offered": ["groq-chat-versatile", "groq-chat-instant"]
+      },
+      "assistant": {
+        "default": "anthropic-chat-sonnet",
+        "offered": ["anthropic-chat-sonnet", "anthropic-chat-opus", "anthropic-chat-haiku"]
+      }
+    },
+    "Local": {
+      "dictation": {
+        "default": "local-speech-base",
+        "offered": ["local-speech-base", "local-speech-base-en", "local-speech-small"]
+      },
+      "meetings": {
+        "default": "local-speech-small",
+        "offered": ["local-speech-small", "local-speech-base", "local-speech-medium"]
+      },
+      "upload": {
+        "default": "local-speech-small",
+        "offered": ["local-speech-small", "local-speech-medium", "local-speech-large-v3-turbo"]
+      },
+      "cleanup": {
+        "default": "local-chat-llama-3b",
+        "offered": ["local-chat-llama-3b", "local-chat-qwen-7b"]
+      },
+      "rewrite": {
+        "default": "local-chat-qwen-7b",
+        "offered": ["local-chat-qwen-7b", "local-chat-llama-3b"]
+      },
+      "translate": {
+        "default": "local-chat-qwen-7b",
+        "offered": ["local-chat-qwen-7b", "local-chat-gemma-4b"]
+      },
+      "enhance": {
+        "default": "local-chat-qwen-7b",
+        "offered": ["local-chat-qwen-7b", "local-chat-llama-3b"]
+      },
+      "assistant": {
+        "default": "local-chat-qwen-7b",
+        "offered": ["local-chat-qwen-7b", "local-chat-gemma-4b"]
+      }
+    },
+    "Enterprise": {
+      "cleanup": {
+        "default": "bedrock-chat-haiku",
+        "offered": ["bedrock-chat-haiku", "bedrock-chat-sonnet"]
+      },
+      "rewrite": {
+        "default": "bedrock-chat-sonnet",
+        "offered": ["bedrock-chat-sonnet", "bedrock-chat-haiku"]
+      },
+      "translate": {
+        "default": "bedrock-chat-sonnet",
+        "offered": ["bedrock-chat-sonnet"]
+      },
+      "enhance": {
+        "default": "bedrock-chat-haiku",
+        "offered": ["bedrock-chat-haiku"]
+      },
+      "assistant": {
+        "default": "bedrock-chat-sonnet",
+        "offered": ["bedrock-chat-sonnet", "bedrock-chat-opus"]
+      }
+    }
+  }
+}

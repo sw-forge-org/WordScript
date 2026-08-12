@@ -26,7 +26,8 @@ import {
   ViewTop,
 } from "@/components/shell";
 import { InertSegment, InertToggle } from "./Models";
-import { DESK_CAP } from "./data";
+import { DESK_CAP, DESK_VOICE_PRESET } from "./data";
+import { modelId } from "@/lib/modelCatalogue";
 import type { ScreenProps } from "./props";
 
 /**
@@ -140,7 +141,7 @@ function Desk() {
             control={
               <span className="ws-rowflex">
                 <ProviderMark name="anthropic" />
-                <span className="ws-mono ws-muted">claude-opus-5</span>
+                <span className="ws-mono ws-muted">{modelId("anthropic-chat-opus")}</span>
                 <StatusBadge tone="plan">read-only</StatusBadge>
               </span>
             }
@@ -387,8 +388,8 @@ function Voice() {
           <Row
             label="Preset"
             control={
-              <Select defaultValue="Cartesia Sonic-3" aria-label="Preset">
-                <option>Cartesia Sonic-3</option>
+              <Select defaultValue={DESK_VOICE_PRESET} aria-label="Preset">
+                <option>{DESK_VOICE_PRESET}</option>
                 <option>Kokoro-82M (local)</option>
               </Select>
             }

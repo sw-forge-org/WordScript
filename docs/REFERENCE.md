@@ -131,6 +131,22 @@ constants themselves were not re-derived and carry their own provenance
   arguments always. Each model field is `supported`, `unsupported` or
   **`unknown`**: a lane whose model list belongs to the vendor cannot be
   enumerated ahead of time, and an unknown answer is never rendered as a no.
+- **A model id resolves from one catalogue, and neither runtime spells one**
+  (ADR 0115, scoped by ADR 0120, built 2026-08-12).
+  `shared/model_catalogue.json` carries a row per model this build routes to,
+  defaults to or makes a statement about, with `(provider, role, model_id,
+  documented streaming, languages, source, read_date)` and the schema beside it;
+  `core::model_catalogue` loads it through `include_str!` behind
+  `CATALOGUE_VERSION` and `src/lib/modelCatalogue.ts` imports the same file. A
+  row is named by a stable slug (`groq-speech-turbo`), never by the model name,
+  so a vendor's next generation is one edited `model_id`. **The catalogue's
+  `streaming` column is what a vendor documents and the capability axes above
+  are what an adapter asserts** — the local rows say `supported` because
+  whisper.cpp ships a streaming server, and `model_capabilities` answers
+  `unsupported` because this build drives `whisper-cli`. Deriving either from
+  the other is the defect ADR 0106 recorded. **It is not a whitelist**: a model
+  absent from the file round-trips through the config as a typed override, which
+  is the only thing Azure's deployment name and a self-hosted model id can be.
 - The Segments capability is load-bearing, not informational: a provider that
   declares it returns typed `TranscriptionSegment` values with `avg_logprob`,
   `no_speech_prob` and `compression_ratio`, and the confidence gate uses them to

@@ -36,7 +36,10 @@ import {
 } from "@/components/shell";
 import {
   DESK,
+  DESK_VOICE_PRESET,
   LANES,
+  LOCAL_VOICE_PRESET,
+  libraryModel,
   PROVIDERS,
   providerNames,
   type JobKey,
@@ -1255,16 +1258,16 @@ function ModelsTab({
                 <Job
                   name="The desk's voice"
                   what="How a coding agent's question reaches you out loud, and how your answer returns."
-                  control={<JobModel mark={null} model="Cartesia Sonic-3" />}
+                  control={<JobModel mark={null} model={DESK_VOICE_PRESET} />}
                   rows={
                     <CardRows>
                       <Row
                         label="Preset"
                         hint="Chosen by time to first byte, not by price."
                         control={
-                          <DrawnSelect defaultValue="Cartesia Sonic-3" aria-label="Preset">
-                            <option>Cartesia Sonic-3</option>
-                            <option>Kokoro-82M (local)</option>
+                          <DrawnSelect defaultValue={DESK_VOICE_PRESET} aria-label="Preset">
+                            <option>{DESK_VOICE_PRESET}</option>
+                            <option>{LOCAL_VOICE_PRESET}</option>
                           </DrawnSelect>
                         }
                       />
@@ -1353,11 +1356,11 @@ function MachineTab() {
           }
         >
           <ModelList>
-            <ModelRow brand="openai" name="ggml-base" size="142 MB" detail="multilingual · the recommended balance" state="installed" active />
-            <ModelRow brand="openai" name="ggml-base.en" size="142 MB" detail="English only, more accurate on English" state="installed" />
-            <ModelRow brand="openai" name="ggml-small" size="466 MB" detail="multilingual · better on accents" state="downloading" pct={38} />
-            <ModelRow brand="openai" name="ggml-medium" size="1.5 GB" detail="multilingual · noticeably slower on CPU" />
-            <ModelRow brand="openai" name="ggml-large-v3-turbo" size="1.6 GB" detail="multilingual · the best that still runs in real time" />
+            <ModelRow {...libraryModel("local-speech-base")} state="installed" active />
+            <ModelRow {...libraryModel("local-speech-base-en")} state="installed" />
+            <ModelRow {...libraryModel("local-speech-small")} state="downloading" pct={38} />
+            <ModelRow {...libraryModel("local-speech-medium")} />
+            <ModelRow {...libraryModel("local-speech-large-v3-turbo")} />
           </ModelList>
         </Card>
       </SectionHeader>
@@ -1377,10 +1380,10 @@ function MachineTab() {
           }
         >
           <ModelList>
-            <ModelRow brand="qwen" name="qwen2.5-7b-instruct" size="4.4 GB" detail="Q4_K_M · the general recommendation" state="installed" active />
-            <ModelRow brand="llama" name="llama-3.2-3b-instruct" size="2.0 GB" detail="Q4_K_M · fast enough for cleanup on CPU" state="installed" />
-            <ModelRow brand="gemma" name="gemma-3-4b-it" size="2.5 GB" detail="Q4_K_M · strong on German" />
-            <ModelRow brand="qwen" name="qwen2.5-14b-instruct" size="8.4 GB" detail="Q4_K_M · needs a GPU to be pleasant" />
+            <ModelRow {...libraryModel("local-chat-qwen-7b")} state="installed" active />
+            <ModelRow {...libraryModel("local-chat-llama-3b")} state="installed" />
+            <ModelRow {...libraryModel("local-chat-gemma-4b")} />
+            <ModelRow {...libraryModel("local-chat-qwen-14b")} />
           </ModelList>
         </Card>
         <Note>

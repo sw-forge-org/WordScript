@@ -1,4 +1,5 @@
 import type { ListItemBadge, RawTranscript } from "@/components/shell";
+import { laneJobModels, modelId, providerLabel } from "@/lib/modelCatalogue";
 
 /**
  * THE PROTOTYPE'S SAMPLE DATA, copied out of `demo.js`.
@@ -231,44 +232,72 @@ export type JobKey =
   | "dictation" | "meetings" | "upload"
   | "cleanup" | "rewrite" | "translate" | "enhance" | "assistant";
 
+/** What stands where a model id would on the lane that has no list to offer. */
+const TYPED_ON_THE_ENDPOINT = "typed on the endpoint";
+
+/* THE MODEL NAMES ARE NO LONGER HERE (ADR 0115). What each lane offers each job
+   is `shared/model_catalogue.json`, read by this file and by
+   `core::model_catalogue` — the same rows, with a source and a read-date on
+   each. What stays here is everything the catalogue is not: which provider a
+   job overrides to, which brand mark the row carries, and the sentence a lane
+   that cannot run a job says instead.
+
+   The Anthropic ids moved a generation in the process, which is the answer
+   `docs/PROVIDERS.md` open disagreement 5 has been waiting for rather than a
+   drawing change: the drawn names were `claude-sonnet-4-6` and
+   `claude-opus-4-7` and the vendor serves `claude-sonnet-5` and
+   `claude-opus-5`. Correcting them by hand was refused twice on the grounds
+   that it is the same work twice; the catalogue is where it is done once. */
+function offered(lane: LaneName, job: JobKey): LaneJob {
+  const entry = laneJobModels(lane, job);
+  if (!entry) {
+    throw new Error(`the catalogue offers nothing for ${lane}/${job}`);
+  }
+  return entry;
+}
+
 export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, LaneJob> }> = {
   Cloud: {
     provider: "Groq",
     jobs: {
-      dictation: { model: "whisper-large-v3-turbo", models: ["whisper-large-v3-turbo", "whisper-large-v3", "distil-whisper-large-v3-en"] },
-      meetings: { model: "whisper-large-v3", models: ["whisper-large-v3", "whisper-large-v3-turbo"] },
-      upload: { model: "whisper-1", models: ["whisper-1", "gpt-4o-transcribe", "whisper-large-v3"], override: "OpenAI" },
-      cleanup: { model: "llama-3.1-8b-instant", models: ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"] },
-      rewrite: { model: "llama-3.3-70b-versatile", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
-      translate: { model: "claude-sonnet-4-6", models: ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-7"], override: "Anthropic" },
-      enhance: { model: "llama-3.3-70b-versatile", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
-      assistant: { model: "claude-sonnet-4-6", models: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"], override: "Anthropic" },
+      dictation: offered("Cloud", "dictation"),
+      meetings: offered("Cloud", "meetings"),
+      upload: { ...offered("Cloud", "upload"), override: "OpenAI" },
+      cleanup: offered("Cloud", "cleanup"),
+      rewrite: offered("Cloud", "rewrite"),
+      translate: { ...offered("Cloud", "translate"), override: "Anthropic" },
+      enhance: offered("Cloud", "enhance"),
+      assistant: { ...offered("Cloud", "assistant"), override: "Anthropic" },
     },
   },
   Local: {
     provider: "llama.cpp",
     jobs: {
-      dictation: { model: "ggml-base", models: ["ggml-base", "ggml-base.en", "ggml-small"], mark: "openai" },
-      meetings: { model: "ggml-small", models: ["ggml-small", "ggml-base", "ggml-medium"], mark: "openai" },
-      upload: { model: "ggml-small", models: ["ggml-small", "ggml-medium", "ggml-large-v3-turbo"], mark: "openai" },
-      cleanup: { model: "llama-3.2-3b-instruct", models: ["llama-3.2-3b-instruct", "qwen2.5-7b-instruct"], mark: "llama" },
-      rewrite: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "llama-3.2-3b-instruct"], mark: "qwen" },
-      translate: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "gemma-3-4b-it"], mark: "qwen" },
-      enhance: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "llama-3.2-3b-instruct"], mark: "qwen" },
-      assistant: { model: "qwen2.5-7b-instruct", models: ["qwen2.5-7b-instruct", "gemma-3-4b-it"], mark: "qwen" },
+      dictation: { ...offered("Local", "dictation"), mark: "openai" },
+      meetings: { ...offered("Local", "meetings"), mark: "openai" },
+      upload: { ...offered("Local", "upload"), mark: "openai" },
+      cleanup: { ...offered("Local", "cleanup"), mark: "llama" },
+      rewrite: { ...offered("Local", "rewrite"), mark: "qwen" },
+      translate: { ...offered("Local", "translate"), mark: "qwen" },
+      enhance: { ...offered("Local", "enhance"), mark: "qwen" },
+      assistant: { ...offered("Local", "assistant"), mark: "qwen" },
     },
   },
   "Self-hosted": {
     provider: "your server",
+    /* NO CATALOGUE ROWS, AND THAT IS THE LANE. "typed on the endpoint" is a
+       sentence standing where a model id would, not a model id — the server is
+       the user's and its model list belongs to whoever runs it, which is the
+       free-typed field ADR 0115 keeps beside every catalogue list. */
     jobs: {
       dictation: { none: "Speech has no OpenAI-compatible shape to talk to. Use Cloud or Local for the listening jobs." },
       meetings: { none: "Same — a self-hosted chat endpoint does not transcribe." },
       upload: { none: "Same — a self-hosted chat endpoint does not transcribe." },
-      cleanup: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
-      rewrite: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
-      translate: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
-      enhance: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
-      assistant: { model: "typed on the endpoint", models: ["typed on the endpoint"], mark: null },
+      cleanup: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
+      rewrite: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
+      translate: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
+      enhance: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
+      assistant: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
     },
   },
   Enterprise: {
@@ -277,11 +306,52 @@ export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, La
       dictation: { none: "Only Azure OpenAI transcribes among the three. Switch the provider above, or use Cloud or Local." },
       meetings: { none: "Only Azure OpenAI transcribes among the three." },
       upload: { none: "Only Azure OpenAI transcribes among the three." },
-      cleanup: { model: "anthropic.claude-haiku-4-5", models: ["anthropic.claude-haiku-4-5", "anthropic.claude-sonnet-4-6"], mark: "bedrock" },
-      rewrite: { model: "anthropic.claude-sonnet-4-6", models: ["anthropic.claude-sonnet-4-6", "anthropic.claude-haiku-4-5"], mark: "bedrock" },
-      translate: { model: "anthropic.claude-sonnet-4-6", models: ["anthropic.claude-sonnet-4-6"], mark: "bedrock" },
-      enhance: { model: "anthropic.claude-haiku-4-5", models: ["anthropic.claude-haiku-4-5"], mark: "bedrock" },
-      assistant: { model: "anthropic.claude-sonnet-4-6", models: ["anthropic.claude-sonnet-4-6", "anthropic.claude-opus-4-7"], mark: "bedrock" },
+      cleanup: { ...offered("Enterprise", "cleanup"), mark: "bedrock" },
+      rewrite: { ...offered("Enterprise", "rewrite"), mark: "bedrock" },
+      translate: { ...offered("Enterprise", "translate"), mark: "bedrock" },
+      enhance: { ...offered("Enterprise", "enhance"), mark: "bedrock" },
+      assistant: { ...offered("Enterprise", "assistant"), mark: "bedrock" },
     },
   },
 };
+
+/* ── The drawn model library ────────────────────────────────────────────────
+   What `AI Models`' machine tab and onboarding's download step list, and what
+   the catalogue cannot answer: a size on this disk, a sentence about who the
+   model suits, and whether it is installed. **The catalogue says what a vendor
+   documents; a library row says what is on this machine**, which is why the two
+   are not the same list and why the real one will eventually come off
+   `core::providers::local`'s model directory rather than from either.
+
+   What the library does NOT carry is the name. That comes off the same
+   catalogue row the lane picker offers, so a renamed model is renamed in one
+   place and both surfaces follow. */
+const LIBRARY: Record<string, { brand: string; size: string; detail: string }> = {
+  "local-speech-base": { brand: "openai", size: "142 MB", detail: "multilingual · the recommended balance" },
+  "local-speech-base-en": { brand: "openai", size: "142 MB", detail: "English only, more accurate on English" },
+  "local-speech-small": { brand: "openai", size: "466 MB", detail: "multilingual · better on accents" },
+  "local-speech-medium": { brand: "openai", size: "1.5 GB", detail: "multilingual · noticeably slower on CPU" },
+  "local-speech-large-v3-turbo": { brand: "openai", size: "1.6 GB", detail: "multilingual · the best that still runs in real time" },
+  "local-chat-qwen-7b": { brand: "qwen", size: "4.4 GB", detail: "Q4_K_M · the general recommendation" },
+  "local-chat-qwen-14b": { brand: "qwen", size: "8.4 GB", detail: "Q4_K_M · needs a GPU to be pleasant" },
+  "local-chat-llama-3b": { brand: "llama", size: "2.0 GB", detail: "Q4_K_M · fast enough for cleanup on CPU" },
+  "local-chat-gemma-4b": { brand: "gemma", size: "2.5 GB", detail: "Q4_K_M · strong on German" },
+};
+
+/* The two voice presets the desk draws, composed once for the three surfaces
+   that show them: `AI Models`' Speaking group, the Agents screen and the agent
+   overlay. Each is a vendor and a model rather than one string that happens to
+   contain a space, which is why the label comes off the provider row and the
+   name off the model row. Neither is operated by anything — ADR 0109 gates the
+   voice adapter on the job that runs it, and that job does not exist yet. */
+export const DESK_VOICE_PRESET = `${providerLabel("cartesia")} ${modelId("cartesia-voice-sonic-3")}`;
+export const LOCAL_VOICE_PRESET = `${modelId("local-voice-kokoro")} (local)`;
+
+/** One library row: the catalogue's name plus what only this disk knows. */
+export function libraryModel(id: string): { brand: string; name: string; size: string; detail: string } {
+  const drawn = LIBRARY[id];
+  if (!drawn) {
+    throw new Error(`no drawn library row for '${id}'`);
+  }
+  return { ...drawn, name: modelId(id) };
+}

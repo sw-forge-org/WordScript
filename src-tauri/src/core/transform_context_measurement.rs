@@ -115,7 +115,7 @@ fn correction_request(
 ) -> ChatCompletionRequest {
     let word_count = text.split_whitespace().count();
     let model = if word_count > 300 {
-        DEFAULT_CORRECTION_MODEL.to_string()
+        default_correction_model().to_string()
     } else {
         config.correction_model.clone()
     };
@@ -162,7 +162,7 @@ async fn measure_profile_context_width() {
         post_process: preset.post_process,
         correction_model: app_config["correction_model"]
             .as_str()
-            .unwrap_or(DEFAULT_CORRECTION_MODEL)
+            .unwrap_or(default_correction_model())
             .to_string(),
         filter_fillers: preset.filter_fillers,
         professionalize: preset.professionalize,

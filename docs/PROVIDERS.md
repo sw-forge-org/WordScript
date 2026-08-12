@@ -992,6 +992,12 @@ corrected sentences turned out to have counterparts in the drawing. A wrong
 sentence in a survey is an edit; the same sentence on a surface is a
 disagreement, because the gallery owns it (ADR 0057).
 
+**And to twelve on 2026-08-12, while one closed.** Stage B3 built the catalogue
+ADR 0115 specified, which closed number 5 the way the preamble demands -- by the
+drawing and the runtime agreeing, in code. The same step opened number 12,
+which nothing on this page could have found: a drawn model list is three strings
+until a catalogue makes each of them name its vendor.
+
 1. **`xAI` is drawn `llm: false`.** It serves chat models. Either the drawing
    scopes the entry to speech deliberately, or it is short a capability.
 2. **`Gemini` is drawn `stt: false`.** It processes audio through the
@@ -1017,9 +1023,10 @@ disagreement, because the gallery owns it (ADR 0057).
    both on the `Voice` role and therefore on one credential. The route stays per
    language; the model does not. **What remains is the drawing**, which is the
    gallery's, and the disagreement stays open until the two rows stand.
-5. **The drawn `LANES` model names are a generation behind.**
-   `Cloud.translate` and `Cloud.assistant` both default to `claude-sonnet-4-6`
-   and offer `claude-opus-4-7`; the whole Enterprise lane carries the same two
+5. **The drawn `LANES` model names are a generation behind.** ~~Closed
+   2026-08-12 by the catalogue landing (stage B3).~~
+   `Cloud.translate` and `Cloud.assistant` both defaulted to `claude-sonnet-4-6`
+   and offered `claude-opus-4-7`; the whole Enterprise lane carried the same two
    ids under an `anthropic.` prefix. The current ids are `claude-sonnet-5` and
    `claude-opus-5`. A model name on a surface goes stale on the vendor's
    schedule, not this repo's, which is an argument about **where model names
@@ -1028,6 +1035,13 @@ disagreement, because the gallery owns it (ADR 0057).
    and the drawing both read. The particular strings are deliberately still
    wrong here -- correcting them by hand is the same work twice, at the place
    the catalogue replaces.*
+   **Both halves are done.** `shared/model_catalogue.json` carries the current
+   ids as dated rows against this document's Anthropic table, and neither
+   runtime spells a model name any more: the drawing reads
+   `lanes.Cloud.translate`, `core/config.rs` reads `runtime_defaults`, and a
+   test walks `src/` to prove no file outside the catalogue spells a catalogued
+   id. **This is the one disagreement on this list closed by code**, which is
+   the bar the preamble sets for all of them.
 6. **`Cloud.upload` already draws a per-job provider override to OpenAI**, and
    the model it defaults to is `whisper-1` -- the one OpenAI documents as
    explicitly not supporting streaming. The override itself is the shape Phase 4
@@ -1073,6 +1087,18 @@ disagreement, because the gallery owns it (ADR 0057).
     cheapest additional speech lane on this page invisible on the screen that
     picks between lanes. Same shape as disagreement 1 (xAI's `llm: false`), and
     it resolves the same way: the drawing decides, not an implementation.
+12. **`Cloud.upload` offers a Groq model id under its OpenAI override.** Added
+    2026-08-12; **found by the catalogue rather than by a reading**, which is
+    the first thing that step did that this survey could not have done for
+    itself. The drawn list is `whisper-1`, `gpt-4o-transcribe`,
+    `whisper-large-v3` — and the third is Groq's id, on a row whose provider
+    override says OpenAI. It was invisible while the list was three strings in
+    an array; a catalogue row names its vendor, so the mismatch is now on the
+    page. **Not corrected**, for the reason every entry on this list is not:
+    dropping the row is a drawing change and the gallery owns it (ADR 0057), and
+    the alternative — catalogueing `whisper-large-v3` a second time under
+    `openai` — would state that a vendor serves an id it does not. Neighbour of
+    disagreement 6, which is about the same row's default.
 
 ---
 
@@ -1145,9 +1171,15 @@ working example**, and why it commits to one method instead of guessing four.
   second page -- and before writing it about a lane, grep this file for the
   opposite claim.
 - **A model id belongs in the catalogue; a reason belongs here** (ADR 0115).
-  When the catalogue lands, the model tables above become its source rows rather
-  than a second copy of them. What this document keeps is what a data row cannot
-  carry: why a lane behaves as it does, what a vendor does not serve, and what
-  was read but not verified.
+  The catalogue landed 2026-08-12 as `shared/model_catalogue.json`, and the
+  model tables above are now its source rows rather than a second copy of them:
+  a row there carries this document's source string and read-date, and a row
+  whose provenance is this repo's own drawing or runtime says so instead of
+  borrowing a vendor URL. **Adding a model is a row there, not an edit here** --
+  what this document keeps is what a data row cannot carry: why a lane behaves
+  as it does, what a vendor does not serve, and what was read but not verified.
+  The catalogue's scope is narrower than this page's on purpose (ADR 0120): what
+  this build routes to, defaults to or makes a statement about, and the long
+  tail arrives live in B4.
 - When a lane becomes integrated, this file does not record that. STATUS.md
   does, and `AI Models` stops greying the control out.

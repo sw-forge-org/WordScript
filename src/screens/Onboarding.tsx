@@ -26,7 +26,7 @@ import {
   type OnboardingStep,
 } from "@/components/shell";
 import { InertSegment, ProviderPick } from "./Models";
-import type { LaneName } from "./data";
+import { LANES, libraryModel, type LaneName } from "./data";
 
 /**
  * ONBOARDING — `SCREENS.onboarding`.
@@ -311,9 +311,9 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
           >
             <Card>
               <ModelList>
-                <ModelRow brand="openai" name="ggml-base" size="142 MB" detail="multilingual · the recommended balance" state="downloading" pct={46} />
-                <ModelRow brand="openai" name="ggml-base.en" size="142 MB" detail="English only, more accurate on English" />
-                <ModelRow brand="openai" name="ggml-small" size="466 MB" detail="multilingual · better on accents" />
+                <ModelRow {...libraryModel("local-speech-base")} state="downloading" pct={46} />
+                <ModelRow {...libraryModel("local-speech-base-en")} />
+                <ModelRow {...libraryModel("local-speech-small")} />
               </ModelList>
             </Card>
           </SectionHeader>
@@ -327,9 +327,9 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
           >
             <Card>
               <ModelList>
-                <ModelRow brand="llama" name="llama-3.2-3b-instruct" size="2.0 GB" detail="Q4_K_M · fast enough for cleanup on CPU" />
-                <ModelRow brand="qwen" name="qwen2.5-7b-instruct" size="4.4 GB" detail="Q4_K_M · the general recommendation" />
-                <ModelRow brand="gemma" name="gemma-3-4b-it" size="2.5 GB" detail="Q4_K_M · strong on German" />
+                <ModelRow {...libraryModel("local-chat-llama-3b")} />
+                <ModelRow {...libraryModel("local-chat-qwen-7b")} />
+                <ModelRow {...libraryModel("local-chat-gemma-4b")} />
               </ModelList>
             </Card>
             <Card>
@@ -494,7 +494,7 @@ function Done() {
             control={
               <span className="ws-jobmodel">
                 <ProviderMark name="Groq" />
-                <span className="ws-jobmodel-name">whisper-large-v3-turbo</span>
+                <span className="ws-jobmodel-name">{LANES.Cloud.jobs.dictation.model}</span>
               </span>
             }
           />

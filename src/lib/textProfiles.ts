@@ -18,6 +18,7 @@ import type {
   TextProfileWorkMode,
 } from "../types/ipc";
 import { PROCESSING_MODE_LABELS } from "./transformRules";
+import { runtimeDefault } from "./modelCatalogue";
 
 function createProfileId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -134,15 +135,21 @@ export function createDefaultProfileProviderSettings(): ProfileProviderSettings 
   return { default: "groq", overrides: {} };
 }
 
+/* The mirror of `ProfileSpeechSettings::default()`, and the four model fields
+   now come off the same catalogue the Rust default reads (ADR 0115) — they were
+   a hand-kept copy of four literals in `core/config.rs`, which is one of the
+   three places a model id used to live. `local_model` stays a literal: `base` is
+   a whisper.cpp file stem that `core::providers::local` resolves to
+   `ggml-{stem}.bin`, not a vendor's model id. */
 export function createDefaultProfileSpeechSettings(): ProfileSpeechSettings {
   return {
-    model: "whisper-large-v3-turbo",
+    model: runtimeDefault("speech"),
     language: "",
     language_locked: false,
-    correction_model: "llama-3.3-70b-versatile",
-    local_correction_model: "llama3.2:latest",
-    agent_model: "llama-3.3-70b-versatile",
-    local_agent_model: "llama3.2:latest",
+    correction_model: runtimeDefault("correction"),
+    local_correction_model: runtimeDefault("local_correction"),
+    agent_model: runtimeDefault("agent"),
+    local_agent_model: runtimeDefault("local_agent"),
     local_model: "base",
     local_profile: "local-base-fast",
     local_prompt_strength: "profile",

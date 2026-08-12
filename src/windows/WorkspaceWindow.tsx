@@ -14,6 +14,7 @@ import {
   WindowBody,
   WindowShell,
 } from "@/components/shell";
+import { runtimeDefault } from "@/lib/modelCatalogue";
 import { useColorScheme, type ColorScheme } from "@/hooks/useColorScheme";
 import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useNavRail } from "@/hooks/useNavRail";
@@ -127,10 +128,16 @@ export default function WorkspaceWindow() {
     selectedProvider === "local"
       ? form?.local_model ?? state.config?.local_model ?? "base"
       : null;
+  /* The last fallback is the runtime's own default, read from the catalogue
+     rather than spelled here (ADR 0115): a config that has never been written
+     names no model, and a second copy of what `core::config` falls back to is a
+     second thing to drift. `base` above stays a literal on purpose — it is a
+     whisper.cpp file stem that `core::providers::local` resolves to
+     `ggml-{stem}.bin`, not a vendor's model id. */
   const selectedCleanupModel =
     selectedProvider === "local"
-      ? form?.local_correction_model ?? state.config?.local_correction_model ?? "llama3.2:latest"
-      : form?.correction_model ?? state.config?.correction_model ?? "llama-3.3-70b-versatile";
+      ? form?.local_correction_model ?? state.config?.local_correction_model ?? runtimeDefault("local_correction")
+      : form?.correction_model ?? state.config?.correction_model ?? runtimeDefault("correction");
   const { status: providerStatus } = useProvider(selectedProvider, selectedLocalModel, selectedCleanupModel);
   const providerReady =
     selectedProvider === "local"

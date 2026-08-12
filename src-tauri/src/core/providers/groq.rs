@@ -10,6 +10,7 @@ use reqwest::{header, multipart, StatusCode};
 use serde::Deserialize;
 use tokio::time::sleep;
 
+use crate::core::model_catalogue;
 use crate::core::runtime_log;
 
 use super::{
@@ -33,10 +34,15 @@ const GROQ_CREDENTIAL_ROLES: &[ProviderRole] = &[ProviderRole::Speech, ProviderR
 /// consumer subscription, so there is nothing for a second kind to authenticate
 /// against (`docs/PROVIDERS.md`, ADR 0102).
 const GROQ_CREDENTIAL_KINDS: &[CredentialKind] = &[CredentialKind::ApiKey];
-/// The model a recognition request runs on when the caller names none. One
-/// constant rather than two literals, because the capability answer and the
-/// request must describe the same run.
-const GROQ_DEFAULT_SPEECH_MODEL: &str = "whisper-large-v3-turbo";
+/// The catalogue rows this adapter operates, named by their slugs (ADR 0115).
+///
+/// **An adapter names a row, never a model id.** The two ids Groq's profiles
+/// offer and the one a request falls back to are the same three strings the
+/// drawing lists and the survey dates, and they lived in three places until this
+/// file stopped spelling them. What is left here is which *row* this lane runs
+/// on, which is an adapter's own business.
+const GROQ_SPEECH_TURBO_ROW: &str = "groq-speech-turbo";
+const GROQ_SPEECH_QUALITY_ROW: &str = "groq-speech-large-v3";
 const DEFAULT_TIMEOUT_MS: u64 = 55_000;
 const DEFAULT_MAX_RETRIES: u8 = 2;
 const GROQ_FREE_TIER_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
@@ -627,7 +633,7 @@ fn provider_profiles() -> Vec<ProviderProfile> {
             id: "cloud-fast".to_string(),
             provider: "groq".to_string(),
             mode: ProviderMode::Fast,
-            model: "whisper-large-v3-turbo".to_string(),
+            model: model_catalogue::model_id(GROQ_SPEECH_TURBO_ROW).to_string(),
             label: "Groq fast multilingual transcription".to_string(),
             default: true,
             requires_api_key: true,
@@ -636,12 +642,30 @@ fn provider_profiles() -> Vec<ProviderProfile> {
             id: "cloud-quality".to_string(),
             provider: "groq".to_string(),
             mode: ProviderMode::Quality,
-            model: "whisper-large-v3".to_string(),
+            model: model_catalogue::model_id(GROQ_SPEECH_QUALITY_ROW).to_string(),
             label: "Groq high-accuracy multilingual transcription".to_string(),
             default: false,
             requires_api_key: true,
         },
     ]
+}
+
+/// The profile a recognition model runs under, or nothing when this lane ships
+/// no profile for it.
+///
+/// **Answered off `provider_profiles()` rather than beside it.** The v1 slice
+/// used to answer the same question with a two-arm match on model literals,
+/// which was a second copy of the table above and could disagree with it — and
+/// after ADR 0115 it would have been a second copy of two catalogue rows as
+/// well. A caller with an id this lane does not ship gets `None` and names its
+/// own fallback, which is what the slice already did.
+pub fn speech_profile_id(model: &str) -> Option<String> {
+    let model = model.trim();
+
+    provider_profiles()
+        .into_iter()
+        .find(|profile| profile.model == model)
+        .map(|profile| profile.id)
 }
 
 fn provider_capabilities() -> ProviderCapabilities {
@@ -691,7 +715,7 @@ fn model_capabilities(model: &str) -> ModelCapabilities {
 fn resolve_speech_model(model: &str) -> String {
     let model = model.trim();
     if model.is_empty() {
-        GROQ_DEFAULT_SPEECH_MODEL.to_string()
+        model_catalogue::model_id(GROQ_SPEECH_TURBO_ROW).to_string()
     } else {
         model.to_string()
     }
@@ -1310,8 +1334,8 @@ mod tests {
 
     #[test]
     fn an_unnamed_model_answers_for_the_one_a_request_would_run() {
-        assert_eq!(model_capabilities("").model, GROQ_DEFAULT_SPEECH_MODEL);
-        assert_eq!(resolve_speech_model("  "), GROQ_DEFAULT_SPEECH_MODEL);
+        assert_eq!(model_capabilities("").model, model_catalogue::model_id(GROQ_SPEECH_TURBO_ROW));
+        assert_eq!(resolve_speech_model("  "), model_catalogue::model_id(GROQ_SPEECH_TURBO_ROW));
         assert_eq!(resolve_speech_model(" whisper-large-v3 "), "whisper-large-v3");
     }
 

@@ -1,6 +1,7 @@
 import type { AppConfig, RuntimeState } from "../types/ipc";
 import type { WorkspaceRuntime } from "../screens/props";
 import { buildCuratedTextProfiles } from "../lib/textProfileTemplates";
+import { runtimeDefault } from "../lib/modelCatalogue";
 import {
   createDefaultProfileCaptureSettings,
   createDefaultProfileModesSettings,
@@ -11,7 +12,7 @@ import {
 
 export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
-    model: "whisper-large-v3-turbo",
+    model: runtimeDefault("speech"),
     provider_tier: "",
     language: "",
     active_text_profile_id: "general",
@@ -35,8 +36,8 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     ],
     curated_profiles_seeded: true,
     post_process: true,
-    correction_model: "llama-3.3-70b-versatile",
-    local_correction_model: "llama3.2:latest",
+    correction_model: runtimeDefault("correction"),
+    local_correction_model: runtimeDefault("local_correction"),
     filter_fillers: true,
     professionalize: false,
     local_model: "base",
@@ -85,8 +86,8 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     history_limit: 200,
     history_retention_days: 90,
     agent_name: "WordScript",
-    agent_model: "llama-3.3-70b-versatile",
-    local_agent_model: "llama3.2:latest",
+    agent_model: runtimeDefault("agent"),
+    local_agent_model: runtimeDefault("local_agent"),
     processing_mode: "auto",
     enhance_sub_mode: "enhance",
     enhance_target: "general",

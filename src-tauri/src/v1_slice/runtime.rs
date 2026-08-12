@@ -10,10 +10,11 @@ use tauri::{AppHandle, Runtime};
 
 use crate::core::{
     capture::{self, NativeCaptureStatus},
-    config::{normalize_local_profile_id, AppConfig},
+    config::{default_speech_model, normalize_local_profile_id, AppConfig},
     providers::{
-        self, JobKey, LocalProviderIssueCode, LocalProviderReadiness, LocalProviderSetupStatus,
-        ProviderCommandError, ProviderStatus, ProviderStatusRequest, LOCAL_PROVIDER_ID,
+        self, groq, JobKey, LocalProviderIssueCode, LocalProviderReadiness,
+        LocalProviderSetupStatus, ProviderCommandError, ProviderStatus, ProviderStatusRequest,
+        LOCAL_PROVIDER_ID,
     },
 };
 
@@ -428,7 +429,7 @@ fn normalized_runtime_provider(config: &AppConfig) -> String {
 
 fn normalized_cloud_model(config: &AppConfig) -> &str {
     if config.model.trim().is_empty() {
-        "whisper-large-v3-turbo"
+        default_speech_model()
     } else {
         config.model.trim()
     }
@@ -542,11 +543,13 @@ fn runtime_provider_profile(config: &AppConfig) -> String {
         return normalized_local_profile(config);
     }
 
-    match normalized_cloud_model(config) {
-        "whisper-large-v3-turbo" => "cloud-fast".to_string(),
-        "whisper-large-v3" => "cloud-quality".to_string(),
-        model => format!("groq-model-{}", sanitize_runtime_profile_segment(model)),
-    }
+    // The lane answers which profile its own models run under; a model it does
+    // not ship keeps the derived name. This used to be two arms matching model
+    // literals — a second copy of `groq::provider_profiles()`'s table, and after
+    // ADR 0115 a second copy of two catalogue rows on top of that.
+    let model = normalized_cloud_model(config);
+    groq::speech_profile_id(model)
+        .unwrap_or_else(|| format!("groq-model-{}", sanitize_runtime_profile_segment(model)))
 }
 
 fn sanitize_runtime_profile_segment(value: &str) -> String {

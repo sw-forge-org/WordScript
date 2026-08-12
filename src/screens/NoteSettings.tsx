@@ -18,6 +18,7 @@ import {
   Toggle,
   ViewTop,
 } from "@/components/shell";
+import { modelId } from "@/lib/modelCatalogue";
 import type { ScreenProps } from "./props";
 
 /**
@@ -203,7 +204,7 @@ export function NoteSettingsScreen({ banner }: ScreenProps = {}) {
               hint="Its own row, beside the dictation engine. One list, not two places."
               control={
                 <span className="ws-rowflex">
-                  <StatusBadge tone="plan">whisper-large-v3</StatusBadge>
+                  <StatusBadge tone="plan">{modelId("groq-speech-large-v3")}</StatusBadge>
                   <Button variant="ghost" icon={<Icon name="arrow" />}>
                     AI Models
                   </Button>

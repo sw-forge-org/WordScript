@@ -174,7 +174,21 @@ The active product core lives in `src-tauri/src/core/`.
 
 - `config.rs`: config lifecycle, disk I/O, scrubbing of sensitive values,
   local text-profile model. Config writes are lock-serialized
-  (`CONFIG_FILE_LOCK`) so overlapping commands cannot clobber each other.
+  (`CONFIG_FILE_LOCK`) so overlapping commands cannot clobber each other. Its
+  five model defaults are re-exported from `model_catalogue` rather than spelled
+  as constants (ADR 0115).
+- `model_catalogue.rs`: the one model catalogue, loaded from
+  `shared/model_catalogue.json` through `include_str!` behind
+  `CATALOGUE_VERSION` — the shape `regression_corpus` already has, with
+  `shared/model_catalogue.schema.json` beside the data. **The file sits outside
+  both `src/` and `src-tauri/` because it has two readers**: this module and
+  `src/lib/modelCatalogue.ts`, which imports the same bytes rather than
+  mirroring them. A row carries `(provider, role, model_id, documented
+  streaming, languages, source, read_date)` and is named by a stable slug, so a
+  vendor's next generation changes one `model_id` and nothing else in either
+  tree. It records what a vendor documents and never what this build can
+  operate — that is `providers::model_capabilities`, and the two are held apart
+  by a test rather than by a convention (ADR 0115, scoped by ADR 0120).
 - `runtime_log.rs`: buffered structured runtime logs for the diagnostics UI,
   plus a persistent ring-rotated file (`~/.config/WordScript/logs/wordscript-runtime.log`).
 - `history.rs`: persistent native history with raw vs transformed
@@ -304,12 +318,13 @@ The active product core lives in `src-tauri/src/core/`.
   `core::backup` snapshot first — **a migration without a snapshot path is not
   written**.
 
-  *Planned and not built* (ADR 0094's second half, ADR 0095, ADR 0096): the
-  provider axis in the config still holds one `provider` field per profile
-  rather than a resolved default plus a sparse override per job, so
-  `resolve_role_credential` is asked for the connection's provider and the job's
-  role rather than for an override; no streaming recognition contract stands
-  beside `transcribe_audio_file`; and no adapter beyond these two is registered. What each vendor can actually serve is
+  *Planned and not built* (ADR 0095, ADR 0096): no streaming recognition
+  contract stands beside `transcribe_audio_file`, and no adapter beyond these
+  two is registered. **The provider axis in the config was the third entry here
+  and is built** — A4 landed the resolved default plus the sparse per-job
+  override on 2026-08-12 and this sentence outlived it by a stage; corrected
+  2026-08-12 by B3, marked rather than edited away, because a paragraph that
+  still describes the state before last week is how a document stops being read. What each vendor can actually serve is
   surveyed per row and per date in [PROVIDERS.md](PROVIDERS.md) — that document
   is a capability reference and not a claim about this codebase.
 

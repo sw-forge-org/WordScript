@@ -37,7 +37,7 @@ import {
   StatusDot,
   ViewTop,
 } from "@/components/shell";
-import { DESK, DESK_CAP } from "./data";
+import { DESK, DESK_CAP, DESK_VOICE_PRESET } from "./data";
 
 /**
  * AGENT OVERLAY — `SCREENS.agentoverlay`, a wide preview.
@@ -179,7 +179,7 @@ export function AgentOverlayScreen() {
             <AgentVoice
               orb={<Orb state="active" size={22} level={0.74} />}
               what="“Should I update the test or the host?”"
-              meta="Cartesia Sonic-3 · 240 ms"
+              meta={`${DESK_VOICE_PRESET} · 240 ms`}
               action={<OverlayMiniButton icon="x">Stop</OverlayMiniButton>}
             />
           </AgentWindow>

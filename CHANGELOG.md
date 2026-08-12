@@ -53,6 +53,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — one model catalogue, and neither runtime spells a model name (ADR 0115 scoped by ADR 0120, speech track step B3)
+
+- **`shared/model_catalogue.json`, with its schema beside it**, carrying one row
+  per model this build routes to, defaults to or makes a statement about:
+  `(provider, role, model_id, documented streaming, languages, source,
+  read_date)`. `core::model_catalogue` loads it through `include_str!` behind
+  `CATALOGUE_VERSION` — the shape `core::regression_corpus` already has — and
+  `src/lib/modelCatalogue.ts` imports the same bytes. **One file, two readers,
+  no mirror.** It sits outside `src/` and `src-tauri/` because neither owns it.
+- **A row is named by a stable slug, not by the model name.**
+  `anthropic-chat-sonnet`, not `claude-sonnet-5`. That is the property the whole
+  scheme rests on: a vendor's next generation is one edited `model_id` and every
+  reference in both trees stands. Naming rows by the id would have moved the
+  rename problem rather than solved it.
+- **The drawn Anthropic ids moved a generation, which closes
+  `docs/PROVIDERS.md` open disagreement 5.** `claude-sonnet-4-6` →
+  `claude-sonnet-5` and `claude-opus-4-7` → `claude-opus-5`, on the Cloud lane
+  and under the Enterprise lane's `anthropic.` prefix. Correcting them by hand
+  was refused twice as *the same work twice*; this is the once.
+- **Twelve places stopped spelling a model id.** `config.rs`'s four default
+  constants plus the inline speech default, `groq.rs`'s default and its two
+  profile models, the v1 slice's cloud fallback and its profile match,
+  `local.rs`'s chat default, `data.ts`'s four lane tables, the drawn model
+  library on `AI Models` and in onboarding, `NoteSettings`' badge, the desk's
+  voice preset on three surfaces, `textProfiles.ts`'s profile defaults,
+  `WorkspaceWindow`'s two fallbacks, the test factories and the component
+  gallery's Select demo. **A test walks `src/` and fails on the thirteenth**;
+  test files are excluded on purpose, because a literal in an assertion is a
+  check on what a surface renders rather than a second source of truth.
+- **The v1 slice's model-to-profile match is gone**, replaced by
+  `groq::speech_profile_id`, which answers off `provider_profiles()`. It was a
+  second copy of that table and would have become a second copy of two catalogue
+  rows as well.
+- **The catalogue is not `ModelCapabilities` and is not derived from it.** One
+  records what a vendor documents, the other what an adapter asserts. The local
+  rows are the live disagreement — they say `streaming: supported` because
+  whisper.cpp ships a streaming example and a `whisper-server`, while
+  `core::providers::local` answers `Unsupported` because this build shells out
+  to `whisper-cli`. A test pins both answers so neither can be quietly made to
+  follow the other, which is the defect ADR 0106 recorded.
+- **It is not a whitelist either.** A model absent from the file round-trips
+  through the config as a typed override — Azure's deployment name is in no
+  catalogue by construction, and a self-hosted server's model list belongs to
+  whoever runs it. A test saves four uncatalogued ids and reads them back.
+- **A row without a source and a read-date fails the suite**, on both sides of
+  the seam. That is the rule `docs/PROVIDERS.md` has held itself to in prose
+  since it was written and nothing enforced. Rows whose provenance is this
+  repo's own drawing or runtime say so — a path in this tree with a date —-
+  rather than borrowing a vendor URL they were not read from.
+- **A finding the catalogue produced rather than a reading:** `Cloud.upload`
+  offers `whisper-large-v3` under a provider override to OpenAI, and that id is
+  Groq's. Invisible while the list was three strings in an array. Recorded as
+  `docs/PROVIDERS.md` open disagreement 12 and **not corrected** — the row is a
+  drawing and the gallery owns it (ADR 0057).
+- **The drawn library kept its sizes and quantizations**, moved from JSX into
+  `data.ts` beside the slug each row names. They are facts about a file on this
+  disk rather than about a vendor's model, and ADR 0122's step B5 is where they
+  become an `install` block at `CATALOGUE_VERSION` 2.
+- `cargo test` 767 passed / 3 ignored (+12), `cargo check` 15 warnings
+  unchanged, `npm test` 492 across 40 files (+12), `npm run build` passes.
+  `npm run port:diff`: `onboarding` and `agentoverlay` at 0, `notesettings` and
+  `agents` unmoved, and **`models` at structural 6 — the one recorded departure
+  (ADR 0088) — with style 191 → 213 and text 6 → 12**, which is the corrected
+  Anthropic ids being shorter than the drawn ones and therefore laying out
+  narrower.
+- **`models` reads style 191 at `HEAD` too**, measured on a stashed tree before
+  this step's files existed and twice for stability. So the `6 | 6` this repo
+  has quoted since ADR 0088 is structural and style, and **the style half no
+  longer describes the screen** — 107 width, 43 padding, 29 height and 12
+  min-width differences, with the harness also reporting the two content columns
+  at 1765.5 px against 1825 px after its own compensation. When that happened is
+  not something this step measured; that it is not this step's doing is.
+
 ### Added — the installation the local lane was drawn with and never got (ADR 0122, speech track step B5)
 
 - **A record and a step, no code.** In-app model installation moved out of

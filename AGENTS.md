@@ -74,6 +74,10 @@ test/lint/build command an agent has no success signal and cannot iterate.
 - New bias filters belong in the corpus at
   `src-tauri/tests/fixtures/regression_transcripts.json` (loader:
   `core::regression_corpus`) and in matching synthetic tests.
+- A model id belongs in `shared/model_catalogue.json` and nowhere else
+  (ADR 0115). Both runtimes read that file and name a row by its slug, not by
+  the model name; a row needs a source and a read-date. A test walks `src/` and
+  fails on a catalogued id spelled outside it.
 
 ## Validation
 
@@ -110,7 +114,8 @@ than relying on this file, which deliberately carries no detail.
 | `docs/RELEASE_RUNBOOK.md` | Release build-up, `check_app_update`, AppImage packaging |
 
 Code areas: `src/` (overlay, settings, rebuild lab, UI state),
-`src-tauri/src/` (native runtime core), `packaging/` and `vendor/` (platform
+`src-tauri/src/` (native runtime core), `shared/` (data both runtimes read --
+the model catalogue and its schema), `packaging/` and `vendor/` (platform
 packaging, vendored patches). Further docs (`ROADMAP`, `VISION`,
 `UI_UX_OVERHAUL_PLAN`, `handoffs/`, `donors/`, `templates/`) live under
 `docs/`. No project-specific skills exist; see `.agents/README.md` if one is

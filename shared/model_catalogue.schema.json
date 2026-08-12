@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WordScript Model Catalogue",
+  "description": "Schema for the one versioned model catalogue both runtimes read (ADR 0115, scoped by ADR 0120). A row records what a vendor documents about a model, with the source and read-date docs/PROVIDERS.md requires. It never records what this build can operate: that is core::providers::model_capabilities, and a catalogued model with no adapter answers unknown.",
+  "type": "object",
+  "required": ["version", "providers", "models", "runtime_defaults", "lanes"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Catalogue schema version. Bump on incompatible changes; core::model_catalogue asserts against it."
+    },
+    "description": {
+      "type": "string"
+    },
+    "providers": {
+      "type": "array",
+      "description": "Every vendor id a row may name. A provider here need not be registered in core::providers::registry — a row is catalogued before its adapter exists, which is the state ModelSupport::Unknown was created for.",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "lane"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The vendor id. Where an adapter exists this is the registry's canonical id.",
+            "pattern": "^[a-z0-9_-]+$"
+          },
+          "label": {
+            "type": "string",
+            "description": "The vendor's drawn name."
+          },
+          "lane": {
+            "type": "string",
+            "description": "Which lane this vendor is drawn in.",
+            "enum": ["Cloud", "Local", "Self-hosted", "Enterprise"]
+          }
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "description": "The catalogue proper. One row per model this build routes to, defaults to, or makes a statement about (ADR 0120) — not every id a vendor serves.",
+      "items": {
+        "type": "object",
+        "required": ["id", "provider", "role", "model_id", "streaming", "languages", "source", "read_date"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The stable slug every consumer names this row by. Deliberately not the model id: a vendor's next generation changes model_id and leaves every reference standing.",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "provider": {
+            "type": "string",
+            "description": "A provider id declared in `providers`."
+          },
+          "role": {
+            "type": "string",
+            "description": "Which of the three roles this model serves. Same vocabulary as core::providers::ProviderRole (ADR 0105), so the schema does not invent a second one.",
+            "enum": ["speech", "chat", "voice"]
+          },
+          "model_id": {
+            "type": "string",
+            "description": "What goes on the wire — or, where no request shape exists yet, the drawn label, with a note saying so."
+          },
+          "streaming": {
+            "type": "string",
+            "description": "What the VENDOR DOCUMENTS about streaming for this model's role: transcription for a speech row, synthesis for a voice row. Same vocabulary as core::providers::ModelSupport (ADR 0110). It is not what this build can operate and must never be read as that — the local rows are the live example, documented as streaming while the adapter answers Unsupported.",
+            "enum": ["supported", "unsupported", "unknown"]
+          },
+          "languages": {
+            "type": "string",
+            "description": "What the source says about language coverage, in its own terms. Prose rather than codes, because the sources answer in prose and a code list would invent precision."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the row was read. A vendor URL, or a path in this repo where the claim's provenance is this repo's own drawing or runtime — which is stated rather than dressed up as a vendor reading.",
+            "minLength": 1
+          },
+          "read_date": {
+            "type": "string",
+            "description": "The date the source was read, ISO 8601.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "note": {
+            "type": "string",
+            "description": "What the columns cannot carry about this row. Sparse on purpose: the prose survey is docs/PROVIDERS.md and this file does not become a second one."
+          }
+        }
+      }
+    },
+    "runtime_defaults": {
+      "type": "object",
+      "description": "Which row each of the runtime's model defaults resolves to. This is the half of the file the Rust config reads; nothing here is a drawing.",
+      "required": ["speech", "correction", "local_correction", "agent", "local_agent"],
+      "additionalProperties": false,
+      "properties": {
+        "speech": { "type": "string" },
+        "correction": { "type": "string" },
+        "local_correction": { "type": "string" },
+        "agent": { "type": "string" },
+        "local_agent": { "type": "string" }
+      }
+    },
+    "lanes": {
+      "type": "object",
+      "description": "What the AI Models matrix offers per lane and job, by row id. The half of the file the drawing reads. A lane or job absent here is a lane or job that offers no picker — Self-hosted types its model id, and the listening jobs on Enterprise say which lane can run them instead.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": ["default", "offered"],
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "string",
+              "description": "The row drawn as chosen. Must appear in `offered`."
+            },
+            "offered": {
+              "type": "array",
+              "description": "The rows the picker lists, in drawn order.",
+              "items": { "type": "string" },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

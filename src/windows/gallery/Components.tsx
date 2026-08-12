@@ -48,6 +48,7 @@ import {
   type LaneOption,
   type TermChip,
 } from "@/components/shell";
+import { LANES as PROVIDER_LANES } from "@/screens/data";
 
 /**
  * COMPONENTS — the *Components*, *Layout primitives* and *Motion* sections of
@@ -80,6 +81,13 @@ function State({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
+
+/** The Cloud lane's dictation row, so the Select demo lists what the product
+ *  lists rather than three strings that were true in August 2026. */
+const CLOUD_DICTATION = {
+  model: PROVIDER_LANES.Cloud.jobs.dictation.model ?? "",
+  models: PROVIDER_LANES.Cloud.jobs.dictation.models ?? [],
+};
 
 const LANES: LaneOption[] = [
   {
@@ -169,10 +177,13 @@ export function Components() {
               />
             </State>
             <State label="select">
-              <Select defaultValue="whisper-large-v3-turbo" aria-label="Model">
-                <option>whisper-large-v3-turbo</option>
-                <option>whisper-large-v3</option>
-                <option>distil-whisper-large-v3-en</option>
+              {/* The lane's own three, off the catalogue (ADR 0115), so the
+                  component gallery cannot show a model list the product no
+                  longer offers. */}
+              <Select defaultValue={CLOUD_DICTATION.model} aria-label="Model">
+                {CLOUD_DICTATION.models.map((name) => (
+                  <option key={name}>{name}</option>
+                ))}
               </Select>
             </State>
             <State label="stepper">

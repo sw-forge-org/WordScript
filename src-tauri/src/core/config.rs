@@ -43,10 +43,25 @@ where
     Ok(result)
 }
 
-pub const DEFAULT_CORRECTION_MODEL: &str = "llama-3.3-70b-versatile";
-pub const DEFAULT_LOCAL_CORRECTION_MODEL: &str = "llama3.2:latest";
-pub const DEFAULT_AGENT_MODEL: &str = "llama-3.3-70b-versatile";
-pub const DEFAULT_LOCAL_AGENT_MODEL: &str = "llama3.2:latest";
+/// The model defaults, resolved from the one catalogue instead of spelled here
+/// (ADR 0115).
+///
+/// They were four `&'static str` constants and a fifth literal inline, and they
+/// were four of the three places a model id lived: the survey's dated tables and
+/// the drawn `LANES` arrays were the other two, and nothing checked any of them
+/// against the others. Re-exported rather than moved so every call site keeps
+/// reading its default from `core::config`, which is where a default belongs;
+/// what changed is that the string now comes from a row with a source and a
+/// date on it.
+///
+/// Functions rather than constants because a `const` cannot be parsed out of a
+/// file. That is the whole cost of the change, and it is paid at every call
+/// site as a pair of parentheses.
+pub use super::model_catalogue::{
+    default_agent_model, default_correction_model, default_local_agent_model,
+    default_local_correction_model, default_speech_model,
+};
+
 pub const DEFAULT_AGENT_NAME: &str = "WordScript";
 
 /// Current version of the shortcut half of the config schema.
@@ -973,13 +988,13 @@ impl Default for ProfileSpeechSettings {
     fn default() -> Self {
         Self {
             migrated_provider: None,
-            model: "whisper-large-v3-turbo".to_string(),
+            model: default_speech_model().to_string(),
             language: String::new(),
             language_locked: false,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
-            local_correction_model: DEFAULT_LOCAL_CORRECTION_MODEL.to_string(),
-            agent_model: DEFAULT_AGENT_MODEL.to_string(),
-            local_agent_model: DEFAULT_LOCAL_AGENT_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
+            local_correction_model: default_local_correction_model().to_string(),
+            agent_model: default_agent_model().to_string(),
+            local_agent_model: default_local_agent_model().to_string(),
             local_model: "base".to_string(),
             local_profile: "local-base-fast".to_string(),
             local_prompt_strength: "profile".to_string(),
@@ -1241,14 +1256,14 @@ impl Default for AppConfig {
         let default_local_prompt_strength = default_local_prompt_strength().to_string();
 
         Self {
-            model: "whisper-large-v3-turbo".to_string(),
+            model: default_speech_model().to_string(),
             language: String::new(),
             active_text_profile_id: default_text_profile_id().to_string(),
             text_profiles: default_seeded_text_profiles(),
             curated_profiles_seeded: true,
             post_process: true,
-            correction_model: DEFAULT_CORRECTION_MODEL.to_string(),
-            local_correction_model: DEFAULT_LOCAL_CORRECTION_MODEL.to_string(),
+            correction_model: default_correction_model().to_string(),
+            local_correction_model: default_local_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
             provider_tier: String::new(),
@@ -1297,8 +1312,8 @@ impl Default for AppConfig {
             history_limit: 200,
             history_retention_days: 90,
             agent_name: DEFAULT_AGENT_NAME.to_string(),
-            agent_model: DEFAULT_AGENT_MODEL.to_string(),
-            local_agent_model: DEFAULT_LOCAL_AGENT_MODEL.to_string(),
+            agent_model: default_agent_model().to_string(),
+            local_agent_model: default_local_agent_model().to_string(),
             processing_mode: ProcessingMode::default(),
             enhance_sub_mode: None,
             enhance_target: PromptTarget::default(),
@@ -2110,7 +2125,7 @@ fn default_local_prompt_strength() -> &'static str {
 fn normalize_local_correction_model_value(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        DEFAULT_LOCAL_CORRECTION_MODEL.to_string()
+        default_local_correction_model().to_string()
     } else {
         trimmed.to_string()
     }
@@ -3343,7 +3358,43 @@ mod tests {
     fn defaults_to_high_accuracy_correction_model() {
         let config = AppConfig::default();
 
-        assert_eq!(config.correction_model, DEFAULT_CORRECTION_MODEL);
+        assert_eq!(config.correction_model, default_correction_model());
+    }
+
+    /// **The catalogue is a snapshot, not a whitelist** (ADR 0115).
+    ///
+    /// A model absent from `shared/model_catalogue.json` survives a save and a
+    /// load as what the user typed. It is the property every enterprise
+    /// deployment name depends on — a deployment name is in no catalogue by
+    /// construction — and the one that would be quietly lost if a validator
+    /// were ever hung off the file. The four fields are checked together
+    /// because a whitelist added to one of them would be found by whichever
+    /// test happened to cover that field and by no other.
+    #[test]
+    fn a_model_the_catalogue_never_heard_of_round_trips_as_a_typed_override() {
+        let mut written = AppConfig::default();
+        written.model = "some-vendors-newest-recogniser".to_string();
+        written.correction_model = "some-vendors-newest-model".to_string();
+        written.local_correction_model = "a-tag-only-this-machine-has".to_string();
+        written.agent_model = "an-enterprise-deployment-name".to_string();
+        written.normalize_for_runtime();
+
+        let raw = serde_json::to_value(written.without_secrets()).expect("serialize config");
+        let mut reloaded: AppConfig = serde_json::from_value(raw).expect("deserialize config");
+        reloaded.normalize_for_runtime();
+
+        assert_eq!(reloaded.model, "some-vendors-newest-recogniser");
+        assert_eq!(reloaded.correction_model, "some-vendors-newest-model");
+        assert_eq!(reloaded.local_correction_model, "a-tag-only-this-machine-has");
+        assert_eq!(reloaded.agent_model, "an-enterprise-deployment-name");
+
+        assert!(
+            crate::core::model_catalogue::catalogue()
+                .models
+                .iter()
+                .all(|row| row.model_id != reloaded.correction_model),
+            "the point of this test is that the id is not in the file",
+        );
     }
 
     #[test]
