@@ -906,6 +906,17 @@ Status: Proposed | Accepted | Superseded by NNNN
   stays until Phase 5; ADR 0067's presentation rule is untouched. No
   compatibility alias, on the owner's instruction and because A5 removed every
   on-disk compatibility path days earlier.
+- [0122](0122-in-app-model-installation-is-two-mechanisms-behind-one-surface-and-only-one-set-of-files-is-ours.md):
+  builds the installation ADR 0042 drew and never got, and finds that its
+  *same disk, same runtime* reasoning holds for only one of the two halves.
+  **The local chat lane talks to Ollama** (`127.0.0.1:11434`, `/api/tags`,
+  `/api/chat`), which owns its own store, so a `.gguf` placed beside it is
+  invisible to it. One tab, kept for the memory argument that survives, and
+  **two mechanisms**: WordScript downloads the speech weights, and asks the
+  user's server to pull the language ones. The catalogue grows an optional
+  install block, `fallback_provider_profiles` stops naming files that do not
+  exist, progress travels on its own channel rather than a session one, and a
+  download is checksummed before it is renamed into place.
 
 ## Resolved: the number 0011 was used twice
 

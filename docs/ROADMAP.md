@@ -291,16 +291,18 @@ guided on-device runtime lane.
 
 - Guided readiness and remediation for the runner, STT model, cleanup endpoint,
   and cleanup model.
-- Explicit model download or pull actions from approved sources.
 - Profile-owned decode and prompt-bias controls with truthful preview.
 - Clear fast-versus-quality tradeoffs.
-- **In-app model installation, for both kinds, on one surface** (ADR 0042).
-  Speech models and language models sit on the same disk, under the same
-  runtime, and compete for the same memory, so they are managed together: a
-  size stated before the download, progress with cancel, removal, and the
-  installed total. The surface currently names models it cannot install and
-  tells the user to run a command elsewhere, which is the specific failure this
-  closes.
+- **In-app model installation left this phase on 2026-08-12**, on the owner's
+  instruction, and is now **B5** on
+  [handoffs/PLAN_speech-track-implementation.md](handoffs/PLAN_speech-track-implementation.md)
+  under ADR 0122 -- together with the explicit download-or-pull actions that
+  were a separate bullet beside it. It moved because the surface was finished
+  and inert while the phase that owed it sat behind the whole provider
+  build-out. **ADR 0122 also corrects what this bullet used to say**: speech
+  models and language models do *not* sit on the same disk under the same
+  runtime, because the local chat lane talks to Ollama and Ollama owns its
+  store. One surface still, for the memory argument, but two mechanisms.
 - **An OpenAI-compatible server, and the decision of whether WordScript ships
   one.** Local language models need a server in front of them, and the surface
   offers two answers: WordScript bundles and manages one, or it talks to the
@@ -333,7 +335,9 @@ without assembling the full runtime from terminal-only instructions.
 
 **Gate:** until in-app installation exists, the local lane is expert
 configuration and the surface says so. ADR 0042 makes this a prerequisite for
-offering the lane, not an improvement to it.
+offering the lane, not an improvement to it. **The gate stays here and is
+answered elsewhere:** the work is B5 in the speech track now, and this phase
+stops being gated when that step lands -- not when this page is next edited.
 
 ## Phase 6 - Guided Setup and Packaging
 

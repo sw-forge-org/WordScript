@@ -255,8 +255,11 @@ when Phase 5 lands, the badge comes off and **nothing gets renamed**.
 
 ## Stage B — the seam and the ninth job
 
-First frontend contact. **Both steps grow the drawing, so both go through the
-gallery** (ADR 0057) and `npm run port:diff` moves with them.
+First frontend contact. **Every step here that grows the drawing goes through
+the gallery** (ADR 0057) and `npm run port:diff` moves with it. **B5 is the
+exception and it is worth naming**: its surface was drawn in Leg 6 and has been
+inert since, so it makes a drawing live rather than growing one — there, a moved
+`port:diff` count is the warning rather than the deliverable.
 
 ### B1. The capability seam (ADR 0106)
 
@@ -381,6 +384,66 @@ is what ADR 0115 already specified for them.
 `local_preview.rs` fetches, then reconciles the request against what came back
 (`resolve_local_chat_model`), then falls back. The reconcile step is the part
 that is easy to drop and the part that makes the fetch safe.
+
+### B5. In-app model installation for the local lane (ADR 0122)
+
+**Added 2026-08-12 on the owner's instruction**, which moved it out of
+`docs/ROADMAP.md`'s Phase 5 and into this track directly behind B3. It is the
+one step here whose surface is already finished: `Models.tsx`'s `MachineTab` and
+the `Onboarding.tsx` first-run step have drawn sizes, a `downloading` state with
+a percentage, an installed total and *Open the model folder* since Leg 6, with
+nothing behind any of it.
+
+- **Requires** — **B3** (the catalogue the install block grows on). **B4 is not
+  a precondition**: the Ollama listing it would add for this lane is already in
+  the tree as `fetch_local_chat_models_async`, so what the language half adds on
+  top is the pull, not the list.
+- **The two halves do not share a disk, and that is the step's whole shape**
+  (ADR 0122). The local chat role talks to Ollama — `127.0.0.1:11434`,
+  `GET /api/tags`, `POST /api/chat`, the failure text that says *Start Ollama* —
+  and Ollama owns its store. So WordScript **downloads** the speech weights into
+  a directory it manages and **asks the server to pull** the language ones,
+  never placing a file beside them. One tab, kept for the memory argument that
+  survives ADR 0042's reasoning; two mechanisms inside it, each named on its own
+  card.
+- **Touches** — `CATALOGUE_VERSION` 1 → 2 for an additive
+  `install: Option<InstallSource>` with `Download { url, size_bytes, sha256 }`
+  and `ServerPull { runtime, tag, size_bytes, quantization }` — **the pull tag
+  beside `model_id`, not derived from it**, because `qwen2.5:7b-instruct` and
+  `qwen2.5-7b-instruct` are not the same string. A managed directory off
+  `core::paths::user_data_dir`, so it inherits `WORDSCRIPT_DATA_DIR` and the test
+  redirection. A new installer module. Three commands. A **new**
+  `wordscript-model-event` channel — never the two session channels (ADR 0018,
+  0019). `discover_local_provider_profiles` gains the managed directory as a
+  third source **after** both environment variables, and
+  `fallback_provider_profiles` stops naming files that do not exist. The drawn
+  size and quantization literals in `Models.tsx` and `Onboarding.tsx` resolve
+  from the catalogue — the last entries on ADR 0115's own inventory.
+- **Validates** — `cargo test`: a checksum mismatch removes the part file and
+  installs nothing; an install completing after its cancel is discarded and
+  reaches the runtime log only; an installed model is found with no environment
+  variable set; a catalogued model with no file is *installable* and never
+  *available*; removing a model a profile resolves to is refused **and names the
+  profile**; every `Download` row carries a size and a checksum. `npm test`,
+  `npm run build`. `npm run port:diff` **at whatever count B3 leaves it** — the
+  rows come alive, they do not change shape, so a moved count is the warning
+  here rather than the deliverable. **The native host, not jsdom** — progress is
+  `invoke()` plus an event bridge, and four legs have found a defect exactly
+  there. The advisory sweep, because `reqwest` gains `stream` (this build has
+  `default-features = false`) and `sha2` is new.
+- **Done when** — a model chosen in the drawn list downloads with progress, is
+  found afterwards without any environment variable, and no row anywhere claims
+  a model that is not on the disk.
+
+**Not in this step:** publishing the lane. ADR 0067's preview badge stays until
+Phase 5 and ADR 0121 renamed the identifier so that nothing gets renamed when it
+comes off. Nor the *bundled versus yours* server question — that is Phase 5 and
+F3's decision one level down, taken once (ADR 0096); this step commits only to
+talking to the server the user runs.
+
+**ADR 0042's gate closes here and not before.** *Until in-app installation
+exists, the local lane is expert configuration and the surface says so* — that
+sentence has been live since 2026-08-03 and this is the step that owes it.
 
 ---
 
@@ -758,6 +821,9 @@ E1 ── E2 ──────────────────────�
 E1 ── F2 ──┬─────────────────────────────────┘
            │
 B2 + B3 ── F1 ──┴── F4 (measure) ── F5 (the four modules)
+
+B3 ──┬── B4 (the live fetch)
+     └── B5 (the installation)
 ```
 
 **A5 and A4 are drawn as siblings because that is the truth: A5 blocks
@@ -771,6 +837,12 @@ vendor's model ids as literals.
 
 **D1a hangs off D1 and nothing hangs off D1a.** That is what makes it the
 cheapest step in Stage D and the one to reach for when F1 is stuck.
+
+**B4 and B5 are siblings on B3 and neither blocks the other**, drawn in their
+own stanza because threading them through the main block hides that. They meet
+in one place only — the Ollama listing B4 would add for the local lane is
+already `fetch_local_chat_models_async` in the tree, so whichever lands second
+inherits it rather than writing it again.
 
 **One owner question is live, and it blocks no step in A through F.** *Whether a
 view plus a pop-out is enough at a table* blocks G2's surface (ADR 0064).
@@ -797,6 +869,7 @@ Speaking row, so it is flagged rather than assumed.
 | A6 | **done** 2026-08-12 — `core/providers/local.rs`, the id `local`, the alias list empty, the profile prefix `local-*`, four counts unchanged |
 | B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for. **Scope narrowed 2026-08-12 by ADR 0120** — fewer rows, same schema |
 | B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
+| B5 | **not started** — added 2026-08-12 (ADR 0122) on the owner's instruction, out of ROADMAP Phase 5; the installation ADR 0042 drew and never got. Gated on B3 only — **B4 is not a precondition** |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |

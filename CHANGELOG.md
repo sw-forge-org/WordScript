@@ -53,6 +53,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the installation the local lane was drawn with and never got (ADR 0122, speech track step B5)
+
+- **A record and a step, no code.** In-app model installation moved out of
+  ROADMAP Phase 5 and into the speech track as **B5**, on the owner's
+  instruction, because the surface for it has been finished and inert since
+  Leg 6: `Models.tsx`'s `MachineTab` and the `Onboarding.tsx` first-run step
+  draw a size per row, a `downloading` state with a percentage, an installed
+  total and *Open the model folder*, with nothing behind any of it.
+- **The finding that shapes the step: the two halves do not share a disk.**
+  ADR 0042 argued the single tab from *speech models and language models sit on
+  the same disk, under the same runtime*. Half of that is not true in this tree
+  — the local chat role talks to Ollama (`127.0.0.1:11434`, `GET /api/tags`,
+  `POST /api/chat`, and a failure message that says *Start Ollama*), and Ollama
+  owns its store, so a `.gguf` placed beside it is invisible to it. **One
+  surface still, for the memory argument that survives; two mechanisms inside
+  it** — WordScript downloads the speech weights and asks the user's server to
+  pull the language ones.
+- **What today's runtime actually does, stated so the step has a baseline.**
+  `discover_local_provider_profiles` reads two environment variables and scans
+  for `ggml-*.bin`. With neither set, `fallback_provider_profiles` still offers
+  `base`, `small`, `medium` and `large-v3` — four rows naming four files that
+  may not exist. B5 ends that: a catalogued model with no file is *installable*,
+  never *available*.
+- **The catalogue grows an install block additively** (`CATALOGUE_VERSION`
+  1 → 2, `install: Option<InstallSource>`), which also retires the last of
+  ADR 0115's inventory: the drawn sizes and `Q4_K_M` quantizations that are
+  still literals in `Models.tsx` and `Onboarding.tsx`.
+- **Progress gets its own channel.** `wordscript-model-event`, never the two
+  session channels — a download is not a session, and the cheapest way to keep
+  it out of the reducer (ADR 0018, ADR 0019) is not to give it the door.
+- ADR 0042's gate is unchanged and still open: until the installation exists,
+  the local lane is expert configuration and the surface says so. ADR 0067's
+  preview badge is untouched — this makes the lane installable, not published.
+- Documentation only; no runtime, frontend or test file was touched.
+
 ### Changed — the local lane is called `local` (speech track, stage A6, ADR 0121)
 
 - **The provider id `local_preview` becomes `local`, everywhere it is spelled.**
