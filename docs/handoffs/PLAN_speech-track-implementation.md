@@ -414,6 +414,15 @@ it wrong makes every verdict after the first wrong in the same direction.
 - **Done when** — there is a number for the open 12–52 % loss across a
   multi-hour hold.
 
+**Done 2026-08-12. The number is zero.** 96 segments, 8.00 h of open stream,
+every one `Intact` with `signature=no_gaps`, worst segment 0.01 %, against a
+rate that predicted about eight events. Per ADR 0084 this moves the suspicion
+into the app rather than clearing PipeWire, and Route B — the real app, silent —
+is the next step. **The gate is satisfied: it asked for a measurement, not a
+cause.** Stage G is unblocked and still ships on a stream with an unexplained
+failure history, which is a different sentence from an unmeasured one and has to
+be said that way on the surface.
+
 **This is a gate, not a step.** Stage G ships a conversation surface on the
 input stream that carries
 [known-issues/capture-loses-half-the-recording.md](../known-issues/capture-loses-half-the-recording.md).

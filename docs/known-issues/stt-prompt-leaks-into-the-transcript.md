@@ -9,6 +9,15 @@ Absatz in der Transkription und verschluckt oft viel."*
 **The recurring sentence is ours.** It is the initial prompt WordScript sends to
 Whisper, echoed back by the decoder as if it had been spoken.
 
+**2026-08-12: how much gets displaced.** This record measures the rate at which
+prompt text appears; it does not say what it costs. Two events that night put a
+single prompt term — `Agenten` — at the point where a dictation stopped making
+sense, and everything after it was lost: in one case the remainder of a 55-second
+recording whose audio the capture had kept in full. Recorded with the numbers in
+[transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md).
+The prompt in both was `"Likely phrases: Agenten; etwas"` — two ordinary German
+words the runtime had learned by itself, not terms anybody opted in.
+
 ## What is sent
 
 `core::transcription_hints::build_transcription_prompt` puts one of two things

@@ -1,10 +1,17 @@
 # Bug: the transcript stops before the audio does
 
 Status: **Open — instrumented 2026-08-12 (`69f8c75`), cause not located, and
-nothing in the product reacts to it.** Two events measured the same night, both
+nothing in the product reacts to it.** Three events measured the same night, all
 on audio the capture read as `Intact`. The verdict exists only as a log line:
 it is not persisted, and a `Truncated` transcript still goes through transform
 and insert and is delivered as a success.
+
+**Revised the same day: there are two shapes, and the instrument only sees
+one.** The recogniser either stops early, leaving a measurable uncovered tail,
+or it keeps emitting to the end of the audio and puts WordScript's own prompt
+words where the speech was. The second shape reads `uncovered_ratio=0.0000
+verdict=Complete` while half the dictation is gone. **The recurring word at the
+break — `Agenten` — is ours**, and the evidence chain to it is below.
 
 First reported: 2026-08-12 00:16, by the owner — *"Jetzt gerade eben wurde ein
 Teil meines vorherigen Diktats verschluckt, der letzte Teil."*
@@ -66,6 +73,63 @@ The truncated segment's own confidence is markedly worse than its healthy
 neighbours. That is the shape a decoder leaves when it stops early rather than
 when it finishes — one observation, not a rate.
 
+### 03:03:18 — 55.2 s, and the instrument says `Complete`
+
+```text
+Capture integrity       wall_seconds=55.258 recorded_seconds=55.240 missing_ratio=0.0003 verdict=Intact
+Transcription coverage  duration_seconds=55.240 covered_seconds=55.240 uncovered_ratio=0.0000 last_segment_avg_logprob=-0.366 verdict=Complete
+Groq transcription complete text_len=189 duration=Some(55.240249344)
+```
+
+The segments span the audio exactly, so nothing stopped early — and 189
+characters for 55 seconds is 3.4 chars/s against 11.7 in the short band. The
+text ends:
+
+> …weil ich die gekauft habe von einem, der sie **Agenten schlagen**.
+
+Reported by the owner as *"wieder ganz viel abgeschnitten von dem letzten Satz
+und wieder mit dem Wort Agenten ersetzt"* — the same word that ended the 00:15
+event. **This shape is invisible to the coverage check**, which measures how far
+the segments reach and not what is in them.
+
+## The word is ours
+
+The request logs `prompt_chars=30` on every one of these events. The active
+profile carries three vocabulary terms, all with `origin: "learned"` — the
+runtime promoted them, nobody typed them:
+
+`Agenten`, `etwas`, `keinen`
+
+The prompt `build_transcription_prompt` produces from the first two is
+`"Likely phrases: Agenten; etwas"` — **exactly 30 characters**, matching the
+logged value to the character.
+
+So the recogniser is being handed the word it then writes over the speech. That
+mechanism is not new: it is
+[stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md),
+open, whose status line already states that ADR 0080 removed the echo from the
+*delivery* while *"the recogniser still produces it and the displaced words are
+still gone"*. What that record does not yet say is how much can be displaced —
+here, the remainder of a 55-second dictation.
+
+**How ordinary German words ended up in a recogniser slot.**
+`use_as_prompt_hint` is `false` on all three, and that is irrelevant: it is a
+migration remnant that nothing reads since ADR 0035. Slots are allocated by
+`select_recognizer_slots` (`config.rs`), which deliberately ranks terms *below*
+the deterministic-repair floor first — short terms, because long product names
+are recoverable afterwards and short ones are not. Ordinary short words are
+exactly what that rule selects, and `is_stt_hint_candidate` passes them.
+
+The rule is behaving as ADR 0035 specified. What is missing is a filter before
+it, and the earlier question of why `vocabulary_learning` promoted `etwas` and
+`keinen` at all.
+
+**Unverified, and worth checking before it is repeated as fact:** learned terms
+are promoted from observed transcripts, and `Agenten` carries
+`observation_count: 2`. If leaked prompt words appear in transcripts and the
+learner promotes them, the leak feeds itself. That is a loop hypothesis, not a
+finding.
+
 ## The instrument (ADR pending)
 
 `TranscriptionCoverage` in `core::providers` compares the `duration` the
@@ -87,6 +151,11 @@ adapters stage D adds inherit it instead of reimplementing it.
 - **Nothing reacts.** `is_truncated` occurs exactly twice in `src-tauri/src`:
   its definition and one test. A truncated transcript is transformed, inserted
   and reported as a completed session.
+- **It sees one of the two shapes.** Coverage measures how far the segments
+  reach, not what is in them, so the 03:03 event reads `Complete` while half its
+  dictation is missing. A second measure — text density against duration, or the
+  prompt's own terms found in the output — would be needed for that one, and the
+  prompt-leak record already computes the second on `raw_transcript`.
 - **Nothing is persisted.** A history record carries `capture_integrity` and
   `input_level`; there is no coverage field. There is therefore no rate, only
   individual log lines — the same gap [ADR 0083](../decisions/0083-a-capture-reports-the-cadence-of-its-own-input-stream-and-the-level-it-was-given.md)
@@ -121,32 +190,47 @@ mid-sentence stop and the 11.7 s uncovered tail.
 
 ## Hypotheses
 
-Untested, ordered by what the evidence supports.
+Ordered by what the evidence supports. Reordered on 2026-08-12 when the prompt
+content was resolved.
 
-1. **The temperature fallback is disabled.** The request pins
-   `temperature=0` (`core/providers/groq.rs`). Whisper's reference decoding
-   escalates temperature when `compression_ratio` and `avg_logprob` cross their
+1. **The initial prompt displaces the speech.** The strongest, and no longer
+   untested at the level of the prompt's content: the request sends
+   `"Likely phrases: Agenten; etwas"`, and `Agenten` is the word standing at the
+   break in two of the three events. The mechanism is documented in
+   [stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md)
+   — the decoder treats the prefix as text to continue rather than as a hint.
+   What is untested is whether removing the prompt removes the failure.
+2. **The temperature fallback is disabled.** The request pins `temperature=0`
+   (`core/providers/groq.rs`). Whisper's reference decoding escalates
+   temperature when `compression_ratio` and `avg_logprob` cross their
    thresholds, which is the guard against exactly this failure; pinning the
-   value removes it. Fits the poor `avg_logprob` on the truncated segment.
-   **A consequence worth stating before anyone proposes one: a plain retry
-   cannot help.** At temperature 0 the decode is deterministic, so the same file
-   with the same parameters returns the same truncated text. Only a retry with
-   changed parameters is a retry.
-2. **The initial prompt provokes an early end-of-text.** `prompt_chars=30` on
-   both events. The same prompt is already documented as being echoed into the
-   output in
-   [stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md),
-   which is the same mechanism seen from the other end: the decoder treats the
-   prefix as text to continue rather than as a hint.
+   value removes it. Fits the `avg_logprob` on the affected segments — `-0.378`
+   and `-0.366` against `-0.171`, `-0.193`, `-0.205`, `-0.206` and `-0.231` on
+   healthy ones in the same sessions. **A consequence worth stating before
+   anyone proposes one: a plain retry cannot help.** At temperature 0 the decode
+   is deterministic, so the same file with the same parameters returns the same
+   text. Only a retry with changed parameters is a retry.
+
+   The two are not exclusive. A prompt that pulls the decoder off the audio and
+   a missing guard that would have caught it produce exactly this pair of
+   shapes.
 3. **The speech really was that sparse.** The honest alternative for the density
    table. It does not explain a transcript that stops mid-sentence, nor 11.7 s
-   of audio with no segment over it.
+   of audio with no segment over it, nor the same word ending two of them.
 
 ## What would settle it
 
-Re-transcribe one affected file twice — once with `temperature` unset, once
-without the prompt — and compare `uncovered_ratio`. This is a provider
-experiment and needs no dictation.
+**The cheapest test costs ten seconds and no code.** Delete the three learned
+terms from the active profile. The prompt then falls back to
+`BLANK_STATE_RECOGNIZER_PROMPT`, which contains no `Agenten`. If the word stops
+appearing at the breaks, hypothesis 1 is established for it, and the question
+becomes why `vocabulary_learning` promoted ordinary German words at all. If it
+keeps appearing, hypothesis 1 is wrong and the prompt is a bystander. Either
+answer is worth having and neither needs a build.
+
+Then, for the mechanism rather than the trigger: re-transcribe one affected file
+twice — once with `temperature` unset, once without the prompt — and compare
+`uncovered_ratio`. This is a provider experiment and needs no dictation.
 
 **It is blocked today for a mundane reason:** `~/.config/WordScript/tmp/` is
 emptied after processing, so no affected audio survives. Retaining the upload of

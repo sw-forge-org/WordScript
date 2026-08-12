@@ -1,13 +1,21 @@
 # Bug: A capture silently keeps half the recording
 
-Status: **Open — cause not located, and now instrumented for the next
-occurrence. Re-measured 2026-08-10 and 2026-08-11: 11 affected captures rather
-than 8, unchanged between the two runs, and the worst one is still the most
-recent. The capture REPORTS the gap (ADR 0079) and now also reports the CADENCE
-of its own input stream (ADR 0083), which is step 2 below. Step 3 now has a
-tool and not yet a night: `capture-soak` (ADR 0084) can reproduce the conditions
-unattended, and has not been run for longer than seconds. No real gap has been
-recorded yet.**
+Status: **Open — cause not located, and the suspicion has moved. Step 3 is
+done: the soak night ran 2026-08-11 23:38 to 2026-08-12 07:38 and produced
+NOTHING. 96 segments, 8.00 h of open stream, every one `Intact` with
+`signature=no_gaps`; worst segment 0.01 %, longest callback gap 25 ms, zero
+gaps over 200 ms, zero stream errors. At the rate this record estimates — one
+event per hour of open stream — roughly eight were expected.** Per
+[ADR 0084](../decisions/0084-the-defect-that-needed-no-dictation-gets-a-binary-that-needs-no-app.md),
+which registered this outcome in advance so it could not be reinterpreted
+afterwards: **a negative night does not exonerate PipeWire, it moves the
+suspicion into the app.** Route B is next.
+
+Re-measured 2026-08-10 and 2026-08-11: 11 affected captures rather than 8,
+unchanged between the two runs, and the worst one is still the most recent. The
+capture REPORTS the gap (ADR 0079) and the CADENCE of its own input stream
+(ADR 0083), which is step 2 below. **No real gap has been recorded yet**, and
+the soak night did not produce one either.
 
 This is the defect the overlay freeze reports have been describing; the frozen
 pill is the symptom, the lost audio is the damage.
@@ -305,8 +313,40 @@ Verified against real hardware for 20 s and 12 s on 2026-08-11:
 is the configuration all 497 capture starts in the log share. Healthy segments
 read `missing_ratio` between 0.0000 and 0.0055 with `signature=no_gaps`.
 
-**Nothing has been soaked yet.** Building the instrument is not running it, and
-the eleven events in this record are still eleven. Step 3 stays open.
+### The night, 2026-08-12: eight hours, ninety-six segments, nothing
+
+Run on the machine and the configuration this record describes, through an
+ordinary working night rather than an idle one — the dev host was rebuilding
+and the owner was dictating for the first four hours, which is what the
+withdrawn "under load" note above asks for.
+
+```text
+segments        96          open stream     8.00 h (28800 s)
+verdicts        Intact 96   signatures      no_gaps 96
+worst segment   0.0001 (0.01 %)
+longest gap     25 ms       gaps > 200 ms   0
+watchdog silent 0           stream errors   0
+```
+
+`PIPEWIRE_DEBUG` level 3 ran beside it, set through the settings metadata rather
+than by restarting the service, because a restart resets the stream state the
+soak exists to hold. Its journal carries the ordinary client churn and one
+Bluetooth node teardown at 03:34, and no window needed correlating because
+there was nothing to correlate.
+
+**What this settles and what it does not.** Eight hours of an open stream doing
+the same per-callback work a capture does — buffer copy, peak, RMS, clipping
+count, waveform bucketing, the 42 ms bookkeeping — produced not one gap.
+Hypothesis 1 (a silent PipeWire suspend of an ordinary client) is not supported
+by a night that had every opportunity to show it. The difference between this
+stream and a capture is what the app adds around it, which is where ADR 0084
+said in advance the suspicion would move. **Route B is now the next step, not
+an alternative to this one.**
+
+Two limits of the run, stated so the result is not read as stronger than it is:
+the soak carries no `app.emit` and no webview, so it cannot reproduce a cause
+that lives there — that is the point, not a flaw — and one night is one sample
+of a phenomenon whose rate was estimated from 11 events, not measured.
 
 **The instrument fabricated a total loss on its first run.** The 20 s run ended
 with a segment reading `missing_ratio=1.0000` — a 3 ms remainder of the rotation

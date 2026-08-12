@@ -72,6 +72,12 @@ status change. Resolved bugs remain as references for the same failure class.
   nothing reacts to the name**: the verdict is not persisted and a truncated
   transcript is still transformed, inserted and reported as a completed session.
   What the product should do about it is an open decision, not an oversight.
+  **Revised the same day: there are two shapes and the instrument sees one.** In
+  the second the recogniser reaches the end of the audio and writes WordScript's
+  own prompt terms over the speech, so coverage reads `Complete` while half the
+  dictation is gone. The prompt is resolved to the character —
+  `"Likely phrases: Agenten; etwas"`, two auto-learned ordinary German words —
+  which ties this record to the prompt-leak one and gives it a ten-second test.
 - [transcription-hallucination.md](transcription-hallucination.md): mitigated —
   raw transcription language drift and hallucination. The approved slice landed
   on 2026-07-29 (ADR 0015, ADR 0016): the capture config now reaches the runtime
@@ -101,7 +107,11 @@ status change. Resolved bugs remain as references for the same failure class.
   badge, and a tab beside the result pill at delivery time. Threshold 10 %,
   derived from a gap in the data that runs from 7.0 % to 12.0 %. The pause
   artifact in `shortfall_ratio` is fixed with it. This is what the overlay
-  freeze reports were describing (2026-08-03).
+  freeze reports were describing (2026-08-03). **The soak night ran 2026-08-12
+  and found nothing**: 96 segments, 8.00 h of open stream, every one `Intact`
+  with `no_gaps`, where roughly eight events were expected. ADR 0084 registered
+  that outcome in advance — it does not exonerate PipeWire, it moves the
+  suspicion into the app, and Route B is next.
 - [overlay-recording-freeze.md](overlay-recording-freeze.md): largely resolved by
   attribution — the recording overlay freezes mid-capture, timer and input
   included, while the pipeline continues. The 2026-07-30 measurement did not

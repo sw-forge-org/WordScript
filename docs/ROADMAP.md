@@ -903,13 +903,17 @@ voice is a model row in AI Models like every other model choice (ADR 0042).
    and Azure, and it does not on Groq ([PROVIDERS.md](PROVIDERS.md)). What is
    unmeasured is the error rate, against bilingual fixtures in the regression
    corpus.
-4. **New, 2026-08-11: has `capture-soak` run a night?** A conversation is the
-   longest capture this product would ever run, on the input stream that carries
-   an open, uncaused loss of 12–52 % across 11 recordings
+4. **Answered 2026-08-12: `capture-soak` ran a night, and the night was clean.**
+   A conversation is the longest capture this product would ever run, on the
+   input stream that carries an open, uncaused loss of 12–52 % across 11
+   recordings
    ([known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)).
-   The tool exists (ADR 0084) and has not been run for longer than seconds.
-   Shipping a table conversation on that stream before the soak night is the
-   fake-readiness rule one layer down.
+   Eight hours of open stream produced 96 segments, all `Intact` with `no_gaps`,
+   where roughly eight events were expected. The gate this question guarded is
+   satisfied — it asked for a measurement, not a cause. **The cause is still
+   open and the suspicion has moved into the app** (ADR 0084), so a conversation
+   surface still ships on a stream with an unexplained failure history; what it
+   no longer does is ship on an unmeasured one.
 
 **Out of scope:** practice or language drilling. Evaluated on the drawn screen
 and argued down there — VISION names what this product is not, and a drill

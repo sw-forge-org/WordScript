@@ -695,7 +695,11 @@ Additional rules:
   captures, nothing moved, and **no real gap has been recorded yet**, so the
   instrumentation has a hypothesis rather than a cause. The journal carries no
   PipeWire line inside the worst window and memory pressure there was inside the
-  healthy band, both on n = 1:
+  healthy band, both on n = 1. **The soak night ran 2026-08-12 and produced
+  nothing**: 96 segments, 8.00 h of open stream, all `Intact` with `no_gaps`,
+  against a rate that predicted about eight events. ADR 0084 registered that
+  outcome in advance — the suspicion moves into the app, not away from the
+  defect:
   [known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)
 - **the recogniser echoes WordScript's own initial prompt into the transcript**,
   and one such sentence reached an agent as an instruction on 2026-08-10.
