@@ -62,6 +62,15 @@ status change. Resolved bugs remain as references for the same failure class.
   and is not answerable**: the join works (136 of 136 records paired) but 9 of
   the 11 short captures had outlived their transcripts. That is a retention
   artifact rather than a result, and ADR 0079 removes the need for the join.
+- [learned-nudge-is-hidden-before-it-is-seen.md](learned-nudge-is-hidden-before-it-is-seen.md):
+  **open, cause located 2026-08-12** — the runtime learns a word, emits the
+  nudge, and the overlay window is hidden 268–303 ms later against the 2020 ms
+  the tab asks for. Seven of seven learned events across both logs, so a fixed
+  ordering rather than a race: the learning pass runs after the insert and
+  parking follows it. The channel is deliberately isolated from session state
+  (ADR 0035, ADR 0018/0019), which is also why it cannot ask the window to stay.
+  Reported as "no badges at all"; the other two side tabs are checked in the
+  record — the limit tab is a correct absence, the gap tab is untested.
 - [transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md):
   **open, instrumented 2026-08-12** — a dictation comes back shorter than it was
   spoken, on audio the capture read as `Intact`. The far side of the capture
