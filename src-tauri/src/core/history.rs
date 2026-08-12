@@ -1084,7 +1084,7 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
     // "which correction model" before "which vendor for this job" is how a
     // re-transform ends up sending a local model id to a cloud endpoint.
     let correction_is_local = config.job_provider(preset.correction_job()).provider
-        == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
+        == super::providers::LOCAL_PROVIDER_ID;
 
     NativeTransformConfig {
         providers: active_profile.resolved_providers(),
@@ -1121,7 +1121,7 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
 /// transcribed with, and a profile that transforms on a different vendor does
 /// not change what listened.
 fn active_model_for_provider(config: &AppConfig) -> String {
-    if speech_provider(config) == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+    if speech_provider(config) == super::providers::LOCAL_PROVIDER_ID {
         let trimmed = config.local_model.trim();
         if trimmed.is_empty() {
             "base".to_string()
@@ -1148,7 +1148,7 @@ fn speech_provider(config: &AppConfig) -> String {
 }
 
 fn local_history_context(config: &AppConfig) -> LocalHistoryContext {
-    if speech_provider(config) != super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+    if speech_provider(config) != super::providers::LOCAL_PROVIDER_ID {
         return LocalHistoryContext::default();
     }
 
@@ -1628,13 +1628,13 @@ mod tests {
             status: TranscriptionHistoryStatus::Failed,
             source: TranscriptionHistorySource::Retry,
             retry_of: Some("history-old".to_string()),
-            provider: "local_preview".to_string(),
+            provider: "local".to_string(),
             model: Some("base.en".to_string()),
             language: Some("en".to_string()),
             active_profile: Some("support".to_string()),
             effective_mode: None,
             title: None,
-            provider_profile: Some("local-preview-base-quality".to_string()),
+            provider_profile: Some("local-base-quality".to_string()),
             local_prompt_strength: Some("profile_and_terms".to_string()),
             local_prompt_carry: Some(true),
             local_beam_size: Some(5),
@@ -1657,10 +1657,10 @@ mod tests {
             capture_integrity: None,
             input_level: None,
         })
-        .expect("local preview history entry");
+        .expect("local runtime history entry");
 
         let filtered = transcription_history_entries(Some(TranscriptionHistoryQuery {
-            provider: Some("local_preview".to_string()),
+            provider: Some("local".to_string()),
             status: Some(TranscriptionHistoryStatus::Failed),
             source: Some(TranscriptionHistorySource::Retry),
             search: Some("model missing".to_string()),
@@ -1670,11 +1670,11 @@ mod tests {
         .expect("filtered history entries");
 
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].provider, "local_preview");
+        assert_eq!(filtered[0].provider, "local");
         assert_eq!(filtered[0].active_profile.as_deref(), Some("support"));
         assert_eq!(
             filtered[0].provider_profile.as_deref(),
-            Some("local-preview-base-quality")
+            Some("local-base-quality")
         );
     }
 
@@ -1725,13 +1725,13 @@ mod tests {
             status: TranscriptionHistoryStatus::Completed,
             source: TranscriptionHistorySource::NativePipeline,
             retry_of: None,
-            provider: "local_preview".to_string(),
+            provider: "local".to_string(),
             model: Some("base".to_string()),
             language: Some("en".to_string()),
             active_profile: Some("support".to_string()),
             effective_mode: None,
             title: None,
-            provider_profile: Some("local-preview-base-fast".to_string()),
+            provider_profile: Some("local-base-fast".to_string()),
             local_prompt_strength: Some("profile".to_string()),
             local_prompt_carry: Some(false),
             local_beam_size: Some(1),

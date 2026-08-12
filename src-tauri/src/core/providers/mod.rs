@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod groq;
-pub mod local_preview;
+pub mod local;
 pub mod registry;
 
 pub use registry::{
@@ -274,7 +274,7 @@ pub(crate) fn aggregate_credential(
 }
 
 pub const DEFAULT_PROVIDER_ID: &str = "groq";
-pub const LOCAL_PREVIEW_PROVIDER_ID: &str = "local_preview";
+pub const LOCAL_PROVIDER_ID: &str = "local";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1072,8 +1072,10 @@ mod tests {
     fn normalizes_provider_values_to_supported_ids() {
         assert_eq!(normalize_provider_value("groq"), "groq");
         assert_eq!(normalize_provider_value(" GrOq "), "groq");
-        assert_eq!(normalize_provider_value("local_preview"), "local_preview");
-        assert_eq!(normalize_provider_value("local"), "local_preview");
+        assert_eq!(normalize_provider_value("local"), "local");
+        // ADR 0121 renamed the lane and kept no alias behind it: the retired id
+        // is as unknown as any other, and lands on the default.
+        assert_eq!(normalize_provider_value("local_preview"), "groq");
         assert_eq!(normalize_provider_value(""), "groq");
         assert_eq!(normalize_provider_value("openai"), "groq");
     }

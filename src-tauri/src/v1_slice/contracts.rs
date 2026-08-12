@@ -56,7 +56,7 @@ pub struct SliceCapabilities {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SliceLocalPreviewContract {
+pub struct SliceLocalContract {
     pub provider_profile: String,
     pub model: String,
     pub prompt_strength: String,
@@ -103,7 +103,7 @@ pub struct SliceRuntimeContract {
     pub work_mode: TextProfileWorkMode,
     pub provider_status: SliceProviderRuntimeStatus,
     pub capture_status: SliceCaptureRuntimeStatus,
-    pub local_preview: Option<SliceLocalPreviewContract>,
+    pub local: Option<SliceLocalContract>,
 }
 
 #[derive(Debug, Clone, Serialize)]

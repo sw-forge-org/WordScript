@@ -28,7 +28,7 @@ for the current implementation state and open gaps.
 - Native microphone capture, waveform, silence timeout, and maximum duration
 - Guarded session finalization that discards late async results
 - Groq BYOK transcription with keys stored in the OS secret store
-- A typed native provider contract with Groq cloud and `local_preview` runtime
+- A typed native provider contract with Groq cloud and `local` runtime
   lanes, capabilities, setup diagnostics, and recovery actions
 - Profile-aware transformation, dictionary and snippet rules, explicit STT
   hints, hallucination guardrails, and conservative transcription bias
@@ -115,9 +115,10 @@ WordScript has two lanes behind one native provider contract:
 
 - **Groq:** the cloud-first production lane. Users provide their own key, which
   is stored in the OS secret store and scrubbed from the JSON configuration.
-- **`local_preview`:** the compatibility identifier for the local lane. It uses
-  an external `whisper-cli` plus ggml models for speech recognition and a local
-  Ollama model for cleanup.
+- **`local`:** the on-device lane. It uses an external `whisper-cli` plus ggml
+  models for speech recognition and a local Ollama model for cleanup. It is
+  still presented as unpublished wherever it is offered (ADR 0067) — the badge
+  carries that, the identifier does not (ADR 0121).
 
 The local lane requires:
 

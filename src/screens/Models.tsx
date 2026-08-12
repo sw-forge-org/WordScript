@@ -949,7 +949,7 @@ function ModelsTab({
                       label: value,
                       /* ADR 0065 and ADR 0067. Three lanes are drawn in full
                          and none of them is integrated — including Local,
-                         which the runtime DOES carry as `local_preview` and
+                         which the runtime DOES carry as `local` and
                          which the owner ruled is treated like the other two
                          everywhere it comes up, because it is not finished. */
                       disabled: Boolean(runtime) && value !== "Cloud",

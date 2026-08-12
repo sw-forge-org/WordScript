@@ -327,7 +327,7 @@ The active product core lives in `src-tauri/src/core/`.
   the gallery first (ADR 0057, ADR 0102).
 - `providers/groq.rs`: cloud-first production implementation (BYOK, secret
   store, Groq-specific HTTP errors).
-- `providers/local_preview.rs`: local runtime lane with `whisper-cli` for
+- `providers/local.rs`: local runtime lane with `whisper-cli` for
   STT, local Ollama cleanup, native model discovery, probe-based runner
   health, selected-model/cleanup setup truth over the same response
   contract.
@@ -409,7 +409,7 @@ lane and missing helpers.
    transcription via `resolve_auto_mode`. The renderer can query the effective
    mode via `resolve_current_processing_mode`.
 6. `providers/mod.rs` resolves the active provider's registry entry and calls its
-   speech role — `providers/groq.rs` or `providers/local_preview.rs` today.
+   speech role — `providers/groq.rs` or `providers/local.rs` today.
 6b. `confidence_gate.rs` drops segments the provider's own metrics mark as
    invented, before any downstream stage sees the text (cloud lane only).
 6c. `recognizer_repair.rs` strips an echo of the prompt this request sent and
@@ -630,7 +630,7 @@ Rules of this stack:
 - AI cleanup must conservatively preserve language mixing, colloquial
   speech, Germanized borrowings and technical tokens; unsafe or
   assistant-like rewrites fall back to the raw transcript via guardrails.
-- the current local preview lane is no longer STT-only; if AI cleanup stays
+- the current local lane is no longer STT-only; if AI cleanup stays
   active, `transform.rs` falls back to the raw local transcript when the
   local model is unavailable or returns unsafe text.
 
@@ -713,8 +713,8 @@ This is not marketing language but part of the insert and support model.
 Two clearly separated provider lanes are active:
 
 - `groq`: cloud-first production path for BYOK, secret store and AI cleanup.
-- `local_preview`: compatibility id for the local runtime lane with external
-  `whisper-cli` runner for STT, local ggml models and local Ollama cleanup.
+- `local`: the local runtime lane with external `whisper-cli` runner for STT,
+  local ggml models and local Ollama cleanup.
 
 Rules:
 
@@ -731,7 +731,7 @@ Rules:
 - `ProviderCommandError` carries error kind, status, Retry-After,
   `retryable` and a `user_action` so runtime events and settings use the same
   recovery semantics.
-- `local_preview` uses no API keys but visible local runtime prerequisites in
+- `local` uses no API keys but visible local runtime prerequisites in
   settings and diagnostics, over a typed `local_setup` contract with
   `readiness`, stable `issue_code`, resolved runner/model paths and resolved
   cleanup endpoint/model; the contract is evaluated against the currently
@@ -740,7 +740,7 @@ Rules:
 - AI Models renders the same contract as a preflight checklist for speech
   runner, STT model, cleanup endpoint and cleanup model, under its `On this
   machine` tab; this UI is display and guidance, not a second setup source.
-- `local_preview` probes the runner via an active native spawn, not just
+- `local` probes the runner via an active native spawn, not just
   filesystem presence; error codes like `runner_probe_failed` or
   `runner_probe_timed_out` are part of the same product truth.
 - local model profiles come natively from `WORDSCRIPT_LOCAL_MODEL_PATH` or
@@ -749,11 +749,11 @@ Rules:
 - the local lane separates STT profile and cleanup model explicitly (following
   the donor-oriented structure: `Handy` for runtime ownership, `voxtype` for
   explicit engine/mode paths, `openwhispr` for separated cleanup scopes).
-- `local_preview` forwards the active STT prompt as an initial
+- `local` forwards the active STT prompt as an initial
   `whisper-cli --prompt` and reports prompt bias as a real capability, not a
   UI-only wish; the strength lives explicitly in `off`/`profile`/`profile_and_terms`
   plus optional `carry_initial_prompt`.
-- local `local_preview` profiles are now real provider profiles with their
+- `local` profiles are now real provider profiles with their
   own id per model and preset (`...-fast`, `...-quality`); the same selection
   lives in config, settings and the native provider request instead of a
   model-family heuristic.
@@ -764,7 +764,7 @@ Rules:
 - the same local runtime config carries a separate `local_correction_model`;
   the local cleanup model must not be reconstructed implicitly from the
   cloud cleanup model or a UI fallback.
-- native diagnostics and transcription history for `local_preview` must show
+- native diagnostics and transcription history for `local` must show
   `provider_profile`, prompt-bias strength, carry flag, decode values,
   cleanup endpoint and cleanup model; these belong to the runtime truth of a
   local run.
@@ -776,7 +776,7 @@ Rules:
   config. The UI may report a short-lived difference while an immediate
   auto-save or runtime reconfiguration is still in flight, but it must not
   mix the two sources.
-- `local_preview` is now a full local dictation path for STT plus cleanup
+- `local` is now a full local dictation path for STT plus cleanup
   within the same runtime lane; capture, insertion and recovery stay
   deliberately the same product paths as for Groq.
 - there is no WordScript proxy or hosted mode.

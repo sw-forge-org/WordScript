@@ -1,6 +1,6 @@
 use super::contracts::{
     CompleteCaptureRequest, InsertMode, SliceCapabilities, SliceCaptureRuntimeStatus,
-    SliceInsertionPlan, SliceLocalPreviewContract, SliceLocalProviderSetupContract,
+    SliceInsertionPlan, SliceLocalContract, SliceLocalProviderSetupContract,
     SlicePipelineState, SlicePipelineStep, SlicePipelineStepStatus, SliceProviderRuntimeStatus,
     SliceResult, SliceRuntimeContract, SliceStage, SliceStatus, SliceTranscript,
     StartCaptureRequest,
@@ -13,7 +13,7 @@ use crate::core::{
     config::{normalize_local_profile_id, AppConfig},
     providers::{
         self, JobKey, LocalProviderIssueCode, LocalProviderReadiness, LocalProviderSetupStatus,
-        ProviderCommandError, ProviderStatus, ProviderStatusRequest, LOCAL_PREVIEW_PROVIDER_ID,
+        ProviderCommandError, ProviderStatus, ProviderStatusRequest, LOCAL_PROVIDER_ID,
     },
 };
 
@@ -44,8 +44,8 @@ impl V1SliceState {
     }
 
     pub fn status_with_runtime(&self, runtime_contract: SliceRuntimeContract) -> SliceStatus {
-        let cloud_transcription = runtime_contract.provider != LOCAL_PREVIEW_PROVIDER_ID;
-        let local_transcription = runtime_contract.provider == LOCAL_PREVIEW_PROVIDER_ID;
+        let cloud_transcription = runtime_contract.provider != LOCAL_PROVIDER_ID;
+        let local_transcription = runtime_contract.provider == LOCAL_PROVIDER_ID;
 
         SliceStatus {
             stage: self.stage.clone(),
@@ -307,7 +307,7 @@ pub fn runtime_contract_for_app<R: Runtime>(app: &AppHandle<R>) -> SliceRuntimeC
     // how a local model id ends up beside a cloud endpoint (ADR 0094).
     let correction_job = config.active_text_profile_transform_preset().correction_job();
     let correction_is_local =
-        config.job_provider(correction_job).provider == LOCAL_PREVIEW_PROVIDER_ID;
+        config.job_provider(correction_job).provider == LOCAL_PROVIDER_ID;
     let provider_status = providers::provider_status(ProviderStatusRequest {
         provider,
         model: Some(model),
@@ -401,8 +401,8 @@ fn runtime_contract_from_sources(
         work_mode: config.resolved_active_text_profile_work_mode(),
         provider_status: map_provider_runtime_status(provider_status),
         capture_status: map_capture_runtime_status(capture_status),
-        local_preview: if provider == LOCAL_PREVIEW_PROVIDER_ID {
-            Some(SliceLocalPreviewContract {
+        local: if provider == LOCAL_PROVIDER_ID {
+            Some(SliceLocalContract {
                 provider_profile: normalized_local_profile(config),
                 model: local_model.to_string(),
                 prompt_strength: config.local_prompt_strength.trim().to_string(),
@@ -447,7 +447,7 @@ fn normalized_local_profile(config: &AppConfig) -> String {
 }
 
 fn runtime_model_for_provider<'a>(config: &'a AppConfig, provider: &str) -> &'a str {
-    if provider == LOCAL_PREVIEW_PROVIDER_ID {
+    if provider == LOCAL_PROVIDER_ID {
         normalized_local_model(config)
     } else {
         normalized_cloud_model(config)
@@ -538,7 +538,7 @@ fn map_capture_runtime_status(
 fn runtime_provider_profile(config: &AppConfig) -> String {
     let provider = normalized_runtime_provider(config);
 
-    if provider == LOCAL_PREVIEW_PROVIDER_ID {
+    if provider == LOCAL_PROVIDER_ID {
         return normalized_local_profile(config);
     }
 
@@ -807,10 +807,10 @@ mod tests {
     }
 
     #[test]
-    fn runtime_contract_surfaces_local_preview_settings() {
+    fn runtime_contract_surfaces_local_settings() {
         let mut config = AppConfig {
             local_model: "large-v3-q5_0".to_string(),
-            local_profile: "local-preview-large-v3-q5_0-quality".to_string(),
+            local_profile: "local-large-v3-q5_0-quality".to_string(),
             local_prompt_strength: "profile_and_terms".to_string(),
             local_prompt_carry: true,
             local_beam_size: 7,
@@ -819,7 +819,7 @@ mod tests {
         };
         // The contract describes the recognition lane, so the local answer has
         // to come from `Dictation`'s vendor and not from a machine-wide field.
-        set_profile_connection(&mut config, LOCAL_PREVIEW_PROVIDER_ID);
+        set_profile_connection(&mut config, LOCAL_PROVIDER_ID);
 
         let runtime_contract = runtime_contract_from_sources(
             &config,
@@ -835,10 +835,10 @@ mod tests {
                 silence_seconds: 0.4,
             }),
             Some(Ok(ProviderStatus {
-                provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
-                default_profile: "local-preview-base-fast".to_string(),
+                provider: LOCAL_PROVIDER_ID.to_string(),
+                default_profile: "local-base-fast".to_string(),
                 credential: crate::core::providers::ProviderCredentialStatus {
-                    provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+                    provider: LOCAL_PROVIDER_ID.to_string(),
                     configured: true,
                     storage: "Local runtime".to_string(),
                     key_preview: Some("/usr/bin/whisper-cli · ggml-large-v3-q5_0.bin".to_string()),
@@ -856,7 +856,7 @@ mod tests {
                     model_management: true,
                 },
                 model_capabilities: crate::core::providers::model_capabilities(
-                    LOCAL_PREVIEW_PROVIDER_ID,
+                    LOCAL_PROVIDER_ID,
                     "large-v3-q5_0",
                 ),
                 // The slice reads the folded connection answer above; the
@@ -879,10 +879,10 @@ mod tests {
             })),
         );
 
-        assert_eq!(runtime_contract.provider, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(runtime_contract.provider, LOCAL_PROVIDER_ID);
         assert_eq!(
             runtime_contract.provider_profile,
-            "local-preview-large-v3-q5_0-quality"
+            "local-large-v3-q5_0-quality"
         );
         assert_eq!(runtime_contract.model, "large-v3-q5_0");
         assert!(runtime_contract.provider_status.ready);
@@ -900,28 +900,28 @@ mod tests {
         );
         assert_eq!(
             runtime_contract
-                .local_preview
+                .local
                 .as_ref()
                 .map(|contract| contract.provider_profile.as_str()),
-            Some("local-preview-large-v3-q5_0-quality")
+            Some("local-large-v3-q5_0-quality")
         );
         assert_eq!(
             runtime_contract
-                .local_preview
+                .local
                 .as_ref()
                 .map(|contract| contract.prompt_strength.as_str()),
             Some("profile_and_terms")
         );
         assert_eq!(
             runtime_contract
-                .local_preview
+                .local
                 .as_ref()
                 .map(|contract| contract.beam_size),
             Some(7)
         );
         assert_eq!(
             runtime_contract
-                .local_preview
+                .local
                 .as_ref()
                 .map(|contract| contract.best_of),
             Some(6)

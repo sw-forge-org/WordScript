@@ -284,7 +284,7 @@ settings, diagnostics, history, capability, and error contracts.
 
 **Status:** planned
 
-**Goal:** Turn `local_preview` from expert environment configuration into a
+**Goal:** Turn `local` from expert environment configuration into a
 guided on-device runtime lane.
 
 **Scope:**

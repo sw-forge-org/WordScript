@@ -42,7 +42,8 @@ ignored** (−18, every one a case that held a migration), frontend **480 across
 transcription-coverage instrument, +5 — another track, measured here so the
 next step does not read it as its own). After A4: `cargo test` **755 passed / 3
 ignored** (+8), frontend **480 across 39 files** unmoved, `cargo check` still
-15, `npm run port:diff` `ALL EXACT`.
+15, `npm run port:diff` `ALL EXACT`. **After A6 not one of the four moved**,
+which for a rename is the whole signal.
 
 **The frontend suite flakes under load on this machine, and it is not a step's
 doing.** A full run that starts cold can drop one to three cases to `waitFor`
@@ -793,7 +794,7 @@ Speaking row, so it is flagged rather than assumed.
 | A3 | **done** 2026-08-11 — the secret-store entry keyed `(provider, role, kind)`, `provider_status` per role, the pre-role key adopted onto both roles, +12 Rust tests |
 | A5 | **done** 2026-08-11 — every on-disk compatibility path removed, both schema counters kept, the import door kept, −18 Rust tests |
 | A4 | **done** 2026-08-12 — a profile holds a resolved default plus a sparse override per job, `JobKey` bridges to `ProviderRole`, the machine-wide `provider` field is gone, schema 5 lifts the per-profile one behind a snapshot, +8 Rust tests, `port:diff` `ALL EXACT` |
-| A6 | **not started** — added 2026-08-12 (ADR 0121); a mechanical rename, **not gated**, independent of A4 |
+| A6 | **done** 2026-08-12 — `core/providers/local.rs`, the id `local`, the alias list empty, the profile prefix `local-*`, four counts unchanged |
 | B3 | **not started** — added 2026-08-11 by the vendor-intake pass (ADR 0115); the step open disagreement 5 has been asking for. **Scope narrowed 2026-08-12 by ADR 0120** — fewer rows, same schema |
 | B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |
@@ -1118,3 +1119,45 @@ not widen `provider_tier`, still machine-wide: a plan belongs to a credential
 and two profiles on two vendors now share one field. That was already true when
 the provider was per profile, so this step neither introduces nor fixes it, and
 the tier's own axis waits for a surface that draws more than one.
+
+**A6, as it landed.** A rename is only mechanical while nobody has to decide
+anything, and three things needed deciding.
+
+**The old id resolves to nothing, and a test says so out loud.** The registry
+entry already carried `aliases: &["local"]`, so the new name has been resolving
+all along and the alias list simply emptied when the id took its place. What
+that leaves is the other direction: `local_preview` is now as unknown as
+`openai`, and `normalize_provider_value` substitutes the default for it the way
+it does for any unresolvable value. The mod.rs case that used to assert the
+alias now asserts the retired id landing on `groq` — the same number of
+assertions, pointed at the decision instead of at the compatibility path. It is
+the **only** live-code line left in the tree that spells the old name, and it is
+there to hold ADR 0121's *no alias* rather than to serve one.
+
+**The prose about the lane stopped saying *preview* about itself.** ADR 0121
+names identifiers, and six guidance strings were outside that list — *Local
+preview runner was not found*, *Local preview model file was not found* — while
+every other message in the same module already said *Local runtime*. They were
+inconsistent before the rename and would have read as a leftover after it, so
+they follow. What did **not** follow is the badge: `Local runtime · {model} ·
+preview` in `WorkspaceWindow` is ADR 0067's mechanism, and `port:diff` is
+`ALL EXACT` because nothing drawn moved.
+
+**Three living docs called it a *compatibility id*, and after the rename that
+was false.** `README.md`, `DEVELOPMENT.md`, `ARCHITECTURE.md` and `REFERENCE.md`
+each described `local_preview` as an identifier kept for compatibility;
+substituting the new name into that sentence would have produced a claim the
+registry now contradicts. They say what the lane is instead, and `REFERENCE.md`
+carries the one line a reader coming from an older config needs: it was
+`local_preview` until ADR 0121, and nothing resolves the old id.
+
+**The one thing the survey undercounted.** ADR 0121 priced it at 177 references
+across 43 files; the commit moves 197 lines across 32, and the two numbers
+disagree in both directions for the same reason — a line can carry two
+references, and the ADRs, the donor plan and `HANDOFF_gui-port-relay.md` are
+records rather than living documents and keep the old name by rule.
+
+Counts: `cargo test` 755 passed / 3 ignored, `cargo check` 15 warnings,
+`npm test` 480 across 39 files, `npm run build` passes, `npm run port:diff`
+`ALL EXACT`. **Four unchanged counts is the deliverable** — a rename that moves
+one of them has done something it did not say it would.

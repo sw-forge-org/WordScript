@@ -53,6 +53,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the local lane is called `local` (speech track, stage A6, ADR 0121)
+
+- **The provider id `local_preview` becomes `local`, everywhere it is spelled.**
+  The module (`core/providers/local.rs`), the struct, the static, the
+  `LOCAL_PROVIDER_ID` constant and its serialized value, the `ProviderId` member
+  in `src/types/providers.ts`, the v1 slice's `local` contract, and the
+  `local-{model}-{preset}` profile prefix. The registry entry's `aliases:
+  &["local"]` became the id and the alias list is empty.
+- **No compatibility alias and no dual profile prefix**, on the owner's
+  instruction: this is a development install and the stored data does not
+  matter. A5 removed every on-disk compatibility path days earlier, so adding
+  one back for a rename would reverse that decision inside the same plan. A
+  stored `local_preview` now resolves to nothing — `normalize_provider_value`
+  lands it on the default like any other unknown id, and a stale
+  `local-preview-*` profile id falls through to `"base"` at the default preset.
+- **The preview badge stays exactly where ADR 0067 put it.** The lane is still
+  unpublished and still presented as unpublished; what moved is the identifier
+  that was carrying the same status a second time. When Phase 5 lands, the badge
+  comes off and nothing gets renamed.
+- **The lane's own prose stopped saying *preview* about itself.** Six setup and
+  probe messages read *Local preview runner* / *Local preview model file* while
+  every other message in the same module already said *Local runtime*; they now
+  agree. `previewStaged` and the result surface keep the word for what it means
+  in this product.
+- Behaviour is unchanged and the counts are the proof: `cargo test` 755 passed
+  / 3 ignored, `cargo check` 15 warnings, `npm test` 480 across 39 files,
+  `npm run port:diff` `ALL EXACT`.
+
 ### Changed — a provider per job, and the second field that meant the same thing
 
 - **A profile stops holding one provider and starts holding the axis.**

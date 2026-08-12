@@ -257,11 +257,11 @@ Status: 2026-08-11
   single transcription retry (retryable only), and a persistent runtime log
   file so abort errors no longer fall out of the ring buffer
 - Groq BYOK with OS secret-store storage
-- `local_preview` as a full local runtime lane over external `whisper-cli`,
+- `local` as a full local runtime lane over external `whisper-cli`,
   local ggml models and local Ollama cleanup (STT plus cleanup, not STT-only)
 - AI Models preflight for the local runtime lane with native runner,
   STT-model, cleanup-endpoint and cleanup-model readiness
-- bounded STT prompt bias for Groq and `local_preview` from active profile
+- bounded STT prompt bias for Groq and `local` from active profile
   context, dictionary spellings and likely phrases; **the bias policy and every
   local decode setting reach the provider for the first time since 2026-07-29**
   (ADR 0015) -- they had been dropped between the capture event and the
@@ -495,7 +495,7 @@ Additional rules:
 - **the speech stack is one lane wide, and that lane cannot stream.** Groq is
   the only integrated cloud provider and its recognition path takes a file and
   returns a result -- no websocket, no partials, no automatic language
-  detection. `local_preview` exists beside it and shells out to `whisper-cli`,
+  detection. `local` exists beside it and shells out to `whisper-cli`,
   which also takes a file. The capability survey is `docs/PROVIDERS.md`
   (2026-08-11); the decision to build the rest out is ADR 0096. **Nothing of
   that build-out is implemented**, and until an adapter lands the surface keeps

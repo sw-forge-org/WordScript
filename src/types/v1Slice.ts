@@ -13,7 +13,7 @@ export interface SliceCapabilities {
   rebuild_lab: boolean;
 }
 
-export interface SliceLocalPreviewContract {
+export interface SliceLocalContract {
   provider_profile: string;
   model: string;
   prompt_strength: string;
@@ -56,7 +56,7 @@ export interface SliceRuntimeContract {
   work_mode: TextProfileWorkMode;
   provider_status: SliceProviderRuntimeStatus;
   capture_status: SliceCaptureRuntimeStatus;
-  local_preview: SliceLocalPreviewContract | null;
+  local: SliceLocalContract | null;
 }
 
 export interface SlicePipelineStepStatus {

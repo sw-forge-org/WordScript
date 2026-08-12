@@ -1,4 +1,4 @@
-export type ProviderId = "groq" | "local_preview";
+export type ProviderId = "groq" | "local";
 
 export type ProviderErrorKind =
   | "missing_api_key"

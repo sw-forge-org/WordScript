@@ -73,6 +73,14 @@ runs on. **The drawing did not move** — `npm run port:diff` is `ALL EXACT` —
 because `AI Models` has drawn the override since Leg 6 and this is the runtime
 catching up to it.
 
+Amended 2026-08-12 by stage A6, which renamed the local lane's identifier from
+`local_preview` to `local` (ADR 0121). **It read every live spelling of the old
+id and moved only those**; it read nothing else and no behaviour changed. The
+registry alias is gone with the old name, so a stored `local_preview` resolves
+to nothing rather than to the lane. **ADR 0067's presentation rule is
+untouched** — the lane is still offered as unpublished and still badged, which
+is the half a release status belongs in.
+
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
 The living overview docs (`ARCHITECTURE.md`, `VISION.md`, `REFERENCE.md`,
@@ -146,7 +154,7 @@ Rust core modules in `src-tauri/src/core/`:
 - `providers/mod.rs` -- shared provider contract, thin resolvers over the registry, typed modes/capabilities/errors
 - `providers/registry.rs` -- the role traits (`Provider`, `SpeechProvider`, `ChatProvider`, `VoiceProvider`) and the frozen id-to-implementation table; adding a provider is a module plus one entry (ADR 0094)
 - `providers/groq.rs` -- cloud-first production lane (BYOK, secret store, Groq HTTP errors)
-- `providers/local_preview.rs` -- local runtime lane (whisper-cli STT, Ollama cleanup, native model discovery, probe-based runner health)
+- `providers/local.rs` -- local runtime lane (whisper-cli STT, Ollama cleanup, native model discovery, probe-based runner health)
 - `confidence_gate.rs` -- drops segments Whisper's own metrics mark as invented; cloud lane only, thresholds are constants (ADR 0016)
 - `hallucination_detect.rs` -- repetition collapse, artifact-pattern filter, language-switch observation; a language mismatch alone never discards text (ADR 0016)
 - `transform.rs` -- detection stage, exact-string hallucination filter, optional AI cleanup (correction guardrail stack), dictionary, snippets
@@ -233,7 +241,7 @@ UI implementation details, not Rust event names or Tauri channels.
   the local lane.
 - `ProviderCommandError`: `kind`, HTTP status, `retryable`, `Retry-After`,
   `user_action`. UI must relay this, never invent its own error categories.
-- `local` (on-device, current `local_preview` lane) and `self_hosted`
+- `local` (on-device, the lane this build runs) and `self_hosted`
   (user-run remote/LAN, reserved, not active) are not interchangeable labels.
 - **Dispatch is a registry over three role traits** (ADR 0094), built
   2026-08-11. `core/providers/registry.rs` declares `Provider` (status and
@@ -655,7 +663,7 @@ no account. Entities:
    so a mode changed mid-recording is already on disk here. An effective `auto`
    value is resolved to a concrete mode per transcription.
 6. `providers/mod.rs` resolves the registry entry the active provider names and
-   calls its speech role -- `groq` or `local_preview` today. The request comes
+   calls its speech role -- `groq` or `local` today. The request comes
    from `NativeCaptureConfig::resolve_transcription_request`, the single place a
    provider request is derived from a capture (ADR 0015).
 6b. `confidence_gate.rs` drops low-confidence segments (cloud lane only).

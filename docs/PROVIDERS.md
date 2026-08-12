@@ -19,7 +19,7 @@ than per vendor or per model.
 
 > This is the reference for **what a provider offers**. It is not a statement of
 > what WordScript integrates. Today the runtime integrates exactly two
-> providers -- `groq` and `local_preview` -- and `AI Models` says so on itself.
+> providers -- `groq` and `local` -- and `AI Models` says so on itself.
 > That state was decided by ADR 0065, which **ADR 0096 supersedes**: the
 > build-out is now the plan and the surface keeps saying what is true until each
 > adapter lands. When that changes, this document does not become the record of
@@ -610,7 +610,7 @@ Anthropic models; it is a shipped subset, not a capability statement.
 ## Local
 
 Source: `github.com/ggml-org/whisper.cpp`, read 2026-08-11, plus the runtime's
-own `core/providers/local_preview.rs`.
+own `core/providers/local.rs`.
 
 **The lane where "no request leaves this machine" is true by construction rather
 than by promise.** It is also the only lane whose speech path this product

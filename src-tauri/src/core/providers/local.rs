@@ -18,7 +18,7 @@ use super::{
     ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderErrorKind,
     ProviderMode, ProviderProfile, ProviderRole, ProviderStatus, ProviderStatusRequest,
     ProviderTier, RoleCredentialStatus, TranscribeAudioFileRequest, TranscriptionResponse,
-    ValidateProviderApiKeyResponse, LOCAL_PREVIEW_PROVIDER_ID,
+    ValidateProviderApiKeyResponse, LOCAL_PROVIDER_ID,
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 90_000;
@@ -125,7 +125,7 @@ impl LocalProfileSelection {
     }
 
     fn profile_id(&self) -> String {
-        format!("local-preview-{}-{}", self.model, self.preset.id_suffix())
+        format!("local-{}-{}", self.model, self.preset.id_suffix())
     }
 }
 
@@ -134,11 +134,11 @@ impl LocalProfileSelection {
 ///
 /// It implements no `VoiceProvider`. Nothing in this build synthesises, and a
 /// stub returning "unsupported" would be a role the type says exists (ADR 0094).
-pub struct LocalPreview;
+pub struct Local;
 
-pub static LOCAL_PREVIEW: LocalPreview = LocalPreview;
+pub static LOCAL: Local = Local;
 
-impl Provider for LocalPreview {
+impl Provider for Local {
     /// Both model fields are read here: the local status is a statement about
     /// the runner, the STT model and the chat model that were actually asked
     /// for, and answering for a different model is how a setup surface reports
@@ -202,7 +202,7 @@ impl Provider for LocalPreview {
     }
 }
 
-impl SpeechProvider for LocalPreview {
+impl SpeechProvider for Local {
     fn transcribe_audio_file(
         &self,
         request: TranscribeAudioFileRequest,
@@ -220,7 +220,7 @@ impl SpeechProvider for LocalPreview {
     }
 }
 
-impl ChatProvider for LocalPreview {
+impl ChatProvider for Local {
     fn create_chat_completion(&self, request: ChatCompletionRequest) -> ProviderFuture<String> {
         Box::pin(create_chat_completion(request))
     }
@@ -235,7 +235,7 @@ fn provider_status(
         .iter()
         .find(|profile| profile.default)
         .map(|profile| profile.id.clone())
-        .unwrap_or_else(|| "local-preview-base-fast".to_string());
+        .unwrap_or_else(|| "local-base-fast".to_string());
     let requested_model = model
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -279,7 +279,7 @@ fn provider_status(
     let role_credentials: Vec<RoleCredentialStatus> = LOCAL_CREDENTIAL_ROLES
         .iter()
         .map(|role| RoleCredentialStatus {
-            provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            provider: LOCAL_PROVIDER_ID.to_string(),
             role: *role,
             kind: None,
             configured,
@@ -290,9 +290,9 @@ fn provider_status(
         .collect();
 
     Ok(ProviderStatus {
-        provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+        provider: LOCAL_PROVIDER_ID.to_string(),
         default_profile: default_profile_id,
-        credential: aggregate_credential(LOCAL_PREVIEW_PROVIDER_ID, &role_credentials),
+        credential: aggregate_credential(LOCAL_PROVIDER_ID, &role_credentials),
         profiles,
         capabilities: provider_capabilities(),
         model_capabilities,
@@ -323,7 +323,7 @@ fn role_credential_status(
     let configured = matches!(setup.readiness, LocalProviderReadiness::Ready);
 
     RoleCredentialStatus {
-        provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+        provider: LOCAL_PROVIDER_ID.to_string(),
         role,
         kind: None,
         configured,
@@ -351,13 +351,13 @@ async fn validate_api_key(
     let status = provider_status(None, None)?;
     if !status.credential.configured {
         return Err(ProviderCommandError::local_setup(
-            local_preview_setup_message("base"),
+            local_setup_message("base"),
         ));
     }
 
     Ok(ValidateProviderApiKeyResponse {
         ok: true,
-        provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+        provider: LOCAL_PROVIDER_ID.to_string(),
         checked_with: "local_runner".to_string(),
     })
 }
@@ -913,12 +913,12 @@ fn build_local_provider_profile(
         .unwrap_or_else(|| " (external whisper-cli)".to_string());
 
     ProviderProfile {
-        id: format!("local-preview-{}-{}", normalized_model, preset.id_suffix()),
-        provider: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+        id: format!("local-{}-{}", normalized_model, preset.id_suffix()),
+        provider: LOCAL_PROVIDER_ID.to_string(),
         mode: preset.mode(),
         model: normalized_model.clone(),
         label: format!(
-            "Local preview {} {} profile{}",
+            "Local runtime {} {} profile{}",
             normalized_model,
             preset.id_suffix(),
             source_suffix
@@ -945,7 +945,7 @@ fn preferred_local_decode_preset(model: &str) -> LocalDecodePreset {
 
 fn local_profile_selection_from_id(profile_id: &str) -> Option<LocalProfileSelection> {
     let normalized = profile_id.trim().to_ascii_lowercase();
-    let rest = normalized.strip_prefix("local-preview-")?;
+    let rest = normalized.strip_prefix("local-")?;
 
     if let Some(model) = rest.strip_suffix("-fast") {
         return Some(LocalProfileSelection::new(model, LocalDecodePreset::Fast));
@@ -976,7 +976,7 @@ fn local_model_name_from_path(path: &Path) -> Option<String> {
     Some(model.to_string())
 }
 
-fn local_preview_setup_message(model: &str) -> String {
+fn local_setup_message(model: &str) -> String {
     format!(
         "Local runtime requires whisper-cli plus a local STT model. Set {} to the binary or install whisper-cli in PATH, then point {} to a ggml model file or {} to a directory containing ggml-{}.bin.",
         LOCAL_WHISPER_BINARY_ENV,
@@ -1091,7 +1091,7 @@ fn local_setup_guidance(
         ) => {
             format!(
                 "{} {}",
-                local_preview_setup_message(model),
+                local_setup_message(model),
                 local_runtime_chat_setup_message(correction_model),
             )
         }
@@ -1100,7 +1100,7 @@ fn local_setup_guidance(
             None,
             Some(LocalModelResolutionError::MissingConfiguration { .. }),
             _,
-        ) => local_preview_setup_message(model),
+        ) => local_setup_message(model),
         (None, None, None, None) => {
             "Local runtime helper, STT model and AI cleanup model are ready.".to_string()
         }
@@ -1609,9 +1609,9 @@ impl LocalRunnerResolutionError {
 
     fn guidance(&self, model: &str) -> String {
         match self {
-            Self::MissingConfiguration => local_preview_setup_message(model),
+            Self::MissingConfiguration => local_setup_message(model),
             Self::InvalidPath { path } => format!(
-                "Local preview runner was not found at '{}'. Set {} to a valid whisper-cli binary or install whisper-cli in PATH.",
+                "Local runtime runner was not found at '{}'. Set {} to a valid whisper-cli binary or install whisper-cli in PATH.",
                 path, LOCAL_WHISPER_BINARY_ENV,
             ),
         }
@@ -1638,11 +1638,11 @@ impl LocalRunnerProbeError {
     fn guidance(&self, binary: &str) -> String {
         match self {
             Self::LaunchFailed { message } => format!(
-                "Local preview runner '{}' could not complete the health probe. WordScript tried '{} --help' and failed to launch it cleanly: {}",
+                "Local runtime runner '{}' could not complete the health probe. WordScript tried '{} --help' and failed to launch it cleanly: {}",
                 binary, binary, message,
             ),
             Self::Failed { status, output } => format!(
-                "Local preview runner '{}' did not answer the health probe cleanly. WordScript tried '{} --help' and got status {}. {}",
+                "Local runtime runner '{}' did not answer the health probe cleanly. WordScript tried '{} --help' and got status {}. {}",
                 binary,
                 binary,
                 status
@@ -1651,7 +1651,7 @@ impl LocalRunnerProbeError {
                 output,
             ),
             Self::TimedOut { timeout_ms } => format!(
-                "Local preview runner '{}' did not answer the health probe within {} ms. WordScript tried '{} --help' and stopped waiting.",
+                "Local runtime runner '{}' did not answer the health probe within {} ms. WordScript tried '{} --help' and stopped waiting.",
                 binary, timeout_ms, binary,
             ),
         }
@@ -1678,20 +1678,20 @@ impl LocalModelResolutionError {
 
     fn guidance(&self) -> String {
         match self {
-            Self::MissingConfiguration { requested } => local_preview_setup_message(requested),
+            Self::MissingConfiguration { requested } => local_setup_message(requested),
             Self::InvalidPath { path } => format!(
-                "Local preview model file was not found at {}. Set {} to a valid ggml model file or {} to a directory containing the requested model.",
+                "Local runtime model file was not found at {}. Set {} to a valid ggml model file or {} to a directory containing the requested model.",
                 path.display(),
                 LOCAL_MODEL_PATH_ENV,
                 LOCAL_MODEL_DIR_ENV,
             ),
             Self::UnreadableDirectory { dir, error } => format!(
-                "Could not read local preview model directory {}: {}",
+                "Could not read local runtime model directory {}: {}",
                 dir.display(),
                 error,
             ),
             Self::ModelNotFound { dir, requested } => format!(
-                "Local preview model file was not found in {} for '{}'. Set {} to a valid ggml model file or {} to a directory containing the requested model.",
+                "Local runtime model file was not found in {} for '{}'. Set {} to a valid ggml model file or {} to a directory containing the requested model.",
                 dir.display(),
                 requested,
                 LOCAL_MODEL_PATH_ENV,
@@ -1813,7 +1813,7 @@ mod tests {
     }
 
     #[test]
-    fn classifies_local_preview_profiles_into_fast_vs_quality_modes() {
+    fn classifies_local_profiles_into_fast_vs_quality_modes() {
         assert_eq!(
             preferred_local_decode_preset("base"),
             LocalDecodePreset::Fast
@@ -1843,14 +1843,14 @@ mod tests {
     #[test]
     fn parses_local_profile_ids_into_model_and_preset() {
         assert_eq!(
-            local_profile_selection_from_id("local-preview-medium-quality"),
+            local_profile_selection_from_id("local-medium-quality"),
             Some(LocalProfileSelection::new(
                 "medium",
                 LocalDecodePreset::Quality,
             ))
         );
         assert_eq!(
-            local_profile_selection_from_id("local-preview-base-fast"),
+            local_profile_selection_from_id("local-base-fast"),
             Some(LocalProfileSelection::new("base", LocalDecodePreset::Fast))
         );
     }
@@ -2006,7 +2006,7 @@ whisper_print_timings: total time = 1337.00 ms
 
     #[test]
     fn finds_quantized_model_variants_in_directory() {
-        let dir = std::env::temp_dir().join("wordscript-local-preview-models");
+        let dir = std::env::temp_dir().join("wordscript-local-models");
         let _ = std::fs::create_dir_all(&dir);
         let quantized = dir.join("ggml-large-v3-q5_0.bin");
         std::fs::write(&quantized, "model").expect("write model file");
@@ -2018,7 +2018,7 @@ whisper_print_timings: total time = 1337.00 ms
     }
 
     #[test]
-    fn local_preview_status_is_not_configured_without_runner_or_model() {
+    fn local_status_is_not_configured_without_runner_or_model() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[
             LOCAL_WHISPER_BINARY_ENV,
@@ -2031,9 +2031,9 @@ whisper_print_timings: total time = 1337.00 ms
         std::env::remove_var(LOCAL_MODEL_DIR_ENV);
         std::env::set_var("PATH", "");
 
-        let status = provider_status(None, None).expect("local preview status");
+        let status = provider_status(None, None).expect("local runtime status");
 
-        assert_eq!(status.provider, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(status.provider, LOCAL_PROVIDER_ID);
         assert!(!status.credential.configured);
         assert_eq!(
             status
@@ -2049,7 +2049,7 @@ whisper_print_timings: total time = 1337.00 ms
     }
 
     #[test]
-    fn local_preview_status_flags_invalid_runner_path_even_when_model_exists() {
+    fn local_status_flags_invalid_runner_path_even_when_model_exists() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[
             LOCAL_WHISPER_BINARY_ENV,
@@ -2057,7 +2057,7 @@ whisper_print_timings: total time = 1337.00 ms
             LOCAL_MODEL_DIR_ENV,
             "PATH",
         ]);
-        let model_path = std::env::temp_dir().join("wordscript-local-preview-base.bin");
+        let model_path = std::env::temp_dir().join("wordscript-local-base.bin");
         std::fs::write(&model_path, "model").expect("write model file");
         std::env::set_var(
             LOCAL_WHISPER_BINARY_ENV,
@@ -2067,7 +2067,7 @@ whisper_print_timings: total time = 1337.00 ms
         std::env::remove_var(LOCAL_MODEL_DIR_ENV);
         std::env::set_var("PATH", "");
 
-        let status = provider_status(None, None).expect("local preview status");
+        let status = provider_status(None, None).expect("local runtime status");
 
         assert!(!status.credential.configured);
         assert_eq!(
@@ -2085,20 +2085,20 @@ whisper_print_timings: total time = 1337.00 ms
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn local_preview_status_flags_runner_probe_failure_for_non_whisper_executable() {
+    fn local_status_flags_runner_probe_failure_for_non_whisper_executable() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[
             LOCAL_WHISPER_BINARY_ENV,
             LOCAL_MODEL_PATH_ENV,
             LOCAL_MODEL_DIR_ENV,
         ]);
-        let model_path = std::env::temp_dir().join("wordscript-local-preview-health-model.bin");
+        let model_path = std::env::temp_dir().join("wordscript-local-health-model.bin");
         std::fs::write(&model_path, "model").expect("write model file");
         std::env::set_var(LOCAL_WHISPER_BINARY_ENV, "/bin/true");
         std::env::set_var(LOCAL_MODEL_PATH_ENV, &model_path);
         std::env::remove_var(LOCAL_MODEL_DIR_ENV);
 
-        let status = provider_status(None, None).expect("local preview status");
+        let status = provider_status(None, None).expect("local runtime status");
 
         assert!(!status.credential.configured);
         assert_eq!(
@@ -2119,7 +2119,7 @@ whisper_print_timings: total time = 1337.00 ms
 
     #[cfg(unix)]
     #[test]
-    fn local_preview_status_flags_runner_probe_timeout() {
+    fn local_status_flags_runner_probe_timeout() {
         use std::os::unix::fs::PermissionsExt;
 
         let _lock = lock_env();
@@ -2128,8 +2128,8 @@ whisper_print_timings: total time = 1337.00 ms
             LOCAL_MODEL_PATH_ENV,
             LOCAL_MODEL_DIR_ENV,
         ]);
-        let script_path = std::env::temp_dir().join("wordscript-local-preview-timeout.sh");
-        let model_path = std::env::temp_dir().join("wordscript-local-preview-timeout-model.bin");
+        let script_path = std::env::temp_dir().join("wordscript-local-timeout.sh");
+        let model_path = std::env::temp_dir().join("wordscript-local-timeout-model.bin");
         std::fs::write(&script_path, "#!/bin/sh\nsleep 2\n").expect("write script");
         let mut perms = std::fs::metadata(&script_path)
             .expect("script metadata")
@@ -2141,7 +2141,7 @@ whisper_print_timings: total time = 1337.00 ms
         std::env::set_var(LOCAL_MODEL_PATH_ENV, &model_path);
         std::env::remove_var(LOCAL_MODEL_DIR_ENV);
 
-        let status = provider_status(None, None).expect("local preview status");
+        let status = provider_status(None, None).expect("local runtime status");
 
         assert_eq!(
             status
@@ -2158,7 +2158,7 @@ whisper_print_timings: total time = 1337.00 ms
     /// cannot run names the setup guidance where a missing key would be named.
     #[test]
     fn the_local_lane_answers_no_credential_kind_and_names_its_setup_instead() {
-        let entry = crate::core::providers::registry::resolve_entry(LOCAL_PREVIEW_PROVIDER_ID)
+        let entry = crate::core::providers::registry::resolve_entry(LOCAL_PROVIDER_ID)
             .expect("local entry");
         assert_eq!(entry.roles(), LOCAL_CREDENTIAL_ROLES.to_vec());
         assert!(
@@ -2192,7 +2192,7 @@ whisper_print_timings: total time = 1337.00 ms
     }
 
     #[test]
-    fn local_preview_capabilities_match_external_stt_lane() {
+    fn local_capabilities_match_external_stt_lane() {
         let capabilities = provider_capabilities();
 
         assert!(capabilities.transcription);
@@ -2242,7 +2242,7 @@ whisper_print_timings: total time = 1337.00 ms
     }
 
     #[test]
-    fn local_preview_profiles_expose_quality_vs_latency_modes() {
+    fn local_profiles_expose_quality_vs_latency_modes() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
         std::env::remove_var(LOCAL_MODEL_PATH_ENV);
@@ -2251,13 +2251,13 @@ whisper_print_timings: total time = 1337.00 ms
         let profiles = provider_profiles();
 
         assert!(profiles.iter().any(|profile| {
-            profile.id == "local-preview-base-fast" && profile.mode == ProviderMode::Fast
+            profile.id == "local-base-fast" && profile.mode == ProviderMode::Fast
         }));
         assert!(profiles.iter().any(|profile| {
-            profile.id == "local-preview-base-quality" && profile.mode == ProviderMode::Quality
+            profile.id == "local-base-quality" && profile.mode == ProviderMode::Quality
         }));
         assert!(profiles.iter().any(|profile| {
-            profile.id == "local-preview-medium-quality" && profile.mode == ProviderMode::Quality
+            profile.id == "local-medium-quality" && profile.mode == ProviderMode::Quality
         }));
     }
 
@@ -2265,7 +2265,7 @@ whisper_print_timings: total time = 1337.00 ms
     fn provider_profiles_discover_models_from_local_model_dir() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
-        let dir = std::env::temp_dir().join("wordscript-local-preview-discovered-profiles");
+        let dir = std::env::temp_dir().join("wordscript-local-discovered-profiles");
         let _ = std::fs::create_dir_all(&dir);
         std::fs::write(dir.join("ggml-medium.bin"), "model").expect("write medium");
         std::fs::write(dir.join("ggml-large-v3-q5_0.bin"), "model").expect("write large");
@@ -2276,10 +2276,10 @@ whisper_print_timings: total time = 1337.00 ms
 
         assert!(profiles
             .iter()
-            .any(|profile| profile.id == "local-preview-medium-fast"));
+            .any(|profile| profile.id == "local-medium-fast"));
         assert!(profiles
             .iter()
-            .any(|profile| profile.id == "local-preview-large-v3-q5_0-quality"));
+            .any(|profile| profile.id == "local-large-v3-q5_0-quality"));
         assert!(profiles.iter().any(|profile| profile.default));
     }
 
@@ -2292,7 +2292,7 @@ whisper_print_timings: total time = 1337.00 ms
             LOCAL_MODEL_DIR_ENV,
             "PATH",
         ]);
-        let dir = std::env::temp_dir().join("wordscript-local-preview-requested-models");
+        let dir = std::env::temp_dir().join("wordscript-local-requested-models");
         let _ = std::fs::create_dir_all(&dir);
         let medium_model = dir.join("ggml-medium.bin");
         std::fs::write(&medium_model, "model").expect("write model file");
@@ -2303,9 +2303,9 @@ whisper_print_timings: total time = 1337.00 ms
             "/tmp/wordscript-missing-whisper-cli",
         );
 
-        let status = provider_status(Some("medium"), None).expect("local preview status");
+        let status = provider_status(Some("medium"), None).expect("local runtime status");
 
-        assert_eq!(status.default_profile, "local-preview-medium-quality");
+        assert_eq!(status.default_profile, "local-medium-quality");
         assert_eq!(
             status
                 .local_setup

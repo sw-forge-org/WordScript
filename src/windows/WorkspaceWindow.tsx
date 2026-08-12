@@ -120,20 +120,20 @@ export default function WorkspaceWindow() {
   const providerSource = form ?? state.config;
   const selectedProvider =
     providerSource && resolveJobProvider(resolveActiveTextProfile(providerSource), "dictation")
-      .provider === "local_preview"
-      ? "local_preview"
+      .provider === "local"
+      ? "local"
       : "groq";
   const selectedLocalModel =
-    selectedProvider === "local_preview"
+    selectedProvider === "local"
       ? form?.local_model ?? state.config?.local_model ?? "base"
       : null;
   const selectedCleanupModel =
-    selectedProvider === "local_preview"
+    selectedProvider === "local"
       ? form?.local_correction_model ?? state.config?.local_correction_model ?? "llama3.2:latest"
       : form?.correction_model ?? state.config?.correction_model ?? "llama-3.3-70b-versatile";
   const { status: providerStatus } = useProvider(selectedProvider, selectedLocalModel, selectedCleanupModel);
   const providerReady =
-    selectedProvider === "local_preview"
+    selectedProvider === "local"
       ? providerStatus?.local_setup?.readiness === "ready"
       : providerStatus?.credential.configured;
 
@@ -259,15 +259,15 @@ export default function WorkspaceWindow() {
               tone: "success" as const,
               label: "Ready",
               title:
-                selectedProvider === "local_preview"
+                selectedProvider === "local"
                   ? providerStatus?.local_setup?.guidance ?? "The local lane is configured."
                   : "The Groq key is present and the native runtime is configured.",
             }
           : {
               tone: "warning" as const,
-              label: selectedProvider === "local_preview" ? "Needs local setup" : "Needs key",
+              label: selectedProvider === "local" ? "Needs local setup" : "Needs key",
               title:
-                selectedProvider === "local_preview"
+                selectedProvider === "local"
                   ? providerStatus?.local_setup?.guidance ??
                     "Configure whisper-cli, a local STT model and a local cleanup model."
                   : "Add a Groq key before transcription can run.",
@@ -320,13 +320,14 @@ export default function WorkspaceWindow() {
       });
     },
   };
-  /* ADR 0067. `local_preview` is a real runtime provider and the product does
-     not offer it: the owner's instruction on 2026-08-10 was to treat it like
-     every other unpublished provider EVERYWHERE it comes up, because it is not
-     finished. So the strip keeps stating it — a config that says local_preview
-     is what is running and hiding that would be the lie — and marks it. */
+  /* ADR 0067. `local` is a real runtime provider and the product does not
+     offer it: the owner's instruction on 2026-08-10 was to treat it like every
+     other unpublished provider EVERYWHERE it comes up, because it is not
+     finished. So the strip keeps stating it — a config that says local is what
+     is running and hiding that would be the lie — and marks it. ADR 0121
+     renamed the lane and left this rule exactly where it was. */
   const lane =
-    selectedProvider === "local_preview"
+    selectedProvider === "local"
       ? `Local runtime · ${form.local_model} · preview`
       : `Groq cloud · ${form.model}`;
   const work = activeProfile.work_mode;

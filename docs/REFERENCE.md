@@ -84,8 +84,9 @@ constants themselves were not re-derived and carry their own provenance
 ### Provider lanes today
 
 - `groq` is the cloud-first production path.
-- `local_preview` is the internal compatibility id for the local runtime
-  lane with `whisper-cli` for STT and Ollama for cleanup.
+- `local` is the id of the local runtime lane with `whisper-cli` for STT and
+  Ollama for cleanup. It was `local_preview` until ADR 0121; nothing resolves
+  the old id.
 - The user stores their own Groq API key locally in the OS secret store.
 - The JSON config is scrubbed on save. **It no longer carries a key to migrate**
   — ADR 0112 removed the plaintext `config.json` field and the path that read
@@ -133,7 +134,7 @@ constants themselves were not re-derived and carry their own provenance
 - The Segments capability is load-bearing, not informational: a provider that
   declares it returns typed `TranscriptionSegment` values with `avg_logprob`,
   `no_speech_prob` and `compression_ratio`, and the confidence gate uses them to
-  drop invented segments before AI cleanup (ADR 0016). `local_preview` declares
+  drop invented segments before AI cleanup (ADR 0016). `local` declares
   `supports_segments: false` and is defended by the silence trim and the
   whisper.cpp decode flags instead.
 - `ProviderCommandError` carries text plus `kind`, HTTP status, Retry-After,
@@ -174,7 +175,7 @@ constants themselves were not re-derived and carry their own provenance
 - `fast` and `quality` describe quality/latency presets within the same
   provider lane.
 - `local` means a local or on-device runtime path without a WordScript
-  backend; at WordScript this is currently the `local_preview` lane with a
+  backend; at WordScript this is currently the `local` lane with a
   local runner, local model path and local cleanup endpoint.
 - `self_hosted` is not an active product lane yet; the term stays reserved
   for later user-run remote or LAN services that would not be WordScript's

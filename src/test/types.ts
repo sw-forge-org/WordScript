@@ -39,7 +39,7 @@ export type V1SliceState = {
         device_name: string | null;
         silence_seconds: number;
       };
-      local_preview: {
+      local: {
         provider_profile: string;
         model: string;
         prompt_strength: string;
@@ -106,7 +106,7 @@ export type V1SliceState = {
           device_name: string | null;
           silence_seconds: number;
         };
-        local_preview: {
+        local: {
           provider_profile: string;
           model: string;
           prompt_strength: string;

@@ -29,11 +29,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::{
-    groq, local_preview, ChatCompletionRequest, CredentialKind, ModelCapabilities,
+    groq, local, ChatCompletionRequest, CredentialKind, ModelCapabilities,
     ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus,
     ProviderRole, ProviderStatus, ProviderStatusRequest, ProviderTier, RoleCredentialStatus,
     TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
-    DEFAULT_PROVIDER_ID, LOCAL_PREVIEW_PROVIDER_ID,
+    DEFAULT_PROVIDER_ID, LOCAL_PROVIDER_ID,
 };
 
 /// What an asynchronous provider call returns.
@@ -236,11 +236,11 @@ static REGISTRY: &[ProviderEntry] = &[
         voice: None,
     },
     ProviderEntry {
-        id: LOCAL_PREVIEW_PROVIDER_ID,
-        aliases: &["local"],
-        provider: &local_preview::LOCAL_PREVIEW,
-        speech: Some(&local_preview::LOCAL_PREVIEW),
-        chat: Some(&local_preview::LOCAL_PREVIEW),
+        id: LOCAL_PROVIDER_ID,
+        aliases: &[],
+        provider: &local::LOCAL,
+        speech: Some(&local::LOCAL),
+        chat: Some(&local::LOCAL),
         voice: None,
     },
 ];

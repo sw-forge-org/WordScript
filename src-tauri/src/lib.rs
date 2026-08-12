@@ -1745,7 +1745,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                     provider: assistant.provider.clone(),
                                     agent_name: agent_name.clone(),
                                     agent_model: if assistant.provider
-                                        == core::providers::LOCAL_PREVIEW_PROVIDER_ID
+                                        == core::providers::LOCAL_PROVIDER_ID
                                     {
                                         app_config.local_agent_model.clone()
                                     } else {
@@ -2864,18 +2864,18 @@ mod tests {
     }
 
     #[test]
-    fn local_preview_prompt_strength_can_disable_bias() {
+    fn local_prompt_strength_can_disable_bias() {
         let config = NativeCaptureConfig {
             prompt: "Customer success terminology".to_string(),
             local_prompt_strength: "off".to_string(),
-            ..capture_config_for_prompt_tests(core::providers::LOCAL_PREVIEW_PROVIDER_ID)
+            ..capture_config_for_prompt_tests(core::providers::LOCAL_PROVIDER_ID)
         };
 
         assert_eq!(resolved_prompt(&config), None);
     }
 
     #[test]
-    fn local_preview_prompt_strength_profile_and_terms_uses_stt_hints_and_dictionary() {
+    fn local_prompt_strength_profile_and_terms_uses_stt_hints_and_dictionary() {
         // profile.prompt is LLM cleanup context — must NOT reach Whisper initial_prompt.
         // Only explicit stt_hints and dictionary preferred spellings are STT signals.
         let config = NativeCaptureConfig {
@@ -2887,10 +2887,10 @@ mod tests {
                 phrase: "word script".to_string(),
                 replace_with: "WordScript".to_string(),
             }],
-            ..capture_config_for_prompt_tests(core::providers::LOCAL_PREVIEW_PROVIDER_ID)
+            ..capture_config_for_prompt_tests(core::providers::LOCAL_PROVIDER_ID)
         };
 
-        let prompt = resolved_prompt(&config).expect("local preview prompt");
+        let prompt = resolved_prompt(&config).expect("local runtime prompt");
 
         assert!(
             !prompt.contains("Vocabulary:"),

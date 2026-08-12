@@ -556,7 +556,7 @@ implementation with two sets of props, and a component that exists only under
 ## AI Models, Profiles, and Privacy UX
 
 AI Models renders capabilities and setup from native status. For
-`local_preview`, its `On this machine` tab shows the speech runner, STT model,
+`local`, its `On this machine` tab shows the speech runner, STT model,
 cleanup endpoint, and cleanup model as a native preflight checklist. It does not
 infer readiness from environment variables or paths. Its job list carries one
 row per job that RUNS a model, which is not the same as one row per job that

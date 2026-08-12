@@ -1697,7 +1697,7 @@ mod tests {
     }
 
     #[test]
-    fn analyze_document_off_yields_no_cloud_or_local_preview() {
+    fn analyze_document_off_yields_no_cloud_or_local() {
         let document = TextRulesDocument {
             schema_version: TEXT_RULES_SCHEMA_VERSION,
             prompt: "WordScript".to_string(),

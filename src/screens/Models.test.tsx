@@ -73,7 +73,7 @@ describe("AI Models, wired", () => {
   it("treats Local exactly as it treats the two lanes the runtime has never carried", () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* ADR 0067. `local_preview` IS a runtime provider, and the owner's answer
+    /* ADR 0067. `local` IS a runtime provider, and the owner's answer
        was that being real is not the same as being finished. */
     const lane = screen.getByRole("group", { name: "Lane" });
     expect(within(lane).getByRole("button", { name: "Local" })).toBeDisabled();

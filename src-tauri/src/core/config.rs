@@ -981,7 +981,7 @@ impl Default for ProfileSpeechSettings {
             agent_model: DEFAULT_AGENT_MODEL.to_string(),
             local_agent_model: DEFAULT_LOCAL_AGENT_MODEL.to_string(),
             local_model: "base".to_string(),
-            local_profile: "local-preview-base-fast".to_string(),
+            local_profile: "local-base-fast".to_string(),
             local_prompt_strength: "profile".to_string(),
             local_prompt_carry: false,
             local_beam_size: 1,
@@ -1358,7 +1358,7 @@ impl AppConfig {
     /// that is per job since ADR 0094's config half. A job routed to Local
     /// takes the local model even while the connection is on Groq.
     pub(crate) fn chat_model_for_job(&self, job: JobKey) -> String {
-        if self.job_provider(job).provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+        if self.job_provider(job).provider == super::providers::LOCAL_PROVIDER_ID {
             self.local_agent_model.clone()
         } else {
             self.agent_model.clone()
@@ -1538,7 +1538,7 @@ impl AppConfig {
         );
         // Clamp all timeout fields to technically realistic ranges.
         // Max recording: 1–30 minutes (60–1800s). Groq free tier caps at
-        // ~25 MiB ≈ 13 min; dev tier at ~100 MiB ≈ 53 min. Local preview has
+        // ~25 MiB ≈ 13 min; dev tier at ~100 MiB ≈ 53 min. Local runtime has
         // no hard limit but RAM-bound. 30 min is the practical ceiling.
         self.max_recording_seconds = self.max_recording_seconds.clamp(60, 1800);
         // Silence timeout: 0 (disabled) – 60s. Longer than 60s of silence is
@@ -2299,7 +2299,7 @@ fn default_local_profile_mode_for_model(model: &str) -> &'static str {
 pub(crate) fn default_local_profile_for_model(model: &str) -> String {
     let normalized = normalize_local_model_value(model);
     format!(
-        "local-preview-{}-{}",
+        "local-{}-{}",
         normalized,
         default_local_profile_mode_for_model(&normalized)
     )
@@ -2307,7 +2307,7 @@ pub(crate) fn default_local_profile_for_model(model: &str) -> String {
 
 pub(crate) fn local_model_from_profile_id(profile: &str) -> Option<String> {
     let normalized = profile.trim().to_ascii_lowercase();
-    let rest = normalized.strip_prefix("local-preview-")?;
+    let rest = normalized.strip_prefix("local-")?;
 
     rest.strip_suffix("-fast")
         .or_else(|| rest.strip_suffix("-quality"))
@@ -2328,7 +2328,7 @@ pub(crate) fn normalize_local_profile_id(profile: &str, fallback_model: &str) ->
         "fast"
     };
 
-    format!("local-preview-{}-{}", model, mode)
+    format!("local-{}-{}", model, mode)
 }
 
 fn default_text_profile_id() -> &'static str {
@@ -2479,7 +2479,7 @@ fn refresh_curated_text_profile_presentation(text_profiles: &mut [TextProfile]) 
 mod tests {
     use super::*;
     use crate::core::providers::{
-        ProviderRole, DEFAULT_PROVIDER_ID, LOCAL_PREVIEW_PROVIDER_ID,
+        ProviderRole, DEFAULT_PROVIDER_ID, LOCAL_PROVIDER_ID,
     };
 
     /// **The promise, not the field it used to be about.** `without_secrets`
@@ -2730,10 +2730,10 @@ mod tests {
             .find(|profile| profile.id == active_id)
             .expect("active profile");
         profile.providers = Some(ProfileProviderSettings {
-            default: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            default: LOCAL_PROVIDER_ID.to_string(),
             overrides: BTreeMap::from([
                 (JobKey::Assistant, "openai".to_string()),
-                (JobKey::Translate, LOCAL_PREVIEW_PROVIDER_ID.to_string()),
+                (JobKey::Translate, LOCAL_PROVIDER_ID.to_string()),
             ]),
         });
 
@@ -2745,7 +2745,7 @@ mod tests {
             "an unresolvable override reads as following the connection"
         );
         assert_eq!(
-            assistant.provider, LOCAL_PREVIEW_PROVIDER_ID,
+            assistant.provider, LOCAL_PROVIDER_ID,
             "and it falls to the connection, not to the registry default"
         );
         assert!(
@@ -2767,14 +2767,14 @@ mod tests {
             default: DEFAULT_PROVIDER_ID.to_string(),
             overrides: BTreeMap::from([(
                 JobKey::Assistant,
-                LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+                LOCAL_PROVIDER_ID.to_string(),
             )]),
         });
 
         let assistant = config.job_provider(JobKey::Assistant);
         let cleanup = config.job_provider(JobKey::Cleanup);
 
-        assert_eq!(assistant.provider, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(assistant.provider, LOCAL_PROVIDER_ID);
         assert_eq!(cleanup.provider, DEFAULT_PROVIDER_ID);
 
         // ADR 0094's one security rule: the credential follows the provider the
@@ -2786,7 +2786,7 @@ mod tests {
         let credential = assistant
             .credential()
             .expect("the local lane answers for chat");
-        assert_eq!(credential.provider, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(credential.provider, LOCAL_PROVIDER_ID);
         assert_eq!(credential.role, ProviderRole::Chat);
         assert!(
             credential.kind.is_none(),
@@ -2822,7 +2822,7 @@ mod tests {
         // The sentence the config could not say before this step.
         profile.providers = Some(ProfileProviderSettings {
             default: DEFAULT_PROVIDER_ID.to_string(),
-            overrides: BTreeMap::from([(JobKey::Rewrite, LOCAL_PREVIEW_PROVIDER_ID.to_string())]),
+            overrides: BTreeMap::from([(JobKey::Rewrite, LOCAL_PROVIDER_ID.to_string())]),
         });
 
         assert_eq!(
@@ -2831,7 +2831,7 @@ mod tests {
         );
         assert_eq!(
             config.job_provider(JobKey::Rewrite).provider,
-            LOCAL_PREVIEW_PROVIDER_ID
+            LOCAL_PROVIDER_ID
         );
         assert_eq!(
             config.chat_model_for_job(JobKey::Rewrite),
@@ -2859,7 +2859,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_local_preview_controls_into_runtime_safe_values() {
+    fn normalizes_local_controls_into_runtime_safe_values() {
         let mut config = AppConfig {
             local_model: "large_v3".to_string(),
             local_profile: String::new(),
@@ -2872,13 +2872,13 @@ mod tests {
         config.normalize_for_runtime();
 
         assert_eq!(config.local_model, "large-v3");
-        assert_eq!(config.local_profile, "local-preview-large-v3-quality");
+        assert_eq!(config.local_profile, "local-large-v3-quality");
         assert_eq!(config.local_prompt_strength, "profile_and_terms");
         assert!(!config.local_prompt_carry);
         assert!(config.local_profile_prompt_settings.iter().any(|entry| {
             entry
                 == &LocalProfilePromptSettings {
-                    profile_id: "local-preview-large-v3-quality".to_string(),
+                    profile_id: "local-large-v3-quality".to_string(),
                     prompt_strength: "profile_and_terms".to_string(),
                     prompt_carry: false,
                 }
@@ -2888,14 +2888,14 @@ mod tests {
         assert!(config.local_profile_decode_settings.iter().any(|entry| {
             entry
                 == &LocalProfileDecodeSettings {
-                    profile_id: "local-preview-large-v3-quality".to_string(),
+                    profile_id: "local-large-v3-quality".to_string(),
                     beam_size: 5,
                     best_of: 5,
                 }
         }));
         assert!(config.local_profile_decode_settings.iter().any(|entry| {
             LocalProfileDecodeSettings {
-                profile_id: "local-preview-base-fast".to_string(),
+                profile_id: "local-base-fast".to_string(),
                 beam_size: 1,
                 best_of: 1,
             } == *entry
@@ -2906,25 +2906,25 @@ mod tests {
     fn selected_local_profile_overrides_stale_local_model() {
         let mut config = AppConfig {
             local_model: "base".to_string(),
-            local_profile: "local-preview-medium-fast".to_string(),
+            local_profile: "local-medium-fast".to_string(),
             ..AppConfig::default()
         };
 
         config.normalize_for_runtime();
 
         assert_eq!(config.local_model, "medium");
-        assert_eq!(config.local_profile, "local-preview-medium-fast");
+        assert_eq!(config.local_profile, "local-medium-fast");
     }
 
     #[test]
     fn selected_local_profile_uses_profile_specific_decode_settings() {
         let mut config = AppConfig {
             local_model: "base".to_string(),
-            local_profile: "local-preview-medium-quality".to_string(),
+            local_profile: "local-medium-quality".to_string(),
             local_beam_size: 1,
             local_best_of: 1,
             local_profile_decode_settings: vec![LocalProfileDecodeSettings {
-                profile_id: "local-preview-medium-quality".to_string(),
+                profile_id: "local-medium-quality".to_string(),
                 beam_size: 7,
                 best_of: 6,
             }],
@@ -2938,7 +2938,7 @@ mod tests {
         assert_eq!(
             config.local_profile_decode_settings[0],
             LocalProfileDecodeSettings {
-                profile_id: "local-preview-medium-quality".to_string(),
+                profile_id: "local-medium-quality".to_string(),
                 beam_size: 7,
                 best_of: 6,
             }
@@ -2949,11 +2949,11 @@ mod tests {
     fn selected_local_profile_uses_profile_specific_prompt_settings() {
         let mut config = AppConfig {
             local_model: "base".to_string(),
-            local_profile: "local-preview-medium-quality".to_string(),
+            local_profile: "local-medium-quality".to_string(),
             local_prompt_strength: "off".to_string(),
             local_prompt_carry: false,
             local_profile_prompt_settings: vec![LocalProfilePromptSettings {
-                profile_id: "local-preview-medium-quality".to_string(),
+                profile_id: "local-medium-quality".to_string(),
                 prompt_strength: "profile_and_terms".to_string(),
                 prompt_carry: true,
             }],
@@ -2967,7 +2967,7 @@ mod tests {
         assert_eq!(
             config.local_profile_prompt_settings[0],
             LocalProfilePromptSettings {
-                profile_id: "local-preview-medium-quality".to_string(),
+                profile_id: "local-medium-quality".to_string(),
                 prompt_strength: "profile_and_terms".to_string(),
                 prompt_carry: true,
             }
@@ -3642,7 +3642,7 @@ mod tests {
             "dictionary_entries": [],
             "snippet_entries": [],
             "speech": {
-                "provider": "local_preview",
+                "provider": "local",
                 "model": "whisper-large-v3",
                 "local_model": "base"
             }
@@ -3659,7 +3659,7 @@ mod tests {
         assert_eq!(profile.schema_version, PROVIDER_AXIS_SCHEMA_VERSION);
         let axis = profile.resolved_providers();
         assert_eq!(
-            axis.default, LOCAL_PREVIEW_PROVIDER_ID,
+            axis.default, LOCAL_PROVIDER_ID,
             "the value the live pipeline was spending survives the lift",
         );
         assert!(
@@ -3668,7 +3668,7 @@ mod tests {
         );
         for job in JobKey::ALL {
             let resolved = profile.job_provider(job);
-            assert_eq!(resolved.provider, LOCAL_PREVIEW_PROVIDER_ID);
+            assert_eq!(resolved.provider, LOCAL_PROVIDER_ID);
             assert!(!resolved.overridden, "{} follows the connection", job.as_str());
         }
 
@@ -3708,7 +3708,7 @@ mod tests {
         let mut profile = TextProfile {
             schema_version: 4,
             providers: Some(ProfileProviderSettings {
-                default: LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+                default: LOCAL_PROVIDER_ID.to_string(),
                 overrides: BTreeMap::from([(JobKey::Cleanup, DEFAULT_PROVIDER_ID.to_string())]),
             }),
             speech: Some(ProfileSpeechSettings {
@@ -3721,7 +3721,7 @@ mod tests {
         profile.migrate_to_current_schema();
 
         let axis = profile.resolved_providers();
-        assert_eq!(axis.default, LOCAL_PREVIEW_PROVIDER_ID);
+        assert_eq!(axis.default, LOCAL_PROVIDER_ID);
         assert_eq!(
             axis.overrides.get(&JobKey::Cleanup).map(String::as_str),
             Some(DEFAULT_PROVIDER_ID),
@@ -3739,7 +3739,7 @@ mod tests {
                 default: DEFAULT_PROVIDER_ID.to_string(),
                 overrides: BTreeMap::from([(
                     JobKey::Assistant,
-                    LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+                    LOCAL_PROVIDER_ID.to_string(),
                 )]),
             }),
             ..TextProfile::default()
@@ -3750,7 +3750,7 @@ mod tests {
 
         assert_eq!(
             back.job_provider(JobKey::Assistant).provider,
-            LOCAL_PREVIEW_PROVIDER_ID,
+            LOCAL_PROVIDER_ID,
         );
         assert!(back.job_provider(JobKey::Assistant).overridden);
         assert!(!back.job_provider(JobKey::Cleanup).overridden);

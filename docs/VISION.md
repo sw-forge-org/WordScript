@@ -220,7 +220,7 @@ The current work must not drift back into:
 3. Densify profiles from static rule sets into visible local work modes for
    context, dictionary, snippets, processing mode, insert and recovery
    defaults, but keep them local and manual for now.
-4. Grow the provider stack from Groq plus `local_preview` into a real model
+4. Grow the provider stack from Groq plus `local` into a real model
    system with at least one second production provider and clear modes
    `fast`, `quality`, `local` and later `self_hosted`; the `local` vs
    `self_hosted` semantics must be clear and honest first.

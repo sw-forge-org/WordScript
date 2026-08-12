@@ -144,7 +144,7 @@ export function createDefaultProfileSpeechSettings(): ProfileSpeechSettings {
     agent_model: "llama-3.3-70b-versatile",
     local_agent_model: "llama3.2:latest",
     local_model: "base",
-    local_profile: "local-preview-base-fast",
+    local_profile: "local-base-fast",
     local_prompt_strength: "profile",
     local_prompt_carry: false,
     local_beam_size: 1,

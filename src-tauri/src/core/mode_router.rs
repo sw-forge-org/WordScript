@@ -358,7 +358,7 @@ pub async fn apply_mode_transform(
     // model follows the job's vendor rather than one connection, because the
     // local lane names its models differently from every cloud one.
     let chat_model = |job: JobKey| {
-        if config.providers.resolve(job).provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID {
+        if config.providers.resolve(job).provider == super::providers::LOCAL_PROVIDER_ID {
             app_config.local_agent_model.clone()
         } else {
             app_config.agent_model.clone()

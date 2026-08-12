@@ -66,7 +66,7 @@ channel.
 
 ### Local Runtime
 
-The `local_preview` compatibility identifier names the full local runtime lane.
+The `local` identifier names the full local runtime lane (ADR 0121).
 It requires an STT runner, an STT model, a cleanup endpoint, and a cleanup
 model. Configure the path only when working on this lane:
 

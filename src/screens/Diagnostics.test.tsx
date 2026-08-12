@@ -44,7 +44,7 @@ function sliceStatus(overrides: Partial<V1SliceStatus> = {}): V1SliceStatus {
         device_name: "Yeti Nano Analog Stereo",
         silence_seconds: 3,
       },
-      local_preview: null,
+      local: null,
     },
     last_transcript: null,
     last_insert_target: null,

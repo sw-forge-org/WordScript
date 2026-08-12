@@ -281,7 +281,7 @@ impl Default for NativeCaptureConfig {
         Self {
             providers: ProfileProviderSettings::default(),
             model: "whisper-large-v3-turbo".to_string(),
-            local_profile: "local-preview-base-fast".to_string(),
+            local_profile: "local-base-fast".to_string(),
             local_prompt_strength: "profile".to_string(),
             local_prompt_carry: false,
             local_beam_size: 1,
@@ -327,7 +327,7 @@ impl NativeCaptureConfig {
         // from which vendor *listens*, and that is `Dictation` and nothing else.
         let providers = active_profile.resolved_providers();
         let local_provider_selected =
-            providers.resolve(JobKey::Dictation).provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
+            providers.resolve(JobKey::Dictation).provider == super::providers::LOCAL_PROVIDER_ID;
         let model = if local_provider_selected {
             if speech.local_model.trim().is_empty() {
                 "base".to_string()
@@ -402,7 +402,7 @@ impl NativeCaptureConfig {
         timeout_ms: u64,
     ) -> super::providers::TranscribeAudioFileRequest {
         let provider = self.speech_provider();
-        let is_local = provider == super::providers::LOCAL_PREVIEW_PROVIDER_ID;
+        let is_local = provider == super::providers::LOCAL_PROVIDER_ID;
         let context = super::transcription_hints::BiasRequestContext::from_work_mode(
             &self.work_mode,
             &self.local_prompt_strength,
@@ -2286,7 +2286,7 @@ mod tests {
     /// A profile whose whole axis sits on the local runtime.
     fn local_lane_providers() -> ProfileProviderSettings {
         ProfileProviderSettings {
-            default: super::super::providers::LOCAL_PREVIEW_PROVIDER_ID.to_string(),
+            default: super::super::providers::LOCAL_PROVIDER_ID.to_string(),
             ..Default::default()
         }
     }
@@ -2333,7 +2333,7 @@ mod tests {
     fn audio_ready_round_trip_preserves_bias_policy_and_local_decode_settings() {
         let config = NativeCaptureConfig {
             providers: local_lane_providers(),
-            local_profile: "local-preview-large-v3".to_string(),
+            local_profile: "local-large-v3".to_string(),
             local_prompt_strength: "profile_and_terms".to_string(),
             local_prompt_carry: true,
             local_beam_size: 5,
@@ -2363,14 +2363,14 @@ mod tests {
         assert!(restored.local_prompt_carry);
         assert_eq!(restored.local_beam_size, 5);
         assert_eq!(restored.local_best_of, 4);
-        assert_eq!(restored.local_profile, "local-preview-large-v3");
+        assert_eq!(restored.local_profile, "local-large-v3");
 
         let request = restored.resolve_transcription_request("/tmp/capture.wav", 20_000);
 
         assert_eq!(request.carry_initial_prompt, Some(true));
         assert_eq!(request.beam_size, Some(5));
         assert_eq!(request.best_of, Some(4));
-        assert_eq!(request.profile.as_deref(), Some("local-preview-large-v3"));
+        assert_eq!(request.profile.as_deref(), Some("local-large-v3"));
         assert_eq!(request.language.as_deref(), Some("de"));
     }
 
