@@ -584,7 +584,9 @@ where the question can be answered**, with the file in hand and its size known.
 
 - **Requires** — B6 (the writable override and the reason-carrying option list
   are what this draws in a second place). Nothing else; **not** gated on D1a.
-- **Touches** — the upload surface and the translation surface gain the rows
+- **Touches** — **two surfaces that exist**: the upload surface, and
+  `Translate.tsx`, which today says *"chosen on AI Models like the rest"* and
+  sends the user away with an *Open AI Models* button. Both gain the rows
   `Follows` already renders, behind a collapsed `Transcription settings`
   disclosure, with the resolved answer above them as one line — *Using Groq ·
   whisper-large-v3*. A second `InertReason` kind for a constraint the runtime
@@ -593,6 +595,10 @@ where the question can be answered**, with the file in hand and its size known.
   `capture_budget.rs`'s existing `seconds_for_upload_limit` and
   `CaptureCeilingReason::upload_limit`. `Cloud.upload` loses its drawn
   `override`, and `screens.test.tsx`'s three-overridden-jobs case moves to two.
+- **Not in this step, and it is an obligation rather than an omission** — the
+  **translation window** (G2) carries the same picker and does not exist yet.
+  Named in G2's own entry so it is built with one rather than retrofitted; the
+  requirement is ADR 0129's, the surface is G2's.
 - **Validates** — `cargo test` for the byte-direction limit, `npm test`,
   `npm run build`, and **`port:diff` moves on `models`** — the gallery's own
   inventory changes here, unlike B6's override half. Say by how much and why.
@@ -978,6 +984,21 @@ defect, for longer than any other capture this product performs.
   the target skips the step. **ADR 0064's first open point — whether a view plus
   a pop-out is enough interaction at a table — is still the owner's** and gates
   the surface, not the runtime beneath it.
+
+  **It carries the provider and model picker, and that is settled rather than
+  optional** (ADR 0129, owner's instruction 2026-08-13). The window is where a
+  translation is actually run, so it is a point of use in the sense that record
+  means, and B7 covers only the two surfaces that exist today. **Build it with
+  the picker; do not retrofit one** — the drawn-ahead-of-the-runtime gap that
+  ADR 0127 spent a step closing is cheaper to avoid than to repair.
+
+  **What form it takes is part of the open surface question, not separate from
+  it.** A table mid-conversation is the worst moment to open a credential
+  ladder, so the window may well want the resolved line plus a compact switch
+  rather than upload's full disclosure — and ADR 0064 already puts the *route*
+  per language, so the two controls sit on one row and must not be confused.
+  **That is a drawing decision and it belongs to whoever answers ADR 0064's
+  first open point**; B7 settles the obligation, not the shape.
 - **G3. The remaining adapters.** **Rewritten 2026-08-11** — it was one bullet
   naming nine adapters, which is a list rather than a route. Grouped by
   `docs/PROVIDERS.md`'s adapter-shape table, because that is what decides the
@@ -1072,6 +1093,13 @@ view plus a pop-out is enough at a table* blocks G2's surface (ADR 0064).
 **Open disagreement 13 was the second and lasted a day**: ADR 0128 answered it
 with a rule rather than with either of the two options it posed, and closed 10
 and 11 with the same rule.
+
+**ADR 0064's open point gained a second half on 2026-08-13.** It was *whether a
+view plus a pop-out is enough interaction at a table*; the owner's instruction
+that the translation window carries the provider and model picker means that
+question now also has to answer **what a picker looks like mid-conversation**.
+The obligation is settled (ADR 0129, G2's entry); the form is the same owner
+question it always was, one item longer.
 
 **Two more are live as of 2026-08-13, and both come from C4** (ADR 0130).
 *Whether a meeting is live-transcribed at all* is a product question with a real
