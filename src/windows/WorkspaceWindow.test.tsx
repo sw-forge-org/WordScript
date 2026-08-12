@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WorkspaceWindow from "./WorkspaceWindow";
@@ -188,6 +188,36 @@ describe("WorkspaceWindow · the sidebar's two widths", () => {
         expect.objectContaining({ workspace_nav_rail: true }),
       ),
     );
+  });
+
+  /* THE HALF THAT MADE THE TOGGLE JUDDER — ADR 0125.
+     `save_config` resolves with the config the runtime wrote, and the `ready`
+     event carrying that same config travels its own channel. The draft used to
+     resync from the EVENT's config when the save settled, which is the one the
+     write has not reached yet whenever the promise wins the race: the rail
+     closed, sprang open on the settle, and closed again when the event landed.
+     Two reversals inside one 180 ms transition is what "it does not collapse
+     cleanly, it judders" was. */
+  it("stays railed when the save settles before the runtime's own echo", async () => {
+    const user = userEvent.setup();
+    /* Spelled out rather than left off the factory: an ABSENT preference reads
+       as "the runtime has not answered yet" and is deliberately ignored, so a
+       config without the field cannot reproduce the reversal at all. */
+    runtimeConfig = createAppConfig({ workspace_nav_rail: false });
+    const { container } = render(<WorkspaceWindow />);
+    const nav = container.querySelector(".ws-nav")!;
+
+    await user.click(screen.getByRole("button", { name: "Collapse the sidebar" }));
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled());
+    // Everything the settle schedules, drained. The mocked runtime emits no
+    // `ready` at all, which is exactly the state the window is in for the
+    // length of that race.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(nav).toHaveAttribute("data-collapsed");
   });
 
   it("opens railed when that is what the config remembers", async () => {

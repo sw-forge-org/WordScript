@@ -943,6 +943,19 @@ Status: Proposed | Accepted | Superseded by NNNN
   capability block is never nine quiet `false`s. `Models.test.tsx` can no longer
   mock `capabilities: {}` and pass.
 
+- [0125](0125-the-sidebar-transition-is-a-clip-and-a-save-adopts-its-own-answer.md):
+  the sidebar juddered on every press, and four faults produced the one symptom.
+  **A settled save adopts the config that save returned**, not the last one the
+  event channel delivered — `save_config` emits `ready` and then returns on two
+  racing channels, so the form was being set back to a config the write had not
+  reached yet, and the rail closed, re-opened and closed again inside one 180 ms
+  transition. That half reaches every discrete control. **The transition is a
+  clip**: the column's children are pinned to the width of the state they are in,
+  the head is a fixed band, both marks are mounted and crossfade, and the words
+  the rail withholds fade instead of being removed — so the column's edge and the
+  toggle riding it are the only things that move. Measured before and after, per
+  animation frame.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

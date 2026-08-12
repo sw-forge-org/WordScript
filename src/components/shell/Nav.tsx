@@ -2,7 +2,7 @@ import * as React from "react";
 import { Icon } from "./Icon";
 import wordmarkDark from "../../../assets/logos/wordscipt-logo-transparent.png";
 import wordmarkLight from "../../../assets/logos/wordscipt-logo-light-transparent.png";
-import appIcon from "../../../assets/logos/wordscript-icon.png";
+import appIcon from "../../../assets/logos/wordscript-icon-128.png";
 import { cn } from "@/lib/utils";
 
 /**
@@ -69,11 +69,12 @@ export function Nav({
  * line, because they are the two things in the column that are about the column
  * rather than about what it navigates to.
  *
- * The toggle keeps the top-right corner in both states: expanded it is the
- * trailing end of the brand's line, and in the rail the head turns into a
- * `column-reverse` stack, which puts the same control at the same height with
- * the mark under it. A control that moves when you press it is a control you
- * have to find twice.
+ * The toggle keeps the top-right corner in both states: it rides the column's
+ * trailing edge, so it stands at one height throughout and travels exactly as
+ * far as that edge does, with the mark passing under it into the rail's icon
+ * column. A control that moves when you press it is a control you have to find
+ * twice — and a control that JUMPS while the column is still sliding is the
+ * same fault at a tenth of the distance (ADR 0125).
  */
 export function NavHead({
   scheme,
@@ -139,6 +140,14 @@ export function NavCollapseToggle({
  * beside a tile and the word is most of its width; scaled into 28 px it is a
  * smudge with a legible corner. The icon file is the same mark drawn for that
  * size, which is why it is a third asset rather than a CSS rule.
+ *
+ * BOTH MARKS ARE MOUNTED AND THE STATE CROSSFADES THEM — ADR 0125. Swapping
+ * `src` left the engine with no decoded image for the mark it was about to
+ * draw: the collapse was measured with `currentSrc` still empty on its first
+ * frame, so the one element on the surface that carries brand went blank for
+ * as long as the decode took. Two elements cost one extra decode ONCE, at
+ * mount, and the toggle costs none. The icon is the decorative half of a mark
+ * the wordmark already names, so it is `alt=""` — two images, one name.
  */
 export function BrandMark({
   scheme,
@@ -154,10 +163,12 @@ export function BrandMark({
   return (
     <div className={cn("ws-brand", className)} data-collapsed={collapsed ? "" : undefined}>
       <img
-        src={collapsed ? appIcon : scheme === "light" ? wordmarkLight : wordmarkDark}
+        className="ws-brand-word"
+        src={scheme === "light" ? wordmarkLight : wordmarkDark}
         alt="WordScript"
       />
-      {qualifier && !collapsed && <span className="ws-brand-qual">{qualifier}</span>}
+      <img className="ws-brand-icon" src={appIcon} alt="" aria-hidden="true" />
+      {qualifier && <span className="ws-brand-qual">{qualifier}</span>}
     </div>
   );
 }

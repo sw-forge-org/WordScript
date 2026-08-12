@@ -84,6 +84,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fails, naming the field and the side. Both new tests were made to fail before
   they were trusted.
 
+### Fixed — the sidebar collapses cleanly, and a saved toggle stops springing back (ADR 0125)
+
+- **The rail no longer reverses itself twice per press.** `useConfigDraft`
+  resolved a save by adopting the config it had last received on the event
+  channel, and `save_config` emits that event and returns on two channels that
+  race — so whenever the promise won, the form was set back to a config that did
+  not carry the write yet. The sidebar closed, sprang open, and closed again
+  inside one 180 ms transition. A settled save now adopts the config that save
+  returned, which belongs to that write and cannot be older than it. This
+  reaches every discrete control, not only the sidebar's toggle; it was visible
+  here because the old value is a 232 px column rather than a word.
+- **Nothing inside the sidebar re-lays-out while the sidebar moves.** Its
+  children were `width: 100%` of a box being animated, so every frame
+  re-measured the whole column: labels rewrapped, group titles took two lines
+  and then one, and the footer was measured moving 29 px up and back down in one
+  press. The children are pinned to the width of the state they are in, the head
+  is a fixed-height band, and the transition is a clip.
+- **The mark stops being rescaled and stops going blank.** The wordmark was
+  sized as a percentage of the animating column, so a 1611 px source was
+  re-rasterised at 26 → 96 → 158 → 161 px across four frames; the rail's mark
+  was the same `<img>` with its `src` swapped, so the first frame of a collapse
+  drew nothing at all. Both marks are mounted and crossfade, and the wordmark is
+  sized by its height.
+- **The rail's icons stand on one axis.** The mark, the toggle, the search icon,
+  every row tile and the avatar resolve to the same centre. Two of them did not:
+  Tailwind's preflight capped the 26 px mark at the 23 px box it sat in, and the
+  shortcut print kept its padding after losing its width, pulling the search
+  icon 4 px off the column.
+- **The app icon ships at the size it is drawn.** `wordscript-icon.png` is
+  2016 × 2130 and 4.65 MB, and was fetched and decoded at the moment of the
+  first collapse to be drawn at 26 px. The bundle carries a 20 kB icon instead
+  and loses 4.63 MB.
+
 ### Changed — the documentation gets an index and a board, and a fact stops having five lists (ADR 0123)
 
 - **`docs/README.md` is new and is the map** — every document, what kind it is,

@@ -851,92 +851,182 @@
      ═════════════════════════════════════════════════════════════════════════ */
 
   .ws-nav {
+    --nav-wall: 10px;
+    /* The width the column's CONTENT is laid out at, in each state, as a
+       number rather than as "whatever the box happens to be this frame" — see
+       the rule below. The border is in it because the column is `border-box`. */
+    --nav-inner: calc(var(--nav-w) - 2 * var(--nav-wall) - 1px);
     flex: none;
     width: var(--nav-w);
     display: flex; flex-direction: column;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
-    padding: var(--s3) 10px;
+    padding: var(--s3) var(--nav-wall);
     overflow-y: auto;
+    /* Never a horizontal bar. The content is laid out at the width of the
+       state it is IN, so for the length of the transition it is wider or
+       narrower than the box holding it, and `overflow-y: auto` alone computes
+       `auto` on both axes — a second scrollbar, flashing on the way past. */
+    overflow-x: hidden;
     /* The rail is a width change and nothing else moves, so it is the one
        transition in the shell that animates a box dimension. It is cheap
        because the column is `flex: none` — the content beside it reflows once,
        at the end, rather than on every frame of a layout animation. */
     transition: width var(--dur-base) var(--ease);
   }
+
+  /* NOTHING INSIDE THE COLUMN RE-LAYS-OUT WHILE THE COLUMN MOVES — ADR 0125.
+     Every child was `width: 100%` of a box whose width was being animated, so
+     each frame of the 180 ms transition was a fresh layout of the whole
+     sidebar: labels rewrapped, the group titles and the profile's second line
+     took two lines and then one again, and the list under them was measured
+     bouncing 29 px up and back down inside one press. Pinning the children to
+     the width of the state they are IN turns the transition into a CLIP — the
+     column slides, the content stands still and is revealed or covered — which
+     is the only kind of width animation that stays smooth in a WebKit host.
+
+     The head is deliberately not pinned: it is the one row that has to follow
+     the edge, because the toggle rides the end of it. */
+  .ws-nav > *:not(.ws-nav-head) { width: var(--nav-inner); }
+
   @media (prefers-reduced-motion: reduce) {
-    .ws-nav { transition: none; }
+    .ws-nav,
+    .ws-nav *,
+    .ws-nav *::before,
+    .ws-nav *::after { transition: none; }
   }
 
   /* THE ONE PLACE IN THE SURFACE THAT CARRIES BRAND RATHER THAN STATE, so it
-     gets the top-left corner and nothing else does. The 180 px cap is the
-     shipped one. */
+     gets the top-left corner and nothing else does.
+
+     THE MARK IS SIZED BY ITS HEIGHT (ADR 0125), not by a percentage of the
+     column. A percentage made the wordmark re-rasterise on every frame of the
+     rail transition — measured at 26 → 96 → 158 → 161 px wide across four
+     consecutive frames — and `height: auto` gave it no box at all until the
+     file had decoded, which is a mark that appears after the layout around it.
+     The 180 px cap the shipped rule carried is what 46 px of height comes to
+     at this wordmark's proportions. */
   .ws-brand {
+    position: relative;
     display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
     padding: var(--s3) var(--s2) var(--s5);
     min-width: 0;
   }
   .ws-brand img {
     display: block;
-    width: 100%; max-width: 180px; height: auto;
     object-fit: contain;
+    /* Preflight caps every image at `max-width: 100%`, and 100% here is the
+       brand box — which in the rail is whatever is left beside the toggle,
+       23 px. That silently drew the 26 px mark at 23 and letterboxed it, which
+       is a logo that is neither its own size nor on the column's axis. A mark
+       states its own size or it is not the mark. */
+    max-width: none;
+    transition: opacity var(--dur-base) var(--ease);
+  }
+  .ws-brand-word { height: var(--nav-mark-h); width: auto; }
+  /* The rail's mark. Out of flow, so the two marks cannot push each other and
+     the head's height stays the wordmark's alone; drawn only in the rail,
+     where the rule further down puts it on the icon column the rows keep. */
+  .ws-brand-icon {
+    position: absolute;
+    left: 0; top: calc(var(--nav-mark-h) - 12px);
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* ── The head: the mark, and the control that changes the column's width ───
      ADR 0111. The brand keeps its own padding when it stands alone — the
      gallery mounts it that way — and gives it up to the head when the head is
      there, so the toggle's hit area reaches the sidebar's own wall instead of
-     stopping at an inset the mark was paying for both of them. */
+     stopping at an inset the mark was paying for both of them.
+
+     THE HEAD IS THE ONE FIXED-HEIGHT BAND IN THE COLUMN (ADR 0125), and that
+     is what holds the search field and every row below it perfectly still
+     through the transition: the two states put different things in this band —
+     a wordmark, or a toggle with an icon under it — and a band that measured
+     its own contents would hand the difference to everything beneath it. It is
+     the mark's height plus the two insets, and the rail's stack fits inside the
+     same figure. A `qualifier` is drawn under the mark and does not grow the
+     band; the one surface that passes one mounts the brand on its own. */
   .ws-nav-head {
+    position: relative;
+    height: var(--nav-head-h); box-sizing: border-box;
     display: flex; align-items: flex-start; gap: var(--s2);
     padding: var(--s3) var(--s2) var(--s5);
   }
   .ws-nav-head > .ws-brand { padding: 0; flex: 1; min-width: 0; }
+  /* OUT OF FLOW, RIDING THE TRAILING EDGE. In flow it sat after a mark that is
+     `flex: 1`, so its position was a subtraction the flex line redid every
+     frame — and at rail width the line no longer fits, which left the control
+     wherever the overflow landed. Anchored to the edge it travels exactly as
+     far as the edge does, at one constant height, and the transform below is
+     the last 8 px of that trip: it lands centred on the rail's icon column. */
   .ws-nav-collapse {
-    flex: none;
+    position: absolute;
+    top: var(--s3); right: var(--s2);
     width: 26px; height: 26px;
     display: grid; place-items: center;
     border-radius: var(--r-control);
     color: var(--fg-muted);
-    transition: background-color var(--dur-fast) var(--ease),
+    transition: transform var(--dur-base) var(--ease),
+                background-color var(--dur-fast) var(--ease),
                 color var(--dur-fast) var(--ease);
   }
   .ws-nav-collapse:hover { background: var(--bg-elevated); color: var(--fg); }
   .ws-nav-collapse svg { width: 15px; height: 15px; }
 
+  /* Everything the rail withholds is a WORD, and every word leaves the same
+     way: it fades over the interval the column takes. Declared here, on the
+     elements themselves, so the rail's own block below states only what
+     changes and not how long it takes (ADR 0125). */
+  .ws-nav .ws-nav-group > h3,
+  .ws-nav .ws-nav-label,
+  .ws-nav .ws-nav-tag,
+  .ws-nav .ws-brand-qual,
+  .ws-nav .ws-nav-search > span,
+  .ws-nav .ws-nav-search kbd,
+  .ws-nav .ws-nav-profile .ws-who,
+  .ws-nav .ws-nav-profile .ws-caret,
+  .ws-nav .ws-nav-lock { transition: opacity var(--dur-base) var(--ease); }
+
   /* ── THE RAIL — the same sidebar with its labels withheld ──────────────────
-     ADR 0111. Every rule below either hides a label or centres what is left;
-     none of them redraws a control. That is the test that this is one sidebar
-     in two states rather than two sidebars: a row's tile, its active ground,
-     its accent and its hover are the rules above, untouched.
+     ADR 0111. Every rule below either withholds a label or fades the skin off
+     a field; none of them moves a control. That is the test that this is one
+     sidebar in two states rather than two sidebars: a row's tile, its active
+     ground, its accent and its hover are the rules above, untouched.
+
+     EVERYTHING IN THE RAIL STANDS ON ONE AXIS, and there is only one figure
+     for it: half the column. The row's tile, the search icon, the avatar, the
+     mark and the toggle all resolve to the same centre, because a rail is read
+     as a single column of icons and two pixels of disagreement between them is
+     the first thing the eye finds. That is why the words the rail withholds
+     take NO WIDTH here: a faded label is still a flex item, and a flex item
+     with a size pushes the tile beside it off the axis it shares with
+     everything above and below.
 
      WHAT THE RAIL OWES IN RETURN FOR THE LABEL IT TOOK is a name the pointer
-     and the screen reader can still reach. The label stays in the DOM and is
-     hidden here; `NavRow` adds `title` in this state and only in this state. */
+     and the screen reader can still reach. The label is faded, not removed:
+     it keeps naming its row to the accessibility tree, and `NavRow` adds
+     `title` in this state and only in this state. Fading rather than
+     `display: none` is also what keeps the list still (ADR 0125) — a hidden
+     group title is 24 px the rows below it would jump by, once per group. */
   .ws-nav[data-collapsed] {
     width: var(--nav-w-rail);
-    padding-left: var(--s2); padding-right: var(--s2);
-    overflow-x: hidden;
+    --nav-wall: var(--s2);
+    --nav-inner: calc(var(--nav-w-rail) - 2 * var(--nav-wall) - 1px);
   }
-  /* Column-reverse, so the toggle keeps the top of the column in both states
-     and the mark moves under it instead. */
-  .ws-nav[data-collapsed] .ws-nav-head {
-    flex-direction: column-reverse; align-items: center;
-    gap: var(--s3);
-    padding: var(--s1) 0 var(--s4);
+  /* The toggle arrives on that axis: from the inset it rides at, back out to
+     half of what a 26 px control leaves over. */
+  .ws-nav[data-collapsed] .ws-nav-collapse {
+    transform: translateX(calc(var(--s2) - (var(--nav-inner) - 26px) / 2));
   }
-  .ws-nav[data-collapsed] .ws-nav-head > .ws-brand { flex: none; width: auto; }
-  .ws-nav[data-collapsed] .ws-brand img { width: 26px; height: 26px; border-radius: 7px; }
-  /* A group title is three words that no longer fit; the grouping it states is
-     carried by the space above the group, which the rail keeps. */
-  .ws-nav[data-collapsed] .ws-nav-group > h3 { display: none; }
-  .ws-nav[data-collapsed] .ws-nav-label,
-  .ws-nav[data-collapsed] .ws-nav-tag,
-  .ws-nav[data-collapsed] .ws-nav-search > span,
-  .ws-nav[data-collapsed] .ws-nav-search kbd,
-  .ws-nav[data-collapsed] .ws-nav-profile .ws-who,
-  .ws-nav[data-collapsed] .ws-nav-profile .ws-caret,
-  .ws-nav[data-collapsed] .ws-nav-lock { display: none; }
+  .ws-nav[data-collapsed] .ws-brand-word { opacity: 0; }
+  .ws-nav[data-collapsed] .ws-brand-icon {
+    opacity: 1;
+    left: calc((var(--nav-inner) - 26px) / 2 - var(--s2));
+  }
   .ws-nav[data-collapsed] .ws-nav-row,
   .ws-nav[data-collapsed] .ws-nav-search,
   .ws-nav[data-collapsed] .ws-nav-profile {
@@ -944,15 +1034,53 @@
     padding-left: 0; padding-right: 0;
     gap: 0;
   }
+  .ws-nav[data-collapsed] .ws-nav-group > h3,
+  .ws-nav[data-collapsed] .ws-nav-label,
+  .ws-nav[data-collapsed] .ws-nav-tag,
+  .ws-nav[data-collapsed] .ws-brand-qual,
+  .ws-nav[data-collapsed] .ws-nav-search > span,
+  .ws-nav[data-collapsed] .ws-nav-search kbd,
+  .ws-nav[data-collapsed] .ws-nav-profile .ws-who,
+  .ws-nav[data-collapsed] .ws-nav-profile .ws-caret,
+  .ws-nav[data-collapsed] .ws-nav-lock {
+    opacity: 0;
+    /* A word that is faded is still LAID OUT, and at 39 px of column every one
+       of them would wrap into a stack — measured pushing the footer 49 px down
+       the moment the rail took hold. The rail is the one state where a word
+       may run past the wall instead: nothing is drawing it, and the column
+       clips. `.ws-nav-label` keeps its wrap in the state where it is read. */
+    white-space: nowrap;
+  }
+  /* And they take no width, so the tile beside them keeps the column's axis.
+     Width alone is not enough: the shortcut print and the tag are drawn with
+     an inset and a border of their own, and 8 px of padding on a box of no
+     width is still 8 px in the flex line — measured pulling the search icon
+     4 px off the axis every other icon stands on. `.ws-nav-lock` is not in
+     this list: it is beside nothing, and a line of it with no width would
+     still be as tall as it is now. */
+  .ws-nav[data-collapsed] .ws-nav-label,
+  .ws-nav[data-collapsed] .ws-nav-tag,
+  .ws-nav[data-collapsed] .ws-brand-qual,
+  .ws-nav[data-collapsed] .ws-nav-search > span,
+  .ws-nav[data-collapsed] .ws-nav-search kbd,
+  .ws-nav[data-collapsed] .ws-nav-profile .ws-who,
+  .ws-nav[data-collapsed] .ws-nav-profile .ws-caret {
+    flex: none;
+    width: 0;
+    padding-left: 0; padding-right: 0;
+    margin-left: 0; margin-right: 0;
+    border-left-width: 0; border-right-width: 0;
+  }
   /* The search field's border is what made it read as a field, and a 36 px
      square of border reads as a disabled button instead. In the rail it is the
-     icon control the row grammar already draws. */
+     icon control the row grammar already draws — and the skin FADES off it
+     rather than being switched off, over the same interval the column takes,
+     because a border that vanishes on the first frame reads as a flicker. */
   .ws-nav[data-collapsed] .ws-nav-search {
-    background: none; border-color: transparent;
-    min-height: var(--nav-row-h);
+    background-color: transparent; border-color: transparent;
   }
   .ws-nav[data-collapsed] .ws-nav-search:hover {
-    background: var(--bg-elevated); border-color: transparent; color: var(--fg);
+    background-color: var(--bg-elevated); border-color: transparent; color: var(--fg);
   }
   /* The two windows are told apart by their sidebar, not by a title bar the OS
      draws (ADR 0003), so the mark gains a qualifier rather than a chrome. */
@@ -1051,7 +1179,10 @@
     letter-spacing: var(--ls-label);
     font-size: var(--t-label);
     text-align: left;
-    transition: border-color var(--dur-fast) var(--ease),
+    /* `background-color` is in the list for the rail, which fades the field's
+       skin off rather than switching it off on the first frame (ADR 0125). */
+    transition: background-color var(--dur-base) var(--ease),
+                border-color var(--dur-fast) var(--ease),
                 color var(--dur-fast) var(--ease);
   }
   .ws-nav-search:hover { border-color: var(--border-strong); color: var(--fg-dim); }

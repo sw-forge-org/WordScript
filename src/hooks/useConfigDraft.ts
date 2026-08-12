@@ -22,6 +22,18 @@ import type { AppConfig } from "../types/ipc";
  * A DISCRETE PATCH FLUSHES A PENDING TEXT COMMIT FIRST. Without that, a
  * debounced keystroke could land after a later toggle, carrying the config the
  * keystroke was computed from, and quietly revert the toggle.
+ *
+ * WHAT A SETTLED SAVE ADOPTS IS THE SAVE'S OWN ANSWER — ADR 0125. `save_config`
+ * returns the config the runtime normalized and wrote, and it ALSO emits a
+ * `ready` carrying the same config; the two travel different channels and
+ * their order is not fixed. This hook used to resync the form from the EVENT's
+ * config when the promise settled, so whenever the promise won that race the
+ * form was set back to a config the write had not reached yet, and the control
+ * sprang back to its old value until the event landed. It is visible wherever
+ * the old value is a shape rather than a word — on the sidebar's toggle, whose
+ * old value is a 232 px column: it collapsed, re-opened and collapsed again
+ * inside one 180 ms transition, which is what "it judders" was. The returned
+ * config is this same write's own answer and cannot be older than it.
  */
 
 /* Long enough that ordinary typing produces one write per pause rather than
@@ -49,11 +61,17 @@ export function useConfigDraft(
      ready(A) can land AFTER the user already edited further to B. The
      unconditional sync would then revert the form A→B→A→B. (plan P1, root C1) */
   const inFlightSaveCountRef = useRef(0);
-  const [formResyncNonce, setFormResyncNonce] = useState(0);
   const latestConfigRef = useRef<AppConfig | null>(null);
   useEffect(() => {
     latestConfigRef.current = config;
   }, [config]);
+
+  /* The last `config` this hook has taken as an answer. A settled save records
+     the config it just superseded here, so the resync below cannot hand the
+     form back to one the write has already overtaken; anything genuinely newer
+     — a later `ready`, another window, an edit on disk — arrives as a new
+     object and is adopted. (ADR 0125) */
+  const adoptedConfigRef = useRef<AppConfig | null>(null);
 
   // Populate the form when the runtime provides config.
   useEffect(() => {
@@ -64,24 +82,29 @@ export function useConfigDraft(
   // in-flight user edit. (plan P1, root C1)
   useEffect(() => {
     if (inFlightSaveCountRef.current > 0) return;
-    if (config) setForm({ ...config });
-  }, [config, formResyncNonce]);
+    if (!config || config === adoptedConfigRef.current) return;
+    adoptedConfigRef.current = config;
+    setForm({ ...config });
+  }, [config]);
 
   const commit = useCallback((next: AppConfig, revertTo: AppConfig) => {
     inFlightSaveCountRef.current += 1;
-    const settle = () => {
+    const settle = (saved: AppConfig | null) => {
       inFlightSaveCountRef.current = Math.max(0, inFlightSaveCountRef.current - 1);
-      if (inFlightSaveCountRef.current === 0) {
-        if (latestConfigRef.current) setForm({ ...latestConfigRef.current });
-        setFormResyncNonce((n) => n + 1);
-      }
+      if (inFlightSaveCountRef.current > 0) return;
+      /* Whatever config stands right now is what this write has superseded,
+         whether or not its own `ready` has landed yet; the form takes the
+         runtime's answer to THIS write instead. */
+      adoptedConfigRef.current = latestConfigRef.current;
+      const settled = saved ?? latestConfigRef.current;
+      if (settled) setForm({ ...settled });
     };
 
     void saveConfig(next).then(settle).catch(() => {
       // The runtime refused it, so the form goes back to what the runtime
       // still holds rather than showing a value it rejected.
       setForm(revertTo);
-      settle();
+      settle(null);
     });
   }, [saveConfig]);
 

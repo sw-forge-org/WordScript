@@ -185,6 +185,14 @@
      needs and not a pixel chosen to look right. */
   --nav-w-rail: 56px;
   --nav-row-h: 32px;
+  /* The mark, and the band it sits in (ADR 0125). The mark is stated as a
+     HEIGHT because that is the dimension both states share — the wordmark at
+     46 px is the 180 px cap the shipped rule carried, and the rail's icon
+     hangs under the toggle inside the same band. The band is a constant so
+     that the two states, which put different things in it, hand nothing down
+     to the list below: 12 + 46 + 20, the mark's height plus its own insets. */
+  --nav-mark-h: 46px;
+  --nav-head-h: 78px;
   --content-pad: var(--s7);
   --content-max: 760px;
   /* THE PANE'S LIST COLUMN, AND IT IS THE ONE STRUCTURE TOKEN THAT IS A RANGE
