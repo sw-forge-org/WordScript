@@ -65,8 +65,14 @@ The report was "no badges at all", and the other two are not the same finding:
   exist in the current log (2026-08-11, `missing_ratio` 0.1144 and 0.1903), and
   the overlay stayed up for 2347 ms and 2693 ms after them — enough time.
   Whether it painted is not observable from the runtime log, because overlay
-  render state is not logged. This needs a live check against a deliberately
-  short capture, not more log reading.
+  render state is not logged.
+
+  **The live check is cheap and does not need the defect.** The first of those
+  two was 3.238 s of wall clock against 2.868 s recorded: at three seconds the
+  ordinary startup transient is already 11.4 % of the capture, which is over the
+  10 % threshold. So a deliberate three-second dictation reads `Short` without
+  anything going wrong, and the gap tab either paints or it does not. That is
+  one recording, not an investigation.
 
 **So one of the three is a defect and one is working as specified.** The
 "generally no badges" impression is real, but it has three different causes and
