@@ -344,4 +344,4 @@ about width.
 - [ADR 0011a](../decisions/0011a-one-decision-surface-per-delivery-mode.md): the effect-ordering fix
 - [REFERENCE.md](../REFERENCE.md): Linux overlay constants and CSS invariants
 - [PLATFORMS.md](../PLATFORMS.md): Linux runtime behavior
-- [OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md](../handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md): related compositor history
+- [../archive/handoffs/overlay-linux-black-block.md](../archive/handoffs/overlay-linux-black-block.md): related compositor history

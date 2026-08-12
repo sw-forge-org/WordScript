@@ -2,7 +2,7 @@
 
 Paste this to the next agent. It is a **different track from the GUI port
 relay**: that one is numbered by Legs and lives in
-`docs/handoffs/HANDOFF_gui-port-relay.md`; this one follows the cluster in
+`docs/tracks/gui-port-relay.md`; this one follows the cluster in
 `docs/known-issues/` where the damage is invisible. The two ran concurrently on
 2026-08-10 and again on 2026-08-11 without colliding, and can again — but see
 **Sharing main** below, because the second pass nearly did.

@@ -79,7 +79,7 @@ state is two, plus a display surface.**
 ## Consequences
 
 - Leg 2 ends by flipping the prototype's status in
-  `handoffs/HANDOFF_gui-port-relay.md` and in `SETTINGS_REWORK_PLAN.md` §0,
+  `../tracks/gui-port-relay.md` and in `../archive/plans/settings-rework.md` §0,
   which currently reads *"the prototype is mandatory reading"* without a
   horizon. Rule 4b of the relay — *read the prototype per screen* — applies to
   screens not yet ported and expires with them.

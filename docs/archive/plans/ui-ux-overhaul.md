@@ -3,15 +3,15 @@
 Status: 2026-07-25
 
 > This is a consolidated record of the implemented UI direction and enduring
-> rationale. Current rules live in [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md); runtime
-> ownership lives in [ARCHITECTURE.md](ARCHITECTURE.md). Historical speculative
+> rationale. Current rules live in [DESIGN_SYSTEM.md](../../DESIGN_SYSTEM.md); runtime
+> ownership lives in [ARCHITECTURE.md](../../ARCHITECTURE.md). Historical speculative
 > code, CSS, and window-config sketches have been removed.
 
 ## Implemented Decisions
 
 - Main settings and diagnostics windows use native decorations on every
   platform. There is no frameless main window, custom title bar, or fake traffic
-  lights. [ADR 0003](decisions/0003-native-fensterdekorationen.md) is
+  lights. [ADR 0003](../../decisions/0003-native-fensterdekorationen.md) is
   authoritative.
 - The UI uses React 18, Tailwind CSS v4, shadcn/ui patterns, and existing CSS
   variables through `@theme inline`.
@@ -59,14 +59,14 @@ does not become a second full application.
 
 The current `clipboard_only` processing preview is real and commits through the
 normal native insert/history/session path. A full preview and controlled commit
-flow for all delivery modes is planned in [ROADMAP.md](ROADMAP.md), Phase 3;
+flow for all delivery modes is planned in [ROADMAP.md](../../ROADMAP.md), Phase 3;
 the UI must not simulate it before that runtime path exists.
 
 On Linux, fixed host sizes, native parking, opacity, and compositor-safe CSS
 are reliability requirements. Overlay placement is user intent only when it
-comes from a real drag. See [REFERENCE.md](REFERENCE.md) for the overlay
+comes from a real drag. See [REFERENCE.md](../../REFERENCE.md) for the overlay
 constants and
-[overlay-placement-persist.md](known-issues/overlay-placement-persist.md) for
+[overlay-placement-persist.md](../../known-issues/overlay-placement-persist.md) for
 the active placement constraints.
 
 ## Design Language
@@ -109,4 +109,4 @@ system.
 The next UI work follows runtime maturity: controlled commit, clearer provider
 modes, guided local setup, and installation-to-first-dictation onboarding. New
 visual concepts require an implemented product contract and must be reflected in
-[DESIGN_SYSTEM.md](DESIGN_SYSTEM.md), not accumulated here as code sketches.
+[DESIGN_SYSTEM.md](../../DESIGN_SYSTEM.md), not accumulated here as code sketches.

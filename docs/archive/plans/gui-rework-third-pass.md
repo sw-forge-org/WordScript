@@ -1,6 +1,6 @@
 # WordScript — GUI rework, third pass
 
-> **Superseded 2026-08-04 by [HANDOFF_gui-port-relay.md](HANDOFF_gui-port-relay.md).**
+> **Superseded 2026-08-04 by [../../tracks/gui-port-relay.md](../../tracks/gui-port-relay.md).**
 > Its four listed faults and its open items were carried through passes four to
 > fourteen and are recorded in the prototype's own pass log: the padding system
 > (ADR 0052), the matrix (ADR 0053), the frosted material (ADR 0051), the
@@ -17,7 +17,7 @@ Repo: `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/Wo
 Branch: `gui-rework-second-pass`, commit `e92e44c`, pushed.
 
 Read first: `AGENTS.md` (= `CLAUDE.md`), `docs/DESIGN_SYSTEM.md`,
-`docs/SETTINGS_REWORK_PLAN.md` §5 and §15,
+`docs/archive/plans/settings-rework.md` §5 and §15,
 `docs/prototypes/settings-rework/README.md`.
 
 Serve the prototype: `python3 -m http.server 8791 --directory docs/prototypes/settings-rework`

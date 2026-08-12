@@ -56,4 +56,4 @@ native host after changes to overlay visibility or placement behavior.
 
 - [REFERENCE.md](../REFERENCE.md): overlay constants the placement must respect
 - [overlay-ghosting.md](overlay-ghosting.md): independent visual compositor issue
-- [OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md](../handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md): related native host behavior
+- [../archive/handoffs/overlay-linux-black-block.md](../archive/handoffs/overlay-linux-black-block.md): related native host behavior

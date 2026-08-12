@@ -5,7 +5,7 @@ by `src/`, not routed in `App.tsx`, uses no Tauri API, and changes nothing in
 the build system — but it is the accepted shape of the target and the reference
 Stage 1 through Stage 5 build against. Do not delete it.
 
-Its gate, per [SETTINGS_REWORK_PLAN.md](../../SETTINGS_REWORK_PLAN.md) §8, is
+Its gate, per [the settings rework plan](../../archive/plans/settings-rework.md) §8, is
 **passed**:
 
 > **Gate: agreement on IA, palette and copy budget before Stage 1.**

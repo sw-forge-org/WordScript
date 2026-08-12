@@ -705,35 +705,9 @@ later expansion:
 
 ## Documentation set
 
-The intentionally small documentation set is:
+The map of the documentation set — every document, what kind it is, and what to
+read before touching an area — is [README.md](README.md). It used to be listed
+here as well, and the two lists disagreed: this one was the only one that still
+named `docs/templates/`, which no longer exists.
 
-- `README.md` for project overview
-- `AGENTS.md` (canonical agent instruction; `CLAUDE.md` is a symlink to it)
-- `CONTRIBUTING.md` for the contribution workflow
-- `SECURITY.md` for security reports and secret handling
-- `CHANGELOG.md` for published changes
-- `docs/spec/SPEC.md` for the consolidated spec (Layer 1)
-- `docs/VISION.md` for product goal and V1/V2 scope
-- `docs/ARCHITECTURE.md` for system truth and ownership
-- `docs/DEVELOPMENT.md` for working mode and validation
-- `docs/DESIGN_SYSTEM.md` for UI rules
-- `docs/STATUS.md` for current product state, implemented core features,
-  insertion/recovery model, open gaps, release status
-- `docs/PLATFORMS.md` for the platform support matrix and
-  insert/recovery diagnostics
-- `docs/REFERENCE.md` for project-wide constants, provider/runtime limits,
-  mode semantics (this file)
-- `docs/ROADMAP.md` for the V1 consolidation phases
-- `docs/RELEASE_RUNBOOK.md` for the current release build-up path
-- `docs/UI_UX_OVERHAUL_PLAN.md` for the UI overhaul plan
-- `docs/decisions/` for Architecture Decision Records (append-only)
-- `docs/known-issues/` for living bug documentation (open and resolved)
-- `docs/handoffs/` for completed implementation specs and historical
-  hand-offs
-- `docs/donors/` for frozen donor references and slice planning
-- `docs/templates/` for reference templates (SPEC, VISION, DATA-MODEL,
-  DESIGN-SYSTEM)
-- `staging/` for the consolidation staging area of unstructured material
-- `.agents/`, `.claude/`, `.githooks/`, `.github/` for meta structure
-
-Any further file needs a narrower purpose than these entry points.
+Any further file needs a narrower purpose than the entry points that page lists.

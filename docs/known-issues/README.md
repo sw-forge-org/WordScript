@@ -21,7 +21,7 @@ status change. Resolved bugs remain as references for the same failure class.
   other five processing modes; the mode is most likely a visibility modifier,
   and it is to be measured before anything is changed. The separate accepted
   mode-cycling residual is recorded in the
-  [accepted-state hand-off](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md).
+  [accepted-state hand-off](../archive/handoffs/overlay-mode-cycling-accepted.md).
 - [insert-behavior-reverts.md](insert-behavior-reverts.md): the delivery mode
   switching itself back to clipboard-only. Two mechanisms found and fixed
   (`92ce7f5` 2026-07-03, ADR 0019 2026-07-29); the second was a normalized
@@ -260,7 +260,11 @@ status change. Resolved bugs remain as references for the same failure class.
 ## Boundaries
 
 - Architecture decisions: [decisions/](../decisions/) (append-only ADRs)
-- Completed implementation specifications: [handoffs/](../handoffs/)
+- Work in progress on these records: [IMPLEMENTATION.md](../IMPLEMENTATION.md).
+  The **core hardening** track exists for the cluster in this directory where
+  the damage is invisible; its sequence is
+  [tracks/core-hardening.md](../tracks/core-hardening.md)
+- Closed implementation specifications: [archive/](../archive/README.md)
 - Frozen donor references: [donors/](../donors/)
 - Regression corpus:
   `src-tauri/tests/fixtures/regression_transcripts.json` and

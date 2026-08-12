@@ -162,7 +162,7 @@ four reasons. This record does not weaken any of them:
   The assistant does not, the copilot does not (ADR 0047), and the handoff card
   does not -- it is keyed, not spoken, which ADR 0030 already required for
   anything that starts a run.
-- **What the runtime has to grow** is stated in SETTINGS_REWORK_PLAN.md §11.52
+- **What the runtime has to grow** is stated in ../archive/plans/settings-rework.md §11.52
   rather than here: an effect-intent classifier on the dictation result, a
   handoff surface that grabs two keys without focus, and `kind` on an action
   record.

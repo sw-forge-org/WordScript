@@ -12,7 +12,7 @@ on `main`. Do not create a branch. `src-tauri/` is open, and **two other tracks
 `git log --oneline -5` AND `git status` before you start, and **stage your own
 paths when you commit** rather than `git add -A`.
 
-**Read `docs/handoffs/HANDOFF_gui-port-relay.md` first.** The Leg 13 prompt is
+**Read `docs/tracks/gui-port-relay.md` first.** The Leg 13 prompt is
 the section titled *"The prompt for Leg 13"* and it is your actual brief — this
 page is only the orientation. Above it, Leg 12's record is your starting state,
 and **its findings 1 and 2 are the two that will cost you if you skip them**.

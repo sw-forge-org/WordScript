@@ -1365,7 +1365,7 @@ export default function OverlayWindow() {
   // leaves you to find it is the defect ADR 0034 names one layer up.
   //
   // The target is a semantic anchor, not a settings area id — the settings
-  // surface is being reworked (docs/SETTINGS_REWORK_PLAN.md) and the auto-stop
+  // surface is being reworked (docs/archive/plans/settings-rework.md) and the auto-stop
   // moves to Profiles → Defaults with it. An id would break silently there.
   // Retry a failed transcription from the audio the runtime kept.
   //

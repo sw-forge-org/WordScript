@@ -156,7 +156,7 @@ chat rather than after it**.
   per lane — so the cost of a new vendor's models is data rather than an edit in
   two languages.
 - **The sequence is
-  [handoffs/PLAN_speech-track-implementation.md](handoffs/PLAN_speech-track-implementation.md)**,
+  [tracks/speech-track-plan.md](tracks/speech-track-plan.md)**,
   which orders every record in this phase — including the two below, which had
   no position relative to each other, and ADR 0094, which is the precondition of
   both and had none at all. The window class (ADR 0100) and the config echo
@@ -295,7 +295,7 @@ guided on-device runtime lane.
 - Clear fast-versus-quality tradeoffs.
 - **In-app model installation left this phase on 2026-08-12**, on the owner's
   instruction, and is now **B5** on
-  [handoffs/PLAN_speech-track-implementation.md](handoffs/PLAN_speech-track-implementation.md)
+  [tracks/speech-track-plan.md](tracks/speech-track-plan.md)
   under ADR 0122 -- together with the explicit download-or-pull actions that
   were a separate bullet beside it. It moved because the surface was finished
   and inert while the phase that owed it sat behind the whole provider
@@ -700,7 +700,7 @@ option, stated as a candidate rather than a promise. The layout it would produce
 is sketched in
 [prototypes/settings-rework](prototypes/settings-rework/README.md) as
 *Meeting capture*, and the open problem is
-[SETTINGS_REWORK_PLAN.md](SETTINGS_REWORK_PLAN.md) §10.4.
+[archive/plans/settings-rework.md](archive/plans/settings-rework.md) §10.4.
 
 **It is a second capture type, not a longer dictation.** A dictation runs for
 seconds, captures the microphone, and ends by inserting text at the cursor. A

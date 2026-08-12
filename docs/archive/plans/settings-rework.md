@@ -5,7 +5,7 @@ derivation.** The delivery model changed on 2026-08-04 (§16): the rework is a
 port that overwrites rather than a migration (ADR 0054), judged in a
 `/gallery` route rather than against the shipped surface (ADR 0055), running as
 a relay of legs on `main` tracked in
-[`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md).
+[`../../tracks/gui-port-relay.md`](../../tracks/gui-port-relay.md).
 
 **Legs 1 through 9 are closed.** All 25 prototype screens stand in `/gallery`;
 the shell was overwritten in Leg 3 and the fourteen flat areas deleted with it;
@@ -36,20 +36,20 @@ the way it is, which nothing else carries.
 > §1's "the overlay is out of scope" still holds: no overlay token, size or CSS
 > rule is part of the rework, and the dependency runs the other way.
 
-> This is the working plan for [ROADMAP.md](ROADMAP.md) Phase 7, second half:
+> This is the working plan for [ROADMAP.md](../../ROADMAP.md) Phase 7, second half:
 > *"Rework the settings surface completely. The information architecture is
 > usable but the presentation is not."* The profile-catalogue half of Phase 7 is
 > separate work and is not planned here.
 >
-> Current rules live in [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md); enduring rationale
-> for the shipped shell lives in [UI_UX_OVERHAUL_PLAN.md](UI_UX_OVERHAUL_PLAN.md).
+> Current rules live in [DESIGN_SYSTEM.md](../../DESIGN_SYSTEM.md); enduring rationale
+> for the shipped shell lives in [ui-ux-overhaul.md](ui-ux-overhaul.md).
 > Neither is superseded until this plan ships and an ADR records the change.
 
 ## 0. Start here
 
 **If you are picking this plan up: it is a derivation, not a queue.** The
 staged delivery it describes (Stage 1a onward) was replaced on 2026-08-04 by the
-leg relay — read `handoffs/HANDOFF_gui-port-relay.md` for what to do next, and
+leg relay — read `../../tracks/gui-port-relay.md` for what to do next, and
 this file for why the surface is shaped the way it is. Everything above §8 is
 the derivation and is still accurate except where §11 records a correction. Do
 not re-derive it.
@@ -65,7 +65,7 @@ runtime and were presented as global; §4.2's table sorts by where a control is
 found, and has to be read with the scope rule on top of it.
 
 **The prototype is PROVENANCE, not the source — as of 2026-08-04.**
-[`prototypes/settings-rework/`](prototypes/settings-rework/README.md) — open
+[`prototypes/settings-rework/`](../../prototypes/settings-rework/README.md) — open
 `index.html` in a browser. It is the accepted shape the port was built from: 25
 screens, the proposed design system on its own screen, and the switches that
 settled the calibration. It is not imported by `src/` and ships nothing.
@@ -227,7 +227,7 @@ surface macOS uses at all.
 
 ### 2.4 The scroll jank is mostly not CSS
 
-[SETTINGS_SCROLL_PERFORMANCE_HANDOFF.md](handoffs/SETTINGS_SCROLL_PERFORMANCE_HANDOFF.md)
+[../handoffs/settings-scroll-performance.md](../handoffs/settings-scroll-performance.md)
 is marked *"Implemented and validated 2026-06-21"* and addressed compositing
 cost. The jank that remains has different causes, ranked by expected impact:
 
@@ -679,7 +679,7 @@ data, and a standing label — never a fake readiness state.
 | **Upload** | V2 (existing) | Existing `UploadArea`, restyled. Band over a full-width queue, not a 460 px `solo` |
 | **Chat** | V2 (existing) | Existing `ChatArea`, **as a panel inside Notes** (§11.19). Assistant turns name the rows they read |
 | **Integrations** | Phase 8 | MCP server endpoint, token, port file; CLI install; all marked planned. **In Settings**, not the workspace (§11.16) |
-| **Meeting capture** | ~~*not on the roadmap*~~ **Candidate, since 2026-08-03** | Added 2026-08-03. A second capture type in a second window — resizable, content-protected, ends as a note. Sketched so the direction is written down; the open questions are in §10.4. It got its ADR on 2026-08-05 ([0063](decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)) and its roadmap candidate the same day it was drawn — the *"not on the roadmap"* in this cell was true for a few hours and has been repeated since |
+| **Meeting capture** | ~~*not on the roadmap*~~ **Candidate, since 2026-08-03** | Added 2026-08-03. A second capture type in a second window — resizable, content-protected, ends as a note. Sketched so the direction is written down; the open questions are in §10.4. It got its ADR on 2026-08-05 ([0063](../../decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)) and its roadmap candidate the same day it was drawn — the *"not on the roadmap"* in this cell was true for a few hours and has been repeated since |
 
 ### Documented as pending, not rendered
 
@@ -713,7 +713,7 @@ That work is **Leg 4a** of the relay, it runs before wiring, and it produces
 ADRs and roadmap entries rather than code — deciding it inside a wiring leg
 means deciding it by implementing one answer. The per-surface breakdown of what
 is drawn against what is undecided is §2.6 of
-[`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md).
+[`../../tracks/gui-port-relay.md`](../../tracks/gui-port-relay.md).
 
 ---
 
@@ -721,7 +721,7 @@ is drawn against what is undecided is §2.6 of
 
 ### Stage 0 — Browser demo — **done and accepted 2026-08-02**
 
-Delivered at [`prototypes/settings-rework/`](prototypes/settings-rework/README.md):
+Delivered at [`prototypes/settings-rework/`](../../prototypes/settings-rework/README.md):
 **19 product screens plus a Design System screen**, the three switches, and a
 screen picker. Nothing landed in `src/`.
 
@@ -840,7 +840,7 @@ this rework, despite the prototype still carrying the screen.
 - `DESIGN_SYSTEM.md`: new tokens, new components, copy budget, the surface model
 - `STATUS.md`: new area list
 - `ROADMAP.md`: Phase 7 second half marked done; Translation-mode candidate added
-- `UI_UX_OVERHAUL_PLAN.md`: IA table updated, or the document retired in favor of
+- `ui-ux-overhaul.md`: IA table updated, or the document retired in favor of
   the ADRs it now duplicates
 - `CHANGELOG.md`, `README.md`
 - `spec-sync` run at the end
@@ -857,7 +857,7 @@ this rework, despite the prototype still carrying the screen.
 | 4 | Does Diagnostics stay in Settings, or become a workspace view? | **Closed: Settings** — it is inspection, not authoring; the pop-out already covers heavy use. |
 | 5 | Search (`Cmd+K`) across settings, as the donor has | **Open, out of scope here.** Follow-up once the IA is stable. The donor puts it at the top of the sidebar; the prototype leaves that space free. |
 | 6 | Is Translation mode wanted at all? | **Closed, in two halves, and the row was stale.** The *mode* was decided on 2026-08-03 by ADR 0041 and lands with Phase 4 — it has not been open since. The *window* was decided on 2026-08-05 by ADR 0064: a workspace view with a pop-out, a conversation kept only if the session opts in, and a roadmap candidate with its own gate. |
-| 7 | Keep `UI_UX_OVERHAUL_PLAN.md` or retire it | **Open.** Decide at Stage 6. |
+| 7 | Keep `ui-ux-overhaul.md` or retire it | **Open.** Decide at Stage 6. |
 | 8 | How many MCP servers, and who may call them | **Open — see §10.1.** Needs its own ADR; do not settle it inside this rework. |
 | 9 | Is meeting capture wanted, and does it start from a hotkey or from detecting a call? | **The start is closed 2026-08-05 by ADR 0063; the capability is not.** Four ways in — its own hotkey, a calendar offer shortly before, a detected call, and `Context → New → Record` — and detection watches which process holds the *microphone* rather than which applications run, so noticing a call needs no system-audio capture. Only an explicit stop ends one. It stays a roadmap candidate: system-audio capture and echo cancellation still do not exist, and gates 2 and 3 there are still open. |
 
@@ -1007,7 +1007,7 @@ roadmap entry. The prototype's screen exists so the direction is written down
 and argued with, not so it is built from.
 
 **Both arrived on 2026-08-05, from relay Leg 4a rather than from this rework.**
-[ADR 0063](decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)
+[ADR 0063](../../decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)
 answers the first open question above with four ways in, and corrects the
 assumption inside it: the detection prompt is **not** a third surface to own,
 because it is ADR 0043's notification window carrying a different payload — and
@@ -2640,15 +2640,15 @@ Added 2026-08-05 by relay Leg 4a, which is the leg §7 predicted: it decided how
 each of the six surfaces is entered, what holds its state, what dismisses it,
 and what happens to it when the thing it is about ends. It wrote no code. Five
 ADRs and three roadmap entries are the output —
-[0060](decisions/0060-onboarding-runs-when-the-runtime-cannot-answer-and-it-is-re-runnable.md)
+[0060](../../decisions/0060-onboarding-runs-when-the-runtime-cannot-answer-and-it-is-re-runnable.md)
 onboarding,
-[0061](decisions/0061-the-tab-is-a-state-the-notification-is-the-question-and-neither-replaces-the-other.md)
+[0061](../../decisions/0061-the-tab-is-a-state-the-notification-is-the-question-and-neither-replaces-the-other.md)
 the agent overlay,
-[0062](decisions/0062-the-effect-verb-stage-runs-before-the-mode-router-and-a-refusal-is-counted-against-the-verb-that-caused-it.md)
+[0062](../../decisions/0062-the-effect-verb-stage-runs-before-the-mode-router-and-a-refusal-is-counted-against-the-verb-that-caused-it.md)
 the handoff,
-[0063](decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)
+[0063](../../decisions/0063-a-meeting-has-four-ways-in-one-of-them-watches-the-microphone-and-only-a-press-ends-it.md)
 meeting capture,
-[0064](decisions/0064-the-translation-window-is-a-view-with-a-pop-out-and-a-conversation-is-kept-only-if-you-say-so.md)
+[0064](../../decisions/0064-the-translation-window-is-a-view-with-a-pop-out-and-a-conversation-is-kept-only-if-you-say-so.md)
 the translation window; live subtitles is the one that did **not** earn an ADR
 and got a candidate entry instead.
 
@@ -2764,9 +2764,9 @@ literals.
 
 ## 14. References
 
-- [ROADMAP.md](ROADMAP.md) Phase 7 — the mandate for this work
-- [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) — rules this plan changes
-- [SETTINGS_SCROLL_PERFORMANCE_HANDOFF.md](handoffs/SETTINGS_SCROLL_PERFORMANCE_HANDOFF.md) — the prior performance pass
+- [ROADMAP.md](../../ROADMAP.md) Phase 7 — the mandate for this work
+- [DESIGN_SYSTEM.md](../../DESIGN_SYSTEM.md) — rules this plan changes
+- [../handoffs/settings-scroll-performance.md](../handoffs/settings-scroll-performance.md) — the prior performance pass
 - ADR 0003 (native decorations), 0020 (mode is the only transform axis), 0023
   (register sets form), 0024 (mode has one source), 0025 (session belongs to its
   profile), 0029/0030 (agents), 0031 (voice nudge), 0034 (a limit belongs to the
@@ -2856,7 +2856,7 @@ correction in §11 stand exactly as written.
 
 ### 16.1 It is a port that overwrites, not a migration
 
-[ADR 0054](decisions/0054-the-rework-lands-as-an-overwrite-because-there-is-nobody-to-migrate.md).
+[ADR 0054](../../decisions/0054-the-rework-lands-as-an-overwrite-because-there-is-nobody-to-migrate.md).
 `0.2.2-alpha` has no users, so the continuity machinery this plan specified has
 nobody to serve.
 
@@ -2875,7 +2875,7 @@ is a migration again.
 
 ### 16.2 The gallery is the acceptance surface
 
-[ADR 0055](decisions/0055-the-gallery-is-where-the-port-is-judged-and-it-is-one-route.md).
+[ADR 0055](../../decisions/0055-the-gallery-is-where-the-port-is-judged-and-it-is-one-route.md).
 One design-time route `/gallery` — Foundations · Components · Motion · Overlay ·
 Screens — folding in the two unlinked routes that already exist
 (`/overlay-gallery`, `/component-lab`).
@@ -2896,7 +2896,7 @@ diffed against.
 
 ### 16.3 It runs as a relay on `main`
 
-Tracked in [`handoffs/HANDOFF_gui-port-relay.md`](handoffs/HANDOFF_gui-port-relay.md),
+Tracked in [`../../tracks/gui-port-relay.md`](../../tracks/gui-port-relay.md),
 which carries the rules, the leg map, the active leg's full specification and
 the prompt for the next one. Each leg is one agent session that ends green,
 commits and pushes to `main`, records what it did, and writes the next prompt.

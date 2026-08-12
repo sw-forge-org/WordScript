@@ -24,7 +24,7 @@ disagreement 5 records that the drawn lane defaults are a generation behind —
 `claude-sonnet-5` and `claude-opus-5` — and ends with the observation that this
 *"is an argument about **where model names should live** rather than about these
 particular strings."* It leaves the argument open. No step on
-`docs/handoffs/PLAN_speech-track-implementation.md` claimed it.
+`docs/tracks/speech-track-plan.md` claimed it.
 
 **The scale is about to change by an order of magnitude.** The build-out is ten
 drawn vendors (ADR 0096) and the survey now carries seven more. Fourteen

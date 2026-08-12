@@ -1,6 +1,6 @@
 # Hand-Off: Overlay Mode-Cycling Ghosting Residual Investigation
 
-Status: **Superseded by `OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md`**
+Status: **Superseded by `overlay-mode-cycling-accepted.md`**
 
 This historical investigation reduced rapid mode-cycle ghosting from roughly
 27 px to a near-invisible edge artifact and removed the visible remount flash.

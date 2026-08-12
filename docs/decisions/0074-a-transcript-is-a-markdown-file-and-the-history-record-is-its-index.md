@@ -4,7 +4,7 @@ Date: 2026-08-10
 Status: Accepted
 
 Keeps the promise
-[SETTINGS_REWORK_PLAN.md §11.23](../SETTINGS_REWORK_PLAN.md) made on 2026-08-03
+[../archive/plans/settings-rework.md §11.23](../archive/plans/settings-rework.md) made on 2026-08-03
 and Leg 4c suspended. Decided by the owner on 2026-08-10 after the case for
 retiring it was put and lost.
 

@@ -25,4 +25,4 @@ could still trigger portal behavior, while the runtime had no useful diagnosis.
 
 Pure Wayland must not retry privileged input drivers blindly. `local` automatic
 paste support remains desktop-environment dependent; clipboard recovery is the
-safe fallback. See [PLATFORMS.md](../PLATFORMS.md) for current support behavior.
+safe fallback. See [PLATFORMS.md](../../PLATFORMS.md) for current support behavior.

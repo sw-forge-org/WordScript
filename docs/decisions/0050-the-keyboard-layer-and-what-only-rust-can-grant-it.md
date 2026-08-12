@@ -6,7 +6,7 @@ Status: Accepted (assignment settled; native implementation outstanding)
 ## Context
 
 The settings surface has 4 workspace views and 11 settings sections, and §4 of
-`SETTINGS_REWORK_PLAN.md` spent considerable effort deciding which of them each
+`../archive/plans/settings-rework.md` spent considerable effort deciding which of them each
 control belongs to. Every one of those placements is defensible and every one
 is still a thing the user has to know.
 

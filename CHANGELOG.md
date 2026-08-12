@@ -53,6 +53,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the documentation gets an index and a board, and a fact stops having five lists (ADR 0123)
+
+- **`docs/README.md` is new and is the map** — every document, what kind it is,
+  and what to read before touching an area. It replaces five lists that had
+  drifted apart: `README.md`, `docs/REFERENCE.md`, `docs/DEVELOPMENT.md`,
+  `AGENTS.md` and the sub-READMEs each carried their own, and `REFERENCE.md` was
+  the only one still naming `docs/templates/` while `DEVELOPMENT.md` did not
+  name `PROVIDERS.md` at all.
+- **`docs/IMPLEMENTATION.md` is new and is the board.** Three tracks run
+  concurrently on `main` — the GUI port relay at Leg 13, core hardening at its
+  third pass, the speech track in Stage B — and the only place that said so was
+  a prose paragraph in a folder README. The board carries each track's stage,
+  its sequence document, the page you paste to start a session, the ADR range it
+  owns, and the rules for sharing one tree.
+- **A document's directory now states its lifecycle.** `docs/tracks/` holds only
+  running tracks; `docs/archive/` holds closed ones, spent plans, spent briefs
+  and closed hand-off records. `docs/handoffs/` — which held all four kinds at
+  once, sorted by filename prefix rather than by whether the work was live — is
+  gone, and the `HANDOFF_`/`KICKOFF_`/`PLAN_` prefixes with it.
+- **The GUI port relay goes from 6,081 lines to 877, with nothing deleted.** It
+  keeps its rules, a leg-log index that for the first time lists every leg, the
+  four most recent leg records and the open brief. Closed records, seventeen
+  spent briefs and nine spent kick-off pages moved to three archive documents.
+  Its header had said "Leg 6 is CLOSED, Leg 7 is next" for six legs after Leg 7
+  closed, and its rule 3 had named `0060` as the next free ADR for sixty-three
+  records; both now say what to do instead of carrying a number that goes stale.
+- **Two live contradictions were found by restructuring rather than by reading.**
+  `STATUS.md` carried its own phase list showing six phases while `ROADMAP.md`
+  carried nine — Phases 7, 8 and 9 were missing. The speech plan's status table
+  listed step C3 as *not started* eleven paragraphs after the step itself
+  recorded **Done 2026-08-12**. The phase copy is removed; C3's row is corrected.
+- **One commit belongs to no leg.** `b330815` — the sidebar's second width,
+  ADR 0111 — landed while Leg 13 was open and is neither of its two items. It is
+  now recorded as unattributed on the relay instead of being silently absent.
+- **Paths were corrected across the whole tree, including inside 16 ADRs and six
+  source-file comments.** The append-only rule protects a record's reasoning, not
+  the resolvability of a path it cites. `docs/prototypes/` is the exception and
+  keeps its original citations: ADR 0055 makes it read-only. All 205 markdown
+  files resolve.
+- **`docs/templates/` is deleted.** Each of its four files stated in its own
+  header that WordScript does not use it.
+
 ### Added — one model catalogue, and neither runtime spells a model name (ADR 0115 scoped by ADR 0120, speech track step B3)
 
 - **`shared/model_catalogue.json`, with its schema beside it**, carrying one row
@@ -408,7 +450,7 @@ make.
   which this repo's own lane definition makes the deciding test. Same
   relationship Polly has to Bedrock — the shared brand is what makes the wrong
   answer look right.
-- **`docs/handoffs/PLAN_speech-track-implementation.md` gains B3 and D1a**, and
+- **`docs/tracks/speech-track-plan.md` gains B3 and D1a**, and
   G3 stops being one bullet naming nine adapters. **D1a is not gated on a
   drawing answer**, which makes it the reachable path to a second and third
   speech lane while F1 waits on the owner.
@@ -1685,7 +1727,7 @@ finding answered. Reported from the running host on 2026-08-11.
   shipped surface having to change first (ADR 0055). The prototype at
   `docs/prototypes/settings-rework/` is read-only from 2026-08-04.
 - **The work runs as a relay on `main`**, tracked in
-  `docs/handoffs/HANDOFF_gui-port-relay.md`: six legs, each one session that ends
+  `docs/tracks/gui-port-relay.md`: six legs, each one session that ends
   green, pushes, records what it did and writes the prompt for the next. Two
   deliberate ordering corrections against the plan's stages — the design system
   lands before the screens, because the prototype had been patching four missing

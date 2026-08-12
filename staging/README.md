@@ -29,6 +29,8 @@ means no consolidation work is pending.
 
 ## WordScript Scope
 
-Frozen donor references in `docs/donors/` and completed implementation records
-in `docs/handoffs/` are already in their final location and do not belong here.
-The global staging principle is defined by the shared SW labs agent guidance.
+Frozen donor references in `docs/donors/` and closed implementation records in
+`docs/archive/` are already in their final location and do not belong here.
+Neither does a document for work that is still running -- that belongs in
+`docs/tracks/`, listed on `docs/IMPLEMENTATION.md`. The global staging principle
+is defined by the shared SW labs agent guidance.

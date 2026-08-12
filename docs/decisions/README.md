@@ -432,7 +432,7 @@ Status: Proposed | Accepted | Superseded by NNNN
   non-default register nobody can see. It becomes a sixth profile tab, `Style`,
   in second position, carrying one card `Communication style`, and the Legend on
   Defaults gains a fifth row stating its scope — which supersedes the placement
-  half of `SETTINGS_REWORK_PLAN.md` §11.4 while meeting what §11.4 protected.
+  half of `../archive/plans/settings-rework.md` §11.4 while meeting what §11.4 protected.
   Rejected: beside the Rewrite job on AI Models, which is machine-scope for a
   profile-scope value (ADR 0024).
 - [0067](0067-local-preview-is-treated-as-an-unpublished-provider-everywhere-it-is-offered.md):
@@ -917,6 +917,19 @@ Status: Proposed | Accepted | Superseded by NNNN
   install block, `fallback_provider_profiles` stops naming files that do not
   exist, progress travels on its own channel rather than a session one, and a
   download is checksummed before it is renamed into place.
+- [0123](0123-a-fact-has-one-list-and-a-track-is-a-directory-not-a-naming-convention.md):
+  the documentation set had grown to 208 files with **no index and no board** —
+  five disagreeing copies of the doc map, three of the phase list, and nothing
+  that said which of three concurrent tracks was running. A fact now has exactly
+  one list (`docs/README.md` for the map, `ROADMAP.md` for the phases,
+  `IMPLEMENTATION.md` for the tracks) and every other mention is a link. A
+  document's **directory** states its lifecycle — `tracks/` for live work,
+  `archive/` for closed — so the `HANDOFF_`/`KICKOFF_`/`PLAN_` prefixes are
+  dropped. The relay keeps its rules, its index, four leg records and the open
+  brief; the other 5,200 lines move to the archive. Paths are corrected inside
+  ADRs too, because the append-only rule protects a record's reasoning and not
+  a citation that has stopped resolving. Doing it surfaced two live
+  contradictions and one commit that belongs to no leg.
 
 ## Resolved: the number 0011 was used twice
 
@@ -963,7 +976,7 @@ outside the decisions meant the delivery-surface record, and two of them do not:
   (two places), `spec/SPEC.md` (two places), `known-issues/overlay-ghosting.md`,
   `CHANGELOG.md` (the overlay surface entry).
 - **0011b** (mode lane): `CHANGELOG.md` (the `Ctrl`-to-`Alt` entry) and
-  `handoffs/HANDOFF_activation-mode-gestures-and-defaults.md` (the migration
+  `../tracks/activation-gestures.md` (the migration
   pattern it cites as precedent).
 
 All of them now carry the letter. Cite these two by number **with** the suffix.

@@ -45,7 +45,7 @@ export function CommitScreen() {
         </header>
         <PreviewBanner tone="withdrawn" lead="Withdrawn">
           Not a target shape — do not build Phase 3 from this screen. Two reasons, both in
-          SETTINGS_REWORK_PLAN.md section 11.15: Diagnostics already does this, better; and the
+          docs/archive/plans/settings-rework.md section 11.15: Diagnostics already does this, better; and the
           decision cannot live in a settings-shaped view.
         </PreviewBanner>
       </div>

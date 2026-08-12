@@ -1,4 +1,4 @@
-//! The transcript as a file on disk (ADR 0074, SETTINGS_REWORK_PLAN §11.23).
+//! The transcript as a file on disk (ADR 0074, docs/archive/plans/settings-rework.md §11.23).
 //!
 //! Every record that produced text is also a Markdown file under
 //! `~/WordScript/transcripts/<YYYY>/<MM>/<DD-HHMM>-<slug>.md`. `history.json`

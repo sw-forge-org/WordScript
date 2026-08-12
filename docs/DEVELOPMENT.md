@@ -202,7 +202,7 @@ preview.
 
 ### The settings-rework port has its own check
 
-While the port runs (see `docs/handoffs/HANDOFF_gui-port-relay.md`), a screen in
+While the port runs (see `docs/tracks/gui-port-relay.md`), a screen in
 `/gallery` → Screens is accepted by **measurement**, not by eye. `npm run
 port:diff` opens the running prototype and the running gallery in one headless
 Chromium, walks both block trees and prints every structural and computed-style
@@ -234,21 +234,15 @@ divergences that are deliberate.
 
 ## Documentation Set
 
-- [SPEC.md](spec/SPEC.md): authoritative product contract
-- [VISION.md](VISION.md): product direction and V1/V2 boundaries
-- [ARCHITECTURE.md](ARCHITECTURE.md): ownership and runtime flow
-- [STATUS.md](STATUS.md): implemented state and open gaps
-- [PLATFORMS.md](PLATFORMS.md): support and platform diagnostics
-- [REFERENCE.md](REFERENCE.md): limits, constants, and mode semantics
-- [ROADMAP.md](ROADMAP.md): canonical phase detail
-- [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md): product-surface rules
-- [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md): internal release build-up
-- [decisions/](decisions/): immutable architecture decisions
-- [known-issues/](known-issues/): editable diagnostic records
-- [handoffs/](handoffs/): completed implementation history
-- [donors/](donors/): frozen reference material
+[README.md](README.md) is the map: every document, what kind it is, and what to
+read before touching an area.
 
 ## Current Focus
+
+**What is being built right now, and in what order, is
+[IMPLEMENTATION.md](IMPLEMENTATION.md)** — three tracks run concurrently on
+`main`, and that page carries which one owns what, plus the rules for sharing
+the tree.
 
 V1 work prioritizes trustworthy transcription, controlled delivery and
 recovery, clear provider semantics, a first-class local path, and guided setup

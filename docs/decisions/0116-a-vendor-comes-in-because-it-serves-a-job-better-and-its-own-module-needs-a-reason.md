@@ -95,7 +95,7 @@ that Cartesia publishes no TTFB — exist because a search result said otherwise
 - **ADR 0096's "every drawn lane gets an adapter" is unchanged in form and
   larger in scope.** It ties adapters to what is drawn; this record ties what is
   surveyed to what serves a job. The two meet at whatever the owner draws.
-- **It does not schedule anything.** `docs/handoffs/PLAN_speech-track-implementation.md`
+- **It does not schedule anything.** `docs/tracks/speech-track-plan.md`
   carries sequence; this record carries admission.
 - **It does not settle whether a specialist replaces Groq on `dictation`.**
   Groq is the lane the product runs (ADR 0065, ADR 0002) and a replacement is a

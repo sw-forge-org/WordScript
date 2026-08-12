@@ -36,7 +36,7 @@ measurement of it. Against the light card, `#ffffff`:
 Five of six clear AA. The muted step misses it by two hundredths.
 
 Two hundredths is not a rounding artefact worth waving through, because of what
-that particular token is for. `SETTINGS_REWORK_PLAN.md` §5.1 argues the entire
+that particular token is for. `../archive/plans/settings-rework.md` §5.1 argues the entire
 dark lift partly on this one figure: today's `--fg-muted` measures 3.89:1 on the
 shipped card and the proposed one measures 4.71:1, so *"`--fg-muted` clears AA
 for the first time and is restricted to labels and counts"*. A light scheme in

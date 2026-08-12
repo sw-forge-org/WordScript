@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    // Linux backend selection (see handoff OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md).
+    // Linux backend selection (see handoff docs/archive/handoffs/overlay-linux-black-block.md).
     // DEFAULT = XWayland (GDK_BACKEND=x11). Rationale: docs/STATUS.md:108 documents
     // that on native Wayland `startDragging`/`setPosition` are unreliable for the
     // overlay window (xdg_toplevel.move / Compositor-ownership) — drag regressed

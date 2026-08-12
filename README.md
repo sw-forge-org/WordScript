@@ -152,26 +152,18 @@ profile contracts, guided local setup, and release engineering.
 
 ## Documentation Map
 
-- [AGENTS.md](AGENTS.md): repository agent instructions
-- [CONTRIBUTING.md](CONTRIBUTING.md): contribution workflow
-- [SECURITY.md](SECURITY.md): disclosure and secret handling
-- [CHANGELOG.md](CHANGELOG.md): project changes
-- [docs/spec/SPEC.md](docs/spec/SPEC.md): authoritative product contract
-- [docs/VISION.md](docs/VISION.md): product direction and V1/V2 boundaries
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): runtime ownership and flow
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): setup and validation
-- [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md): active UI rules
-- [docs/STATUS.md](docs/STATUS.md): product state and gaps
-- [docs/PLATFORMS.md](docs/PLATFORMS.md): platform diagnostics
-- [docs/PROVIDERS.md](docs/PROVIDERS.md): what each provider serves, per lane and per date
-- [docs/REFERENCE.md](docs/REFERENCE.md): limits and mode semantics
-- [docs/ROADMAP.md](docs/ROADMAP.md): V1 phases
-- [docs/RELEASE_RUNBOOK.md](docs/RELEASE_RUNBOOK.md): release build-up
-- [docs/decisions/](docs/decisions/): immutable ADRs
-- [docs/known-issues/](docs/known-issues/): living bug records
-- [docs/handoffs/](docs/handoffs/): historical implementation hand-offs
-- [docs/donors/](docs/donors/): frozen reference material
-- [staging/](staging/): unstructured material awaiting consolidation
+**[docs/README.md](docs/README.md) is the map** — every document, what kind it
+is, and what to read before touching an area. The four entry points from here:
+
+- [docs/spec/SPEC.md](docs/spec/SPEC.md): the authoritative product contract
+- [docs/STATUS.md](docs/STATUS.md): what works today and what is open
+- [docs/ROADMAP.md](docs/ROADMAP.md): the V1 phases
+- [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md): what is being built right
+  now, by which track
+
+Repository meta: [AGENTS.md](AGENTS.md) (agent instructions),
+[CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
+[CHANGELOG.md](CHANGELOG.md), [staging/](staging/).
 
 ## License
 

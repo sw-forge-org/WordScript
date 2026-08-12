@@ -42,7 +42,7 @@
   /* WebKitGTK paints the OUTER drop-shadow of a transparent overlay window
      opaquely (the shadow's alpha bounding box turns solid black) instead of
      compositing it softly — proven by the P3 brute-force test in
-     docs/handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md: setting these to `none`
+     docs/archive/handoffs/overlay-linux-black-block.md: setting these to `none`
      made the black block disappear under XWayland. This affected both backends
      on the target system. The inner hairline highlight (--ov-highlight) is
      inset and stays; depth comes from border + surface. Do NOT reintroduce an

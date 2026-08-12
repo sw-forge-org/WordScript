@@ -4,7 +4,7 @@ Status: **Superseded by later residual and accepted-state hand-offs**
 
 This record captured the initial 2026-07-19 investigation of overlay state
 bleeding during rapid processing-mode changes while recording. It is historical
-context only; see `OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md` for the accepted
+context only; see `overlay-mode-cycling-accepted.md` for the accepted
 operational state.
 
 ## Original Symptom

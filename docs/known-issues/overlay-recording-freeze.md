@@ -274,5 +274,5 @@ rotates at 8 MB.
   against the diagnostic log this investigation relies on
 - [overlay-ghosting.md](overlay-ghosting.md): the related but distinct retained
   compositor layer failure class
-- [OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md):
+- [../archive/handoffs/overlay-mode-cycling-accepted.md](../archive/handoffs/overlay-mode-cycling-accepted.md):
   why compositor iterations are not restarted without new reproducible impact

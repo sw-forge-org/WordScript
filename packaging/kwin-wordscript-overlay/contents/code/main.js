@@ -5,7 +5,7 @@
 // xdg_toplevel clients. The only reliable always-on-top path on Wayland is to
 // place the window on KWin's OverlayLayer (above fullscreen), which is only
 // reachable via the KWin scripting API. See docs/STATUS.md ("Linux Wayland –
-// Overlay Click-Through nicht loesbar") and docs/handoffs/OVERLAY_LINUX_BLACK_BLOCK_HANDOFF.md.
+// Overlay Click-Through nicht loesbar") and docs/archive/handoffs/overlay-linux-black-block.md.
 //
 // Match: a WordScript window WITH skipTaskbar — that is the transparent overlay
 // only. The Settings and Diagnostics windows keep their normal layer.

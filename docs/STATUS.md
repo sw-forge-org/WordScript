@@ -161,7 +161,7 @@ Status: 2026-08-11
   that do not exist yet. With the last screen standing, the
   prototype turned from source into provenance (ADR 0057) and the gallery is the
   source. The wiring and the runtime contracts are later legs — see
-  `docs/handoffs/HANDOFF_gui-port-relay.md` for what is done and what is next,
+  `docs/tracks/gui-port-relay.md` for what is done and what is next,
   including the list of facts the drawn screens state that the runtime cannot
   yet answer, and the six surfaces whose behaviour nobody has decided.
 
@@ -650,7 +650,7 @@ Additional rules:
   rejected outside Linux, modifiers cannot be told apart by side, and the
   observation path exists only in the x11 backend of the vendored crate. The
   full plan is in
-  [handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](handoffs/HANDOFF_activation-mode-gestures-and-defaults.md)
+  [tracks/activation-gestures.md](tracks/activation-gestures.md)
 - the fix that stops the shipped abort default from discarding a capture under
   an unrelated `Ctrl+Alt+<key>` chord is **in code but unobserved**. Pause and
   abort now follow start/stop's rule — a modifier-only binding is decided at the
@@ -862,23 +862,18 @@ rejected permanently rather than deferred.
 
 ## Phase status (V1 consolidation)
 
-The detailed roadmap with order, conditions and phase scope lives in
-[docs/ROADMAP.md](./ROADMAP.md). Here only the current state of each V1
-phase:
+**The phase list lives in [ROADMAP.md](./ROADMAP.md) and only there.** A second
+copy stood here until 2026-08-12 and had drifted to six phases while the roadmap
+carried nine — Phases 7, 8 and 9 were missing entirely, and the two closed
+phases were the only rows still true.
 
-- [x] **Phase 1 -- Transcription bias, profile health, corpus** (commit
-  `a6005ca`, merged 2026-06-10).
-- [x] **Phase 2 -- Settings shell polish** (completed 2026-06-20).
-- [ ] **Phase 3 -- Live preview and controlled commit in the overlay.**
-  Prerequisite: phase 1 (preview needs bias clarity).
-- [ ] **Phase 4 -- Provider stack build-up** with honestly separated
-  `local` vs `self_hosted` semantics. Prerequisite: stable
-  `ProviderCommandError` / `ProviderStatus` contract.
-- [ ] **Phase 5 -- Local runtime as a first-class product option.**
-  Prerequisite: phase 4 (same provider contract).
-- [ ] **Phase 6 -- Guided setup and packaging path.** Comes last on
-  purpose, because guided setup is only honest once the underlying paths are
-  honest.
+What this file reports is the product state above: what is wired, what is drawn
+and not wired, and what is open. Which phase a piece of that belongs to is the
+roadmap's question.
+
+**Which of it is being worked on right now** — three concurrent tracks, their
+stages and what each owns — is
+[IMPLEMENTATION.md](./IMPLEMENTATION.md).
 
 ## Release build-up status
 

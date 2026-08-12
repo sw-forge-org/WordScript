@@ -70,7 +70,7 @@ does not exist.
 - The native side owes the system half of this: `window.theme()` and the
   Tauri theme-changed event, so the shell follows the OS the way the prototype
   follows `prefers-color-scheme`. Recorded in the handoff section of
-  `SETTINGS_REWORK_PLAN.md`.
+  `../archive/plans/settings-rework.md`.
 - Contrast has to be re-measured on the light side. The dark ladder's numbers
   in the design-system screen do not transfer, and a theme shipped without its
   own measurements is a theme nobody checked.

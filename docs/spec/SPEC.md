@@ -825,7 +825,7 @@ result surface (ADR 0011a).
   the second output stream, ADR 0098 for the mute that lets a machine speak over
   an open microphone without transcribing itself — but a record is not an
   implementation and neither entry leaves this list yet. The full list is §2.5 of
-  `docs/handoffs/HANDOFF_gui-port-relay.md`. **A drawn surface may not be read
+  `docs/tracks/gui-port-relay.md`. **A drawn surface may not be read
   as implemented**; the six undecided surfaces (ADRs 0060-0064 plus the roadmap
   candidate) are mounted in no window at all.
 - ~~**Text-rules import and export have a runtime and no caller.**~~ **CLOSED by

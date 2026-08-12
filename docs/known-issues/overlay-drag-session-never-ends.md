@@ -11,7 +11,7 @@ Affected area: overlay drag handling, all platforms
 Cycling processing modes in the idle mode picker left the previous mode's pill
 painted underneath the new one. It read as a compositor artifact and looked like
 the residual described in
-[OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md),
+[../archive/handoffs/overlay-mode-cycling-accepted.md](../archive/handoffs/overlay-mode-cycling-accepted.md),
 only much more visible.
 
 It was not a compositor problem.
@@ -82,5 +82,5 @@ Verified to fail against the pre-fix behaviour.
   class, distinct from this one.
 - [overlay-placement-persist.md](overlay-placement-persist.md): K1/K2, the
   reason the persist handler must not clear the session itself.
-- [OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md](../handoffs/OVERLAY_MODE_CYCLING_GHOSTING_ACCEPTED.md):
+- [../archive/handoffs/overlay-mode-cycling-accepted.md](../archive/handoffs/overlay-mode-cycling-accepted.md):
   the accepted-state record this finding calls into question.

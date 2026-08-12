@@ -603,8 +603,8 @@ native status and the next action. Do not invent readiness or conceal a fallback
 
 ## References
 
-- [UI_UX_OVERHAUL_PLAN.md](UI_UX_OVERHAUL_PLAN.md): enduring design rationale
+- [archive/plans/ui-ux-overhaul.md](archive/plans/ui-ux-overhaul.md): enduring design rationale
 - [ARCHITECTURE.md](ARCHITECTURE.md): UI/runtime ownership and contracts
 - [PLATFORMS.md](PLATFORMS.md): platform-specific behavior
-- [OVERLAY_PHASE1_HANDOFF.md](handoffs/OVERLAY_PHASE1_HANDOFF.md): historical
+- [archive/handoffs/overlay-phase-1.md](archive/handoffs/overlay-phase-1.md): historical
   overlay implementation notes

@@ -8,7 +8,7 @@ this page closes.
 
 **It is a living document.** Each step gets its status here as it lands. The
 records stay append-only and are not edited to match progress
-(`KICKOFF_speech-track.md` is stage one's account and is not updated by this
+(`speech-track.md` is stage one's account and is not updated by this
 work either).
 
 ---
@@ -919,7 +919,8 @@ Speaking row, so it is flagged rather than assumed.
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
-| B1–B2, C1–C3, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
+| C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |
+| B1–B2, C1–C2, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.
@@ -1273,7 +1274,7 @@ carries the one line a reader coming from an older config needs: it was
 **The one thing the survey undercounted.** ADR 0121 priced it at 177 references
 across 43 files; the commit moves 197 lines across 32, and the two numbers
 disagree in both directions for the same reason — a line can carry two
-references, and the ADRs, the donor plan and `HANDOFF_gui-port-relay.md` are
+references, and the ADRs, the donor plan and `gui-port-relay.md` are
 records rather than living documents and keep the old name by rule.
 
 Counts: `cargo test` 755 passed / 3 ignored, `cargo check` 15 warnings,

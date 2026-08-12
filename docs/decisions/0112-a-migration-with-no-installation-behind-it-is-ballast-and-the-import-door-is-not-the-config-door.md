@@ -14,7 +14,7 @@ the retired bundle identifier `io.github.swbench.wordscript`, the pre-role entry
 name `groq_api_key`, and `AppConfig.legacy_groq_api_key` — the plaintext key a
 much older build wrote into the config file. The adoption logic that keeps those
 three from destroying each other is the most delicate code in that step, and
-`docs/handoffs/PLAN_speech-track-implementation.md` records it as *the bug that
+`docs/tracks/speech-track-plan.md` records it as *the bug that
 is not in the records*.
 
 **The owner's answer, on the same day: there is nothing behind any of it.** This
@@ -139,5 +139,5 @@ release, and carry nothing.
   smaller edit against a smaller file, and it inherits the owner's licence to
   fall back to defaults rather than build a rescue path.
 - **It schedules itself nowhere.** ADRs decide shape; the sequence is
-  `docs/handoffs/PLAN_speech-track-implementation.md`, which carries this as
+  `docs/tracks/speech-track-plan.md`, which carries this as
   step A5.

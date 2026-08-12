@@ -81,5 +81,5 @@ opens a microphone on the press edge and must be able to end what it started
   not a fix. The parser already refuses a single modifier on those platforms
   (`session_has_interruption_signal`), but two modifiers are allowed, which is
   exactly the shipped `Ctrl+Alt`. Closing it needs the observation path itself:
-  [handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md),
+  [../tracks/activation-gestures.md](../tracks/activation-gestures.md),
   gap C, and it is unchanged by this decision.

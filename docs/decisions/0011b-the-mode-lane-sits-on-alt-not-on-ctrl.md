@@ -73,6 +73,6 @@ a migration that fires on every save rewrites what the user just chose).
   `defaults_survive_normalization_unchanged`); the migration has its own tests
   for the moved lane, the preserved user value and the occupied-target skip.
 - Anything that quotes the old defaults as current — the archived handoff
-  `docs/handoffs/HANDOFF_shortcut-lane-rebuild.md` in particular — is historical
+  `docs/archive/handoffs/shortcut-lane-rebuild.md` in particular — is historical
   record and stays unedited. `docs/REFERENCE.md` is the current source of truth
   for the rotation.

@@ -117,4 +117,4 @@ to build the Linked tab; what a network connector could add belongs to the desk
   frontmatter (§11.23). One type does not mean one database: it means one
   frontmatter shape, with `origin` and `state` in it, over files that stay
   readable in an editor and in git.
-- The runtime shape this needs is in SETTINGS_REWORK_PLAN.md §11.52.
+- The runtime shape this needs is in ../archive/plans/settings-rework.md §11.52.

@@ -1,7 +1,7 @@
 # Kick-off — the speech track
 
 Opened 2026-08-11. **A third track**, beside the GUI port relay
-(`HANDOFF_gui-port-relay.md`) and core hardening (`KICKOFF_core-hardening-*.md`),
+(`gui-port-relay.md`) and core hardening (`core-hardening.md`),
 in the same tree. Stage your own paths when you commit; never `git add -A`.
 
 Its subject is the capability layer four drawn surfaces wait on: providers,
@@ -161,7 +161,7 @@ reference* lists which file answers which question. Three things to take:
 ## Stage two, and the order
 
 **The full sequence — including what each step requires and what validates it —
-is [PLAN_speech-track-implementation.md](PLAN_speech-track-implementation.md).**
+is [speech-track-plan.md](speech-track-plan.md).**
 That page exists because this one named an adapter order and no order for the
 work in front of it: ADR 0094 is the precondition of both preconditions and
 carried no position at all, and six further records carried none either. **Start

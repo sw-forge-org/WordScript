@@ -16,7 +16,7 @@ the first overlay drag, and both overlay layout effects bail on it. The
 visual-epoch repaint is the only native repaint trigger for a same-kind visual
 change such as a mode cycle, so after any drag a mode change forced no repaint
 whatsoever. See
-[overlay-drag-session-never-ends.md](../known-issues/overlay-drag-session-never-ends.md)
+[overlay-drag-session-never-ends.md](../../known-issues/overlay-drag-session-never-ends.md)
 for the diagnostic-log evidence and the fix.
 
 Consequence for this document: the measurements behind the accepted state were

@@ -24,5 +24,5 @@ runtime commands.
 - Native host behavior, fixed sizing, parking, and placement rules are part of
   overlay correctness, not optional styling.
 
-See [DESIGN_SYSTEM.md](../DESIGN_SYSTEM.md) and [AGENTS.md](../../AGENTS.md) for
+See [DESIGN_SYSTEM.md](../../DESIGN_SYSTEM.md) and [AGENTS.md](../../../AGENTS.md) for
 the active rules that supersede detailed historical implementation notes.

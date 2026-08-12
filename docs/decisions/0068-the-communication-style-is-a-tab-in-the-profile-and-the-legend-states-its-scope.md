@@ -35,7 +35,7 @@ than tidy. On the owner's machine one of six profiles carries `register: quick`
 with 256 characters of style rules and an 88-character writing sample, set in
 the old UI, applied to every Rewrite and every assistant run under that profile,
 and invisible and unchangeable in the product. That is the exact defect ADR 0023
-was written against, and `SETTINGS_REWORK_PLAN.md` §11.4 quotes it: *a setting
+was written against, and `../archive/plans/settings-rework.md` §11.4 quotes it: *a setting
 whose cause is nowhere on screen.*
 
 Raised by the owner on 2026-08-10 against Leg 4c's report, and decided with him
@@ -76,7 +76,7 @@ Four parts, and the third is the one that does the real work:
    row is added: **Style · sets how a sentence is built · Rewrite and the
    assistant.**
 
-   This supersedes the *placement* half of `SETTINGS_REWORK_PLAN.md` §11.4,
+   This supersedes the *placement* half of `../archive/plans/settings-rework.md` §11.4,
    which required the same card on two mode tabs "with its scope named on each".
    That was right under the old IA and is wrong under this one: one tab plus one
    Legend row says the same thing in one place, and two copies of a card are two

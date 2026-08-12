@@ -265,7 +265,7 @@ runtime log for `[trigger]` lines. The log lives under
 
 Record the filled sheet in this file, dated, and then update the matrix only if a
 result justifies a hard branch (invariant 10 in the
-[hand-off](../handoffs/HANDOFF_shortcut-lane-rebuild.md)).
+[hand-off](../archive/handoffs/shortcut-lane-rebuild.md)).
 
 ## macOS run sheet
 

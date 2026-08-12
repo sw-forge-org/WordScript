@@ -1,4 +1,4 @@
-//! The native half of the colour scheme (SETTINGS_REWORK_PLAN §15.3).
+//! The native half of the colour scheme (docs/archive/plans/settings-rework.md §15.3).
 //!
 //! `AppConfig.color_scheme` persists the choice and `useColorScheme` puts the
 //! resolved value on `<html data-theme>`, which is everything the WEB surface

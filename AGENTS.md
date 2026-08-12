@@ -99,8 +99,12 @@ new one, never edit an existing one.
 Detail lives in the owning document. Read it before changing the area rather
 than relying on this file, which deliberately carries no detail.
 
+`docs/README.md` is the map of the whole set. This table is only the routing
+that matters most often.
+
 | Read this | Before touching |
 | --- | --- |
+| `docs/IMPLEMENTATION.md` | **Starting any implementation session.** Three tracks run concurrently on `main`; it says which owns what, and the rules for sharing the tree |
 | `docs/spec/SPEC.md` | Any runtime contract, session semantics or delivery mode |
 | `docs/ARCHITECTURE.md` | Module boundaries or the UI/runtime seam |
 | `docs/DEVELOPMENT.md` | Setup, or when unsure which validation a change needs |
@@ -111,15 +115,16 @@ than relying on this file, which deliberately carries no detail.
 | `docs/known-issues/` | Areas with failure history: overlay placement, ghosting, shortcuts, transcription |
 | `docs/decisions/` | A rule that looks arbitrary -- the ADR carries the derivation |
 | `docs/STATUS.md` | Reporting what works today, what is open, what is release-ready |
+| `docs/ROADMAP.md` | Asking which phase something belongs to. The phase list lives there and nowhere else |
 | `docs/RELEASE_RUNBOOK.md` | Release build-up, `check_app_update`, AppImage packaging |
 
 Code areas: `src/` (overlay, settings, rebuild lab, UI state),
 `src-tauri/src/` (native runtime core), `shared/` (data both runtimes read --
 the model catalogue and its schema), `packaging/` and `vendor/` (platform
-packaging, vendored patches). Further docs (`ROADMAP`, `VISION`,
-`UI_UX_OVERHAUL_PLAN`, `handoffs/`, `donors/`, `templates/`) live under
-`docs/`. No project-specific skills exist; see `.agents/README.md` if one is
-ever needed in more than one harness.
+packaging, vendored patches). Under `docs/`: `tracks/` for live implementation
+tracks, `archive/` for closed ones and spent plans, `donors/` and `prototypes/`
+for frozen reference. No project-specific skills exist; see `.agents/README.md`
+if one is ever needed in more than one harness.
 
 ## Documentation Maintenance
 
@@ -129,6 +134,12 @@ CHANGELOG and SPEC in sync. Product state belongs in `docs/STATUS.md` and the
 spec drift date in the `Status:` line of `docs/spec/SPEC.md` -- neither belongs
 in this file, which must not accumulate a changelog. Drift check runs via the
 `spec-sync` skill.
+
+**One list per fact** (ADR 0123). The documentation map lives in
+`docs/README.md`, the phase list in `docs/ROADMAP.md`, the track state in
+`docs/IMPLEMENTATION.md`. Each of those three had between three and five copies
+that had drifted apart. If you find a second copy of one, it is drift: replace
+it with a link rather than updating both.
 
 ## staging/
 

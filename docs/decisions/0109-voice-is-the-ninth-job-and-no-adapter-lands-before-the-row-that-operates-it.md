@@ -43,7 +43,7 @@ precondition for ADR 0094's `VoiceProvider`, ADR 0102's inadmissibility rule and
 ADR 0105's per-role credential resolution all naming something that exists.
 
 **Where the translation voice sits on `AI Models` stays the owner's question**,
-exactly as `KICKOFF_speech-track.md` records it: one row for the desk and the
+exactly as `../tracks/speech-track.md` records it: one row for the desk and the
 table both, or a second row in the same group. This record does not answer it
 and an implementation must not settle it quietly.
 

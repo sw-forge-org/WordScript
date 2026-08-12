@@ -741,7 +741,7 @@ further:
   `event.interrupted`, so the shipped `Ctrl+Alt` abort default fires under an
   unrelated chord. It concerns the trigger's decision logic rather than
   recording, normalization or registration, which is what this record is about.
-- [../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md)
+- [../tracks/activation-gestures.md](../tracks/activation-gestures.md)
   (2026-07-29): the plan for per-mode activation gestures and defaults, and the
   three capability gaps beneath it.
 

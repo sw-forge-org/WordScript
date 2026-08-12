@@ -1,0 +1,89 @@
+# Archive
+
+**Frozen. Read for derivation, never as current truth.** Nothing here is a
+product contract, and a claim in here that disagrees with
+[`../spec/SPEC.md`](../spec/SPEC.md) or [`../STATUS.md`](../STATUS.md) is a
+claim that was true once.
+
+Live work is in [`../tracks/`](../tracks/README.md); the board is
+[`../IMPLEMENTATION.md`](../IMPLEMENTATION.md).
+
+**Paths inside these documents were rewritten on 2026-08-12** when the
+documentation was restructured, so links still resolve. The prose was not
+touched — where a page says "read `SETTINGS_REWORK_PLAN.md` §0", the link now
+points at `plans/settings-rework.md` and the sentence is the one its author
+wrote. The one exception is [`../prototypes/`](../prototypes/), which is
+read-only under ADR 0055 and still cites the paths that existed when it froze.
+
+## The GUI port relay's history
+
+The relay itself is still live at
+[`../tracks/gui-port-relay.md`](../tracks/gui-port-relay.md) and keeps its rules,
+its leg-log index and the four most recent leg records. Everything older is
+here, in three files that split by *kind of document* rather than by leg:
+
+- [`gui-port-relay-leg-records.md`](gui-port-relay-leg-records.md) — what Legs 1
+  through 8 **did**, in the order they ran. Each record is the account its leg
+  wrote when it closed.
+- [`gui-port-relay-prompts.md`](gui-port-relay-prompts.md) — the **brief** each
+  leg ran against, written into the relay by the leg before it. Leg 2's is
+  first: it was never a prompt, it stood in the relay as a full specification
+  with a reading list.
+- [`gui-port-relay-kickoffs.md`](gui-port-relay-kickoffs.md) — the eight spent
+  **kick-off pages** (Legs 4d, 5, 6, 7, 8, 10, 11, 12). Each carries the
+  instrument notes and standing warnings its leg accumulated, several of which
+  are written down nowhere else. Legs 1–4c and Leg 9 had no kick-off page.
+
+## Closed tracks and spent plans
+
+- [`plans/settings-rework.md`](plans/settings-rework.md) — the settings surface
+  rework plan. **Spent as an instruction, kept as derivation:** §2 through §11
+  are why the surface is shaped the way it is, which nothing else carries. The
+  delivery model changed on 2026-08-04 (ADR 0054, 0055) and the relay took over.
+- [`plans/ui-ux-overhaul.md`](plans/ui-ux-overhaul.md) — the implemented UI
+  direction and its enduring rationale. Current rules live in
+  [`../DESIGN_SYSTEM.md`](../DESIGN_SYSTEM.md).
+- [`plans/gui-rework-third-pass.md`](plans/gui-rework-third-pass.md) —
+  superseded by the relay, whose work is done.
+- [`core-hardening-pass-2.md`](core-hardening-pass-2.md) — the second hardening
+  pass's kick-off. The live third pass is
+  [`../tracks/core-hardening.md`](../tracks/core-hardening.md).
+
+## Closed hand-off records
+
+Completed implementation specifications, kept as references for their failure
+class rather than as active contracts.
+
+- [`handoffs/shortcut-lane-rebuild.md`](handoffs/shortcut-lane-rebuild.md) —
+  merged 2026-07-25. The shortcut contract rebuild (S0–S8), the invariants it
+  established, and the decisions behind them.
+- [`handoffs/overlay-phase-1.md`](handoffs/overlay-phase-1.md) — `OverlayPill`
+  is render-only and owns no session semantics.
+- [`handoffs/overlay-linux-black-block.md`](handoffs/overlay-linux-black-block.md)
+  — 2026-06-20. Black blocks, dead input and always-on-top under KWin. Still
+  cited from `src/styles/overlay-pill.css` and `src-tauri/src/main.rs`.
+- [`handoffs/overlay-mode-cycling-accepted.md`](handoffs/overlay-mode-cycling-accepted.md)
+  — the accepted operational state, with permanent development-only
+  diagnostics.
+- [`handoffs/overlay-mode-cycling-residual.md`](handoffs/overlay-mode-cycling-residual.md)
+  — the predecessor investigation that reduced the residual artifacts.
+- [`handoffs/overlay-mode-switch-ghosting.md`](handoffs/overlay-mode-switch-ghosting.md)
+  — the 2026-07-19 first look, superseded by the two above.
+- [`handoffs/settings-scroll-performance.md`](handoffs/settings-scroll-performance.md)
+  — 2026-06-21. Why WebKitGTK scrolling was janky and what was removed.
+- [`handoffs/hotkey-cross-platform.md`](handoffs/hotkey-cross-platform.md) —
+  historical cross-platform hotkey work, superseded by current per-mode hotkey
+  behavior.
+- [`handoffs/linux-portal-control-input.md`](handoffs/linux-portal-control-input.md)
+  — the repeated portal "Control input devices" prompt and its diagnosis.
+- [`handoffs/doc-realignment.md`](handoffs/doc-realignment.md) — 2026-07-24.
+  Established the current documentation set and American English throughout.
+  Its own file list is superseded by [`../README.md`](../README.md).
+
+## Convention
+
+- **Move a document here when its work closes**, not when it gets long.
+- **Record supersession at the top of the affected document**, not in the
+  changelog.
+- **Nothing is deleted from here.** A record whose conclusion turned out wrong
+  is still the record of what was believed, and the correction is an ADR.

@@ -32,11 +32,17 @@ in [DEVELOPMENT.md](docs/DEVELOPMENT.md); do not create worktrees inside
 
 ## Architecture and Documentation
 
+[docs/README.md](docs/README.md) is the map of the documentation set: every
+document, what kind it is, and how it may be changed.
+
 Put consequential architecture decisions in append-only ADRs under
 `docs/decisions/`; see its README for criteria and format. Update the relevant
-living documentation when product reality changes, especially README, VISION,
-ARCHITECTURE, DEVELOPMENT, DESIGN_SYSTEM, STATUS, PLATFORMS, REFERENCE, and
-CHANGELOG. Use `spec-sync` for material specification drift.
+living documentation when product reality changes. Use `spec-sync` for material
+specification drift.
+
+If your change is part of a running implementation track, read
+[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) first — several tracks work on
+`main` at once, so stage your own paths rather than `git add -A`.
 
 For a substantial change, open and discuss an issue first. Current contribution
 priorities are listed in [README.md](README.md).

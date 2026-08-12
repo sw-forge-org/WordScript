@@ -6,7 +6,7 @@ not yet confirmed in a native session. Windows: implemented the same day, not
 compiled for its target. macOS: still open, requirements written down.**
 
 First recorded: 2026-07-29, while planning
-[handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md)
+[../tracks/activation-gestures.md](../tracks/activation-gestures.md)
 Affected area: the `is_abort` and `is_pause` branches of
 `handle_native_shortcut_event` (`src-tauri/src/core/trigger.rs:1152-1213`),
 `arm_hold_action` (`trigger.rs:1673`), `double_tap_gate` (`trigger.rs:1933`)
@@ -209,7 +209,7 @@ Still owed, and the reason this record is not closed:
 
 ## References
 
-- [handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md):
+- [../tracks/activation-gestures.md](../tracks/activation-gestures.md):
   where this was found, and the three capability gaps around it
 - [capture-shortcut-recording.md](capture-shortcut-recording.md): the trigger
   observability this record's verification depends on

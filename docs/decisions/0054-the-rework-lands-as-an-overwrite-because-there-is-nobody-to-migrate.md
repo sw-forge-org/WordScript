@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-`SETTINGS_REWORK_PLAN.md` was written as a migration. §4.3 rule 6 requires that
+`../archive/plans/settings-rework.md` was written as a migration. §4.3 rule 6 requires that
 *"deep links survive — every current area id keeps working via an alias map, on
 the `SECTION_ALIASES` pattern the donor uses"*. §13's mitigation for a stalled
 rework is that *"old and new sections coexist behind the alias map"*, and Stage 4

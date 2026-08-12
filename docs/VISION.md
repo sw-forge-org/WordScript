@@ -237,8 +237,15 @@ transcription reliability and UI guidance of the settings shell.
 
 ## Phase roadmap
 
-The order and scope of the V1 consolidation phases (transcription bias,
-settings polish, live preview, provider stack, local runtime, guided setup
-path) is documented in detail in [docs/ROADMAP.md](./ROADMAP.md). VISION stays
-the north star, ROADMAP is the executable view, STATUS holds the current
-phase state.
+The order, scope and current state of the V1 consolidation phases is in
+[ROADMAP.md](./ROADMAP.md), and the phase list is not repeated anywhere else —
+naming the phases in prose is how three copies of it drifted apart.
+
+The division of labour between the four:
+
+- **VISION** is the north star: why the product exists and where the V1/V2 line
+  falls.
+- **ROADMAP** is the executable view: the phases, their order and their gates.
+- **STATUS** is what works today.
+- **[IMPLEMENTATION.md](./IMPLEMENTATION.md)** is what is being built right now,
+  by which track, in what order.

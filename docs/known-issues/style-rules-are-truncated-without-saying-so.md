@@ -78,5 +78,5 @@ live. Whatever is chosen here has to stay inside that decision.
 - `src-tauri/src/core/communication_style.rs` — `style_rules_budget`,
   `truncate_to`, `MAX_STYLE_RULE_LINE_CHARS`
 - [ADR 0068](../decisions/0068-the-communication-style-is-a-tab-in-the-profile-and-the-legend-states-its-scope.md)
-- `docs/handoffs/HANDOFF_gui-port-relay.md` — Leg 5's record (the meter's
+- `docs/tracks/gui-port-relay.md` — Leg 5's record (the meter's
   derivation), Leg 6's finding 5 (this measurement)

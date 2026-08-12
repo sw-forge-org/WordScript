@@ -158,5 +158,5 @@ override should exist before such a test is written.
 
 - Neither defect is caused by the trigger or activation-mode work; both are
   pre-existing and were noticed in passing during it, see
-  [handoffs/HANDOFF_activation-mode-gestures-and-defaults.md](../handoffs/HANDOFF_activation-mode-gestures-and-defaults.md)
+  [../tracks/activation-gestures.md](../tracks/activation-gestures.md)
 - [DEVELOPMENT.md](../DEVELOPMENT.md): the validation commands this affects

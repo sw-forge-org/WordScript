@@ -6,7 +6,7 @@ Status: Accepted (planning direction; **blocked on a capability — nothing is b
 ## Context
 
 Meeting capture is a second capture type: an hour long, microphone *and* system
-audio, inserts nothing, ends as a note ([§10.4](../SETTINGS_REWORK_PLAN.md)).
+audio, inserts nothing, ends as a note ([§10.4](../archive/plans/settings-rework.md)).
 It is a roadmap **candidate** with a decision gate, and its first gate question
 is the one this record answers:
 

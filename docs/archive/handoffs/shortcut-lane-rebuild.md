@@ -12,11 +12,11 @@ find it:
 
 | Open item | Where it lives now |
 | --- | --- |
-| Hold to talk does not work (D11, open again) | [known-issues/capture-shortcut-recording.md](../known-issues/capture-shortcut-recording.md) |
+| Hold to talk does not work (D11, open again) | [known-issues/capture-shortcut-recording.md](../../known-issues/capture-shortcut-recording.md) |
 | The physical S0 measurement (run 2) | same record, with empty tables and the procedure |
-| Windows and macOS have never run this lane | [known-issues/cross-platform-shortcut-verification.md](../known-issues/cross-platform-shortcut-verification.md) |
-| Single modifier is Linux-only; right Shift inexpressible | ADR [0009](../decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md) and the same record |
-| Product state and gaps | [STATUS.md](../STATUS.md) |
+| Windows and macOS have never run this lane | [known-issues/cross-platform-shortcut-verification.md](../../known-issues/cross-platform-shortcut-verification.md) |
+| Single modifier is Linux-only; right Shift inexpressible | ADR [0009](../../decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md) and the same record |
+| Product state and gaps | [STATUS.md](../../STATUS.md) |
 
 ## Where this came from
 
@@ -42,7 +42,7 @@ fix(shortcuts): rebuild the capture shortcut lane (S0-S5)
 ## What this branch delivers
 
 The problem record is
-[known-issues/capture-shortcut-recording.md](../known-issues/capture-shortcut-recording.md)
+[known-issues/capture-shortcut-recording.md](../../known-issues/capture-shortcut-recording.md)
 (defects D1-D12, target contract T1-T12, slice plan S0-S8). **All slices S0-S8
 are implemented.** Eleven of the twelve defects are addressed; D11, hold to talk,
 is open again — a live session shows the mode still doing nothing while double tap
@@ -68,7 +68,7 @@ before assuming the state machine is wrong.
 These are the point of the rebuild. Breaking one silently re-opens a defect.
 
 1. **Rust owns the shortcut contract** (ADR
-   [0006](../decisions/0006-rust-owns-the-shortcut-contract.md)).
+   [0006](../../decisions/0006-rust-owns-the-shortcut-contract.md)).
    `src-tauri/src/core/shortcut.rs` is the single owner of the token vocabulary,
    canonical form, display strings and validity rules. **The UI carries no key
    table and re-derives no rule.** If the UI needs to know something about a
@@ -78,7 +78,7 @@ These are the point of the rebuild. Breaking one silently re-opens a defect.
 2. **Empty means disabled**, for capture and mode shortcuts alike. Never fall
    back to a platform default for a value the user set.
 3. **A single bare modifier depends on the session, not on taste** (ADR
-   [0009](../decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md)).
+   [0009](../../decisions/0009-modifier-only-shortcuts-are-observed-not-grabbed.md)).
    Modifier-only shortcuts are *observed*, not grabbed, so a lone modifier no
    longer creates a desktop-wide grab. It is allowed exactly where the session
    reports an interrupted hold — `Policy::interruption_signal`, from
@@ -102,7 +102,7 @@ These are the point of the rebuild. Breaking one silently re-opens a defect.
    `core::config`; `trigger.rs` delegates to them. This now includes
    `default_activation_mode()`.
 10. **The capability matrix is measured, not tabulated** (ADR
-    [0007](../decisions/0007-capability-matrix-is-measured-not-assumed.md)).
+    [0007](../../decisions/0007-capability-matrix-is-measured-not-assumed.md)).
     `capability_matrix` is a pure function of the session facts plus the
     `ReleaseEvidence` the trigger lane counted. Do not add a per-OS verdict on
     hold to talk that is not backed by a measurement recorded in the known-issues
@@ -127,7 +127,7 @@ after a counted press edge, **key delivery is ruled out for this session** — t
 fault is in the hold path or in what it starts.
 
 Four candidates and the single log block that separates them are in the
-[known-issues record](../known-issues/capture-shortcut-recording.md). Do not start
+[known-issues record](../../known-issues/capture-shortcut-recording.md). Do not start
 by reading the state machine: the trap at the bottom of this file applies exactly
 here. One hold attempt with `[trigger]` running names the branch.
 
@@ -144,7 +144,7 @@ state something about the **platform** rather than about the current session.
 
 The procedure is written out ready to execute, with empty tables, the probe to
 use, and what each possible outcome should change, in the
-[run 2 section of the record](../known-issues/capture-shortcut-recording.md).
+[run 2 section of the record](../../known-issues/capture-shortcut-recording.md).
 Do not re-derive it; walk the user through that section and fill in the tables.
 
 Two points worth repeating here because they are easy to get wrong:
@@ -163,7 +163,7 @@ Separate from A and not blocked by it. The lane is implemented and unit-tested
 for all three platforms; only Linux has ever executed it. Run sheets for both,
 the findings already established from the vendored crate's source, and which
 questions a VM or a CI runner can answer instead of owned hardware are in
-[known-issues/cross-platform-shortcut-verification.md](../known-issues/cross-platform-shortcut-verification.md).
+[known-issues/cross-platform-shortcut-verification.md](../../known-issues/cross-platform-shortcut-verification.md).
 
 The one item there worth knowing before reading anything else: **on macOS the
 modifier-only capture defaults are expected to fail registration**, because that
@@ -207,7 +207,7 @@ consequence are shown above the shortcut list. Asserted across all five session
 kinds and all three evidence states.
 
 **Read ADR
-[0007](../decisions/0007-capability-matrix-is-measured-not-assumed.md) before
+[0007](../../decisions/0007-capability-matrix-is-measured-not-assumed.md) before
 touching this.** The matrix deliberately contains no per-OS verdict on hold to
 talk, because none has been measured — see invariant 10.
 
@@ -215,7 +215,7 @@ talk, because none has been measured — see invariant 10.
 
 - **`double_tap` is the default `activation_mode`.** Decided yes by the user on
   2026-07-25, recorded as ADR
-  [0008](../decisions/0008-double-tap-is-the-default-activation-mode.md).
+  [0008](../../decisions/0008-double-tap-is-the-default-activation-mode.md).
   Default only: `AppConfig` is `#[serde(default)]`, so an existing config keeps
   its value and no migration touches the field.
 - **`Ctrl+S` and `Ctrl+1`-`Ctrl+6` stay the global grab defaults.** Reaffirmed by
