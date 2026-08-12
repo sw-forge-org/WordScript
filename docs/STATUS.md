@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-11
+Status: 2026-08-12
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -188,8 +188,23 @@ Status: 2026-08-11
   for. **Both lanes answer `unsupported` everywhere on the model axis today** —
   Groq's speech endpoint takes a file and returns a result, and the local lane
   echoes back the language it was told — so the vendor whose models disagree is
-  proved by a fixture rather than left unproved until it is integrated. Nothing
-  reads either axis yet; that seam is ADR 0106
+  proved by a fixture rather than left unproved until it is integrated. **The
+  provider axis is read by `AI Models` since 2026-08-12** (ADR 0106, ADR 0124);
+  the model axis waits for the first drawn row that asks whether something
+  streams
+- the capability seam between the drawing and the runtime (ADR 0106 and
+  ADR 0124, 2026-08-12): `AI Models` asks the runtime whether a drawn row can be
+  operated instead of reading the hand-maintained `PROVIDERS` table for it, and
+  **a row that cannot says which of four things stopped it** — no adapter
+  exists, the lane denies that role, the role has no credential, or the answer
+  came back incomplete. `registered_providers()` answers for the whole registry
+  in one call and reads no credential, so **a vendor's absence from that list is
+  how *no adapter* is stated**; the alternative was ten `provider_status` calls
+  and ten secret-store reads for a screen that merely opened. The drawn table
+  stays the drawing. ADR 0094's first draft called the TypeScript mirror the
+  guard that stops a surface over-claiming and ADR 0106 corrected it; **the
+  guard exists now and is two tests**, both made to fail before they were
+  trusted
 - a credential resolved per `(provider, role)` (ADR 0105 and ADR 0102's storage
   half, 2026-08-11): the secret-store entry is keyed `(provider, role, kind)`,
   so **clearing the chat credential leaves the speech one standing**, and a role
@@ -530,17 +545,17 @@ Additional rules:
   gets a subscription path at all -- Anthropic and Google both forbade theirs in
   February 2026. What a second kind forces is done (ADR 0105); what pays for it
   is stage D3
-- **no surface reads a runtime capability, and one record claimed otherwise.**
-  `provider_status` returns `ProviderCapabilities` and `ModelCapabilities`, both
-  mirrored into `src/types/providers.ts`, and **no field of either is read
-  anywhere in `src/`** -- `Models.test.tsx` mocks capabilities as `{}` and the
-  suite passes. Building the axes (ADR 0110) did not change that: it gave the
-  runtime a second answer to be ignored, not a reader. Every capability
-  answer on `AI Models` comes from the hand-maintained `PROVIDERS` table in
-  `src/screens/data.ts`, which `docs/PROVIDERS.md` runs three open
-  disagreements against. ADR 0094's first draft called that mirror the guard
-  that stops a surface over-claiming; ADR 0106 corrects it and makes building
-  the seam a step before the first adapter, asserted by a test
+- **the model axis is read by no surface; the provider axis now is.** Closed for
+  `ProviderCapabilities` on 2026-08-12 by stage B1 (ADR 0106, ADR 0124):
+  `AI Models` reads it, `Models.test.tsx` can no longer mock capabilities as
+  `{}` and pass, and a drawn row states which of four things stops it being
+  operated instead of one blanket sentence. ADR 0094's first draft called the
+  mirror the guard that stops a surface over-claiming and ADR 0106 corrected
+  that; the guard exists now and is two tests. **`ModelCapabilities` is still
+  read nowhere** -- *will this row stream* is a model question no drawn row asks
+  yet, and it arrives with the lane that streams (stage D2). The `PROVIDERS`
+  table in `src/screens/data.ts` stays the drawing, and the three open
+  disagreements `docs/PROVIDERS.md` runs against it stay open
 - **the runtime announces no setting change.** `AppConfig::save_to_disk` writes
   and `save_config` returns to its caller; no event channel carries a config
   change. It has never mattered with one settings window, and ADR 0100's window

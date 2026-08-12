@@ -166,17 +166,28 @@ constants themselves were not re-derived and carry their own provenance
   ADR 0097, ADR 0105 through ADR 0110, and ADR 0113 through ADR 0117.
   **ADR 0094's trait-and-registry half,
   ADR 0110's capability axes and ADR 0105's per-role credential are built**
-  (2026-08-11); the rest describes
+  (2026-08-11), and ADR 0106's seam with them (2026-08-12); the rest describes
   what does not run yet, and this section describes what does. Both lanes
   answer `unsupported` to streaming and to detected language on every model,
   which is the same statement the two sentences above make, in the type.
-- **Both capability structs are returned and read by nothing.**
-  `ProviderCapabilities` and `ModelCapabilities` cross to
-  `src/types/providers.ts` on `provider_status`, and no field of either is
-  consumed in `src/` -- the capability answers drawn on `AI Models` come from
-  the `PROVIDERS` table in `src/screens/data.ts`, which is a drawing. So a
-  capability stated on a surface today is a drawn intent, not a runtime answer
-  (ADR 0106).
+- **The provider axis is read; the model axis is not** (ADR 0106, ADR 0124,
+  2026-08-12). `AI Models` reads `ProviderCapabilities` and `role_credentials`
+  off `provider_status` to decide whether a drawn row can be operated, and asks
+  `registered_providers` -- one call, no credential read -- whether an adapter
+  exists at all, because **a vendor's absence from that list is that answer**.
+  The seam is `src/lib/providerSeam.ts`; it also holds the drawn-name-to-runtime-id
+  correspondence, which cannot live in `data.ts` (that file is the drawing) nor
+  in the catalogue (a declared vendor there must carry model rows). No field of
+  `ModelCapabilities` is consumed in `src/` yet -- no drawn row asks whether
+  something streams. The `PROVIDERS` table in `src/screens/data.ts` stays a
+  drawing and states intent; it is no longer where the surface reads a
+  capability.
+- **A row that cannot be operated says which of four things stopped it**: no
+  adapter exists, the lane denies that role, the role has no credential, or the
+  runtime's answer was incomplete. A fifth state -- the read has not come back
+  -- claims nothing and leaves the surface's existing reason standing. One
+  greyed control with one hint conflated the first three, which is the defect
+  ADR 0106 recorded.
 - **Groq's recognition path takes a language as a hint, not as a question.**
   Supplying ISO-639-1 improves accuracy and latency; the response does not tell
   you what it heard. That matters wherever a surface wants to route by language

@@ -332,14 +332,17 @@ The active product core lives in `src-tauri/src/core/`.
   them.** `ProviderCapabilities` and `ModelCapabilities` are mirrored in
   `src/types/providers.ts` and returned by `provider_status` — the model axis
   answered for the model the request named, since asking without one is half a
-  question. No field of either is consumed anywhere in `src/`, and
-  `AI Models` draws its capability answers from the hand-maintained `PROVIDERS`
-  table in `src/screens/data.ts` instead. **The drawing states an intent and the
-  runtime answers a capability**; the code that makes the second govern the
-  first does not exist and is ADR 0106 — a step before the first adapter, not
-  with it. `role_credentials` crosses the same seam and is read by nobody for
-  the same reason: the per-role credential row is drawn vocabulary and grows in
-  the gallery first (ADR 0057, ADR 0102).
+  question. **The drawing states an intent and the runtime answers a
+  capability**, and the code that makes the second govern the first is
+  `src/lib/providerSeam.ts` (ADR 0106, ADR 0124, 2026-08-12) — the third thing,
+  neither the drawing nor the runtime. `AI Models` reads
+  `status.capabilities` and `role_credentials` for *can this be operated*;
+  `registered_providers()` answers the prior question — *does an adapter exist
+  at all* — for the whole registry in one call, and a vendor's absence from that
+  list is that answer. The drawn `PROVIDERS` table in `src/screens/data.ts`
+  stays the drawing and is what `port:diff` measures. **The model axis is still
+  consumed by no surface**: *will this row stream* is a model question no drawn
+  row asks yet, and it arrives with the lane that streams (ADR 0110, stage D2).
 - `providers/groq.rs`: cloud-first production implementation (BYOK, secret
   store, Groq-specific HTTP errors).
 - `providers/local.rs`: local runtime lane with `whisper-cli` for

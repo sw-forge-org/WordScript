@@ -506,6 +506,31 @@ pub struct ProviderCapabilities {
     pub model_management: bool,
 }
 
+/// One provider this build holds an adapter for, and what it serves.
+///
+/// **The seam's first question, and the one `provider_status` cannot answer**
+/// (ADR 0124). A screen drawing ten vendors needs to know which of them the
+/// registry knows at all before it can ask anything else about them: a vendor
+/// missing from this list has no adapter (ADR 0096), one present whose `roles`
+/// omit a role is denied by the lane (ADR 0106), and only the second of those
+/// is a question `provider_status` has an answer for.
+///
+/// **It reads nothing.** No secret store, no local probe, no network — which is
+/// exactly why `Provider::capabilities` was split from `Provider::status` in the
+/// first place (A2). Asking ten times for a screen that opens is a cost the
+/// split exists to avoid, and a keyring prompt is not a thing a settings screen
+/// may trigger by being looked at.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RegisteredProvider {
+    /// The canonical id, never an alias.
+    pub provider: String,
+    /// The roles the entry registered, in `ProviderRole::ALL` order. Derived
+    /// from the entry rather than declared beside it, so it cannot claim a role
+    /// with no implementation behind it.
+    pub roles: Vec<ProviderRole>,
+    pub capabilities: ProviderCapabilities,
+}
+
 /// What a model does, or whether this build knows.
 ///
 /// Three states rather than a `bool`, because one of the drawn lanes serves a
@@ -974,6 +999,30 @@ fn credential_target_roles(
     Ok(targets)
 }
 
+/// Every provider this build can operate, and the roles each one serves.
+///
+/// **One call for the whole table** (ADR 0124). The alternative the record
+/// weighed was asking `provider_status` once per drawn vendor, which reads the
+/// OS secret store and probes the local runtime once per vendor — and answers
+/// most of them with `Err("not supported yet")`, making an error the normal
+/// result for the majority of a screen. Absence from this list is how *no
+/// adapter* is stated, and stating it is what lets a surface tell it apart from
+/// *the lane denies that role*.
+///
+/// It takes no argument on purpose: a filtered list would be the caller's
+/// drawing deciding what the runtime may admit to registering.
+#[tauri::command]
+pub fn registered_providers() -> Vec<RegisteredProvider> {
+    registry::entries()
+        .iter()
+        .map(|entry| RegisteredProvider {
+            provider: entry.id.to_string(),
+            roles: entry.roles(),
+            capabilities: entry.provider.capabilities(),
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn provider_status(
     request: ProviderStatusRequest,
@@ -1086,6 +1135,117 @@ mod tests {
 
         assert!(matches!(error.kind, ProviderErrorKind::InvalidRequest));
         assert!(error.message.contains("openai"));
+    }
+
+    /// **The list is the table, not a copy of it** (ADR 0124). Walked over the
+    /// registry rather than asserted against the two ids registered today, so
+    /// the tenth adapter appears here without this test being edited — and a
+    /// row that claimed a role its entry did not register would fail on the
+    /// entry, which is where `registry.rs` already holds the same rule.
+    #[test]
+    fn the_registered_list_states_every_entry_and_the_roles_it_registered() {
+        let listed = registered_providers();
+
+        assert_eq!(listed.len(), registry::entries().len());
+
+        for (row, entry) in listed.iter().zip(registry::entries()) {
+            assert_eq!(row.provider, entry.id);
+            assert_eq!(row.roles, entry.roles());
+            assert_eq!(row.capabilities, entry.provider.capabilities());
+            assert_eq!(
+                row.roles.contains(&ProviderRole::Speech),
+                row.capabilities.transcription,
+                "{} lists roles {:?} and states transcription={}",
+                row.provider,
+                row.roles,
+                row.capabilities.transcription,
+            );
+            assert_eq!(
+                row.roles.contains(&ProviderRole::Chat),
+                row.capabilities.chat_completion,
+            );
+            assert_eq!(
+                row.roles.contains(&ProviderRole::Voice),
+                row.capabilities.speech_synthesis,
+            );
+        }
+    }
+
+    /// **The absence is the answer** (ADR 0124, ADR 0096). A vendor the drawing
+    /// names and the registry does not carry is missing from this list, and
+    /// that is precisely how a surface says *no adapter* rather than inventing
+    /// a capability block full of `false` — which would read as *this vendor
+    /// cannot listen* about a vendor that listens perfectly well elsewhere.
+    #[test]
+    fn a_vendor_with_no_adapter_is_absent_rather_than_denied() {
+        let listed = registered_providers();
+
+        assert!(!listed.iter().any(|row| row.provider == "openai"));
+        assert!(!resolves_to_a_known_provider("openai"));
+
+        // And the two that are present are present with their roles, so the
+        // absence above is the registry's answer and not an empty list.
+        assert!(listed
+            .iter()
+            .any(|row| row.provider == DEFAULT_PROVIDER_ID && !row.roles.is_empty()));
+        assert!(listed
+            .iter()
+            .any(|row| row.provider == LOCAL_PROVIDER_ID && !row.roles.is_empty()));
+    }
+
+    /// **A capability answer carries no credential.** The whole reason
+    /// `capabilities()` is split from `status()` (A2) is that this question is
+    /// answerable without reading the OS secret store — and the payload is
+    /// where that would stop being true first, because the easy way to add a
+    /// *ready* column later is to fold `credential.configured` into this row.
+    ///
+    /// Asserted on the serialized keys rather than on a substring search,
+    /// because `requires_api_key` is a capability and would fail that search
+    /// while carrying nothing — and asserted on the wire rather than on the
+    /// struct, because the wire is what a second window and a log line see: an
+    /// event is a path out of the runtime and this one must not become a second
+    /// door to a key preview (ADR 0108's `without_secrets()`, same reason).
+    ///
+    /// **It pins the whole wire shape**, which is the other half of its worth:
+    /// `src/lib/providerSeam.ts` reads exactly these keys, and a field renamed
+    /// here without the mirror moving fails on this side first.
+    #[test]
+    fn the_registered_list_carries_no_credential_on_the_wire() {
+        let payload = serde_json::to_value(registered_providers()).expect("the list serializes");
+        let rows = payload.as_array().expect("the list is an array");
+        assert!(!rows.is_empty());
+
+        for row in rows {
+            let row = row.as_object().expect("a row is an object");
+            let mut keys: Vec<&str> = row.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            assert_eq!(
+                keys,
+                ["capabilities", "provider", "roles"],
+                "the row carries a field the capability answer has no business in",
+            );
+
+            let capabilities = row["capabilities"]
+                .as_object()
+                .expect("the capability block is an object");
+            let mut fields: Vec<&str> = capabilities.keys().map(String::as_str).collect();
+            fields.sort_unstable();
+            assert_eq!(
+                fields,
+                [
+                    "chat_completion",
+                    "local",
+                    "model_management",
+                    "requires_api_key",
+                    "speech_synthesis",
+                    "supports_language",
+                    "supports_prompt_bias",
+                    "supports_segments",
+                    "transcription",
+                ],
+                "the nine fields the TypeScript mirror reads",
+            );
+        }
     }
 
     /// The resolver takes the pair and declines to guess without it.

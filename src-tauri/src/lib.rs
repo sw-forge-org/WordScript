@@ -2755,6 +2755,7 @@ pub fn run() {
             read_diag_log,
             clear_diag_log,
             remember_overlay_manual_position,
+            core::providers::registered_providers,
             core::providers::provider_status,
             core::providers::save_provider_api_key,
             core::providers::clear_provider_api_key,

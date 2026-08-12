@@ -46,6 +46,7 @@ import {
   type LaneName,
 } from "./data";
 import { formatBudgetDuration, useCaptureBudget } from "@/hooks/useCaptureBudget";
+import { useProviderSeam } from "@/hooks/useProviderSeam";
 import {
   TRANSLATE_LANGUAGES,
   type ProviderTier,
@@ -53,7 +54,14 @@ import {
   type TranslateSameLanguage,
 } from "@/types/ipc";
 import { resolveActiveTextProfile, resolveProfileModesSettings } from "@/lib/textProfiles";
-import type { ProviderStatus } from "@/types/providers";
+import {
+  connectionCapabilitySentence,
+  NO_ANSWERS,
+  resolveProviderAnswer,
+  roleForDrawnCapability,
+  selectableProviderNames,
+  type RuntimeAnswers,
+} from "@/lib/providerSeam";
 import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
 
 /**
@@ -95,10 +103,36 @@ const Wired = createContext<{
      is a model choice, and a model choice has no config shape to write into yet
      (ADR 0042, plan §11.36). */
   runtime?: WorkspaceRuntime;
-}>({ on: false });
+  /* What the runtime says about the vendors this lane draws (ADR 0106). The
+     drawing is still `data.ts`; this is the other side of the seam, and the
+     controls below read it for WHY they are inert rather than for what they
+     are. */
+  answers: RuntimeAnswers;
+  refresh?: () => Promise<void>;
+}>({ on: false, answers: NO_ANSWERS });
 
 function useWired() {
   return useContext(Wired).on;
+}
+
+function useAnswers(): RuntimeAnswers {
+  return useContext(Wired).answers;
+}
+
+/**
+ * WHY THE CONTROL UNDER THIS SUBTREE CANNOT BE OPERATED — one sentence, or none.
+ *
+ * `null` is the gallery, where nothing is inert and every control is the
+ * drawing. The default on the product is ADR 0065's blanket sentence, and a
+ * subtree that knows better replaces it: a job row whose provider the runtime
+ * has an answer about states THAT answer, because "not integrated yet" said
+ * over a vendor that is integrated and merely missing its key is the
+ * conflation ADR 0106 exists to end.
+ */
+const InertBecause = createContext<string | null>(null);
+
+function useInertReason(): string | null {
+  return useContext(InertBecause);
 }
 
 function useRuntime(): WorkspaceRuntime | undefined {
@@ -142,23 +176,23 @@ function WiredCeilingBadge() {
 }
 
 function DrawnSelect(props: ComponentProps<typeof Select>) {
-  const wired = useWired();
-  return <Select {...props} disabled={wired || props.disabled} title={wired ? NOT_INTEGRATED : props.title} />;
+  const reason = useInertReason();
+  return <Select {...props} disabled={Boolean(reason) || props.disabled} title={reason ?? props.title} />;
 }
 
 function DrawnField(props: ComponentProps<typeof Field>) {
-  const wired = useWired();
-  return <Field {...props} disabled={wired || props.disabled} title={wired ? NOT_INTEGRATED : props.title} />;
+  const reason = useInertReason();
+  return <Field {...props} disabled={Boolean(reason) || props.disabled} title={reason ?? props.title} />;
 }
 
 function DrawnButton(props: ComponentProps<typeof Button>) {
-  const wired = useWired();
-  return <Button {...props} disabled={wired || props.disabled} title={wired ? NOT_INTEGRATED : props.title} />;
+  const reason = useInertReason();
+  return <Button {...props} disabled={Boolean(reason) || props.disabled} title={reason ?? props.title} />;
 }
 
 function DrawnToggle(props: ComponentProps<typeof Toggle>) {
-  const wired = useWired();
-  return <Toggle {...props} disabled={wired || props.disabled} />;
+  const reason = useInertReason();
+  return <Toggle {...props} disabled={Boolean(reason) || props.disabled} />;
 }
 
 export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
@@ -169,8 +203,8 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      with different names. */
   const [lane, setLane] = useState<LaneName>("Cloud");
 
-  return (
-    <Wired.Provider value={{ on: Boolean(runtime), open: runtime?.open, runtime }}>
+  const surface = (
+    <>
       <ViewTop
         title="AI Models"
         lead="One connection, and what each job runs on it."
@@ -197,6 +231,45 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
         Which mode is effective right now is runtime truth and lives on Home. Which mode a
         profile defaults to lives in that profile. Neither is set here.
       </Note>
+    </>
+  );
+
+  /* TWO COMPONENTS RATHER THAN ONE WITH A CONDITIONAL HOOK, and the split is
+     the one `CeilingBadge` already makes for the same reason: the gallery
+     asserts NO runtime state, so it must not reach for `registered_providers`
+     at all. `screens.test.tsx` measures this screen with no runtime and
+     `Models.test.tsx` asserts nothing was invoked there. */
+  return runtime ? (
+    <WiredModels lane={lane} runtime={runtime}>
+      {surface}
+    </WiredModels>
+  ) : (
+    <Wired.Provider value={{ on: false, answers: NO_ANSWERS }}>{surface}</Wired.Provider>
+  );
+}
+
+/**
+ * THE PRODUCT SURFACE, WITH THE RUNTIME'S ANSWER BEHIND IT (ADR 0106, ADR 0124).
+ *
+ * The blanket reason is still ADR 0065's — most of this screen is inert because
+ * WordScript integrates one lane, and that has not changed. What changed is
+ * that a subtree the runtime has a better answer for now states THAT answer
+ * instead, and the default is a default rather than the only sentence there is.
+ */
+function WiredModels({
+  lane,
+  runtime,
+  children,
+}: {
+  lane: LaneName;
+  runtime: WorkspaceRuntime;
+  children: ReactNode;
+}) {
+  const { answers, refresh } = useProviderSeam(lane, runtime.config.model);
+
+  return (
+    <Wired.Provider value={{ on: true, open: runtime.open, runtime, answers, refresh }}>
+      <InertBecause.Provider value={NOT_INTEGRATED}>{children}</InertBecause.Provider>
     </Wired.Provider>
   );
 }
@@ -376,27 +449,29 @@ function LaneRows({ lane, runtime }: { lane: LaneName; runtime?: WorkspaceRuntim
  * looks editable invites somebody to append to a secret they cannot see.
  */
 function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
-  const [status, setStatus] = useState<ProviderStatus | null>(null);
+  const { answers, refresh } = useContext(Wired);
   const [tiers, setTiers] = useState<ProviderTier[]>([]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
+  /* THE STATUS IS THE SEAM'S, NOT THIS ROW'S (ADR 0124). It used to run its own
+     `provider_status`, and once the seam started asking for the same provider
+     that was two reads of one OS secret store on one screen open — and two
+     components with two opinions of one credential, which is the drift this
+     step exists to remove one layer up. The plans stay here: they are a speech
+     question this row is the only reader of. */
+  const status = answers.statuses.groq ?? null;
+
   const read = useCallback(async () => {
     if (!runtime) return;
-    const [statusResult, tierResult] = await Promise.allSettled([
-      invoke<ProviderStatus>("provider_status", {
-        request: { provider: "groq", model: runtime.config.model, correction_model: null },
-      }),
-      invoke<ProviderTier[]>("resolve_provider_tiers", { provider: "groq" }),
-    ]);
-    if (statusResult.status === "fulfilled" && statusResult.value) setStatus(statusResult.value);
+    const tierResult = await invoke<ProviderTier[]>("resolve_provider_tiers", {
+      provider: "groq",
+    }).catch(() => null);
     /* Not an array is a runtime that did not answer, not a provider with no
        plans — the row then states the stored value rather than an empty list. */
-    if (tierResult.status === "fulfilled" && Array.isArray(tierResult.value)) {
-      setTiers(tierResult.value);
-    }
+    if (Array.isArray(tierResult)) setTiers(tierResult);
   }, [runtime]);
 
   useEffect(() => {
@@ -422,7 +497,7 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
       if (!validation?.ok) setProblem("The key was saved and the provider did not accept it.");
       setDraft("");
       setEditing(false);
-      await read();
+      await refresh?.();
     } catch (cause) {
       setProblem(String(cause));
     } finally {
@@ -434,7 +509,7 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
     setBusy(true);
     try {
       await invoke("clear_provider_api_key", { request: { provider: "groq" } });
-      await read();
+      await refresh?.();
     } catch (cause) {
       setProblem(String(cause));
     } finally {
@@ -583,16 +658,24 @@ export function ProviderPick({
   custom?: boolean;
 }) {
   const wired = useWired();
+  const answers = useAnswers();
   const here = PROVIDERS.filter((p) => p.lane === lane);
   const cur = here.find((p) => p.name === selected) ?? here[0];
   const [value, setValue] = useState(cur.name);
   const chosen = here.find((p) => p.name === value) ?? cur;
-  const caps =
+
+  /* THE LINE ADR 0106 NAMES. Drawn, this reads `chosen.stt && chosen.llm` — the
+     hand-maintained table answering *what can this vendor do here*, which is a
+     runtime question and the subject of three of `docs/PROVIDERS.md`'s open
+     disagreements. On the product the runtime answers it; in the gallery the
+     drawing still does, because there the drawing is the whole point. */
+  const drawnCaps =
     chosen.stt && chosen.llm
       ? "Speech and language."
       : chosen.llm
         ? "Language only — the listening jobs stay on whichever provider can hear."
         : "Speech only — the writing jobs stay on whichever provider can write.";
+  const caps = wired ? (connectionCapabilitySentence(chosen.name, answers) ?? drawnCaps) : drawnCaps;
 
   return (
     <Row layout="stack" label={label ?? "Provider"} hint={hint ?? caps}>
@@ -608,11 +691,33 @@ export function ProviderPick({
         customIcon={<Icon name="settings" />}
         fallbackIcon={<Icon name="cloud" />}
         /* The chip row is the single worst place on the surface to imply a
-           provider works: the next thing it asks for is an API key. */
-        selectable={wired ? ["Groq"] : undefined}
+           provider works: the next thing it asks for is an API key. Which ones
+           can be picked was a literal `["Groq"]` until ADR 0124 — the registry
+           answers it now, so the first adapter that lands is offered here
+           without this line being edited.
+
+           A CHIP IS NOT A JOB. A vendor that listens but does not write is
+           still a connection worth having, so the chip asks whether the
+           registry carries it at all; which of its jobs can run is the job
+           rows' question and they answer it one row at a time. */
+        selectable={wired ? selectableProviderNames(lane, answers) : undefined}
+        reasonFor={
+          wired ? (name) => inertReasonFor(name, answers) : undefined
+        }
       />
     </Row>
   );
+}
+
+/** The sentence a chip carries when it cannot be picked. */
+function inertReasonFor(drawnName: string, answers: RuntimeAnswers): string | undefined {
+  const speech = resolveProviderAnswer(drawnName, "speech", answers);
+  if (!speech.operable && speech.reason.kind !== "role_denied") return speech.reason.sentence;
+
+  const chat = resolveProviderAnswer(drawnName, "chat", answers);
+  if (!chat.operable && chat.reason.kind !== "role_denied") return chat.reason.sentence;
+
+  return undefined;
 }
 
 /**
@@ -636,14 +741,39 @@ function Follows({
   model?: string;
   extra?: ReactNode;
 }) {
+  const wired = useWired();
+  const answers = useAnswers();
   const lj = jobKey ? LANES[lane].jobs[jobKey] : {};
   const model = lj.model ?? fallbackModel ?? "";
   const models = lj.models ?? (model ? [model] : []);
   const override = lj.override;
   const conn = LANES[lane].provider;
 
-  return (
-    <CardRows>
+  /* WHICH VENDOR THIS JOB WOULD RUN ON, and therefore which answer applies:
+     the override where the drawing gives one, the connection otherwise. The
+     role comes from the job's own column — `stt` and `llm` are what the
+     drawing calls its axes, `speech` and `chat` what a credential is keyed by
+     (ADR 0105), and `roleForDrawnCapability` is the one translation. */
+  const runsOn = override ?? conn;
+  const answer = wired
+    ? resolveProviderAnswer(runsOn, roleForDrawnCapability(cap), answers)
+    : null;
+  /* A row inert for a reason the runtime can name says THAT reason; one inert
+     because this build integrates a single lane keeps ADR 0065's sentence.
+     Never both, and never the wrong one — which is the whole of ADR 0106.
+
+     `pending` keeps the blanket sentence rather than replacing it with "not
+     read": the read being outstanding claims nothing, and ADR 0065's reason is
+     true for this row whether or not the runtime has answered. The runtime can
+     refine that sentence; it may not make the surface flicker through a second
+     one on the way. */
+  const reason =
+    answer && !answer.operable && answer.reason.kind !== "pending"
+      ? answer.reason.sentence
+      : undefined;
+
+  const modelRows = (
+    <>
       {/* The provider row only exists where there is a provider to pick. On
           Local the choice is a file and on Self-hosted it is a URL, so offering
           "which company" there would be furniture with nothing behind it. */}
@@ -730,6 +860,27 @@ function Follows({
         />
       )}
 
+    </>
+  );
+
+  /* THE REASON GOVERNS THE VENDOR AND MODEL ROWS AND STOPS THERE.
+     `extra` is the caller's own — on Translate those four rows are the mode's
+     settings, not model choices, and two of them have had a config home since
+     the commit that added the mode (ADR 0041). A job whose *model provider* has
+     no adapter has not stopped having a target language, and disabling one for
+     the other would be the same conflation this step exists to end, one axis
+     over.
+
+     Provided to the subtree rather than passed to each control: this renders up
+     to four and a prop threaded through all of them is the list this screen's
+     own header calls "a list nobody keeps correct". */
+  return (
+    <CardRows>
+      {reason ? (
+        <InertBecause.Provider value={reason}>{modelRows}</InertBecause.Provider>
+      ) : (
+        modelRows
+      )}
       {extra}
     </CardRows>
   );

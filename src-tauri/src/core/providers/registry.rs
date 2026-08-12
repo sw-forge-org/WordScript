@@ -245,6 +245,18 @@ static REGISTRY: &[ProviderEntry] = &[
     },
 ];
 
+/// Every entry this build registered, in table order.
+///
+/// **The absence of an id from this list is an answer, not a gap** (ADR 0124).
+/// A surface drawing ten vendors and holding adapters for two has to tell *no
+/// adapter exists* apart from *the lane denies the role*, and the only place
+/// that difference is stated is the table itself. Exposing it read-only is
+/// cheaper and more honest than asking `resolve_entry` ten times and reading
+/// eight errors as the normal answer.
+pub fn entries() -> &'static [ProviderEntry] {
+    REGISTRY
+}
+
 /// The entry a stored provider value names.
 ///
 /// An empty value is the default provider rather than an error: a config that

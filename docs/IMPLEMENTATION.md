@@ -32,7 +32,7 @@ updated; a kick-off is spent when its unit closes.
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
-| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 8 of ~25 steps done | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 9 of ~25 steps done, and the first adapter is unblocked | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
 ### GUI port
@@ -73,7 +73,7 @@ The third pass's own page carries where each of the five records stands.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -81,8 +81,18 @@ fifteen records, no code — and the plan exists because those records order the
 starts on; [`tracks/speech-track.md`](tracks/speech-track.md) is stage one's
 account and is not updated by later work.
 
-Done: A1–A6 (the runtime contract), B3 (the model catalogue), C3 (the soak
-night, which returned zero). Next unblocked and cheapest: **D1a** and **B4**.
+Done: A1–A6 (the runtime contract), B1 (the capability seam), B3 (the model
+catalogue), C3 (the soak night, which returned zero).
+
+Next unblocked: **B2**, **B4**, **B5**, **C1** and **E1**. With B1 in, the
+remaining precondition for the first adapter is gone: **D1 (OpenAI) is
+unblocked** and is the step the track exists for.
+
+**D1a is not unblocked, and the line that said so was drift.** It requires D1 —
+the shared request helper D1 extracts is the thing it reaches with a second base
+URL. Its plan entry says *not gated*, which means no owner decision stands in
+front of it, and that was read here as *no dependency*. The two are different
+words for different things.
 
 ### Activation gestures
 

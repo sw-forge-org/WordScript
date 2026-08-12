@@ -117,6 +117,24 @@ export interface ProviderCapabilities {
 }
 
 /**
+ * One provider the runtime holds an adapter for, and what it serves.
+ *
+ * The answer to the seam's first question (ADR 0124), from the
+ * `registered_providers` command. **A vendor missing from this list has no
+ * adapter** (ADR 0096) — which is a different sentence from one whose `roles`
+ * omit a role (the lane denies it, ADR 0106) and from one whose role has no
+ * credential (ADR 0105). Mirrors `core::providers::RegisteredProvider`.
+ *
+ * It carries no credential: the answer is free of the OS secret store, which is
+ * why it can be asked for the whole table at once.
+ */
+export interface RegisteredProvider {
+  provider: string;
+  roles: ProviderRole[];
+  capabilities: ProviderCapabilities;
+}
+
+/**
  * What a model does, or whether the runtime knows.
  *
  * Three states and not a boolean: one drawn lane serves a model list that

@@ -1,8 +1,10 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-12 (stage B3, and it read
-only the model-catalogue entry; the stage A4 pass before it read only the
-provider axis, and the previous whole-section pass is Leg 10's, below)
+Status: created 2026-07-24, last drift check 2026-08-12 (stage B1, and it read
+only the capability-seam clauses and the deviation entry that denied them; the
+stage B3 pass before it read only the model-catalogue entry, the stage A4 pass
+before that only the provider axis, and the previous whole-section pass is
+Leg 10's, below)
 
 Leg 10's line, kept because it is what the sections below were last measured
 against: last drift check 2026-08-11 (Leg 10, and it read
@@ -81,6 +83,15 @@ registry alias is gone with the old name, so a stored `local_preview` resolves
 to nothing rather than to the lane. **ADR 0067's presentation rule is
 untouched** — the lane is still offered as unpublished and still badged, which
 is the half a release status belongs in.
+
+Amended 2026-08-12 by stage B1, which built the capability seam (ADR 0106) and
+took the command-surface decision that record left open (ADR 0124). **It read
+`core/providers/`, `src/screens/Models.tsx`, `src/types/providers.ts` and the
+two clauses that said no surface reads a capability**; it read nothing else.
+**The correction at the top of this file is now spent**: the mirror is a guard,
+held by the two tests ADR 0106 required rather than by this sentence, and both
+were made to fail before they were trusted. The model axis is still read by no
+surface and still says so.
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -352,12 +363,24 @@ UI implementation details, not Rust event names or Tauri channels.
   across the whole table, so a lane with no `VoiceProvider` cannot state a voice.
 - **The four fields ADR 0094 named land on those two axes** rather than all on
   the provider struct. Both structs are mirrored into `src/types/providers.ts`
-  and travel on `provider_status`. **Neither is read by any surface**: no field
-  of `status.capabilities` or `status.model_capabilities` is consumed in `src/`,
-  and `AI Models` draws its capability answers from the hand-maintained
-  `PROVIDERS` table in `src/screens/data.ts`. The mirror is a precondition for a
-  guard, not a guard; ADR 0106 makes building that seam a step before the first
-  adapter, asserted by a test rather than by a sentence. Planned; not built.
+  and travel on `provider_status`.
+- **The capability seam is built** (ADR 0106, ADR 0124), 2026-08-12, and the
+  mirror may be called a guard for the first time — the two tests that record
+  required both exist and both were made to fail before they were trusted.
+  `AI Models` reads `status.capabilities` for *can this be operated*; the
+  `PROVIDERS` table in `src/screens/data.ts` stays the drawing and has stopped
+  being a runtime claim. **`registered_providers()` answers for the whole
+  registry in one call**, reads no credential, and **a vendor's absence from it
+  is how *no adapter* is stated** — which is what lets that sentence be told
+  apart from *the lane denies this role* (the roles the entry registered) and
+  from *the role has no credential* (`role_credentials`, ADR 0105). Two further
+  states are about the read rather than the vendor: a read that has not come
+  back claims nothing and leaves the surface's own reason standing, and **an
+  incomplete capability block is reported, never read as nine `false`s**. The
+  drawn-name-to-runtime-id correspondence lives in `src/lib/providerSeam.ts`
+  with a three-direction test as its keeper, because `data.ts` may not carry a
+  runtime id and the model catalogue may not declare a vendor without model
+  rows. Built.
 - **`voice` is the ninth `JobKey`** (ADR 0109). The union carries eight and four
   records already write contracts against the ninth; the drawn `Speaking` job
   sits outside the lane axis and that is the shape the type follows. Where the
@@ -777,15 +800,17 @@ result surface (ADR 0011a).
   notification — wait on a second window class whose geometry belongs to the
   user (ADR 0100). This does not reopen the overlay's fixed per-surface
   geometry, and no generic resize command returns (ADR 0089).
-- **No surface reads a runtime capability.** `provider_status` returns
-  `ProviderCapabilities` **and, since 2026-08-11, `ModelCapabilities`**, and no
-  field of either is consumed anywhere in `src/`; `Models.test.tsx` mocks
-  capabilities as `{}` and the suite passes. `AI Models` draws
-  every capability answer from the hand-maintained `PROVIDERS` table in
-  `src/screens/data.ts`, whose `stt`/`llm` booleans are a drawing and are the
-  subject of three open disagreements in `docs/PROVIDERS.md`. The seam that
-  makes a drawn row inert when the runtime denies its role is ADR 0106 and is a
-  step before the first adapter, asserted by a test.
+- **The model axis travels unread, and the provider axis no longer does.**
+  Closed for `ProviderCapabilities` on 2026-08-12 by stage B1 (ADR 0106,
+  ADR 0124): `AI Models` reads it, `Models.test.tsx` can no longer mock
+  capabilities as `{}` and pass, and the `PROVIDERS` table in
+  `src/screens/data.ts` is the drawing rather than the answer — its `stt`/`llm`
+  booleans stay the subject of three open disagreements in
+  `docs/PROVIDERS.md`, and this record did not correct them. **`ModelCapabilities`
+  is still consumed by no surface**: *will this row stream* is a model question
+  and no drawn row asks it yet, which is the half a seam covering only the
+  provider axis leaves open (ADR 0110). It arrives with the lane that streams
+  (D2), and until then the mirror carries it without a reader.
 - **Nothing announces that a setting changed.** `AppConfig::save_to_disk` writes
   and `save_config` returns to its caller; there is no config-changed channel
   among `wordscript-event`, `wordscript-native-event`, `wordscript-mode-event`,

@@ -53,6 +53,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the capability seam, so a drawn row states why it cannot be operated (ADR 0106, ADR 0124)
+
+- **`AI Models` asks the runtime whether a lane can be operated, instead of a
+  table.** Which provider chips can be picked was the literal `["Groq"]`, and
+  what a connection does was `chosen.stt && chosen.llm` read off the drawn
+  `PROVIDERS` table. Both come from `core::providers` now. The drawn table stays
+  and is still what `port:diff` measures; it has stopped being a runtime claim,
+  and the open disagreements it carries in `docs/PROVIDERS.md` stay open —
+  correcting a drawn row is not what this does.
+- **`registered_providers()` answers for the whole registry in one call**, reads
+  no credential and cannot fail. **A vendor's absence from that answer is how
+  *no adapter exists* is stated** — which is what lets it be told apart from
+  *the lane denies this role* and from *the role has no credential*. The
+  alternative was ten `provider_status` calls on a screen that merely opened:
+  ten OS-secret-store reads, a local-runtime probe, and eight of ten answers
+  arriving as errors.
+- **Three reasons, three sentences, and two more that are about the read.** A
+  row inert because a key is missing now says which key, on which role, and
+  where to add it, rather than "not integrated yet" over a vendor that is
+  integrated. A read that has not come back claims nothing and leaves the
+  existing reason standing; **an incomplete capability block is reported rather
+  than read as nine silent `false`s**, which would be a working lane called
+  denied.
+- **The credential row stopped running its own `provider_status`.** It shared
+  one read with the seam — two reads of one secret store on one screen open, and
+  two components with two opinions of one credential.
+- **The mirror between `src/types/providers.ts` and the Rust structs is held by
+  a test rather than by a comment.** A field added on one side and not the other
+  fails, naming the field and the side. Both new tests were made to fail before
+  they were trusted.
+
 ### Changed — the documentation gets an index and a board, and a fact stops having five lists (ADR 0123)
 
 - **`docs/README.md` is new and is the map** — every document, what kind it is,

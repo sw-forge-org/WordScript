@@ -46,7 +46,21 @@ ignored** (+8), frontend **480 across 39 files** unmoved, `cargo check` still
 which for a rename is the whole signal. After B3: `cargo test` **767 passed / 3
 ignored** (+12), frontend **492 across 40 files** (+12), `cargo check` still 15,
 and `port:diff` moved on one screen — see the paragraph below, which is where a
-step that moves it has to say what it moved.
+step that moves it has to say what it moved. After B1: `cargo test` **770 passed
+/ 3 ignored** (+3), frontend **517 across 42 files** (+25 in two new files),
+`cargo check` still 15, and `port:diff` **unmoved** at B3's
+`structural 6 | style 213 | text 12` — the seam changes why a wired control is
+inert and the gallery has no runtime, so a moved count there would have been the
+warning rather than the deliverable.
+
+**Do not measure a baseline by stashing this tree.** B1 did, to get the
+before-number honestly, and `git stash push -u` swept the owner's live
+`shell.css`, `Nav.tsx` and `useConfigDraft.ts` edits in with the step's own; the
+pop then aborted on `shell.css`, which the owner's editor had written again in
+the meantime, and left every tracked change of the step in the stash while the
+tree looked merely clean. What recovered it was `git checkout stash@{0} -- ` and
+an explicit path list. **Three tracks share one working tree** — read the
+before-number off `git show HEAD:<file>` or a scratchpad copy instead.
 
 **The frontend suite flakes under load on this machine, and it is not a step's
 doing.** A full run that starts cold can drop one to three cases to `waitFor`
@@ -920,7 +934,8 @@ Speaking row, so it is flagged rather than assumed.
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |
-| B1–B2, C1–C2, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
+| B1 | **done** 2026-08-12 — `registered_providers()` answers for the whole table in one call, `src/lib/providerSeam.ts` is the third thing ADR 0106 named, five states rather than three, the two tests that record required both exist and both were made to fail before they were trusted (ADR 0124). +3 Rust tests, +25 frontend across 2 new files, `port:diff` unmoved at `structural 6 \| style 213 \| text 12` |
+| B2, C1–C2, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.
@@ -1281,3 +1296,93 @@ Counts: `cargo test` 755 passed / 3 ignored, `cargo check` 15 warnings,
 `npm test` 480 across 39 files, `npm run build` passes, `npm run port:diff`
 `ALL EXACT`. **Four unchanged counts is the deliverable** — a rename that moves
 one of them has done something it did not say it would.
+
+**B1, as it landed.** The record left one question open by name and four more by
+omission, and the reasoning each turned on is below. The command-surface
+decision is ADR 0124.
+
+**One command for the whole table, not ten for one screen.** ADR 0106 posed it
+and declined to answer it. Three facts in the tree decide it: `capabilities()`
+was split from `status()` in A1 precisely so a capability question costs no
+keyring read, `resolve_entry` refuses an unknown id so eight of ten answers
+would arrive as errors, and a screen that merely opened would have paid ten
+secret-store reads and a local-runtime probe for it. `registered_providers()`
+takes no argument — a filtered list would be the caller's drawing deciding what
+the runtime may admit to registering — and **absence from its answer is how *no
+adapter* is stated**, which is what lets that sentence be told apart from *the
+lane denies this role*.
+
+**The drawn name and the runtime id needed a third home, and both obvious ones
+were closed.** `data.ts` may not carry a runtime id: ADR 0106 says in its own
+consequences that it does not move that file, and a field the gallery has no
+copy of is one the next paste drops. `shared/model_catalogue.json` may not carry
+one either, and the reason is a test rather than a preference —
+`every_row_names_a_vendor_the_file_declares_and_every_vendor_carries_rows`
+requires a declared vendor to carry model rows, and Gemini, Mistral, xAI,
+OpenRouter, Azure OpenAI and GCP Vertex carry none. Editing that test to admit
+them would be accommodating a guard to a new step. So the correspondence is
+restated in the seam with a test as its keeper, which is the arrangement
+ADR 0106 endorses in its own consequences and attributes to the donor. **The
+third guard direction is the one that will bite**: every id the registry answers
+with must be reachable from a drawn name, so `openai` landing under a spelling
+nothing points at fails here rather than reading as a vendor with no adapter
+forever.
+
+**Five states, because three of them are about the vendor and two are about the
+read.** ADR 0106 named three reasons a row may be inert. A read that has not
+come back is not one of them — it claims nothing, so the surface keeps whatever
+reason it had, and a `pending` that replaced ADR 0065's blanket sentence would
+make every screen open flicker through *not read* on its way to the truth. A
+read that came back malformed is loud, and has to be: JavaScript reads a missing
+field as falsy, so an incomplete block without an explicit completeness check
+makes every lane read as denied and no test notices. **That is exactly the state
+ADR 0106 found**, and reproducing it one layer down while claiming to have fixed
+it was the failure this step was most at risk of.
+
+**Two defects the tests found, and both were real.** The first: the reason
+initially governed the whole job row, and the Translate row draws `override:
+"Anthropic"` — a vendor with no adapter — so its two acting settings stopped
+writing. Those four rows are the mode's own and have had a config home since
+ADR 0041; a job whose *model provider* has no adapter has not stopped having a
+target language. The reason now governs the vendor and model rows and stops
+there, which is this record's own conflation one axis over. The second: the
+Rust test asserting the capability answer carries no credential searched the
+payload for `api_key` and failed on `requires_api_key`, which is a capability.
+It asserts the serialized **keys** now, and pins the whole wire shape as a side
+effect — the nine fields the mirror reads, named once more where the wire is.
+
+**The chip row is inert until the runtime answers, and that is correct.** It was
+live at first paint because the answer was the literal `["Groq"]`. Two existing
+cases now await it. A chip enabled before the runtime has said anything is the
+fake readiness this screen's own comment calls the single worst place on the
+surface to imply a provider works.
+
+**The credential row stopped reading its own status.** Once the seam asked
+`provider_status` for the connection, `CloudCredentialRows` doing the same was
+two reads of one OS secret store on one screen open and two components with two
+opinions of one credential — the drift this step exists to remove, one layer up.
+It reads the seam's answer and refreshes through it; the account plans stay,
+being a speech question it is the only reader of.
+
+**What B1 deliberately did not do:** correct a drawn row (ADR 0106 forbids it,
+and `docs/PROVIDERS.md`'s open disagreements stay open), give a job row a config
+target (that is A4's shape and D1's use of it), touch `ProviderId`'s two-member
+union in `src/types/providers.ts` — it is `useProvider`'s parameter type, the
+seam names ids as strings and never needed it, and widening it on the way past
+would be a change with no caller — or add a surface element. **No new DOM**: the
+reason travels on `title`, where it already travelled, and on the connection
+row's `hint`.
+
+**The mirror may now be called a guard**, and `docs/spec/SPEC.md` says so for
+the first time. ADR 0106 forbade that until two tests existed. Both were made to
+fail before they were trusted: a field deleted from the TypeScript mirror failed
+the field comparison and the parser's own sanity case, and the empty capability
+block failed the screen.
+
+Counts: `cargo test` **770 passed / 3 ignored** (+3, all new in
+`providers/mod.rs`), `cargo check` **15 warnings** unchanged, frontend **517
+across 42 files** (+25: 19 in `lib/providerSeam.test.ts`, 6 in
+`types/providers.test.ts`, and `Models.test.tsx` net +4 with two existing cases
+made to await), `npm run build` passes, `npm run port:diff` on `models`
+**unmoved** at `structural 6 | style 213 | text 12`, and every `invoke(` in
+`src/` resolves to a registered handler (56 commands checked).

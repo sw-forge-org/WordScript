@@ -108,6 +108,7 @@ export function ProviderChips({
   fallbackIcon,
   label = "Provider",
   selectable,
+  reasonFor,
 }: {
   providers: string[];
   value: string;
@@ -122,6 +123,11 @@ export function ProviderChips({
    *  that accepts a click and then a key is the worst place on the surface to
    *  imply something works. */
   selectable?: string[];
+  /** WHY a chip cannot be picked, from whoever knows (ADR 0106). The fallback
+   *  below is one sentence for every cause, which is the conflation that record
+   *  is about: *no adapter exists*, *the lane denies this role* and *the key is
+   *  missing* are three different next actions for the reader. */
+  reasonFor?: (name: string) => string | undefined;
 }) {
   const canPick = (name: string) => !selectable || selectable.includes(name);
   return (
@@ -137,7 +143,11 @@ export function ProviderChips({
             aria-checked={on}
             data-on={on ? "" : undefined}
             disabled={!canPick(name)}
-            title={canPick(name) ? undefined : `${name} is not integrated yet`}
+            title={
+              canPick(name)
+                ? undefined
+                : (reasonFor?.(name) ?? `${name} is not integrated yet`)
+            }
             onClick={() => onChange?.(name)}
           >
             <span className="ws-provchip-mark">

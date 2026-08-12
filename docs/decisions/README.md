@@ -930,6 +930,18 @@ Status: Proposed | Accepted | Superseded by NNNN
   ADRs too, because the append-only rule protects a record's reasoning and not
   a citation that has stopped resolving. Doing it surfaced two live
   contradictions and one commit that belongs to no leg.
+- [0124](0124-the-registry-answers-for-the-whole-table-at-once-and-a-vendors-absence-from-it-is-the-answer.md):
+  builds the seam ADR 0106 required and takes the command-surface decision that
+  record left open. **One `registered_providers()` for the whole table**, rather
+  than ten `provider_status` calls that would each read the OS secret store and
+  answer eight of ten with an error — and **a vendor's absence from that list is
+  how *no adapter* is stated**. The drawn-name-to-runtime-id correspondence
+  lives in the seam with a three-direction test as its keeper, because
+  `data.ts` may not carry a runtime id and the catalogue may not carry a vendor
+  without model rows. Five states rather than three: `pending` claims nothing
+  and keeps the surface's own reason, `not_answered` is loud, and an incomplete
+  capability block is never nine quiet `false`s. `Models.test.tsx` can no longer
+  mock `capabilities: {}` and pass.
 
 ## Resolved: the number 0011 was used twice
 
