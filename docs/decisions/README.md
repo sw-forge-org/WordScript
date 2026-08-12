@@ -956,6 +956,29 @@ Status: Proposed | Accepted | Superseded by NNNN
   toggle riding it are the only things that move. Measured before and after, per
   animation frame.
 
+- [0126](0126-the-second-adapter-shares-a-transport-and-a-store-and-shares-no-policy-at-all.md):
+  the first adapter the registry was built for, and where the line between two
+  cloud vendors falls. **The transport and the credential store are one
+  implementation** — `groq.rs` was already the OpenAI request shape with a Groq
+  host, and the keyring differed only by the id in front of the entry name.
+  **Every policy stays with the vendor**, and the reason is not tidiness:
+  OpenAI documents `verbose_json` for `whisper-1` alone, so a shared default
+  would have made every request on its newer models a 400 with no Groq test able
+  to catch it. `ModelCapabilities` stops being vacuous here. A model id
+  belonging to another lane is substituted onto this one's default; one nobody
+  catalogued is a typed override and survives.
+
+- [0127](0127-the-connection-is-a-stored-value-and-every-row-that-names-a-vendor-reads-it.md):
+  A4 built a provider axis no surface could set and said so; B1 named it as
+  D1's to use. **The Cloud connection is now read from the active profile and
+  written back to it**, and the chip row, the credential row and every job row
+  read that one answer instead of three literals that agreed only while one
+  vendor was registered. The runtime id is stored, never the drawn name; the
+  gallery keeps its own state and reads no config. **The per-job override stays
+  unwritable on purpose** — the drawn `override` literal decides a row's shape
+  and A4 decided a fresh profile overrides nothing, which cannot both drive the
+  same branch. Recorded as open disagreement 13 rather than settled.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

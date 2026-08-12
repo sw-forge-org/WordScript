@@ -53,11 +53,18 @@ import {
   type TranslateAddressForm,
   type TranslateSameLanguage,
 } from "@/types/ipc";
-import { resolveActiveTextProfile, resolveProfileModesSettings } from "@/lib/textProfiles";
+import {
+  buildProfileProvidersPatch,
+  resolveActiveTextProfile,
+  resolveConfigJobProvider,
+  resolveProfileModesSettings,
+} from "@/lib/textProfiles";
 import {
   connectionCapabilitySentence,
+  drawnNameFor,
   NO_ANSWERS,
   resolveProviderAnswer,
+  runtimeIdFor,
   roleForDrawnCapability,
   selectableProviderNames,
   type RuntimeAnswers,
@@ -109,6 +116,23 @@ const Wired = createContext<{
      are. */
   answers: RuntimeAnswers;
   refresh?: () => Promise<void>;
+  /**
+   * WHICH VENDOR THE CLOUD CONNECTION IS ON, by drawn name — the one piece of
+   * state this screen now writes besides a credential (D1).
+   *
+   * It is on the context rather than inside `ProviderPick` because three
+   * things need the same answer and they are siblings, not ancestors: the chip
+   * row that sets it, the credential row directly beneath it, and every job row
+   * that says *Follow the connection · X*. It was local state until the second
+   * adapter landed, and it could be, because with one registered vendor the
+   * three could not disagree.
+   *
+   * `undefined` where the surface is the gallery: there is no config to read
+   * and `ProviderPick` keeps its own state, which is what makes the drawing
+   * still work with nothing behind it.
+   */
+  connection?: string;
+  setConnection?: (drawnName: string) => void;
 }>({ on: false, answers: NO_ANSWERS });
 
 function useWired() {
@@ -267,8 +291,32 @@ function WiredModels({
 }) {
   const { answers, refresh } = useProviderSeam(lane, runtime.config.model);
 
+  /* THE CONNECTION IS THE STORED ONE, not the drawn one. `LANES.Cloud.provider`
+     is `"Groq"` because that is what the prototype drew; what the pipeline
+     spends is `providers.default` on the active profile, which A4 made
+     per-profile and per-job. A stored id with no drawn name falls back to the
+     drawing rather than rendering a storage key into a chip. */
+  const stored = resolveConfigJobProvider(runtime.config, "dictation").provider;
+  const connection = drawnNameFor(stored) ?? LANES[lane].provider;
+
+  const setConnection = useCallback(
+    (drawnName: string) => {
+      const id = runtimeIdFor(drawnName);
+      /* A name with no id is this repo naming its vendors inconsistently, and
+         `providerSeam.test.ts` fails on it long before a user gets here.
+         Writing nothing is still the right answer at runtime: a config holding
+         a name the registry cannot resolve is dropped on load, so the write
+         would look like it worked and then vanish. */
+      if (!id) return;
+      runtime.patch(buildProfileProvidersPatch(runtime.config, { default: id }));
+    },
+    [runtime],
+  );
+
   return (
-    <Wired.Provider value={{ on: true, open: runtime.open, runtime, answers, refresh }}>
+    <Wired.Provider
+      value={{ on: true, open: runtime.open, runtime, answers, refresh, connection, setConnection }}
+    >
       <InertBecause.Provider value={NOT_INTEGRATED}>{children}</InertBecause.Provider>
     </Wired.Provider>
   );
@@ -449,12 +497,21 @@ function LaneRows({ lane, runtime }: { lane: LaneName; runtime?: WorkspaceRuntim
  * looks editable invites somebody to append to a secret they cannot see.
  */
 function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
-  const { answers, refresh } = useContext(Wired);
+  const { answers, refresh, connection } = useContext(Wired);
   const [tiers, setTiers] = useState<ProviderTier[]>([]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  /* THE VENDOR IS THE CONNECTION'S, AND IT USED TO BE THE LITERAL `"groq"` —
+     in the status read, in both writes, in the validation and in the plans, five
+     times (D1). With one registered lane that literal was correct; with two it
+     is a row that shows one vendor's credential while the chip above it names
+     another, and it would have written an OpenAI key into Groq's secret-store
+     entry. The fallback is the registry default rather than nothing: a screen
+     opening before the config has been read still has a credential to state. */
+  const providerId = (connection ? runtimeIdFor(connection) : undefined) ?? "groq";
 
   /* THE STATUS IS THE SEAM'S, NOT THIS ROW'S (ADR 0124). It used to run its own
      `provider_status`, and once the seam started asking for the same provider
@@ -462,22 +519,31 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
      components with two opinions of one credential, which is the drift this
      step exists to remove one layer up. The plans stay here: they are a speech
      question this row is the only reader of. */
-  const status = answers.statuses.groq ?? null;
+  const status = answers.statuses[providerId] ?? null;
 
   const read = useCallback(async () => {
     if (!runtime) return;
     const tierResult = await invoke<ProviderTier[]>("resolve_provider_tiers", {
-      provider: "groq",
+      provider: providerId,
     }).catch(() => null);
     /* Not an array is a runtime that did not answer, not a provider with no
        plans — the row then states the stored value rather than an empty list. */
     if (Array.isArray(tierResult)) setTiers(tierResult);
-  }, [runtime]);
+  }, [runtime, providerId]);
 
   useEffect(() => {
     if (!runtime?.active) return;
     void read();
   }, [runtime?.active, read]);
+
+  /* A DRAFT BELONGS TO THE VENDOR IT WAS TYPED FOR. Switching the connection
+     mid-edit with a half-typed key in the field would offer to save it to the
+     new vendor, which is how a key reaches an account it was never issued for. */
+  useEffect(() => {
+    setDraft("");
+    setEditing(false);
+    setProblem(null);
+  }, [providerId]);
 
   const configured = status?.credential.configured ?? false;
   const preview = status?.credential.key_preview;
@@ -489,10 +555,10 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
     setProblem(null);
     try {
       await invoke("save_provider_api_key", {
-        request: { provider: "groq", api_key: draft.trim() },
+        request: { provider: providerId, api_key: draft.trim() },
       });
       const validation = await invoke<{ ok: boolean }>("validate_provider_api_key", {
-        request: { provider: "groq", api_key: null },
+        request: { provider: providerId, api_key: null },
       });
       if (!validation?.ok) setProblem("The key was saved and the provider did not accept it.");
       setDraft("");
@@ -508,7 +574,7 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
   const clear = async () => {
     setBusy(true);
     try {
-      await invoke("clear_provider_api_key", { request: { provider: "groq" } });
+      await invoke("clear_provider_api_key", { request: { provider: providerId } });
       await refresh?.();
     } catch (cause) {
       setProblem(String(cause));
@@ -610,7 +676,20 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
         hint="Sets the largest upload, and with it the longest recording. Stated again where it is spent."
         control={
           <Select
-            value={runtime.config.provider_tier}
+            /* A PLAN ID THIS VENDOR NEVER HAD READS AS ITS DEFAULT, which is
+               what the runtime already does: `capture_limits` falls back to the
+               default tier for an id it does not recognise, on the argument
+               that being wrong towards "you may record less" costs a retry.
+               `provider_tier` is machine-wide — A4 left it so deliberately —
+               so switching the connection can leave Groq's `dev` selected on a
+               vendor with one plan, and a select whose value matches no option
+               renders blank. Blank reads as a setting nobody has made rather
+               than one that does not apply here. */
+            value={
+              tiers.some((tier) => (tier.default ? "" : tier.id) === runtime.config.provider_tier)
+                ? runtime.config.provider_tier
+                : ""
+            }
             onChange={(event) => runtime.patch({ provider_tier: event.target.value })}
             aria-label="Account plan"
             disabled={tiers.length === 0}
@@ -659,9 +738,19 @@ export function ProviderPick({
 }) {
   const wired = useWired();
   const answers = useAnswers();
+  const { connection, setConnection } = useContext(Wired);
   const here = PROVIDERS.filter((p) => p.lane === lane);
   const cur = here.find((p) => p.name === selected) ?? here[0];
-  const [value, setValue] = useState(cur.name);
+  const [drawnValue, setDrawnValue] = useState(cur.name);
+  /* THE PRODUCT READS THE CONFIG AND THE GALLERY READS ITSELF. Two sources for
+     one control, and the alternative was worse in both directions: local state
+     on the product is a chip that springs back on the next render, and a config
+     read in the gallery is a screen that cannot be rendered without a runtime
+     (ADR 0055). The Enterprise pick has no config home yet, so it keeps the
+     drawing on both surfaces. */
+  const wiredHere = wired && lane === "Cloud" && Boolean(connection);
+  const value = wiredHere ? (connection as string) : drawnValue;
+  const setValue = wiredHere && setConnection ? setConnection : setDrawnValue;
   const chosen = here.find((p) => p.name === value) ?? cur;
 
   /* THE LINE ADR 0106 NAMES. Drawn, this reads `chosen.stt && chosen.llm` — the
@@ -747,7 +836,12 @@ function Follows({
   const model = lj.model ?? fallbackModel ?? "";
   const models = lj.models ?? (model ? [model] : []);
   const override = lj.override;
-  const conn = LANES[lane].provider;
+  /* THE CONNECTION IS THE STORED ONE WHERE THERE IS ONE (D1). `Follow the
+     connection · Groq` on a profile whose connection is OpenAI is a row stating
+     a vendor the runtime is not using — and it is the sentence a user reads to
+     find out where a job runs. At the default it is the drawn value, which is
+     why `port:diff` does not move for this. */
+  const conn = useContext(Wired).connection ?? LANES[lane].provider;
 
   /* WHICH VENDOR THIS JOB WOULD RUN ON, and therefore which answer applies:
      the override where the drawing gives one, the connection otherwise. The

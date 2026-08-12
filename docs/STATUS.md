@@ -121,8 +121,9 @@ Status: 2026-08-12
   theme rows write it;
   before 2026-08-10 they changed the window and persisted nothing.
 - **A control the runtime cannot answer for is drawn and inert rather than
-  deleted** (ADR 0065, ADR 0067): three of four provider lanes, seven of eight
-  provider chips, the profile-list editors, and every per-job model override.
+  deleted** (ADR 0065, ADR 0067): three of four provider lanes, **five of seven
+  Cloud provider chips** (Groq and OpenAI can be picked since D1, 2026-08-12),
+  the profile-list editors, and every per-job model override.
   Every one carries its reason. **Four things left that list on 2026-08-10.**
   Translate is a mode you can select, bind and run (ADR 0041, ADR 0071), so the
   two controls naming its absence act. `Show transcripts in file manager` acts,
@@ -185,13 +186,14 @@ Status: 2026-08-12
   list belongs to the vendor and a capability nobody has looked up is not a
   capability that is absent. A registry test holds every entry's role claims to
   the implementations it registered, so no lane can state a voice it has none
-  for. **Both lanes answer `unsupported` everywhere on the model axis today** —
-  Groq's speech endpoint takes a file and returns a result, and the local lane
-  echoes back the language it was told — so the vendor whose models disagree is
-  proved by a fixture rather than left unproved until it is integrated. **The
-  provider axis is read by `AI Models` since 2026-08-12** (ADR 0106, ADR 0124);
-  the model axis waits for the first drawn row that asks whether something
-  streams
+  for. **The model axis stopped being vacuous on 2026-08-12** (D1): Groq's
+  speech endpoint takes a file and returns a result and the local lane echoes
+  back the language it was told, so both answer `unsupported` everywhere — but
+  OpenAI answers `supported` for `gpt-4o-transcribe` and `unsupported` for
+  `whisper-1` on one key at one URL, which is the pair ADR 0110 was written
+  from. **The provider axis is read by `AI Models` since 2026-08-12**
+  (ADR 0106, ADR 0124); the model axis is answered by the runtime and still read
+  by no drawn row
 - the capability seam between the drawing and the runtime (ADR 0106 and
   ADR 0124, 2026-08-12): `AI Models` asks the runtime whether a drawn row can be
   operated instead of reading the hand-maintained `PROVIDERS` table for it, and
@@ -217,8 +219,8 @@ Status: 2026-08-12
   configured means every role has one. The single key a previous build stored is
   adopted onto both of Groq's roles on first read, and the config migration
   copies the file aside first. **No vendor accepts a subscription yet** — a
-  registry test holds that kind to OpenAI, which is not integrated, and
-  acquiring a token set is ADR 0102's other half
+  registry test holds that kind to OpenAI, and that vendor's adapter refuses one
+  at the door because D3 has not built the sign-in that acquires it
 - recording limits that agree with what the pipeline can do (ADR 0038): a
   processing limit resolved per provider, account plan and model; an auto-stop
   the user sets under it with a recommended safety margin; and the silence stop
@@ -271,7 +273,11 @@ Status: 2026-08-12
 - pipeline hardening against backend aborts: a hard-deadline watchdog, a
   single transcription retry (retryable only), and a persistent runtime log
   file so abort errors no longer fall out of the ring buffer
-- Groq BYOK with OS secret-store storage
+- Groq and OpenAI BYOK with OS secret-store storage, one entry per
+  `(provider, role, kind)`, and a connection the user picks on `AI Models`
+  (ADR 0126, ADR 0127, 2026-08-12). OpenAI serves recognition and chat; the
+  transport and the credential store behind both cloud lanes are one
+  implementation and every vendor policy is the adapter's own
 - `local` as a full local runtime lane over external `whisper-cli`,
   local ggml models and local Ollama cleanup (STT plus cleanup, not STT-only)
 - AI Models preflight for the local runtime lane with native runner,

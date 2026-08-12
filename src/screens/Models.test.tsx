@@ -77,15 +77,25 @@ const STATUS = {
   local_setup: null,
 };
 
-/** What the registry answers: two adapters, and eight drawn vendors without. */
+/** What the registry answers: three adapters, and seven drawn vendors without.
+ *
+ *  **`openai` joined on D1 and the fixture followed the runtime, not the other
+ *  way round.** It was two entries, and every case below that means *a drawn
+ *  vendor with no adapter* had picked its example from whatever was absent that
+ *  day. Those cases now name Anthropic, which is drawn, unregistered, and the
+ *  chat vendor the Translate and Assistant rows already point at. */
 const REGISTERED = [
   { provider: "groq", roles: ["speech", "chat"], capabilities: CAPABILITIES },
+  { provider: "openai", roles: ["speech", "chat"], capabilities: CAPABILITIES },
   {
     provider: "local",
     roles: ["speech", "chat"],
     capabilities: { ...CAPABILITIES, local: true, requires_api_key: false },
   },
 ];
+
+/** The vendors this fixture leaves without an adapter, by drawn name. */
+const NO_ADAPTER = /Anthropic|Gemini|Mistral|xAI|OpenRouter/;
 
 const TIERS = [
   { id: "free", label: "Free — 25 MiB per request", max_audio_bytes: 26_214_400, default: true },
@@ -166,9 +176,15 @@ describe("AI Models, wired", () => {
     await waitFor(() =>
       expect(within(chips).getByRole("radio", { name: /Groq/ })).not.toBeDisabled(),
     );
+    /* Both registered vendors are selectable and every drawn one without an
+       adapter is not — which is the sentence ADR 0124 wanted the chip row to
+       make, now that there is more than one of each. */
+    await waitFor(() =>
+      expect(within(chips).getByRole("radio", { name: /OpenAI/ })).not.toBeDisabled(),
+    );
     const others = within(chips)
       .getAllByRole("radio")
-      .filter((chip) => !/Groq/.test(chip.textContent ?? ""));
+      .filter((chip) => NO_ADAPTER.test(chip.textContent ?? ""));
     expect(others.length).toBeGreaterThan(0);
     for (const chip of others) expect(chip).toBeDisabled();
   });
@@ -327,20 +343,34 @@ describe("AI Models, wired", () => {
       expect(within(chips).getByRole("radio", { name: /Groq/ })).not.toBeDisabled(),
     );
 
-    const openai = within(chips).getByRole("radio", { name: /OpenAI/ });
-    expect(openai).toBeDisabled();
-    expect(openai).toHaveAttribute("title", expect.stringContaining("no adapter"));
+    /* THE EXAMPLE MOVED BECAUSE THE REGISTRY DID. This named OpenAI until D1
+       registered it, which is the case working rather than breaking: what the
+       assertion means is *a vendor the drawing names and the registry does
+       not*, and Anthropic is that vendor now. */
+    const anthropic = within(chips).getByRole("radio", { name: /Anthropic/ });
+    expect(anthropic).toBeDisabled();
+    expect(anthropic).toHaveAttribute("title", expect.stringContaining("no adapter"));
+    expect(within(chips).getByRole("radio", { name: /OpenAI/ })).not.toBeDisabled();
   });
 
   /* One read, not two. The credential row used to run its own `provider_status`
      beside the seam's, which is two reads of one OS secret store on one screen
      open and two components with two opinions of one credential. */
-  it("reads the provider status once for the connection", async () => {
+  it("reads the provider status once per vendor and never twice for one", async () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await screen.findByText("gsk_…4f2a");
-    const reads = invoked.mock.calls.filter(([command]) => command === "provider_status");
-    expect(reads).toHaveLength(1);
+    /* ONCE PER VENDOR, NOT ONCE ALTOGETHER. This asserted a single call, which
+       was the same sentence while one adapter existed and stopped being it when
+       D1 added a second Cloud vendor the seam legitimately asks about. What it
+       has always meant is that the credential row does not run a read of its
+       own beside the seam's — so the check is for a DUPLICATE, and it survives
+       the third adapter without being edited again. */
+    const read = invoked.mock.calls
+      .filter(([command]) => command === "provider_status")
+      .map(([, payload]) => (payload as { request: { provider: string } }).request.provider);
+    expect(read.length).toBeGreaterThan(0);
+    expect(new Set(read).size).toBe(read.length);
   });
 
   /* The Translate job row, which is where the rule above splits. Its four rows
@@ -409,6 +439,124 @@ describe("AI Models, wired", () => {
     expect(titles!.tagName).toBe("DIV");
     expect(titles!.querySelector("summary")).toBeNull();
     expect(within(titles as HTMLElement).queryByRole("combobox")).toBeNull();
+  });
+});
+
+/**
+ * THE DOOR D1 OPENED (ADR 0096 step 1).
+ *
+ * Every case here failed before the OpenAI adapter landed, and each for a
+ * different reason: the chip row held its choice in local state and wrote
+ * nothing, the credential row spelled `"groq"` in five places, and the job rows
+ * read the connection off `data.ts`. With one registered vendor none of that
+ * was visible; with two, each one is a row stating a vendor the runtime is not
+ * using.
+ */
+describe("AI Models, choosing the connection", () => {
+  /** The active profile's provider axis, out of whatever the patch carried. */
+  function axisOf(patch: { text_profiles?: { id: string; providers?: unknown }[] }, id: string) {
+    return patch.text_profiles?.find((profile) => profile.id === id)?.providers;
+  }
+
+  it("writes the chosen connection onto the active profile", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const runtime = createWorkspaceRuntime({ active: true, patch });
+    render(<ModelsScreen runtime={runtime} />);
+
+    const chips = screen.getByRole("radiogroup", { name: "Provider" });
+    await waitFor(() =>
+      expect(within(chips).getByRole("radio", { name: /OpenAI/ })).not.toBeDisabled(),
+    );
+    await user.click(within(chips).getByRole("radio", { name: /OpenAI/ }));
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    /* The RUNTIME id, never the drawn name: `providers.default` is read by
+       `resolve_entry`, which knows `openai` and has never heard of `OpenAI`. */
+    expect(axisOf(patch.mock.calls[0][0], runtime.config.active_text_profile_id)).toEqual({
+      default: "openai",
+      overrides: {},
+    });
+  });
+
+  it("saves a key to the vendor the connection names and never to Groq", async () => {
+    const user = userEvent.setup();
+    const config = createAppConfig();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "openai", overrides: {} };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    /* Several rows draw a Replace button — every overriding job row has one —
+       and exactly one of them is live: the connection's. The drawn ones are
+       disabled by `InertBecause`, which is what picks it out here. */
+    const keyButtons = await screen.findAllByRole("button", { name: /Replace|Add/ });
+    const live = keyButtons.find((button) => !(button as HTMLButtonElement).disabled);
+    expect(live, "the connection's key button is the live one").toBeDefined();
+    await user.click(live as HTMLElement);
+    await user.type(screen.getByLabelText(/API key/i), "sk-proj-abcdefghijklmnop");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    /* THE BUG THIS CASE EXISTS FOR: writing an OpenAI key into Groq's
+       secret-store entry, which is one literal away and silent. */
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
+        request: { provider: "openai", api_key: "sk-proj-abcdefghijklmnop" },
+      }),
+    );
+    expect(invoked).not.toHaveBeenCalledWith(
+      "save_provider_api_key",
+      expect.objectContaining({ request: expect.objectContaining({ provider: "groq" }) }),
+    );
+  });
+
+  it("reads a plan the new vendor never had as that vendor's default", async () => {
+    const config = createAppConfig();
+    /* Groq's paid plan, stored machine-wide, while the connection is OpenAI —
+       which publishes one ceiling for every account. */
+    config.provider_tier = "dev";
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "openai", overrides: {} };
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") return STATUS;
+      if (command === "resolve_provider_tiers") {
+        return [
+          { id: "standard", label: "Standard — 25 MiB per request", max_audio_bytes: 26_214_400, default: true },
+        ];
+      }
+      return undefined;
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    /* A select whose value matches no option renders blank, and blank reads as
+       a setting nobody made rather than one that does not apply. The runtime
+       already falls back to the default for an unrecognised plan id; the
+       surface has to say the same thing. */
+    await waitFor(() =>
+      expect(screen.getByLabelText("Account plan")).toHaveValue(""),
+    );
+    expect(screen.getByLabelText("Account plan")).not.toBeDisabled();
+  });
+
+  it("names the stored connection on a job row that follows it", async () => {
+    const config = createAppConfig();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "openai", overrides: {} };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    /* `Follow the connection · Groq` on a profile connected to OpenAI is the
+       row lying about where the job runs, and it is the sentence a user reads
+       to find that out. */
+    const cleanup = (await screen.findByText("Cleanup")).closest(".ws-job") as HTMLElement;
+    expect(within(cleanup).getByLabelText("Provider")).toHaveValue(
+      "Follow the connection · OpenAI",
+    );
   });
 });
 

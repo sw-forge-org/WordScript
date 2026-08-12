@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+pub mod credential_store;
 pub mod groq;
 pub mod local;
+pub mod openai;
+pub mod openai_compatible;
 pub mod registry;
 
 pub use registry::{
@@ -1117,6 +1120,16 @@ pub async fn create_chat_completion(
 mod tests {
     use super::*;
 
+    /// An id no adapter will ever claim.
+    ///
+    /// **Six tests here and in `config.rs` used to spell `openai` for this**,
+    /// which made them assertions about the shape of the registry on the day
+    /// they were written rather than about the fallback they were testing —
+    /// and D1 failed all six by registering the vendor ADR 0096 scheduled
+    /// first. A registry with ten entries would have retired the stand-in ten
+    /// times. This one is retired never, and it says what it means.
+    const UNREGISTERABLE_ID: &str = "not-a-vendor-this-build-carries";
+
     #[test]
     fn normalizes_provider_values_to_supported_ids() {
         assert_eq!(normalize_provider_value("groq"), "groq");
@@ -1126,15 +1139,21 @@ mod tests {
         // is as unknown as any other, and lands on the default.
         assert_eq!(normalize_provider_value("local_preview"), "groq");
         assert_eq!(normalize_provider_value(""), "groq");
-        assert_eq!(normalize_provider_value("openai"), "groq");
+        // A SYNTHETIC ID, AND DELIBERATELY SO. This assertion used to name
+        // `openai`, which made it a test about which vendors happen to be
+        // registered rather than about the fallback — and D1 broke it by doing
+        // the thing the plan scheduled. What it means is *an id this build
+        // cannot resolve*, and only an id nothing will ever register says that
+        // for good.
+        assert_eq!(normalize_provider_value(UNREGISTERABLE_ID), "groq");
     }
 
     #[test]
     fn rejects_unknown_provider_dispatch() {
-        let error = registry::resolve_entry("openai").unwrap_err();
+        let error = registry::resolve_entry(UNREGISTERABLE_ID).unwrap_err();
 
         assert!(matches!(error.kind, ProviderErrorKind::InvalidRequest));
-        assert!(error.message.contains("openai"));
+        assert!(error.message.contains(UNREGISTERABLE_ID));
     }
 
     /// **The list is the table, not a copy of it** (ADR 0124). Walked over the
@@ -1180,8 +1199,10 @@ mod tests {
     fn a_vendor_with_no_adapter_is_absent_rather_than_denied() {
         let listed = registered_providers();
 
-        assert!(!listed.iter().any(|row| row.provider == "openai"));
-        assert!(!resolves_to_a_known_provider("openai"));
+        assert!(!listed
+            .iter()
+            .any(|row| row.provider == UNREGISTERABLE_ID));
+        assert!(!resolves_to_a_known_provider(UNREGISTERABLE_ID));
 
         // And the two that are present are present with their roles, so the
         // absence above is the registry's answer and not an empty list.
@@ -1270,8 +1291,8 @@ mod tests {
             "the alias resolves to the entry and the entry names the model",
         );
 
-        let unknown_lane = model_capabilities("openai", "gpt-4o-transcribe");
-        assert_eq!(unknown_lane.model, "gpt-4o-transcribe");
+        let unknown_lane = model_capabilities(UNREGISTERABLE_ID, "some-model");
+        assert_eq!(unknown_lane.model, "some-model");
         assert_eq!(unknown_lane.transcription_streaming, ModelSupport::Unknown);
     }
 

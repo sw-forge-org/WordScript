@@ -73,7 +73,7 @@ The third pass's own page carries where each of the five records stands.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0127.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -82,17 +82,18 @@ starts on; [`tracks/speech-track.md`](tracks/speech-track.md) is stage one's
 account and is not updated by later work.
 
 Done: A1–A6 (the runtime contract), B1 (the capability seam), B3 (the model
-catalogue), C3 (the soak night, which returned zero).
+catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
+adapter, and the connection that can now be chosen)**.
 
-Next unblocked: **B2**, **B4**, **B5**, **C1** and **E1**. With B1 in, the
-remaining precondition for the first adapter is gone: **D1 (OpenAI) is
-unblocked** and is the step the track exists for.
+Next unblocked: **B2**, **B4**, **B5**, **C1**, **E1** and — now that D1 has
+extracted the shared request helper — **D1a**, which is the cheapest step in
+Stage D and reaches two more lanes for a base URL.
 
-**D1a is not unblocked, and the line that said so was drift.** It requires D1 —
-the shared request helper D1 extracts is the thing it reaches with a second base
-URL. Its plan entry says *not gated*, which means no owner decision stands in
-front of it, and that was read here as *no dependency*. The two are different
-words for different things.
+**One thing D1 found is somebody's to decide, and it blocks a control.** The
+drawn per-job override and A4's runtime resolution disagree about what a fresh
+profile overrides, so the override select stays unwritable while the connection
+does not (ADR 0127, `PROVIDERS.md` open disagreement 13). It gates the row, not
+the adapter.
 
 ### Activation gestures
 

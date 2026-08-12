@@ -1,20 +1,14 @@
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::{Mutex, OnceLock},
-    time::{Duration, Instant},
-};
-
-use keyring::{Entry, Error as KeyringError};
-use reqwest::{header, multipart, StatusCode};
-use serde::Deserialize;
-use tokio::time::sleep;
+use reqwest::StatusCode;
 
 use crate::core::model_catalogue;
 use crate::core::runtime_log;
 
 use super::{
     aggregate_credential,
+    credential_store::{self, KeyShape, OsSecretStore},
+    openai_compatible::{
+        format_audio_size, CompatibleClient, CompatibleError, TranscriptionPlan,
+    },
     registry::{ChatProvider, Provider, ProviderFuture, SpeechProvider},
     ChatCompletionRequest, CredentialKind, ModelCapabilities, ModelSupport, ProviderCapabilities,
     ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus, ProviderErrorKind,
@@ -23,8 +17,21 @@ use super::{
     ValidateProviderApiKeyResponse,
 };
 
+/// The registry id, and the one string a credential entry is keyed by.
+const GROQ_PROVIDER_ID: &str = "groq";
+/// How this vendor is named in a sentence a user reads.
+const GROQ_VENDOR: &str = "Groq";
+/// **Already the OpenAI shape with a Groq host** — the finding ADR 0113 is
+/// built on, and the reason `openai_compatible` exists rather than a second
+/// copy of this file's transport.
 const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
-const GROQ_KEY_SERVICE: &str = "io.github.sw-forge-org.wordscript";
+/// Groq issues `gsk_`-prefixed keys, and catching a key pasted into the wrong
+/// vendor's field here is cheaper than a 401 that does not say which one.
+const GROQ_KEY_PREFIX: &str = "gsk_";
+/// Groq runs `verbose_json` on every model it serves, which is what gives the
+/// coverage instrument its segments. **OpenAI does not**, and that difference
+/// is why the format is a per-vendor decision rather than a shared default.
+const GROQ_RESPONSE_FORMAT: &str = "verbose_json";
 /// The roles Groq's key pays for. Held to the registry entry by a test in this
 /// module — the entry is the answer, this list is what a save with no named
 /// role fans out across, and two lists that disagreed would strand a
@@ -48,57 +55,16 @@ const DEFAULT_MAX_RETRIES: u8 = 2;
 const GROQ_FREE_TIER_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 const GROQ_DEV_TIER_MAX_AUDIO_BYTES: usize = 100 * 1024 * 1024;
 
-/// The stored keys, by the entry name they live under — one per `(role, kind)`
-/// rather than one per provider, so a cached chat credential cannot answer a
-/// speech lookup.
-static GROQ_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-
-#[derive(Debug)]
-struct GroqProviderError {
-    kind: ProviderErrorKind,
-    message: String,
-    status: Option<u16>,
-    retry_after_seconds: Option<u64>,
-}
-
-impl From<GroqProviderError> for ProviderCommandError {
-    fn from(error: GroqProviderError) -> Self {
-        Self::new(
-            error.kind,
-            error.message,
-            error.status,
-            error.retry_after_seconds,
-        )
-    }
-}
+/// This lane's transport error. **The type is shared and the wording is not** —
+/// every message it carries names `Groq`, because the first question about a
+/// refused key is which vendor refused it.
+type GroqProviderError = CompatibleError;
 
 pub type GroqProviderStatus = ProviderStatus;
 
 pub type ValidateGroqApiKeyResponse = ValidateProviderApiKeyResponse;
 
 pub type GroqTranscriptionResponse = TranscriptionResponse;
-
-#[derive(Debug, Deserialize)]
-struct GroqChatCompletionResponse {
-    choices: Vec<GroqChatChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GroqChatChoice {
-    message: GroqChatChoiceMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct GroqChatChoiceMessage {
-    content: String,
-}
-
-struct GroqClient {
-    http: reqwest::Client,
-    api_key: String,
-    timeout: Duration,
-    max_retries: u8,
-}
 
 /// Groq as the registry sees it: recognition and completions on one key.
 ///
@@ -209,8 +175,8 @@ fn save_api_key(
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     ensure_supported_kind(kind)?;
     let api_key = normalize_api_key(api_key)?;
-    write_api_key_to(&OsSecretStore, role, kind, &api_key).map_err(secret_store_error)?;
-    cache_api_key(&credential_entry_user(role, kind), Some(api_key));
+    credential_store::write_to(&OsSecretStore, GROQ_PROVIDER_ID, role, kind, &api_key).map_err(secret_store_error)?;
+    credential_store::cache_key(&credential_entry_user(role, kind), Some(api_key));
     credential_status().map_err(ProviderCommandError::from)
 }
 
@@ -219,8 +185,8 @@ fn clear_api_key(
     kind: CredentialKind,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     ensure_supported_kind(kind)?;
-    clear_api_key_in(&OsSecretStore, role, kind).map_err(secret_store_error)?;
-    cache_api_key(&credential_entry_user(role, kind), None);
+    credential_store::clear_in(&OsSecretStore, GROQ_PROVIDER_ID, role, kind).map_err(secret_store_error)?;
+    credential_store::cache_key(&credential_entry_user(role, kind), None);
     credential_status().map_err(ProviderCommandError::from)
 }
 
@@ -248,8 +214,7 @@ async fn validate_api_key(
         _ => (load_any_stored_api_key()?, "stored_key".to_string()),
     };
 
-    let client = GroqClient::new(api_key, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_RETRIES)
-        .map_err(ProviderCommandError::from)?;
+    let client = groq_client(api_key, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_RETRIES)?;
     client
         .validate_models_endpoint()
         .await
@@ -257,25 +222,65 @@ async fn validate_api_key(
 
     Ok(ValidateGroqApiKeyResponse {
         ok: true,
-        provider: "groq".to_string(),
+        provider: GROQ_PROVIDER_ID.to_string(),
         checked_with,
     })
+}
+
+fn groq_client(
+    api_key: String,
+    timeout_ms: u64,
+    max_retries: u8,
+) -> Result<CompatibleClient, ProviderCommandError> {
+    CompatibleClient::new(GROQ_VENDOR, GROQ_API_BASE, api_key, timeout_ms, max_retries)
+        .map_err(ProviderCommandError::from)
 }
 
 async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<GroqTranscriptionResponse, ProviderCommandError> {
     let api_key = load_groq_api_key(ProviderRole::Speech)?;
-    let client = GroqClient::new(
+    let client = groq_client(
         api_key,
         request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
         request.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
-    )
-    .map_err(ProviderCommandError::from)?;
+    )?;
+
+    let (file_name, audio_bytes) = client
+        .read_audio(&request.audio_path)
+        .await
+        .map_err(ProviderCommandError::from)?;
+
+    validate_audio_upload_size(&file_name, audio_bytes.len())
+        .map_err(ProviderCommandError::from)?;
+
+    if audio_bytes.len() > GROQ_FREE_TIER_MAX_AUDIO_BYTES {
+        runtime_log::record(format!(
+            "[WordScript] Groq transcription upload warning file={} size={} free_tier_limit={} dev_tier_limit={}",
+            file_name,
+            format_audio_size(audio_bytes.len()),
+            format_audio_size(GROQ_FREE_TIER_MAX_AUDIO_BYTES),
+            format_audio_size(GROQ_DEV_TIER_MAX_AUDIO_BYTES),
+        ));
+    }
+
+    let audio_bytes_len = audio_bytes.len();
+    let plan = TranscriptionPlan {
+        file_name: file_name.clone(),
+        audio_bytes,
+        model: resolve_speech_model(request.model.as_deref().unwrap_or_default()),
+        response_format: request
+            .response_format
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| GROQ_RESPONSE_FORMAT.to_string()),
+        language: request.language.filter(|value| !value.trim().is_empty()),
+        prompt: request.prompt.filter(|value| !value.trim().is_empty()),
+    };
 
     client
-        .transcribe_file(request)
+        .transcribe(plan)
         .await
+        .map_err(|error| annotate_transcription_error(error, &file_name, audio_bytes_len))
         .map_err(ProviderCommandError::from)
 }
 
@@ -283,348 +288,16 @@ async fn create_chat_completion(
     request: ChatCompletionRequest,
 ) -> Result<String, ProviderCommandError> {
     let api_key = load_groq_api_key(ProviderRole::Chat)?;
-    let client = GroqClient::new(
+    let client = groq_client(
         api_key,
         request.timeout_ms.unwrap_or(8_000),
         request.max_retries.unwrap_or(1),
-    )
-    .map_err(ProviderCommandError::from)?;
+    )?;
 
     client
         .chat_completion(request)
         .await
         .map_err(ProviderCommandError::from)
-}
-
-impl GroqClient {
-    fn new(api_key: String, timeout_ms: u64, max_retries: u8) -> Result<Self, GroqProviderError> {
-        let timeout = Duration::from_millis(timeout_ms.max(5_000));
-        let http = reqwest::Client::builder()
-            .timeout(timeout)
-            .connect_timeout(Duration::from_secs(8))
-            .build()
-            .map_err(|error| GroqProviderError {
-                kind: ProviderErrorKind::InvalidRequest,
-                message: format!("Could not build Groq HTTP client: {error}"),
-                status: None,
-                retry_after_seconds: None,
-            })?;
-
-        Ok(Self {
-            http,
-            api_key,
-            timeout,
-            max_retries,
-        })
-    }
-
-    async fn validate_models_endpoint(&self) -> Result<(), GroqProviderError> {
-        let response = self
-            .send_with_retries("models.validate", || {
-                self.http
-                    .get(format!("{GROQ_API_BASE}/models"))
-                    .bearer_auth(&self.api_key)
-            })
-            .await?;
-
-        drop(response);
-        Ok(())
-    }
-
-    async fn transcribe_file(
-        &self,
-        request: TranscribeAudioFileRequest,
-    ) -> Result<GroqTranscriptionResponse, GroqProviderError> {
-        let started_at = Instant::now();
-        let audio_path = Path::new(&request.audio_path);
-        let file_name = audio_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("wordscript-audio.wav")
-            .to_string();
-
-        let audio_bytes = tokio::fs::read(audio_path)
-            .await
-            .map_err(|error| GroqProviderError {
-                kind: ProviderErrorKind::Io,
-                message: format!("Could not read audio file: {error}"),
-                status: None,
-                retry_after_seconds: None,
-            })?;
-
-        let model = resolve_speech_model(request.model.as_deref().unwrap_or_default());
-        let language = request.language.filter(|value| !value.trim().is_empty());
-        let prompt = request.prompt.filter(|value| !value.trim().is_empty());
-        let response_format = request
-            .response_format
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "verbose_json".to_string());
-
-        // `prompt_chars` is here so the blank-state floor can be verified where
-        // it matters. A floor that only shows up in the settings preview is the
-        // defect `stt-hints-bypass-the-vocabulary-opt-in.md` records, and until
-        // this line carried the number there was no way to tell from a real
-        // dictation whether the provider got a prompt at all (ADR 0036). The
-        // count, not the text: the prompt can carry the user's own terms.
-        runtime_log::record(format!(
-            "[WordScript] Groq transcription start file={} bytes={} model={} timeout_ms={} retries={} prompt_chars={}",
-            file_name,
-            audio_bytes.len(),
-            model,
-            self.timeout.as_millis(),
-            self.max_retries,
-            prompt.as_deref().map(str::len).unwrap_or(0),
-        ));
-
-        validate_audio_upload_size(&file_name, audio_bytes.len())?;
-
-        if audio_bytes.len() > GROQ_FREE_TIER_MAX_AUDIO_BYTES {
-            runtime_log::record(format!(
-                "[WordScript] Groq transcription upload warning file={} size={} free_tier_limit={} dev_tier_limit={}",
-                file_name,
-                format_audio_size(audio_bytes.len()),
-                format_audio_size(GROQ_FREE_TIER_MAX_AUDIO_BYTES),
-                format_audio_size(GROQ_DEV_TIER_MAX_AUDIO_BYTES),
-            ));
-        }
-
-        let response = match self
-            .send_with_retries("audio.transcriptions", || {
-                let mut form = multipart::Form::new()
-                    .text("model", model.clone())
-                    .text("response_format", response_format.clone())
-                    .text("temperature", "0")
-                    .part(
-                        "file",
-                        multipart::Part::bytes(audio_bytes.clone()).file_name(file_name.clone()),
-                    );
-
-                if let Some(language) = &language {
-                    form = form.text("language", language.clone());
-                }
-                if let Some(prompt) = &prompt {
-                    form = form.text("prompt", prompt.clone());
-                }
-
-                self.http
-                    .post(format!("{GROQ_API_BASE}/audio/transcriptions"))
-                    .bearer_auth(&self.api_key)
-                    .multipart(form)
-            })
-            .await
-        {
-            Ok(response) => response,
-            Err(error) => {
-                return Err(annotate_transcription_error(
-                    error,
-                    &file_name,
-                    audio_bytes.len(),
-                ));
-            }
-        };
-
-        let payload = response
-            .json::<GroqTranscriptionResponse>()
-            .await
-            .map_err(|error| GroqProviderError {
-                kind: ProviderErrorKind::Parse,
-                message: format!("Could not parse Groq transcription response: {error}"),
-                status: None,
-                retry_after_seconds: None,
-            })?;
-
-        runtime_log::record(format!(
-            "[WordScript] Groq transcription complete elapsed_ms={} text_len={} duration={:?}",
-            started_at.elapsed().as_millis(),
-            payload.text.len(),
-            payload.duration,
-        ));
-        runtime_log::record(payload.coverage().log_line());
-
-        Ok(payload)
-    }
-
-    async fn chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<String, GroqProviderError> {
-        let started_at = Instant::now();
-        let prompt_chars = request
-            .messages
-            .iter()
-            .map(|message| message.content.len())
-            .sum::<usize>();
-        runtime_log::record(format!(
-            "[WordScript] Groq correction start model={} timeout_ms={} retries={} prompt_chars={} max_tokens={}",
-            request.model,
-            self.timeout.as_millis(),
-            self.max_retries,
-            prompt_chars,
-            request.max_tokens,
-        ));
-
-        let body = serde_json::json!({
-            "model": request.model,
-            "messages": request.messages,
-            "temperature": request.temperature,
-            "max_tokens": request.max_tokens,
-        });
-
-        let response = self
-            .send_with_retries("chat.completions", || {
-                self.http
-                    .post(format!("{GROQ_API_BASE}/chat/completions"))
-                    .bearer_auth(&self.api_key)
-                    .json(&body)
-            })
-            .await?;
-
-        let payload = response
-            .json::<GroqChatCompletionResponse>()
-            .await
-            .map_err(|error| GroqProviderError {
-                kind: ProviderErrorKind::Parse,
-                message: format!("Could not parse Groq chat completion response: {error}"),
-                status: None,
-                retry_after_seconds: None,
-            })?;
-
-        payload
-            .choices
-            .first()
-            .map(|choice| choice.message.content.trim().to_string())
-            .filter(|content| !content.is_empty())
-            .ok_or(GroqProviderError {
-                kind: ProviderErrorKind::Parse,
-                message: "Groq chat completion returned no text choices.".to_string(),
-                status: None,
-                retry_after_seconds: None,
-            })
-            .inspect(|content| {
-                runtime_log::record(format!(
-                    "[WordScript] Groq correction complete elapsed_ms={} text_len={}",
-                    started_at.elapsed().as_millis(),
-                    content.len(),
-                ));
-            })
-    }
-
-    async fn send_with_retries<F>(
-        &self,
-        label: &str,
-        request_factory: F,
-    ) -> Result<reqwest::Response, GroqProviderError>
-    where
-        F: Fn() -> reqwest::RequestBuilder,
-    {
-        let mut attempt = 0;
-        loop {
-            let attempt_number = attempt + 1;
-            let started_at = Instant::now();
-            let response = request_factory().send().await;
-            match response {
-                Ok(response) if response.status().is_success() => {
-                    runtime_log::record(format!(
-                        "[WordScript] Groq {} success attempt={} status={} elapsed_ms={}",
-                        label,
-                        attempt_number,
-                        response.status().as_u16(),
-                        started_at.elapsed().as_millis(),
-                    ));
-                    return Ok(response);
-                }
-                Ok(response) => {
-                    let status = response.status();
-                    let retry_after_seconds = retry_after_seconds(&response);
-                    let body = response.text().await.unwrap_or_default();
-                    let error = status_error(status, body, retry_after_seconds);
-
-                    runtime_log::record(format!(
-                        "[WordScript] Groq {} failure attempt={} status={} elapsed_ms={} retry_after={:?}",
-                        label,
-                        attempt_number,
-                        status.as_u16(),
-                        started_at.elapsed().as_millis(),
-                        retry_after_seconds,
-                    ));
-
-                    if should_retry_status(status) && attempt < self.max_retries {
-                        attempt += 1;
-                        runtime_log::record(format!(
-                            "[WordScript] Groq {} retrying after status failure attempt={} next_attempt={} delay_ms={}",
-                            label,
-                            attempt_number,
-                            attempt + 1,
-                            retry_delay(attempt, retry_after_seconds).as_millis(),
-                        ));
-                        sleep(retry_delay(attempt, retry_after_seconds)).await;
-                        continue;
-                    }
-
-                    return Err(error);
-                }
-                Err(error) if error.is_timeout() => {
-                    runtime_log::record(format!(
-                        "[WordScript] Groq {} timeout attempt={} elapsed_ms={} timeout_ms={}",
-                        label,
-                        attempt_number,
-                        started_at.elapsed().as_millis(),
-                        self.timeout.as_millis(),
-                    ));
-                    if attempt < self.max_retries {
-                        attempt += 1;
-                        runtime_log::record(format!(
-                            "[WordScript] Groq {} retrying after timeout attempt={} next_attempt={} delay_ms={}",
-                            label,
-                            attempt_number,
-                            attempt + 1,
-                            retry_delay(attempt, None).as_millis(),
-                        ));
-                        sleep(retry_delay(attempt, None)).await;
-                        continue;
-                    }
-
-                    return Err(GroqProviderError {
-                        kind: ProviderErrorKind::Timeout,
-                        message: format!(
-                            "Groq request timed out after {}ms",
-                            self.timeout.as_millis()
-                        ),
-                        status: None,
-                        retry_after_seconds: None,
-                    });
-                }
-                Err(error) => {
-                    runtime_log::record(format!(
-                        "[WordScript] Groq {} network error attempt={} elapsed_ms={} error={}",
-                        label,
-                        attempt_number,
-                        started_at.elapsed().as_millis(),
-                        error,
-                    ));
-                    if attempt < self.max_retries {
-                        attempt += 1;
-                        runtime_log::record(format!(
-                            "[WordScript] Groq {} retrying after network error attempt={} next_attempt={} delay_ms={}",
-                            label,
-                            attempt_number,
-                            attempt + 1,
-                            retry_delay(attempt, None).as_millis(),
-                        ));
-                        sleep(retry_delay(attempt, None)).await;
-                        continue;
-                    }
-
-                    return Err(GroqProviderError {
-                        kind: ProviderErrorKind::Network,
-                        message: format!("Groq network request failed: {error}"),
-                        status: None,
-                        retry_after_seconds: None,
-                    });
-                }
-            }
-        }
-    }
 }
 
 fn provider_profiles() -> Vec<ProviderProfile> {
@@ -741,16 +414,16 @@ fn role_credentials() -> Result<Vec<RoleCredentialStatus>, GroqProviderError> {
 fn role_credential_status(role: ProviderRole) -> Result<RoleCredentialStatus, GroqProviderError> {
     let kind = CredentialKind::ApiKey;
 
-    match read_api_key_from(&OsSecretStore, role, kind).map_err(secret_store_error)? {
+    match credential_store::read_from(&OsSecretStore, GROQ_PROVIDER_ID, role, kind).map_err(secret_store_error)? {
         Some(api_key) => {
-            cache_api_key(&credential_entry_user(role, kind), Some(api_key.clone()));
+            credential_store::cache_key(&credential_entry_user(role, kind), Some(api_key.clone()));
             Ok(RoleCredentialStatus {
                 provider: "groq".to_string(),
                 role,
                 kind: Some(kind),
                 configured: true,
                 storage: "os_secret_store".to_string(),
-                key_preview: Some(mask_api_key(&api_key)),
+                key_preview: Some(credential_store::mask_api_key(&api_key)),
                 missing: None,
             })
         }
@@ -771,14 +444,14 @@ fn load_groq_api_key(role: ProviderRole) -> Result<String, ProviderCommandError>
     let kind = CredentialKind::ApiKey;
     let user = credential_entry_user(role, kind);
 
-    if let Some(api_key) = cached_api_key(&user) {
+    if let Some(api_key) = credential_store::cached(&user) {
         return Ok(api_key);
     }
 
-    match read_api_key_from(&OsSecretStore, role, kind).map_err(secret_store_error)? {
+    match credential_store::read_from(&OsSecretStore, GROQ_PROVIDER_ID, role, kind).map_err(secret_store_error)? {
         Some(api_key) => {
             let normalized = normalize_api_key(&api_key).map_err(ProviderCommandError::from)?;
-            cache_api_key(&user, Some(normalized.clone()));
+            credential_store::cache_key(&user, Some(normalized.clone()));
             Ok(normalized)
         }
         None => Err(ProviderCommandError::from(GroqProviderError {
@@ -816,150 +489,40 @@ fn load_any_stored_api_key() -> Result<String, ProviderCommandError> {
     }))
 }
 
+/// The shape a Groq key has, with the sentence this vendor puts on it.
+///
+/// **The check moved and the wording did not.** `credential_store` knows what
+/// an empty key and a wrong prefix are; only this file knows that the prefix is
+/// `gsk_` and that the vendor is called Groq, which is the half a user reads.
 fn normalize_api_key(api_key: &str) -> Result<String, GroqProviderError> {
-    let trimmed = api_key.trim();
-    if trimmed.is_empty() {
-        return Err(GroqProviderError {
-            kind: ProviderErrorKind::MissingApiKey,
-            message: "Groq API key must not be empty.".to_string(),
-            status: None,
-            retry_after_seconds: None,
-        });
-    }
-
-    if !trimmed.starts_with("gsk_") {
-        return Err(GroqProviderError {
-            kind: ProviderErrorKind::InvalidRequest,
-            message: "Groq API key should start with gsk_.".to_string(),
-            status: None,
-            retry_after_seconds: None,
-        });
-    }
-
-    Ok(trimmed.to_string())
+    credential_store::normalized_key(api_key, Some(GROQ_KEY_PREFIX))
+        .map(str::to_string)
+        .map_err(|shape| match shape {
+            KeyShape::Empty => GroqProviderError {
+                kind: ProviderErrorKind::MissingApiKey,
+                message: "Groq API key must not be empty.".to_string(),
+                status: None,
+                retry_after_seconds: None,
+            },
+            KeyShape::WrongPrefix => GroqProviderError {
+                kind: ProviderErrorKind::InvalidRequest,
+                message: format!("Groq API key should start with {GROQ_KEY_PREFIX}."),
+                status: None,
+                retry_after_seconds: None,
+            },
+        })
 }
 
-/// The secret-store surface used for the Groq key.
-///
-/// The keyring is process-global OS state, so every read, write and delete
-/// below sits behind this trait: the tests exercise it against an in-memory
-/// store instead of writing into the developer's real secret store.
-trait SecretStore {
-    fn read(&self, service: &str, user: &str) -> Result<Option<String>, KeyringError>;
-    fn write(&self, service: &str, user: &str, secret: &str) -> Result<(), KeyringError>;
-    fn delete(&self, service: &str, user: &str) -> Result<(), KeyringError>;
-}
-
-struct OsSecretStore;
-
-impl SecretStore for OsSecretStore {
-    fn read(&self, service: &str, user: &str) -> Result<Option<String>, KeyringError> {
-        match Entry::new(service, user)?.get_password() {
-            Ok(secret) => Ok(Some(secret)),
-            Err(KeyringError::NoEntry) => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
-
-    fn write(&self, service: &str, user: &str, secret: &str) -> Result<(), KeyringError> {
-        Entry::new(service, user)?.set_password(secret)
-    }
-
-    fn delete(&self, service: &str, user: &str) -> Result<(), KeyringError> {
-        match Entry::new(service, user)?.delete_credential() {
-            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
-            Err(error) => Err(error),
-        }
-    }
-}
-
-/// The entry one credential lives under: the provider, the role and the kind.
-///
-/// **Changing one of these strings orphans every credential already stored**,
-/// which is why the parts come from `ProviderRole::as_str` and
-/// `CredentialKind::as_str` rather than from literals written twice.
 fn credential_entry_user(role: ProviderRole, kind: CredentialKind) -> String {
-    format!("groq.{}.{}", role.as_str(), kind.as_str())
+    credential_store::entry_user(GROQ_PROVIDER_ID, role, kind)
 }
 
-/// Reads the key stored for one role.
-///
-/// `Ok(None)` means no entry this build knows holds a key for that role --
-/// which is a legitimate state, not a store failure, and it is the state that
-/// makes a job inert with a name rather than with a stack trace.
-///
-/// Three fallbacks stood here until ADR 0112 — a retired bundle identifier, the
-/// pre-role entry name, and the adoption that fanned one string across both
-/// roles before anything touched it. Every one of them served a keyring on one
-/// machine whose owner wrote it off, and the adoption logic was the most
-/// delicate code in A3.
-fn read_api_key_from(
-    store: &impl SecretStore,
-    role: ProviderRole,
-    kind: CredentialKind,
-) -> Result<Option<String>, KeyringError> {
-    store.read(GROQ_KEY_SERVICE, &credential_entry_user(role, kind))
-}
-
-/// Writes one role's credential and touches no other entry.
-fn write_api_key_to(
-    store: &impl SecretStore,
-    role: ProviderRole,
-    kind: CredentialKind,
-    api_key: &str,
-) -> Result<(), KeyringError> {
-    store.write(
-        GROQ_KEY_SERVICE,
-        &credential_entry_user(role, kind),
-        api_key,
-    )
-}
-
-/// Clears one role's credential and nothing else.
-///
-/// **Clearing one role never clears another's** (ADR 0105) — the rule A3
-/// established, which the removal of the pre-role adoption leaves untouched
-/// because the entry names were already one per `(role, kind)`.
-fn clear_api_key_in(
-    store: &impl SecretStore,
-    role: ProviderRole,
-    kind: CredentialKind,
-) -> Result<(), KeyringError> {
-    store.delete(GROQ_KEY_SERVICE, &credential_entry_user(role, kind))
-}
-
-fn secret_store_error(error: KeyringError) -> GroqProviderError {
+fn secret_store_error(error: keyring::Error) -> GroqProviderError {
     GroqProviderError {
         kind: ProviderErrorKind::SecretStoreUnavailable,
         message: format!("OS secret store is unavailable: {error}"),
         status: None,
         retry_after_seconds: None,
-    }
-}
-
-fn status_error(
-    status: StatusCode,
-    body: String,
-    retry_after_seconds: Option<u64>,
-) -> GroqProviderError {
-    let kind = match status {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => ProviderErrorKind::Unauthorized,
-        StatusCode::TOO_MANY_REQUESTS => ProviderErrorKind::RateLimited,
-        StatusCode::BAD_REQUEST
-        | StatusCode::PAYLOAD_TOO_LARGE
-        | StatusCode::UNPROCESSABLE_ENTITY => ProviderErrorKind::InvalidRequest,
-        _ => ProviderErrorKind::ProviderStatus,
-    };
-
-    GroqProviderError {
-        kind,
-        message: if body.is_empty() {
-            format!("Groq returned HTTP {status}")
-        } else {
-            format!("Groq returned HTTP {status}: {body}")
-        },
-        status: Some(status.as_u16()),
-        retry_after_seconds,
     }
 }
 
@@ -1064,71 +627,13 @@ pub fn format_upload_limit(limit_bytes: usize) -> String {
     format!("{} MiB", limit_bytes / 1_048_576)
 }
 
-fn format_audio_size(audio_bytes_len: usize) -> String {
-    format!(
-        "{:.1} MiB ({} bytes)",
-        audio_bytes_len as f64 / 1_048_576.0,
-        audio_bytes_len,
-    )
-}
-
-fn should_retry_status(status: StatusCode) -> bool {
-    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
-}
-
-fn retry_delay(attempt: u8, retry_after_seconds: Option<u64>) -> Duration {
-    if let Some(seconds) = retry_after_seconds {
-        return Duration::from_secs(seconds.min(10));
-    }
-
-    Duration::from_millis(250 * u64::from(attempt))
-}
-
-fn retry_after_seconds(response: &reqwest::Response) -> Option<u64> {
-    response
-        .headers()
-        .get(header::RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-}
-
-fn mask_api_key(api_key: &str) -> String {
-    let trimmed = api_key.trim();
-    if trimmed.len() <= 10 {
-        return "configured".to_string();
-    }
-
-    format!("{}...{}", &trimmed[..4], &trimmed[trimmed.len() - 4..])
-}
-
-fn groq_api_key_cache() -> &'static Mutex<HashMap<String, String>> {
-    GROQ_API_KEY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn cached_api_key(user: &str) -> Option<String> {
-    groq_api_key_cache()
-        .lock()
-        .ok()
-        .and_then(|cache| cache.get(user).cloned())
-}
-
-fn cache_api_key(user: &str, value: Option<String>) {
-    if let Ok(mut cache) = groq_api_key_cache().lock() {
-        match value {
-            Some(api_key) => {
-                cache.insert(user.to_string(), api_key);
-            }
-            None => {
-                cache.remove(user);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, collections::HashMap};
 
+    use keyring::Error as KeyringError;
+
+    use super::super::credential_store::SecretStore;
     use super::*;
 
     #[derive(Default)]
@@ -1152,7 +657,7 @@ mod tests {
 
         fn role_key(&self, role: ProviderRole) -> Option<String> {
             self.get(
-                GROQ_KEY_SERVICE,
+                credential_store::KEY_SERVICE,
                 &credential_entry_user(role, CredentialKind::ApiKey),
             )
         }
@@ -1184,13 +689,13 @@ mod tests {
 
     #[test]
     fn masks_api_key_without_exposing_secret() {
-        let masked = mask_api_key("gsk_1234567890abcdef");
+        let masked = credential_store::mask_api_key("gsk_1234567890abcdef");
         assert_eq!(masked, "gsk_...cdef");
     }
 
     #[test]
     fn uses_single_neutral_product_namespace_for_key_service() {
-        assert_eq!(GROQ_KEY_SERVICE, "io.github.sw-forge-org.wordscript");
+        assert_eq!(credential_store::KEY_SERVICE, "io.github.sw-forge-org.wordscript");
     }
 
     /// The roles a save with no named role fans out across are the roles the
@@ -1210,19 +715,19 @@ mod tests {
     fn a_role_reads_only_its_own_entry() {
         let store = FakeSecretStore::default();
         store.set(
-            GROQ_KEY_SERVICE,
+            credential_store::KEY_SERVICE,
             &credential_entry_user(ProviderRole::Speech, CredentialKind::ApiKey),
             "gsk_speech_key",
         );
 
         assert_eq!(
-            read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Speech, CredentialKind::ApiKey)
                 .expect("read must succeed")
                 .as_deref(),
             Some("gsk_speech_key"),
         );
         assert_eq!(
-            read_api_key_from(&store, ProviderRole::Chat, CredentialKind::ApiKey)
+            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Chat, CredentialKind::ApiKey)
                 .expect("read must succeed"),
             None,
         );
@@ -1233,7 +738,7 @@ mod tests {
         let store = FakeSecretStore::default();
 
         assert_eq!(
-            read_api_key_from(&store, ProviderRole::Speech, CredentialKind::ApiKey)
+            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Speech, CredentialKind::ApiKey)
                 .expect("read must succeed"),
             None
         );
@@ -1246,22 +751,24 @@ mod tests {
     #[test]
     fn clearing_one_role_leaves_the_other_paid_for() {
         let store = FakeSecretStore::default();
-        write_api_key_to(
+        credential_store::write_to(
             &store,
+            GROQ_PROVIDER_ID,
             ProviderRole::Speech,
             CredentialKind::ApiKey,
             "gsk_speech_key",
         )
         .expect("write must succeed");
-        write_api_key_to(
+        credential_store::write_to(
             &store,
+            GROQ_PROVIDER_ID,
             ProviderRole::Chat,
             CredentialKind::ApiKey,
             "gsk_chat_key",
         )
         .expect("write must succeed");
 
-        clear_api_key_in(&store, ProviderRole::Chat, CredentialKind::ApiKey)
+        credential_store::clear_in(&store, GROQ_PROVIDER_ID, ProviderRole::Chat, CredentialKind::ApiKey)
             .expect("clear must succeed");
 
         assert_eq!(
@@ -1270,7 +777,7 @@ mod tests {
         );
         assert_eq!(store.role_key(ProviderRole::Chat), None);
         assert_eq!(
-            read_api_key_from(&store, ProviderRole::Chat, CredentialKind::ApiKey)
+            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Chat, CredentialKind::ApiKey)
                 .expect("read must succeed"),
             None,
         );

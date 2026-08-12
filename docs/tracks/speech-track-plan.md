@@ -930,12 +930,13 @@ Speaking row, so it is flagged rather than assumed.
 | B3 | **done** 2026-08-12 — `shared/model_catalogue.json` plus its schema, `core::model_catalogue` and `src/lib/modelCatalogue.ts` on the same bytes, rows named by slug, twelve places stopped spelling a model id and a test walks `src/` for the thirteenth, +12 Rust tests and +12 frontend cases, `PROVIDERS.md` disagreement 5 closed and 12 opened |
 | B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
 | B5 | **not started** — added 2026-08-12 (ADR 0122) on the owner's instruction, out of ROADMAP Phase 5; the installation ADR 0042 drew and never got. Gated on B3 only — **B4 is not a precondition** |
-| D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and the cheapest step in Stage D |
+| D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and now genuinely the cheapest step in Stage D: D1 extracted the helper it reaches with a second base URL |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |
 | B1 | **done** 2026-08-12 — `registered_providers()` answers for the whole table in one call, `src/lib/providerSeam.ts` is the third thing ADR 0106 named, five states rather than three, the two tests that record required both exist and both were made to fail before they were trusted (ADR 0124). +3 Rust tests, +25 frontend across 2 new files, `port:diff` unmoved at `structural 6 \| style 213 \| text 12` |
-| B2, C1–C2, D1–D3, E1–E2, F1–F3, G1–G3 | **not started** |
+| D1 | **done** 2026-08-12 — `core/providers/openai.rs` plus one registry line, on a transport and a credential store extracted from `groq.rs` in the same commit (ADR 0113, ADR 0126). `verbose_json` turned out to be `whisper-1`-only on this vendor, so the response format is per model and `ModelCapabilities` is non-vacuous for the first time. **The connection became writable** (ADR 0127) — the chip row, the credential row and every job row read one stored answer, so *a second lane can be operated* is a fact rather than a registry entry. +17 Rust tests, +3 frontend, `port:diff` **unmoved** at `structural 6 \| style 213 \| text 12`, no dependency moved |
+| B2, C1–C2, D2–D3, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.
@@ -1386,3 +1387,99 @@ across 42 files** (+25: 19 in `lib/providerSeam.test.ts`, 6 in
 made to await), `npm run build` passes, `npm run port:diff` on `models`
 **unmoved** at `structural 6 | style 213 | text 12`, and every `invoke(` in
 `src/` resolves to a registered handler (56 commands checked).
+
+**D1, as it landed.** The step the track exists for, and the shortest list of
+surprises of any so far — which is the report on Stage A rather than on this
+step. Nothing in `core/providers/registry.rs`'s contract, `ModelCapabilities`,
+the credential resolution, the seam or the catalogue had to move to admit a
+second vendor. Five things were decided; the records are ADR 0126 and ADR 0127.
+
+**The one thing that could not be inherited is the response format, and it
+would have failed silently in review.** `groq.rs` sets
+`response_format=verbose_json` unconditionally, and copying that into the new
+module reads as obviously correct — same shape, same endpoint path, same bearer
+token. OpenAI documents `verbose_json` and `timestamp_granularities[]` for
+`whisper-1` **alone**; the `gpt-*-transcribe` family refuses them
+(`developers.openai.com/api/docs/guides/speech-to-text`, read 2026-08-12). Every
+request on a newer model would have been a 400, and no Groq test could have
+caught it because on that lane the default is right. So the shared client takes
+the format as an argument and holds no opinion, which is where the line between
+transport and policy fell for everything else too.
+
+**And the consequence reaches further than one parameter.** `verbose_json` is
+what carries `duration` and `segments`, which is what `TranscriptionCoverage`
+reads. On this lane the model decides whether the *transcript stopped before the
+audio did* check can answer at all — so `whisper-1` is the default profile, not
+because it is the best recogniser but because it is the only one that reports
+its own coverage, and picking another writes a line in the runtime log rather
+than letting the verdict quietly become `unknown`.
+
+**The credential store was extracted too, and ADR 0113 does not ask for it.**
+That record is scoped to the request shape; the keyring half was the same
+duplication one file over, and writing a second hundred-line copy of it in
+`openai.rs` would have been the defect the extraction exists to prevent, one
+axis across. The entry names did not move — `entry_user("groq", role, kind)`
+produces A3's string byte for byte, and a test asserts the literal rather than
+deriving it, because a refactor claiming to change nothing is exactly where an
+orphaned keyring happens unseen.
+
+**Six Rust tests failed and every one was right to.** They spelled `openai` as
+their example of a vendor the registry does not carry — twice in `config.rs`,
+four times in `providers/mod.rs`. That made them assertions about which vendors
+happened to be registered on the day they were written rather than about the
+fallback they were testing. They now name a synthetic id no adapter will ever
+claim, and three frontend cases got the same treatment: the *no adapter*
+example moved to Anthropic, and *reads the provider status once* became *once
+per vendor and never twice for one*, which is what it always meant and what
+survives the third adapter.
+
+**The door is the half the plan under-specified, and B1's record is where it
+was written down.** D1's *Touches* line says one module plus one registry line;
+its *Done when* says **a second lane can be operated**. Those could not both be
+true. `Models.tsx` wrote three things — a key, the account plan, two Translate
+settings — and the connection was `selected="Groq"` with the chip held in local
+state, the credential row spelled `"groq"` five times, and every job row read
+`LANES[lane].provider`. With one registered vendor none of that was wrong. With
+two, it is three components naming a vendor the runtime is not using, and one of
+them would have written an OpenAI key into Groq's secret-store entry. ADR 0127
+is the record; `buildProfileProvidersPatch` is the door, beside the three
+per-profile patch helpers that already existed.
+
+**What D1 deliberately did not do: wire the per-job override.** It is one
+`onChange` away and it is a drawing decision, which an adapter may not take
+(ADR 0057). The drawn `override` literal decides the row's *shape* — three rows
+get a provider mark, a *Use the default* button and their own key row — while
+A4 decided a fresh profile overrides nothing. Driving that branch from the
+config changes three rows structurally at the default state; leaving the literal
+in charge means a row displaying an override that is not stored. Both are
+decisions and neither is this step's. It is `docs/PROVIDERS.md` open
+disagreement 13, and **it is the first entry on that list whose resolution
+blocks a control rather than a sentence.**
+
+**`port:diff` unmoved is the deliverable, not a side effect.** `models` reads
+`structural 6 | style 213 | text 12`, exactly where B3 left it: the controls
+that came alive are the ones Leg 6 drew and that have been inert since, which is
+the same shape B1 had and B5 is named for. A moved count would have been the
+warning.
+
+**One edge D1 did not create and did make visible.** `provider_tier` is
+machine-wide (A4 left it so, deliberately), so a profile switched to OpenAI can
+still hold Groq's `dev` — and a select whose value matches no option renders
+blank, which reads as a setting nobody made rather than one that does not apply.
+The runtime already answers this: `capture_limits` falls back to the vendor's
+default for an id it does not recognise. The surface now says the same thing.
+
+Counts: `cargo test` **787 passed / 3 ignored** (+17, all new: 5 in
+`credential_store.rs`, 3 in `openai_compatible.rs`, 9 in `openai.rs`), `cargo
+check` **15 warnings** unchanged, frontend **521 across 42 files** (+4, all in
+`Models.test.tsx`'s new *choosing the connection* block; three existing cases
+were repointed rather than added to), `npm run build` passes, `npm run port:diff`
+on `models` unmoved, and every `invoke(` in `src/` resolves to a registered
+handler (65 commands checked against 70 registered). **No dependency moved**, so
+no advisory sweep was owed — `reqwest`, `keyring`, `serde` and `tokio` were
+already carrying this lane, which is what ADR 0094 promised a second vendor
+would cost.
+
+**Not verified in the native host, and it is the one gap.** The key round trip
+needs a real OpenAI key and a running app; the suite covers the command
+payloads and the config patch, not the keyring write on this machine.

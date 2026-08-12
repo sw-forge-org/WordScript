@@ -152,6 +152,27 @@ pub fn model_id(id: &str) -> &'static str {
         .as_str()
 }
 
+/// Which vendor the catalogue attributes a model id to, for the one role it
+/// would be run under.
+///
+/// **This is how an adapter tells "an id I do not know" apart from "an id that
+/// belongs to somebody else"**, and the two need opposite treatment. A model id
+/// this file has never seen is a user's own typed override and passes through
+/// untouched (ADR 0115). A model id the file attributes to another vendor is a
+/// stored value left behind by a connection change, and sending it would spend
+/// a request to be told the model does not exist.
+///
+/// The role is part of the question because one vendor's speech id and another's
+/// chat id have no reason to be distinguishable as strings.
+pub fn provider_for_model_id(model_id: &str, role: ProviderRole) -> Option<&'static str> {
+    let model_id = model_id.trim();
+    catalogue()
+        .models
+        .iter()
+        .find(|row| row.role == role && row.model_id == model_id)
+        .map(|row| row.provider.as_str())
+}
+
 pub fn default_speech_model() -> &'static str {
     model_id(&catalogue().runtime_defaults.speech)
 }

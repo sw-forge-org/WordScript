@@ -2721,10 +2721,18 @@ mod tests {
         });
     }
 
+    /// An id no adapter will ever claim — see `providers::mod`'s copy of this
+    /// constant for why both files stopped naming a real vendor here.
+    const UNREGISTERABLE_PROVIDER_ID: &str = "not-a-vendor-this-build-carries";
+
     #[test]
     fn normalizes_unknown_provider_to_default_runtime_provider() {
         let mut config = AppConfig::default();
-        set_profile_connection(&mut config, "openai");
+        // NOT A REAL VENDOR'S NAME, and that is the point. This stood as
+        // `openai` and therefore stopped testing the fallback the moment D1
+        // registered that vendor. What it means is *a connection this build
+        // cannot resolve*, which only an id nothing will register can say.
+        set_profile_connection(&mut config, UNREGISTERABLE_PROVIDER_ID);
 
         config.normalize_for_runtime();
 
@@ -2747,7 +2755,7 @@ mod tests {
         profile.providers = Some(ProfileProviderSettings {
             default: LOCAL_PROVIDER_ID.to_string(),
             overrides: BTreeMap::from([
-                (JobKey::Assistant, "openai".to_string()),
+                (JobKey::Assistant, UNREGISTERABLE_PROVIDER_ID.to_string()),
                 (JobKey::Translate, LOCAL_PROVIDER_ID.to_string()),
             ]),
         });

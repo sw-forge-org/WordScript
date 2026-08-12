@@ -53,6 +53,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a second cloud lane, and a connection you can choose (ADR 0096 step 1, ADR 0126, ADR 0127)
+
+- **OpenAI transcribes and writes.** One module plus one registry line, which is
+  what ADR 0094's contract promised a second vendor would cost and this is the
+  first step that spent it. Nothing in the registry, the capability axes, the
+  credential resolution, the seam or the model catalogue had to move.
+- **The transport and the credential store are shared; no policy is.**
+  `groq.rs` was already the OpenAI request shape with a Groq host
+  (`GROQ_API_BASE` ends `/openai/v1`), so the client, the retries, the multipart
+  upload and the keyring live in two modules both lanes call. **What is not
+  shared is what would have broken it:** OpenAI documents
+  `response_format=verbose_json` for `whisper-1` alone, and Groq's
+  unconditional default would have made every `gpt-4o-transcribe` request a 400.
+- **The connection is yours to pick, and it is stored.** The Cloud provider chip
+  wrote nowhere and the credential row spelled `groq` five times. Picking OpenAI
+  now writes `providers.default` on the active profile, the key is saved under
+  that vendor, and every job row says which connection it follows. **The per-job
+  override is deliberately still inert** — the drawing and the runtime disagree
+  about what a fresh profile overrides, which is `docs/PROVIDERS.md` open
+  disagreement 13 and somebody's decision rather than an adapter's.
+- **`whisper-1` is the default on this lane, and not for its accuracy.** It is
+  the only OpenAI model returning `duration` and `segments`, which is what the
+  *transcript stopped before the audio did* check reads. Choosing a newer model
+  costs that check, and the runtime log says so instead of letting the verdict
+  go quietly `unknown`.
+- Model ids, sources and read-dates for OpenAI's chat and transcription rows are
+  in `shared/model_catalogue.json`, read from the vendor's own documentation on
+  2026-08-12 (ADR 0115).
+
 ### Added — the capability seam, so a drawn row states why it cannot be operated (ADR 0106, ADR 0124)
 
 - **`AI Models` asks the runtime whether a lane can be operated, instead of a

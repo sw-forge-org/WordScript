@@ -111,6 +111,61 @@
       "note": "stream=true emits transcript.text.delta then transcript.text.done. That streams the transcription of a finished recording; the Realtime endpoint is a second shape and a different model."
     },
     {
+      "id": "openai-speech-gpt-transcribe",
+      "provider": "openai",
+      "role": "speech",
+      "model_id": "gpt-transcribe",
+      "streaming": "supported",
+      "languages": "Whisper's 99+; takes a `languages` array in place of the singular `language`, and the completion event names what it heard",
+      "source": "developers.openai.com/api/docs/guides/speech-to-text",
+      "read_date": "2026-08-12",
+      "note": "The vendor's own recommendation for general transcription. It does NOT accept response_format=verbose_json, so it returns no segments and the coverage instrument cannot answer for it."
+    },
+    {
+      "id": "openai-speech-gpt-4o-mini-transcribe",
+      "provider": "openai",
+      "role": "speech",
+      "model_id": "gpt-4o-mini-transcribe",
+      "streaming": "supported",
+      "languages": "Whisper's 99+; the completion event names the detected languages",
+      "source": "developers.openai.com/api/docs/guides/speech-to-text",
+      "read_date": "2026-08-12",
+      "note": "The cheaper half of the gpt-4o transcription pair, and it carries the same verbose_json restriction as its larger sibling."
+    },
+    {
+      "id": "openai-chat-luna",
+      "provider": "openai",
+      "role": "chat",
+      "model_id": "gpt-5.6-luna",
+      "streaming": "supported",
+      "languages": "not a property a chat row states",
+      "source": "developers.openai.com/api/docs/models",
+      "read_date": "2026-08-12",
+      "note": "Documented as optimized for budget-conscious, high-volume applications, which is what Cleanup is: one call per dictation, on every dictation."
+    },
+    {
+      "id": "openai-chat-terra",
+      "provider": "openai",
+      "role": "chat",
+      "model_id": "gpt-5.6-terra",
+      "streaming": "supported",
+      "languages": "not a property a chat row states",
+      "source": "developers.openai.com/api/docs/models",
+      "read_date": "2026-08-12",
+      "note": "Documented as balancing intelligence with cost-effectiveness. This lane's default chat row, on the argument that makes groq-chat-versatile Groq's."
+    },
+    {
+      "id": "openai-chat-sol",
+      "provider": "openai",
+      "role": "chat",
+      "model_id": "gpt-5.6-sol",
+      "streaming": "supported",
+      "languages": "not a property a chat row states",
+      "source": "developers.openai.com/api/docs/models",
+      "read_date": "2026-08-12",
+      "note": "Documented as the frontier model for complex professional work."
+    },
+    {
       "id": "anthropic-chat-sonnet",
       "provider": "anthropic",
       "role": "chat",

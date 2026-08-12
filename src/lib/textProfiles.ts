@@ -619,6 +619,30 @@ export function buildProfileSpeechPatch(
   return buildTextProfilesPatch(config, nextProfiles, activeProfile.id);
 }
 
+/** Writes the provider axis of the active profile (ADR 0094's config half).
+ *
+ *  **The axis A4 built and nothing could set.** That step landed the shape and
+ *  said so explicitly: the runtime honours a per-job provider and the surface
+ *  cannot yet write one. This is the door, and it opens onto the CONNECTION —
+ *  `default` — because that is what makes a second lane operable. The per-job
+ *  `overrides` map is writable through the same patch, and the surface that
+ *  writes it is a drawing decision that is not this step's to take (see
+ *  `docs/PROVIDERS.md`, open disagreement 13). */
+export function buildProfileProvidersPatch(
+  config: AppConfig,
+  providersUpdate: Partial<ProfileProviderSettings>,
+): Partial<AppConfig> {
+  const activeProfile = resolveActiveTextProfile(config);
+  const currentProviders = resolveProfileProviderSettings(activeProfile);
+  const nextProviders = { ...currentProviders, ...providersUpdate };
+  const nextProfiles = config.text_profiles.map((profile) =>
+    profile.id === activeProfile.id
+      ? { ...profile, providers: nextProviders }
+      : profile,
+  );
+  return buildTextProfilesPatch(config, nextProfiles, activeProfile.id);
+}
+
 export function buildProfileModesPatch(
   config: AppConfig,
   modesUpdate: Partial<ProfileModesSettings>,

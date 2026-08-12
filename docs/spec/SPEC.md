@@ -93,6 +93,21 @@ held by the two tests ADR 0106 required rather than by this sentence, and both
 were made to fail before they were trusted. The model axis is still read by no
 surface and still says so.
 
+Amended 2026-08-12 by stage D1, the first adapter (ADR 0096 step 1, ADR 0126,
+ADR 0127). **It read `core/providers/`, `shared/model_catalogue.json`,
+`src/screens/Models.tsx`, `src/lib/textProfiles.ts` and the clauses that said
+Groq is the only integrated lane**; it read nothing else. **WordScript
+integrates two cloud vendors.** OpenAI serves recognition and chat on an API
+key; the transport and the credential store behind both are one implementation,
+and every policy — response format, upload ceiling, key prefix, model
+resolution — is the adapter's own. `ModelCapabilities` differentiates two models
+on one connection for the first time, which is what ADR 0110 was written for.
+**The connection is a stored value the surface writes** (`providers.default` on
+the active profile), so the chip row, the credential row and every job row read
+one answer. **The per-job override is still writable by no surface**, and that
+is a drawing question rather than a gap: `docs/PROVIDERS.md` open disagreement
+13. A model choice still writes nowhere.
+
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
 The living overview docs (`ARCHITECTURE.md`, `VISION.md`, `REFERENCE.md`,

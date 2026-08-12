@@ -29,7 +29,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::{
-    groq, local, ChatCompletionRequest, CredentialKind, ModelCapabilities,
+    groq, local, openai, ChatCompletionRequest, CredentialKind, ModelCapabilities,
     ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus,
     ProviderRole, ProviderStatus, ProviderStatusRequest, ProviderTier, RoleCredentialStatus,
     TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
@@ -235,6 +235,18 @@ static REGISTRY: &[ProviderEntry] = &[
         chat: Some(&groq::GROQ),
         voice: None,
     },
+    /* **The step this registry was built for** (ADR 0096, D1). Two roles on one
+       key: OpenAI serves `voice` too and no `VoiceProvider` is registered for
+       it, because that trait carries no method until F1 (ADR 0114) and no
+       adapter lands before the row that operates it (ADR 0109). */
+    ProviderEntry {
+        id: openai::OPENAI_PROVIDER_ID,
+        aliases: &[],
+        provider: &openai::OPENAI,
+        speech: Some(&openai::OPENAI),
+        chat: Some(&openai::OPENAI),
+        voice: None,
+    },
     ProviderEntry {
         id: LOCAL_PROVIDER_ID,
         aliases: &[],
@@ -416,11 +428,14 @@ mod tests {
     ///
     /// This is the shape ADR 0110 corrects, and OpenAI is the real case: it
     /// serves `gpt-4o-transcribe` (streams, names the languages it heard) and
-    /// `whisper-1` (documented as not streaming) on one key. ADR 0096 schedules
-    /// that adapter first and it is not built, so the shape is proved here
-    /// against a fixture rather than left unproved until the vendor lands —
-    /// **the axis has to be right before an adapter hard-codes the wrong one**,
-    /// which is the whole reason this step precedes D1.
+    /// `whisper-1` (documented as not streaming) on one key.
+    ///
+    /// **D1 landed that vendor and this fixture stayed**, which is not
+    /// duplication. `openai.rs` asserts what one vendor answers; this asserts
+    /// that the *registry* carries the pair through at all, on an entry that
+    /// owes nothing to a real vendor's current model list. The two fail for
+    /// different reasons, and a vendor rotating a model id must not be able to
+    /// take the contract test with it.
     struct TwoModelVendor;
 
     impl Provider for TwoModelVendor {

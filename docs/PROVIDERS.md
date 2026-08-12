@@ -998,6 +998,14 @@ drawing and the runtime agreeing, in code. The same step opened number 12,
 which nothing on this page could have found: a drawn model list is three strings
 until a catalogue makes each of them name its vendor.
 
+**Thirteen the same day, and this one was reached rather than read.** D1 landed
+the OpenAI adapter and made the connection writable (ADR 0126, ADR 0127), which
+put a step inside the per-job override for the first time -- and found the
+drawing and the runtime holding two different answers about what a fresh
+profile overrides. Number 13 is that. **It is also the first entry whose
+resolution is scheduled**: the row cannot be operated until somebody decides,
+and ADR 0109's rule points the same way.
+
 1. **`xAI` is drawn `llm: false`.** It serves chat models. Either the drawing
    scopes the entry to speech deliberately, or it is short a capability.
 2. **`Gemini` is drawn `stt: false`.** It processes audio through the
@@ -1099,6 +1107,21 @@ until a catalogue makes each of them name its vendor.
     the alternative — catalogueing `whisper-large-v3` a second time under
     `openai` — would state that a vendor serves an id it does not. Neighbour of
     disagreement 6, which is about the same row's default.
+13. **A drawn per-job override is a product default the runtime does not
+    carry.** Added 2026-08-12 by D1 (ADR 0127), and it is the one entry on this
+    list that a step reached, looked at and stepped around. `data.ts` gives
+    three of the eight jobs an `override` — `upload` to OpenAI, `translate` and
+    `assistant` to Anthropic — and that literal decides the row's SHAPE: an
+    overriding row draws a provider mark, a *Use the default* button and an
+    API-key row of its own, and the other five draw a *Follow the connection*
+    select. A4 decided the opposite for the runtime: a fresh profile holds
+    `overrides: {}` and every job follows the connection. **Both are defensible
+    and they cannot both drive the same branch.** Driving it from the config
+    changes three rows structurally at the default state and `port:diff` says
+    so; leaving the literal in charge means a row displaying an override that is
+    not stored. D1 wired the CONNECTION and left the override unwritable rather
+    than pick one silently — an adapter may not settle a drawing question
+    (ADR 0057), and this is the shape of the one it found.
 
 ---
 

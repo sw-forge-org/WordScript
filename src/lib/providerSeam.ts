@@ -73,6 +73,20 @@ export function runtimeIdFor(drawnName: string): string | undefined {
 }
 
 /**
+ * The drawn name behind a runtime id — the direction a stored value is read in.
+ *
+ * `runtimeIdFor` answers when the surface is about to ask the runtime
+ * something; this answers when the runtime has already been asked and a config
+ * value has to be shown. **An id with no drawn name returns `undefined` rather
+ * than the id itself**, because a raw `azure_openai` rendered into a chip row
+ * is this repo leaking a storage key onto a surface, and the caller that has a
+ * sensible fallback is the one that should choose it.
+ */
+export function drawnNameFor(providerId: string): string | undefined {
+  return Object.keys(RUNTIME_IDS).find((name) => RUNTIME_IDS[name] === providerId);
+}
+
+/**
  * Which kind of call a drawn job column makes.
  *
  * `data.ts` says `stt` and `llm` because that is what the drawing calls its two
