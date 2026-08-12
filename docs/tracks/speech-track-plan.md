@@ -595,10 +595,33 @@ where the question can be answered**, with the file in hand and its size known.
   `capture_budget.rs`'s existing `seconds_for_upload_limit` and
   `CaptureCeilingReason::upload_limit`. `Cloud.upload` loses its drawn
   `override`, and `screens.test.tsx`'s three-overridden-jobs case moves to two.
-- **Not in this step, and it is an obligation rather than an omission** — the
-  **translation window** (G2) carries the same picker and does not exist yet.
-  Named in G2's own entry so it is built with one rather than retrofitted; the
-  requirement is ADR 0129's, the surface is G2's.
+- **All four lanes, and this is not a detail** (ADR 0131). `Follows` renders
+  three shapes already — a provider row on Cloud and Enterprise, *Runs on* for
+  Local, *Endpoint* plus a free-typed model for Self-hosted — and the size
+  constraint answers differently on each: Local and Self-hosted have **no
+  ceiling because nothing is uploaded**, Cloud has the vendor's, and Enterprise
+  has one per member (Azure OpenAI transcribes; Bedrock and Vertex do not).
+  Handling Cloud and treating the rest as a fallback is the failure mode.
+- **Not in this step, and each is an obligation rather than an omission.** The
+  rule is general (ADR 0131): *every surface that starts a job names where it
+  runs*. B7 does the two that exist; the rest carry it into the step that builds
+  them.
+
+| Surface | Prototype | Whose step |
+| --- | --- | --- |
+| Import intake (upload) | `contextintake`, the `Import` way | **B7** |
+| Translate settings | `translate` | **B7** |
+| Meeting HUD (`Record`) | `meeting` | ROADMAP *Meeting capture* |
+| Translation window | pop-out drawn, the tab is not | **G2** |
+| Live subtitles | `subtitles` | ROADMAP *Live subtitles* |
+| Agent overlay | `agentoverlay` | its own |
+| Client conversations | `conversation` — reuses the meeting window | ROADMAP |
+
+**`Record` is deliberately almost empty in `contextintake`** and the prototype
+says why: *putting a second copy of those controls here would make this the
+place a meeting is configured and the HUD the place it is watched, which is one
+decision in two rooms.* That is a constraint on **where** the picker goes for a
+meeting — the HUD, not the intake — not an exception to the rule.
 - **Validates** — `cargo test` for the byte-direction limit, `npm test`,
   `npm run build`, and **`port:diff` moves on `models`** — the gallery's own
   inventory changes here, unlike B6's override half. Say by how much and why.
@@ -723,6 +746,47 @@ of them.**
 once.** `UploadAudioView.tsx` refuses anything over 25 MB on a third-party key
 and says its own cloud handles *splitting, parallel processing, and reassembly*.
 That answer is a backend, and `docs/ROADMAP.md` rules one out.
+
+**Corrected 2026-08-13 by ADR 0131, on three counts.**
+
+**Two of the questions this step filed as open were already drawn.** Live
+transcription is a `toggle(true)` on the `Meetings` job row, and retention is
+`Keep the audio` with `Until the note is saved | 7 days | Never` and its own
+`Open decision` badge. Neither was an owner question; both were a prototype
+nobody read. **What replaces the first is narrower and is not a product
+question**: what the toggle says when the connection cannot stream — ADR 0128's
+second rule applied to a toggle, and a **fourth `InertReason` kind**, *this lane
+does not stream*, beside no-adapter, role-denied and no-credential.
+
+**Diarization is a third requirement of the meeting lane** and this step did not
+carry it. The drawing has said since 2026-08-03 that a meeting wants a lane that
+streams **and separates speakers**, with three stages of which only two are
+audio and a name that never comes from a recording at all.
+
+**And the donor survey was wrong.** `voxtype` carries a complete meeting
+implementation **in Rust** — `src/meeting/` with `chunk.rs`,
+`diarization/{simple,ml,subprocess}.rs`, `summary/{local,remote}.rs` — which the
+prototype's own Speakers section cites by path. Its `chunk.rs` defaults to
+`chunk_duration_secs: 30` behind VAD with a silence hangover, which is the same
+figure openwhispr's Silero reaches by a different route: **two independent
+donors converge on ~30 s with a VAD**, which is the strongest confirmation this
+plan has that ADR 0130 cut it in the right place.
+
+**The context-window answer, and nobody in this tree implements it.**
+`voxtype/src/meeting/summary/mod.rs:153` concatenates every segment into one
+prompt and sends it — no truncation, no chunking, no ceiling. Published practice
+converges on **map-reduce over semantic boundaries**: chunk at topic and
+speaker-turn boundaries rather than at token counts, summarise per chunk, and
+carry each chunk's summary into the next so a decision spanning a boundary
+survives. **The audio is cut on silence and the transcript is cut on topic** —
+the same refusal of the arbitrary cut, one layer up.
+
+**A fourth consumer of a model exists and no axis carries it: the copilot.**
+ADR 0047's strip above the HUD bar compares the running transcript against the
+index **continuously, for the length of the call**. It is neither transcription
+nor the notes pass. Drawn `Open decision`, toggle **off**, and whether it becomes
+a `JobKey` or rides the assistant's resolution is open — ADR 0040's *one model
+for all four* is the argument that it rides.
 
 ---
 
@@ -1101,13 +1165,27 @@ question now also has to answer **what a picker looks like mid-conversation**.
 The obligation is settled (ADR 0129, G2's entry); the form is the same owner
 question it always was, one item longer.
 
-**Two more are live as of 2026-08-13, and both come from C4** (ADR 0130).
-*Whether a meeting is live-transcribed at all* is a product question with a real
-cost — it forces a streaming lane and therefore a second credential for anyone
-on Groq — and it blocks no step, because C1 delivers the after-the-fact path
-either way. *What happens to the audio of a meeting nobody keeps* is
-`docs/ROADMAP.md`'s own gate 2, still open since the meeting chapter was
-written, and ADR 0130 deliberately did not touch it.
+~~**Two more are live as of 2026-08-13, and both come from C4.**~~
+**Withdrawn the same day by ADR 0131: neither was an owner question.** Both were
+drawn in the prototype and this plan had not read it — live transcription is a
+`toggle(true)` on the `Meetings` row, and retention is `Keep the audio` with
+three options and a default of *Until the note is saved*. The retention row does
+still carry an `Open decision` badge, so **that one is genuinely the owner's** —
+but it is the drawing's own open point rather than something C4 discovered, and
+it is `docs/ROADMAP.md` gate 2.
+
+**Two that are real, and both are drawn `Open decision` already.** *What the
+copilot costs* — continuous inference for the length of a call, toggle off —
+and *what a picker looks like mid-conversation*, which is ADR 0064's first open
+point now that the translation window carries one.
+
+**And one that is a research decision rather than a design one.** Two candidate
+donors were found by a web reading on 2026-08-13 and **neither is verified
+against its source tree**: **Meetily** (Rust, whisper.cpp, Parakeet,
+diarization, Ollama summarisation, fully local — the closest stack to this one)
+and **Anarlog**, formerly Hyprnote (Tauri, GPL-3.0, which this project's
+AGPL-3.0 accommodates). Pulling either into `donors/` is a provenance decision
+with an owner, and verification is its precondition.
 **The other was answered on 2026-08-11**: where the translation voice sits is
 ADR 0119, two rows, delegated by the owner and decided against ADR 0043's one
 voice, ADR 0064's per-language route and the language coverage the survey
@@ -1140,7 +1218,7 @@ Speaking row, so it is flagged rather than assumed.
 | D1 | **done** 2026-08-12 — `core/providers/openai.rs` plus one registry line, on a transport and a credential store extracted from `groq.rs` in the same commit (ADR 0113, ADR 0126). `verbose_json` turned out to be `whisper-1`-only on this vendor, so the response format is per model and `ModelCapabilities` is non-vacuous for the first time. **The connection became writable** (ADR 0127) — the chip row, the credential row and every job row read one stored answer, so *a second lane can be operated* is a fact rather than a registry entry. +17 Rust tests, +3 frontend, `port:diff` **unmoved** at `structural 6 \| style 213 \| text 12`, no dependency moved |
 | B6 | **done** 2026-08-12 — added the same day on the owner's instruction. The override reads the config in the product and the drawn literal in the gallery, so `port:diff` is unmoved at `structural 6 \| style 213 \| text 12` for that half; the `stt` correction moves it to `structural 9 \| style 217 \| text 12` and that movement **is** the correction. The literal `Set` badge is gone, an unbuilt vendor is offered and disabled with its reason, and the provider select escapes its own inert reason. +6 frontend cases in `Models.test.tsx`, +3 in `providerSeam.test.ts`, all nine made to fail first. `PROVIDERS.md` disagreements 10, 11 and 13 closed |
 | B7 | **not started** — added 2026-08-13 (ADR 0129); the picker at the point of use, on B6 only. Closes disagreements 6 and 12 and answers the paragraph ADR 0128 left open |
-| C4 | **not started** — added 2026-08-13 (ADR 0130); the two ceilings a two-hour recording actually hits. The capture half is C1; what is new is that the default lane cannot stream and that nothing records a context window |
+| C4 | **not started** — added 2026-08-13 (ADR 0130), corrected the same day (ADR 0131). The capture half is C1. What is real: the default lane cannot stream, nothing records a context window, and diarization is a third requirement. Two of its "open questions" were withdrawn — the prototype had already answered them |
 | D3 | **not started, and not blocked** — its `Requires` line reads D1 and A3, both done. The graph below draws a `B2` line into its column that no `Requires` line supports; the line is decorative and the `Requires` is the contract |
 | B2, C1–C2, D2, E1–E2, F1–F3, G1–G3 | **not started** |
 

@@ -73,7 +73,7 @@ The third pass's own page carries where each of the five records stands.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0130.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0131.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -92,13 +92,24 @@ Next unblocked: **B2**, **B4**, **B5**, **B7**, **C1**, **E1**, **D3** — whose
 cheapest step in Stage D.
 
 **Two steps were added on 2026-08-13 from a donor reading, and neither needs
-code to have been useful.** **B7** (ADR 0129) moves the provider choice to the
-point of use — the file's size is the fact that decides it, and it is not known
-in a settings table. **C4** (ADR 0130) answers how a two-hour meeting is
-transcribed, which no document in this repo did: it is C1's turns cut on silence
-rather than a chunker, and **the ceiling that binds it is neither the audio nor
-the upload size** — the default lane cannot stream at all, and nothing here
-records a model's context window.
+code to have been useful.** **B7** (ADR 0129, widened by ADR 0131) moves the
+provider choice to the point of use — the file's size is the fact that decides
+it, and it is not known in a settings table. **C4** (ADR 0130) answers how a
+two-hour meeting is transcribed, which no document in this repo did: it is C1's
+turns cut on silence rather than a chunker, and **the ceiling that binds it is
+neither the audio nor the upload size** — the default lane cannot stream at all,
+and nothing here records a model's context window.
+
+**And the same day's third record is mostly a correction, which is why it is
+worth reading.** ADR 0131 generalises B7's rule — *every surface that starts a
+job names where it runs*, on **all four lanes** rather than Cloud with three
+fallbacks — and then withdraws two questions C4 had filed as the owner's,
+because **the prototype had already answered both**: live transcription is a
+`toggle(true)` on the `Meetings` row and retention is `Keep the audio` with a
+lifecycle default. Reading `docs/prototypes/` rather than reasoning about it
+would have found them. It also corrects the donor survey — `voxtype` carries a
+complete Rust meeting stack that the first pass missed — and records that **no
+donor in this tree solves the context window**, so nobody goes looking.
 
 **What D1 left for somebody to decide was decided the next morning.** The drawn
 per-job override and A4's runtime resolution disagreed about what a fresh

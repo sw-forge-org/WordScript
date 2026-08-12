@@ -1019,6 +1019,21 @@ Status: Proposed | Accepted | Superseded by NNNN
   the ceiling that binds it is neither: the default lane cannot stream at all,
   and the notes pass hits a context window nothing in this repo records.
 
+- [0131](0131-every-surface-that-starts-a-job-names-where-it-runs-and-the-drawing-already-decided-more-than-was-read.md):
+  ADR 0129's rule generalises — **every surface that starts a job names where it
+  runs**, and on all four lanes, not on Cloud with three fallbacks. The rest of
+  the record is a correction: **two questions ADR 0130 filed as the owner's were
+  already drawn** — live transcription is a `toggle(true)` on the `Meetings`
+  row, retention is `Keep the audio` with three options and a lifecycle default
+  — and reading the prototype rather than reasoning about it would have found
+  both. **Diarization is a third requirement** of the meeting lane beside
+  streaming, and **the copilot is a fourth consumer of a model** that no axis
+  carries. The donor survey was wrong too: `voxtype` has a complete Rust meeting
+  stack, and **two donors converge on ~30 s VAD chunks**, which confirms
+  ADR 0130's cut. The context-window answer is **map-reduce over semantic
+  boundaries** — the audio is cut on silence, the transcript on topic, both
+  refusing the arbitrary cut — and **no donor in this tree implements it**.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
