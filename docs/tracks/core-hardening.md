@@ -30,7 +30,7 @@ What two passes bought is that the cluster went from invisible to instrumented.
 
 | Record | Still occurring? | What exists now |
 |---|---|---|
-| Capture loses audio | **Yes, cause still unlocated** | Reported (0079); a callback cadence and a named signature (0083); the soak ran 2026-08-12 and returned **zero events in 8 h** (0084), which moved the suspicion into the app, and a live event on 2026-08-13 then refuted that too. **The instrument half now belongs to the measurement integrity track** (ADR 0133) — read that record before appending to it |
+| Capture loses audio | **Yes, cause still unlocated** | Reported (0079); a callback cadence and a named signature (0083); the soak ran 2026-08-12 and returned **zero events in 8 h** (0084), which moved the suspicion into the app, and a live event on 2026-08-13 then refuted that too. **The instrument half now belongs to the runtime ownership track** (ADR 0133) — read that record before appending to it |
 | Prompt leak | **Yes in the recogniser, 12.5 % of raw** | Removed from the delivery (0080); displaced words stay gone |
 | Pluralized address | **Yes, one of three shapes** | Two repaired (0081), third out of reach by design |
 | Mishearings at large | **Yes, unmeasured** | One instance in the corpus; still no WER, no rate |
@@ -90,8 +90,8 @@ rather than compacted, because the items are cited by number elsewhere.
    disappointment: it does not exonerate PipeWire, it moves the suspicion into
    the app. A live event on 2026-08-13 then refuted the app-side hypothesis as
    well and exposed the instrument's own blind spot, which is why **the capture
-   half of this record now runs on the measurement integrity track**
-   (`tracks/measurement-integrity.md`, ADR 0133). The reasoning below is kept
+   half of this record now runs on the runtime ownership track**
+   (`tracks/runtime-ownership.md`, ADR 0133). The reasoning below is kept
    because it is what made the run cheap and what the next unattended run
    inherits:
 

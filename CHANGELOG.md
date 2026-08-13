@@ -53,10 +53,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Documented — four defects found in one session, and the instruments that could not see them (ADR 0133)
+### Documented — the session end belongs to a window, and the instruments that could not see it (ADR 0133, ADR 0134)
 
 Documentation only; no product behavior changed. Sequenced as the new
-**measurement integrity** track (`docs/tracks/measurement-integrity.md`).
+**runtime ownership** track (`docs/tracks/runtime-ownership.md`), opened as
+*measurement integrity* and re-scoped the same day when the last finding turned
+out not to be a measurement problem.
+
+- **A finished dictation is discarded when its window does not come back**
+  (ADR 0134). `CLAUDE.md` gives the runtime the insert; every insert call site
+  is an `invoke` from `OverlayWindow.tsx`, and after `preview ready` the runtime
+  has no deadline and no fallback. The clipboard write, the history record and
+  the transcript file are all created inside that insert, so no insert means the
+  text exists only in memory. Measured across 277 `clipboard_only` previews:
+  **1.12 s median, but 11.45–115.11 s in the 13 whose webview was destroyed
+  mid-preview**, and one transcript lost outright to an app restart. The runtime
+  gets a **10 s deadline** and commits when it expires; the overlay keeps commit
+  and abort, and a late frontend commit is a no-op. This is why the track was
+  re-scoped: it outranks the watcher fix even though the watcher is cheaper.
 
 - **The dev server reloads all three windows mid-session.** New record
   `known-issues/dev-server-reloads-the-app-mid-session.md`. `vite.config.ts`
@@ -80,13 +94,12 @@ Documentation only; no product behavior changed. Sequenced as the new
   copied; the two failures occur separately as well as together. Its heartbeat
   cannot detect a reload — a destroyed interval reads as silence, not as a
   stall — so the decision table gained a fourth row.
-- **`clipboard_only` gives a finished transcript exactly one door.** Recorded as
-  an addendum on the *fixed* `overlay-leave-hold-dead-actions.md`, whose own
-  mechanism did not regress. Three mechanisms in six weeks have produced one
-  user sentence — dead handlers (fixed), a window on no monitor (reopened), and
-  now a destroyed webview — because each removes the only surface the mode
-  offers to the text. Two were fixed individually and the sentence returned. The
-  track treats this as a product question rather than a fourth mechanism hunt.
+- **Three mechanisms in six weeks produced one user sentence.** Recorded as an
+  addendum on the *fixed* `overlay-leave-hold-dead-actions.md`, whose own
+  mechanism did not regress: dead handlers (fixed), a window on no monitor
+  (reopened), and now a destroyed webview. Each removes the surface the mode
+  offers to the text, and two were fixed individually before the sentence
+  returned — so the recurring part is none of them, it is the ownership above.
 - **The cue output stream underruns constantly.** New record
   `known-issues/sound-output-underruns-and-reopens.md`. 283 stream errors and
   256 reopens in 2.5 days on the playback sink, whose log line reads as a

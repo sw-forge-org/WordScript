@@ -173,12 +173,16 @@ status change. Resolved bugs remain as references for the same failure class.
   gone dead, so Copy rendered fully enabled and did nothing. The `edit-mode`
   branch beside it already had the rule the `processing` branch was missing
   (2026-07-30). **Its mechanism stays fixed, and its damage came back on
-  2026-08-13 by a third route** — the addendum tabulates all three and draws the
-  conclusion none of them could on its own: `clipboard_only` gives a finished
-  transcript **exactly one door**, so any mechanism that removes the preview
-  surface removes the transcript. Two were fixed as wiring and placement bugs
-  and the same user sentence returned. That is a product question, and it is
-  step 3 of the measurement integrity track.
+  2026-08-13 by a third route** — the addendum tabulates all three and finds
+  what none of them could on its own: **the session's completion belongs to a
+  window.** Every insert call site is an `invoke` from `OverlayWindow.tsx`, and
+  the clipboard write, the history record and the transcript file are all
+  created inside that insert, so a surface that never returns stops the text
+  from ever being written. Measured across 277 previews: 1.12 s median, but
+  11–115 s in the 13 whose webview died mid-preview, and one transcript lost
+  outright to an app restart. Two mechanisms were fixed as wiring and placement
+  bugs and the same user sentence returned; the recurring part is the ownership.
+  ADR 0134 and step 1 of the runtime ownership track.
 - [diag-log-write-surface.md](diag-log-write-surface.md): open — hardening
   finding, no observed failure. The overlay diagnostic log uses a predictable
   path in the world-writable `/tmp`, and its three commands are registered in
@@ -343,7 +347,7 @@ status change. Resolved bugs remain as references for the same failure class.
   [tracks/core-hardening.md](../tracks/core-hardening.md). The **measurement
   integrity** track carries the four records whose instruments could not see
   their own cause; its sequence is
-  [tracks/measurement-integrity.md](../tracks/measurement-integrity.md)
+  [tracks/runtime-ownership.md](../tracks/runtime-ownership.md)
 - Closed implementation specifications: [archive/](../archive/README.md)
 - Frozen donor references: [donors/](../donors/)
 - Regression corpus:

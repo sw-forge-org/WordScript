@@ -744,6 +744,20 @@ Additional rules:
   the overlay-freeze record: a reload destroys the heartbeat rather than
   delaying it, so every instrument here read it as silence:
   [known-issues/dev-server-reloads-the-app-mid-session.md](known-issues/dev-server-reloads-the-app-mid-session.md)
+- **a finished dictation is discarded when its window does not come back**, and
+  this is the most damaging open item on the product path. `CLAUDE.md` gives the
+  runtime the insert; the runtime does not have it. Every insert call site is an
+  `invoke` from `OverlayWindow.tsx`, and after `preview ready` there is no
+  deadline and no fallback — while the clipboard write, the `history.json`
+  record and the Markdown transcript are **all created inside that insert**. So
+  a destroyed, frozen or stranded overlay does not hide the text, it stops it
+  from ever being written. Measured across 277 `clipboard_only` previews:
+  **1.12 s median, 11.45–115.11 s in the 13 whose webview was destroyed
+  mid-preview**, and one transcript lost outright to an application restart.
+  ADR 0134 gives the runtime a 10 s deadline and keeps the overlay's commit and
+  abort; until it lands, the three overlay mechanisms are data-loss bugs rather
+  than surface bugs:
+  [decisions/0134](decisions/0134-a-session-ends-in-the-runtime-not-in-the-window-that-shows-it.md)
 - **the recogniser echoes WordScript's own initial prompt into the transcript**,
   and one such sentence reached an agent as an instruction on 2026-08-10.
   12.5% of raw transcripts carried prompt text and 6.6% were delivered still

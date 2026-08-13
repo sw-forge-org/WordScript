@@ -33,7 +33,7 @@ updated; a kick-off is spent when its unit closes.
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
-| **Measurement integrity** | 2026-08-13 | **Open, six steps, none started**; steps 1 and 4 are unblocked and independent | [`tracks/measurement-integrity.md`](tracks/measurement-integrity.md) | the same file — it is both |
+| **Runtime ownership** | 2026-08-13 | **Open, seven steps, none started**; step 1 is silent data loss and outranks the rest | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
 ### GUI port
@@ -147,28 +147,35 @@ gallery — and closes `PROVIDERS.md` disagreements 10, 11 and 13 with it. The
 rule generalises past this screen: **an inherited drawing is an inventory of
 intent, and what is unbuilt stays visible and inert rather than tidied away.**
 
-### Measurement integrity
+### Runtime ownership
 
-Opened after a live capture-loss event on 2026-08-13 turned out to refute the
-hypothesis the previous pass had settled on, and to expose why it could not
-have been settled: **three long-open records were investigated with instruments
-that cannot see the cause they name, inside a dev environment nobody had
-measured.**
+Opened 2026-08-13 as *measurement integrity*, **renamed and re-scoped the same
+day** when the last finding turned out not to be a measurement problem at all.
 
-Owns ADR 0133 onward for its four records.
+`CLAUDE.md` gives the runtime trigger, capture, provider, transform, **insert**
+and recovery. It does not own the insert, and the instruments cannot see where
+it does not.
 
-The capture cadence timestamps itself after taking the app's own mutex, so a
-suspended stream and a self-blocked callback are one number. The overlay
-heartbeat reports a *late* interval, so a dev-server reload — which destroys the
-interval rather than delaying it — reads as silence. And `npm run tauri dev`
-issued about 1,389 full reloads in 2.5 days, rebuilding all three webviews,
-because the watcher covers 36,000 files it has no reason to watch.
+Owns ADR 0133 onward for its five records.
 
-None of that is a bug on its own. It is why the bugs stayed open. Steps 1, 4 and
-5 are independent and cheap; step 6 is gated on one more natural event,
-deliberately, and step 3 is a product question rather than a bug — three
-mechanisms in six weeks have produced one user sentence, because
-`clipboard_only` gives a finished transcript exactly one door.
+**Step 1 is silent data loss.** Every insert call site is an `invoke` from
+`OverlayWindow.tsx`; after `preview ready` the runtime does nothing on its own.
+The clipboard write, the history record and the transcript file are all created
+inside that insert, so a window that never returns discards a finished
+dictation and nothing reports it. Measured across 277 previews: 1.12 s median,
+but 11–115 s in the 13 whose webview was destroyed mid-preview, and one
+transcript lost outright to an app restart. ADR 0134 gives the runtime a 10 s
+deadline; the overlay keeps commit and abort.
+
+The rest is why it stayed invisible. The capture cadence timestamps itself
+after taking the app's own mutex, so a suspended stream and a self-blocked
+callback are one number. The overlay heartbeat reports a *late* interval, so a
+reload — which destroys the interval rather than delaying it — reads as silence.
+And `npm run tauri dev` issued about 1,389 full reloads in 2.5 days because the
+watcher covers 36,000 files it has no reason to watch.
+
+Step 1 outranks the watcher fix even though the watcher is cheaper: the watcher
+makes the window die less often, step 1 makes it not matter when it does.
 
 **It shares `capture-loses-half-the-recording.md` with Core hardening.** That
 track holds the capture *loss* as one of its five invisible-damage records;

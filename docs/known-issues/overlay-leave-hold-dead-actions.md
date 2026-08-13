@@ -34,19 +34,38 @@ All three end where this record's *Symptom* section already put it: in
 `clipboard_only` the preview pill is the only route the mode offers to the
 transcript, so losing that surface by **any** means loses the transcript.
 
-**The lesson this record earns.** Three mechanisms in six weeks have produced
-one user sentence, and each was fixed as a placement or a wiring bug. The
-recurring part is not any of them — it is that a finished transcript has
-exactly one door. That belongs to the
-[measurement integrity track](../tracks/measurement-integrity.md), step 3, as a
-product question rather than a fourth mechanism hunt.
+### Why it is one door, and it is worse than "one door"
 
-One observation for whoever takes it: the runtime writes the clipboard
-unconditionally at insert time on every session in the log
-(`insert_mode=ClipboardOnly clipboard_written=true`, `wl-copy clipboard verified
-via wl-paste`), so the text does reach the clipboard without the pill. What the
-lost surface removes is the route *back* to it once the clipboard has moved on.
-Confirm that before designing the second door.
+An earlier version of this addendum said the text survives regardless, because
+the runtime writes the clipboard unconditionally and History carries a `copy`
+action. **That was wrong**, and it was wrong in the direction that matters.
+
+Every insert call site is an `invoke` from `OverlayWindow.tsx` (`:1508`,
+`:1548`, `:1621`, `:1648`). The runtime does nothing on its own after
+`preview ready`. And **the clipboard write, the `history.json` record and the
+Markdown transcript are all created inside that insert** — the record id
+`history-1786574199766-200` and its file's `created:` stamp are the same
+millisecond as `Native insert event emit done`.
+
+So there is no fallback behind the pill. No insert means no clipboard, no
+history row, no file; the text exists only in memory. History's `copy` /
+`restore` / `reveal` are real, but they act on a record that the lost surface
+prevented from ever being written.
+
+The runtime log shows the dependency without any code reading. Across 277
+`clipboard_only` previews: median preview→insert **1.12 s**, p90 2.27 s — but
+**11.45 s to 115.11 s in the 13 sessions whose webview was destroyed
+mid-preview**. The commit was waiting for a window to come back. Three previews
+never reached an insert at all: two deliberate aborts, and one that died with an
+application restart and **was never written anywhere**.
+
+**The lesson this record earns.** Three mechanisms in six weeks produced one
+user sentence, and each was fixed as a placement or a wiring bug. The recurring
+part is none of them — it is that the session's completion belongs to a window.
+That is [ADR 0134](../decisions/0134-a-session-ends-in-the-runtime-not-in-the-window-that-shows-it.md)
+and step 1 of the [runtime ownership track](../tracks/runtime-ownership.md): the
+runtime finishes the session on a 10 s deadline, and the second door then exists
+without designing one.
 
 ## Symptom
 

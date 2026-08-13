@@ -27,10 +27,13 @@ contents of the directory.
 - [`speech-track.md`](speech-track.md) — stage one's account: the six findings
   the later stages are built on, and what a review of its own first pass found
   false in it. Not updated by later work.
-- [`measurement-integrity.md`](measurement-integrity.md) — opened 2026-08-13.
-  Four records whose instruments could not see the cause they name, and a dev
-  environment that was never measured. Six steps; 1 and 4 are independent and
-  cheap, 6 is gated on one more natural event. Both the orientation page and the
+- [`runtime-ownership.md`](runtime-ownership.md) — opened 2026-08-13 as
+  *measurement integrity*, renamed and re-scoped the same day. `CLAUDE.md` gives
+  the runtime trigger, capture, transform, **insert** and recovery; it does not
+  own the insert, and the instruments cannot see where it does not. Step 1 is
+  silent data loss — a finished dictation is discarded when its window does not
+  come back, because the session's completion is an `invoke` from the overlay.
+  Seven steps; 1, 2, 3, 5 and 7 are unblocked. Both the orientation page and the
   sequence. **Shares `capture-loses-half-the-recording.md` with core hardening** —
   that track holds the loss, this one holds the instrument.
 - [`activation-gestures.md`](activation-gestures.md) — open, nothing built. Why

@@ -90,12 +90,22 @@ is destroyed and remounts with no session state, so it renders nothing while
 Rust is still recording.
 
 **The hotkeys are unaffected** — they are Rust-owned and the owner confirms
-every shortcut works every time, so a session is always stoppable. What the
-missing surface costs is the transcript: in `clipboard_only` the preview pill is
-the only route the mode offers to it. See
+every shortcut works every time, so a session is always stoppable.
+
+**What the missing surface costs is the transcript itself.** Every insert call
+site is an `invoke` from `OverlayWindow.tsx`, and the clipboard write, the
+history record and the transcript file are all created inside that insert. A
+reload during the preview therefore does not hide the text — it stops it from
+being written. The same 277-preview measurement that dates the reloads shows
+the dependency: 1.12 s median preview→insert, **11.45 s to 115.11 s in the 13
+sessions with a reload in that window**, and one preview that died with an app
+restart and was never written anywhere.
+
+That makes this record a data-loss contributor, not only a cosmetic one — until
+[ADR 0134](../decisions/0134-a-session-ends-in-the-runtime-not-in-the-window-that-shows-it.md)
+lands and the runtime commits on its own deadline. See
 [overlay-leave-hold-dead-actions.md](overlay-leave-hold-dead-actions.md), whose
-2026-08-13 addendum tabulates this as the third mechanism to reach that same
-damage.
+2026-08-13 addendum tabulates this as the third mechanism to reach that damage.
 
 ## What this does NOT cause
 

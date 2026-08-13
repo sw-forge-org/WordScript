@@ -1062,6 +1062,25 @@ Status: Proposed | Accepted | Superseded by NNNN
   deliberately left in place, because fixing them now makes the next event
   unattributable. The reading is registered in advance, as 0084 did.
 
+- [0134](0134-a-session-ends-in-the-runtime-not-in-the-window-that-shows-it.md):
+  **the insert belongs to a window, and `CLAUDE.md` says it belongs to Rust.**
+  Every insert call site is an `invoke` from `OverlayWindow.tsx`; after
+  `preview ready` the runtime has no deadline and no fallback. The clipboard
+  write, the `history.json` record and the Markdown transcript are all created
+  inside that insert, so **a window that never returns silently discards a
+  finished dictation** — the record id and its file's `created:` stamp are the
+  same millisecond as `Native insert event emit done`. Measured across 277
+  `clipboard_only` previews: 1.12 s median, p90 2.27 s, but **11.45–115.11 s in
+  the 13 whose webview was destroyed mid-preview**, and one transcript lost
+  outright to an app restart. The runtime now commits on a **10 s deadline** —
+  a safety net, not an abort window, sized so it never fires while the window
+  works — and a late frontend commit is a no-op through ADR 0018's existing
+  one-commit guard. Stated cost: an abort after the deadline becomes a delete
+  rather than a nothing; one of the two aborts on record (at 15.4 s) would now
+  land that way. Accepted, because a deleted record is one action to recover and
+  an unwritten transcript is none. This also supplies the fallback ADR 0018
+  named and owes a reported surface under ADR 0019.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

@@ -97,15 +97,16 @@ that removes the heartbeat rather than delaying it was never on the list.
    with no session state while Rust is still recording or holding a staged
    preview, and shows nothing. Rust knows what is active — the overlay should
    ask on mount and restore the surface it was showing.
-4. **Give `clipboard_only` a second route to its transcript.** This is the
-   damage, and it is independent of which of the three mechanisms removed the
-   pill. As long as one destroyed surface can strand a finished transcript, the
-   next mechanism will produce the same report. Note the tension worth
-   resolving first: the runtime already writes the clipboard unconditionally at
-   insert time (`Native insert … insert_mode=ClipboardOnly clipboard_written=true`,
-   `wl-copy clipboard verified via wl-paste`, on every session in the log), so
-   what is lost is the route *back* to the text once the clipboard has moved
-   on — not the first copy. Establish which before designing the second route.
+4. **Take the session's completion away from this window** — [ADR
+   0134](../decisions/0134-a-session-ends-in-the-runtime-not-in-the-window-that-shows-it.md),
+   and it outranks everything else here. Every insert call site is an `invoke`
+   from `OverlayWindow.tsx`, and the clipboard write, the history record and the
+   transcript file are all created inside that insert. So a freeze that ends in
+   no recovery does not merely hide the text — **it prevents the text from ever
+   being written**. Measured: 1.12 s median preview→insert, but 11–115 s in the
+   13 sessions whose webview was destroyed mid-preview, and one transcript lost
+   outright to an app restart. Once the runtime commits on its own deadline,
+   this record's failure costs a surface instead of a dictation.
 5. Re-measure after 1. If the freeze still occurs with no reload triple in the
    window, the residual signature is real and independent, and the
    release-versus-dev comparison below is finally worth running. The owner
