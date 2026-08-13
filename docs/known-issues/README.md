@@ -120,18 +120,38 @@ status change. Resolved bugs remain as references for the same failure class.
   and found nothing**: 96 segments, 8.00 h of open stream, every one `Intact`
   with `no_gaps`, where roughly eight events were expected. ADR 0084 registered
   that outcome in advance — it does not exonerate PipeWire, it moves the
-  suspicion into the app, and Route B is next.
-- [overlay-recording-freeze.md](overlay-recording-freeze.md): largely resolved by
-  attribution — the recording overlay freezes mid-capture, timer and input
+  suspicion into the app. **Route B was then answered by ordinary use
+  (2026-08-13):** the defect occurred live and the log holds it whole, with
+  per-gap detail. It refutes the app-side hypothesis ADR 0084 pointed at —
+  `slowest_emit_ms` is 0 and 5 ms in two of the three failures — and exposes a
+  blind spot: the callback gap is timestamped *after* the app takes its own
+  mutex, so "the stream stopped" and "we blocked our own callback" are the same
+  number, and `signature=stream_suspended` asserts the first. Load and memory
+  were re-tested against the new event and stay refuted (40.3 % free memory; 90
+  `Intact` captures ran at equal or worse pressure). ADR 0133 fixes the
+  instrument; the fix for the defect waits for one more event, deliberately.
+- [overlay-recording-freeze.md](overlay-recording-freeze.md): **reopened
+  2026-08-13** — the recording overlay freezes mid-capture, timer and input
   included, while the pipeline continues. The 2026-07-30 measurement did not
   reproduce it and its sightings turned out to be placement. On 2026-08-03 it
-  did reproduce, on the emit axis, and the cause is not the overlay: the pill
-  stops because the capture stream stopped delivering samples (see above). The
-  main-thread hypotheses are dead — `[ov-beat]` stays empty while the other
-  `[ov-*]` kinds log normally. What stays open is the residual signature alone:
-  hover, click and drag dying while a *live* stream runs.
+  did reproduce, on the emit axis, and that cause is not the overlay: the pill
+  stops because the capture stream stopped delivering samples (see above). What
+  reopened it is the sighting the record asked for — **a freeze with a live
+  capture behind it**. The trigger path is *not* implicated: the stop hotkey
+  ends the session and every shortcut works every time. What sometimes fails is
+  the recovery, and then in `clipboard_only` **the transcript can no longer be
+  copied** — the two failures occur separately as well as together. A candidate
+  cause now exists that this record's own instrument structurally cannot see: a
+  dev-server full reload destroys the heartbeat rather than delaying it, so it
+  reads as silence. The decision table has a fourth row for it. The main-thread
+  hypotheses stay dead for the mechanisms they named.
 - [overlay-stranded-off-screen.md](overlay-stranded-off-screen.md): **reopened
-  2026-08-03** — the overlay is placed where no monitor is. The ADR 0022 rescue
+  2026-08-03, narrowed 2026-08-13** — the overlay is placed where no monitor is.
+  A second, unrelated mechanism produces this record's founding sentence ("the
+  overlay becomes completely invisible mid-recording"), so the mid-session half
+  is no longer safely attributable here; the addendum carries the log
+  discriminator. Stranding *at reveal* is unaffected and still real: 18 in 326
+  reveals over the current log. The ADR 0022 rescue
   works and is firing, but it does not prevent the stranding: in 82.9 hours on a
   build carrying the fix, 65 of 503 reveals found an already-visible window on no
   work area, while the mid-session check that was meant to catch it fired **zero**
@@ -145,7 +165,13 @@ status change. Resolved bugs remain as references for the same failure class.
   snapshot with its buttons wired unconditionally to handlers that had already
   gone dead, so Copy rendered fully enabled and did nothing. The `edit-mode`
   branch beside it already had the rule the `processing` branch was missing
-  (2026-07-30).
+  (2026-07-30). **Its mechanism stays fixed, and its damage came back on
+  2026-08-13 by a third route** — the addendum tabulates all three and draws the
+  conclusion none of them could on its own: `clipboard_only` gives a finished
+  transcript **exactly one door**, so any mechanism that removes the preview
+  surface removes the transcript. Two were fixed as wiring and placement bugs
+  and the same user sentence returned. That is a product question, and it is
+  step 3 of the measurement integrity track.
 - [diag-log-write-surface.md](diag-log-write-surface.md): open — hardening
   finding, no observed failure. The overlay diagnostic log uses a predictable
   path in the world-writable `/tmp`, and its three commands are registered in
@@ -257,13 +283,42 @@ status change. Resolved bugs remain as references for the same failure class.
   "ready" and paste nothing. The core is cleanly separated; the missing seam is a
   platform-window abstraction.
 
+- [dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md):
+  **open; cause located 2026-08-13, one edit away from fixed** — the white GUI
+  window and the vanishing overlay. `vite.config.ts:21-24` limits the dev
+  server's watcher to `**/src-tauri/**`; `donors/**` and `vendor/**` are excluded
+  only under `test.exclude`, which the dev server never reads. So it watches
+  32,576 files under `donors/` (577 of them `tsconfig.json`/`package.json`, each
+  a forced full reload) and 4,078 under `vendor/`. **About 1,389 full reloads in
+  2.5 days**, 33 of them inside a live capture — the longest a 197.6 s capture
+  with 22. A reload destroys every window's webview, which is why the overlay
+  dies while the transcription does not. Dev-only by construction. It is **not**
+  the cause of the capture loss: all 33 of those captures are `Intact`, and that
+  join is recorded so nobody re-runs it. It matters anyway, because every
+  capture measurement in this directory was taken inside it, and because it
+  gives two other overlay records a second candidate cause.
+- [sound-output-underruns-and-reopens.md](sound-output-underruns-and-reopens.md):
+  **open, measured not diagnosed (2026-08-13)** — the cue playback sink is held
+  open for the process lifetime and underruns constantly: 283
+  `Audio stream error: Buffer underrun/overrun occurred.` against 256 reopens in
+  2.5 days, many at a fixed `:35` offset that looks like an idle timeout. Each
+  failure clears the synthesized-cue cache and forces a re-open, capped at 3 per
+  60 s before the engine goes silent. It is the **output** stream, not capture —
+  the line's wording invites the opposite reading and cost one investigation a
+  detour. Kept because reopening a sink renegotiates the PipeWire graph and can
+  suspend a capture node: 1 of 6 captures with an output error during them is
+  `Short` against a 1.0 % base rate, which at n=6 is a lead, not a finding.
+
 ## Boundaries
 
 - Architecture decisions: [decisions/](../decisions/) (append-only ADRs)
 - Work in progress on these records: [IMPLEMENTATION.md](../IMPLEMENTATION.md).
   The **core hardening** track exists for the cluster in this directory where
   the damage is invisible; its sequence is
-  [tracks/core-hardening.md](../tracks/core-hardening.md)
+  [tracks/core-hardening.md](../tracks/core-hardening.md). The **measurement
+  integrity** track carries the four records whose instruments could not see
+  their own cause; its sequence is
+  [tracks/measurement-integrity.md](../tracks/measurement-integrity.md)
 - Closed implementation specifications: [archive/](../archive/README.md)
 - Frozen donor references: [donors/](../donors/)
 - Regression corpus:

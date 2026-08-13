@@ -1,11 +1,116 @@
 # Bug: Recording Overlay Freezes Mid-Capture
 
-Status: **Largely resolved by attribution 2026-08-03 — the freeze is real and
-its cause is not the overlay. The pill stops moving because the capture stream
-stops delivering samples; see
+Status: **Reopened 2026-08-13 — the sighting this entry asked for arrived, with
+a live capture behind it, and it carries a worse symptom than the one on
+record: the session cannot be ended. A candidate cause now exists that the
+instrumentation here structurally cannot see, and it is dev-only:
+[dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md).**
+
+Previous status (2026-08-03): largely resolved by attribution — the pill stops
+moving because the capture stream stops delivering samples; see
 [capture-loses-half-the-recording.md](capture-loses-half-the-recording.md).
-What is left here is the residual signature — dead input while the pill is
-visible — which that finding does not explain.**
+What was left was the residual signature — dead input while the pill is
+visible — which that finding does not explain. That residual is what reopened.
+
+## Addendum 2026-08-13: the sighting with a live capture behind it
+
+The 2026-08-03 addendum ends with a routing rule: *"If a future sighting has a
+live capture stream behind it, that is this entry; if the audio is short, it is
+the other one."*
+
+The owner reported, 2026-08-13: **the overlay often freezes but the
+transcription does not.** It keeps recording, and the text arrives. By the rule
+above, that is this entry.
+
+**The *Symptom* section below holds where it matters.** Confirmed by the owner
+on 2026-08-13: the stop hotkey ends the session normally, **every shortcut works
+every time**, and the overlay does recover. Nothing about the trigger or the
+session path is in question, and an earlier draft of this addendum claiming the
+recording could not be stopped was wrong.
+
+What does not always happen is the recovery:
+
+> It recovers, definitely, and all the shortcuts work every time — only it
+> becomes invisible, and in Copy-to-clipboard-only I can no longer copy the
+> text.
+
+So there are **two failures, and they occur both together and separately**:
+
+1. **The freeze alone.** The pill stops and input dies; the hotkey still ends
+   the session and the overlay comes back. Recoverable.
+2. **The freeze followed by no recovery.** By the time the session ends the
+   overlay is invisible, and in `clipboard_only` **the transcript can no longer
+   be copied.** This is the damaging one.
+
+The second is the same damage
+[overlay-leave-hold-dead-actions.md](overlay-leave-hold-dead-actions.md) was
+opened on: *"in `clipboard_only` this is the worst case the product has — that
+surface is the only route the mode ever offers to the transcript."* That record
+is correctly **Fixed** for its own mechanism (live-looking buttons on dead
+handlers, inside a 240 ms leave hold) and scoped itself to the transient half,
+handing the persistent half to
+[overlay-stranded-off-screen.md](overlay-stranded-off-screen.md).
+
+**A third route to that damage now exists**, and it is neither: a surface that
+is not dead and not mis-placed, but *destroyed and remounted empty*. All three
+end at the same place — the only route to the transcript is gone — which is why
+the reported sentence has now been filed under three records in six weeks.
+
+### A candidate cause, and why nothing here could have found it
+
+`npm run tauri dev` issues **about 1,389 vite full reloads in 2.5 days**,
+because the dev server watches 32,576 files under `donors/` and 4,078 under
+`vendor/`. A full reload destroys and rebuilds the webview of every window.
+**33 captures in the runtime log had at least one reload while they were
+recording** — the longest a 197.6 s capture with 22 of them, whose audio is
+untouched (`missing_ratio=0.0002`). Cause, counts and log signature are in
+[dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md).
+
+That matches the report exactly: the overlay's React app is destroyed, so the
+pill stops and input dies; it remounts with no session state, so it renders
+nothing and the window reads as invisible; Rust owns the capture, so recording
+and transcription continue, stoppable by hotkey throughout; and the only
+`clipboard_only` route to the finished text goes with the frontend.
+
+**Why the instrumentation here is blind to it.** The main-thread heartbeat logs
+`[ov-beat] stalled_ms=…` when a 250 ms interval lands late. A full reload does
+not make an interval land late — it **destroys the JS context the interval
+lives in**. The new page starts a new heartbeat with a clean clock. A reload is
+therefore *indistinguishable from silence* to this instrument, and the
+"Reading the result" table below has no row for it.
+
+This does not resurrect hypothesis 1. That hypothesis named a specific
+mechanism — dev instrumentation saturating the IPC and GTK main loop — and the
+heartbeat did refute *that*. What it shows is that the inference "the heartbeat
+is clean, therefore dev-only causes are dead" was too broad: a dev-only cause
+that removes the heartbeat rather than delaying it was never on the list.
+
+### What to do about it here
+
+1. Fix the watcher first (one edit, in the other record). It is free and it
+   removes the confound from every subsequent overlay measurement.
+2. Add the missing row to the decision table: **webview replaced** — no
+   heartbeat gap, no emit shortfall, but a `[trigger] event=register
+   outcome=skipped_idempotent` triple inside the capture window. That triple is
+   the only in-log evidence a reload happened; see the other record for why.
+3. Have the overlay survive a remount, or fail loudly. The frontend remounts
+   with no session state while Rust is still recording or holding a staged
+   preview, and shows nothing. Rust knows what is active — the overlay should
+   ask on mount and restore the surface it was showing.
+4. **Give `clipboard_only` a second route to its transcript.** This is the
+   damage, and it is independent of which of the three mechanisms removed the
+   pill. As long as one destroyed surface can strand a finished transcript, the
+   next mechanism will produce the same report. Note the tension worth
+   resolving first: the runtime already writes the clipboard unconditionally at
+   insert time (`Native insert … insert_mode=ClipboardOnly clipboard_written=true`,
+   `wl-copy clipboard verified via wl-paste`, on every session in the log), so
+   what is lost is the route *back* to the text once the clipboard has moved
+   on — not the first copy. Establish which before designing the second route.
+5. Re-measure after 1. If the freeze still occurs with no reload triple in the
+   window, the residual signature is real and independent, and the
+   release-versus-dev comparison below is finally worth running. The owner
+   reports the two failures occur **separately as well as together**, so
+   expect the freeze to survive the watcher fix in some form.
 
 ## Addendum 2026-08-03: the freeze is a capture stall, not a render stall
 
@@ -236,13 +341,20 @@ first. None of it changes product behavior.
 
 ### Reading the result
 
-| Heartbeat gap | Emit shortfall | Reading |
-|---|---|---|
-| yes | yes | Real freeze; the main thread stalled and emits were dropped |
-| no | yes | Runtime-side emit loss without a webview stall |
-| no | no | Silence, not a freeze — the overlay correctly skipped re-renders |
+| Heartbeat gap | Emit shortfall | Register triple in window | Reading |
+|---|---|---|---|
+| yes | yes | — | Real freeze; the main thread stalled and emits were dropped |
+| no | yes | — | Runtime-side emit loss without a webview stall |
+| no | no | **yes** | **Webview replaced by a dev-server full reload** (added 2026-08-13) |
+| no | no | no | Silence, not a freeze — the overlay correctly skipped re-renders |
 
-The third row closes this entry as not reproducible.
+The last row closes this entry as not reproducible — but only once the third
+row has been excluded. Before 2026-08-13 the two were read as one, because a
+reload leaves exactly the signature of silence: it destroys the heartbeat
+rather than delaying it, so `[ov-beat]` cannot report it. The third column is
+`[trigger] event=register outcome=skipped_idempotent`, three at a time, inside
+the capture window; see
+[dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md).
 
 ## Resolution
 

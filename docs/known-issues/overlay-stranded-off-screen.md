@@ -3,13 +3,63 @@
 Status: **Reopened 2026-08-03 — reported again from a build that carries the
 ADR 0022 fix. The fix works as a rescue and is measurably firing; what it does
 not do is prevent the stranding, and the one path that was supposed to catch it
-during a recording has never fired at all.**
+during a recording has never fired at all. Narrowed 2026-08-13: a second
+mechanism produces this record's founding sentence, so the mid-session half of
+this entry is no longer safely attributable here — see the addendum below.**
 
 First reported: 2026-07-30, as "the overlay becomes completely invisible
 mid-recording despite always-on-top"
 Reported again: 2026-08-03, same wording, from a build containing `ffe57ee`
 Affected area: overlay window placement on multi-monitor layouts, all platforms;
 observed on Linux/XWayland
+
+## Addendum 2026-08-13: a second cause owns part of this symptom
+
+This record was opened on the wording *"the overlay becomes completely
+invisible mid-recording"*. **A second, unrelated mechanism produces that exact
+sentence**, and it is not placement:
+[dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md).
+A vite full reload destroys and rebuilds every window's webview, so the overlay
+remounts with no session state and renders nothing while the window sits at a
+perfectly valid position.
+
+Recounted over `wordscript-runtime.log`, 2026-08-10 18:23 to 2026-08-13 00:55:
+
+| Line | Count |
+|---|---|
+| `Overlay placement … reason=reveal` | 326 |
+| `Overlay placement … reason=stranded` | 18 |
+| `Overlay stranded off every work area … repositioning` | 18 |
+| `Overlay stranded mid-session … repositioning` | **0** |
+| placement lines whose `target` fell outside the reported `work_area` | **0 of 344** |
+| register triples inside a capture window (= reloads mid-session) | **33 captures** |
+
+Stranding at reveal is still real and still uncaught at the source — 18 in
+326 reveals, about one in 18, improved from one in 8 but not gone.
+
+**The mid-session half reads differently now.** The mid-session rescue has
+still never fired, not once, across the whole log, and no placement target has
+landed outside its work area. Meanwhile mid-session invisibility keeps being
+reported, and 33 captures demonstrably had their webview replaced while they
+were recording. Two readings survive and they are not exclusive:
+
+1. The mid-session detector does not work, and stranding during a recording is
+   real but unobserved. This is what the 2026-08-03 addendum assumed.
+2. A share of the mid-session reports were never stranding at all — the window
+   was where it should be and had nothing painted in it.
+
+**How to tell them apart in the log**, for the next report:
+
+| | stranded | reload |
+|---|---|---|
+| `Overlay placement … reason=stranded` near the sighting | yes | no |
+| `target` outside `work_area` | yes | no |
+| `event=register outcome=skipped_idempotent` triple in the window | no | **yes** |
+| the window moves when it comes back | yes | no |
+
+Fix the watcher before re-measuring anything here. Until it is fixed, every
+mid-session sighting has two candidate causes and the log cannot be read
+cleanly. That is one edit, in the other record.
 
 ## Addendum 2026-08-03: the rescue fires, the prevention does not exist
 

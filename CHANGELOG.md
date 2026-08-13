@@ -53,6 +53,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documented — four defects found in one session, and the instruments that could not see them (ADR 0133)
+
+Documentation only; no product behavior changed. Sequenced as the new
+**measurement integrity** track (`docs/tracks/measurement-integrity.md`).
+
+- **The dev server reloads all three windows mid-session.** New record
+  `known-issues/dev-server-reloads-the-app-mid-session.md`. `vite.config.ts`
+  limits the watcher to `**/src-tauri/**`; `donors/**` and `vendor/**` are
+  excluded only under `test.exclude`, which the dev server never reads. So it
+  watches 32,576 files under `donors/` — 577 of them `tsconfig.json` /
+  `package.json`, each a forced full reload — and 4,078 under `vendor/`. About
+  **1,389 full reloads in 2.5 days**, 33 of them inside a live capture. That is
+  the white GUI window and the vanishing overlay. Dev-only; one edit away.
+- **The capture cadence measures on the far side of its own lock** (ADR 0133).
+  The defect occurred live on 2026-08-13 and the log held it whole. It refutes
+  the app-side delta ADR 0084 pointed at — `slowest_emit_ms` is 0 and 5 ms in
+  two of three failures — and shows the instrument cannot separate "the stream
+  stopped" from "we blocked our own callback", while printing the first as a
+  verdict. A third of the missing audio sits below the 200 ms threshold and is
+  attributed to nothing. Load and memory were re-tested and stay refuted.
+- **The overlay freeze record reopened.** The sighting it asked for arrived with
+  a live capture behind it. The trigger path is not implicated — the stop hotkey
+  ends the session and every shortcut works every time. What sometimes fails is
+  the recovery, and then in `clipboard_only` the transcript can no longer be
+  copied; the two failures occur separately as well as together. Its heartbeat
+  cannot detect a reload — a destroyed interval reads as silence, not as a
+  stall — so the decision table gained a fourth row.
+- **`clipboard_only` gives a finished transcript exactly one door.** Recorded as
+  an addendum on the *fixed* `overlay-leave-hold-dead-actions.md`, whose own
+  mechanism did not regress. Three mechanisms in six weeks have produced one
+  user sentence — dead handlers (fixed), a window on no monitor (reopened), and
+  now a destroyed webview — because each removes the only surface the mode
+  offers to the text. Two were fixed individually and the sentence returned. The
+  track treats this as a product question rather than a fourth mechanism hunt.
+- **The cue output stream underruns constantly.** New record
+  `known-issues/sound-output-underruns-and-reopens.md`. 283 stream errors and
+  256 reopens in 2.5 days on the playback sink, whose log line reads as a
+  capture failure and is not one.
+- **`overlay-stranded-off-screen.md` narrowed.** A second mechanism produces its
+  founding sentence, so its mid-session half is no longer safely attributable
+  there; the addendum carries the log discriminator.
+
 ### Fixed — the screen stops claiming things it does not know (ADR 0128)
 
 - **A per-job provider override is now what is stored, not what was drawn.**

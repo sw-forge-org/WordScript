@@ -719,15 +719,31 @@ Additional rules:
   which none arrived, and the sample count of the callback that ended it — which
   is what separates a suspended stream from callback starvation from a late
   delivery, and the line names which. Re-run 2026-08-11: still exactly 11 short
-  captures, nothing moved, and **no real gap has been recorded yet**, so the
-  instrumentation has a hypothesis rather than a cause. The journal carries no
-  PipeWire line inside the worst window and memory pressure there was inside the
-  healthy band, both on n = 1. **The soak night ran 2026-08-12 and produced
+  captures, nothing moved. **The soak night ran 2026-08-12 and produced
   nothing**: 96 segments, 8.00 h of open stream, all `Intact` with `no_gaps`,
   against a rate that predicted about eight events. ADR 0084 registered that
   outcome in advance — the suspicion moves into the app, not away from the
-  defect:
+  defect. **Then the defect occurred live on 2026-08-13 and the log held it
+  whole** (`native-18`, 15.5 % missing, seven gaps of 202–366 ms), which
+  answered Route B by ordinary use and changed the picture twice over: it
+  **refutes the app-side delta ADR 0084 pointed at** — `slowest_emit_ms` is 0
+  and 5 ms in two of the three detailed failures, so `app.emit` is fast while
+  the audio disappears — and it shows **the instrument cannot see the cause it
+  names**, because the cadence timestamps itself after taking the app's own
+  mutex and prints `stream_suspended` regardless. Load and memory were re-tested
+  against the new event and stay refuted (40.3 % free, with 90 healthy captures
+  under equal or worse pressure). ADR 0133 fixes the instrument; the fix for the
+  defect deliberately waits for one more event:
   [known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)
+- **the dev server rebuilds all three windows about 1,389 times in 2.5 days**,
+  because `vite.config.ts` excludes `donors/**` and `vendor/**` only under
+  `test.exclude`, which the dev server never reads — so it watches 36,000 files
+  including 577 `tsconfig.json`/`package.json`, each one a forced full reload.
+  That is the white GUI window and the vanishing overlay, and 33 captures had a
+  reload inside them while recording. Dev-only, one edit away, and it reopened
+  the overlay-freeze record: a reload destroys the heartbeat rather than
+  delaying it, so every instrument here read it as silence:
+  [known-issues/dev-server-reloads-the-app-mid-session.md](known-issues/dev-server-reloads-the-app-mid-session.md)
 - **the recogniser echoes WordScript's own initial prompt into the transcript**,
   and one such sentence reached an agent as an instruction on 2026-08-10.
   12.5% of raw transcripts carried prompt text and 6.6% were delivered still

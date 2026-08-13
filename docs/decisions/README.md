@@ -1046,6 +1046,21 @@ Status: Proposed | Accepted | Superseded by NNNN
   **The consequence reaches the runtime**: the echo renders partials, and no
   partial may reach the session reducer — compatible, but only if D2 delivers a
   display path beside its result path. **It may paint and it may never commit.**
+- [0133](0133-the-gap-was-measured-on-the-far-side-of-our-own-lock.md):
+  the capture cadence (ADR 0083) calls `observe` **inside** the mutex guard, so
+  the interval it reports begins after lock acquisition — "the callback was
+  never called" and "the callback waited on our own lock" are the same number,
+  and `signature()` prints the first as `stream_suspended`. Found when the
+  defect occurred live on 2026-08-13 and refuted the delta ADR 0084 had pointed
+  at: `slowest_emit_ms` is 0 and 5 ms in two of the three failures, so
+  `app.emit` is fast while the audio disappears. The cadence now timestamps
+  **callback arrival**, reports the lock wait as its own quantity, and
+  attributes the loss below the 200 ms threshold — a third of the missing audio
+  sat there unaccounted. `capture_soak.rs` takes the same change, because ADR
+  0084's premise is that the soak is the app minus a *known* delta. **Nothing is
+  fixed by this**: three realtime violations in the callback are named and
+  deliberately left in place, because fixing them now makes the next event
+  unattributable. The reading is registered in advance, as 0084 did.
 
 ## Resolved: the number 0011 was used twice
 

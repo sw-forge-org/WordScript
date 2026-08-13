@@ -1,11 +1,52 @@
 # Bug: The leave hold painted live-looking buttons on dead handlers
 
-Status: **Fixed (2026-07-30)**
+Status: **Fixed (2026-07-30) — and this record's mechanism stays fixed. The
+damage it was reported as arrived again on 2026-08-13 by a third route; see the
+addendum.**
 
 First reported: 2026-07-30, as "at the end of a recording it freezes, and in
 Copy-to-clipboard-only mode I cannot get at my transcript at all"
 Affected area: overlay preview actions at the end of a `clipboard_only` session,
 all platforms
+
+## Addendum 2026-08-13: the same damage, a third mechanism
+
+The owner reported, in almost the founding words: *"it becomes invisible, and in
+Copy-to-clipboard-only I can no longer copy the text."*
+
+**Nothing here regressed.** This record's mechanism is dead handlers behind
+live-looking buttons, inside a 240 ms window, and its regression test still
+pins it. The *Scope* section below was right to say the hold explains a dead
+click and "not a persistently unusable overlay", and right to hand the
+persistent half to
+[overlay-stranded-off-screen.md](overlay-stranded-off-screen.md).
+
+What has changed is that the persistent half now has **two** mechanisms, not
+one:
+
+| # | Mechanism | Surface state | Record |
+|---|---|---|---|
+| 1 | handlers dead under the leave hold | painted, enabled, inert | this one — fixed |
+| 2 | window placed where no monitor is | alive, unpaintable | [overlay-stranded-off-screen.md](overlay-stranded-off-screen.md) |
+| 3 | webview destroyed by a dev-server reload, remounted empty | gone | [dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md) |
+
+All three end where this record's *Symptom* section already put it: in
+`clipboard_only` the preview pill is the only route the mode offers to the
+transcript, so losing that surface by **any** means loses the transcript.
+
+**The lesson this record earns.** Three mechanisms in six weeks have produced
+one user sentence, and each was fixed as a placement or a wiring bug. The
+recurring part is not any of them — it is that a finished transcript has
+exactly one door. That belongs to the
+[measurement integrity track](../tracks/measurement-integrity.md), step 3, as a
+product question rather than a fourth mechanism hunt.
+
+One observation for whoever takes it: the runtime writes the clipboard
+unconditionally at insert time on every session in the log
+(`insert_mode=ClipboardOnly clipboard_written=true`, `wl-copy clipboard verified
+via wl-paste`), so the text does reach the clipboard without the pill. What the
+lost surface removes is the route *back* to it once the clipboard has moved on.
+Confirm that before designing the second door.
 
 ## Symptom
 

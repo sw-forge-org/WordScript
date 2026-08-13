@@ -33,6 +33,7 @@ updated; a kick-off is spent when its unit closes.
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Measurement integrity** | 2026-08-13 | **Open, six steps, none started**; steps 1 and 4 are unblocked and independent | [`tracks/measurement-integrity.md`](tracks/measurement-integrity.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
 ### GUI port
@@ -134,6 +135,34 @@ option — the config answers in the product, the drawn literal answers in the
 gallery — and closes `PROVIDERS.md` disagreements 10, 11 and 13 with it. The
 rule generalises past this screen: **an inherited drawing is an inventory of
 intent, and what is unbuilt stays visible and inert rather than tidied away.**
+
+### Measurement integrity
+
+Opened after a live capture-loss event on 2026-08-13 turned out to refute the
+hypothesis the previous pass had settled on, and to expose why it could not
+have been settled: **three long-open records were investigated with instruments
+that cannot see the cause they name, inside a dev environment nobody had
+measured.**
+
+Owns ADR 0133 onward for its four records.
+
+The capture cadence timestamps itself after taking the app's own mutex, so a
+suspended stream and a self-blocked callback are one number. The overlay
+heartbeat reports a *late* interval, so a dev-server reload — which destroys the
+interval rather than delaying it — reads as silence. And `npm run tauri dev`
+issued about 1,389 full reloads in 2.5 days, rebuilding all three webviews,
+because the watcher covers 36,000 files it has no reason to watch.
+
+None of that is a bug on its own. It is why the bugs stayed open. Steps 1, 4 and
+5 are independent and cheap; step 6 is gated on one more natural event,
+deliberately, and step 3 is a product question rather than a bug — three
+mechanisms in six weeks have produced one user sentence, because
+`clipboard_only` gives a finished transcript exactly one door.
+
+**It shares `capture-loses-half-the-recording.md` with Core hardening.** That
+track holds the capture *loss* as one of its five invisible-damage records;
+this one holds the capture *instrument*. Re-read the record before appending —
+both tracks write to it.
 
 ### Activation gestures
 

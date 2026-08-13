@@ -27,6 +27,12 @@ contents of the directory.
 - [`speech-track.md`](speech-track.md) — stage one's account: the six findings
   the later stages are built on, and what a review of its own first pass found
   false in it. Not updated by later work.
+- [`measurement-integrity.md`](measurement-integrity.md) — opened 2026-08-13.
+  Four records whose instruments could not see the cause they name, and a dev
+  environment that was never measured. Six steps; 1 and 4 are independent and
+  cheap, 6 is gated on one more natural event. Both the orientation page and the
+  sequence. **Shares `capture-loses-half-the-recording.md` with core hardening** —
+  that track holds the loss, this one holds the instrument.
 - [`activation-gestures.md`](activation-gestures.md) — open, nothing built. Why
   one set of shortcut defaults cannot serve three activation modes, and the
   decisions still owed.
