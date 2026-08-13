@@ -187,6 +187,15 @@ argument for a different failure.
 
 ## Related
 
+- [cleanup-flips-the-grammatical-person.md](cleanup-flips-the-grammatical-person.md)
+  — **the same damage on the other lane and the other grammatical axis**, found
+  2026-08-13. There the raw transcript is correct and cleanup changes the person;
+  here the recogniser changes the number and cleanup passes it through. Read
+  together they say that an address can be corrupted at either end of the
+  pipeline, and that neither stage's guardrails look at the other's axis. That
+  record is also the counter-example to this one's language gate: person is not
+  German-shaped, so ADR 0081's *"a rule that encodes one language says so"* gives
+  a fix there nothing to hang on.
 - [transcription-hallucination.md](transcription-hallucination.md) — the
   recognizer lane this sits on, and the bias and gate machinery that already
   exists there.

@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-12
+Status: 2026-08-13
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -800,6 +800,25 @@ Additional rules:
   found across 167 records the plural already stands in the raw transcript — but
   not scoped:
   [known-issues/singular-address-becomes-plural.md](known-issues/singular-address-becomes-plural.md)
+- the AI stage can change who a sentence is addressed to (found 2026-08-13). A
+  question dictated as *"wie genau würdest du das lösen"* was delivered as *"wie
+  genau würde ich das lösen"* — six second-person forms and their agreement at
+  once, on a correct raw transcript and an intact capture. The counterpart of the
+  entry above on the other lane: there the recogniser damages the address, here
+  the transform does. No guardrail sees it, because every one of them reads
+  length, sentence start or word overlap, and a person flip moves none of the
+  three. 1 in 200 records and no repair — the corpus carries the case and the
+  same construction handled correctly two days earlier, which is deliberately not
+  enough evidence for a rule:
+  [known-issues/cleanup-flips-the-grammatical-person.md](known-issues/cleanup-flips-the-grammatical-person.md)
+- a subtitle closing phrase can arrive attached to a real sentence and ship with
+  it: *"Da hab ich hier drüber gesprochen Thank you"* was delivered unchanged
+  (2026-08-13). The hallucination filters carry the words but not this shape —
+  one tests the whole transcript as a single string, the other matches per
+  sentence but its patterns are subtitle credits and music markers. Adding the
+  words to a per-sentence list is not the fix: *Vielen Dank* is ordinary German
+  and would be stripped out of a dictated sign-off. Addendum in
+  [known-issues/transcription-hallucination.md](known-issues/transcription-hallucination.md)
 - `react-router-dom` 6.30.4 carries an open advisory with no patch in the 6.x
   line; the app has no `<Link>` or `useNavigate` call site the advisory could
   act on, but the move to v7 is still owed. Two further transitive advisories

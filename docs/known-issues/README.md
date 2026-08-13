@@ -95,7 +95,14 @@ status change. Resolved bugs remain as references for the same failure class.
   cleanup; a language mismatch alone never discards anything. Not resolved: real
   language identification and segment confidence on the local lane stay
   deferred, and everything above the slice heading remains the historical record
-  of the problem.
+  of the problem. **One shape was found unreached on 2026-08-13**: a closing
+  phrase appended to a real sentence (*"Da hab ich hier drüber gesprochen Thank
+  you"*, delivered). `is_hallucination` carries the words but tests the **whole**
+  transcript as one string; `artifact_patterns` matches per sentence but its nine
+  patterns are subtitle credits and music markers and **do not contain the closing
+  phrases at all**. The one mechanism that does catch them is the segment
+  confidence gate, which is Groq-only. A fix cannot simply add the words: *Vielen
+  Dank* is ordinary German and would be stripped out of a dictated sign-off.
 - [capture-shortcut-recording.md](capture-shortcut-recording.md): resolved for
   the activation modes — shortcut recording, manual entry, normalization,
   registration and activation-mode failures in Capture and Modes, including the
@@ -263,6 +270,24 @@ status change. Resolved bugs remain as references for the same failure class.
   bare-stem/stem-plus-`-t` pair that IS the defect exists in no other language in
   reach. `Denkt ihr …?` stays out of reach on purpose. Also qualifies the
   `switch` → `switcht` classification in the entry above.
+- [cleanup-flips-the-grammatical-person.md](cleanup-flips-the-grammatical-person.md):
+  **open, no repair** (found 2026-08-13) — a question dictated to an addressee is
+  delivered as a question about the speaker: *"wie genau würdest **du** das
+  lösen"* ships as *"wie genau würde **ich** das lösen"*, six pronouns and their
+  agreement at once. The mirror image of the entry above and its counter-example:
+  the plural address is the **recogniser's**, this one is **cleanup's** — the raw
+  transcript is correct and the transform changes it, with `applied_rules` reading
+  the ordinary `post_corrected`. Every guardrail declines for a different reason,
+  and the reasons are the finding: the question mark survives so the
+  question gate is silent, the length moves 4 %, and word overlap is *near total*
+  because only pronouns change. The one guard that reads person at all is gated on
+  `professionalize` and therefore off in cleanup, which is the default path.
+  **The system prompt forbids answering and acting, and the model did neither** —
+  it re-aimed the sentence, which no line covers. 1 in 200 records, a floor. Not
+  German-shaped, unlike its neighbour, so no language gate can bound a fix. The
+  corpus carries the case and **both** negative directions, one of them the same
+  construction handled correctly two days earlier — which is why no rule was
+  written.
 - [style-rules-are-truncated-without-saying-so.md](style-rules-are-truncated-without-saying-so.md):
   open, found by looking (2026-08-10) — a style rule past 120 characters is cut
   with `...` appended and the budget meter stays black, because truncation is

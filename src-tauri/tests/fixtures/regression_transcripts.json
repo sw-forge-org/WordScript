@@ -950,6 +950,82 @@
       "expected_vocabulary_candidates": [],
       "expected_guardrail": null,
       "notes": "Record history-1786387983612-133, 2026-08-11, whisper-large-v3 on the Groq lane, profile General writing. THE FIRST GENUINE MISHEARING IN THIS CORPUS: the speaker said 'tmux' and the recogniser produced 'D-Max'. It is neither of the two identified causes — not the prompt leak, not the pluralized address — which is the gap docs/known-issues/transcription-accuracy.md names as its open headline. The ground truth is not inferred: applied_rules carries 'overlay_edit', so the user retyped the word in the overlay before delivery and 'tmux' is his own wording, not a guess about what he meant. It is also ADR 0036's argument at full strength — 'D-Max' is capitalized and hyphenated, the shape of a real product name (it is an Isuzu pickup), so the damage is invisible and ships. Three stages decline it and all three are asserted here: the echo strip has no prompt text to match, the address repair finds no plural imperative, and learning returns nothing. The last decline is the interesting one and it is deliberate rather than broken: 'tmux' is four characters and MIN_CANDIDATE_CHARS is five, so the one mechanism that could stop this recurring — promoting the term into the profile vocabulary, where the recogniser bias would carry it — cannot reach a term this short. That floor exists because a close match on a four-letter word is not evidence. Recorded as a measured limit with a named cost, not lowered on the strength of one case."
+    },
+    {
+      "id": "cleanup_flips_the_grammatical_person",
+      "failure_mode": "cleanup_flips_grammatical_person",
+      "profile": {
+        "id": "founder-ops-notes",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Ok, zu dieser Spannung, die du dokumentiert hast, wie genau würdest du das lösen mit dem gesamten Kontext, den du dazu hast?",
+      "language": "de",
+      "biased_correction": "Zu dieser Spannung, die ich dokumentiert habe, wie genau würde ich das lösen mit dem gesamten Kontext, den ich dazu habe?",
+      "expected_post_correction": "Zu dieser Spannung, die ich dokumentiert habe, wie genau würde ich das lösen mit dem gesamten Kontext, den ich dazu habe?",
+      "expected_guardrail": null,
+      "notes": "Record history-1786582009784-200, 2026-08-13 02:46, whisper-large-v3 on the Groq lane, profile Founder ops notes, processing mode auto resolving to cleanup, capture intact at 0.5 % missing and input level ok. THIS ENTRY CHARACTERISES A DEFECT RATHER THAN ASSERTING A REPAIR, and the null guardrail is the finding, not an endorsement: the correction model rewrote a question addressed to the reader into a question the speaker asks about himself — all six second-person forms became first person — and every one of the five guardrails in normalize_correction declines. The question mark survives, so the question guardrail is silent; the reply is 118 characters against 122, inside both length bounds; no ASSISTANT_PHRASES token appears; has_suspicious_start reads the opening words and the flip begins in a relative clause; and word overlap is near total because only the pronouns and their verb agreement move. The one guard that reads person at all — has_new_first_person_action_start — is gated on professionalize and therefore off in cleanup, which is the default path. When a rule for this is built, THIS ASSERTION MUST BE REWRITTEN rather than satisfied: the test will fail with 'reply was altered although no guardrail was expected', and that failure is the intended signal. Ground truth is the raw transcript minus the discourse particle, and see docs/known-issues/cleanup-flips-the-grammatical-person.md for why nothing downstream can see it."
+    },
+    {
+      "id": "cleanup_keeps_the_second_person_address",
+      "failure_mode": "cleanup_flips_grammatical_person_false_positive",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Okay, kannst du bitte deinen Teil committen und pushen?",
+      "language": "de",
+      "biased_correction": "Kannst du bitte deinen Teil committen und pushen?",
+      "expected_post_correction": "Kannst du bitte deinen Teil committen und pushen?",
+      "expected_guardrail": null,
+      "notes": "Record history-1786483171959-190, 2026-08-11, same lane, same mode, same shape as the entry above — a discourse particle at the head and a question addressed to the reader — and here the model did the right thing: it dropped 'Okay,' and left every second-person form standing. The pair is the whole argument for measuring before writing a rule. Two transcripts of the same construction, days apart, one flipped and one not, so the flip is a property of the correction model's reading rather than of a sentence pattern a matcher could recognise. This is the negative direction the track requires: any future person rule must leave this delivery byte-identical, and a rule that rewrote 'du' here would be committing the defect it was written to prevent."
+    },
+    {
+      "id": "cleanup_keeps_a_dictated_first_person",
+      "failure_mode": "cleanup_flips_grammatical_person_false_positive",
+      "profile": {
+        "id": "general-writing",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Okay, dann sagt mir einfach wie genau ich den API-Token konfiguriere.",
+      "language": "de",
+      "biased_correction": "Dann sagt mir einfach wie genau ich den API-Token konfiguriere.",
+      "expected_post_correction": "Dann sagt mir einfach wie genau ich den API-Token konfiguriere.",
+      "expected_guardrail": null,
+      "notes": "Record history-1786415037583-114, 2026-08-11, same lane and mode. The mirror of the entry above and the reason a person rule cannot simply prefer the second person: here the first person is what the speaker said, in a sentence that also carries an imperative addressed to somebody else ('sagt mir'). A rule counting pronouns, or one restoring 'du' wherever an instruction appears, corrupts this delivery. Both directions of the pronoun axis are now pinned by real dictation rather than by constructed examples."
+    },
+    {
+      "id": "recognizer_appends_a_closing_phrase",
+      "failure_mode": "raw_stt_artifact_trailing",
+      "profile": {
+        "id": "founder-ops-notes",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Da hab ich hier drüber gesprochen Thank you",
+      "language": "de",
+      "expected_detection": {
+        "text": "Da hab ich hier drüber gesprochen Thank you",
+        "char_repetition_collapsed": false,
+        "word_repetition_collapsed": false,
+        "phrase_repetition_collapsed": false,
+        "artifact_pattern_filtered": false,
+        "language_switch_flagged": false,
+        "language_drift_stripped": false
+      },
+      "expected_post_correction": "Da hab ich hier drüber gesprochen.",
+      "expected_guardrail": null,
+      "notes": "Record history-1786574234951-200, 2026-08-13 00:37, whisper-large-v3 on the Groq lane, 31.7 s of intact capture. THE SUBTITLE ARTIFACT ARRIVES ATTACHED TO A REAL SENTENCE, and the delivery carried it: applied_rules is ['post_correction_no_change'], so the correction stage left it alone and 'Thank you' shipped as if the speaker had said it. This entry asserts today's behaviour, which is that NOTHING FIRES — deliberately not flagged 'unchanged', because that flag means legitimate dictation and this is not that. Two mechanisms exist and neither can reach it: is_hallucination carries 'thank you' in its EXACT list but is applied to the whole transcript as one unit, so an artifact appended to a sentence never matches; and artifact_patterns in hallucination_detect matches per sentence, but its nine patterns cover subtitle credits, copyright lines and music markers — 'thank you for watching' and 'like and subscribe' are not among them at all. The language check cannot help either: an English fragment inside German shares the Latin script, which the corpus already pins as unreachable by design. expected_post_correction records what the speaker meant; no code produces it today."
     }
   ]
 }

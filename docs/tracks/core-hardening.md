@@ -13,27 +13,29 @@ You are picking up WordScript's core loop after two hardening passes. Work in
 `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 on `main`. Do not create a branch. `src-tauri/` is open.
 
-**Read all five records before touching any of them.** They are one failure
+**Read all six records before touching any of them.** They are one failure
 class — output that is fluent, grammatical, plausible and wrong, with nothing
 downstream carrying evidence that a substitution happened:
 `capture-loses-half-the-recording.md`, `transcription-accuracy.md`,
 `stt-prompt-leaks-into-the-transcript.md`, `singular-address-becomes-plural.md`,
-`cleanup-invents-tokens-on-broken-input.md`. Then ADRs 0079, 0080, 0081, 0083
+`cleanup-invents-tokens-on-broken-input.md`, and — added 2026-08-13 —
+`cleanup-flips-the-grammatical-person.md`. Then ADRs 0079, 0080, 0081, 0083
 and 0084, and `CLAUDE.md`.
 
 ## Where the cluster actually stands
 
-**None of the five records is closed, and two of them never will be in the
+**None of the six records is closed, and two of them never will be in the
 ordinary sense** — the rule is that lost content is reported, never replaced.
 What two passes bought is that the cluster went from invisible to instrumented.
 
 | Record | Still occurring? | What exists now |
 |---|---|---|
-| Capture loses audio | **Yes, 11 events, cause unknown** | Reported (0079); the next one arrives with a callback cadence and a named signature (0083); `capture-soak` can now provoke the conditions unattended (0084) but **has not been run for a night** |
+| Capture loses audio | **Yes, cause still unlocated** | Reported (0079); a callback cadence and a named signature (0083); the soak ran 2026-08-12 and returned **zero events in 8 h** (0084), which moved the suspicion into the app, and a live event on 2026-08-13 then refuted that too. **The instrument half now belongs to the measurement integrity track** (ADR 0133) — read that record before appending to it |
 | Prompt leak | **Yes in the recogniser, 12.5 % of raw** | Removed from the delivery (0080); displaced words stay gone |
 | Pluralized address | **Yes, one of three shapes** | Two repaired (0081), third out of reach by design |
 | Mishearings at large | **Yes, unmeasured** | One instance in the corpus; still no WER, no rate |
 | Cleanup invents tokens | **Yes, groups A and C** | No new guardrail; rate unchanged |
+| **Cleanup flips the person** | **Yes, 1 in 200, found 2026-08-13** | Nothing. The corpus carries the case and both negative directions; **no rule was written on purpose** — see step 6 |
 
 ## What the second pass did
 
@@ -73,13 +75,25 @@ for any of them and building something would be the mistake:
 An empty group is a population fact. It is not evidence that short captures are
 clean, and the harness is written to refuse that reading. Leave it refused.
 
-## The order, and the first item is the whole point
+## The order
 
-1. **Run the soak overnight.** The binary was built on 2026-08-11
-   ([ADR 0084](../decisions/0084-the-defect-that-needed-no-dictation-gets-a-binary-that-needs-no-app.md))
-   and verified against real hardware for **seconds, not hours** — so this step
-   is still the first open one and still the only task that can produce a
-   **cause** rather than another description:
+Items 1 to 5 are the third pass as it was written; 6 and 7 were added on
+2026-08-13 with the two records that landed that day. Item 1 has since been
+answered and its capture half has moved to another track — the numbering is kept
+rather than compacted, because the items are cited by number elsewhere.
+
+1. ~~**Run the soak overnight.**~~ **Done 2026-08-12, and it returned nothing:**
+   8 h, 96 segments, every one `Intact` with `no_gaps`, where roughly eight
+   events were expected.
+   [ADR 0084](../decisions/0084-the-defect-that-needed-no-dictation-gets-a-binary-that-needs-no-app.md)
+   registered that outcome in advance, so it is a result rather than a
+   disappointment: it does not exonerate PipeWire, it moves the suspicion into
+   the app. A live event on 2026-08-13 then refuted the app-side hypothesis as
+   well and exposed the instrument's own blind spot, which is why **the capture
+   half of this record now runs on the measurement integrity track**
+   (`tracks/measurement-integrity.md`, ADR 0133). The reasoning below is kept
+   because it is what made the run cheap and what the next unattended run
+   inherits:
 
    ```text
    cargo run --release --bin capture-soak -- --hours 8
@@ -164,6 +178,48 @@ clean, and the harness is written to refuse that reading. Leave it refused.
    on the profile's language setting there, because `json` carries no detected
    one.
 
+6. **The person flip needs a second instance before it needs a rule.** Added
+   2026-08-13 with the record
+   ([`known-issues/cleanup-flips-the-grammatical-person.md`](../known-issues/cleanup-flips-the-grammatical-person.md)).
+   The corpus already carries the case and both negative directions, so the work
+   here is **population, not code** — and the reason is in the corpus itself:
+   `cleanup_keeps_the_second_person_address` is the *same construction* handled
+   correctly two days earlier, on the same lane in the same mode. One flip and
+   one non-flip of one sentence shape is not a rule's worth of evidence, and this
+   track's own history says what happens when a surface rule is written on less
+   (ADR 0081: 45 tokens flagged to find 3).
+
+   Two things are cheap and worth doing before any rule:
+
+   - **A scan, not a guess.** The detector is a pronoun-and-agreement count over
+     `raw_transcript` / `transformed_transcript` pairs, which is the same join
+     the other harnesses use. Today it returns 1 of 200. Run it again when
+     history has turned over, and report the count even when it is 1.
+   - **Ask whether the prompt can carry it at all.** The two anti-answering
+     lines were obeyed by the model that flipped the sentence. A third line
+     about perspective is the cheapest possible intervention and also the one
+     this repo has the least reason to trust — ADR 0036's whole argument is that
+     a prompt line is not enforcement. If it is tried, it is tried **as a
+     measurement** against these three corpus entries, not as a fix.
+
+   Out of scope here and stated so it is not re-derived: `Agent` and
+   `Prompt Enhance` do not run this transform, and what they do with a
+   second-person dictation is a different question in a different owner's area.
+
+7. **The closing-phrase artifact has a shape nothing reaches.** Added 2026-08-13
+   as an addendum to
+   [`known-issues/transcription-hallucination.md`](../known-issues/transcription-hallucination.md),
+   which is the sixth record's neighbour on the recogniser side. `is_hallucination`
+   tests the whole transcript as one string, so an artifact appended to a real
+   sentence never matches; `artifact_patterns` matches per sentence but does not
+   carry the closing phrases at all. **The obvious fix is the one this cluster
+   forbids**: adding `vielen dank` to a per-sentence pattern list strips a real
+   sign-off out of a dictated email. What separates artifact from sign-off is
+   position, language and decoder confidence — and `DriftCorroboration` already
+   exists for exactly that kind of two-signal rule. Corpus entry
+   `recognizer_appends_a_closing_phrase` pins today's behaviour, which is that
+   nothing fires.
+
 ## Rules you are measured on
 
 **Measure before you fix, and fix in the corpus.** Every real case goes into
@@ -225,7 +281,7 @@ reproduced. And **Context in any direction**: another agent owns that contract.
 ## Checks
 
 ```text
-cd src-tauri && cargo test    # 739 passing, 3 ignored, after the third pass
+cd src-tauri && cargo test    # 787 passing, 3 ignored, at b9f493e (2026-08-13)
 npm test                      # 465 passing across 39 files at 0662d94
 npm run build
 npx tsc --noEmit
@@ -236,6 +292,14 @@ promise.** It was 451 at `8d2ae07` and 465 at `0662d94` a few hours later,
 because the GUI port relay added tests to `src/screens/Profiles.test.tsx` while
 this track was running. Both were verified green. Check the number against
 `git log` rather than reading a mismatch as damage.
+
+**The `cargo test` total moved the same way and none of it is this track's.** It
+read 739 after the third pass and reads 787 at `b9f493e`; the speech track landed
+the difference. The 2026-08-13 documentation step measured 787 before and 787
+after adding four corpus entries, which is the expected shape — the corpus tests
+are data-driven, so an entry adds assertions inside an existing test rather than
+a test. **A corpus addition that moves this number has added a test somebody did
+not mention.**
 
 **Run the suite twice before believing a failure.** `npm test` flaked once in ten
 runs during the second pass — 2 failures in 2 files, not reproducible in the nine

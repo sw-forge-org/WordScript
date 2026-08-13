@@ -31,7 +31,7 @@ updated; a kick-off is spent when its unit closes.
 | Track | Opened | State | Sequence | Start a session with |
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
-| **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
+| **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Measurement integrity** | 2026-08-13 | **Open, six steps, none started**; steps 1 and 4 are unblocked and independent | [`tracks/measurement-integrity.md`](tracks/measurement-integrity.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
@@ -59,7 +59,7 @@ its own leg.
 
 Follows the cluster in [`known-issues/`](known-issues/) where the damage is
 invisible — output that is fluent, grammatical, plausible and wrong, with
-nothing downstream carrying evidence that a substitution happened. Five records
+nothing downstream carrying evidence that a substitution happened. Six records
 are one failure class; **none of them is closed and two never will be in the
 ordinary sense**, because the rule is that lost content is reported, never
 replaced.
@@ -67,7 +67,18 @@ replaced.
 Owns ADR 0079–0081, 0083, 0084, 0100.
 
 What two passes bought is that the cluster went from invisible to instrumented.
-The third pass's own page carries where each of the five records stands.
+The third pass's own page carries where each of the six records stands.
+
+**The sixth landed 2026-08-13 and it is the first one on the cleanup lane that
+damages a correct transcript**: the AI stage rewrote a question dictated to an
+addressee into a question about the speaker
+([`known-issues/cleanup-flips-the-grammatical-person.md`](known-issues/cleanup-flips-the-grammatical-person.md)).
+Every guardrail declines, the two prompt lines that forbid answering and acting
+were obeyed, and the one guard that reads grammatical person is gated on a mode
+this did not run in. **No rule was written**, on this track's own evidence
+standard — the corpus carries the case and the same construction handled
+correctly two days earlier, which is one flip and one non-flip. Steps 6 and 7 of
+the sequence carry it and the closing-phrase artifact found beside it.
 
 ### Speech
 

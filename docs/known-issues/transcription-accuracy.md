@@ -19,6 +19,18 @@ does **not** answer the join above, which stays blocked for the reason stated:
 that question is about capture shortfall against mishearings, and this one is
 about audio the capture kept whole.
 
+**A third channel was found on 2026-08-13 and it is not the recogniser's at
+all:**
+[cleanup-flips-the-grammatical-person.md](cleanup-flips-the-grammatical-person.md).
+The transcript is correct when it leaves the recogniser and the AI stage changes
+who the sentence is addressed to. It is recorded separately for the same reason
+the prompt leak is: **this record's own question is what the recogniser gets
+wrong**, and a defect the correction model introduces would corrupt any rate
+measured here. It matters to the reader of a brief in exactly the same way,
+which is why it is named here — see *Consequence for anyone reading a brief*
+below, whose two rules now have a third case they do not cover: a sentence that
+is fluent, in the repository's own vocabulary, and aimed at the wrong person.
+
 ## Symptom
 
 Dictated speech comes back with words the speaker did not say. The output is
@@ -273,3 +285,11 @@ Two rules, and the first is now sharper than "ask":
    drawing is a candidate mishearing** and is worth one direct question rather
    than an hour of searching. That has happened often enough to be a working
    rule rather than an anecdote.
+3. **A brief that reads as if the owner were describing his own work may be a
+   sentence he addressed to you** (added 2026-08-13). Neither rule above reaches
+   it: the wording matches the repository, nothing is missing, and the sentence
+   is fluent. Only the person is wrong, and the AI stage rather than the
+   recogniser put it there —
+   [cleanup-flips-the-grammatical-person.md](cleanup-flips-the-grammatical-person.md).
+   One instance in 200 records, so this is a thing to recognise when a brief
+   reads oddly, not a thing to suspect by default.
