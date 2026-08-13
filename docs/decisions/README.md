@@ -1034,6 +1034,19 @@ Status: Proposed | Accepted | Superseded by NNNN
   boundaries** — the audio is cut on silence, the transcript on topic, both
   refusing the arbitrary cut — and **no donor in this tree implements it**.
 
+- [0132](0132-live-subtitles-are-two-features-and-the-echo-needs-a-partial-that-never-reaches-the-reducer.md):
+  the prototype's `Live subtitles` is **two features sharing one word**, and the
+  screen says the owner said so. **Captions** read somebody else's audio onto
+  their own opaque always-on-top strip — never frosted (ADR 0051 excludes
+  exactly this case), two lines rolling, no history — and are blocked on system
+  audio. The **Echo** reads your own voice under the dictation pill as a trace
+  rather than a surface, one line of tail at two weights, off by default, with
+  the only colour in this product that is measured rather than themed. Neither
+  is *the meeting live transcript*, which is what ADR 0130 and ADR 0131 meant.
+  **The consequence reaches the runtime**: the echo renders partials, and no
+  partial may reach the session reducer — compatible, but only if D2 delivers a
+  display path beside its result path. **It may paint and it may never commit.**
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

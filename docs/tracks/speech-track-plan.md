@@ -89,9 +89,21 @@ narrower. **A step that quotes `6 | 6` from a record rather than measuring it is
 quoting a number that stopped being true**, and the structural half — the one
 ADR 0088, 0096 and 0109 each pin — is the half that has held.
 
+**Three donors carry the meeting stack, and one of them leads** (ADR 0131). For
+anything in Stage C or the meeting work, read **`anarlog`** first —
+`donors/app/meeting-notetakers/anarlog`, MIT, Rust, and it carries `aec`,
+`agc`, `denoise`, `vad`/`vad-ext`/`vad-masking`, `audio-chunking`,
+`segmentation`, `pyannote-local`/`pyannote-cloud`/`voiceprint`,
+`listener-core/src/live_transcript` and `overlay-kit` as crates. **`meetily`**
+(same directory, MIT) is the only worked answer to the transcript half;
+`openwhispr` and `voxtype` are the secondary reads. **Mechanism, not
+structure** — anarlog is a 616 MB monorepo with mobile, web and billing in it.
+
 **The rules no step may break**, restated from the records because a plan is
 where they get quietly dropped: no partial result reaches the session reducer
-(ADR 0018, 0019, 0095); no generic resize command returns (ADR 0089, 0100);
+(ADR 0018, 0019, 0095) — **and a partial may still paint a surface, which is a
+second path D2 owes rather than an exception** (ADR 0132); no generic resize
+command returns (ADR 0089, 0100);
 nothing mounts (ADR 0057, and `ia.test.tsx`'s last case asserts it); no drawing
 grows outside the gallery (ADR 0057, 0088); no adapter lands before the row that
 operates it (ADR 0109); never `--no-verify`; never `pkill -f`.
@@ -772,14 +784,21 @@ figure openwhispr's Silero reaches by a different route: **two independent
 donors converge on ~30 s with a VAD**, which is the strongest confirmation this
 plan has that ADR 0130 cut it in the right place.
 
-**The context-window answer, and nobody in this tree implements it.**
-`voxtype/src/meeting/summary/mod.rs:153` concatenates every segment into one
-prompt and sends it — no truncation, no chunking, no ceiling. Published practice
-converges on **map-reduce over semantic boundaries**: chunk at topic and
-speaker-turn boundaries rather than at token counts, summarise per chunk, and
-carry each chunk's summary into the next so a decision spanning a boundary
-survives. **The audio is cut on silence and the transcript is cut on topic** —
-the same refusal of the arbitrary cut, one layer up.
+**The context-window answer, corrected 2026-08-13 after reading an
+implementation instead of a marketing page** (ADR 0131). `voxtype` does not
+solve it — `summary/mod.rs:153` concatenates every segment into one prompt. What
+**`meetily`** does is map-reduce with a **sentence** boundary, not a topic one:
+`rough_token_count` is characters × 0.35, a window of `token_threshold - 300`
+with 100 tokens of overlap, each window snapped back to the last `". "`, and a
+combine pass over the chunk summaries. **The principle survives — cut where a
+seam already exists — but *topic* was an aspiration and *sentence* is what
+exists.**
+
+**And meetily's one shape WordScript may not copy**: `processor.rs:369` takes
+the single-pass branch for every non-local provider **regardless of length**.
+That is a bet that a cloud context window is always big enough, not a guard.
+ADR 0115 already makes a documented model property a catalogue row, so here the
+ceiling is knowable per `(provider, model)` and the bet is unnecessary.
 
 **A fourth consumer of a model exists and no axis carries it: the copilot.**
 ADR 0047's strip above the HUD bar compares the running transcript against the
@@ -858,9 +877,15 @@ on that lane needs its own reading first.
   transport (`reqwest` does not carry one — a dependency decision), OpenAI
   Realtime as the first true-streaming implementation, resampling **inside the
   adapter** (24 kHz against `TRANSCRIPTION_SAMPLE_RATE`'s 16 kHz).
-- **Validates** — `cargo test`, and **a test that no partial result reaches the
-  session reducer** — ADR 0095 requires this to be held by a test rather than a
-  comment, and this is the step that owes it.
+- **Validates** — `cargo test`, and **two tests rather than one** (ADR 0132).
+  (a) **No partial result reaches the session reducer** — ADR 0095 requires this
+  to be held by a test rather than a comment, and this is the step that owes it.
+  (b) **A partial reaches a surface anyway.** The echo on the dictation overlay
+  renders partials, so the contract owes a display path beside the result path;
+  an implementation that renders by pushing partials through the reducer breaks
+  (a) while appearing to satisfy the feature. `wordscript-native-event` is the
+  precedent for a channel that mirrors without deciding (ADR 0019) — **it may
+  paint and it may never commit.**
 - **Done when** — one contract serves a lane that streams and a lane that does
   not, and the caller cannot tell which without asking the `(provider, model)`
   pair.
@@ -1179,13 +1204,20 @@ copilot costs* — continuous inference for the length of a call, toggle off —
 and *what a picker looks like mid-conversation*, which is ADR 0064's first open
 point now that the translation window carries one.
 
-**And one that is a research decision rather than a design one.** Two candidate
-donors were found by a web reading on 2026-08-13 and **neither is verified
-against its source tree**: **Meetily** (Rust, whisper.cpp, Parakeet,
-diarization, Ollama summarisation, fully local — the closest stack to this one)
-and **Anarlog**, formerly Hyprnote (Tauri, GPL-3.0, which this project's
-AGPL-3.0 accommodates). Pulling either into `donors/` is a provenance decision
-with an owner, and verification is its precondition.
+~~**And one that is a research decision rather than a design one.**~~
+**Closed 2026-08-13**: both were cloned on the owner's instruction into
+`donors/app/meeting-notetakers/`, **both are MIT**, and verifying them corrected
+two claims — Anarlog is not GPL-3.0, and the topic-boundary chunking nobody
+implements. `anarlog` leads for the meeting work; see the routing paragraph at
+the head of this page.
+
+**A third running-text surface exists and neither C4 nor B7 knew it** (ADR
+0132). `Live subtitles` in the prototype is **two** features that share only the
+word: **Captions** read somebody else's audio onto their own always-on-top strip
+and are blocked on system audio, and the **Echo** reads your own voice under the
+dictation pill and is blocked on partial results. Neither is *the meeting live
+transcript*, which is what ADR 0130 and ADR 0131 meant by the phrase. The echo
+is why D2 now validates two things instead of one.
 **The other was answered on 2026-08-11**: where the translation voice sits is
 ADR 0119, two rows, delegated by the owner and decided against ADR 0043's one
 voice, ADR 0064's per-language route and the language coverage the survey

@@ -73,7 +73,7 @@ The third pass's own page carries where each of the five records stands.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0131.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -108,8 +108,24 @@ because **the prototype had already answered both**: live transcription is a
 `toggle(true)` on the `Meetings` row and retention is `Keep the audio` with a
 lifecycle default. Reading `docs/prototypes/` rather than reasoning about it
 would have found them. It also corrects the donor survey — `voxtype` carries a
-complete Rust meeting stack that the first pass missed — and records that **no
-donor in this tree solves the context window**, so nobody goes looking.
+complete Rust meeting stack that the first pass missed.
+
+**Then two candidates were cloned and correcting that record twice is the
+lesson.** `donors/app/meeting-notetakers/` now holds **anarlog** (MIT, Rust,
+formerly Hyprnote) and **meetily** (MIT, Rust). Reading them showed that
+anarlog is **not GPL-3.0** as a web summary had said, and that the
+topic-boundary chunking the same paragraph called *published practice* is not
+what anybody implements — meetily cuts on a **sentence** boundary inside a token
+window. **Anarlog is the primary reference for all meeting work** and carries
+`aec`, diarization, `audio-chunking`, `segmentation`, `live_transcript` and
+`overlay-kit` as crates. Read for mechanism, not structure.
+
+**And a third surface for running text turned up that neither step knew**
+(ADR 0132). `Live subtitles` is **two** features that share only the word:
+captions over somebody else's audio, and the **echo** of your own voice under
+the dictation pill. The echo renders partials, and no partial may reach the
+session reducer — so **D2 now owes a display path beside its result path**, and
+validates two things instead of one.
 
 **What D1 left for somebody to decide was decided the next morning.** The drawn
 per-job override and A4's runtime resolution disagreed about what a fresh

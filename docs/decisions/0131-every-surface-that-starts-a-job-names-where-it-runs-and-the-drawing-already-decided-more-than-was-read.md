@@ -2,7 +2,13 @@
 
 Date: 2026-08-13
 
-Status: Accepted
+Status: Accepted — **amended the same day, on the owner's explicit permission,
+which is an exception to the append-only rule and is marked as one.** The
+planning revision was still open, two claims below were made from a web reading
+rather than from a source tree, and both were wrong. They are corrected in place
+rather than contradicted from a later record, because a plan being written to is
+not yet a record being cited. **The exception does not generalise**; the next
+correction gets its own record.
 
 ## Context
 
@@ -83,22 +89,46 @@ a toggle: it stays visible, it goes inert, and it names the reason — **a lane
 that cannot stream**, which is a fourth `InertReason` kind beside no-adapter,
 role-denied and no-credential.
 
-**The context-window answer is map-reduce over semantic boundaries, and it is
-the same principle as the audio side.** Cut where a seam already exists.
-Published practice converges on chunking at **topic and speaker-turn
-boundaries** rather than at token counts, summarising per chunk and combining —
-each chunk carrying the previous one's summary so a decision spanning a boundary
-survives. **The audio is cut on silence and the transcript is cut on topic**;
-both refuse the arbitrary cut for the same reason ADR 0130 refused
-ten-minute windows.
+**The context-window answer is map-reduce, and the boundary it cuts on is a
+sentence.** *Corrected 2026-08-13.* The first version of this paragraph said
+published practice converges on **topic and speaker-turn** boundaries. That came
+from a vendor's marketing page and not from an implementation, and reading one
+shows it is stronger than what anybody builds. **`Meetily` is the only worked
+answer now in this tree** (`frontend/src-tauri/src/summary/processor.rs`), and
+what it does is:
 
-**And no donor in this tree solves it.** `voxtype`'s `summary/mod.rs:153`
-concatenates every segment into one prompt and sends it — no truncation, no
-chunking, no ceiling; `local.rs` logs the character count on the way out.
-`openwhispr` sends long files to its own backend. **The most complete Rust
-meeting implementation available to this repository has the same gap this
-repository has**, which is worth recording so the next reader does not go
-looking for an answer that is not there.
+- `rough_token_count` — **characters × 0.35**, a heuristic and not a tokenizer.
+- Above `token_threshold` (default 4000) it chunks at `token_threshold - 300`,
+  reserving 300 for prompt overhead, with **100 tokens of overlap**.
+- Each window is then **snapped back to the last `". "`**, falling back to the
+  last space. A sentence boundary, not a topic one.
+- The reduce step joins the chunk summaries with `\n---\n` under a *synthesise
+  these consecutive summaries* prompt.
+
+**And it only chunks for local providers.** `processor.rs:369` takes the
+single-pass branch for every provider that is not Ollama or its built-in
+runtime, **regardless of length**. That is a bet that a cloud context window is
+always large enough, not a guard — a cloud model with a small window fails
+there silently. **WordScript may not copy that shape**: ADR 0115 already makes a
+model's documented properties a catalogue row, so the ceiling is knowable per
+`(provider, model)` and a bet is not needed.
+
+**The principle survives the correction**: cut where a seam already exists. The
+audio is cut on silence and the transcript on a sentence end; both refuse the
+arbitrary cut for the reason ADR 0130 refused ten-minute windows. What changes
+is that *topic* was an aspiration and *sentence* is what exists.
+
+**Three donors now agree on the audio side, which was inference and is now
+measurement.** `openwhispr` runs Silero at `minSilenceDurationMs: 200` with a
+30 s backstop; `voxtype`'s `chunk.rs` defaults to 30 s behind VAD with a silence
+hangover; **`anarlog`'s `crates/audio-chunking/src/speech.rs` wraps a
+`VadChunker` with a `redemption_time` of 600 ms and no clock at all.** Three
+independent implementations, all VAD-driven.
+
+**`voxtype` still does not solve the transcript half**: `summary/mod.rs:153`
+concatenates every segment into one prompt and sends it, and `local.rs` logs the
+character count on the way out. `openwhispr` sends long files to its own
+backend.
 
 ## Consequences
 
@@ -120,14 +150,28 @@ an index for the length of a call. **It is not `JobKey`'d.** Whether it becomes
 a job or rides the assistant's resolution is open, and ADR 0040's *one model for
 all four* is the argument that it rides.
 
-**Two candidate donors are worth adding and neither is added by this record**,
-because pulling a repository into `donors/` is a provenance decision with an
-owner: **Meetily** (Zackriya Solutions) is the closest stack — Rust,
-whisper.cpp, Parakeet, diarization, Ollama summarisation, fully local — and
-**Anarlog**, formerly Hyprnote, is Tauri and GPL-3.0, which this project's
-AGPL-3.0 accommodates. Both are cited from a web reading on 2026-08-13 and
-**neither has been verified against its source tree**; that verification is the
-precondition for adding either.
+**Both candidate donors were cloned on the owner's instruction, and verifying
+them corrected this record twice.** They are in
+`donors/app/meeting-notetakers/`, which `donors/` being gitignored keeps local:
+
+- **Meetily** (`github.com/Zackriya-Solutions/meetily`) — **MIT**, last commit
+  2026-06-05. Rust, whisper.cpp, Parakeet, diarization, Ollama summarisation,
+  fully local. It is the only worked answer to the transcript half.
+- **Anarlog** (`github.com/fastrepl/anarlog`), formerly Hyprnote — **MIT**, last
+  commit 2026-08-13. **Not GPL-3.0**, which the first version of this record
+  said on the strength of a web summary; the licence file says otherwise. The
+  claim mattered enough to be worth stating and was never checked, which is the
+  failure this correction exists to mark.
+
+**Anarlog is the primary reference for the meeting work and openwhispr and
+voxtype are the secondary ones.** It carries as Rust crates almost exactly the
+list `docs/ROADMAP.md`'s meeting chapter calls unbuilt: `aec` (echo
+cancellation), `agc`, `denoise`, `vad` / `vad-ext` / `vad-masking`,
+`audio-chunking`, `segmentation`, `pyannote-local` / `pyannote-cloud` /
+`voiceprint` (diarization), `listener-core/src/live_transcript`, `overlay-kit`,
+and several `transcribe-*` backends. **Read it for mechanism, not for
+structure**: it is a 616 MB commercial monorepo carrying mobile, web, Supabase
+and billing, and this product is one desktop binary.
 
 **What this does not do:** answer the retention question, decide the copilot's
 cost, or settle what a picker looks like mid-conversation. All three stay the
