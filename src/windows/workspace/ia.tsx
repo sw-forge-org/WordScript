@@ -233,6 +233,14 @@ export function findSection(id: string): SurfaceEntry<SectionId> | undefined {
  * It is data rather than prose because Leg 4a's first act is to read it, and
  * because the surfaces are mounted in the gallery today: the entry point is the
  * only thing missing, and naming its place is what makes that checkable.
+ *
+ * TWO OF THE SIX NO LONGER READ AS DECISIONS, AND THE FIELD NAME LAGS THAT.
+ * `meeting` and `translate` were answered by ADR 0063 and ADR 0064 on
+ * 2026-08-05 and this list said otherwise for nine days (ADR 0137 named the
+ * drift without fixing it, 2026-08-14). Their `undecided` now says what holds
+ * the hole open instead, which for the meeting is a capability rather than a
+ * decision. Giving the field a name that carries both shapes is Leg 4a's, along
+ * with the rest of this list's schema.
  */
 export const ENTRY_POINT_HOLES = [
   {
@@ -246,9 +254,9 @@ export const ENTRY_POINT_HOLES = [
     surface: "Meeting capture",
     screen: "meeting",
     wouldGo:
-      "A second always-on-top window, 330 × 560, plus a start control that has no home yet — the meeting hotkey is drawn `not set` and call detection is drawn as an Open decision with three answers.",
+      "A second window, 330 × 560, which exists since ADR 0137: `Context → Record meeting` raises it, and that is ADR 0063's fourth way in. The other three have no control — the meeting hotkey is drawn `not set` and stays that way (ADR 0041), and the calendar offer and the detection prompt have no runtime behind them.",
     undecided:
-      "How a capture starts and what ends it. §10.4 is the window question and is only part of it; the HUD's behaviour when the meeting ends is prose, not a transition.",
+      "Nothing about the lifecycle. ADR 0063 decided the four ways in, that only an explicit press ends a capture, and that the object rather than the window holds the state — which is why the end is prose and not a transition: there is no transition to draw. What holds this hole open is a capability, not a decision. System audio and echo cancellation do not exist in the runtime, and that is ROADMAP gate 3.",
   },
   {
     surface: "Live subtitles",
@@ -261,9 +269,10 @@ export const ENTRY_POINT_HOLES = [
   {
     surface: "Translation",
     screen: "translate",
-    wouldGo: "Its own window. No entry point for it exists anywhere in the 25 screens.",
+    wouldGo:
+      "A fifth workspace view, in the nav beside Home · History · Profiles · Context, with the drawn window as its pop-out (ADR 0064). §4.2 says four views and is correct until this ships. Nothing is mounted because nothing is scheduled, and a nav row that opens nothing is the fake affordance rule 7 forbids.",
     undecided:
-      "How the window is opened. Whether it is one window or one per conversation, what a swapped pair does to a running conversation, and where the two device routings are persisted.",
+      "Two things, and the owner named both in ADR 0064: whether a view plus a pop-out is enough interaction for a conversation at a table, and whether the window needs a processing mode of its own beyond ADR 0041's. Neither may be quietly settled by an implementation. The three questions this entry used to carry are closed — multiple pop-outs may stand with exactly one live conversation, a swapped pair takes effect from the next utterance, and the two output routings are per machine and per language, edited in the view.",
   },
   {
     surface: "Agent overlay",

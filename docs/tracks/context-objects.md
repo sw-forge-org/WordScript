@@ -183,8 +183,13 @@ meeting window**, because it is ADR 0063's fourth way in.
 **Verification in the native host is owed** — jsdom cannot watch a window open,
 and `CLAUDE.md` requires the host for anything window-bound.
 
-**`ENTRY_POINT_HOLES` is stale on two of six and nobody has fixed it.**
-`meeting`'s *undecided* text says *how a capture starts and what ends it*,
-closed by ADR 0063 on 2026-08-05; `translate`'s says *how the window is opened*,
-closed by ADR 0064 the same day. Correcting it is Leg 4a's subject and is the
-first thing Stage C3 needs.
+**`ENTRY_POINT_HOLES` was stale on two of six and was corrected 2026-08-14.**
+`meeting`'s *undecided* text had said *how a capture starts and what ends it*,
+closed by ADR 0063 on 2026-08-05; `translate`'s had said *how the window is
+opened*, closed by ADR 0064 the same day. Both now name what actually holds the
+hole open — for the meeting a capability rather than a decision (ROADMAP gate 3,
+which is this track's Stage E gate), for the translation window the two
+questions ADR 0064 left with the owner. **The list's schema is still Leg 4a's**:
+`undecided` is now the wrong name for a field that carries both shapes, and
+saying so in the file was the honest fix rather than redesigning it from another
+track. Stage C3 reads the corrected list rather than the stale one.
