@@ -1,6 +1,6 @@
 {
   "$schema": "./regression_transcripts.schema.json",
-  "version": 3,
+  "version": 4,
   "description": "Real and synthesized failure-mode transcripts for the Customer Success Replies and similar profiles, plus raw-transcript hallucination cases for the post-STT detection stage. Each entry models a real reproducer. Add new entries by following the schema; keep names snake_case and notes anonymized.",
   "entries": [
     {
@@ -865,6 +865,77 @@
       "expected_post_correction": "Kurz.",
       "expected_guardrail": null,
       "notes": "Under two seconds the startup transient between `started_at` and the first cpal callback is a measurable fraction of the whole capture — the 1–2 s band loses a median of 1.9 % against 0.1 % for long ones. 'We did not look' and 'we looked and it was fine' are different facts and the verdict keeps them apart."
+    },
+    {
+      "id": "a_recorded_dropout_replays_its_own_cadence",
+      "failure_mode": "capture_lost_audio",
+      "profile": {
+        "id": "founder-ops-notes",
+        "prompt": "",
+        "stt_hints": "",
+        "dictionary_entries": [],
+        "snippet_entries": []
+      },
+      "raw_transcript": "Übrigens, dieses Ding der Crider und Window Auswahl soll auch im Translation Fenster so sein, wenn das noch nicht so festgehalten und dokumentiert ist.",
+      "expected_capture_integrity": {
+        "wall_seconds": 16.523,
+        "recorded_seconds": 13.967,
+        "verdict": "short"
+      },
+      "expected_callback_cadence": {
+        "session": "native-18",
+        "sample_rate": 44100,
+        "channels": 2,
+        "nominal_samples": 1024,
+        "callbacks": 1203,
+        "gaps": [
+          {
+            "at_ms": 4312,
+            "gap_ms": 202,
+            "samples": 1024
+          },
+          {
+            "at_ms": 4678,
+            "gap_ms": 366,
+            "samples": 1024
+          },
+          {
+            "at_ms": 4963,
+            "gap_ms": 284,
+            "samples": 1024
+          },
+          {
+            "at_ms": 8452,
+            "gap_ms": 204,
+            "samples": 1024
+          },
+          {
+            "at_ms": 9104,
+            "gap_ms": 205,
+            "samples": 1024
+          },
+          {
+            "at_ms": 9369,
+            "gap_ms": 265,
+            "samples": 1024
+          },
+          {
+            "at_ms": 9695,
+            "gap_ms": 232,
+            "samples": 1024
+          }
+        ],
+        "longest_gap_ms": 366,
+        "gaps_over_threshold": 7,
+        "oversized_resumes": 0,
+        "lost_in_gaps_seconds": 1.681,
+        "share_of_missing": 0.658,
+        "signature": "stream_suspended",
+        "unattributed_seconds": 0.875
+      },
+      "expected_post_correction": "Übrigens, dieses Ding der Crider und Window Auswahl soll auch im Translation Fenster so sein, wenn das noch nicht so festgehalten und dokumentiert ist.",
+      "expected_guardrail": null,
+      "notes": "The first observed dropout with full per-callback detail — session `native-18`, 2026-08-13 00:36, record `history-1786574199766-200`. Every number here is read off the runtime log and nothing is invented: the four cadence lines quoted in `docs/known-issues/capture-loses-half-the-recording.md` under *The first event after the soak night*. It is in the corpus because every other cadence assertion runs over a synthetic timeline, which pins the arithmetic and not the phenomenon — and the synthetic constants do not even match this device (they assume 2048 interleaved samples every 23 ms, and the device delivers 1024 every 11.6 ms). The recorded figures are mutually consistent, which is what makes a replay possible at all: 1203 callbacks × 1024 samples ÷ 88200 = 13.967 s, exactly `recorded_seconds`. `signature=stream_suspended` is pinned as TODAY's answer, not as a correct one — ADR 0133 holds that it overclaims, because the gap was measured on the far side of our own lock. This entry replays with no lock wait, so the verdict must survive ADR 0133's implementation unchanged; a step that flips it here has changed what a past event meant."
     },
     {
       "id": "the_address_repair_never_runs_outside_german",

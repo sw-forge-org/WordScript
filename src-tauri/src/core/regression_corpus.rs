@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
@@ -14,12 +15,12 @@ use super::workspace_context::WorkspaceContext;
 use super::text_rules::{
     analyze_document, get_profile_health, GetProfileHealthRequest, TextRulesDocument,
 };
-use super::capture::{CaptureIntegrity, CaptureIntegrityVerdict};
+use super::capture::{cadence_log_lines, CallbackCadence, CaptureIntegrity, CaptureIntegrityVerdict};
 use super::hallucination_detect::{detect_advanced_hallucination, DriftCorroboration};
 use super::recognizer_repair::{repair_singular_address, strip_prompt_echo};
 use super::transcription_hints::{analyze_transcription_bias_with_mode, BiasRequestContext};
 
-const CORPUS_VERSION: u32 = 3;
+const CORPUS_VERSION: u32 = 4;
 const TEXT_RULES_SCHEMA_VERSION: u32 = 1;
 const EMBEDDED_CORPUS: &str = include_str!("../../tests/fixtures/regression_transcripts.json");
 
@@ -80,6 +81,12 @@ struct CorpusEntry {
     /// asserts that too (ADR 0079).
     #[serde(default)]
     expected_capture_integrity: Option<ExpectedCaptureIntegrity>,
+    /// What the callback cadence of an OBSERVED capture reported about itself.
+    /// Present only on entries drawn from a real runtime log: every other
+    /// cadence assertion in this repo drives a synthetic timeline, which pins
+    /// the arithmetic and not the phenomenon (ADR 0083, ADR 0133).
+    #[serde(default)]
+    expected_callback_cadence: Option<ExpectedCallbackCadence>,
     /// What deterministic vocabulary repair must do to `raw_transcript`.
     /// Negative cases carry the same shape with `text` equal to the input, and
     /// they are the ones that matter: a missed repair is readable text, a wrong
@@ -184,6 +191,52 @@ struct ExpectedCaptureIntegrity {
     recorded_seconds: f64,
     /// `intact`, `short` or `not_measured`.
     verdict: String,
+}
+
+/// The cadence line of one observed capture, field for field as the runtime
+/// log wrote it.
+///
+/// The gap list is what makes this replayable rather than merely recorded: a
+/// capture's cadence is fully determined by its callback count, its nominal
+/// callback size and the stretches in which no callback arrived, so an entry
+/// carrying those three can be driven back through `CallbackCadence` and
+/// checked against the line the event actually produced.
+#[derive(Debug, Clone, Deserialize)]
+struct ExpectedCallbackCadence {
+    /// The runtime log's session id, so the entry can be traced back to the
+    /// lines it was read from rather than being taken on trust.
+    #[allow(dead_code)]
+    session: String,
+    sample_rate: u32,
+    channels: u16,
+    nominal_samples: usize,
+    callbacks: u64,
+    gaps: Vec<RecordedCallbackGap>,
+    longest_gap_ms: u128,
+    gaps_over_threshold: u64,
+    oversized_resumes: usize,
+    lost_in_gaps_seconds: f64,
+    share_of_missing: f64,
+    signature: String,
+    /// The missing audio that sits in no gap over the threshold, and which no
+    /// field of today's cadence line reports (ADR 0133, decision 3). It is a
+    /// derived figure, kept here so the entry states the deficiency rather than
+    /// leaving a reader to subtract two numbers and notice.
+    ///
+    /// **This entry cannot validate the field that will attribute it.** The
+    /// per-callback jitter it consists of was never written to the log — only
+    /// its total — so a replay reconstructs none of it. That check belongs to a
+    /// synthetic timeline, where the jitter is chosen and therefore known.
+    unattributed_seconds: f64,
+}
+
+/// One `Capture callback gap` line: when the stream came back, how long it had
+/// been away, and what the resuming callback carried.
+#[derive(Debug, Clone, Copy, Deserialize)]
+struct RecordedCallbackGap {
+    at_ms: u64,
+    gap_ms: u64,
+    samples: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -783,6 +836,225 @@ fn corpus_drives_capture_integrity_assertions() {
     assert!(
         short >= 1 && intact >= 1 && unmeasured >= 1,
         "the capture corpus needs all three verdicts, short={short} intact={intact} unmeasured={unmeasured}"
+    );
+}
+
+/// Rebuild the arrival timeline of a recorded capture, callback by callback.
+///
+/// A cadence is fully determined by three things the runtime log preserves: how
+/// many callbacks arrived, how large the device's callback is, and the
+/// stretches in which none arrived. Between the recorded gaps the stream is
+/// filled at the nominal interval, which is what the log's `nominal_interval_ms`
+/// asserts it was doing; each recorded gap is then placed so that the callback
+/// ending it arrives exactly at its recorded `at_ms`.
+///
+/// **The fill is exactly nominal, and the replay is therefore shorter than the
+/// capture was.** The real stream jittered, and the jitter is precisely the
+/// sub-threshold loss ADR 0133 found unattributed — a per-callback quantity the
+/// log never carried, only its total. A replay that manufactured that jitter
+/// would be inventing the number this entry exists to show is missing, so it
+/// does not, and the reconstructed wall clock is not asserted against anything.
+fn replay_recorded_cadence(recorded: &ExpectedCallbackCadence) -> CallbackCadence {
+    let nominal_ms = recorded.nominal_samples as f64
+        / (f64::from(recorded.sample_rate) * f64::from(recorded.channels))
+        * 1000.0;
+
+    // (offset from the capture's start in ms, samples the callback carried).
+    let mut arrivals: Vec<(f64, usize)> = vec![(0.0, recorded.nominal_samples)];
+
+    for gap in &recorded.gaps {
+        let gap_began_at = gap.at_ms.saturating_sub(gap.gap_ms) as f64;
+
+        while arrivals.last().expect("seeded above").0 + nominal_ms <= gap_began_at {
+            let next = arrivals.last().expect("seeded above").0 + nominal_ms;
+            arrivals.push((next, recorded.nominal_samples));
+        }
+
+        // The last callback before the gap lands on its start. Where the fill
+        // has already passed it — two gaps back to back — there is nothing to
+        // add, and the previous gap's resuming callback is that predecessor.
+        if gap_began_at > arrivals.last().expect("seeded above").0 {
+            arrivals.push((gap_began_at, recorded.nominal_samples));
+        }
+        arrivals.push((gap.at_ms as f64, gap.samples));
+    }
+
+    while (arrivals.len() as u64) < recorded.callbacks {
+        let next = arrivals.last().expect("seeded above").0 + nominal_ms;
+        arrivals.push((next, recorded.nominal_samples));
+    }
+
+    assert_eq!(
+        arrivals.len() as u64,
+        recorded.callbacks,
+        "the recorded gaps need more callbacks than the capture reported — the entry is internally inconsistent"
+    );
+
+    let mut cadence = CallbackCadence::new(recorded.sample_rate, recorded.channels);
+    let started_at = Instant::now();
+    for (offset_ms, samples) in &arrivals {
+        cadence.observe(
+            started_at,
+            started_at + Duration::from_secs_f64(offset_ms / 1000.0),
+            *samples,
+        );
+    }
+
+    cadence
+}
+
+/// Read one `key=value` field out of a runtime log line.
+///
+/// Asserting by key rather than against the whole line pins the field NAMES as
+/// well as the values, which matters because `~/.cache/wordscript-soak-report.sh`
+/// parses this line positionally and ADR 0133 requires new fields to be appended
+/// rather than reordered.
+fn log_field<'a>(line: &'a str, key: &str) -> &'a str {
+    line.split_whitespace()
+        .find_map(|token| {
+            token
+                .strip_prefix(key)
+                .and_then(|rest| rest.strip_prefix('='))
+        })
+        .unwrap_or_else(|| panic!("no `{key}=` field in: {line}"))
+}
+
+/// The one cadence assertion in this repo driven by an observed capture rather
+/// than by a timeline somebody wrote.
+///
+/// Every other one — `capture.rs`'s six synthetic cases — pins the arithmetic,
+/// which is worth having and is not the same thing as pinning the phenomenon.
+/// They do not even run at this device's cadence: they assume 2048 interleaved
+/// samples every 23 ms, and the machine the defect occurs on delivers 1024
+/// every 11.6 ms.
+///
+/// **What it protects is a past reading.** `native-18` is what ADR 0133 was
+/// written from, and the instrument is about to change underneath it. A change
+/// that makes this event report something else has not improved the instrument,
+/// it has changed what an event in the record meant.
+///
+/// **Two of the assertions below check the log line and not the event, and
+/// saying so is the point.** `callbacks` and each gap's `at_ms` are *inputs* to
+/// the reconstruction — the fill is sized to the recorded callback count and
+/// each gap is placed at its recorded `at_ms` — so mutating either in the
+/// corpus mutates the replay with it and the assertion passes. Both were
+/// checked that way and both passed, which is how they are known to be
+/// tautologies of the reconstruction rather than statements about 2026-08-13.
+/// They earn their place against the *code*: dropping `self.callbacks += 1`,
+/// printing the gap list in reverse and renaming the `at_ms` field each fail
+/// this test, and all three were run. The assertions that do carry the event
+/// are `longest_gap_ms`, `gaps_over_200ms`, `oversized_resumes`, `signature`,
+/// `lost_in_gaps_seconds`, `share_of_missing` and `unattributed_seconds` —
+/// every one of them derived by `CallbackCadence` from the timeline rather than
+/// handed to it, and every one falsified in the corpus before being trusted.
+#[test]
+fn corpus_replays_a_recorded_callback_dropout() {
+    let corpus = load_corpus();
+    let mut replayed = 0;
+
+    for entry in &corpus.entries {
+        let Some(recorded) = &entry.expected_callback_cadence else {
+            continue;
+        };
+        let measured = entry
+            .expected_capture_integrity
+            .as_ref()
+            .unwrap_or_else(|| {
+                panic!(
+                    "[{}] a recorded cadence is read against the capture it was measured on",
+                    entry.id
+                )
+            });
+
+        let cadence = replay_recorded_cadence(recorded);
+        let integrity = CaptureIntegrity::from_seconds_for_tests(
+            measured.wall_seconds,
+            measured.recorded_seconds,
+        );
+        let lines = cadence_log_lines(&cadence, &integrity);
+        let summary = &lines[0];
+
+        for (key, expected) in [
+            ("callbacks", recorded.callbacks.to_string()),
+            ("nominal_samples", recorded.nominal_samples.to_string()),
+            ("longest_gap_ms", recorded.longest_gap_ms.to_string()),
+            ("gaps_over_200ms", recorded.gaps_over_threshold.to_string()),
+            ("oversized_resumes", recorded.oversized_resumes.to_string()),
+            ("signature", recorded.signature.clone()),
+        ] {
+            assert_eq!(
+                log_field(summary, key),
+                expected,
+                "[{}] replayed {key} differs from the recorded line\n{summary}",
+                entry.id
+            );
+        }
+
+        // Each recorded `gap_ms` was written by `Duration::as_millis`, which
+        // truncates, so the replay can under-count the loss by up to one
+        // millisecond per gap. That is the whole tolerance — there is no other
+        // source of slack, because nothing here reads a clock.
+        let truncation_ms = recorded.gaps.len() as f64;
+        let lost_in_gaps: f64 = log_field(summary, "lost_in_gaps_seconds")
+            .parse()
+            .expect("lost_in_gaps_seconds is a number");
+        let shortfall = recorded.lost_in_gaps_seconds - lost_in_gaps;
+        assert!(
+            shortfall >= 0.0 && shortfall <= truncation_ms / 1000.0 + 0.001,
+            "[{}] replayed lost_in_gaps_seconds={lost_in_gaps} against a recorded {} — outside the truncation the gap list can account for",
+            entry.id,
+            recorded.lost_in_gaps_seconds
+        );
+
+        let missing_seconds = measured.wall_seconds - measured.recorded_seconds;
+        let share: f64 = log_field(summary, "share_of_missing")
+            .parse()
+            .expect("share_of_missing is a number");
+        assert!(
+            (recorded.share_of_missing - share).abs()
+                <= (truncation_ms / 1000.0 + 0.001) / missing_seconds,
+            "[{}] replayed share_of_missing={share} against a recorded {}",
+            entry.id,
+            recorded.share_of_missing
+        );
+
+        assert_eq!(
+            lines.len(),
+            recorded.gaps.len() + 1,
+            "[{}] one summary line and one line per recorded gap\n{lines:#?}",
+            entry.id
+        );
+        for (line, gap) in lines[1..].iter().zip(&recorded.gaps) {
+            assert_eq!(log_field(line, "at_ms"), gap.at_ms.to_string(), "{line}");
+            assert_eq!(log_field(line, "gap_ms"), gap.gap_ms.to_string(), "{line}");
+            assert_eq!(
+                log_field(line, "resumed_with_samples"),
+                gap.samples.to_string(),
+                "{line}"
+            );
+        }
+
+        // The finding this entry carries into the next instrument (ADR 0133,
+        // decision 3): a third of the missing audio sits in no gap over the
+        // threshold, so the gap list describes two thirds of the damage and is
+        // silent about the rest. Checked here as an arithmetic property of the
+        // recorded numbers, which is the only place it can be checked.
+        assert!(
+            (recorded.unattributed_seconds - (missing_seconds - recorded.lost_in_gaps_seconds))
+                .abs()
+                < 0.001,
+            "[{}] unattributed_seconds={} does not match the recorded loss the gaps do not account for ({:.3} s)",
+            entry.id,
+            recorded.unattributed_seconds,
+            missing_seconds - recorded.lost_in_gaps_seconds
+        );
+
+        replayed += 1;
+    }
+
+    assert!(
+        replayed >= 1,
+        "the corpus carries no observed cadence — every dropout assertion is synthetic again"
     );
 }
 

@@ -114,6 +114,38 @@
             "items": {"type": "string"},
             "description": "Terms vocabulary_learning must read out of the raw_transcript / expected_post_correction pair, in order. An empty array is an assertion, not an omission: rewording, filler removal, sentence restructuring and capitalization must all yield nothing, and a term the profile already carries is a hit rather than a find (ADR 0035)."
           },
+          "expected_callback_cadence": {
+            "type": "object",
+            "description": "What the callback cadence of an OBSERVED capture reported about itself, field for field as the runtime log wrote it. Present only on entries drawn from a real log: every other cadence assertion drives a synthetic timeline, which pins the arithmetic and not the phenomenon (ADR 0083, ADR 0133). The gap list is what makes an entry replayable -- a cadence is determined by the callback count, the nominal callback size, and the stretches in which no callback arrived.",
+            "required": ["session", "sample_rate", "channels", "nominal_samples", "callbacks", "gaps", "longest_gap_ms", "gaps_over_threshold", "oversized_resumes", "lost_in_gaps_seconds", "share_of_missing", "signature", "unattributed_seconds"],
+            "properties": {
+              "session": {"type": "string", "description": "The runtime log's session id, so the entry can be traced back to the lines it was read from rather than taken on trust"},
+              "sample_rate": {"type": "integer"},
+              "channels": {"type": "integer"},
+              "nominal_samples": {"type": "integer", "description": "Interleaved samples the device delivers per callback -- the first callback's size, which ALSA holds constant for the life of a stream"},
+              "callbacks": {"type": "integer"},
+              "gaps": {
+                "type": "array",
+                "description": "One entry per `Capture callback gap` line, in the order the log wrote them",
+                "items": {
+                  "type": "object",
+                  "required": ["at_ms", "gap_ms", "samples"],
+                  "properties": {
+                    "at_ms": {"type": "integer", "description": "Milliseconds from the capture's start to the callback that ENDED the gap"},
+                    "gap_ms": {"type": "integer"},
+                    "samples": {"type": "integer", "description": "Samples the resuming callback carried -- the discriminator between a lost delivery and a late one"}
+                  }
+                }
+              },
+              "longest_gap_ms": {"type": "integer"},
+              "gaps_over_threshold": {"type": "integer", "description": "Gaps at or over CALLBACK_GAP_THRESHOLD_MS"},
+              "oversized_resumes": {"type": "integer"},
+              "lost_in_gaps_seconds": {"type": "number"},
+              "share_of_missing": {"type": "number"},
+              "signature": {"type": "string", "description": "Which hypothesis the cadence supported, as the log named it at the time. Pinned as the answer of the day rather than as a correct one (ADR 0133)."},
+              "unattributed_seconds": {"type": "number", "description": "Missing audio sitting in no gap over the threshold, which no field of today's cadence line reports (ADR 0133, decision 3)."}
+            }
+          },
           "expected_post_correction": {
             "type": "string",
             "description": "What the user should see after Transform runs. Usually the raw transcript when a guardrail fires."
