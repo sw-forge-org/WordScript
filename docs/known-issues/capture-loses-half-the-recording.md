@@ -521,6 +521,99 @@ Those three realtime violations are named here deliberately and are **not** to
 be fixed before the measurement lands. Fixing them now removes the ability to
 tell which one mattered.
 
+## The instrument shipped, 2026-08-14 — and it was wrong once on the way in
+
+Runtime-ownership steps 5 and 3. All four items above are in, and the reading
+below is the one ADR 0133 registered in advance; nothing here is a fix and the
+three realtime violations are untouched on purpose.
+
+**The cadence line grew three fields, appended:**
+
+```
+… signature=<…> slowest_lock_wait_ms=<…> lock_wait_total_ms=<…> lost_below_threshold_seconds=<…>
+```
+
+`~/.cache/wordscript-soak-report.sh` and the event tables in this record parse
+this line positionally, so the fields are appended rather than placed where they
+read best, and a test holds the order.
+
+**`signature=stream_suspended` is no longer printed over a self-inflicted
+stall.** A gap that is at least half our own lock now reads
+`blocked_on_our_lock`. Ordinary contention does not reach it, and a gap with no
+lock wait is still a suspend — deliberately, because the pre-registered reading
+makes that case the first real support hypothesis 1 has ever had, and a verdict
+that drifted toward blaming ourselves would destroy the finding it exists to
+enable.
+
+**`native-18` is in the corpus** (`a_recorded_dropout_replays_its_own_cadence`),
+replayed through the real `CallbackCadence` rather than described. Its recorded
+figures turn out to be mutually consistent — 1203 callbacks × 1024 samples ÷
+88200 is 13.967 s, exactly `recorded_seconds` — which is what made a replay
+possible. It replays with **no lock wait**, because the event predates the
+instrument, so its `stream_suspended` has to survive this change unchanged. It
+does, and when `LOCK_WAIT_DOMINATES_AT` was set to zero as a check, that entry
+was one of the three tests that caught it.
+
+### The new field was fabricating loss, and the soak found it in twelve seconds
+
+**Worth reading even if the rest of this section is not.** The first
+implementation of `lost_below_threshold` summed `gap - audio_time` per interval
+and clamped each term at zero. Every synthetic test passed. A 12 s soak against
+the real device then reported this:
+
+```
+Capture integrity     wall_seconds=4.010 recorded_seconds=4.017 missing_ratio=0.0000 verdict=Intact
+Capture callback cadence … lost_in_gaps_seconds=0.000 … lost_below_threshold_seconds=0.292
+```
+
+**0.292 s of loss on a segment that recorded more audio than its own clock
+ran.** ALSA delivers in bursts — two callbacks together, then a 21 ms pause on a
+stream losing nothing — so clamping counts the late side of the jitter and
+discards the early side, and 344 callbacks of a phenomenon that averages to zero
+accumulate a third of a second. That is this record's own failure class,
+produced by the instrument built to detect it, for the second time
+([the soak's rotation remainder](#route-a-shipped-2026-08-11-the-tool-exists-the-night-does-not)
+was the first).
+
+The sum is signed now, and reported signed: a negative value means the stream
+handed over more audio than the clock ran, which is hypothesis 3 rather than a
+number worth hiding behind a zero. Re-measured on the same hardware, same
+command, three segments:
+
+| segment | wall | recorded | missing_ratio | `lost_below_threshold_seconds` | before |
+|---|---|---|---|---|---|
+| 1 | 4.006 | 3.971 | 0.0087 | **0.005** | 0.291 |
+| 2 | 4.010 | 4.017 | 0.0000 | **−0.006** | 0.292 |
+| 3 | 4.000 | 3.994 | 0.0017 | **0.007** | 0.302 |
+
+The residual in segment 1 — 0.035 s missing against 0.005 s attributed — is the
+stretch between `segment_started_at` and the first callback, which belongs to no
+interval and is the same startup transient the `not_measured` verdict exists for
+under two seconds.
+
+**Why the synthetic tests could not see it.** `PERIOD_MS = 23` in the test
+module, while 2048 interleaved samples at 44100×2 carry 23.2199 ms. The
+rounding was harmless for six years of assertions about gap counts and became a
+0.088 s phantom surplus the moment anything summed the intervals. The synthetic
+fill is driven by the exact duration now.
+
+**What the soak's own numbers say, which is a result of its own:**
+`slowest_lock_wait_ms=0` and `lock_wait_total_ms=0` across all three segments.
+ADR 0084's premise is that the soak is the app minus a known delta, and the
+app's lock contention was outside that delta until now. It is measured rather
+than assumed for the first time — and it is the control's *own* contention, so
+the comparison the next real event allows is finally like for like.
+
+### What is still owed
+
+The next `Short` capture in ordinary use, at roughly 1.5 % of captures. Then
+ADR 0133's pre-registered reading applies, and it is step 6 of the track:
+
+- `slowest_lock_wait_ms` close to `longest_gap_ms` → the app blocked its own
+  audio thread, and the three realtime violations named above are the fix.
+- lock wait near zero while the gap persists → the callback genuinely was not
+  called, and hypothesis 1 has real support for the first time.
+
 ## Environment
 
 - `host=Alsa device=default sample_rate=44100 channels=2 sample_format=f32` —
@@ -581,18 +674,16 @@ Untested, ordered by what the evidence supports.
    confirm hypothesis 1 outright rather than inferring it from the resume size.
 5. ~~Fix the pause interaction in `shortfall_ratio`.~~ **Done 2026-08-10,
    ADR 0079** — `LevelEmitSummary` measures against `effective_elapsed`.
-6. **Put the first real gap in the corpus.** ~~Nothing in
-   `regression_transcripts.json` describes an observed dropout, because none has
-   been recorded.~~ **Unblocked 2026-08-13** — three events now carry full
-   per-callback detail (02:18, 06:01, 00:36). The cadence assertions still run
-   over a synthetic timeline, which pins the arithmetic and not the phenomenon;
-   `native-18` is the one to encode.
-7. **Measure the lock wait and the sub-threshold loss** (2026-08-13, ADR 0133).
-   The current cadence cannot separate hypothesis 1 from hypothesis 4, and
-   leaves a third of the missing audio unattributed. This is now the first item:
-   Route B was answered by ordinary use, and the instrument is what is blocking,
-   not the sample size. Pre-registered reading in *What the next instrument has
-   to do*, above.
+6. ~~**Put the first real gap in the corpus.**~~ **Done 2026-08-14** —
+   `a_recorded_dropout_replays_its_own_cadence` replays `native-18` through the
+   real `CallbackCadence`. The other two events (02:18, 06:01) are not encoded;
+   one replayable event was the point, and a second adds rows rather than
+   coverage.
+7. ~~**Measure the lock wait and the sub-threshold loss**~~ **Done 2026-08-14,
+   and the sub-threshold half fabricated a loss before it measured one.** See
+   *The instrument shipped* above. **Nothing is diagnosed by it** — it makes the
+   next event decidable, which is step 6 of the runtime-ownership track and is
+   waiting on one natural `Short` capture.
 8. **Fix the dev-server watcher before trusting any further measurement**
    ([dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md)).
    It is one edit and it removes an unmeasured confound from every capture in

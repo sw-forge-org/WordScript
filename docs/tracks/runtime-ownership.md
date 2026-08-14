@@ -65,10 +65,10 @@ This table is the state of the track. Update it as steps land.
 |---|---|---|---|
 | 1 | the runtime finishes the session (ADR 0134) | **done 2026-08-14 — acceptance run passed in the native host.** One half of the check still owed: a healthy session logging `path=frontend` | — |
 | 2 | the dev-server watcher | **done 2026-08-14** | — |
-| 3 | the cadence instrument (ADR 0133) | **open, unblocked** | nothing |
+| 3 | the cadence instrument (ADR 0133) | **done 2026-08-14 — and its new field fabricated a loss before it measured one; a 12 s soak against real hardware is what caught it** | — |
 | 4 | the overlay restores itself on mount | open | — (step 1 done) |
-| 5 | `native-18` into the regression corpus | **open, unblocked** | nothing |
-| 6 | read the next capture event, then fix | open | step 3, then one natural `Short` capture |
+| 5 | `native-18` into the regression corpus | **done 2026-08-14** | — |
+| 6 | read the next capture event, then fix | **open, and now the only thing between this record and a located cause** | one natural `Short` capture (step 3 done) |
 | 7 | the cue output stream | **open, unblocked — and it stopped being invisible on 2026-08-14** | nothing |
 
 Opened with all seven open and nothing started, 2026-08-13.
@@ -157,6 +157,52 @@ reload, under the new config or the old one. The record's quoted
 `changed tsconfig file detected` line is real; what this session verified is the
 watch surface, not the per-file reload mechanism. An mtime-only touch is
 probably not what vite acts on.
+
+### Steps 5 and 3 landed 2026-08-14, in that order
+
+**Step 5 first, and the ordering paid off exactly as written.** `native-18` was
+encoded against today's field set and then the field set widened underneath it;
+encoding it after step 3 would have meant inventing lock-wait values for an
+event that has none. It replays with zero lock wait, which is the condition
+under which its `stream_suspended` has to survive ADR 0133's decision 4 — and
+when `LOCK_WAIT_DOMINATES_AT` was set to zero as a falsification, that entry was
+one of the three tests that caught it. **The corpus entry defends a past reading
+against the instrument that replaced the one which produced it**, which is the
+whole reason step 5 exists.
+
+Its recorded numbers turned out to be mutually consistent, which is what made a
+replay possible rather than a retelling: 1203 callbacks × 1024 samples ÷ 88200
+is 13.967 s, exactly `recorded_seconds`. **Two of the entry's assertions are
+tautologies of the reconstruction** — `callbacks` and each gap's `at_ms` are
+inputs to it — and the test says so and earns them against the code instead.
+
+**Step 3's `lost_below_threshold` was wrong on its first implementation, and the
+soak found it in twelve seconds.** Clamping each interval's shortfall at zero
+counted the late side of ALSA's burst delivery and discarded the early side:
+**0.292 s of loss reported on a four-second segment that had recorded more audio
+than its own clock ran.** Every synthetic test passed while it did, because
+`PERIOD_MS = 23` in the test module against a true 23.2199 ms — a rounding that
+was harmless for every assertion about gap counts and became a phantom the
+moment anything summed the intervals. The sum is signed now and reported signed;
+the same three segments read 0.005, −0.006 and 0.007 s. Full table in the
+record.
+
+**This is the second time this cluster's failure class has come out of the
+instrument built to detect it**, after the soak's rotation remainder reported
+`missing_ratio=1.0000`. Both were found by reading a real run rather than by a
+test. *Check your own instrument before believing it* is not a slogan on this
+track; it has now cost two implementations.
+
+Also measured, and it is a result of its own: the soak reports
+`slowest_lock_wait_ms=0` and `lock_wait_total_ms=0`. ADR 0084's premise is that
+the soak is the app minus a *known* delta, and the app's lock contention sat
+outside that delta until now.
+
+**What is not covered by a test, stated so it is not assumed:** that
+`arrived_at` is taken before `shared.lock()` — ADR 0133's first decision — is
+held by construction and review. `process_samples` needs an `AppHandle` and no
+test in this repo drives it. The half that lives in `CallbackCadence`, that a
+long lock wait is not a gap, is asserted.
 
 ### What step 1 leaves open, and it is the owner's call
 
@@ -259,7 +305,7 @@ the old one, an mtime-only `touch` of a donor `tsconfig.json` produced no reload
 at all, so what this session verified is the watch surface and not the per-file
 reload mechanism the record quotes.
 
-### Step 3 — the cadence instrument (ADR 0133)
+### Step 3 — the cadence instrument (ADR 0133) — **done 2026-08-14**
 
 `src-tauri/src/core/capture.rs` and `src-tauri/src/core/capture_soak.rs`. The
 decision, the field list and the pre-registered reading are in
@@ -294,7 +340,7 @@ deadline comes back as committed rather than as an offer.
 
 **Validates with:** `npm test`, `npm run build`, and a native-host run.
 
-### Step 5 — the first real gap enters the corpus
+### Step 5 — the first real gap enters the corpus — **done 2026-08-14**
 
 `native-18` (2026-08-13 00:36) is the first observed dropout with full
 per-callback detail. The cadence assertions run over a synthetic timeline, which
@@ -313,9 +359,16 @@ timeline.
 
 ### Step 6 — read the next capture event, then fix
 
-Gated on Step 3 shipping and one natural `Short` capture arriving (3 in 195
-captures, roughly one every day or two of the owner's use). Apply ADR 0133's
+~~Gated on Step 3 shipping and~~ **Step 3 shipped 2026-08-14, so this now waits
+on nothing but** one natural `Short` capture arriving (3 in 195 captures,
+roughly one every day or two of the owner's use). Apply ADR 0133's
 pre-registered reading, then fix what it names.
+
+**The next event is the first one that will be readable.** Every `Short` capture
+in the record so far was measured by an instrument that could not tell a
+suspended stream from a self-inflicted stall, so none of them can be re-read —
+the numbers are what they are and the ambiguity is in the numbers, not in how
+they were interpreted.
 
 **Done when:** the record names a located cause rather than a hypothesis. If the
 reading comes back "the callback genuinely was not called", the outcome is a

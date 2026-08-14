@@ -225,11 +225,18 @@ impl SoakRecorder {
     /// question it answers is whether the callback ran at all, and skipping it
     /// under any condition would put a hole in the measurement that exists to
     /// find holes.
-    pub(crate) fn observe(&mut self, now: Instant, samples: &[f32]) {
+    ///
+    /// `lock_wait` is how long the caller waited for this recorder's own mutex.
+    /// The soak is the app minus a KNOWN delta (ADR 0084), and the app's lock
+    /// contention was not in that delta until ADR 0133 measured it — a control
+    /// that does not measure the thing the subject is suspected of is not a
+    /// control. The soak's own contention is small by construction, which is
+    /// the point: it is now a number rather than an assumption.
+    pub(crate) fn observe(&mut self, now: Instant, lock_wait: Duration, samples: &[f32]) {
         self.total_callbacks += 1;
         self.last_callback_at = Some(now);
         self.cadence
-            .observe(self.segment_started_at, now, samples.len());
+            .observe(self.segment_started_at, now, lock_wait, samples.len());
 
         let normalized = samples
             .iter()
@@ -555,8 +562,12 @@ fn build_soak_stream(
                 config,
                 move |data: &[f32], _| {
                     let now = Instant::now();
+                    // Measured from immediately before the acquisition in every
+                    // arm, so the conversion the other two do first is not
+                    // charged to the lock (ADR 0133).
+                    let waiting_since = Instant::now();
                     if let Ok(mut recorder) = recorder.lock() {
-                        recorder.observe(now, data);
+                        recorder.observe(now, waiting_since.elapsed(), data);
                     }
                 },
                 error_callback,
@@ -573,8 +584,9 @@ fn build_soak_stream(
                         .copied()
                         .map(|sample| f32::from(sample) / f32::from(i16::MAX))
                         .collect::<Vec<_>>();
+                    let waiting_since = Instant::now();
                     if let Ok(mut recorder) = recorder.lock() {
-                        recorder.observe(now, &converted);
+                        recorder.observe(now, waiting_since.elapsed(), &converted);
                     }
                 },
                 error_callback,
@@ -591,8 +603,9 @@ fn build_soak_stream(
                         .copied()
                         .map(|sample| (f32::from(sample) / f32::from(u16::MAX)) * 2.0 - 1.0)
                         .collect::<Vec<_>>();
+                    let waiting_since = Instant::now();
                     if let Ok(mut recorder) = recorder.lock() {
-                        recorder.observe(now, &converted);
+                        recorder.observe(now, waiting_since.elapsed(), &converted);
                     }
                 },
                 error_callback,
@@ -645,7 +658,7 @@ mod tests {
         let samples = silence();
         while now < end {
             now += step;
-            recorder.observe(now, &samples);
+            recorder.observe(now, Duration::ZERO, &samples);
         }
         now
     }
@@ -687,7 +700,7 @@ mod tests {
 
         let mut now = feed_steady(&mut recorder, started_at, Duration::from_secs(2));
         now += Duration::from_secs(5);
-        recorder.observe(now, &silence());
+        recorder.observe(now, Duration::ZERO, &silence());
         now = feed_steady(&mut recorder, now, Duration::from_secs(2));
 
         recorder.finish(now);
@@ -727,7 +740,7 @@ mod tests {
         let mut now = feed_steady(&mut recorder, started_at, Duration::from_secs(2));
         now += Duration::from_secs(1);
         let catch_up = vec![0.0_f32; PERIOD_SAMPLES * 24];
-        recorder.observe(now, &catch_up);
+        recorder.observe(now, Duration::ZERO, &catch_up);
         now = feed_steady(&mut recorder, now, Duration::from_secs(2));
 
         recorder.finish(now);
@@ -801,7 +814,7 @@ mod tests {
         let samples = silence();
         while recorder.finished.is_empty() {
             now += step;
-            recorder.observe(now, &samples);
+            recorder.observe(now, Duration::ZERO, &samples);
         }
         let closed_by_callbacks = recorder.finished.len();
 

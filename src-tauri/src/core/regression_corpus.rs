@@ -896,6 +896,11 @@ fn replay_recorded_cadence(recorded: &ExpectedCallbackCadence) -> CallbackCadenc
         cadence.observe(
             started_at,
             started_at + Duration::from_secs_f64(offset_ms / 1000.0),
+            // No lock wait, because the event carries none: it happened before
+            // the instrument that measures it existed. That is not a
+            // convenience — it is the condition under which this entry's
+            // `signature` has to stay what it was (ADR 0133, decision 4).
+            Duration::ZERO,
             *samples,
         );
     }

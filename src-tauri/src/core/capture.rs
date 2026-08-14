@@ -70,6 +70,12 @@ const CAPTURE_INTEGRITY_MIN_WALL_SECONDS: f64 = 2.0;
 /// below the multi-second stretches
 /// `capture-loses-half-the-recording.md` implies.
 const CALLBACK_GAP_THRESHOLD_MS: u128 = 200;
+/// The share of the longest callback gap that has to be our own lock before the
+/// cadence stops calling that gap a suspended stream. Half is chosen to be
+/// unarguable rather than tuned: at that point the majority of the stretch is
+/// something the app did to itself, and no amount of it makes a producer-side
+/// verdict more true (ADR 0133).
+const LOCK_WAIT_DOMINATES_AT: f64 = 0.5;
 /// How many gaps one capture keeps. The realtime callback must not grow a
 /// buffer without bound, and a capture that has already produced 64 of these
 /// has answered the question the log is being read for.
@@ -618,6 +624,35 @@ pub(crate) struct CallbackCadence {
     /// Compared against the missing audio it says whether the named gaps
     /// account for the loss or only part of it.
     lost_in_gaps: Duration,
+    /// The same arithmetic over every interval BELOW the threshold, which the
+    /// gap list is silent about.
+    ///
+    /// `native-18` lost 2.556 s and named 1.681 s of it in seven gaps; the
+    /// remaining 0.875 s sat in no gap at all and no field reported it, so a
+    /// third of the damage was invisible to the instrument built to see it
+    /// (ADR 0133). Together the two now approach `wall - recorded` instead of
+    /// leaving a reader to notice a shortfall by subtracting.
+    ///
+    /// **Signed, in nanoseconds, and that is not a detail — it is the whole
+    /// correctness of the field.** ALSA delivers in bursts: two callbacks
+    /// arrive together and the next is 21 ms behind, on a stream that is losing
+    /// nothing. Summing only the late side of that jitter reported **0.292 s
+    /// lost on a segment that recorded MORE audio than its own clock**, which
+    /// is this cluster's own failure class committed by the instrument built to
+    /// detect it — measured on real hardware, not reasoned about. An early
+    /// callback repays a late one, so the two cancel and only a net shortfall
+    /// survives.
+    lost_below_threshold_nanos: i128,
+    /// How long the callback waited for the app's own mutex before it could
+    /// record anything, worst case and total.
+    ///
+    /// **This is the entire difference between two live hypotheses.** Before
+    /// it existed the cadence timestamped itself *after* acquiring that lock,
+    /// so "the callback was never called" and "the callback was called and
+    /// blocked on us" produced the identical number — and the instrument
+    /// printed the first as a verdict (ADR 0133).
+    slowest_lock_wait: Duration,
+    lock_wait_total: Duration,
     gaps_over_threshold: u64,
     gaps: Vec<CallbackGap>,
 }
@@ -632,6 +667,9 @@ impl CallbackCadence {
             nominal_samples: 0,
             longest_gap: Duration::ZERO,
             lost_in_gaps: Duration::ZERO,
+            lost_below_threshold_nanos: 0,
+            slowest_lock_wait: Duration::ZERO,
+            lock_wait_total: Duration::ZERO,
             gaps_over_threshold: 0,
             gaps: Vec::new(),
         }
@@ -641,33 +679,72 @@ impl CallbackCadence {
     /// construction: arithmetic, and at most `MAX_RECORDED_CALLBACK_GAPS`
     /// pushes for the whole capture.
     ///
-    /// `now` is passed in rather than read here so the cadence can be driven
-    /// over a synthetic timeline in a test. A dropout instrumentation asserted
-    /// with `thread::sleep` would be measuring the test runner's scheduler.
-    pub(crate) fn observe(&mut self, started_at: Instant, now: Instant, samples: usize) {
+    /// **`arrived_at` is the moment the callback ARRIVED, not the moment it got
+    /// the lock**, and the difference is the whole of ADR 0133. Timestamping
+    /// after acquisition makes the reported interval a property of the guard
+    /// rather than of the stream: a callback that never came and a callback
+    /// that came and waited on us are then the same number, and `signature()`
+    /// prints the first as a verdict. `lock_wait` is what separates them, and
+    /// it is passed in for the same reason `arrived_at` is.
+    ///
+    /// Both are passed rather than read here so the cadence can be driven over
+    /// a synthetic timeline in a test. A dropout instrumentation asserted with
+    /// `thread::sleep` would be measuring the test runner's scheduler.
+    pub(crate) fn observe(
+        &mut self,
+        started_at: Instant,
+        arrived_at: Instant,
+        lock_wait: Duration,
+        samples: usize,
+    ) {
         self.callbacks += 1;
         self.samples_total += samples as u64;
         if self.nominal_samples == 0 {
             self.nominal_samples = samples;
         }
 
+        self.slowest_lock_wait = self.slowest_lock_wait.max(lock_wait);
+        self.lock_wait_total += lock_wait;
+
         if let Some(previous) = self.last_callback_at {
-            let gap = now.saturating_duration_since(previous);
+            let gap = arrived_at.saturating_duration_since(previous);
             self.longest_gap = self.longest_gap.max(gap);
+            // Whatever the interval did not deliver is lost either way. The
+            // threshold decides whether the stretch is worth naming on its own
+            // line, not whether its loss is counted — that was the hole.
+            let audio = self.audio_time(samples);
             if gap.as_millis() >= CALLBACK_GAP_THRESHOLD_MS {
                 self.gaps_over_threshold += 1;
-                self.lost_in_gaps += gap.saturating_sub(self.audio_time(samples));
+                // Saturating here and signed below, deliberately: a gap whose
+                // resuming callback carries the audio for it is a LATE
+                // delivery and lost nothing, and crediting it against the rest
+                // of the capture would let one catch-up burst erase a real
+                // dropout somewhere else.
+                self.lost_in_gaps += gap.saturating_sub(audio);
                 if self.gaps.len() < MAX_RECORDED_CALLBACK_GAPS {
                     self.gaps.push(CallbackGap {
-                        at_ms: now.saturating_duration_since(started_at).as_millis(),
+                        at_ms: arrived_at.saturating_duration_since(started_at).as_millis(),
                         gap_ms: gap.as_millis(),
                         samples,
                     });
                 }
+            } else {
+                self.lost_below_threshold_nanos +=
+                    gap.as_nanos() as i128 - audio.as_nanos() as i128;
             }
         }
 
-        self.last_callback_at = Some(now);
+        self.last_callback_at = Some(arrived_at);
+    }
+
+    /// The net audio time the sub-threshold intervals failed to deliver.
+    ///
+    /// **It is reported signed.** A negative value means the stream handed over
+    /// more audio than the clock ran, which is hypothesis 3 — a clock
+    /// disagreement rather than a loss — and is a finding worth seeing rather
+    /// than a number worth hiding behind a zero.
+    fn lost_below_threshold_seconds(&self) -> f64 {
+        self.lost_below_threshold_nanos as f64 / 1_000_000_000.0
     }
 
     /// How much recorded time a callback of this many samples carries.
@@ -714,10 +791,32 @@ impl CallbackCadence {
 
         let oversized = self.oversized_resumes();
         match (oversized, self.gaps.len()) {
+            // `stream_suspended` is a claim about the producer, and only one of
+            // the two things that can make the callback stop arriving lives
+            // there. Where the worst gap is mostly our own lock, the app
+            // blocked its own audio thread and the stream did nothing wrong —
+            // so the line says that instead (ADR 0133, decision 4).
+            (0, _) if self.lock_wait_dominates_longest_gap() => "blocked_on_our_lock",
             (0, _) => "stream_suspended",
             (over, total) if over == total => "late_delivery",
             _ => "mixed",
         }
+    }
+
+    /// Whether the longest stretch without a callback is mostly time spent
+    /// waiting for the app's own mutex.
+    ///
+    /// The two quantities are not commensurable in general — the worst lock
+    /// wait need not be the one inside the worst gap — so this is deliberately
+    /// a coarse test and its only job is to stop `stream_suspended` being
+    /// printed over a self-inflicted stall. ADR 0133 pre-registered the reading
+    /// it serves: a lock wait close to the longest gap means the fix is ours,
+    /// and a lock wait near zero while the gap persists is the first real
+    /// support hypothesis 1 has ever had.
+    fn lock_wait_dominates_longest_gap(&self) -> bool {
+        self.longest_gap > Duration::ZERO
+            && self.slowest_lock_wait.as_secs_f64()
+                >= self.longest_gap.as_secs_f64() * LOCK_WAIT_DOMINATES_AT
     }
 
     /// What fraction of the capture's missing audio the named gaps account for.
@@ -744,8 +843,14 @@ pub(crate) fn cadence_log_lines(
         .map(|share| format!("{share:.3}"))
         .unwrap_or_else(|| "n/a".to_string());
 
+    // The three ADR 0133 fields are APPENDED rather than folded in where they
+    // would read best. `~/.cache/wordscript-soak-report.sh` and the history in
+    // `capture-loses-half-the-recording.md` both parse this line positionally,
+    // so a reordering silently changes what every previously recorded event
+    // meant — which is the failure class this whole cluster is about, committed
+    // against its own archive.
     let mut lines = vec![format!(
-        "[WordScript] Capture callback cadence callbacks={} nominal_samples={} nominal_interval_ms={:.1} longest_gap_ms={} gaps_over_{}ms={} oversized_resumes={} lost_in_gaps_seconds={:.3} share_of_missing={} signature={}",
+        "[WordScript] Capture callback cadence callbacks={} nominal_samples={} nominal_interval_ms={:.1} longest_gap_ms={} gaps_over_{}ms={} oversized_resumes={} lost_in_gaps_seconds={:.3} share_of_missing={} signature={} slowest_lock_wait_ms={} lock_wait_total_ms={} lost_below_threshold_seconds={:.3}",
         cadence.callbacks,
         cadence.nominal_samples,
         cadence.nominal_interval().as_secs_f64() * 1000.0,
@@ -756,6 +861,9 @@ pub(crate) fn cadence_log_lines(
         cadence.lost_in_gaps.as_secs_f64(),
         share,
         cadence.signature(integrity),
+        cadence.slowest_lock_wait.as_millis(),
+        cadence.lock_wait_total.as_millis(),
+        cadence.lost_below_threshold_seconds(),
     )];
 
     for gap in &cadence.gaps {
@@ -1784,6 +1892,11 @@ fn process_samples<R: Runtime>(
     shared: &Arc<Mutex<SharedCaptureData>>,
     samples: impl IntoIterator<Item = f32>,
 ) {
+    // Before anything else in this function, and specifically before the
+    // allocation below and the lock after it: this is the moment the stream
+    // handed us the samples, and the cadence measures the stream (ADR 0133).
+    let arrived_at = Instant::now();
+
     let mut peak = 0.0_f32;
     let mut rms = 0.0_f32;
     let mut waveform = vec![0.0_f32; WAVEFORM_BUCKET_COUNT];
@@ -1791,7 +1904,14 @@ fn process_samples<R: Runtime>(
     let mut muted = false;
     let mut paused = false;
 
+    // Taken separately rather than as `arrived_at.elapsed()`, because the
+    // allocation above sits between the two and is a different cost with a
+    // different owner — it is one of the three realtime violations ADR 0133
+    // names and leaves for step 6. Folding it into the lock wait would put the
+    // attribution back where this change exists to take it out of.
+    let waiting_since = Instant::now();
     if let Ok(mut shared) = shared.lock() {
+        let lock_wait = waiting_since.elapsed();
         muted = shared.muted;
         paused = shared.paused || shared.rebuild_in_progress;
         let normalized_samples = samples
@@ -1815,9 +1935,12 @@ fn process_samples<R: Runtime>(
             shared.cadence.resumed();
         } else {
             let started_at = shared.started_at;
-            shared
-                .cadence
-                .observe(started_at, Instant::now(), normalized_samples.len());
+            shared.cadence.observe(
+                started_at,
+                arrived_at,
+                lock_wait,
+                normalized_samples.len(),
+            );
         }
 
         for sample in &normalized_samples {
@@ -2708,6 +2831,20 @@ mod tests {
     const PERIOD_SAMPLES: usize = 2_048;
     const PERIOD_MS: u64 = 23;
 
+    /// The interval a period of `PERIOD_SAMPLES` actually carries: 23.2199 ms,
+    /// not the 23 the constant above rounds it to.
+    ///
+    /// **The rounding used to be invisible and is not any more.** A fill at
+    /// 23 ms delivers 0.22 ms more audio than the clock advances, and once the
+    /// sub-threshold intervals are summed that is 88 ms of phantom SURPLUS
+    /// across 400 callbacks — harmless where the old assertions looked, and a
+    /// number in the field that exists to say whether audio went missing. A
+    /// synthetic stream that is meant to lose nothing has to actually lose
+    /// nothing.
+    fn nominal_step() -> Duration {
+        Duration::from_secs_f64(PERIOD_SAMPLES as f64 / (44_100.0 * 2.0))
+    }
+
     /// Drives a cadence over a synthetic timeline: `gaps` names the callbacks
     /// after which an extra stretch of silence is inserted, and the size the
     /// resuming callback then carries.
@@ -2715,18 +2852,39 @@ mod tests {
         callbacks: usize,
         gaps: &[(usize, u64, usize)],
     ) -> (CallbackCadence, Duration) {
+        cadence_over_waiting(callbacks, gaps, &[])
+    }
+
+    /// The same, with lock waits: `lock_waits` names the callback index and how
+    /// long that callback waited for the app's own mutex before it could record
+    /// anything.
+    ///
+    /// The two are separate arguments because they are separate phenomena, and
+    /// the whole of ADR 0133 is that one instrument reported them as one
+    /// number. A test that could not set them independently could not tell the
+    /// two hypotheses apart either.
+    fn cadence_over_waiting(
+        callbacks: usize,
+        gaps: &[(usize, u64, usize)],
+        lock_waits: &[(usize, u64)],
+    ) -> (CallbackCadence, Duration) {
         let mut cadence = CallbackCadence::new(44_100, 2);
         let started_at = Instant::now();
         let mut clock = started_at;
 
         for index in 0..callbacks {
             let gap = gaps.iter().find(|(after, _, _)| *after == index);
-            let (step_ms, samples) = match gap {
-                Some((_, gap_ms, samples)) => (*gap_ms, *samples),
-                None => (PERIOD_MS, PERIOD_SAMPLES),
+            let (step, samples) = match gap {
+                Some((_, gap_ms, samples)) => (Duration::from_millis(*gap_ms), *samples),
+                None => (nominal_step(), PERIOD_SAMPLES),
             };
-            clock += Duration::from_millis(step_ms);
-            cadence.observe(started_at, clock, samples);
+            let lock_wait = lock_waits
+                .iter()
+                .find(|(at, _)| *at == index)
+                .map(|(_, wait_ms)| Duration::from_millis(*wait_ms))
+                .unwrap_or(Duration::ZERO);
+            clock += step;
+            cadence.observe(started_at, clock, lock_wait, samples);
         }
 
         let elapsed = clock.saturating_duration_since(started_at);
@@ -2818,6 +2976,185 @@ mod tests {
         );
     }
 
+    /// Hypothesis 4, and the reason ADR 0133 exists: the callback WAS called
+    /// and spent the stretch waiting for the app's own mutex. Every number the
+    /// old instrument printed is identical to a suspended stream's — a nominal
+    /// resume, no oversized callback, the same gap — so the lock wait is the
+    /// only thing that separates them, and the verdict has to follow it.
+    #[test]
+    fn a_gap_spent_waiting_on_our_own_lock_is_not_called_a_suspend() {
+        let (cadence, elapsed) =
+            cadence_over_waiting(400, &[(200, 8_000, PERIOD_SAMPLES)], &[(200, 7_900)]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64() - 8.0);
+
+        assert_eq!(cadence.gaps_over_threshold, 1);
+        assert_eq!(cadence.oversized_resumes(), 0);
+        assert_eq!(cadence.signature(&integrity), "blocked_on_our_lock");
+        assert_eq!(cadence.slowest_lock_wait, Duration::from_millis(7_900));
+        assert_eq!(cadence.lock_wait_total, Duration::from_millis(7_900));
+    }
+
+    /// The two quantities are independent, and this is the half of ADR 0133's
+    /// first decision that a test can hold.
+    ///
+    /// **The other half is not covered by a test and saying so is the point.**
+    /// That `arrived_at` is taken before `shared.lock()` rather than after is a
+    /// property of `process_samples`, which needs an `AppHandle` and is driven
+    /// by no test in this repo — it is held by construction and by review. What
+    /// lives here is the invariant that would break if somebody later derived
+    /// one number from the other: a callback that waited a long time for the
+    /// lock but arrived on schedule has no gap at all.
+    #[test]
+    fn a_long_lock_wait_is_not_a_gap() {
+        let waits: Vec<(usize, u64)> = (0..400).map(|index| (index, 900)).collect();
+        let (cadence, elapsed) = cadence_over_waiting(400, &[], &waits);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64());
+
+        assert_eq!(cadence.gaps_over_threshold, 0);
+        assert_eq!(cadence.gaps, Vec::new());
+        assert!(cadence.longest_gap < Duration::from_millis(CALLBACK_GAP_THRESHOLD_MS as u64));
+        assert_eq!(cadence.signature(&integrity), "no_gaps");
+        assert_eq!(cadence.slowest_lock_wait, Duration::from_millis(900));
+    }
+
+    /// The other direction, and it is the one that matters more. The reading was
+    /// pre-registered in ADR 0133: a lock wait near zero while the gap persists
+    /// is the first real support hypothesis 1 has ever had, so a verdict that
+    /// drifted toward blaming ourselves would destroy the finding it exists to
+    /// make possible.
+    #[test]
+    fn a_gap_with_no_lock_wait_is_still_a_suspended_stream() {
+        let (cadence, elapsed) =
+            cadence_over_waiting(400, &[(200, 8_000, PERIOD_SAMPLES)], &[(200, 12)]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64() - 8.0);
+
+        assert_eq!(cadence.signature(&integrity), "stream_suspended");
+        assert_eq!(cadence.slowest_lock_wait, Duration::from_millis(12));
+    }
+
+    /// Ordinary contention is not a verdict either. The lock is taken by six
+    /// call sites on the app's command threads, so a capture that reports some
+    /// wait is the normal case — a signature that fired on any of it would
+    /// convict the app on every healthy capture.
+    #[test]
+    fn ordinary_lock_contention_does_not_reach_the_verdict() {
+        let waits: Vec<(usize, u64)> = (0..400).map(|index| (index, 3)).collect();
+        let (cadence, elapsed) =
+            cadence_over_waiting(400, &[(200, 8_000, PERIOD_SAMPLES)], &waits);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64() - 8.0);
+
+        assert_eq!(cadence.signature(&integrity), "stream_suspended");
+        assert_eq!(cadence.lock_wait_total, Duration::from_millis(1_200));
+        assert_eq!(cadence.slowest_lock_wait, Duration::from_millis(3));
+    }
+
+    /// The third of `native-18`'s loss that no gap accounted for. Intervals
+    /// under the threshold are not gaps worth a line of their own and their
+    /// audio is just as gone, so the two figures together have to approach the
+    /// missing audio instead of leaving a reader to subtract and wonder.
+    #[test]
+    fn the_loss_below_the_threshold_is_attributed() {
+        // Every callback arrives 5 ms late — under the 200 ms threshold, and
+        // 400 of them are two seconds of audio nobody would otherwise see.
+        let jittered: Vec<(usize, u64, usize)> = (0..400)
+            .map(|index| (index, PERIOD_MS + 5, PERIOD_SAMPLES))
+            .collect();
+        let (cadence, elapsed) = cadence_over(400, &jittered);
+        let recorded = f64::from(400 * PERIOD_SAMPLES as u32) / (44_100.0 * 2.0);
+        let integrity = integrity_for(elapsed, recorded);
+
+        assert_eq!(cadence.gaps_over_threshold, 0);
+        assert!(integrity.is_short());
+        assert_eq!(cadence.lost_in_gaps, Duration::ZERO);
+
+        let missing = integrity.wall_seconds - integrity.recorded_seconds;
+        let attributed =
+            cadence.lost_in_gaps.as_secs_f64() + cadence.lost_below_threshold_seconds();
+        assert!(
+            (attributed - missing).abs() < 0.05,
+            "the two figures should account for the missing {missing:.3} s, got {attributed:.3} s"
+        );
+    }
+
+    /// And a burst-delivering stream that is losing NOTHING must report
+    /// nothing. This is the direction the first implementation got wrong, and
+    /// it was found on real hardware rather than here: ALSA hands over two
+    /// callbacks together and then pauses, so summing only the late side of
+    /// that jitter reported 0.292 s lost on a four-second segment that had
+    /// recorded MORE audio than its own clock ran.
+    ///
+    /// A fabricated loss is worse than a missed one here. Everything downstream
+    /// of this figure is a hypothesis about where audio goes, and a healthy
+    /// capture reporting a third of a second of loss would send the next
+    /// investigation after a phenomenon that does not exist.
+    #[test]
+    fn a_bursty_but_complete_stream_reports_no_loss_below_the_threshold() {
+        // Callbacks in pairs: one arrives 2 ms after the last, the next carries
+        // the rest of the pair's time. Driven with exact durations rather than
+        // through the ms-based helper, because a burst that is meant to lose
+        // nothing must sum to exactly two nominal intervals — and this test
+        // exists precisely because a fraction of a millisecond per callback is
+        // what fabricated the figure it guards.
+        let mut cadence = CallbackCadence::new(44_100, 2);
+        let started_at = Instant::now();
+        let mut clock = started_at;
+        let early = Duration::from_millis(2);
+        for index in 0..400 {
+            clock += if index % 2 == 0 {
+                early
+            } else {
+                nominal_step() * 2 - early
+            };
+            cadence.observe(started_at, clock, Duration::ZERO, PERIOD_SAMPLES);
+        }
+        let elapsed = clock.saturating_duration_since(started_at);
+        let recorded = f64::from(400 * PERIOD_SAMPLES as u32) / (44_100.0 * 2.0);
+        let integrity = integrity_for(elapsed, recorded);
+
+        assert!(!integrity.is_short(), "the synthetic stream must be complete");
+        assert_eq!(cadence.gaps_over_threshold, 0);
+        assert!(
+            cadence.lost_below_threshold_seconds().abs() < 0.05,
+            "a complete stream reported {:.3} s lost below the threshold",
+            cadence.lost_below_threshold_seconds()
+        );
+    }
+
+    /// And the same sum on the shape the record actually carries: named gaps
+    /// AND jitter between them. `native-18` had both, and the old instrument
+    /// reported `share_of_missing=0.658` — two thirds — with nothing saying
+    /// where the other third went.
+    #[test]
+    fn the_named_gaps_and_the_jitter_together_account_for_the_loss() {
+        let mut timeline: Vec<(usize, u64, usize)> = (0..400)
+            .map(|index| (index, PERIOD_MS + 2, PERIOD_SAMPLES))
+            .collect();
+        timeline[200] = (200, 400, PERIOD_SAMPLES);
+        let (cadence, elapsed) = cadence_over(400, &timeline);
+        let recorded = f64::from(400 * PERIOD_SAMPLES as u32) / (44_100.0 * 2.0);
+        let integrity = integrity_for(elapsed, recorded);
+
+        assert_eq!(cadence.gaps_over_threshold, 1);
+        assert!(cadence.lost_in_gaps > Duration::ZERO);
+        assert!(cadence.lost_below_threshold_seconds() > 0.0);
+
+        let share = cadence
+            .share_of_missing_audio(&integrity)
+            .expect("audio is missing");
+        assert!(
+            share < 0.9,
+            "the named gap alone should NOT account for the loss, got {share}"
+        );
+
+        let missing = integrity.wall_seconds - integrity.recorded_seconds;
+        let attributed =
+            cadence.lost_in_gaps.as_secs_f64() + cadence.lost_below_threshold_seconds();
+        assert!(
+            (attributed - missing).abs() < 0.05,
+            "together they should account for the missing {missing:.3} s, got {attributed:.3} s"
+        );
+    }
+
     /// A deliberate pause stops the cpal callback outright, so the first
     /// callback after it is a gap the length of the pause. Counting it would
     /// reproduce, one layer down, exactly the artifact ADR 0079 removed from
@@ -2830,13 +3167,13 @@ mod tests {
 
         for _ in 0..10 {
             clock += Duration::from_millis(PERIOD_MS);
-            cadence.observe(started_at, clock, PERIOD_SAMPLES);
+            cadence.observe(started_at, clock, Duration::ZERO, PERIOD_SAMPLES);
         }
 
         // Paused for two minutes, then resumed.
         cadence.resumed();
         clock += Duration::from_secs(120);
-        cadence.observe(started_at, clock, PERIOD_SAMPLES);
+        cadence.observe(started_at, clock, Duration::ZERO, PERIOD_SAMPLES);
 
         assert_eq!(cadence.gaps_over_threshold, 0);
         assert_eq!(cadence.gaps, Vec::new());
@@ -2882,6 +3219,55 @@ mod tests {
         assert!(lines[0].contains("signature=no_gaps"), "{}", lines[0]);
         assert!(lines[0].contains("gaps_over_200ms=0"), "{}", lines[0]);
         assert!(lines[0].contains("share_of_missing=0.000"), "{}", lines[0]);
+        // On the healthy capture too, for ADR 0083's reason: a field that only
+        // appears on failures has no baseline, and the first question asked of
+        // the first large lock wait would be whether lock waits are normal.
+        assert!(lines[0].contains("slowest_lock_wait_ms=0"), "{}", lines[0]);
+        assert!(lines[0].contains("lock_wait_total_ms=0"), "{}", lines[0]);
+        assert!(
+            lines[0].contains("lost_below_threshold_seconds=0.000"),
+            "{}",
+            lines[0]
+        );
+    }
+
+    /// ADR 0133 requires the three fields to be APPENDED. Two readers parse
+    /// this line positionally — `~/.cache/wordscript-soak-report.sh` and the
+    /// event history in the record itself — so a field inserted in the middle
+    /// silently changes what every capture recorded before today meant.
+    #[test]
+    fn the_new_cadence_fields_are_appended_and_not_woven_in() {
+        let (cadence, elapsed) =
+            cadence_over_waiting(400, &[(200, 8_000, PERIOD_SAMPLES)], &[(200, 40)]);
+        let integrity = integrity_for(elapsed, elapsed.as_secs_f64() - 8.0);
+        let line = cadence_log_lines(&cadence, &integrity)[0].clone();
+
+        let order: Vec<usize> = [
+            "callbacks=",
+            "nominal_samples=",
+            "nominal_interval_ms=",
+            "longest_gap_ms=",
+            "gaps_over_200ms=",
+            "oversized_resumes=",
+            "lost_in_gaps_seconds=",
+            "share_of_missing=",
+            "signature=",
+            "slowest_lock_wait_ms=",
+            "lock_wait_total_ms=",
+            "lost_below_threshold_seconds=",
+        ]
+        .iter()
+        .map(|field| {
+            line.find(field)
+                .unwrap_or_else(|| panic!("no `{field}` in: {line}"))
+        })
+        .collect();
+
+        assert!(
+            order.windows(2).all(|pair| pair[0] < pair[1]),
+            "the cadence line's fields are out of order: {line}"
+        );
+        assert!(line.contains("slowest_lock_wait_ms=40"), "{line}");
     }
 
     /// A share with no denominator is printed as `n/a` rather than as zero.

@@ -53,6 +53,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the cadence measures the callback instead of the callback's wait for us (ADR 0133)
+
+Runtime-ownership steps 5 and 3, in that order. **Nothing is fixed by this and
+nothing is meant to be.** The three realtime violations ADR 0133 names are still
+in the callback, deliberately: changing them now would destroy the attribution
+the next event is supposed to carry.
+
+- **The first observed dropout is in the regression corpus as a timeline rather
+  than as a story.** Every cadence assertion this repo had drove a synthetic
+  timeline — which pins the arithmetic and not the phenomenon, and did not even
+  run at the cadence of the device the defect occurs on: they assume 2048
+  interleaved samples every 23 ms and it delivers 1024 every 11.6 ms.
+  `native-18` replays through the real `CallbackCadence` and reproduces its
+  recorded log line. The entry says which of its assertions check the event and
+  which only check the line.
+- **The gap is now a property of the stream, not of our own mutex.**
+  `cadence.observe` is fed the moment the callback arrived, taken before
+  `shared.lock()`, so "the callback was never called" and "the callback was
+  called and waited on us" stop being the same number.
+- **The lock wait is its own reported quantity**, `slowest_lock_wait_ms` and
+  `lock_wait_total_ms`, and it is the entire difference between the record's
+  hypotheses 1 and 4. The reading was pre-registered by ADR 0133 and is not
+  chosen after the fact.
+- **`signature()` stops overclaiming.** A gap that is mostly our own lock is
+  reported as `blocked_on_our_lock` rather than `stream_suspended`, which
+  asserted a producer-side cause from an observation that could not carry one.
+  Ordinary contention does not reach the verdict — the threshold is half the
+  longest gap — and a gap with no lock wait is still a suspend, which is the
+  direction that matters, because that is the first real support hypothesis 1
+  has ever had.
+- **The loss below the threshold is attributed.** `native-18` lost 2.556 s, named
+  1.681 s of it in seven gaps, and the remaining 0.875 s sat in no gap and in no
+  field. `lost_in_gaps_seconds` and `lost_below_threshold_seconds` now approach
+  `wall - recorded` together.
+- **That field was wrong on its first implementation and real hardware said so.**
+  Summing only the late side of the jitter reported **0.292 s lost on a
+  four-second soak segment that had recorded MORE audio than its own clock ran**
+  — a fabricated loss, produced by the instrument built to find fabricated
+  losses, and invisible to every synthetic test because the test constants
+  rounded 23.2 ms to 23. ALSA delivers in bursts, so an early callback repays a
+  late one and the sum has to be signed. Re-measured on the same hardware the
+  three segments read 0.005, **−0.006** and 0.007 s against 0.291/0.292/0.302
+  before. The negative one is the segment whose recorded audio exceeds its clock,
+  and it is reported rather than clamped, because that is hypothesis 3 showing
+  itself.
+- **The soak takes the same change** (ADR 0084's premise is that it is the app
+  minus a *known* delta) and now measures its own lock contention, which had
+  been assumed to be zero and is now a number.
+- **The three fields are appended to the cadence line, never woven in.** A test
+  holds the field order, because `~/.cache/wordscript-soak-report.sh` and the
+  event history in the record both parse it positionally — a field inserted in
+  the middle silently changes what every previously recorded capture meant.
+
+Rust tests 790 → 799 (+9: one corpus replay, eight in `core::capture`). Every
+one was falsified against a deliberately broken implementation before it was
+trusted, and the mutation table is in the commit. `cargo check` unchanged at 15
+warnings. Frontend untouched. **`process_samples` takes an `AppHandle` and is
+driven by no test in this repo, so that `arrived_at` is taken before the lock is
+held by construction and review rather than by an assertion** — the half of that
+decision a test can hold is held.
+
 ### Fixed — the runtime finishes the session, and the dev server stops killing the window (ADR 0134)
 
 Runtime-ownership steps 1 and 2. **Step 1 passed its native-host acceptance run
@@ -112,9 +173,14 @@ restarts the dev server in place and leaves the parked overlay permanently
 blank while the runtime keeps working. That is what produced the invisible
 overlay during the acceptance run, and it is now a rule in `AGENTS.md`.
 
-Rust tests 790 → 793 (three new, all in `core::sessions`; two were made to fail
+Rust tests 787 → 790 (three new, all in `core::sessions`; two were made to fail
 against a build without the epoch guard before they were trusted). Frontend
 unchanged at 533 in 42 files — no frontend code was touched.
+
+*(This line read `790 → 793` until 2026-08-14 and took the after-number as the
+before-number. Measured at `83d4f0d` the suite is 790, `b9f493e` is documented
+at 787, and that commit adds exactly three `#[test]` items — corrected here
+because the next step measures its own delta against it.)*
 
 ### Documented — the session end belongs to a window, and the instruments that could not see it (ADR 0133, ADR 0134)
 
