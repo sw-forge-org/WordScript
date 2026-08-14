@@ -183,6 +183,20 @@ Interpretation of a heartbeat gap against the per-capture level-emit accounting
 is in
 [known-issues/overlay-recording-freeze.md](known-issues/overlay-recording-freeze.md).
 
+### Reading a capture that lost audio
+
+```
+scripts/read-capture-event.sh [logfile]
+```
+
+Finds every `verdict=Short` capture in the runtime log, pairs it with its
+cadence line, and applies the reading ADR 0133 registered in advance: a lock
+wait dominating the longest gap means the app blocked its own audio thread, a
+lock wait near zero means the callback genuinely was not called. It refuses to
+read an event recorded before that instrument landed, because in those the two
+are the same number. It decides nothing on its own — it prints what the ADR said
+to look at, so the event is not missed while nobody is looking for it.
+
 ## Validation
 
 Run the smallest relevant validation first, then broaden it for cross-cutting
