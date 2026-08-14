@@ -132,6 +132,7 @@ export type { MenuEntry } from "./FloatBar";
 export {
   ChatWindow, ChatWinDeco, AiChatBody, AiChatFoot, Msg, Bubble, Typing,
 } from "./ChatWindow";
+export { usePopout, type PopoutHandle } from "./usePopout";
 export {
   ActionsBody, ActionsList, ActionsRule, ActionRow, ActionNew, ActionsEdit,
   ActionsDesk, ActionsFoot, FieldRow,

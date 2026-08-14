@@ -689,7 +689,9 @@ from the microphone without transcribing itself.
 ## Candidate - Meeting capture
 
 **Status:** candidate, not scheduled. Added 2026-08-03. Needs the decision gate
-below before it becomes scope, and an ADR before any of it is built.
+below before it becomes scope, and an ADR before any of it is built. **Three of
+its four gates are closed** as of 2026-08-14; the one that remains is gate 3,
+and it is a capability question rather than a product one.
 
 **Why it is written down at all.** `NotesArea` ships speaker separation, and
 nothing in the product creates a note that contains audio — a note is authored
@@ -720,7 +722,16 @@ obligations.
 - **System-audio capture**, per platform. This is the real cost and there is no
   native path in the runtime today.
 - **Echo cancellation.** The microphone hears the speakers, so every remote
-  voice arrives twice. A real component, not a flag.
+  voice arrives twice. A real component, not a flag — and since 2026-08-14 the
+  shape is specific enough to price, read off the donor and recorded in
+  [ADR 0136](decisions/0136-what-is-taken-from-the-donor-and-the-one-thing-it-does-that-must-not-be.md):
+  a **two-stage ONNX model** of the DTLN-AEC family over a 512-sample block with
+  a 128-sample shift, 2–24 MB of weights depending on variant, with the speaker
+  signal aligned to the microphone by cross-correlation up to 600 ms of lag and
+  the pass **skipped rather than guessed** when the reference is silent or
+  uncorrelated. **The cancelled microphone is a second view, never a
+  replacement** — the raw sources stay on disk, for the same reason ADR 0039
+  keeps a failed capture.
 - **Content protection on the meeting window.** It floats over a call that is
   often being screen-shared and must not appear in the share or the recording.
 - A **dedicated hotkey**, separate from the dictation trigger, plus the three
@@ -742,21 +753,44 @@ obligations.
    notification window carrying a different payload, so it is **not** a third
    surface to own — which is what this gate had assumed. Only an explicit stop
    ends a capture; nothing infers that a call is over.
-2. What happens to the audio of a meeting nobody keeps? ADR 0038 and ADR 0039
-   bound a dictation's audio; an hour of meeting is a different size of promise
-   and the sweep that covers one may not cover the other. **Still open**, and
-   two drawn surfaces carry it as an `Open decision`.
+2. ~~What happens to the audio of a meeting nobody keeps?~~
+   **Closed 2026-08-14 by [ADR 0135](decisions/0135-retention-is-a-guard-rather-than-a-timer-the-copilot-runs-on-turns-and-the-picker-is-a-sentence-with-a-sheet-behind-it.md).**
+   The drawn default stands — `Until the note is saved`, with `7 days` and
+   `Never` beside it — and what was missing was its definition rather than a
+   fourth option. It is **three conditions and a holder set, not one event**:
+   the session has ended, a transcript with content exists, and nothing still
+   holds the recording, where the notes pass, the diarization re-clustering pass
+   and a running re-transcribe each count as a holder. Meeting audio takes a
+   **second namespace and a second sweep budget** under ADR 0039 rather than
+   sharing its `7 days or 20 files`, because twenty dictations are a few
+   megabytes and twenty meetings are tens of gigabytes; ADR 0039's two guards
+   (`0600`, and the sweep deletes only what it created) carry over unchanged.
+   **`Never` means never written**, which requires a lane that streams and is
+   therefore inert with a reason on one that does not. A failed meeting keeps
+   its audio under every option.
 3. Does system-audio capture work without a per-session authorization prompt on
    the target platforms? Same gate, same reason, as the libei candidate above.
    **Still open.**
-4. **Is the meeting live-transcribed, or transcribed when it ends?** Added
+4. ~~**Is the meeting live-transcribed, or transcribed when it ends?**~~ Added
    2026-08-13 by [ADR 0130](decisions/0130-a-long-recording-is-a-sequence-of-turns-and-the-ceiling-that-binds-it-is-not-the-upload-size.md),
-   which found this chapter never mentioned transcribing the recording at all.
-   **Live is not free and not currently possible**: the catalogue records Groq
-   speech as batch only — no websocket, no `stream=true` — so live forces the
-   streaming contract (speech track D2) **and** a second credential for anyone
-   on the default connection. Transcribing at the end forces neither.
-   **Still open, and it is the owner's.**
+   which found this chapter never mentioned transcribing the recording at all —
+   and **withdrawn the same day by [ADR 0131](decisions/0131-every-surface-that-starts-a-job-names-where-it-runs-and-the-drawing-already-decided-more-than-was-read.md),
+   which found it already drawn**: `Live transcript` is a `toggle(true)` on the
+   `Meetings` job row of `AI Models`. It was never an owner question; it was a
+   prototype nobody had read. *This entry stayed stale for a day and is
+   corrected here.*
+
+   **What is real is narrower and is not a product question**: the catalogue
+   records Groq speech as batch only — no websocket, no `stream=true` — so the
+   toggle is drawn on and would be inoperable on the default connection. It
+   stays visible, goes inert, and names the reason. That is a **fourth
+   `InertReason` kind**, *this lane does not stream*, which
+   [ADR 0135](decisions/0135-retention-is-a-guard-rather-than-a-timer-the-copilot-runs-on-turns-and-the-picker-is-a-sentence-with-a-sheet-behind-it.md)
+   gave a second caller (the `Never` retention option) and which speech track
+   C4 owes. Live transcription still forces the streaming contract (speech track
+   D2) and a second credential for anyone on the default connection; what
+   changed is that the product answer was already given and only the inert state
+   was missing.
 
 **How the recording becomes a transcript, since this chapter never said.**
 It is the speech track's C1 and nothing more: *a turn is a recording, the stream

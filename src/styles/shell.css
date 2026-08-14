@@ -4551,6 +4551,20 @@
      open from adjacent buttons and behave differently teach two rules for one
      gesture. Wider than Ask because it holds a list beside an editor. */
   .ws-actionswin { width: 520px; height: 440px; }
+  /* IN A REAL WINDOW THE CONTENT IS THE WINDOW. The family's fixed size and
+     corner anchor exist because a box inside the workspace has to be put
+     somewhere; a window is already somewhere, and the compositor owns its
+     frame, its shadow and its radius (ADR 0003). Keeping any of the three here
+     would draw a second window inside the first. */
+  .ws-popout-root { position: fixed; inset: 0; background: var(--bg-base); }
+  .ws-win-bare,
+  .ws-popout-root .ws-hud {
+    position: static;
+    width: 100%; height: 100%; max-width: none; max-height: none;
+    border: 0; border-radius: 0; box-shadow: none;
+  }
+  /* The resize grip is the compositor's corner now. */
+  .ws-popout-root .ws-hud-resize { display: none; }
   .ws-win-sub { flex: none; font-size: 10px; color: var(--fg-muted); }
   /* The subtitle takes the middle, so the title stops growing and the close
      control keeps the right edge. */
@@ -4723,6 +4737,15 @@
     overflow: hidden;
     position: relative;
   }
+  /* THE HUD AS A POP-OUT, over another surface rather than in flow. Same
+     window, one anchor: 330 × 560 is the drawn size and is not relaxed here.
+     It sits above the two panels because in the product it is a separate
+     always-on-top window and they are panels over the object. */
+  .ws-hud.ws-hud-popout {
+    position: absolute; right: var(--s4); bottom: var(--s4);
+    max-height: calc(100% - var(--s5));
+    z-index: 7;
+  }
   /* ADR 0003: the OS draws the frame. This strip stands in for it, exactly as
      the main window's does — no traffic lights are invented here either. */
   .ws-hud-deco {
@@ -4732,7 +4755,18 @@
     border-bottom: 1px solid var(--border);
     font-size: 10px; color: var(--fg-muted);
     cursor: grab;
+    position: relative;
   }
+  /* The pop-out's own close control. In the product the compositor draws one
+     and this strip does not exist; here it is the only way back. */
+  .ws-hud-deco button {
+    position: absolute; right: var(--s2);
+    width: 18px; height: 18px; border-radius: 5px;
+    display: grid; place-items: center; color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .ws-hud-deco button:hover { background: var(--bg-elevated); color: var(--fg); }
+  .ws-hud-deco button svg { width: 11px; height: 11px; }
   /* 330 px is not much to put a title, a date and a three-way switch into, so
      nothing here is allowed to wrap: the title truncates, the date stays on
      one line, and the tabs shrink a step rather than pushing the title into

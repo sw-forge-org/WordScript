@@ -16,6 +16,12 @@ const OverlayWindow = lazy(() => import("./windows/OverlayWindow"));
 // pulls in never load on a route that ships.
 const GalleryWindow = lazy(() => import("./windows/GalleryWindow"));
 
+// Ask, Actions and the meeting HUD as their own OS windows rather than boxes
+// pinned inside the workspace. Created at runtime by `openPopout`, so this route
+// is reached only by a window that already exists; lazy for the same reason the
+// two above are.
+const PopoutWindow = lazy(() => import("./windows/PopoutWindow"));
+
 /**
  * `/settings` IS THE WORKSPACE NOW, and the path stays because `tauri.conf.json`
  * pins it and `src-tauri/` is out of scope until Leg 5 (rule 6). The window it
@@ -32,6 +38,7 @@ export default function App() {
         <Route path="/rebuild-lab" element={<RebuildLabWindow />} />
         <Route path="/settings" element={<WorkspaceWindow />} />
         <Route path="/gallery" element={<Suspense fallback={null}><GalleryWindow /></Suspense>} />
+        <Route path="/popout/:surface" element={<Suspense fallback={null}><PopoutWindow /></Suspense>} />
         <Route path="*" element={<Navigate to="/overlay" replace />} />
       </Routes>
     </>

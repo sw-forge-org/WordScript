@@ -377,8 +377,15 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="Meeting audio"
-              hint="An hour of recording is a different size of promise than a dictation's few seconds. Undecided."
-              control={<StatusBadge tone="warning">Open decision</StatusBadge>}
+              hint="Kept under its own budget rather than sharing a dictation's, because twenty meetings are not twenty dictations. The rule that ends one is set where a meeting is configured."
+              control={
+                <span className="ws-rowflex">
+                  <StatusBadge tone="plan">Own budget</StatusBadge>
+                  <Button variant="ghost" icon={<Icon name="arrow" />}>
+                    Notes &amp; Meetings
+                  </Button>
+                </span>
+              }
             />
           </CardRows>
         </Card>

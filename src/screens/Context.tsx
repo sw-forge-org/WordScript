@@ -66,6 +66,7 @@ import {
   Toggle,
   Transcript,
   Typing,
+  usePopout,
   ViewTop,
   WhoAdd,
   WhoChip,
@@ -73,6 +74,8 @@ import {
 } from "@/components/shell";
 import { DESK, DESK_CAP } from "./data";
 import { ACTIONS, CTX, FOLDERS } from "./contextData";
+import { MeetingHud } from "./Meeting";
+import { hasNativeHost, openPopout, type PopoutSurface } from "@/windows/popout";
 import type { ScreenProps } from "./props";
 
 /**
@@ -95,6 +98,10 @@ import type { ScreenProps } from "./props";
  */
 
 type Tab = "Transcript" | "Notes" | "Summary" | "Linked";
+
+/* `null` is a real state: both windows shut, the object on its own. */
+type Panel = "ask" | "actions" | null;
+type Mode = "read" | "intake";
 
 const TABS: Array<{ id: Tab; icon: "list" | "notes" | "sparkle" | "layers" }> = [
   { id: "Transcript", icon: "list" },
@@ -137,7 +144,7 @@ const LINES = [
  * that already behaves like the rest of the product rather than a second idiom
  * to reconcile.
  */
-function ContextRail({ addOn }: { addOn?: boolean }) {
+function ContextRail({ addOn, onAdd }: { addOn?: boolean; onAdd?: () => void }) {
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -167,7 +174,12 @@ function ContextRail({ addOn }: { addOn?: boolean }) {
         </Folders>
       </PaneSec>
       <PaneSec grow>
-        <PaneSecHead label="Everything" addLabel="Add a recording, file or link" addOn={addOn} />
+        <PaneSecHead
+          label="Everything"
+          addLabel="Add a recording, file or link"
+          addOn={addOn}
+          onAdd={onAdd}
+        />
         <PaneSearch>
           <Field placeholder="Search transcripts, notes and people…" />
         </PaneSearch>
@@ -218,10 +230,16 @@ function ContextRail({ addOn }: { addOn?: boolean }) {
    Its two shipped facts survive the move out of the old Chat screen: an answer
    names the rows it read, and voice input is the dictation hotkey rather than
    a second recording path. */
-function AskWindow() {
+export function AskPopout({ onClose, bare }: { onClose?: () => void; bare?: boolean }) {
+  const popout = usePopout();
+
   return (
-    <ChatWindow>
-      <ChatWinDeco title="Ask" onMinimize={() => undefined} onClose={() => undefined} />
+    <ChatWindow className={bare ? "ws-win-bare" : undefined} style={bare ? undefined : popout.style}>
+      {/* In a real window the compositor draws the strip. Drawing a second one
+          is the fake-traffic-lights defect arrived at from the other side. */}
+      {!bare && (
+        <ChatWinDeco title="Ask" onMinimize={onClose} onClose={onClose} handle={popout.handle} />
+      )}
       <AiChatBody>
         <Msg from="me">
           <Bubble>
@@ -249,20 +267,27 @@ function AskWindow() {
 }
 
 /* ── The Actions window ───────────────────────────────────────────────────── */
-function ActionsWindow() {
+export function ActionsPopout({ onClose, bare }: { onClose?: () => void; bare?: boolean }) {
   /* The selected one is the desk action, because that is the half of this
      window that is new and the half whose extra fields have to be visible. */
   const selected = ACTIONS[4];
   const desk = selected.kind === "desk";
+  const popout = usePopout();
 
   return (
-    <ChatWindow className="ws-actionswin">
-      <ChatWinDeco
-        title="Actions"
-        sub={`6 · 2 built-in · 2 run on ${DESK}`}
-        closeLabel="Close actions"
-        onClose={() => undefined}
-      />
+    <ChatWindow
+      className={bare ? "ws-actionswin ws-win-bare" : "ws-actionswin"}
+      style={bare ? undefined : popout.style}
+    >
+      {!bare && (
+        <ChatWinDeco
+          title="Actions"
+          sub={`6 · 2 built-in · 2 run on ${DESK}`}
+          closeLabel="Close actions"
+          onClose={onClose}
+          handle={popout.handle}
+        />
+      )}
       <ActionsBody>
         <ActionsList>
           {ACTIONS.filter((action) => action.kind !== "desk").map((action) => (
@@ -391,79 +416,179 @@ function RunsOn({ desk }: { desk: boolean }) {
 
 /* ── The reading state ──────────────────────────────────────────────────── */
 
-function ContextScreenBody({ panel, banner }: { panel: "ask" | "actions" } & ScreenProps) {
+/**
+ * THE THREE DRAWN STATES ARE ONE SCREEN AND THEY REACH EACH OTHER.
+ *
+ * They were three gallery entries and nothing else: `Ask`, `Actions` and the
+ * `+` in the rail were drawn `on` or `off` and did nothing, and the intake's
+ * `Back to reading` did nothing either. That is ADR 0020's defect — a control
+ * whose effect is invisible — with four instances on one screen, and it made
+ * the preview unable to answer the question it exists for, which is *what is
+ * missing when you move through this*.
+ *
+ * NAVIGATION BETWEEN DRAWN STATES IS NOT A FAKE STATE, and the line matters
+ * because the rest of this screen deliberately does nothing. A row action that
+ * appeared to delete an object would assert a runtime that is not there; moving
+ * between two drawings of the same screen asserts only that they are two
+ * drawings of the same screen, which they are. `ContextRail`'s menu entries
+ * stay inert for exactly the reason its own comment gives.
+ *
+ * The three gallery ids still work and now set the starting state instead of
+ * being the only way to see one, so a deep link survives (§4.3).
+ */
+function ContextScreenBody({
+  panel: initialPanel = "ask",
+  mode: initialMode = "read",
+  banner,
+}: { panel?: Panel; mode?: Mode } & ScreenProps) {
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [panel, setPanel] = useState<Panel>(initialPanel);
   const [tab, setTab] = useState<Tab>("Summary");
+  const [way, setWay] = useState<Way>("Write");
+  const [recording, setRecording] = useState(false);
+  const hud = usePopout();
+
+  /* THE HOST OPENS A REAL WINDOW; THE BROWSER DRAWS THE BOX.
+     These three are OS windows in the product (ADR 0003, and `popout.ts`), so
+     in the native host the button opens one and nothing appears inside the
+     workspace. The gallery runs in a browser, where that is not possible and a
+     dead button would be the defect this pass came to remove — so it falls
+     back to the drawn pop-out, which is what it always was.
+
+     The host check is synchronous on purpose: awaiting a promise that is going
+     to say "no host" anyway would put a frame between the click and the box. */
+  const raise = (surface: PopoutSurface, draw: () => void) => {
+    if (!hasNativeHost()) {
+      draw();
+      return;
+    }
+    void openPopout(surface).then((opened) => {
+      if (!opened) draw();
+    });
+  };
+
+  /* A window closes to nothing rather than to the other one. Two buttons that
+     could never both be off would be a segment control wearing two hats. */
+  const toggle = (next: Exclude<Panel, null>) =>
+    raise(next, () => setPanel((open) => (open === next ? null : next)));
+
+  const intake = mode === "intake";
 
   return (
     <>
       <ViewTop
         title="Context"
         lead="Everything you have said, recorded or brought in — and what follows from it."
-        banner={banner ?? <PreviewBanner>Planned for V2. Nothing on the Summary tab is wired.</PreviewBanner>}
+        banner={
+          banner ??
+          (intake ? (
+            <PreviewBanner>Planned for V2.</PreviewBanner>
+          ) : (
+            <PreviewBanner>Planned for V2. Nothing on the Summary tab is wired.</PreviewBanner>
+          ))
+        }
       />
       <Pane
         list={
           <>
-            <ContextRail />
+            <ContextRail addOn={intake} onAdd={() => setMode("intake")} />
             {/* `New note` was here and is gone. The section heads own their own
                 additions, which is the pattern the whole rail is built on; a
                 third button repeating one of them at the foot made the foot
                 look like the place new things are made, and then contradicted
                 itself by not offering a new folder. What is left is the one
-                action the rail cannot express as an addition to a list. */}
+                action the rail cannot express as an addition to a list — and it
+                is ADR 0063's fourth way in, so it raises the meeting window the
+                way pressing it would. */}
             <PaneListFoot>
-              <Button icon={<Icon name="users" />}>Record meeting</Button>
+              <Button
+                icon={<Icon name="users" />}
+                onClick={() => raise("meeting", () => setRecording(true))}
+              >
+                Record meeting
+              </Button>
             </PaneListFoot>
             <PanePath path="~/Documents/WordScript/Meetings" onOpen={() => undefined} />
           </>
         }
         detail={
-          <>
-            <PaneDetailHead
-              title="Product Sync"
-              /* Two windows, two buttons, side by side — they open the same
-                 kind of thing and are told apart by their names, not by their
-                 behaviour. Export lost its label in the same pass: it is the
-                 one control here that is neither a way of looking at the object
-                 nor a window over it, and §11.28 says a labelled ghost button
-                 has to earn its width against the row's own sentence. */
-              actions={
-                <>
-                  <Button variant="ghost" icon={<Icon name="chat" />} on={panel === "ask"}>
-                    Ask
-                  </Button>
-                  <Button variant="ghost" icon={<Icon name="template" />} on={panel === "actions"}>
-                    Actions
-                  </Button>
-                  <IconButton label="Export" icon={<Icon name="download" />} />
-                </>
-              }
-              tabs={<NoteTabs label="Context" items={TABS} value={tab} onChange={setTab} />}
-            />
-            <PaneDetailMain
-              /* The menu is drawn closed here and open on the meeting HUD. It
-                 was open on this screen and the list grew from four entries to
-                 six, so it ran up behind the Ask window — two overlays at once,
-                 which is a state nobody is ever in. */
-              float={
-                <FloatBar>
-                  <MicButton label="Dictate into this note" />
-                  <SplitButton action={ACTIONS[0].name} />
-                </FloatBar>
-              }
-              overlay={panel === "actions" ? <ActionsWindow /> : <AskWindow />}
-            >
-              <NoteBody>
-                <NoteDate from="· from Google Calendar">
-                  Mar 11, 2026 · 12:04 · meeting · mic + system audio · 2 speakers
-                </NoteDate>
-                {tab === "Transcript" && <TranscriptTab />}
-                {tab === "Notes" && <NotesTab />}
-                {tab === "Summary" && <SummaryTab />}
-                {tab === "Linked" && <LinkedTab />}
-              </NoteBody>
-            </PaneDetailMain>
-          </>
+          intake ? (
+            <IntakeDetail way={way} onWay={setWay} onBack={() => setMode("read")} />
+          ) : (
+            <>
+              <PaneDetailHead
+                title="Product Sync"
+                /* Two windows, two buttons, side by side — they open the same
+                   kind of thing and are told apart by their names, not by their
+                   behaviour. Export lost its label in the same pass: it is the
+                   one control here that is neither a way of looking at the
+                   object nor a window over it, and §11.28 says a labelled ghost
+                   button has to earn its width against the row's own sentence. */
+                actions={
+                  <>
+                    <Button
+                      variant="ghost"
+                      icon={<Icon name="chat" />}
+                      on={panel === "ask"}
+                      onClick={() => toggle("ask")}
+                    >
+                      Ask
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      icon={<Icon name="template" />}
+                      on={panel === "actions"}
+                      onClick={() => toggle("actions")}
+                    >
+                      Actions
+                    </Button>
+                    <IconButton label="Export" icon={<Icon name="download" />} />
+                  </>
+                }
+                tabs={<NoteTabs label="Context" items={TABS} value={tab} onChange={setTab} />}
+              />
+              <PaneDetailMain
+                /* The menu is drawn closed here and open on the meeting HUD. It
+                   was open on this screen and the list grew from four entries to
+                   six, so it ran up behind the Ask window — two overlays at once,
+                   which is a state nobody is ever in. */
+                float={
+                  <FloatBar>
+                    <MicButton label="Dictate into this note" />
+                    <SplitButton action={ACTIONS[0].name} />
+                  </FloatBar>
+                }
+                /* THREE WINDOWS AND THE HUD IS NOT ONE OF THE TWO. Ask and
+                   Actions are panels over this object and replace each other;
+                   the meeting window is its own window over everything, so it
+                   stands beside them rather than in their slot. That is the
+                   product's arrangement, not a preview convenience. */
+                overlay={
+                  <>
+                    {panel === "actions" && <ActionsPopout onClose={() => setPanel(null)} />}
+                    {panel === "ask" && <AskPopout onClose={() => setPanel(null)} />}
+                    {recording && (
+                      <MeetingHud
+                        tab="Summary"
+                        popout={{ style: hud.style, handle: hud.handle }}
+                        onClose={() => setRecording(false)}
+                      />
+                    )}
+                  </>
+                }
+              >
+                <NoteBody>
+                  <NoteDate from="· from Google Calendar">
+                    Mar 11, 2026 · 12:04 · meeting · mic + system audio · 2 speakers
+                  </NoteDate>
+                  {tab === "Transcript" && <TranscriptTab />}
+                  {tab === "Notes" && <NotesTab />}
+                  {tab === "Summary" && <SummaryTab />}
+                  {tab === "Linked" && <LinkedTab />}
+                </NoteBody>
+              </PaneDetailMain>
+            </>
+          )
         }
       />
     </>
@@ -656,63 +781,48 @@ type Way = "Write" | "Record" | "Import";
  * (§11.38): it decides what is being made, so a switch that left the panel
  * identical would assert the three ways are one thing with three names.
  */
-export function ContextIntakeScreen() {
-  const [way, setWay] = useState<Way>("Write");
-
+function IntakeDetail({
+  way,
+  onWay,
+  onBack,
+}: {
+  way: Way;
+  onWay: (way: Way) => void;
+  onBack: () => void;
+}) {
   return (
     <>
-      <ViewTop
-        title="Context"
-        lead="Everything you have said, recorded or brought in — and what follows from it."
-        banner={<PreviewBanner>Planned for V2.</PreviewBanner>}
-      />
-      <Pane
-        list={
-          <>
-            <ContextRail addOn />
-            <PaneListFoot>
-              <Button icon={<Icon name="users" />}>Record meeting</Button>
-            </PaneListFoot>
-            <PanePath path="~/Documents/WordScript/Meetings" onOpen={() => undefined} />
-          </>
+      <PaneDetailHead
+        title="New"
+        actions={
+          <Button variant="ghost" icon={<Icon name="arrow" />} onClick={onBack}>
+            Back to reading
+          </Button>
         }
-        detail={
-          <>
-            <PaneDetailHead
-              title="New"
-              actions={
-                <Button variant="ghost" icon={<Icon name="arrow" />}>
-                  Back to reading
-                </Button>
-              }
-              tabs={
-                <SegmentControl
-                  aria-label="Intake"
-                  value={way}
-                  onChange={setWay}
-                  options={[
-                    { value: "Write", label: "Write" },
-                    { value: "Record", label: "Record" },
-                    { value: "Import", label: "Import" },
-                  ]}
-                />
-              }
-            />
-            <PaneDetailMain>
-              <NoteBody className="ws-intake-body">
-                {way === "Write" && <WriteWay />}
-                {way === "Record" && <RecordWay />}
-                {way === "Import" && <ImportWay />}
-                <Note icon="list">
-                  What is running is in the list on the left with its state on the row. There is
-                  no second queue: a file being transcribed is a context object without a
-                  transcript yet.
-                </Note>
-              </NoteBody>
-            </PaneDetailMain>
-          </>
+        tabs={
+          <SegmentControl
+            aria-label="Intake"
+            value={way}
+            onChange={onWay}
+            options={[
+              { value: "Write", label: "Write" },
+              { value: "Record", label: "Record" },
+              { value: "Import", label: "Import" },
+            ]}
+          />
         }
       />
+      <PaneDetailMain>
+        <NoteBody className="ws-intake-body">
+          {way === "Write" && <WriteWay />}
+          {way === "Record" && <RecordWay />}
+          {way === "Import" && <ImportWay />}
+          <Note icon="list">
+            What is running is in the list on the left with its state on the row. There is no
+            second queue: a file being transcribed is a context object without a transcript yet.
+          </Note>
+        </NoteBody>
+      </PaneDetailMain>
     </>
   );
 }
@@ -874,4 +984,8 @@ export function ContextScreen({ banner }: ScreenProps = {}) {
 
 export function ContextActionsScreen() {
   return <ContextScreenBody panel="actions" />;
+}
+
+export function ContextIntakeScreen() {
+  return <ContextScreenBody mode="intake" panel={null} />;
 }

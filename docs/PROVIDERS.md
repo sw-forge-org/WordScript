@@ -467,6 +467,23 @@ document's findings -- that Groq's speech path does not stream, and that
 Cartesia publishes no TTFB -- exist precisely because a search result said
 otherwise.
 
+**Groq's batch-only speech path has an independent second source since
+2026-08-14**, and it is an implementation rather than a page. The meeting donor
+`donors/app/meeting-notetakers/anarlog` carries its own per-`(provider, model)`
+capability table
+(`apps/desktop/src/stt/capabilities.ts`, `getSttModelTranscriptionMode`) and
+classes `groq` as `batch` with no exception, alongside `openrouter`,
+`siliconflow`, `together`, `zai`, `speechmatics`, `azure_speech`,
+`google_cloud`, `aws_transcribe` and `revai`. Read 2026-08-14. Two sources, one
+conclusion, from a vendor page and from a shipped product.
+
+**The donor's own shape is what this document exists to avoid, and that is the
+second half of the finding.** Its table is a ninety-line `if` cascade inline in
+the frontend, with no source and no read-date on any row -- the drift
+[ADR 0115](decisions/0115-a-model-name-is-a-dated-row-in-one-catalogue-and-neither-runtime-spells-it-alone.md)
+and `shared/model_catalogue.json` exist to prevent. **The finding is adopted;
+the shape is not.**
+
 ### Microsoft Azure Speech -- the MAI-Voice family
 
 Source: `learn.microsoft.com/azure/ai-services/speech-service/mai-voices`, read

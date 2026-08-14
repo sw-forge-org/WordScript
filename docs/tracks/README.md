@@ -36,6 +36,13 @@ contents of the directory.
   Seven steps; 1, 2, 3, 5 and 7 are unblocked. Both the orientation page and the
   sequence. **Shares `capture-loses-half-the-recording.md` with core hardening** —
   that track holds the loss, this one holds the instrument.
+- [`context-objects.md`](context-objects.md) — opened 2026-08-14, nothing built.
+  ADR 0045 declared one object with five states and five origins; no track built
+  it, and the drawing sits in `src/screens/Context.tsx` over a fixture. Five
+  stages: the object on disk, the four tabs over real data, the three ways in,
+  retention, and the meeting behind roadmap gate 3. **Named for the object and
+  not for meetings** — the meeting is one origin of five and the only gated one.
+  Both the orientation page and the sequence.
 - [`activation-gestures.md`](activation-gestures.md) — open, nothing built. Why
   one set of shortcut defaults cannot serve three activation modes, and the
   decisions still owed.

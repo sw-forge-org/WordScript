@@ -170,9 +170,13 @@ describe("Notes & Meetings", () => {
     for (const s of switches) expect(s).toBeDisabled();
   });
 
-  it("marks the undecided retention as an open decision rather than picking one", () => {
+  /* Was "marks the undecided retention as an open decision rather than picking
+     one" until 2026-08-14. ADR 0135 answered it — the drawn default stands and
+     gained a definition — so the badge came off and this case now asserts the
+     opposite: the row states its answer and no longer advertises a question. */
+  it("states the decided retention rather than carrying an open decision", () => {
     render(<NoteSettingsScreen />);
-    expect(screen.getByText("Open decision")).toBeInTheDocument();
+    expect(screen.queryByText("Open decision")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Keep the audio")).toHaveValue("Until the note is saved");
   });
 });
@@ -382,6 +386,58 @@ describe("Context", () => {
   it("draws the menu closed here, because two overlays at once is a state nobody is in", () => {
     const { container } = render(<ContextScreen />);
     expect(container.querySelector(".ws-menu")).toBeNull();
+  });
+
+  /* ADDED 2026-08-14. The three drawn states were three gallery entries and
+     nothing else: `Ask`, `Actions`, the rail's `+` and the intake's `Back to
+     reading` were drawn on or off and did nothing, which is ADR 0020's defect
+     four times on one screen. These cases hold the navigation — and only the
+     navigation. Everything else on this screen is still deliberately inert,
+     and `ContextRail`'s own comment says why. */
+  it("switches between the two windows and closes to neither", () => {
+    const { container } = render(<ContextScreen />);
+    expect(container.querySelector(".ws-actionswin")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    expect(container.querySelector(".ws-actionswin")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    expect(container.querySelector(".ws-actionswin")).toBeNull();
+    expect(container.querySelector(".ws-chatwin")).not.toBeNull();
+
+    /* Both shut is a real state. Two buttons that could never both be off
+       would be a segment control wearing two hats. */
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    expect(container.querySelector(".ws-chatwin")).toBeNull();
+  });
+
+  it("reaches the intake from the rail and comes back", () => {
+    render(<ContextScreen />);
+    expect(screen.queryByRole("button", { name: "Back to reading" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add a recording, file or link" }));
+    expect(screen.getByRole("button", { name: "Back to reading" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to reading" }));
+    expect(screen.queryByRole("button", { name: "Back to reading" })).not.toBeInTheDocument();
+  });
+
+  /* `Record meeting` raises the meeting window, because it is ADR 0063's
+     fourth way in and pressing it in the product would. The window is its own
+     window rather than a third panel — it may stand while Ask or Actions is
+     open, which is the arrangement the product has and the one a preview
+     pinned to a corner cannot show. */
+  it("raises the meeting window and lets it stand beside a panel", () => {
+    const { container } = render(<ContextScreen />);
+    expect(container.querySelector(".ws-hud-popout")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Record meeting" }));
+    expect(container.querySelector(".ws-hud-popout")).not.toBeNull();
+    /* Ask is still open behind it. Three windows, not one slot shared. */
+    expect(container.querySelector(".ws-chatwin")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close the meeting window" }));
+    expect(container.querySelector(".ws-hud-popout")).toBeNull();
   });
 });
 

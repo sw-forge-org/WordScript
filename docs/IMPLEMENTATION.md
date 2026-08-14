@@ -1,6 +1,6 @@
 # WordScript — the implementation board
 
-Status: 2026-08-12
+Status: 2026-08-14
 
 **This page answers one question: what is being built right now, by whom, and
 where does its sequence live.** It is the entry point for a session that is
@@ -34,6 +34,7 @@ updated; a kick-off is spent when its unit closes.
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Open, seven steps, none started**; step 1 is silent data loss and outranks the rest | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
+| **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
 ### GUI port
@@ -181,6 +182,29 @@ makes the window die less often, step 1 makes it not matter when it does.
 track holds the capture *loss* as one of its five invisible-damage records;
 this one holds the capture *instrument*. Re-read the record before appending —
 both tracks write to it.
+
+### Context objects
+
+Opened 2026-08-14 out of the meeting-donor reading (ADR 0135, ADR 0136), which
+found a gap rather than a feature: **ADR 0045 declared one object with five
+states and five origins on 2026-08-03, and no track ever built it.** What exists
+is a ported drawing over a fixture, and every route into that object was filed
+either as a roadmap candidate or as a step in somebody else's sequence.
+
+Owns ADR 0135–0149. The first two were written before the track existed, out of
+the speech track's donor reading, and are filed here because they are about this
+subject rather than about a lane.
+
+**It is named for the object and not for meetings on purpose.** The meeting is
+one origin of five and the only one behind a capability gate; a track called
+*meetings* would file four unblocked origins behind the blocked one.
+
+The seam with the **Speech** track is the one to keep straight: that track
+answers *where a job runs and what it can do*, this one answers *what the job
+produced*. Speech-track C1, C4 and B7 are requirements here, not duplicates.
+
+Stage E is blocked on roadmap gate 3 (system audio without a per-session
+prompt). A through D are not blocked by anything.
 
 ### Activation gestures
 

@@ -177,16 +177,13 @@ export function NoteSettingsScreen({ banner }: ScreenProps = {}) {
             />
             <Row
               label="Keep the audio"
-              hint="An hour of meeting is a different size of promise than a failed dictation. Undecided."
+              hint="The default goes when nothing needs the recording any more — the session ended, a transcript exists, and no pass still holds it. Never means never written, which needs a connection that transcribes while you talk."
               control={
-                <span className="ws-rowflex">
-                  <StatusBadge tone="warning">Open decision</StatusBadge>
-                  <Select defaultValue="Until the note is saved" aria-label="Keep the audio">
-                    <option>Until the note is saved</option>
-                    <option>7 days</option>
-                    <option>Never</option>
-                  </Select>
-                </span>
+                <Select defaultValue="Until the note is saved" aria-label="Keep the audio">
+                  <option>Until the note is saved</option>
+                  <option>7 days</option>
+                  <option>Never</option>
+                </Select>
               }
             />
           </CardRows>

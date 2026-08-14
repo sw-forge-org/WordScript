@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import type { PopoutHandle } from "@/components/shell";
 import {
   Button,
   Card,
@@ -123,18 +124,46 @@ const LEVEL_AT_REST = new Array(16).fill(0);
 
 type HudTab = "Transcript" | "Notes" | "Summary";
 
-function MeetingHud({
+/**
+ * EXPORTED SINCE 2026-08-14, so `Record meeting` in Context can raise the real
+ * window instead of describing one. It is the same specimen either way — this
+ * screen stands three of them side by side in flow, and Context floats one over
+ * the object; `popout` and `onClose` are what tell them apart, and neither adds
+ * a state the window did not already have.
+ */
+export function MeetingHud({
   tab,
   menu,
   copilot,
+  popout,
+  onClose,
+  bare,
 }: {
   tab: HudTab;
   menu?: boolean;
   copilot?: { text: string; source: string };
+  popout?: { style?: CSSProperties; handle: PopoutHandle };
+  onClose?: () => void;
+  /** In its own OS window: the compositor draws the frame, so the stand-in
+   *  strip goes rather than being drawn a second time. */
+  bare?: boolean;
 }) {
   return (
-    <Hud>
-      <HudDeco>native window decoration — drawn by the OS</HudDeco>
+    <Hud className={popout ? "ws-hud-popout" : undefined} style={popout?.style}>
+      {!bare && (
+        <HudDeco
+          handle={popout?.handle}
+          actions={
+            onClose && (
+              <button type="button" aria-label="Close the meeting window" onClick={onClose}>
+                <Icon name="x" />
+              </button>
+            )
+          }
+        >
+          native window decoration — drawn by the OS
+        </HudDeco>
+      )}
       <HudHead>
         {/* Two rows, as in the pane and for the same measured reason: at the
             HUD's 330 px the three tabs and the title cannot share a line, and
@@ -318,10 +347,10 @@ export function MeetingScreen() {
             />
             <Row
               label="What it costs"
-              hint="It compares the running transcript against the index continuously, which is inference for the length of the call rather than once at the end. Off by default, and the row that turns it on states the cost."
+              hint="One index lookup per finished turn — not a continuous comparison — and a model only when something clears the bar. It stays off by default because it is sometimes wrong mid-call, which is the expensive place to be wrong, not because of what it costs."
               control={
                 <span className="ws-rowflex">
-                  <StatusBadge tone="warning">Open decision</StatusBadge>
+                  <StatusBadge tone="plan">Per turn</StatusBadge>
                   <Toggle checked={copilotOn} onCheckedChange={setCopilotOn} aria-label="Copilot" />
                 </span>
               }
@@ -548,8 +577,15 @@ export function MeetingScreen() {
             />
             <Row
               label="The audio afterwards"
-              hint="Undecided. ADR 0039 keeps a failed dictation's audio until the retry or the sweep; an hour of meeting is a different size of promise."
-              control={<StatusBadge tone="warning">Open decision</StatusBadge>}
+              hint="It goes when nothing needs it any more: the meeting ended, a transcript exists, and neither the notes pass nor the speaker pass is still reading it. A meeting that failed keeps its recording either way."
+              control={
+                <span className="ws-rowflex">
+                  <StatusBadge tone="plan">Until nothing needs it</StatusBadge>
+                  <Button variant="ghost" icon={<Icon name="arrow" />}>
+                    Notes &amp; Meetings
+                  </Button>
+                </span>
+              }
             />
           </CardRows>
         </Card>

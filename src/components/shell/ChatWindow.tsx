@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Icon } from "./Icon";
+import type { PopoutHandle } from "./usePopout";
 
 /**
  * THE SMALL WINDOW — `demo.css`'s `.chatwin`, and the family Ask, Actions and
@@ -20,9 +21,18 @@ import { Icon } from "./Icon";
  * strip exactly as the main window's does. No traffic lights are invented, and
  * the resize grip is the corner the compositor would give it.
  */
-export function ChatWindow({ className, children }: { className?: string; children: ReactNode }) {
+export function ChatWindow({
+  className,
+  style,
+  children,
+}: {
+  className?: string;
+  /** `usePopout`'s translation. Absent until somebody drags the strip. */
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
   return (
-    <div className={cn("ws-chatwin", className)}>
+    <div className={cn("ws-chatwin", className)} style={style}>
       {children}
       <span className="ws-hud-resize" aria-hidden />
     </div>
@@ -36,6 +46,7 @@ export function ChatWinDeco({
   onMinimize,
   onClose,
   closeLabel = "Close",
+  handle,
 }: {
   title: string;
   /** A count or a boundary, in the middle. With one beside it the title stops
@@ -50,9 +61,12 @@ export function ChatWinDeco({
   onMinimize?: () => void;
   onClose?: () => void;
   closeLabel?: string;
+  /** The strip has advertised `cursor: grab` since the port. This is what
+   *  finally answers it — `usePopout`'s handlers, spread onto the strip. */
+  handle?: PopoutHandle;
 }) {
   return (
-    <div className="ws-chatwin-deco">
+    <div className="ws-chatwin-deco" {...handle}>
       <b>{title}</b>
       {typeof sub === "string" ? <span className="ws-win-sub">{sub}</span> : sub}
       {actions ?? (

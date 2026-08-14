@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import { Icon } from "./Icon";
+import type { PopoutHandle } from "./usePopout";
 
 /**
  * THE MEETING WINDOW — `demo.css`'s `.hud`.
@@ -28,9 +30,19 @@ export function HudWrap({ children }: { children: ReactNode }) {
   return <div className="ws-hud-wrap">{children}</div>;
 }
 
-export function Hud({ children }: { children: ReactNode }) {
+export function Hud({
+  className,
+  style,
+  children,
+}: {
+  /** `ws-hud-popout` when it stands over another surface rather than in flow. */
+  className?: string;
+  /** `usePopout`'s translation. Absent until somebody drags the strip. */
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
   return (
-    <div className="ws-hud">
+    <div className={cn("ws-hud", className)} style={style}>
       {children}
       <span className="ws-hud-resize" aria-hidden />
     </div>
@@ -39,8 +51,23 @@ export function Hud({ children }: { children: ReactNode }) {
 
 /** ADR 0003: the OS draws the frame. This stands in for it, exactly as the
  *  main window's strip does — no traffic lights are invented here either. */
-export function HudDeco({ children }: { children: ReactNode }) {
-  return <div className="ws-hud-deco">{children}</div>;
+export function HudDeco({
+  children,
+  handle,
+  actions,
+}: {
+  children: ReactNode;
+  /** `usePopout`'s handlers, when this HUD is a pop-out over another surface. */
+  handle?: PopoutHandle;
+  /** A close control, for the same case. In the product the OS draws one. */
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="ws-hud-deco" {...handle}>
+      {children}
+      {actions}
+    </div>
+  );
 }
 
 export function HudHead({ children }: { children: ReactNode }) {

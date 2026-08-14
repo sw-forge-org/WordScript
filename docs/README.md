@@ -55,7 +55,7 @@ the set drifted in the first place.
 | [`known-issues/`](known-issues/README.md) | Living diagnostic records for open and resolved bugs. A resolved one stays, as the reference for its failure class | living |
 | [`tracks/`](tracks/README.md) | The sequence and kick-off page of every **live** implementation track | living |
 | [`archive/`](archive/README.md) | Closed tracks, spent plans, spent briefs, closed hand-off records | frozen |
-| [`donors/`](donors/README.md) | Frozen comparison repositories and slice planning, captured 2026-06-10 | frozen |
+| [`donors/`](donors/README.md) | Frozen comparison repositories and slice planning, captured 2026-06-10, plus the **mechanism index** for the trees that are cloned but gitignored — read it before searching a donor repository again | frozen |
 | [`prototypes/`](prototypes/settings-rework/README.md) | The settings-rework demo GUI. **Read-only since 2026-08-04** (ADR 0057) — it is provenance, and the gallery is the source | frozen |
 
 ## Documentation outside this directory

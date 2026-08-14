@@ -1,10 +1,15 @@
 # WordScript -- Platforms
 
-Status: 2026-07-27
+Status: 2026-08-14
 
 Platform support matrix and platform-specific insert/recovery diagnostics.
 Source is `core::insertion` (`NativeInsertionPlatformStatus`); this file is
 the human-readable mirror of the native contract.
+
+The closing section, *Meeting surfaces*, is the exception to that sentence: it
+describes work that is not built and has no native source yet. It is here
+because the rule it states has to exist before the first platform-specific
+answer is written, not after.
 
 ## Support and platform matrix
 
@@ -490,3 +495,48 @@ pactl suspend-source <default-source> 1
 stream-error callback fires; the persistent runtime log should show
 `[WordScript] Native capture stream rebuilt session_id=... new_device=... new_sample_rate=... rebuild_attempt=1`
 and the recording should continue without an error pill.
+
+## Meeting surfaces -- what has to hold on every OS
+
+Added 2026-08-14 by
+[ADR 0136](decisions/0136-what-is-taken-from-the-donor-and-the-one-thing-it-does-that-must-not-be.md).
+Nothing in this section is built. It is here **before** the work rather than
+after it, because the failure it describes is one a donor already shipped and
+the temptation is structural rather than accidental.
+
+### The rule
+
+A meeting-capture capability is either available on a platform or **named as
+absent on that platform's surface**. What is refused is shipping the surface as
+though the guarantee were universal. A window that stays out of a screen share
+on one operating system and silently appears in it on another is the fake-state
+rule raised to the level of a platform: *on macOS* is not an answer somebody in
+a call can act on.
+
+This is the same obligation the insert path already meets. `NativeInsertionPlatformStatus`
+carries a support tier, a strategy, visible prerequisites **and visible honest
+limits**, and the About area shows them. A meeting surface owes the same shape.
+
+### The five capabilities and where each one actually lives
+
+| Capability | What it needs | Where the cost is |
+|---|---|---|
+| Content protection on the meeting window | exclude the window from screen capture | **macOS**: one property on the panel. **Windows**: a window-affinity call, and it interacts with the compositor. **Linux**: no portable answer -- Wayland has no capture-exclusion protocol, X11 has none either, so a compositor-specific path or an honest absence |
+| System-audio capture | a loopback or tap of the output device | the real cost of the whole candidate, per platform, and roadmap gate 3 |
+| Auto-stop when the call ends | notice the meeting app releasing the microphone | rides the same process/device watch ADR 0063 already scoped for detection |
+| The floating control bar | an always-on-top surface that does not steal focus | the overlay already solves this shape; the meeting window's obligations differ (ADR 0063, it may be focused) |
+| Reading the meeting app's own chat | an accessibility or automation API per app | app-specific and permission-gated everywhere; the least portable of the five |
+
+### The donor is the cost evidence, not the template
+
+`donors/app/meeting-notetakers/anarlog` implements all five and **gates all five
+on macOS**: the floating bar, the live-caption panel, content protection, the
+recording disclosure and meeting-chat capture are behind an `isMacos` check, and
+microphone detection is disabled on Windows. Its entire content protection is
+`panel.sharingType = .none` in three Swift files.
+
+That is worth recording precisely because the team behind it is funded and
+shipping. It measures the price of the other two platforms; it does not license
+taking the same exemption. Where a capability genuinely cannot exist on a
+platform, it is named here and on the surface -- which is what this section is
+for.

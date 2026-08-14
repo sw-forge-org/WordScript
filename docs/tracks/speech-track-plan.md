@@ -802,10 +802,29 @@ ceiling is knowable per `(provider, model)` and the bet is unnecessary.
 
 **A fourth consumer of a model exists and no axis carries it: the copilot.**
 ADR 0047's strip above the HUD bar compares the running transcript against the
-index **continuously, for the length of the call**. It is neither transcription
-nor the notes pass. Drawn `Open decision`, toggle **off**, and whether it becomes
-a `JobKey` or rides the assistant's resolution is open — ADR 0040's *one model
-for all four* is the argument that it rides.
+index. It is neither transcription nor the notes pass. Whether it becomes a
+`JobKey` or rides the assistant's resolution is open — ADR 0040's *one model for
+all four* is the argument that it rides.
+
+**Priced 2026-08-14 by [ADR 0135](../decisions/0135-retention-is-a-guard-rather-than-a-timer-the-copilot-runs-on-turns-and-the-picker-is-a-sentence-with-a-sheet-behind-it.md),
+and it is not continuous.** It runs **once per finished turn** — the same seam
+C1 cuts the audio on and `meetily` cuts the transcript on — and the comparison
+against the index is an **embedding plus a nearest-neighbour lookup**, not a
+model call. A language model is spent only when a candidate clears the
+threshold, which is rare by construction because the strip replaces rather than
+stacks. **So the copilot is two consumers, not one, and the second has no axis
+at all**: `JobKey`, `ProviderRole` and the catalogue describe transcription,
+chat and speech synthesis, and none of them describes an embedding. This step
+does not add the axis. It records that the row must name both, which is what
+will make the gap visible before the surface is built.
+
+**Retention is C4-adjacent and now has a definition** (ADR 0135, `ROADMAP.md`
+gate 2): the audio goes when the session has ended, a transcript with content
+exists, and no job still holds the recording — the notes pass, the re-clustering
+pass and a running re-transcribe each counting as a holder. The part that lands
+on this track is that **`Never` requires a lane that streams**, so it is the
+**second caller** for the fourth `InertReason` kind below rather than a separate
+mechanism.
 
 ---
 
@@ -1183,12 +1202,15 @@ view plus a pop-out is enough at a table* blocks G2's surface (ADR 0064).
 with a rule rather than with either of the two options it posed, and closed 10
 and 11 with the same rule.
 
-**ADR 0064's open point gained a second half on 2026-08-13.** It was *whether a
-view plus a pop-out is enough interaction at a table*; the owner's instruction
-that the translation window carries the provider and model picker means that
-question now also has to answer **what a picker looks like mid-conversation**.
-The obligation is settled (ADR 0129, G2's entry); the form is the same owner
-question it always was, one item longer.
+**ADR 0064's open point gained a second half on 2026-08-13 and lost it again on
+2026-08-14.** It was *whether a view plus a pop-out is enough interaction at a
+table*; the owner's instruction that the translation window carries the provider
+and model picker meant that question also had to answer **what a picker looks
+like mid-conversation**. ADR 0135 answered the second half — a sentence in the
+chrome, a collapsed ladder behind it, effective from the next turn, and a
+per-line provider on the produced record. **The first half is still open and is
+still the owner's**: whether a view plus a pop-out is enough at a table is a
+question about the table, not about the picker.
 
 ~~**Two more are live as of 2026-08-13, and both come from C4.**~~
 **Withdrawn the same day by ADR 0131: neither was an owner question.** Both were
@@ -1199,10 +1221,36 @@ still carry an `Open decision` badge, so **that one is genuinely the owner's** �
 but it is the drawing's own open point rather than something C4 discovered, and
 it is `docs/ROADMAP.md` gate 2.
 
-**Two that are real, and both are drawn `Open decision` already.** *What the
-copilot costs* — continuous inference for the length of a call, toggle off —
-and *what a picker looks like mid-conversation*, which is ADR 0064's first open
-point now that the translation window carries one.
+~~**Two that are real, and both are drawn `Open decision` already.**~~
+**All three closed 2026-08-14 by [ADR 0135](../decisions/0135-retention-is-a-guard-rather-than-a-timer-the-copilot-runs-on-turns-and-the-picker-is-a-sentence-with-a-sheet-behind-it.md)**,
+against a full reading of `donors/app/meeting-notetakers/anarlog` rather than
+against a preference. In the order they were open:
+
+- **Retention** keeps the drawn default and gains a definition: *the session has
+  ended, a transcript with content exists, and nothing still holds the
+  recording* — where the notes pass, the re-clustering pass and a running
+  re-transcribe each count as a holder. Meeting audio takes a second namespace
+  and a second sweep budget under ADR 0039 rather than sharing its numbers, and
+  **`Never` means never written**, which makes it a second caller for the
+  fourth `InertReason` kind below. `docs/ROADMAP.md` gate 2 is closed with it.
+- **What the copilot costs** stops being *continuous* and becomes **one
+  embedding per finished turn, and a model call only on a hit**. The seam is the
+  turn — the same rule C1 already applies to audio and `meetily` applies to the
+  transcript. The row names **two** models rather than one, which is ADR 0131's
+  rule applied to a control that starts two kinds of work, and the embedding
+  stage is a consumer no axis in this track carries.
+- **What a picker looks like mid-conversation** is ADR 0129's resolved sentence
+  in the window's chrome with the collapsed ladder behind it, **effective from
+  the next turn** (ADR 0064's rule for the language pair, inherited rather than
+  reinvented), and **a produced line carries the provider that produced it**.
+  B7's surface inventory gains that last item for the surfaces that do not exist
+  yet.
+
+**The donor answered the copilot question by not having one.** anarlog runs no
+inference during a call: its two AI tasks are `enhance` and `title`, both behind
+`postCaptureAction` in `stt/capture-lifecycle.ts`, and chat is on demand. That
+does not make the copilot wrong; it means it is not table stakes, so the row
+prices itself rather than justifying a category.
 
 ~~**And one that is a research decision rather than a design one.**~~
 **Closed 2026-08-13**: both were cloned on the owner's instruction into
@@ -1249,8 +1297,8 @@ Speaking row, so it is flagged rather than assumed.
 | B1 | **done** 2026-08-12 — `registered_providers()` answers for the whole table in one call, `src/lib/providerSeam.ts` is the third thing ADR 0106 named, five states rather than three, the two tests that record required both exist and both were made to fail before they were trusted (ADR 0124). +3 Rust tests, +25 frontend across 2 new files, `port:diff` unmoved at `structural 6 \| style 213 \| text 12` |
 | D1 | **done** 2026-08-12 — `core/providers/openai.rs` plus one registry line, on a transport and a credential store extracted from `groq.rs` in the same commit (ADR 0113, ADR 0126). `verbose_json` turned out to be `whisper-1`-only on this vendor, so the response format is per model and `ModelCapabilities` is non-vacuous for the first time. **The connection became writable** (ADR 0127) — the chip row, the credential row and every job row read one stored answer, so *a second lane can be operated* is a fact rather than a registry entry. +17 Rust tests, +3 frontend, `port:diff` **unmoved** at `structural 6 \| style 213 \| text 12`, no dependency moved |
 | B6 | **done** 2026-08-12 — added the same day on the owner's instruction. The override reads the config in the product and the drawn literal in the gallery, so `port:diff` is unmoved at `structural 6 \| style 213 \| text 12` for that half; the `stt` correction moves it to `structural 9 \| style 217 \| text 12` and that movement **is** the correction. The literal `Set` badge is gone, an unbuilt vendor is offered and disabled with its reason, and the provider select escapes its own inert reason. +6 frontend cases in `Models.test.tsx`, +3 in `providerSeam.test.ts`, all nine made to fail first. `PROVIDERS.md` disagreements 10, 11 and 13 closed |
-| B7 | **not started** — added 2026-08-13 (ADR 0129); the picker at the point of use, on B6 only. Closes disagreements 6 and 12 and answers the paragraph ADR 0128 left open |
-| C4 | **not started** — added 2026-08-13 (ADR 0130), corrected the same day (ADR 0131). The capture half is C1. What is real: the default lane cannot stream, nothing records a context window, and diarization is a third requirement. Two of its "open questions" were withdrawn — the prototype had already answered them |
+| B7 | **not started** — added 2026-08-13 (ADR 0129); the picker at the point of use, on B6 only. Closes disagreements 6 and 12 and answers the paragraph ADR 0128 left open. **ADR 0135 gave its form for the surfaces that run longer than one request**: a sentence in the chrome, a collapsed ladder behind it, effective from the next turn, and a per-line provider on the record. The upload intake is the degenerate case — one request, so no next turn |
+| C4 | **not started** — added 2026-08-13 (ADR 0130), corrected the same day (ADR 0131), extended 2026-08-14 (ADR 0135). The capture half is C1. What is real: the default lane cannot stream, nothing records a context window, and diarization is a third requirement. Two of its "open questions" were withdrawn — the prototype had already answered them. **The fourth `InertReason` kind now has two callers** (`Live transcript`, and `Never` retention), and the copilot is **two** consumers — an embedding per turn plus a model call on a hit — of which the first has no axis |
 | D3 | **not started, and not blocked** — its `Requires` line reads D1 and A3, both done. The graph below draws a `B2` line into its column that no `Requires` line supports; the line is decorative and the `Requires` is the contract |
 | B2, C1–C2, D2, E1–E2, F1–F3, G1–G3 | **not started** |
 
