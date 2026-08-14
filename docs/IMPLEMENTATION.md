@@ -33,7 +33,7 @@ updated; a kick-off is spent when its unit closes.
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
-| **Runtime ownership** | 2026-08-13 | **Open, seven steps, none started**; step 1 is silent data loss and outranks the rest | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
+| **Runtime ownership** | 2026-08-13 | **Steps 1 and 2 done 2026-08-14**, step 1 with its native-host run passed. Five open; step 7 gained a user-visible symptom | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
@@ -159,24 +159,30 @@ it does not.
 
 Owns ADR 0133 onward for its five records.
 
-**Step 1 is silent data loss.** Every insert call site is an `invoke` from
-`OverlayWindow.tsx`; after `preview ready` the runtime does nothing on its own.
-The clipboard write, the history record and the transcript file are all created
-inside that insert, so a window that never returns discards a finished
-dictation and nothing reports it. Measured across 277 previews: 1.12 s median,
-but 11–115 s in the 13 whose webview was destroyed mid-preview, and one
-transcript lost outright to an app restart. ADR 0134 gives the runtime a 10 s
-deadline; the overlay keeps commit and abort.
+**Step 1 was silent data loss and its code landed 2026-08-14.** Every insert
+call site is an `invoke` from `OverlayWindow.tsx`; after `preview ready` the
+runtime did nothing on its own. The clipboard write, the history record and the
+transcript file are all created inside that insert, so a window that never
+returned discarded a finished dictation and nothing reported it. Measured across
+277 previews: 1.12 s median, but 11–115 s in the 13 whose webview was destroyed
+mid-preview, and one transcript lost outright to an app restart. ADR 0134 gives
+the runtime a 10 s deadline; the overlay keeps commit and abort. **The
+acceptance run passed the same evening in the native host, in a run where the
+overlay rendered no frames at all** — two dictations reached all three artifacts
+10.0 s after their preview. Still owed: one healthy session logging
+`path=frontend`. **Step 2 is done**: one constant for the watcher and the test
+exclude, 20,393 inotify watches down to 576.
 
 The rest is why it stayed invisible. The capture cadence timestamps itself
 after taking the app's own mutex, so a suspended stream and a self-blocked
 callback are one number. The overlay heartbeat reports a *late* interval, so a
 reload — which destroys the interval rather than delaying it — reads as silence.
 And `npm run tauri dev` issued about 1,389 full reloads in 2.5 days because the
-watcher covers 36,000 files it has no reason to watch.
+watcher covered 36,000 files it had no reason to watch.
 
-Step 1 outranks the watcher fix even though the watcher is cheaper: the watcher
-makes the window die less often, step 1 makes it not matter when it does.
+Step 1 outranked the watcher fix even though the watcher is cheaper: the watcher
+makes the window die less often, step 1 makes it not matter when it does. Both
+landed the same day, in that order.
 
 **It shares `capture-loses-half-the-recording.md` with Core hardening.** That
 track holds the capture *loss* as one of its five invisible-damage records;

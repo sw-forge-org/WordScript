@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-13
+Status: 2026-08-14
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -537,6 +537,19 @@ Additional rules:
   from fourteen surveyed candidates -- one method, `synthesize_speech`, with
   streaming grown beside it later. Designed; still not built, and the method
   lands with its first implementation rather than ahead of it
+- **the cue output stream is held open, and that is why sound cues stick to one
+  device** (found 2026-08-14, reported as "the sound is gone"). The cues were
+  playing at full volume into the HDMI monitor while the owner listened on the
+  Bluetooth default -- nothing muted, nothing corked. A permanently open stream
+  acquires an output device at process start and keeps it, and PipeWire's
+  `module-stream-restore` re-applies that route on every restart, so the symptom
+  appears after a restart rather than at a device switch. The HDMI sink was
+  `RUNNING` with WordScript as its only stream: this app holds a device awake
+  for nothing, and moving the stream to Bluetooth would keep *that* device awake
+  instead. A stream opened per cue is routed when it plays and could not have
+  this symptom. The same lifecycle question is owed by the speech track's second
+  output stream (F2), so it should be decided once:
+  [known-issues/sound-output-underruns-and-reopens.md](known-issues/sound-output-underruns-and-reopens.md)
 - **the machine cannot speak while listening without hearing itself.** ADR 0098
   records the third capture state that would fix it, and the finding that the
   existing `muted` flag is a *level* mute and does not stop recording. Echo
@@ -735,28 +748,48 @@ Additional rules:
   under equal or worse pressure). ADR 0133 fixes the instrument; the fix for the
   defect deliberately waits for one more event:
   [known-issues/capture-loses-half-the-recording.md](known-issues/capture-loses-half-the-recording.md)
-- **the dev server rebuilds all three windows about 1,389 times in 2.5 days**,
-  because `vite.config.ts` excludes `donors/**` and `vendor/**` only under
-  `test.exclude`, which the dev server never reads — so it watches 36,000 files
+- **the dev server rebuilt all three windows about 1,389 times in 2.5 days**,
+  **fixed 2026-08-14** (runtime-ownership step 2): `server.watch.ignored` and
+  `test.exclude` now read one `NON_SOURCE_DIRS` constant, which is what the
+  duplication had made impossible. Measured on the running server: **20,393
+  inotify watches before, 576 after**, with `src/` hot reload unchanged. Before
+  that, `vite.config.ts` excluded `donors/**` and `vendor/**` only under
+  `test.exclude`, which the dev server never reads — so it watched 36,000 files
   including 577 `tsconfig.json`/`package.json`, each one a forced full reload.
-  That is the white GUI window and the vanishing overlay, and 33 captures had a
+  That was the white GUI window and the vanishing overlay, and 33 captures had a
   reload inside them while recording. Dev-only, one edit away, and it reopened
   the overlay-freeze record: a reload destroys the heartbeat rather than
   delaying it, so every instrument here read it as silence:
   [known-issues/dev-server-reloads-the-app-mid-session.md](known-issues/dev-server-reloads-the-app-mid-session.md)
-- **a finished dictation is discarded when its window does not come back**, and
-  this is the most damaging open item on the product path. `CLAUDE.md` gives the
-  runtime the insert; the runtime does not have it. Every insert call site is an
-  `invoke` from `OverlayWindow.tsx`, and after `preview ready` there is no
+- **a finished dictation was discarded when its window did not come back**, and
+  it was the most damaging open item on the product path. **The runtime finishes
+  the session itself since 2026-08-14** (ADR 0134, runtime-ownership step 1):
+  staging a `clipboard_only` preview arms a 10 s deadline that commits it —
+  clipboard, history record, transcript file — through the same body a window
+  commit takes, guarded so that a deadline armed for one staging can never
+  commit another. The runtime log names the path that completed the session
+  (`Native session completed path=frontend|deadline`), so deadline commits can
+  be counted rather than inferred. **The native-host acceptance run passed the
+  same evening, under the hardest available condition**: two dictations landed
+  in the clipboard, in `history.json` and as Markdown files 10.0 s after their
+  preview, in a run where the overlay rendered **no frames at all** — the
+  overlay diagnostic log has zero lines for it. One half is still owed, a
+  healthy session logging `path=frontend`, and the epoch guard has still never
+  run in the wild. **What it left open** is one case ADR 0134 did not weigh: an edit that
+  takes longer than ten seconds loses to the deadline and the unedited text is
+  committed — coherently (the edit surface closes rather than erroring), but the
+  in-progress correction is gone. The record below is the pre-fix statement of
+  the defect. `CLAUDE.md` gives the
+  runtime the insert; the runtime did not have it. Every insert call site is an
+  `invoke` from `OverlayWindow.tsx`, and after `preview ready` there was no
   deadline and no fallback — while the clipboard write, the `history.json`
   record and the Markdown transcript are **all created inside that insert**. So
-  a destroyed, frozen or stranded overlay does not hide the text, it stops it
+  a destroyed, frozen or stranded overlay did not hide the text, it stopped it
   from ever being written. Measured across 277 `clipboard_only` previews:
   **1.12 s median, 11.45–115.11 s in the 13 whose webview was destroyed
   mid-preview**, and one transcript lost outright to an application restart.
-  ADR 0134 gives the runtime a 10 s deadline and keeps the overlay's commit and
-  abort; until it lands, the three overlay mechanisms are data-loss bugs rather
-  than surface bugs:
+  With the deadline in, the three overlay mechanisms stop being data-loss bugs
+  and stay surface bugs in their own records:
   [decisions/0134](decisions/0134-a-session-ends-in-the-runtime-not-in-the-window-that-shows-it.md)
 - **the recogniser echoes WordScript's own initial prompt into the transcript**,
   and one such sentence reached an agent as an instruction on 2026-08-10.

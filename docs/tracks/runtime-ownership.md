@@ -63,15 +63,120 @@ This table is the state of the track. Update it as steps land.
 
 | Step | What | State | Blocked on |
 |---|---|---|---|
-| 1 | the runtime finishes the session (ADR 0134) | **open, unblocked — do this first** | nothing |
-| 2 | the dev-server watcher | **open, unblocked** | nothing — one edit |
+| 1 | the runtime finishes the session (ADR 0134) | **done 2026-08-14 — acceptance run passed in the native host.** One half of the check still owed: a healthy session logging `path=frontend` | — |
+| 2 | the dev-server watcher | **done 2026-08-14** | — |
 | 3 | the cadence instrument (ADR 0133) | **open, unblocked** | nothing |
-| 4 | the overlay restores itself on mount | open | step 1 |
+| 4 | the overlay restores itself on mount | open | — (step 1 done) |
 | 5 | `native-18` into the regression corpus | **open, unblocked** | nothing |
 | 6 | read the next capture event, then fix | open | step 3, then one natural `Short` capture |
-| 7 | the cue output stream | **open, unblocked** | nothing |
+| 7 | the cue output stream | **open, unblocked — and it stopped being invisible on 2026-08-14** | nothing |
 
 Opened with all seven open and nothing started, 2026-08-13.
+
+### What landed on 2026-08-14
+
+**Step 1 passed its acceptance run the same evening, and it passed under the
+hardest condition available: the overlay rendered no frames at all.** The
+owner's own test dictation is the evidence — it reached him through the
+deadline, and the sentence he sent to report the missing overlay *is* the
+transcript the deadline committed.
+
+| | `native-2` | `native-3` |
+|---|---|---|
+| preview ready | +883.504 | +930.818 |
+| deadline expired | +893.541 (**10.037 s**) | +940.819 (**10.001 s**) |
+| clipboard | `wl-copy verified via wl-paste (13 bytes)` | `(102 bytes)` |
+| history | `history-1786671065645-200` | `history-1786671112919-200` |
+| transcript | `14-0331-time-discussion.md` | `14-0331-test-des-overlay-systems.md` |
+| log | `path=deadline` | `path=deadline` |
+
+`/tmp/kilo/overlay-diag.log` ends in the *previous* app run: **zero `[ov-dom]`,
+`[ov-repaint]` or `[ov-reveal]` lines for the entire run these three sessions
+happened in.** Both dictations landed anyway. That is the whole point of
+ADR 0134, observed rather than argued.
+
+**Two caveats on that run, because it was not a clean-room.**
+
+**The `path=frontend` half is still owed.** Every session in that run committed
+by deadline, which is explained by the dead overlay and not by the deadline
+being sized wrong — but *explained* is not *measured*. One ordinary dictation
+committed on the pill closes it.
+
+**The binary in that run was one build behind.** `target/debug/wordscript`
+started 03:16:03 while the current build was written at 03:16:11, so the running
+app came from the source state during the falsification test — with the epoch
+guard temporarily disabled. It changes nothing about what was measured: the
+deadline, its timing, its commit path and its three artifacts are identical in
+both versions. **What it does mean is that the epoch guard has still never run
+in the wild.** It came within 1.1 s of mattering: `native-1` staged a preview at
++872.396, a new capture cleared it at +879.597, and the stale deadline woke at
++882.4 — 1.1 s before `native-2` staged the preview it would have committed ten
+seconds early.
+
+### What the run cost, and it was self-inflicted
+
+**The overlay was invisible because this session edited `vite.config.ts` while
+the owner's `npm run tauri dev` was running.** Vite watches its own config and
+restarts the server in place; all three webviews lose their page, and the parked
+overlay never asks for it again. The app had come up at 03:16:03 and the config
+was written at 03:23:12. A restart of the dev host fixed it completely.
+
+It is worth stating plainly because it is this track's own thesis with the agent
+in the loop: **the app is its own environment, and an edit to that environment
+is a change to the running app.** The rule now stands in `AGENTS.md` under
+*Validation*. The first thing ADR 0134 ever saved was a dictation from a window
+this session had destroyed.
+
+`core/sessions.rs`: the command body became
+`commit_pending_preview(app, text, path, expected_epoch)`, which the window and
+the deadline both call, so there is one commit body and ADR 0018's one-commit
+rule holds across both. `stage_pending_transcription_preview` arms a task that
+sleeps `PREVIEW_COMMIT_DEADLINE_MS` (10 s) and then commits. There is **no
+cancellation channel on purpose**: the staged preview *is* the cancellation
+state, and a task that wakes to find it taken does nothing.
+
+**The guard is an epoch, not a session id**, and that is the one thing here
+worth remembering. An abort inside the deadline window frees the session for a
+new capture, and that capture can stage its own preview before the first
+deadline expires — so a deadline that only checked "is a preview pending" would
+commit somebody else's, several seconds early. A session id does not separate
+them on every path either, because `force_processing_for_active_capture` reuses
+one. `preview_counter` counts stagings. Three tests, two of which were made to
+fail first; the failing assertion in the third-party case is the interesting
+one, because it commits the *second* dictation's text.
+
+**Step 2 is one constant, `NON_SOURCE_DIRS`, read by both consumers.** Measured
+on the running dev server rather than argued: **20,393 inotify watches before,
+576 after**, `src/App.tsx` still hot-reloads, and touching `donors/`, `vendor/`
+or `.kilo/` produces nothing. Vitest discovers the same 42 files and 533 tests
+as before, so the exclude rewrite moved no test.
+
+**What could not be reproduced, stated so nobody re-runs it expecting a
+result:** a `touch` of a donor `tsconfig.json` did **not** produce a full
+reload, under the new config or the old one. The record's quoted
+`changed tsconfig file detected` line is real; what this session verified is the
+watch surface, not the per-file reload mechanism. An mtime-only touch is
+probably not what vite acts on.
+
+### What step 1 leaves open, and it is the owner's call
+
+**An edit that takes longer than ten seconds loses to the deadline.** The edit
+surface is frontend-local until confirm — the preview stays staged the whole
+time — so at 10 s the runtime commits the *unedited* text. The surface then
+closes correctly rather than erroring: `editSourceAvailable` reads
+`isProcessing && pendingPreviewResult`, both of which the commit clears, so the
+edit box disappears mid-typing and the leave hold replays it. Nothing is
+inconsistent and nothing is lost that was not already delivered — but the
+user's in-progress correction is gone, and typing for more than ten seconds is
+not exotic.
+
+ADR 0134 weighed the abort case ("delete the record that was written") and did
+not weigh this one. It is not a defect against the decision as written, so
+nothing here overrides it. The options, if it turns out to matter: the edit
+surface extends the deadline while it is open, or the deadline is longer while
+an edit is open, or a lost edit is re-offered on the clipboard the way a
+post-delivery edit already is. **All three are decisions, not fixes**, and the
+last is the one the product's existing semantics already point at.
 
 ## The order
 
@@ -105,7 +210,28 @@ And the runtime log names which path completed the session.
 then the native host — destroy the overlay webview mid-preview and check all
 three artifacts. Browser preview cannot do this.
 
-### Step 2 — the dev-server watcher
+**Run sheet for the native check** (owed as of 2026-08-14; the code is in). It
+needs a spoken dictation, because no other path stages a preview — the history
+retry inserts directly and never stages one, so it cannot stand in for this.
+
+1. Active profile on `clipboard_only`. `npm run tauri dev`, and clear the
+   clipboard first so a hit cannot be last session's text.
+2. Dictate something short and let the preview appear. **Then take the window
+   away and leave it away**: close the overlay window, or reload its webview.
+3. Do not touch the pill for fifteen seconds.
+4. Expect, without a window ever returning: the text in the clipboard, a row in
+   `~/.config/WordScript/history.json`, and a Markdown file under
+   `~/WordScript/transcripts`.
+5. `grep "Native session completed" ~/.config/WordScript/logs/wordscript-runtime.log`
+   → `path=deadline`. Run one ordinary dictation too and expect `path=frontend`
+   on that one; if a healthy session ever logs `path=deadline`, the deadline is
+   sized wrong, which is a finding and not a pass.
+
+The line before it, `Native preview deadline expired … outcome=committing`,
+dates the firing. `outcome=not_committed` means the take lost a race — expected
+only if a commit or abort landed in the same instant.
+
+### Step 2 — the dev-server watcher — **done 2026-08-14**
 
 `vite.config.ts:23`, extend `server.watch.ignored` with `**/donors/**`,
 `**/vendor/**`, `**/target/**`, `**/.kilo/**`. The same list already exists at
@@ -122,6 +248,16 @@ outcome=skipped_idempotent` triple no longer appears outside a real restart.
 
 **Validates with:** `npm run build`, plus the manual dev-server check. No Rust
 change.
+
+**How it was checked:** on a running server, plus a counter-check with the old
+list restored — **20,393 inotify watches before, 576 after**, and `src/App.tsx`
+still hot-reloads under the new one. Vitest discovers the same 42 files and 533
+tests, so the exclude rewrite moved no test. The register triple is the owner's
+to confirm over a day of ordinary use; it needs a log window rather than a
+check. **The reload half came out inconclusive:** under both the new config and
+the old one, an mtime-only `touch` of a donor `tsconfig.json` produced no reload
+at all, so what this session verified is the watch surface and not the per-file
+reload mechanism the record quotes.
 
 ### Step 3 — the cadence instrument (ADR 0133)
 
@@ -196,6 +332,22 @@ Independent of everything above.
 1. Rename the log line to name its stream (`Audio output stream error: …`). It
    currently reads as a capture failure and cost this investigation a detour.
 2. Decide whether the sink should be held open at all — see the record.
+
+**It stopped being a log-only finding on 2026-08-14.** Reported as *"der Ton ist
+weg"*: the cues were playing at full volume into the HDMI monitor while the
+owner listened on the Bluetooth default. Nothing muted, nothing corked — the
+held-open stream had acquired a route at process start and kept it, and
+PipeWire's `module-stream-restore` re-applied that route on every restart. The
+HDMI sink was `RUNNING` with WordScript as its only stream, which is this app
+holding a device awake for nothing. **Question 2 is therefore no longer only
+about the underrun class**: a stream opened per cue is routed when it plays, so
+the symptom could not exist. The measurement and the reverse cost — a moved
+stream keeps a Bluetooth device permanently awake — are in the record's
+2026-08-14 addendum.
+
+**Second consumer, so decide it once:** the speech track's **F2** builds a
+second output stream with `list_native_output_devices` and its own lifecycle. If
+the cue stream keeps its shape, the voice path inherits the same symptom.
 
 **Done when:** the log distinguishes output from capture at a glance.
 

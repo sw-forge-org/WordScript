@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -71,6 +71,34 @@ pub struct PendingTranscriptionPreviewEvent {
     pub occurred_at_ms: u64,
 }
 
+/// How long the runtime waits for a window to finish a staged preview before it
+/// finishes the session itself (ADR 0134).
+///
+/// Not configurable, and deliberately not a frontend timer: a frontend timer
+/// dies with the frontend, which is the entire defect. Sized as a safety net
+/// rather than an abort window — p90 of a healthy commit is 2.27 s, so this is
+/// invisible whenever the window works and still bounds the loss when it does
+/// not.
+pub const PREVIEW_COMMIT_DEADLINE_MS: u64 = 10_000;
+
+/// Which path completed a session. The runtime says what it did, so the next
+/// investigation can count deadline commits instead of inferring them from
+/// timing (ADR 0134).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitPath {
+    Frontend,
+    Deadline,
+}
+
+impl CommitPath {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Frontend => "frontend",
+            Self::Deadline => "deadline",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ActiveSession {
     id: String,
@@ -97,6 +125,13 @@ struct PendingTranscriptionPreview {
     /// the same reason: the commit writes the record, and by then the capture
     /// is long over.
     input_level: Option<InputLevelSummary>,
+    /// Which staging this preview came from. The deadline armed for one preview
+    /// may not commit another: an abort inside the deadline window frees the
+    /// session for a new capture, and that capture can stage its own preview
+    /// before the first deadline expires. A session id would not separate them
+    /// on every path — `force_processing_for_active_capture` reuses one — so
+    /// the epoch counts stagings rather than sessions.
+    epoch: u64,
     occurred_at_ms: u64,
 }
 
@@ -127,6 +162,7 @@ pub struct NativeSessionState {
     last_transcript: Option<String>,
     last_error: Option<String>,
     pending_preview: Option<PendingTranscriptionPreview>,
+    preview_counter: u64,
 }
 
 impl NativeSessionState {
@@ -171,11 +207,12 @@ impl NativeSessionState {
         effective_mode: Option<ProcessingMode>,
         capture_integrity: Option<CaptureIntegrity>,
         input_level: Option<InputLevelSummary>,
-    ) -> Result<PendingTranscriptionPreviewEvent, String> {
+    ) -> Result<(u64, PendingTranscriptionPreviewEvent), String> {
         if !matches!(self.stage, NativeSessionStage::Processing) || self.active_session.is_none() {
             return Err("No native session is waiting for a preview commit.".to_string());
         }
 
+        self.preview_counter += 1;
         let preview = PendingTranscriptionPreview {
             app_config,
             provider,
@@ -184,14 +221,36 @@ impl NativeSessionState {
             effective_mode,
             capture_integrity,
             input_level,
+            epoch: self.preview_counter,
             occurred_at_ms: now_ms(),
         };
         let payload = preview.event_payload();
+        let epoch = preview.epoch;
         self.pending_preview = Some(preview);
-        Ok(payload)
+        Ok((epoch, payload))
     }
 
-    fn take_pending_preview(&mut self) -> Result<(String, PendingTranscriptionPreview), String> {
+    /// Whether the staging this epoch names is still the one waiting to be
+    /// committed. Read by the deadline before it decides to act, so an already
+    /// settled session logs as settled rather than as a failed commit.
+    fn preview_epoch_is_pending(&self, epoch: u64) -> bool {
+        matches!(self.stage, NativeSessionStage::Processing)
+            && self
+                .pending_preview
+                .as_ref()
+                .map(|preview| preview.epoch == epoch)
+                .unwrap_or(false)
+    }
+
+    /// Takes the staged preview so exactly one path can commit it (ADR 0018).
+    ///
+    /// `expected_epoch` is the deadline's guard: `None` takes whatever this
+    /// session staged, which is what a window commit means, while `Some(epoch)`
+    /// refuses any preview but the one the deadline was armed for.
+    fn take_pending_preview(
+        &mut self,
+        expected_epoch: Option<u64>,
+    ) -> Result<(String, PendingTranscriptionPreview), String> {
         if !matches!(self.stage, NativeSessionStage::Processing) {
             return Err("No native session is waiting for a preview commit.".to_string());
         }
@@ -201,6 +260,14 @@ impl NativeSessionState {
             .as_ref()
             .map(|session| session.id.clone())
             .ok_or_else(|| "No native session is waiting for a preview commit.".to_string())?;
+        if let Some(expected) = expected_epoch {
+            if !self.preview_epoch_is_pending(expected) {
+                return Err(
+                    "The staged preview is no longer the one this deadline was armed for."
+                        .to_string(),
+                );
+            }
+        }
         let preview = self
             .pending_preview
             .take()
@@ -398,7 +465,25 @@ pub async fn commit_pending_transcription_preview(
     // consistent with an unedited commit — a separate `insert_text_native`
     // call would deliver the text while the session ended with the stale one.
     text: Option<String>,
-    state: State<'_, Mutex<NativeSessionState>>,
+    _state: State<'_, Mutex<NativeSessionState>>,
+) -> Result<NativeInsertResult, String> {
+    commit_pending_preview(&app, text, CommitPath::Frontend, None).await
+}
+
+/// Commits a staged preview: insert, history record, transcript file, session
+/// completion and the authoritative event.
+///
+/// The window may reach this and so may the runtime's own deadline (ADR 0134);
+/// there is one body for both, because a deadline commit that took a different
+/// path would be a second way for a session to end and ADR 0018 allows one.
+/// Which path arrived is a log line, not a behaviour difference.
+pub async fn commit_pending_preview<R: Runtime>(
+    app: &AppHandle<R>,
+    text: Option<String>,
+    path: CommitPath,
+    // `Some` only for the deadline, which may commit the staging it was armed
+    // for and no other.
+    expected_epoch: Option<u64>,
 ) -> Result<NativeInsertResult, String> {
     // MUST be async: the clipboard write (wl-copy + verify) can block for up to
     // 800ms. A sync command runs on Tauri's main thread and blocks the webview's
@@ -407,8 +492,11 @@ pub async fn commit_pending_transcription_preview(
     // a background thread via spawn_blocking keeps the main thread free so JS
     // timers and IPC events flow normally.
     let (session_id, mut preview) = {
+        let state = app
+            .try_state::<Mutex<NativeSessionState>>()
+            .ok_or_else(|| "Native session state is not available.".to_string())?;
         let mut state = state.lock().map_err(|error| error.to_string())?;
-        state.take_pending_preview()?
+        state.take_pending_preview(expected_epoch)?
     };
 
     if let Some(edited) = text {
@@ -474,7 +562,7 @@ pub async fn commit_pending_transcription_preview(
             if let Some(entry) = history_entry.as_ref() {
                 let active_profile = preview.app_config.active_text_profile();
                 super::vocabulary_learning::learn_from_session(
-                    &app,
+                    app,
                     super::vocabulary_learning::LearnFromSessionRequest {
                         profile_id: preview.app_config.active_text_profile_id.clone(),
                         observation_id: entry.id.clone(),
@@ -500,12 +588,24 @@ pub async fn commit_pending_transcription_preview(
             }
 
             match complete_processing_session_from_transcription(
-                &app,
+                app,
                 &session_id,
                 &final_text,
                 preview.transformed.corrected,
             ) {
                 Ok(true) => {
+                    // A commit the user did not ask for is a runtime decision,
+                    // so the runtime says which path took it (ADR 0134). The
+                    // count of deadline commits is the measurement this whole
+                    // step is for; inferring it from timing is what the
+                    // investigation had to do before.
+                    super::runtime_log::record(format!(
+                        "[WordScript] Native session completed path={} session_id={} delivery={} text_len={}",
+                        path.as_str(),
+                        session_id,
+                        result.insert_mode.delivery_label(),
+                        final_text.len(),
+                    ));
                     let _ = app.emit(
                         "wordscript-event",
                         serde_json::json!({
@@ -540,7 +640,7 @@ pub async fn commit_pending_transcription_preview(
                     Err("The pending transcription preview is no longer current.".to_string())
                 }
                 Err(error) => {
-                    fail_from_native_error(&app, &error);
+                    fail_from_native_error(app, &error);
                     let _ = app.emit(
                         "wordscript-event",
                         serde_json::json!({
@@ -569,7 +669,7 @@ pub async fn commit_pending_transcription_preview(
                 .error
                 .clone()
                 .unwrap_or_else(|| "Native insertion failed.".to_string());
-            let _ = fail_processing_session_from_native_error(&app, &session_id, &error);
+            let _ = fail_processing_session_from_native_error(app, &session_id, &error);
             let _ = app.emit(
                 "wordscript-event",
                 serde_json::json!({
@@ -598,7 +698,7 @@ pub async fn commit_pending_transcription_preview(
                 preview.capture_integrity,
                 preview.input_level,
             );
-            let _ = fail_processing_session_from_native_error(&app, &session_id, &error);
+            let _ = fail_processing_session_from_native_error(app, &session_id, &error);
             let _ = app.emit(
                 "wordscript-event",
                 serde_json::json!({
@@ -645,19 +745,69 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
     capture_integrity: Option<CaptureIntegrity>,
     input_level: Option<InputLevelSummary>,
 ) -> Result<PendingTranscriptionPreviewEvent, String> {
-    let state = app
-        .try_state::<Mutex<NativeSessionState>>()
-        .ok_or_else(|| "Native session state is not available.".to_string())?;
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    state.stage_pending_preview(
-        app_config,
-        provider,
-        raw_text,
-        transformed,
-        effective_mode,
-        capture_integrity,
-        input_level,
-    )
+    let (epoch, payload, session_id) = {
+        let state = app
+            .try_state::<Mutex<NativeSessionState>>()
+            .ok_or_else(|| "Native session state is not available.".to_string())?;
+        let mut state = state.lock().map_err(|error| error.to_string())?;
+        let (epoch, payload) = state.stage_pending_preview(
+            app_config,
+            provider,
+            raw_text,
+            transformed,
+            effective_mode,
+            capture_integrity,
+            input_level,
+        )?;
+        (epoch, payload, state.processing_session_id())
+    };
+
+    // Armed here rather than after the event, so no ordering between the two
+    // can leave a staged preview with nothing behind it.
+    arm_preview_commit_deadline(app, session_id.unwrap_or_else(|| "unknown".to_string()), epoch);
+    Ok(payload)
+}
+
+/// Starts the runtime's deadline for a staged preview (ADR 0134).
+///
+/// The window may still commit or abort, and normally does — at p90 = 2.27 s
+/// this task finds the preview already gone. What it exists for is the case
+/// where the window never comes back: everything the user can later reach is
+/// created by the commit, so a destroyed webview would otherwise discard a
+/// finished dictation with nothing reporting it.
+///
+/// There is no cancellation channel on purpose. The staged preview IS the
+/// cancellation state: a commit or an abort takes it, and a task that wakes to
+/// find it gone does nothing.
+fn arm_preview_commit_deadline<R: Runtime>(app: &AppHandle<R>, session_id: String, epoch: u64) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(PREVIEW_COMMIT_DEADLINE_MS)).await;
+
+        let still_pending = app
+            .try_state::<Mutex<NativeSessionState>>()
+            .and_then(|state| {
+                state
+                    .lock()
+                    .ok()
+                    .map(|state| state.preview_epoch_is_pending(epoch))
+            })
+            .unwrap_or(false);
+        if !still_pending {
+            return;
+        }
+
+        super::runtime_log::record(format!(
+            "[WordScript] Native preview deadline expired session_id={session_id} deadline_ms={PREVIEW_COMMIT_DEADLINE_MS} outcome=committing"
+        ));
+        if let Err(error) =
+            commit_pending_preview(&app, None, CommitPath::Deadline, Some(epoch)).await
+        {
+            super::runtime_log::record(format!(
+                "[WordScript] Native preview deadline session_id={session_id} outcome=not_committed reason={error}"
+            ));
+        }
+    });
 }
 
 pub fn complete_processing_session_from_transcription<R: Runtime>(
@@ -1012,13 +1162,33 @@ mod tests {
         assert!(aborted.active_session_id.is_none());
     }
 
+    fn stage_preview(state: &mut NativeSessionState, text: &str) -> u64 {
+        let (epoch, _) = state
+            .stage_pending_preview(
+                AppConfig::default(),
+                "groq".to_string(),
+                "raw transcript".to_string(),
+                NativeTransformResult {
+                    text: text.to_string(),
+                    corrected: true,
+                    applied_rules: vec!["removed_fillers".to_string()],
+                    warning: None,
+                },
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        epoch
+    }
+
     #[test]
     fn abort_clears_pending_preview_commit_state() {
         let mut state = NativeSessionState::default();
 
         state.start_capture("hotkey").unwrap();
         state.stop_for_processing().unwrap();
-        let staged = state
+        let (epoch, staged) = state
             .stage_pending_preview(
                 AppConfig::default(),
                 "groq".to_string(),
@@ -1037,10 +1207,72 @@ mod tests {
 
         assert_eq!(staged.text, "Final transcript");
         assert!(state.pending_preview.is_some());
+        assert!(state.preview_epoch_is_pending(epoch));
 
         state.abort("user cancelled");
 
         assert!(state.pending_preview.is_none());
+        // The abort is the cancellation: the deadline armed for this staging
+        // wakes to find nothing and does nothing (ADR 0134).
+        assert!(!state.preview_epoch_is_pending(epoch));
+    }
+
+    #[test]
+    fn a_window_commit_leaves_its_deadline_nothing_to_take() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let epoch = stage_preview(&mut state, "Final transcript");
+
+        let (session_id, preview) = state.take_pending_preview(None).unwrap();
+        assert_eq!(session_id, "native-1");
+        assert_eq!(preview.transformed.text, "Final transcript");
+
+        // ADR 0134's third rule from the other side: whichever path arrives
+        // second finds the preview gone, and there is exactly one commit.
+        let error = state.take_pending_preview(Some(epoch)).unwrap_err();
+        assert!(error.contains("deadline was armed for"));
+    }
+
+    #[test]
+    fn a_deadline_may_not_commit_a_preview_it_was_not_armed_for() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("first_hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let first_epoch = stage_preview(&mut state, "First transcript");
+
+        // An abort inside the deadline window frees the session, and the next
+        // capture can stage its own preview before the first deadline expires.
+        state.abort("user cancelled");
+        state.start_capture("second_hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let second_epoch = stage_preview(&mut state, "Second transcript");
+        assert_ne!(first_epoch, second_epoch);
+
+        let error = state.take_pending_preview(Some(first_epoch)).unwrap_err();
+        assert!(error.contains("deadline was armed for"));
+        assert!(
+            state.pending_preview.is_some(),
+            "a stale deadline must leave the current staging alone"
+        );
+
+        let (session_id, preview) = state.take_pending_preview(Some(second_epoch)).unwrap();
+        assert_eq!(session_id, "native-2");
+        assert_eq!(preview.transformed.text, "Second transcript");
+    }
+
+    #[test]
+    fn a_deadline_does_not_reach_a_session_that_already_ended() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let epoch = stage_preview(&mut state, "Final transcript");
+
+        state.complete_transcription("Final transcript");
+
+        assert!(!state.preview_epoch_is_pending(epoch));
+        let error = state.take_pending_preview(Some(epoch)).unwrap_err();
+        assert!(error.contains("No native session is waiting"));
     }
 
     #[test]

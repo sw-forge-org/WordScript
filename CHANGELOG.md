@@ -53,6 +53,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the runtime finishes the session, and the dev server stops killing the window (ADR 0134)
+
+Runtime-ownership steps 1 and 2. **Step 1 passed its native-host acceptance run
+the same evening, in a run where the overlay rendered no frames at all** — two
+dictations reached the clipboard, `history.json` and `~/WordScript/transcripts`
+10.0 s after their preview, with zero `[ov-*]` diagnostic output for the whole
+run. Still owed: one healthy session logging `path=frontend`, and the epoch
+guard has never run in the wild (the binary in that run predated it by one
+build).
+
+- **A finished dictation is no longer discarded when its window does not come
+  back.** Staging a `clipboard_only` preview arms a runtime deadline of 10 s;
+  when it expires the runtime commits — clipboard, history record, transcript
+  file — through the same body a window commit takes, so ADR 0018's one-commit
+  rule holds across both paths and the overlay keeps commit and abort. Whichever
+  path arrives second finds the preview taken and does nothing.
+- **The deadline is guarded by a staging epoch, not by a session id.** An abort
+  inside the deadline window frees the session for a new capture, and that
+  capture can stage its own preview before the first deadline expires — so a
+  deadline that only asked "is a preview pending" would commit somebody else's
+  dictation several seconds early. `force_processing_for_active_capture` reuses
+  a session id, so the id could not separate them either.
+- **The runtime says which path completed the session.**
+  `Native session completed path=frontend|deadline …` in the runtime log, so
+  deadline commits are counted rather than inferred from timing, plus a line
+  when the deadline fires and one when it wakes to find nothing to do.
+- **Left open, and it is a decision rather than a defect:** an edit that takes
+  longer than ten seconds loses to the deadline, and the unedited text is
+  committed. The edit surface closes on its own rather than erroring, because it
+  reads `isProcessing && pendingResult` and the commit clears both — so nothing
+  is inconsistent, but the in-progress correction is gone. ADR 0134 weighed the
+  abort case and not this one.
+- **The dev server no longer watches 40,000 files it has no reason to watch.**
+  `server.watch.ignored` and `test.exclude` read one `NON_SOURCE_DIRS` constant;
+  the duplication is what let `donors/` and `vendor/` be excluded for the test
+  runner and watched by the dev server for as long as both lines existed.
+  Measured on the running server: **20,393 inotify watches before, 576 after**,
+  `src/` hot reload unchanged, and Vitest discovering the same 42 files and 533
+  tests. Dev-only; `vite` does not exist in a release build.
+
+### Documented — the cue output stream has a user-visible symptom, and it is the routing
+
+No code change. Reported as "the sound is gone" and it was not: the cues were
+playing at full volume into the HDMI monitor while the owner listened on the
+Bluetooth default. A permanently open output stream acquires a device at process
+start and keeps it, and PipeWire's `module-stream-restore` re-applies that route
+on every restart — so a stream opened per cue, routed when it plays, could not
+have this symptom. The HDMI sink was `RUNNING` with WordScript as its only
+stream. Runtime-ownership **step 7** already asks whether the sink should be
+held open at all; this is the second reason to answer it, and the speech track's
+**F2** (a second output stream, its own lifecycle) is the second consumer.
+Addendum in `known-issues/sound-output-underruns-and-reopens.md`; the record had
+said no user-visible symptom existed.
+
+Also recorded: editing `vite.config.ts` under a running `npm run tauri dev`
+restarts the dev server in place and leaves the parked overlay permanently
+blank while the runtime keeps working. That is what produced the invisible
+overlay during the acceptance run, and it is now a rule in `AGENTS.md`.
+
+Rust tests 790 → 793 (three new, all in `core::sessions`; two were made to fail
+against a build without the epoch guard before they were trusted). Frontend
+unchanged at 533 in 42 files — no frontend code was touched.
+
 ### Documented — the session end belongs to a window, and the instruments that could not see it (ADR 0133, ADR 0134)
 
 Documentation only; no product behavior changed. Sequenced as the new

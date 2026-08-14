@@ -1,8 +1,9 @@
 # Bug: The cue output stream underruns constantly and reopens itself
 
 Status: **Open — found 2026-08-13 while researching the capture loss. Measured,
-not diagnosed. Nothing user-visible has been reported against it; it was found
-in the log.**
+not diagnosed. It had no user-visible symptom until 2026-08-14, when the
+held-open stream turned out to be why the cues stick to one output device; see
+the addendum at the end.**
 
 First reported: 2026-08-13, from a terminal frame the owner sent showing
 `[WordScript] Audio stream error: Buffer underrun/overrun occurred.`
@@ -92,9 +93,70 @@ recorded so the next event can be checked against it, not as a finding.
 4. Carry the output-error timestamps into the capture record's next event
    review, so the 6-capture table grows instead of being re-derived.
 
+## Addendum 2026-08-14 — it has a user-visible symptom now, and it is the routing
+
+Reported as *"der Ton ist weg"* right after a dev-host restart. **The cues were
+playing the whole time — into the wrong device.** Measured while it was
+happening:
+
+```
+Sink Input #31343   application.name = "WordScript"
+  Sink: 28079 → alsa_output.pci-0000_01_00.1.hdmi-stereo   (RUNNING)
+  Mute: no   Volume: 100%   Corked: no
+  module-stream-restore.id = "sink-input-by-application-name:WordScript"
+
+Default Sink: bluez_output.A8_E6_E8_5A_BC_8D.1              (SUSPENDED)
+```
+
+The owner was listening on the Bluetooth default; WordScript was on the HDMI
+monitor. Nothing was muted, nothing was corked, the volume was full.
+
+**Two things in that dump are this record's, not PipeWire's.**
+
+**One: the HDMI sink is `RUNNING` and WordScript is the only stream on it.** The
+monitor's audio path is awake solely because this app holds a sink open with
+nothing to play. That is the same permanently-open stream the sections above
+measure underruns on, seen from the outside.
+
+**Two: a held-open stream acquires a route once and keeps it.** PipeWire's
+`module-stream-restore` remembers the device per application name and re-applies
+it when the process starts, which is why a restart is when this surfaces. A
+stream that is opened for a cue and closed after it would be routed at the
+moment it plays, i.e. to whatever the default is then — the symptom could not
+exist. So *next step 2* below is no longer only about the underrun class: **it
+is also the difference between cues that follow the user's output device and
+cues that stick to whichever device was current when the app started.**
+
+**And the cost runs the other way too.** Moving the stream to the Bluetooth sink
+fixes the sound and then keeps that device permanently awake, because the app
+never closes the stream — the headphones cannot idle-suspend, the codec stays
+engaged, the battery pays for it. Holding the sink open is not neutral in either
+direction.
+
+Immediate relief for a user in this state, which fixes the session and not the
+cause:
+
+```
+pactl move-sink-input <id> @DEFAULT_SINK@
+```
+
+**Not measured:** whether the routing was already on HDMI before the restart.
+Nobody looked, so the addendum claims only where the stream was when it was
+observed, and why a process start is the moment the remembered route is applied.
+
+**This is the first user-visible symptom against this record**, which until now
+said there was none. It does not change the underrun measurements above and it
+does not turn *next step 2* into a decided question — it adds a second reason to
+answer it, and a second consumer: the speech track's **F2** builds a *second*
+output stream (`list_native_output_devices`, a named speech stream with its own
+lifecycle, `Silent` opening no stream rather than muting one). If the cue stream
+keeps its current shape, F2 inherits this symptom on the voice path.
+
 ## References
 
 - [capture-loses-half-the-recording.md](capture-loses-half-the-recording.md) —
   the record this is a candidate path into
+- [`../tracks/speech-track-plan.md`](../tracks/speech-track-plan.md) — **F2**,
+  the second output stream, which owes the same lifecycle question
 - [dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md)
   — the other environment-level finding from the same 2026-08-13 session

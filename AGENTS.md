@@ -87,6 +87,11 @@ test/lint/build command an agent has no success signal and cannot iterate.
   `cd src-tauri && cargo test`.
 - For shell/window/Tauri-bound changes, check in the native host rather than
   browser preview only (`invoke()` and event bridges need the host).
+- **Do not write `vite.config.ts` while a dev host is running.** Vite watches its
+  own config and restarts in place; every webview loses its page, and the parked
+  overlay never asks for it again -- it goes silently invisible while the runtime
+  keeps working. Land config changes before starting the host, or restart the
+  host after them.
 - For release-build-up changes additionally `npm run tauri build`.
 
 ## Reference Map

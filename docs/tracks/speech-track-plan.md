@@ -1003,6 +1003,15 @@ proves the contract; F4 and F5 fill the palette.**
 - **Validates** — `cargo test`, the native host, and `docs/PLATFORMS.md` grows
   its measured section — **it currently says "nothing here is measured yet"**
   and this is the step that owes the measurements.
+- **Read before designing the lifecycle** —
+  [`../known-issues/sound-output-underruns-and-reopens.md`](../known-issues/sound-output-underruns-and-reopens.md),
+  2026-08-14 addendum. The cue stream is held open, and on 2026-08-14 that
+  produced a user-visible symptom: it acquires an output device at process
+  start and keeps it, so cues stick to whatever was current then instead of
+  following the user's default. *"Its own lifecycle"* above is the right
+  instinct and this is the evidence for it — a stream opened per utterance is
+  routed when it plays. Runtime-ownership step 7 owns the decision for the cue
+  stream; do not decide it a second time here.
 
 ### F3. Local, with streaming (ADR 0096 step 3)
 

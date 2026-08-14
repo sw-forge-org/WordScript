@@ -1,7 +1,9 @@
 # Bug: The dev server reloads all three windows mid-session
 
-Status: **Open — cause located 2026-08-13, not yet fixed. Dev-only by
-construction: `vite` does not exist in a release build.**
+Status: **Fixed 2026-08-14 — cause located 2026-08-13. Dev-only by
+construction: `vite` does not exist in a release build.** See the addendum at
+the end for what was measured and the one clause of the acceptance that is
+still the owner's to observe.
 
 First reported: 2026-08-13, as "sometimes the whole GUI window just goes white
 and the overlay becomes invisible"
@@ -160,6 +162,68 @@ one of them.
 - Whether reloads explain a share of the reopened
   [overlay-stranded-off-screen.md](overlay-stranded-off-screen.md) sightings.
   They are distinguishable in the log; see that record's 2026-08-13 addendum.
+
+## Addendum 2026-08-14 — fixed, and what the fix was actually measured against
+
+Landed as runtime-ownership step 2, in the shape this record's *Fix* section
+asked for: **one `NON_SOURCE_DIRS` constant** at the top of `vite.config.ts`,
+mapped to `**/<dir>/**` globs and read by both `server.watch.ignored` and
+`test.exclude`. The duplication is gone, so a future addition cannot land in
+only one copy.
+
+**Measured on a running dev server, by counting the watches the process holds:**
+
+```
+cat /proc/<vite-pid>/fdinfo/* | grep -c '^inotify wd:'
+```
+
+| Config | inotify watches |
+|---|---|
+| before (`["**/src-tauri/**"]`) | **20,393** |
+| after (`+ donors, vendor, target, .kilo`) | **576** |
+
+Both readings on the same process, restarted by vite itself when the config
+changed. `src/App.tsx` still emits `hmr update` under the new config, and a
+touch of `donors/`, `vendor/` or `.kilo/` emits nothing. Vitest discovers the
+same 42 files and 533 tests as before, so the rewritten `test.exclude` moved no
+test.
+
+**One thing did not reproduce, and it is worth writing down so nobody spends an
+hour on it.** This record's *Fix* section proposes verifying by touching a file
+under `donors/` and confirming no reload. **Under both configs — new and old —
+an mtime-only `touch` of a donor `tsconfig.json` produced no reload at all.**
+The `changed tsconfig file detected … forcing full-reload` line quoted above is
+real and came out of an actual session; what a bare `touch` does not do is
+trigger it, most likely because the content is unchanged or because vite only
+tracks the tsconfig files it has loaded. So the negative half of that check is
+not a usable acceptance test. The watch count is, and it is what was used.
+
+**Still the owner's to observe:** the third clause, that the
+`[trigger] event=register outcome=skipped_idempotent` triple stops appearing
+outside a real restart. That needs a day of ordinary use under
+`npm run tauri dev`, not a check.
+
+**The same evening produced one more instance of this class, from the other
+side.** Editing `vite.config.ts` while `npm run tauri dev` is running restarts
+the dev server *in place* — vite watches its own config — and every open webview
+loses its page. The app had come up at 03:16:03; the config was written at
+03:23:12; the overlay produced **zero** `[ov-*]` diagnostic lines for the rest of
+that run and was reported as completely invisible. The workspace window can be
+rescued with a reload; the parked overlay never asks for its page again. A
+restart of the dev host fixed it entirely.
+
+It is the same failure as this record's — the app's own environment removing its
+windows — with the agent rather than the watcher as the trigger, and it cost a
+test run to diagnose. The rule now stands in `AGENTS.md` under *Validation*.
+**It also means a fix to this file is itself a reload**, so land watcher changes
+before starting a host, not during one.
+
+**The data loss this record contributed to is closed from the other side too.**
+[ADR 0134](../decisions/0134-a-session-ends-in-the-runtime-not-in-the-window-that-shows-it.md)
+landed the same day: a reload during a preview can no longer stop a transcript
+from being written, because the runtime commits on its own deadline. That
+step's own native-host run is still owed — see
+[`../tracks/runtime-ownership.md`](../tracks/runtime-ownership.md).
 
 ## References
 

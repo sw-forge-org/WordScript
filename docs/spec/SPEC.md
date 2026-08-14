@@ -9,6 +9,13 @@ stage B3 pass before it read only the model-catalogue entry, the stage A4 pass
 before that only the provider axis, and the previous whole-section pass is
 Leg 10's, below)
 
+Amended 2026-08-14 by runtime-ownership step 1, which added the runtime commit
+deadline to *Clipboard-only commit*. **It read `core/sessions.rs` and the
+session-lifecycle section against what they claim, and nothing else** — it is
+not a drift check on this file and does not inherit the date above for the
+parts it did not read. The clause it added is implemented; its native-host
+acceptance run is owed ([`../tracks/runtime-ownership.md`](../tracks/runtime-ownership.md)).
+
 Leg 10's line, kept because it is what the sections below were last measured
 against: last drift check 2026-08-11 (Leg 10, and it read
 only what it changed: the Contracts command list against `invoke_handler`, and
@@ -781,6 +788,22 @@ layer); the edit passes the corrected text as its optional `text` argument, so
 session completion, history and the insert result all describe the text that was
 actually delivered. The overlay closes after the commit -- this mode has no
 result surface (ADR 0011a).
+
+**The window is not the only thing that can end this session.** Staging the
+preview arms a runtime deadline of `PREVIEW_COMMIT_DEADLINE_MS` (10 s,
+`core/sessions.rs`, not configurable). If nothing has committed or aborted by
+then, the runtime commits (ADR 0134) -- everything a user can later reach
+(clipboard, `history.json` row, Markdown transcript) is created inside that
+insert, so a window that never comes back would otherwise discard a finished
+dictation with nothing reporting it. Both paths run one body,
+`commit_pending_preview`, so ADR 0018's one-commit rule holds across them:
+whichever arrives second finds the staged preview taken and does nothing. The
+deadline names itself in the runtime log
+(`Native session completed path=frontend|deadline`), and it may commit only the
+staging it was armed for -- an abort frees the session for a new capture, whose
+preview a stale deadline must not touch. A committed preview closes the edit
+surface with it: the surface reads `isProcessing && pendingResult`, both of
+which the commit clears.
 
 ## Known Deviations / Open Questions
 
