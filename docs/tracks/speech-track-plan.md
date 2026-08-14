@@ -1009,9 +1009,22 @@ proves the contract; F4 and F5 fill the palette.**
   produced a user-visible symptom: it acquires an output device at process
   start and keeps it, so cues stick to whatever was current then instead of
   following the user's default. *"Its own lifecycle"* above is the right
-  instinct and this is the evidence for it — a stream opened per utterance is
-  routed when it plays. Runtime-ownership step 7 owns the decision for the cue
+  instinct and this is the evidence for it. ~~A stream opened per utterance is
+  routed when it plays.~~ Runtime-ownership step 7 owns the decision for the cue
   stream; do not decide it a second time here.
+- **It landed 2026-08-14 as
+  [ADR 0150](../decisions/0150-the-cue-stream-closes-when-it-is-idle-and-closing-it-does-not-answer-where-it-plays.md),
+  and it hands F2 two things rather than settling them.** The lifecycle is
+  settled: open on demand, close after 60 s idle, and the open costs 14–20 ms
+  against 40 ms of warm-up silence already prepended — inherit that shape, not
+  the held-open one. **The routing is yours, and the struck sentence above is
+  why**: WirePlumber pins a target by application name, so a stream that closes
+  and reopens comes back on the *remembered* device rather than the current
+  default. Proven with a control probe and then confirmed in the product.
+  `list_native_output_devices` plus an explicit choice is the only thing that
+  answers it, and this step is the one that has it. **And the open latency was
+  measured against a virtual loopback sink — a suspended Bluetooth sink is
+  unmeasured**, which is one of the numbers `PLATFORMS.md` owes.
 
 ### F3. Local, with streaming (ADR 0096 step 3)
 

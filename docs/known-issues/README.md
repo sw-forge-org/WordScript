@@ -327,16 +327,20 @@ status change. Resolved bugs remain as references for the same failure class.
   capture measurement in this directory was taken inside it, and because it
   gives two other overlay records a second candidate cause.
 - [sound-output-underruns-and-reopens.md](sound-output-underruns-and-reopens.md):
-  **open, measured not diagnosed (2026-08-13)** — the cue playback sink is held
-  open for the process lifetime and underruns constantly: 283
-  `Audio stream error: Buffer underrun/overrun occurred.` against 256 reopens in
-  2.5 days, many at a fixed `:35` offset that looks like an idle timeout. Each
-  failure clears the synthesized-cue cache and forces a re-open, capped at 3 per
-  60 s before the engine goes silent. It is the **output** stream, not capture —
-  the line's wording invites the opposite reading and cost one investigation a
-  detour. Kept because reopening a sink renegotiates the PipeWire graph and can
-  suspend a capture node: 1 of 6 captures with an output error during them is
-  `Short` against a 1.0 % base rate, which at n=6 is a lead, not a finding.
+  **half fixed 2026-08-14 (ADR 0150), half open and now correctly attributed.**
+  The cue playback sink was held open for the process lifetime and underran
+  constantly: 283 `Audio stream error: Buffer underrun/overrun occurred.`
+  against 256 reopens in 2.5 days, many at a fixed `:35` offset that looks like
+  an idle timeout. It is the **output** stream, not capture — the line's wording
+  invited the opposite reading, cost one investigation a detour, and now reads
+  `Audio output stream error:`. The engine opens on demand and closes after 60 s
+  idle, which is ADR 0010's own registered fallback and takes the underrun class
+  with it; a cold open measures 14–20 ms against the 40 ms of warm-up silence
+  already prepended. **What stays open is the routing**, and the record was
+  wrong for a day about why: WirePlumber pins a target by application name, so a
+  per-cue stream comes back on the remembered device rather than the default —
+  proven with a control, and confirmed in the product. That half is the speech
+  track's F2.
 
 ## Boundaries
 

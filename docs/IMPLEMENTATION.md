@@ -33,7 +33,7 @@ updated; a kick-off is spent when its unit closes.
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
-| **Runtime ownership** | 2026-08-13 | **Steps 1, 2, 5 and 3 done 2026-08-14.** Three open; step 6 now waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
+| **Runtime ownership** | 2026-08-13 | **Steps 1, 2, 5, 3 and 7 done 2026-08-14.** Two open; step 6 waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
@@ -157,7 +157,9 @@ day** when the last finding turned out not to be a measurement problem at all.
 and recovery. It does not own the insert, and the instruments cannot see where
 it does not.
 
-Owns ADR 0133 onward for its five records.
+Owns ADR 0133, 0134 and 0150 onward for its five records — 0135–0149 went to
+Context objects as a range the same week, which is why step 7's decision is 0150
+and not 0138.
 
 **Step 1 was silent data loss and its code landed 2026-08-14.** Every insert
 call site is an `invoke` from `OverlayWindow.tsx`; after `preview ready` the
@@ -194,6 +196,19 @@ own clock ran, because clamping counts the late half of ALSA's burst jitter and
 discards the early half. Found by reading a twelve-second run against real
 hardware; every synthetic test was green while it did. That is the second time
 this cluster's failure class has come out of the instrument built to detect it.
+
+**Step 7 landed the same day and its interest is the refutation, not the fix.**
+ADR 0010 had registered the idle-close fallback in 2026-07 and named the
+evidence that would trigger it; 283 stream errors in 2.5 days is that evidence,
+so the decision was one somebody else had already made. A cold open measures
+14–20 ms against 40 ms of warm-up silence the engine already pays, and the app
+verified it live — `closed after idle` at +60.043, the monitor's sink
+`SUSPENDED`, WordScript's stream gone. **What the record was wrong about is why
+it mattered**: it said a per-cue stream would follow the user's default device.
+WirePlumber pins a target by application name, so it does not — proven with a
+control, and confirmed when the reopened stream came back on the wrong device
+anyway. The routing half was never this stream's lifecycle question; it is the
+Speech track's F2.
 
 **Step 6 is now the whole track's front line and it cannot be hurried.** It
 waits on one natural `Short` capture, at about 1.5 % of captures, and every

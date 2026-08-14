@@ -53,6 +53,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the cue stream stops being held open, and closing it does not answer where it plays (ADR 0150)
+
+- **The cue output stream is opened on demand and closed after 60 s idle.** It
+  was held for the process lifetime, which produced 283 stream errors against
+  256 reopens in 2.5 days and left the app holding a monitor's audio path awake
+  as the only stream in the system. ADR 0010 had registered exactly this
+  fallback in advance; the evidence it named arrived. A cold open measures
+  14–20 ms against the 40 ms of warm-up silence the engine already prepends, so
+  a dictation's cue chain still runs on one stream and an idle app holds no
+  device.
+- **The reopen budget counts failures, not opens.** `MAX_REOPENS` exists for a
+  device that keeps dying; if an idle close spent it, four dictations inside a
+  minute would leave the app silent.
+- **The log line names its stream: `Audio output stream error:`.** The old
+  wording read as a capture failure and cost one investigation a detour.
+- **Where a cue plays is not fixed by this and is now named as open.**
+  WirePlumber pins an output target by application name, so a stream that closes
+  and reopens returns to the remembered device rather than the current default —
+  which is why cues can play into a monitor while the user listens elsewhere.
+  The fix needs an explicit device choice and belongs to the speech track's F2.
+
 ### Changed — the cadence measures the callback instead of the callback's wait for us (ADR 0133)
 
 Runtime-ownership steps 5 and 3, in that order. **Nothing is fixed by this and

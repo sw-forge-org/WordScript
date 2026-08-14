@@ -45,17 +45,20 @@ own, then make the next event decidable.
 | [`dev-server-reloads-the-app-mid-session.md`](../known-issues/dev-server-reloads-the-app-mid-session.md) | open, cause located, fix known | Step 2 |
 | [`capture-loses-half-the-recording.md`](../known-issues/capture-loses-half-the-recording.md) | open, 3 detailed events, cause not located | Steps 3, 5, 6 |
 | [`overlay-recording-freeze.md`](../known-issues/overlay-recording-freeze.md) | **reopened 2026-08-13** | Steps 1, 2, 4 |
-| [`sound-output-underruns-and-reopens.md`](../known-issues/sound-output-underruns-and-reopens.md) | open, measured not diagnosed | Step 7 |
+| [`sound-output-underruns-and-reopens.md`](../known-issues/sound-output-underruns-and-reopens.md) | **half fixed 2026-08-14**; the underrun class is gone, the routing half is the Speech track's F2 | Step 7 |
 
 Adjacent, do not re-derive:
 [`overlay-stranded-off-screen.md`](../known-issues/overlay-stranded-off-screen.md)
 owns the second cause of "invisible mid-recording" and carries the log
 discriminator table. Reopened, not this track's to fix.
 
-Owns **ADR 0133** onward for these records. ADRs 0079–0081, 0083, 0084 and 0100
-belong to **Core hardening**; 0133 continues that line and says so in its own
-References. 0132 is the Speech track's — it landed in `2d5bead` while this track
-was being written, which is why the rule below says to check the ranges too.
+Owns **ADR 0133, 0134 and 0150 onward** for these records. ADRs 0079–0081, 0083,
+0084 and 0100 belong to **Core hardening**; 0133 continues that line and says so
+in its own References. 0132 is the Speech track's — it landed in `2d5bead` while
+this track was being written, which is why the rule below says to check the
+ranges too. **0135–0149 are the Context objects track's**, claimed as a range on
+2026-08-14 while this track held 0134 — which is why step 7's ADR is 0150 and
+not 0138, and is the rule below working rather than failing.
 
 ## Status
 
@@ -69,7 +72,7 @@ This table is the state of the track. Update it as steps land.
 | 4 | the overlay restores itself on mount | open | — (step 1 done) |
 | 5 | `native-18` into the regression corpus | **done 2026-08-14** | — |
 | 6 | read the next capture event, then fix | **open, and now the only thing between this record and a located cause** | one natural `Short` capture (step 3 done) |
-| 7 | the cue output stream | **open, unblocked — and it stopped being invisible on 2026-08-14** | nothing |
+| 7 | the cue output stream (ADR 0150) | **done 2026-08-14 — and the record's own explanation of the symptom turned out to be wrong; the underrun half is fixed, the routing half is the speech track's** | — |
 
 Opened with all seven open and nothing started, 2026-08-13.
 
@@ -203,6 +206,67 @@ outside that delta until now.
 held by construction and review. `process_samples` needs an `AppHandle` and no
 test in this repo drives it. The half that lives in `CallbackCadence`, that a
 long lock wait is not a gap, is asserted.
+
+### Step 7 landed 2026-08-14, and the refutation is the part worth reading
+
+**The cheap half first.** The callback logs `Audio output stream error:`. That
+was the whole of item 1 and it was always going to be one line.
+
+**Item 2 was already decided in 2026-07.** ADR 0010 chose the persistent stream
+*and wrote down the condition that would overturn it*: *"If this proves unstable
+on real hardware, the fallback is closing the stream after ~60 s idle."* The
+record's 283 errors against 256 reopens is that condition, met. So step 7 is a
+decision executing its own pre-registered fallback rather than a new preference
+— which is the cheapest kind of decision this repo has, and it exists because
+somebody wrote the falsifier down eleven ADRs before the evidence arrived.
+
+Measured, because that is what item 2 asked for: **cold open 14.2–20.1 ms across
+six fresh processes, one outlier at 44.5 ms, warm opens 9.6–15.7 ms — against
+the 40 ms of warm-up silence the engine already prepends at every open.** The
+open fits inside a budget that was already being paid. The outlier is in the
+record rather than averaged out of it, and what it costs is a late cue, not a
+missing one. **Stated limitation: the default sink was a virtual loopback, so a
+suspended Bluetooth sink is unmeasured** — F2 owes `PLATFORMS.md` that number
+anyway.
+
+**Verified in the running app, not argued:** `[+60.043] Audio output closed
+after idle`, HDMI `RUNNING → SUSPENDED`, and WordScript's sink input gone. Before
+it, the check from the record's first addendum still held — WordScript was the
+**only sink input in the entire system**, holding a monitor's audio path awake
+for an app making no sound. The owner's own session then produced the whole
+cycle without being asked to: closed at +60.058, opened at +265.355 for a
+dictation's Listen cue, closed again at +332.091, opened at +445.646 for the
+next one. **The zero errors in that window are not a result** — the base rate is
+5.2 per hour and under half an error was expected in it; a day of use is what
+would make the count mean anything.
+
+**And then the record's explanation of its own symptom was refuted.** The
+2026-08-14 addendum reasoned that a per-cue stream *"would be routed at the
+moment it plays … the symptom could not exist"*. It can. WirePlumber persists
+`Output/Audio:application.name:WordScript={"target":"…hdmi-stereo"}`, and a
+fresh stream carrying that name lands on HDMI while a control name lands on the
+default. Worse for the record: **`pactl move-sink-input` — the relief it
+recommends — is what writes that rule.** The product then confirmed the whole
+thing without being asked: after the change the stream closed, and the next cue
+reopened it on HDMI with the default elsewhere.
+
+**So step 7 fixed the half it owned and disproved the half it was credited
+with.** Where a cue plays needs the app to *choose* an output device, which is
+`list_native_output_devices` and is F2's. This is the third time in this cluster
+that reading the real system beat reasoning about it.
+
+**Counts, because a test total is a shared measurement.** `cargo test` 799 → 801
+passing and 3 → 5 ignored: two synthetic tests for the budget rule, and two
+`#[ignore]`d ones that need the real device — the open-latency measurement and
+the lifecycle check. `cargo check` 15 warnings, unchanged. No frontend file was
+touched, so no frontend count moved.
+
+**What it cost, and it is the same self-inflicted class as step 1's.** Editing a
+Rust file restarts `npm run tauri dev`; this session's edits — including the
+falsification and its restore — rebuilt and **restarted the owner's running app
+about four times**, once while he was dictating. The `vite.config.ts` rule in
+`AGENTS.md` covers the frontend half of this; the native half is the same
+sentence with `cargo` in it.
 
 ### What step 1 leaves open, and it is the owner's call
 
@@ -378,9 +442,11 @@ result, not a failure of this step.
 **Do not** substitute a forced reproduction for the wait without saying so in
 the record. Route B exists and is withdrawn as a plan, not as an option.
 
-### Step 7 — the cue output stream
+### Step 7 — the cue output stream — **done 2026-08-14 (ADR 0150)**
 
-Independent of everything above.
+Independent of everything above. The account of what landed and what it refuted
+is above, under *Step 7 landed 2026-08-14*; what follows is the brief as it was
+written, kept because the refutation only reads as one against it.
 
 1. Rename the log line to name its stream (`Audio output stream error: …`). It
    currently reads as a capture failure and cost this investigation a detour.

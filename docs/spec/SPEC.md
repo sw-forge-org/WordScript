@@ -16,6 +16,13 @@ not a drift check on this file and does not inherit the date above for the
 parts it did not read. The clause it added is implemented; its native-host
 acceptance run is owed ([`../tracks/runtime-ownership.md`](../tracks/runtime-ownership.md)).
 
+Amended 2026-08-14 by runtime-ownership step 7 (ADR 0150), which rewrote the
+cue-stream clause in the deviation list: the stream is no longer persistent, and
+the clause said *bound to* the OS default where the truth is that it *asks for*
+it and the OS answers from memory. **It read `core/sound/engine.rs` and that one
+clause, and nothing else** — same rule as above, it inherits no date for what it
+did not read.
+
 Leg 10's line, kept because it is what the sections below were last measured
 against: last drift check 2026-08-11 (Leg 10, and it read
 only what it changed: the Contracts command list against `invoke_handler`, and
@@ -838,9 +845,12 @@ which the commit clears.
   lane stays drawn and inert and says so.
 - **No speech synthesis anywhere in the runtime**, and no output-device
   enumeration — `list_native_input_devices` has no counterpart, and
-  `core::sound` runs one persistent output stream bound to the OS default by
-  decision (ADR 0010). ADR 0097 adds a second, named stream for speech on a
-  selectable device and leaves every cue rule intact.
+  `core::sound` runs at most one cue stream, opened on demand and closed after
+  60 s idle (ADR 0010, ADR 0150). It **asks for the OS default and does not
+  choose**, so which device a cue reaches is whatever the OS has remembered for
+  this application; that is a known open defect, not a contract. ADR 0097 adds a
+  second, named stream for speech on a selectable device, leaves every cue rule
+  intact, and is the step that gains the enumeration.
 - **No streaming recognition.** One speech entry point, `transcribe_audio_file`;
   `capture.rs` records to a file, stops and uploads. See the streaming contract
   above for the planned shape, and `docs/PROVIDERS.md` for which lanes could

@@ -1,12 +1,16 @@
 # Bug: The cue output stream underruns constantly and reopens itself
 
-Status: **Open — found 2026-08-13 while researching the capture loss. Measured,
-not diagnosed. It had no user-visible symptom until 2026-08-14, when the
-held-open stream turned out to be why the cues stick to one output device; see
-the addendum at the end.**
+Status: **Half fixed 2026-08-14 (ADR 0150), half open and now correctly
+attributed.** The underrun class is gone with the held-open stream: the engine
+opens on demand and closes after 60 s idle. **The routing half is open and was
+never this stream's lifecycle to fix** — the 2026-08-14 addendum reasoned that
+a per-cue stream would follow the user's default, and the second addendum below
+shows that it does not. Found 2026-08-13 while researching the capture loss.
 
 First reported: 2026-08-13, from a terminal frame the owner sent showing
-`[WordScript] Audio stream error: Buffer underrun/overrun occurred.`
+`[WordScript] Audio stream error: Buffer underrun/overrun occurred.` — **the
+line reads `Audio output stream error:` since 2026-08-14**; every quotation of
+the old wording in this record is left as it was logged.
 Affected area: `core::sound::engine` — the cue playback device, not capture
 
 ## Symptom
@@ -152,11 +156,112 @@ output stream (`list_native_output_devices`, a named speech stream with its own
 lifecycle, `Silent` opening no stream rather than muting one). If the cue stream
 keeps its current shape, F2 inherits this symptom on the voice path.
 
+## Addendum 2026-08-14, second — the stream now closes, and the addendum above was wrong about why that matters
+
+Runtime-ownership step 7, [ADR 0150](../decisions/0150-the-cue-stream-closes-when-it-is-idle-and-closing-it-does-not-answer-where-it-plays.md).
+Two things landed and a third was refuted.
+
+**Next step 1 is done.** The callback logs `Audio output stream error: …`.
+
+**Next step 2 is decided: the sink is not held open.** ADR 0010 had already
+named this fallback in advance — *"closing the stream after ~60 s idle"* — so
+this is that decision's own condition being met rather than a new preference.
+The engine opens on demand and closes after 60 s with an empty player.
+
+**Measured, because next step 2 asked for the open latency against
+`WARMUP_MS = 40`:**
+
+| | ms |
+|---|---|
+| cold open, six fresh processes | 20.1, 44.5, 15.9, 18.7, 14.2, 14.9 |
+| warm opens in those processes | 9.6 – 15.7 |
+| silence already prepended at every open | 40 |
+
+The open usually disappears inside a budget the engine already pays. The 44.5 ms
+outlier is kept rather than averaged away; it costs a marginally late cue, not a
+missing one. **The default sink during the measurement was a virtual loopback,
+which is the cheapest open on this machine — a suspended Bluetooth sink is
+unmeasured and is where this could still be wrong.**
+
+**Verified in the running app rather than argued**, and then in the owner's
+ordinary use rather than in a contrived one:
+
+```
+[+60.043]  Audio output closed after idle
+           alsa_output.pci-0000_01_00.1.hdmi-stereo   RUNNING → SUSPENDED
+           WordScript sink-input                       gone
+```
+
+```
++60.058   closed after idle      (startup warm-up, no cue followed)
++265.355  opened                 (a dictation's Listen cue)
++332.091  closed after idle      (66.7 s open — 60 s past the last cue)
++445.646  opened                 (the next dictation)
+```
+
+Before it, the same check as the first addendum's: WordScript was the **only
+sink input in the entire system** and the monitor's audio path was awake for it
+alone.
+
+**The error count since the change is zero and that is not a result.** At the
+measured base rate of 5.2 per hour, under half an error was expected in the
+window observed. The argument is that an idle stream is what underran and there
+is no longer an idle stream; the count is consistent with it and nothing more.
+A day of ordinary use is what would make it evidence.
+
+### The refutation — a per-cue stream does not follow the default here
+
+The first addendum reasoned: *"a stream that is opened for a cue and closed
+after it would be routed at the moment it plays … the symptom could not
+exist."* **It can, and it does.** WirePlumber persists a target keyed by
+application name, in `~/.local/state/wireplumber/stream-properties`:
+
+```
+Output/Audio:application.name:WordScript={"target":"alsa_output.pci-0000_01_00.1.hdmi-stereo", …}
+```
+
+Probe, with a control, while the default sink was something else entirely:
+
+| new stream named | landed on |
+|---|---|
+| `WordScript` | `hdmi-stereo` — the remembered target |
+| `WsProbeControl` | the current default |
+
+**And the rule is written by the relief this record recommends.** Moving the
+control stream with `pactl move-sink-input` made a `target` appear for a name
+that had none. So the immediate-relief line above fixes the session **and pins
+the application to that sink for every future stream**. It is a pin, not a
+reset.
+
+**The product confirmed it unprompted after the change**: the stream closed
+after idle and the next cue reopened it on HDMI, with the default sink
+elsewhere.
+
+**What this leaves open, correctly attributed:** cues follow a remembered
+device, not the user's. Fixing that needs the app to choose its output device
+rather than inherit one — `list_native_output_devices`, which is the speech
+track's **F2**. It was never the cue stream's lifecycle question and this record
+said it was for one day.
+
+**One probe artifact was left behind**, stated so it is not mistaken for a real
+rule later: `Output/Audio:application.name:WsProbeControl={"target":…}` now
+exists in the machine's WirePlumber state. It names a stream that will never
+exist again and is inert.
+
 ## References
 
+- [ADR 0150](../decisions/0150-the-cue-stream-closes-when-it-is-idle-and-closing-it-does-not-answer-where-it-plays.md)
+  — the lifecycle decision, the open-latency measurement and the routing
+  refutation
+- [ADR 0010](../decisions/0010-audio-cues-are-a-synthesised-motif-on-one-persistent-stream.md)
+  — the persistent stream, and the idle-close fallback it registered in advance
 - [capture-loses-half-the-recording.md](capture-loses-half-the-recording.md) —
-  the record this is a candidate path into
+  the record this is a candidate path into. **The candidate is narrower now**:
+  with no idle stream there is no idle reopen, so the graph renegotiation this
+  record offered as a path can no longer happen between captures — only during
+  one whose cues fire
 - [`../tracks/speech-track-plan.md`](../tracks/speech-track-plan.md) — **F2**,
-  the second output stream, which owes the same lifecycle question
+  the second output stream. Its lifecycle question is answered by ADR 0150; the
+  **routing** question is now F2's alone
 - [dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md)
   — the other environment-level finding from the same 2026-08-13 session

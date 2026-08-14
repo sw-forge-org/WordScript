@@ -256,15 +256,26 @@ nondeterministic, and the physical half of that measurement is still open (see
 
 ## Sound cue output and per-application volume
 
-WordScript keeps one output stream open for the whole process (ADR 0010). That
-is what makes it appear as a stable entry in the system volume mixer rather
-than as a stream that flickers in and out for 300 ms per cue.
+WordScript opens **one output stream on demand and closes it after 60 s idle**
+(ADR 0010, amended by ADR 0150). It was held for the whole process until
+2026-08-14; the underruns and the device it kept awake are why it is not. A cue
+chain within one dictation still runs on a single open stream, and a cold open
+measures 14–20 ms against the 40 ms of warm-up silence the engine prepends
+anyway.
 
 | Platform | Per-app volume in the OS mixer | Notes |
 |---|---|---|
-| Linux (PipeWire / PulseAudio) | Yes | Appears as its own playback stream in `pavucontrol` or the KDE volume applet; the level is remembered per application |
-| Windows | Yes | Own entry in the Volume Mixer, remembered per application |
+| Linux (PipeWire / PulseAudio) | Yes | Appears as its own playback stream in `pavucontrol` or the KDE volume applet; the level is remembered per application. **The entry now exists only while cues play and for 60 s after** — a level once set still survives, because it is remembered by application name, but it cannot be adjusted while the app is silent |
+| Windows | Yes | Own entry in the Volume Mixer, remembered per application. Same idle-close caveat; **unmeasured on this platform** |
 | macOS | **No** | macOS offers no per-application volume at all. The in-app slider is the only control there |
+
+**The open latency is measured on one machine and one sink class.** The number
+above was taken with a virtual loopback as the default sink, on PipeWire.
+**A suspended Bluetooth sink is unmeasured and is the case that could overturn
+it**, because the link has to be re-established before the stream runs; the cost
+would land on the `Listen` cue, which is the one that fires at capture start.
+`sound::engine::tests::measures_what_an_output_open_costs` is the instrument and
+is `#[ignore]`d.
 
 ### Output devices are not enumerated, and speech will need them to be
 
@@ -274,6 +285,19 @@ name, marks the OS default and sorts default-first; **it has no counterpart on
 the output side**. The cue stream opens with
 `DeviceSinkBuilder::from_default_device()` -- deliberately, rather than
 `open_default_sink()`, which falls back to arbitrary non-default devices.
+
+**Asking for the default is not the same as landing on it, and that is a
+measured defect rather than a theoretical one** (ADR 0150). WirePlumber stores
+an output target keyed by `application.name` in
+`~/.local/state/wireplumber/stream-properties` and re-applies it to every new
+stream, so a cue can reach a device the user is not listening to while the
+current default sits idle. Probed with a control: a fresh stream named
+`WordScript` landed on the remembered sink, the same stream under another name
+landed on the default. **Closing and reopening the stream does not shake the pin
+off**, which is why the idle close above fixes the underruns and not this.
+`pactl move-sink-input` is how such a pin gets *written*, so it is a way to
+choose a device rather than a way to reset one. The fix is the enumeration
+below.
 
 ADR 0097 adds a second, named output stream for speech on a device the user
 picks. That is not built, and three things about it are platform questions this

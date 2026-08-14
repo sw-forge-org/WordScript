@@ -237,10 +237,12 @@ The active product core lives in `src-tauri/src/core/`.
   segmenter as well as the recording, so a deaf stretch is not a turn boundary.
 - `sound/`: startup signature plus listen/handoff/done/abort/error cues.
   `cue.rs` owns the score, `pack.rs` the timbre, `synth.rs` renders at the
-  device sample rate, `engine.rs` owns the one persistent output stream
-  (see ADR 0010). **There is no speech synthesis here or anywhere else**, and
-  the stream is bound to the OS default device — the runtime enumerates input
-  devices only.
+  device sample rate, `engine.rs` owns the output stream — one at a time, on one
+  thread, opened on demand and closed after 60 s idle (ADR 0010, ADR 0150).
+  **There is no speech synthesis here or anywhere else**, and the stream asks
+  for the OS default device — the runtime enumerates input devices only, so
+  where a cue actually lands is whatever the OS remembers for this application
+  rather than a choice the app makes.
 
   *Planned and not built* (ADR 0097): a second, named output stream for speech
   on a device selected by name, leaving every cue rule intact. The two differ in

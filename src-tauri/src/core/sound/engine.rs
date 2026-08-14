@@ -1,27 +1,29 @@
 //! Playback engine.
 //!
-//! One dedicated thread owns the output stream for the whole process. The
-//! previous implementation opened a fresh stream for every cue, which cost an
-//! device-open on the hot path (the Listen cue fires exactly while `capture`
-//! is opening the input device), swallowed cues whenever that open failed, and
-//! let rapid cue chains overlap acoustically.
-//!
-//! Keeping one stream alive is also what makes the app show up as a stable
-//! entry in the OS volume mixer: a stream that exists for 300 ms cannot carry
-//! a remembered per-application volume.
+//! One dedicated thread owns the output stream. The implementation before
+//! ADR 0010 opened a fresh stream for every cue, which cost a device-open on
+//! the hot path (the Listen cue fires exactly while `capture` is opening the
+//! input device), swallowed cues whenever that open failed, and let rapid cue
+//! chains overlap acoustically.
 //!
 //! The original reason for the per-cue design was real — long-lived
 //! ALSA/cpal streams can freeze or crash when the audio server or the device
 //! changes underneath them. That is handled here by exclusive thread
 //! ownership (no cross-thread drop races) plus discard-and-reopen after any
 //! failure, rather than by paying an open on every cue.
+//!
+//! The stream is **not** held for the process lifetime. It is opened on
+//! demand and closed after `IDLE_CLOSE`, which is ADR 0010's own pre-registered
+//! fallback and is taken in ADR 0150: a whole dictation's cue chain still runs
+//! on one open stream, and an app that is not making sound stops holding a
+//! device awake.
 
 use std::{
     collections::{HashMap, VecDeque},
     num::NonZero,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::{channel, Sender},
+        mpsc::{channel, RecvTimeoutError, Sender},
         Arc, OnceLock,
     },
     thread,
@@ -47,6 +49,13 @@ const ABORT_ERROR_WINDOW: Duration = Duration::from_millis(400);
 
 const MAX_REOPENS: usize = 3;
 const REOPEN_WINDOW: Duration = Duration::from_secs(60);
+
+/// How long an open output stream may sit with nothing to play before it is
+/// closed. Longer than any cue chain a single dictation produces, so the
+/// Listen/Handoff/Done sequence never pays a second open; short enough that an
+/// idle app is not the reason a monitor's or a headset's audio path stays
+/// awake. ADR 0010 named this number as its fallback and ADR 0150 takes it.
+const IDLE_CLOSE: Duration = Duration::from_secs(60);
 
 enum AudioCommand {
     Play { cue: SoundCue, volume: f32 },
@@ -76,7 +85,25 @@ fn sender() -> &'static Sender<AudioCommand> {
             .name("wordscript-audio".into())
             .spawn(move || {
                 let mut state = EngineState::default();
-                while let Ok(command) = rx.recv() {
+                loop {
+                    // Only a thread that holds a device needs to wake on its
+                    // own; with none open there is nothing to close and the
+                    // next command is the only thing worth waiting for.
+                    let command = if state.device.is_some() {
+                        match rx.recv_timeout(IDLE_CLOSE) {
+                            Ok(command) => command,
+                            Err(RecvTimeoutError::Timeout) => {
+                                state.close_idle_device();
+                                continue;
+                            }
+                            Err(RecvTimeoutError::Disconnected) => break,
+                        }
+                    } else {
+                        match rx.recv() {
+                            Ok(command) => command,
+                            Err(_) => break,
+                        }
+                    };
                     match command {
                         AudioCommand::Warmup => state.ensure_device(),
                         AudioCommand::InvalidateCache => state.cache.clear(),
@@ -107,6 +134,11 @@ struct EngineState {
     cached_rate: Option<u32>,
     guard: CueGuard,
     reopens: VecDeque<Instant>,
+    /// The last open ended in a failure — either the stream reported an error
+    /// or the open itself returned one. A device closed on purpose after idle
+    /// does not set this, which is what keeps the reopen budget spent on
+    /// devices that keep dying rather than on ordinary use.
+    open_failed: bool,
 }
 
 impl EngineState {
@@ -153,6 +185,7 @@ impl EngineState {
     }
 
     fn ensure_device(&mut self) {
+        let mut after_failure = self.open_failed;
         if let Some(device) = self.device.as_ref() {
             if !device.failed.load(Ordering::Relaxed) {
                 return;
@@ -162,8 +195,9 @@ impl EngineState {
             );
             self.device = None;
             self.cache.clear();
+            after_failure = true;
         }
-        if !self.may_reopen() {
+        if !self.may_open(after_failure) {
             return;
         }
 
@@ -177,11 +211,40 @@ impl EngineState {
                 self.device = Some(device);
                 self.cache.clear();
                 self.cached_rate = None;
+                self.open_failed = false;
             }
             Err(error) => {
                 runtime_log::record(format!("[WordScript] Audio output unavailable: {error}"));
+                self.open_failed = true;
             }
         }
+    }
+
+    /// Drops the output stream when it has been idle for `IDLE_CLOSE`. A cue
+    /// still sounding keeps it: the next timeout takes it instead, which costs
+    /// one more idle window and never truncates a cue.
+    fn close_idle_device(&mut self) {
+        let Some(device) = self.device.as_ref() else {
+            return;
+        };
+        if !device.player.empty() {
+            return;
+        }
+        self.device = None;
+        self.cache.clear();
+        self.cached_rate = None;
+        runtime_log::record("[WordScript] Audio output closed after idle".to_string());
+    }
+
+    /// A cold open — the first one, or the first after an idle close — is
+    /// always allowed. Only an open that follows a failure is rate-limited, so
+    /// a stream this engine closed on purpose does not spend the budget that
+    /// exists for a device that keeps dying.
+    fn may_open(&mut self, after_failure: bool) -> bool {
+        if !after_failure {
+            return true;
+        }
+        self.may_reopen()
     }
 
     fn may_reopen(&mut self) -> bool {
@@ -211,7 +274,11 @@ fn open_device() -> Result<Device, rodio::DeviceSinkError> {
     let mut sink = DeviceSinkBuilder::from_default_device()?
         .with_error_callback(move |error: rodio::cpal::StreamError| {
             flag.store(true, Ordering::Relaxed);
-            runtime_log::record(format!("[WordScript] Audio stream error: {error}"));
+            // Named for its stream. `Audio stream error` read as a capture
+            // failure and cost the 2026-08-13 investigation a detour; capture
+            // reports itself through `Capture integrity` and
+            // `Capture callback cadence` and never through this callback.
+            runtime_log::record(format!("[WordScript] Audio output stream error: {error}"));
         })
         .open_sink_or_fallback()?;
     sink.log_on_drop(false);
@@ -315,6 +382,97 @@ mod tests {
         assert!(
             !state.may_reopen(),
             "a dead audio device must not be reopened without limit"
+        );
+    }
+
+    #[test]
+    fn an_idle_close_does_not_spend_the_reopen_budget() {
+        let mut state = EngineState::default();
+        for _ in 0..(MAX_REOPENS * 3) {
+            assert!(
+                state.may_open(false),
+                "a stream closed on purpose must reopen on the next cue"
+            );
+        }
+        for _ in 0..MAX_REOPENS {
+            assert!(state.may_open(true));
+        }
+        assert!(
+            !state.may_open(true),
+            "the budget still binds the device that keeps dying"
+        );
+    }
+
+    #[test]
+    fn a_failed_open_is_rate_limited_like_a_failed_stream() {
+        let mut state = EngineState::default();
+        state.open_failed = true;
+        for _ in 0..MAX_REOPENS {
+            assert!(state.may_open(state.open_failed));
+        }
+        assert!(
+            !state.may_open(state.open_failed),
+            "an unavailable device must not be retried on every cue"
+        );
+    }
+
+    /// The regression the idle close could introduce: a stream that closes and
+    /// never comes back is silence for the rest of the process, and no
+    /// synthetic test can see it because the open is the part that touches
+    /// hardware. Volume is set so low the cue is inaudible; it still renders,
+    /// queues and drains exactly as a real one does.
+    #[test]
+    #[ignore = "opens the real default output device; run explicitly"]
+    fn a_cue_after_an_idle_close_opens_the_device_again() {
+        let mut state = EngineState::default();
+
+        state.play(SoundCue::Listen, 0.000_1);
+        assert!(state.device.is_some(), "the first cue opens the device");
+
+        thread::sleep(Duration::from_millis(1_500));
+        state.close_idle_device();
+        assert!(state.device.is_none(), "an idle stream is dropped");
+
+        state.play(SoundCue::Done, 0.000_1);
+        assert!(
+            state.device.is_some(),
+            "a cue after an idle close must reopen rather than stay silent"
+        );
+        assert!(
+            state.reopens.is_empty(),
+            "an idle close spends no reopen budget"
+        );
+    }
+
+    /// Measurement rather than assertion, and the one this decision turned on:
+    /// what a cold open costs against `WARMUP_MS`. Opens the real default
+    /// output device, so it is not part of the suite.
+    ///
+    /// `cargo test --lib sound::engine::tests::measures_ -- --ignored --nocapture`
+    #[test]
+    #[ignore = "opens the real default output device; run explicitly"]
+    fn measures_what_an_output_open_costs() {
+        let mut samples = Vec::new();
+        for round in 0..8 {
+            let started = Instant::now();
+            let device = open_device().expect("default output device");
+            let elapsed = started.elapsed();
+            println!(
+                "open {round}: {:.1} ms, rate={} channels={}",
+                elapsed.as_secs_f64() * 1000.0,
+                device.sample_rate,
+                device.sink.config().channel_count()
+            );
+            samples.push(elapsed);
+            drop(device);
+            thread::sleep(Duration::from_millis(200));
+        }
+        let total: Duration = samples.iter().sum();
+        println!(
+            "cold={:.1} ms  mean={:.1} ms  warmup budget={} ms",
+            samples[0].as_secs_f64() * 1000.0,
+            total.as_secs_f64() * 1000.0 / samples.len() as f64,
+            WARMUP_MS
         );
     }
 }

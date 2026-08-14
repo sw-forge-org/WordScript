@@ -537,18 +537,19 @@ Additional rules:
   from fourteen surveyed candidates -- one method, `synthesize_speech`, with
   streaming grown beside it later. Designed; still not built, and the method
   lands with its first implementation rather than ahead of it
-- **the cue output stream is held open, and that is why sound cues stick to one
-  device** (found 2026-08-14, reported as "the sound is gone"). The cues were
-  playing at full volume into the HDMI monitor while the owner listened on the
-  Bluetooth default -- nothing muted, nothing corked. A permanently open stream
-  acquires an output device at process start and keeps it, and PipeWire's
-  `module-stream-restore` re-applies that route on every restart, so the symptom
-  appears after a restart rather than at a device switch. The HDMI sink was
-  `RUNNING` with WordScript as its only stream: this app holds a device awake
-  for nothing, and moving the stream to Bluetooth would keep *that* device awake
-  instead. A stream opened per cue is routed when it plays and could not have
-  this symptom. The same lifecycle question is owed by the speech track's second
-  output stream (F2), so it should be decided once:
+- **sound cues play into a remembered output device rather than the user's**
+  (found 2026-08-14, reported as "the sound is gone"; **half fixed the same day,
+  ADR 0150**). The cues were playing at full volume into the HDMI monitor while
+  the owner listened on the Bluetooth default -- nothing muted, nothing corked,
+  and the HDMI sink `RUNNING` with WordScript as its only stream. **The
+  held-open stream is gone**: the engine opens on demand and closes after 60 s
+  idle, which ends the underrun class and stops the app holding a device awake,
+  verified live. **The routing is not fixed and the first explanation of it was
+  wrong.** WirePlumber pins an output target by `application.name`, so a stream
+  that closes and reopens comes back on the *remembered* device, not the current
+  default -- shown with a control probe and then confirmed in the product. It
+  needs an explicit device choice, which is the speech track's F2 and the only
+  step that has `list_native_output_devices`:
   [known-issues/sound-output-underruns-and-reopens.md](known-issues/sound-output-underruns-and-reopens.md)
 - **the machine cannot speak while listening without hearing itself.** ADR 0098
   records the third capture state that would fix it, and the finding that the

@@ -1081,6 +1081,32 @@ Status: Proposed | Accepted | Superseded by NNNN
   an unwritten transcript is none. This also supplies the fallback ADR 0018
   named and owes a reported surface under ADR 0019.
 
+- **0135, 0136 and 0137 have no entry here yet.** They are the Context objects
+  track's founding records and its window decision, filed 2026-08-14. Noted
+  rather than written for that track, because an index entry summarising a
+  record its own track has not finished reading is how a summary drifts from
+  what it summarises.
+
+- [0150](0150-the-cue-stream-closes-when-it-is-idle-and-closing-it-does-not-answer-where-it-plays.md):
+  **the cue stream was held open for the process lifetime, and ADR 0010 had
+  already written down what would overturn that.** Its fallback — *"closing the
+  stream after ~60 s idle"* — was registered in 2026-07 against evidence that
+  arrived in 2026-08: 283 stream errors against 256 reopens in 2.5 days, many at
+  a fixed `:35` offset, plus an app holding a monitor's audio path awake as the
+  only sink input in the system. The engine now opens on demand and closes after
+  60 s idle; a cold open measures **14–20 ms against the 40 ms of warm-up
+  silence it already prepends**, so the open fits a budget that was already
+  being paid. The reopen budget counts failures rather than opens, because an
+  idle close spending it would silence the app after four dictations in a
+  minute. **The second half is a refutation and it is why the ADR exists in this
+  shape**: the record had reasoned that a per-cue stream would follow the user's
+  default device, and WirePlumber pins a target by application name, so it does
+  not — shown with a control probe, and confirmed when the reopened stream came
+  back on the wrong device in the product. `pactl move-sink-input`, the relief
+  the record recommended, is what *writes* that pin. Where a cue plays is
+  therefore named as unfixed and handed to the speech track's F2, which is the
+  only step that has `list_native_output_devices`.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
