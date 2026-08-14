@@ -87,11 +87,24 @@ test/lint/build command an agent has no success signal and cannot iterate.
   `cd src-tauri && cargo test`.
 - For shell/window/Tauri-bound changes, check in the native host rather than
   browser preview only (`invoke()` and event bridges need the host).
-- **Do not write `vite.config.ts` while a dev host is running.** Vite watches its
-  own config and restarts in place; every webview loses its page, and the parked
-  overlay never asks for it again -- it goes silently invisible while the runtime
-  keeps working. Land config changes before starting the host, or restart the
-  host after them.
+- **A dev host is a running app, and editing its inputs restarts it.** Two
+  halves of one rule:
+  - **Do not write `vite.config.ts` while a dev host is running.** Vite watches
+    its own config and restarts in place; every webview loses its page, and the
+    parked overlay never asks for it again -- it goes silently invisible while
+    the runtime keeps working. Land config changes before starting the host, or
+    restart the host after them.
+  - **Writing any file under `src-tauri/` rebuilds and restarts the whole app.**
+    Not a reload: the process dies, the hotkeys go with it, and a dictation in
+    flight is a dictation interrupted. One session did this about four times in
+    an afternoon, once while the owner was mid-sentence. Before touching Rust,
+    check whether a host is running (`pgrep -af "tauri dev"`) and say so; batch
+    the edits rather than landing them one at a time.
+- **No heavy builds while an audio or capture measurement is running.** PipeWire
+  runs at no realtime priority on the reporting machine, so a 20-core
+  `cargo test` can fabricate a callback gap that lands in the log as a finding.
+  During a measurement, code may be written but not validated. The derivation is
+  in [`docs/tracks/runtime-ownership.md`](docs/tracks/runtime-ownership.md).
 - For release-build-up changes additionally `npm run tauri build`.
 
 ## Reference Map
