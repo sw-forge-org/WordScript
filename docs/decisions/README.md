@@ -1138,6 +1138,33 @@ Status: Proposed | Accepted | Superseded by NNNN
   the deadline commit a four-character transcript, which the run sheet had
   pre-declared as proof of a mis-sized deadline and which was in fact a user not
   answering. A preview nobody is editing therefore keeps its ten seconds.
+- [0153](0153-the-seam-has-two-channels-and-the-sweep-only-knew-one-of-them.md):
+  **the seam has two channels and the sweep only knew one of them.** ADR 0089,
+  0093 and 0103 are all about `invoke` — the frontend calling the runtime. An
+  event is the runtime calling the frontend, and that half had never been swept.
+  The `invoke` seam came back clean and checkable: 72 registered, 72 defined, the
+  lists identical, **zero callers with no command**, and the same five orphans
+  those ADRs already recorded. The event half found one —
+  **`wordscript-native-insert` is emitted from three sites and nothing listens**,
+  while `spec/SPEC.md` carries it as contract. It is dead weight rather than a
+  gap, and that had to be measured: each emitter sits beside a path that already
+  delivers the same `NativeInsertResult`, the runtime-driven one folded into
+  `wordscript-event`'s `insertion` field. Recorded, not deleted — the insert is
+  the runtime ownership track's. **Every direction of the sweep has now been
+  observed to report a true defect**, direction 1 against the historical tree
+  that still had Leg 12's, and the instrument reproduced this cluster's own
+  failure class three times while being built.
+- [0154](0154-the-second-insert-channel-is-removed-because-the-first-one-already-said-it.md):
+  **the second insert channel is removed, because the first one already said
+  it.** ADR 0153 found `wordscript-native-insert` emitted from three sites and
+  heard by nobody, recorded it, and left the disposition to the owner because the
+  insert is the Runtime ownership track's. Taken 2026-08-15: the emitter, its
+  three call sites, the `Emitter` import and the timing pair that only measured
+  the emit are gone, and `spec/SPEC.md` keeps a sentence naming what replaced it
+  rather than going quiet. **The rule is ADR 0018/0019** — a session ends in one
+  reducer commit, and an unlistened second channel is that forbidden shape left
+  available for a future surface to bind to by mistake. All four defect
+  directions of the sweep now report zero.
 
 ## Resolved: the number 0011 was used twice
 

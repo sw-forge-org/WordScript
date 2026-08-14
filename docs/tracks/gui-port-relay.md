@@ -1,6 +1,8 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Legs 0 through 12 are CLOSED and Leg 13 is open.**
+Opened 2026-08-04. **Active — Legs 0 through 13a are CLOSED and Leg 13b is
+open.** Leg 13 split on 2026-08-14: 13a is the caller sweep, done; 13b is the
+panel plane, which is the half where the port designs rather than carries.
 Its brief is at the foot of this page; the page you paste to start it is
 [`gui-port-relay-kickoff.md`](gui-port-relay-kickoff.md). Two other tracks work
 in the same tree — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so stage
@@ -163,11 +165,15 @@ What the map carried that the log does not:
   the contract work was decided from what Leg 4 found rather than guessed at in
   front of it. That order is why rule 6 reads the way it does.
 
-**One commit on this track has no leg behind it.** `b330815` — the sidebar's
-second width and the container-query tiers, ADR 0111 — landed on 2026-08-11
-while Leg 13 was open, and it is neither of Leg 13's two items. No leg claimed
-it, so it appears in no row. Whoever closes Leg 13 either adopts it into that
-record or files it as its own leg; do not leave it unattributed a third time.
+**Two commits on this track have no leg behind them.** `b330815` — the sidebar's
+second width and the container-query tiers, ADR 0111 — landed on 2026-08-11 while
+Leg 13 was open, and it is neither of Leg 13's two items. The 2026-08-14
+`Context.tsx` wiring is the second: four `Open decision` badges removed, three
+drawn states connected, three cases added to `screens.test.tsx`, recorded in
+[`context-objects.md`](context-objects.md) so it is not rediscovered as that
+track's work. Neither claimed a leg, so neither appears in a row. **Leg 13b
+either adopts them into its record or files them as their own leg**; do not
+leave them unattributed a third time.
 
 ## Leg log
 
@@ -200,7 +206,8 @@ absent leg — it is a leg whose record names its work and not its hash.
 | 10 | 2026-08-11 | | Text-rules export/import and the session command shells, both decided rather than built. ADR 0090, 0091 |
 | 11 | 2026-08-11 | | The copy budget **measured** across 123 rows and wrong in all four places it was written. ADR 0092, 0093 |
 | 12 | 2026-08-11 | | The three unmeasured row classes; the sweep run the other way found a caller with no command. ADR 0103, 0104 |
-| **13** | **open** | | The caller sweep in both directions; the row classes the panel plane draws |
+| 13a | 2026-08-14 | | The sweep run over both channels of the seam; the `invoke` half clean, the event half not. ADR 0153 |
+| **13b** | **open** | | The row classes the panel plane draws |
 
 Legs 1 through 8 are closed and their full records are in
 [`../archive/gui-port-relay-leg-records.md`](../archive/gui-port-relay-leg-records.md).
@@ -738,60 +745,202 @@ not flake. The editor-panel fix was measured before and after in the native
 host, and the comment I wrote about it was measured too and was wrong.
 
 
-## The prompt for Leg 13
+### Leg 13a — the sweep over the other channel, and three false findings from the tool built to prevent them
 
-You are picking up WordScript after Leg 12. Work in the repo root on `main`. Do
-not create a branch. **The core-hardening and speech tracks are working in the
-same tree and had ~250 uncommitted lines across ten documents when Leg 12
-closed** — run `git status` and `git log --oneline -5` before you start, and
-stage your own paths.
+**ITEM 1 IS DONE AND STRUCK. ITEM 2 IS UNTOUCHED AND IS NOW LEG 13B.** One ADR
+(0153). The leg split because item 1 grew a second channel and item 2 is a
+design plane, not a scan.
+
+**THE `invoke` SEAM IS CLEAN AND THE NUMBER IS CHECKABLE.** 72 commands
+registered in `generate_handler!`, 72 defined by `#[tauri::command]`, the two
+lists **identical** — so there is no command written and never registered, which
+no ADR had asked before. 67 called from non-test `src/`. **Zero callers with no
+command.** Five commands with no caller, and they are the same five ADR 0089 and
+ADR 0093 already recorded: `preview_prompt_enhance`, `transcribe_audio_file`,
+`read_diag_log`, `clear_diag_log`, `overlay_open_devtools`. Nothing new became
+dead weight and nothing dead came back.
+
+**SO I RAN THE CHANNEL NOBODY HAD SWEPT.** ADR 0089, 0093 and 0103 are all about
+`invoke` — the frontend calling the runtime. An event is the runtime calling the
+frontend, the same seam turned around, and its asymmetry is identical: an emitter
+with no listener compiles, runs, delivers to nobody and warns nowhere.
+**`wordscript-native-insert` is emitted from three sites in `core/insertion.rs`
+and nothing in `src/` listens** — not the overlay, not the workspace, not even a
+test mock. `docs/spec/SPEC.md:297` carries it as contract: *"carries
+`NativeInsertResult`, including insertion and recovery truth."*
+
+**IT IS DEAD WEIGHT AND NOT A GAP, AND I HAD TO MEASURE THAT RATHER THAN ASSUME
+IT.** Each of the three emitters sits beside a path that already delivers the
+same `NativeInsertResult`: `insert_text_native` and `restore_last_transcript`
+return it to their `invoke` caller, and `insert_transcription_from_legacy` — the
+runtime-driven one, called from `lib.rs:1965`, `sessions.rs:664` and
+`history.rs:762`, with no frontend caller to return to — reaches the frontend
+folded into `wordscript-event` as the `insertion` field (`src/types/ipc.ts:144`).
+No surface is missing truth it needs. What exists is a second, unordered channel
+carrying session truth the authoritative one already carries, which is what ADR
+0018/0019 argues against. **Recorded, not deleted** (ADR 0093's rule), and the
+disposition is the runtime ownership track's because the insert is.
+
+**MY OWN INSTRUMENT PRODUCED THIS CLUSTER'S FAILURE CLASS THREE TIMES WHILE I
+WAS BUILDING IT, AND THAT IS THE PART TO TAKE FROM THIS LEG.**
+
+1. The first draft abandoned any `invoke<…>` whose generic contained `{` or `;`,
+   reading them as proof the `<` was a comparison. It reported **all five of
+   `Privacy.tsx`'s backup commands as orphans — the exact five ADR 0103 recorded
+   as false**, one leg after that ADR was written. Worse than the noise: the same
+   blindness would have **passed** a direction-1 defect written in that shape.
+2. The event half used a non-greedy `<[\s\S]*?>` to skip the generic. It matched
+   `listen<BackendEvent>(RUNTIME_EVENT_CHANNEL, …)` against an `invoke` string
+   two hundred lines further down and reported `load_app_config` and
+   `save_config` — two **commands** — as events nothing emits. A non-greedy class
+   will cross the end of the call it is standing in.
+3. Stripping comments dropped the newlines inside block comments, so every line
+   number drifted by the height of whatever docblock stood above the call. The
+   regression run reported `OverlayWindow.tsx:1345` for a call on **1380**.
+
+Three passes, three false findings, from the tool whose whole purpose is to stop
+false findings. Everything the sweep now reports was verified by hand against the
+tree before it was believed.
+
+**AND THE PRODUCT'S MAIN EVENT CHANNEL READ AS REACHING NOBODY UNTIL THE SWEEP
+LEARNED TO READ A CONSTANT.** The overlay subscribes with
+`listen<BackendEvent>(RUNTIME_EVENT_CHANNEL, …)`, so the literal
+`"wordscript-event"` never appears at the call site. A name-grep finds it only in
+a **comment** on `src/types/ipc.ts:1`. The sweep resolves frontend string
+constants now; `tauri://` is the framework's namespace and is skipped, because
+`tauri://theme-changed` has no emitter here and never will.
+
+**EVERY DIRECTION HAS BEEN OBSERVED TO REPORT A TRUE DEFECT, WHICH IS THE ONLY
+REASON `0 defects` MEANS ANYTHING.** Direction 1 was pointed at
+`git archive 4445423^ src` — the tree that still had Leg 12's defect — and named
+`load_transcription_history` at `OverlayWindow.tsx:1380`. Direction 4 was made to
+fire by deleting one `listen(` from a copy of `src/`. `--frontend <dir>` exists
+for exactly that and the file says so. This is ADR 0103's lesson about the retry
+button, applied to the instrument instead of to a control.
+
+**Findings for Leg 13b.**
+
+1. **THE SWEEP HAS NO npm SCRIPT AND THAT IS DELIBERATE FOR ONE MORE SESSION.**
+   It runs as `node scripts/command-sweep.mjs`. Adding `sweep:commands` to
+   `package.json` is a one-line change and I did not make it: a `tauri dev` host
+   was running (PID 3307285) and Vite can restart on a `package.json` write, and
+   the runtime-ownership track's step 6 is waiting on a natural capture event
+   that a restart would cost. **Land it as your first edit if no host is
+   running**, next to `port:diff`.
+2. **THE TEST COUNT MOVED AND NONE OF IT IS MINE.** Leg 12 closed at 474 across
+   39 files; the suite is now **541 across 42**. I added no test and touched no
+   file under `src/`, so +67 across +3 files is the runtime-ownership and
+   context-objects work of 2026-08-14. Take 541/42 as your baseline, not 474/39.
+3. **`b330815` STILL HAS NO LEG BEHIND IT, AND NOW IT HAS COMPANY.** The
+   sidebar's second width (ADR 0111) and the 2026-08-14 `Context.tsx` wiring —
+   four `Open decision` badges removed, three drawn states connected, three cases
+   added to `screens.test.tsx` — are both GUI-port work that no leg claimed.
+   `docs/tracks/context-objects.md` records the second so it is not rediscovered
+   as that track's. **Adopt both into your record or file them as their own leg.**
+   Do not leave either unattributed a third time.
+4. **THE RUST BASELINE IS MEASURED AGAIN AND IT MOVED A LOT.** `cargo test` is
+   **807 passed / 5 ignored**, not Leg 12's 740, and `cargo check` is **15
+   warnings** — the same count, but re-measured rather than carried. The three
+   `never used` are unchanged and still nobody's:
+   `should_oscillate_flat_reveal`, `NativeInsertionState::configure`,
+   `ModeHotkeys::for_mode`. `port:diff` did not run and could not have moved:
+   nothing in this leg touched `src/` or a style.
+5. **THE ADR NUMBER WENT STALE AGAIN — FOURTH LEG RUNNING.** The brief said 0105
+   was free; the tree said 0152 was the highest and I took **0153**. The runtime
+   ownership track's board line claims *"0153 onward as they come"*, which is a
+   direction of travel rather than a reservation, so it takes 0154. Grep the
+   tree, including source and commit messages.
+
+**Addendum, 2026-08-15 — the two things this record deferred were both cleared
+the same session, by the owner, on one sentence.** *"Kein Ding, alles kann neu
+starten."* That removed the only reason findings 1 and 5 existed:
+
+- **`sweep:commands` is wired.** `npm run sweep:commands` runs beside
+  `npm run port:diff`. Finding 1 is spent.
+- **`wordscript-native-insert` is gone (ADR 0154).** The emitter, its three call
+  sites, the `Emitter` import and the timing pair that only measured the emit are
+  out of `core/insertion.rs`; `spec/SPEC.md` keeps a sentence naming what
+  replaced it. **`restore_last_transcript` lost its `AppHandle` parameter** — the
+  emit was its only reader, and leaving it would have been the sixteenth warning.
+  All four defect directions now report zero.
+- **The app restarted during this, which is what the sentence authorised**, and
+  the log shows it: trigger re-registration at `+0.000` and the audio output
+  reopening. **No capture ran** — the only line matching the capture pattern is
+  `binding=capture shortcut=Shift`, a shortcut registration — so runtime
+  ownership's step 6 lost nothing.
+- **One line in that window is machine load and should not be read as a
+  finding:** `Audio output stream error: Buffer underrun/overrun occurred.`
+  landed while `cargo test` was running on 20 cores. It is the cue output stream
+  (ADR 0150's, which is why the line names its stream now), not capture, and it
+  is exactly the artefact `CLAUDE.md`'s no-heavy-builds rule predicts.
+
+**Checks at the close.** `npm test` **541 passed across 42 files**, `npm run
+build` green in 1.90 s. **The suite did not move by my hand and I did not re-run
+it to prove that** — vitest collects only from `src/` and this leg added one file
+under `scripts/`. No `cargo` command was run because no Rust changed. **The
+runtime log stood at 33724 lines before the checks and 33724 after**, so no
+capture ran during them and no measurement was contaminated — which is the check
+`CLAUDE.md`'s no-heavy-builds rule actually asks for, rather than a promise not
+to build.
+
+## The prompt for Leg 13b
+
+You are picking up WordScript after Leg 13a. Work in the repo root on `main`. Do
+not create a branch. **Four other tracks work in the same tree** — see
+[`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run `git status` and
+`git log --oneline -5` before you start, and stage your own paths. Never
+`git add -A`.
+
+**Leg 13 split.** 13a was the caller sweep and it is struck. You are item 2 and
+only item 2: **the row classes no instrument has reached — the panel plane,
+where the port designs rather than carries.**
 
 ### What is already true
 
-**Leg 12's documentation is in the working tree, not on `main`** — its ADR index
-entries, its leg record, its map row and its `DESIGN_SYSTEM.md` additions. It
-committed only `src/`, ADR 0103 and ADR 0104, because every doc it would have
-touched had another track's uncommitted prose in it. **Check whether those
-landed before you write anything near them**, and if a doc still carries them,
-whoever commits that file next carries them too.
+**The seam is swept and clean, so it is not your job.** `npm run sweep:commands`
+reports both channels: caller with no command, command with no caller,
+unresolvable call sites, listener with no emitter, emitter with no listener.
+Today it is `direction 1: 0 | direction 2: 5 | events 0 | 0` — **all four defect
+directions at zero**, and the five are the orphans ADR 0089 and ADR 0093 triaged.
+`wordscript-native-insert` was the fifth column's one entry and was removed on
+2026-08-15 (ADR 0154). **Re-run the sweep if you add an `invoke` or a `listen`;
+do not rebuild it.**
 
-**The sweep is two directions now** (ADR 0103). Caller-with-no-command is the
-one that finds defects, and it found the overlay's retry invoking a command that
-never existed. The scan must read whole files: a line-based grep reported five
-live commands as orphans.
+**A `tauri dev` host was running throughout 13a and may still be.** Writing
+anything under `src-tauri/` rebuilds and restarts the whole app — the process
+dies, the hotkeys go with it, and a dictation in flight is interrupted. The
+runtime ownership track's step 6 is waiting on a natural `Short` capture at about
+1.5 % of captures, and a restart costs whatever was accruing. Say whether a host
+is running before you touch native, and batch the edits.
+
+**The suite is 541 across 42 files**, not Leg 12's 474 across 39. The difference
+is other tracks' 2026-08-14 work, not a regression. **`cargo test` is 807 passed
+/ 5 ignored and `cargo check` 15 warnings**, both re-measured on 2026-08-15.
 
 **Every copy budget is a budget at a CSS viewport** (ADR 0104). The workspace
-lays out at **800 CSS px** while `tauri.conf.json` declares 1000 and a minimum
-of 880, because the display scale is 1.25 — the config's pixels and the
+lays out at **800 CSS px** while `tauri.conf.json` declares 1000 and a minimum of
+880, because the display scale is 1.25 — the config's pixels and the
 stylesheet's are different units. The floor moved from 12 characters to 10
 between two passes at the same window.
 
-**`port:diff` is 24 of 25 at structural 0 | style 0**, `models` the one
-departure at 6 | 6. `cargo test` 740, `cargo check` 15 warnings, **474 frontend
-tests across 39 files**.
-
 ### Read this first
 
-`docs/tracks/gui-port-relay.md`. **Leg 12's record is your starting
-state, and its findings 1 and 2 are the two that will cost you if you skip
-them**: its docs may not be committed, and `port:diff` cannot do 25 screens in
-one invocation. Then ADR 0103, ADR 0104, ADR 0092, `CLAUDE.md` and
-`docs/spec/SPEC.md`.
+`docs/tracks/gui-port-relay.md` — Leg 13a's record above is your starting state,
+and its findings 1 through 3 are the ones that will cost you. Then ADR 0092, ADR
+0104, ADR 0103, `CLAUDE.md` and `docs/spec/SPEC.md`.
 
 ### The order
 
-1. **The caller sweep, in both directions, over the whole tree.** Leg 12 ran it
-   once and found one live defect on the first attempt. Run it again — the
-   overlay is not the only window that invokes, and `RebuildLabWindow` and the
-   gallery were never in scope. Whole-file scan, not `grep`. Then the ADR 0089
-   direction with ADR 0093's third question.
-2. **Whatever the row instrument reaches that Leg 12's did not.** It walked
+1. **Whatever the row instrument reaches that Leg 12's did not.** It walked
    views, sections, sub-tabs, `<details>` jobs and the two Add panels. It did
    **not** open a row menu, a `ConfirmPanel`, a `FlagPanel`, an `AnswerPanel`,
    the export answer, or any error state — `.ws-edit-question`,
    `.ws-edit-issues p` and `.ws-flag-what p` returned zero samples because
-   nothing on the walk rendered them. Those are the next unmeasured classes, and
-   the panel plane is where the port designs rather than carries.
+   nothing on the walk rendered them. Those are the next unmeasured classes.
+2. **Settle the two commits with no leg behind them.** `b330815` — the sidebar's
+   second width, ADR 0111 — and the 2026-08-14 `Context.tsx` wiring recorded in
+   `docs/tracks/context-objects.md`. Adopt both into your record or file them as
+   their own leg. This is the third leg they have been asked about.
 
 ### The rules you will be judged on
 
@@ -806,15 +955,20 @@ passed for eight legs while the retry did nothing, because it never pressed the
 button. Where a control's whole purpose is the call it makes, press it — and
 check the new test FAILS before you keep it.
 
-**MEASURE THE BUDGET, DO NOT CARRY IT**, and now: **quote the viewport with it.**
+**AN INSTRUMENT ASSERTED ONLY TO RUN IS NOT TESTED EITHER**, which is 13a's
+version of the same sentence. It reproduced this cluster's failure class three
+times before it was trusted, twice reporting findings that were pure artefact.
+Make yours report something you already know is there before you believe a zero
+out of it.
+
+**MEASURE THE BUDGET, DO NOT CARRY IT**, and quote the viewport with it:
 `window.innerWidth` and `devicePixelRatio`, not the number in `tauri.conf.json`.
 
 **A COMMENT ASSERTING A CONTROL IS INDISTINGUISHABLE FROM THE CONTROL** (ADR
-0090). Leg 12 found one in `shell.css` claiming a foot never wraps, and then
-wrote a replacement comment that was also wrong until it measured it.
+0090). Leg 12 found one in `shell.css` claiming a foot never wraps, then wrote a
+replacement that was also wrong until it measured it.
 
-**STRIKE THE ITEM WHEN YOU DO IT.** Leg 10 struck both of Leg 9's; Leg 11 struck
-both of Leg 10's; Leg 12 struck both of Leg 11's.
+**STRIKE THE ITEM WHEN YOU DO IT.** Leg 13a struck item 1 of two.
 
 ### What you must NOT do
 
@@ -829,32 +983,39 @@ both of Leg 10's; Leg 12 struck both of Leg 11's.
   2026-08-11 — ask.
 - **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
   roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
-- **Do not edit an existing ADR.** Append-only. The next free number is **0105**
-  — 0101 and 0102 went to the core-hardening track while Leg 12's checks ran,
-  which is the third leg in a row that sentence went stale. Grep the tree.
+- **Do not dispose of `wordscript-native-insert`.** ADR 0153 records it; the
+  insert belongs to the runtime ownership track.
+- **Do not edit an existing ADR.** Append-only. **0153 is taken by this track**
+  and the runtime ownership board claims 0153 onward, so it takes 0154 — the
+  number on this page has gone stale four legs running. Grep the whole tree,
+  source and commit messages included.
 - **Do not rename the `settings` window label** without being asked.
 - **Do not migrate a config without a backup path.** `core::backup` is the
   pattern.
-- **The overlay is still rule 5.** The two commands that resized it dynamically
-  are gone (ADR 0089).
+- **The overlay is still rule 5.**
 - **Leave a temporary instrument out of the commit** and grep for it. Leg 12's
   was `src/dev/rowAudit.ts` with one hook in `WorkspaceWindow.tsx`, and it needs
   a timestamped run guard or Fast Refresh interleaves two walks.
 
 ### How to check yourself
 
-- `npm test`, `npm run build`, `cd src-tauri && cargo test`. **Watch the TOTAL,
-  not the colour.** Leg 12 closed at 474 frontend across 39 files, `cargo test`
-  740, `cargo check` 15 warnings. Under load the suite flakes by about 5;
+- `npm test`, `npm run build`, and `cd src-tauri && cargo test` **only if you
+  touched Rust**. **Watch the TOTAL, not the colour.** The baseline is **541
+  frontend across 42 files**. Under load the suite flakes by about 5;
   `npx vitest run --no-file-parallelism` is the tiebreaker and `uptime` says
   whether to reach for it.
+- **A capture measurement is running in ordinary use, so prove you did not
+  disturb it rather than promising not to.** `wc -l
+  ~/.config/WordScript/logs/wordscript-runtime.log` before and after your checks;
+  if it moved, read what landed before trusting any number out of it. 13a's
+  checks moved it by zero lines.
 - **`npm run port:diff` TAKES GALLERY IDS OR IT MEASURES NOTHING**, and a name
   that is not one is dropped in silence. The 25 are the **16 ids in
   `src/windows/gallery/registry.tsx` except `ds`** plus `models#1 agents#1
-  agents#2 onboarding#1`–`#6`. **Run it in two or three batches** — it crashed
-  at screen 8 and at screen 23 of a single 25-id invocation, and every screen
-  that crashed is exact alone. **Check `ss -ltn | grep 9333` before each batch**
-  and kill a leftover by PID: a crashed run is what creates the stale browser.
+  agents#2 onboarding#1`–`#6`. **Run it in two or three batches** — it crashed at
+  screen 8 and at screen 23 of a single 25-id invocation, and every screen that
+  crashed is exact alone. **Check `ss -ltn | grep 9333` before each batch** and
+  kill a leftover by PID: a crashed run is what creates the stale browser.
 - **The native host is the only instrument for a drawn state.** Rebuild the row
   instrument from ADR 0092 and Leg 12's record: walk `VIEWS` and `SECTIONS`,
   click every `button[role=tab]`, set `details.ws-job { open = true }` (a closed
@@ -872,6 +1033,5 @@ both of Leg 10's; Leg 12 struck both of Leg 11's.
 ### When it is done
 
 Commit, push to `main`, append your record to the leg log, and write the Leg 14
-prompt. Then report what you did, what you found, and anything the next leg
-needs that is not already written down.
-
+prompt. Then report what you did, what you found, and anything the next leg needs
+that is not already written down.

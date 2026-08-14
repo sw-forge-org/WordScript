@@ -53,6 +53,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — the second insert channel, which nothing had ever listened to (ADR 0153, ADR 0154)
+
+- **`wordscript-native-insert` is gone.** It was emitted from three sites in
+  `core::insertion` and heard by nothing — not the overlay, not the workspace,
+  not a test mock — while `spec/SPEC.md` carried it as part of the
+  runtime→frontend contract. Nothing was missing truth it needed: every emitter
+  sat beside a path already delivering the same `NativeInsertResult`, the
+  runtime-driven one folded into `wordscript-event` as the `insertion` field. It
+  is removed on ADR 0018/0019's rule that a session ends in exactly one reducer
+  commit — an unlistened second channel is that forbidden shape left available
+  for a future surface to bind to by mistake. `restore_last_transcript` lost its
+  `AppHandle` parameter with it; the emit was its only reader.
+- **The seam has a standing check in both directions now.**
+  `npm run sweep:commands` reports callers with no command, commands with no
+  caller, unresolvable call sites, listeners with no emitter and emitters with no
+  listener. ADR 0089, 0093 and 0103 only ever asked about `invoke` — the frontend
+  calling the runtime; an event is the runtime calling the frontend, and that
+  half had never been checked. The `invoke` side came back clean: 72 registered,
+  72 defined, the lists identical, zero callers with no command, and the same
+  five orphans already on record.
+
 ### Added — a window that mounts mid-session repaints it, and an open edit surface keeps the runtime waiting (ADR 0151, ADR 0152)
 
 Runtime-ownership steps 4 and the decision step 1 had left to the owner.

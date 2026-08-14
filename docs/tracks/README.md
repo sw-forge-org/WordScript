@@ -12,7 +12,8 @@ contents of the directory.
 
 - [`gui-port-relay.md`](gui-port-relay.md) — the GUI port's chain document: the
   two decisions it rests on, the rules every leg obeys, the leg log, the four
-  most recent leg records, and the open leg's brief. **Leg 13 is open.**
+  most recent leg records, and the open leg's brief. **Leg 13b is open** — Leg 13
+  split on 2026-08-14 when its first item, the caller sweep, closed as 13a.
 - [`gui-port-relay-kickoff.md`](gui-port-relay-kickoff.md) — the page you paste
   into a fresh session to start the open leg. It is orientation; the brief is
   the relay's `## The prompt for Leg N` section. **Replace this file when a leg

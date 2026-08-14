@@ -665,6 +665,44 @@ Step 1 touches `src-tauri/src/core/sessions.rs` and `OverlayWindow.tsx`, which
 the **GUI port** also works in. `git status` before you start and before you
 append to any shared doc.
 
+### Handed over by the GUI port 2026-08-14, decided 2026-08-15 — `wordscript-native-insert`
+
+**RESOLVED. The channel is removed (ADR 0154).** The owner took the disposition
+the next day: `emit_insert_event`, its three call sites, the `Emitter` import it
+alone needed and the timing pair that only measured the emit are gone from
+`core/insertion.rs`, and `spec/SPEC.md` carries a sentence where the contract
+line was rather than falling silent. `restore_last_transcript` lost its
+`AppHandle` parameter with it — the emit was its only reader — which is the one
+signature this touched. `cargo test` 807, `cargo check` back to 15 warnings from
+the 16 that removal briefly caused. **All four defect directions of the sweep now
+report zero.** What follows is the finding as it was filed, kept because the
+decision only reads as one against it.
+
+**Filed here by ADR 0153 rather than acted on there, because the insert is this
+track's.** The GUI port's Leg 13a swept the event channel for the first time —
+`invoke` is the frontend calling the runtime, an event is the runtime calling the
+frontend, and only the first half had ever been checked. `wordscript-native-insert`
+is emitted from three sites in `core/insertion.rs` and **no surface in `src/`
+listens to it**, not even a test mock, while [`../spec/SPEC.md`](../spec/SPEC.md)
+carries it as contract: *"carries `NativeInsertResult`, including insertion and
+recovery truth."*
+
+**It is dead weight rather than a gap, and that was measured.** Each emitter sits
+beside a path that already delivers the same `NativeInsertResult`:
+`insert_text_native` and `restore_last_transcript` return it to their `invoke`
+caller, and `insert_transcription_from_legacy` — the runtime-driven one, from
+`lib.rs:1965`, `sessions.rs:664` and `history.rs:762`, with no caller to return
+to — reaches the frontend folded into `wordscript-event` as the `insertion` field
+(`src/types/ipc.ts:144`). No surface is missing truth it needs.
+
+**Nothing was deleted on a grep** (ADR 0093's rule) and the disposition is open.
+What can be said without deciding it: ADR 0018/0019 argues against keeping it — a
+session ends in exactly one reducer commit, and a second channel carrying the same
+result out of band is the defect `CLAUDE.md` already forbids for
+`wordscript-native-event`. **If it stays, the SPEC line says what consumes it; if
+it goes, the SPEC line goes with it.** Re-run the sweep with
+`node scripts/command-sweep.mjs` after either.
+
 ## Not this track
 
 - The transcript-side loss

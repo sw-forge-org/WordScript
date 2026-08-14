@@ -11,7 +11,7 @@ use enigo::{
     Enigo, Key, Keyboard, Settings,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::config::AppConfig;
 use super::paths::{config_file_path, scratchpad_file_path};
@@ -547,7 +547,6 @@ pub async fn insert_text_native(
         let mut state = state.lock().map_err(|error| error.to_string())?;
         let result = state.insert(request.clone());
         drop(state);
-        emit_insert_event(&app_for_blocking, &result);
         Ok(result)
     })
     .await
@@ -559,7 +558,6 @@ pub async fn insert_text_native(
 
 #[tauri::command]
 pub fn restore_last_transcript(
-    app: AppHandle,
     state: State<'_, Mutex<NativeInsertionState>>,
 ) -> Result<NativeInsertResult, String> {
     let last = {
@@ -578,7 +576,6 @@ pub fn restore_last_transcript(
         corrected: Some(false),
         auto_paste: None,
     });
-    emit_insert_event(&app, &result);
     Ok(result)
 }
 
@@ -617,17 +614,10 @@ pub fn insert_transcription_from_legacy<R: Runtime>(
     drop(state);
 
     runtime_log::record(format!(
-        "[WordScript] Native insert legacy state done elapsed_ms={}",
+        "[WordScript] Native insert legacy state done total_elapsed_ms={}",
         started_at.elapsed().as_millis(),
     ));
 
-    let insert_emit_started_at = Instant::now();
-    emit_insert_event(app, &result);
-    runtime_log::record(format!(
-        "[WordScript] Native insert event emit done elapsed_ms={} total_elapsed_ms={}",
-        insert_emit_started_at.elapsed().as_millis(),
-        started_at.elapsed().as_millis(),
-    ));
     // No cue is played here. This helper is called from three flows that reach
     // "finished" at three different moments, and it runs BEFORE each caller's
     // staleness gate — so a cue emitted here announced a delivery that the
@@ -1898,10 +1888,6 @@ fn driver_status(
         active: driver == active_driver,
         detail: detail.to_string(),
     }
-}
-
-fn emit_insert_event<R: Runtime>(app: &AppHandle<R>, result: &NativeInsertResult) {
-    let _ = app.emit("wordscript-native-insert", result);
 }
 
 fn load_scratchpad_entries() -> Vec<ScratchpadEntry> {

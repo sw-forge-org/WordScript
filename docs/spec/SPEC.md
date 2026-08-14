@@ -9,6 +9,14 @@ stage B3 pass before it read only the model-catalogue entry, the stage A4 pass
 before that only the provider axis, and the previous whole-section pass is
 Leg 10's, below)
 
+Amended 2026-08-15 by GUI-port Leg 13a's sweep and the decision it produced
+(ADR 0153, ADR 0154), which **removed** the `wordscript-native-insert` clause
+from the event surface because nothing had ever listened to that channel. **It
+read the event-surface section and `core/insertion.rs` against each other, and
+nothing else** — it is not a drift check on this file. The check that found it
+is `npm run sweep:commands` and it now reports zero in all four defect
+directions.
+
 Amended 2026-08-14 by runtime-ownership step 1, which added the runtime commit
 deadline to *Clipboard-only commit*. **It read `core/sessions.rs` and the
 session-lifecycle section against what they claim, and nothing else** — it is
@@ -294,8 +302,13 @@ Tauri event channels and their payload discriminators are separate contracts:
   carries the whole config for the Settings form, the mode event is the named
   signal the overlay listens on. Settings saves used to emit only `ready` and
   reached the overlay through a config-identity side effect (ADR 0024).
-- `wordscript-native-insert` carries `NativeInsertResult`, including insertion
-  and recovery truth.
+There is no separate insert event. `wordscript-native-insert` was emitted from
+three sites in `core::insertion` and listened to by nothing; the same
+`NativeInsertResult` already reaches the frontend as the `insertion` field of
+`wordscript-event`, and as the return value of `insert_text_native` and
+`restore_last_transcript`. Removed 2026-08-15 (ADR 0154), on the rule that a
+session ends in exactly one reducer commit — a second channel carrying the same
+result out of band is what ADR 0018/0019 forbids.
 
 Frontend reducer action names such as `NATIVE_TRANSCRIPTION_SYNC` are internal
 UI implementation details, not Rust event names or Tauri channels.

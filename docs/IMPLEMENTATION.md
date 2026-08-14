@@ -30,7 +30,7 @@ updated; a kick-off is spent when its unit closes.
 
 | Track | Opened | State | Sequence | Start a session with |
 | --- | --- | --- | --- | --- |
-| **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
+| **GUI port** | 2026-08-04 | **Leg 13b open**; Legs 0–13a closed. Leg 13 split 2026-08-14 | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
@@ -45,16 +45,30 @@ writing the next leg's brief into it before it stops. Rests on ADR 0054 (the
 port overwrites, it does not migrate) and ADR 0055 (the gallery is the
 acceptance surface).
 
-Owns ADR 0054–0064, 0074–0077, 0082, 0085–0093, 0103, 0104, 0111.
+Owns ADR 0054–0064, 0074–0077, 0082, 0085–0093, 0103, 0104, 0111, 0153.
 
-**Leg 13 is open** and is two items: the caller sweep run in both directions
-over the whole tree, and the row classes no instrument has reached — the panel
-plane, where the port designs rather than carries.
+**Leg 13 split on 2026-08-14.** Its first item — the caller sweep in both
+directions over the whole tree — closed as **Leg 13a**, and **Leg 13b is open**
+with the second: the row classes no instrument has reached, the panel plane where
+the port designs rather than carries.
 
-**One commit on this track has no leg behind it.** `b330815` (the sidebar's
-second width, ADR 0111) landed on 2026-08-11 while Leg 13 was open and is
-neither of Leg 13's items. Whoever closes Leg 13 either adopts it or files it as
-its own leg.
+**13a swept a channel no ADR had asked about and it is the reason it owns 0153.**
+ADR 0089, 0093 and 0103 are all about `invoke`, the frontend calling the runtime;
+an event is the runtime calling the frontend, the same seam turned around. The
+`invoke` half came back clean — 72 registered, 72 defined, the lists identical,
+zero callers with no command, and the same five orphans already on record. The
+event half found `wordscript-native-insert`: emitted from three sites, listened
+to by nothing, and carried in `spec/SPEC.md` as contract. **Dead weight rather
+than a gap** — every emitter sat beside a path already delivering the same
+result — and the disposition went to the Runtime ownership track because the
+insert is its. **It was taken on 2026-08-15 and the channel is removed** (ADR
+0154), so all four defect directions of the sweep now report zero. The sweep is
+`npm run sweep:commands`.
+
+**Two commits on this track have no leg behind them.** `b330815` (the sidebar's
+second width, ADR 0111) landed on 2026-08-11, and the 2026-08-14 `Context.tsx`
+wiring is the second. Neither is one of Leg 13's items. Leg 13b either adopts
+them or files them as their own leg.
 
 ### Core hardening
 
@@ -165,9 +179,20 @@ day** when the last finding turned out not to be a measurement problem at all.
 and recovery. It does not own the insert, and the instruments cannot see where
 it does not.
 
-Owns ADR 0133, 0134 and 0150–0152 for its five records, and 0153 onward as they
-come — 0135–0149 went to Context objects as a range the same week, which is why
-step 7's decision is 0150 and not 0138.
+Owns ADR 0133, 0134, 0150–0152 for its five records, **0154** for the insert
+channel the GUI port's sweep handed it, and 0155 onward as they come — 0135–0149
+went to Context objects as a range the same week, which is why step 7's decision
+is 0150 and not 0138, and **0153 went to the GUI port on 2026-08-14** because
+that leg filed first. "Onward as they come" is a direction of travel, not a
+reservation.
+
+**A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
+swept the event channel and found `wordscript-native-insert` emitted from three
+sites in `core::insertion` and heard by nothing, while `spec/SPEC.md` carried it
+as contract (ADR 0153). It was dead weight rather than a gap — every emitter sat
+beside a path already delivering the same `NativeInsertResult` — and the owner
+removed it the next day (ADR 0154), on ADR 0018/0019's rule that a session ends
+in exactly one reducer commit.
 
 **Step 1 was silent data loss and its code landed 2026-08-14.** Every insert
 call site is an `invoke` from `OverlayWindow.tsx`; after `preview ready` the
