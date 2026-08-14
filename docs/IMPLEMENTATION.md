@@ -99,10 +99,18 @@ catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
 adapter, and the connection that can now be chosen)**, and **B6 (what it means
 to wire a drawing inherited from the demo GUI)**.
 
-Next unblocked: **B2**, **B4**, **B5**, **B7**, **C1**, **E1**, **D3** — whose
+Next unblocked: **B2**, **B4**, **B5**, **B7**, **E1**, **D3** — whose
 `Requires` line has read D1 and A3 since it was written, both now done — and
 **D1a**, which since B6 spent its drawing half is the adapter alone and the
 cheapest step in Stage D.
+
+**C1 was on that list until 2026-08-14 and came off it, on a measurement rather
+than on a dependency.** It rewrites `core::capture`, which the Runtime ownership
+track is measuring until its step 6 has read one natural `Short` capture — and a
+rewrite of the file under measurement makes that event unattributable, which is
+the same rule that already defers the realtime-violation fixes. C2 requires C1
+and inherits the wait. The reason and its cost are on C1 in the plan; closing
+step 6 releases both.
 
 **Two steps were added on 2026-08-13 from a donor reading, and neither needs
 code to have been useful.** **B7** (ADR 0129, widened by ADR 0131) moves the

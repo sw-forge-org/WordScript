@@ -664,7 +664,8 @@ G waits on it.
 
 ### C1. Separate the stream from the recording (ADR 0107)
 
-- **Requires** — nothing.
+- **Requires** — nothing. **Waits anyway, and on a measurement rather than on a
+  dependency**: see *Why this step is not next* below.
 - **Touches** — `core::capture`. Session open/close as a third and fourth entry
   point beside `start_native_capture` / `stop_native_capture`, which **stay
   exactly as they are** for dictation. A recording window per turn.
@@ -679,6 +680,30 @@ G waits on it.
 **Which of `started_at`, `accumulated_paused` and the mute accumulator reset per
 turn and which accumulate per session is the first real decision**, and getting
 it wrong makes every verdict after the first wrong in the same direction.
+
+**Why this step is not next, added 2026-08-14.** `core::capture` is under
+measurement by the runtime ownership track, whose
+[step 6](runtime-ownership.md) is waiting for one natural `Short` capture — at
+about 1.5 % of captures — to read against ADR 0133's pre-registered reading.
+That track's own rule is *do not fix the realtime violations before step 6,
+because fixing them now makes the next event unattributable*, and this step is
+a larger edit to the same file than any of those fixes.
+
+**The claim that saves it is the one not to trust.** C1 promises the dictation
+path is byte-identical and offers the existing capture tests as the guard. That
+promise may well hold — but this cluster has twice produced an instrument that
+reported a loss it had fabricated, green synthetic tests and all (the soak's
+3 ms rotation remainder, and step 3's clamped elapsed field). A green suite is
+not evidence that the next `Short` capture is still attributable to what it was
+attributable to yesterday.
+
+**So the order is: step 6 first, C1 after.** This is a scheduling constraint and
+not a dependency — nothing in C1 needs anything step 6 produces, and if the
+owner wants C1 sooner, the cost is stated rather than hidden: the wait for a
+readable event restarts, and the events already in the record cannot be re-read.
+**C2 inherits the wait** because it requires C1. Every other unblocked step in
+this plan (B2, B4, B5, B7, D1a, D3, E1) is free of `core::capture` and is free
+to run now.
 
 ### C2. The runtime mute (ADR 0098)
 
@@ -1322,7 +1347,8 @@ Speaking row, so it is flagged rather than assumed.
 | B7 | **not started** — added 2026-08-13 (ADR 0129); the picker at the point of use, on B6 only. Closes disagreements 6 and 12 and answers the paragraph ADR 0128 left open. **ADR 0135 gave its form for the surfaces that run longer than one request**: a sentence in the chrome, a collapsed ladder behind it, effective from the next turn, and a per-line provider on the record. The upload intake is the degenerate case — one request, so no next turn |
 | C4 | **not started** — added 2026-08-13 (ADR 0130), corrected the same day (ADR 0131), extended 2026-08-14 (ADR 0135). The capture half is C1. What is real: the default lane cannot stream, nothing records a context window, and diarization is a third requirement. Two of its "open questions" were withdrawn — the prototype had already answered them. **The fourth `InertReason` kind now has two callers** (`Live transcript`, and `Never` retention), and the copilot is **two** consumers — an embedding per turn plus a model call on a hit — of which the first has no axis |
 | D3 | **not started, and not blocked** — its `Requires` line reads D1 and A3, both done. The graph below draws a `B2` line into its column that no `Requires` line supports; the line is decorative and the `Requires` is the contract |
-| B2, C1–C2, D2, E1–E2, F1–F3, G1–G3 | **not started** |
+| C1–C2 | **not started, and deliberately not next** — no dependency blocks C1, but `core::capture` is under measurement until runtime-ownership step 6 has read one natural `Short` capture. The reason and its cost are on C1 itself; C2 requires C1 and inherits the wait |
+| B2, D2, E1–E2, F1–F3, G1–G3 | **not started** |
 
 Stage one (documentation) closed 2026-08-11: `docs/PROVIDERS.md`, ADR 0094–0102
 and ADR 0105–0110, no code.

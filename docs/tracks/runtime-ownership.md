@@ -653,6 +653,14 @@ of its invisible-damage class. Before editing that record, re-read it — the
 other track appends to it too. `src-tauri/src/core/capture.rs` is the file most
 likely to be touched by both.
 
+**Step 6 holds that file against a third track, and closing step 6 releases
+it.** The Speech track's C1 rewrites `core::capture` into per-turn recordings;
+it is unblocked by dependency and is standing down until the next `Short`
+capture has been read, because a rewrite of the file under measurement makes
+that event unattributable. The reason and its cost live on
+[C1 itself](speech-track-plan.md) — say when it is free rather than leaving it
+to be rediscovered.
+
 Step 1 touches `src-tauri/src/core/sessions.rs` and `OverlayWindow.tsx`, which
 the **GUI port** also works in. `git status` before you start and before you
 append to any shared doc.
