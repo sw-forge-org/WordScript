@@ -248,6 +248,18 @@ rule later: `Output/Audio:application.name:WsProbeControl={"target":…}` now
 exists in the machine's WirePlumber state. It names a stream that will never
 exist again and is inert.
 
+**2026-08-14, later: removed.** The entry is gone from
+`~/.local/state/wireplumber/stream-properties` (90 lines to 89). It could not be
+edited out from under a running WirePlumber — the state is held in memory and
+written back on exit — so the sequence was stop, edit, start, which costs a
+couple of seconds of audio and needed the owner's say-so. WordScript's own two
+entries were checked before and after and are untouched: **the HDMI pin on
+`application.name:WordScript` is deliberately still there**, because it is the
+state the routing question is about and deleting it would remove the evidence
+F2 has to reason from. The recipe is written down because the probe technique is
+worth repeating and its residue is not: any control stream named for a probe
+leaves a rule behind, and the rule outlives the measurement.
+
 ## References
 
 - [ADR 0150](../decisions/0150-the-cue-stream-closes-when-it-is-idle-and-closing-it-does-not-answer-where-it-plays.md)
