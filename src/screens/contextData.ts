@@ -1,4 +1,4 @@
-import type { IconName, StatusTone } from "@/components/shell";
+import type { IconName, MenuEntry, StatusTone } from "@/components/shell";
 
 /**
  * CONTEXT'S SAMPLE DATA — copied out of `demo.js`, where it is data too.
@@ -191,3 +191,31 @@ export const ACTIONS: ActionEntry[] = [
       "Take the summary and the open questions from this meeting. Write one\nfollow-up mail per attendee with only the parts that concern them.\nShow me each mail before sending it.",
   },
 ];
+
+/**
+ * THE CHEVRON'S MENU, AND IT IS THE SAME LIST AS THE WINDOW'S.
+ *
+ * The float bar's primary button runs the last action used; the caret beside it
+ * opens the rest. That caret was drawn on both surfaces and wired on neither,
+ * and the meeting HUD carried a **second, hand-written list of four** that had
+ * already drifted from this one — two lists for one fact, which ADR 0123 says
+ * to replace with a link rather than to keep in step.
+ *
+ * So the menu is derived. An action added to `ACTIONS` appears in the window,
+ * in the Context bar and in the meeting HUD without anybody remembering to add
+ * it three times, and the desk entries keep the boundary the window draws:
+ * `MenuEntry.kind` carries it and `Menu` renders the rule.
+ *
+ * `onSelect` is deliberately absent — a drawn menu, like the rest of this
+ * screen. What is being settled is which entries exist and where the boundary
+ * between them falls.
+ */
+export const ACTION_MENU: MenuEntry[] = ACTIONS.map((action, index) => ({
+  label: action.name,
+  hint: action.desc,
+  icon: action.icon,
+  kind: action.kind === "desk" ? "desk" : undefined,
+  /* The first one is what the primary button runs, so the menu marks it rather
+     than repeating it as an unexplained duplicate. */
+  on: index === 0,
+}));

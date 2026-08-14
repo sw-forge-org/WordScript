@@ -365,8 +365,14 @@ describe("Context", () => {
     expect(screen.queryByText("Mail")).not.toBeInTheDocument();
   });
 
+  /* The object opens on its own since 2026-08-14 — `panel="ask"` was the
+     prototype demonstrating the window, not a default anybody would want. So
+     this case presses the button it used to skip. */
   it("opens the Ask window with an answer that names the rows it read", () => {
     const { container } = render(<ContextScreen />);
+    expect(container.querySelector(".ws-chatwin")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     expect(container.querySelector(".ws-chatwin")).not.toBeNull();
     const sources = container.querySelector(".ws-sources")!;
     /* An answer about your own record names the rows it was read from. Scoped
@@ -433,8 +439,11 @@ describe("Context", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Record meeting" }));
     expect(container.querySelector(".ws-hud-popout")).not.toBeNull();
-    /* Ask is still open behind it. Three windows, not one slot shared. */
+
+    /* Three windows, not one slot shared: opening Ask does not displace it. */
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     expect(container.querySelector(".ws-chatwin")).not.toBeNull();
+    expect(container.querySelector(".ws-hud-popout")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Close the meeting window" }));
     expect(container.querySelector(".ws-hud-popout")).toBeNull();
@@ -518,11 +527,20 @@ describe("Meeting capture", () => {
     }
   });
 
-  it("opens the action menu on exactly one of the three, with the desk entry ruled off", () => {
+  /* The menu is derived from `ACTIONS` since 2026-08-14 rather than kept as a
+     second hand-written list beside it — two lists for one fact, which had
+     already drifted. So the assertion is on the boundary and on the derivation,
+     not on a string only the dead copy carried. */
+  it("opens the action menu on exactly one of the three, with the desk entries ruled off", () => {
     const { container } = render(<MeetingScreen />);
     expect(container.querySelectorAll(".ws-menu")).toHaveLength(1);
     expect(container.querySelectorAll(".ws-menu-rule")).toHaveLength(1);
-    expect(screen.getByText("Draft one per attendee, then send")).toBeInTheDocument();
+
+    const menu = container.querySelector(".ws-menu") as HTMLElement;
+    for (const action of ACTIONS) {
+      expect(within(menu).getByText(action.name), action.name).toBeInTheDocument();
+    }
+    expect(within(menu).getByText("Runs on the desk")).toBeInTheDocument();
   });
 
   it("carries the copilot hint with its citation, on one window only", () => {

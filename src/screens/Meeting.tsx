@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import type { PopoutHandle } from "@/components/shell";
+import { ACTION_MENU } from "./contextData";
 import {
   Button,
   Card,
@@ -43,7 +44,6 @@ import {
   Toggle,
   Transcript,
   ViewTop,
-  type MenuEntry,
 } from "@/components/shell";
 
 /**
@@ -91,22 +91,12 @@ const HUD_TABS = [
   { id: "Summary" as const, icon: "sparkle" as const },
 ];
 
-/* The one place the open menu is drawn, and it carries the rule the actions
-   window carries (§11.43): the last entry runs somewhere else, for minutes, and
-   does something. Right after a meeting is exactly when that entry gets picked,
-   which is why it is shown here rather than argued about on a settings screen. */
-const HUD_MENU: MenuEntry[] = [
-  { label: "Sync template", hint: "Format using the team template", on: true, icon: "template" },
-  { label: "Meeting summary", hint: "Summarize decisions and actions", icon: "sparkle" },
-  { label: "Email draft", hint: "Draft the follow-up email", icon: "mail" },
-  {
-    label: "Follow up by mail",
-    hint: "Draft one per attendee, then send",
-    icon: "handoff",
-    kind: "desk",
-  },
-];
-
+/* THE MENU IS DERIVED AND NO LONGER WRITTEN TWICE. A hand-kept list of four
+   stood here and had already drifted from `ACTIONS`, which the Actions window
+   edits — two lists for one fact, which ADR 0123 says to replace with a link.
+   It carries the rule the window carries (§11.43): the last entries run
+   somewhere else, for minutes, and do something. Right after a meeting is
+   exactly when one of those gets picked. */
 /* THE LEVEL IS AT REST, AND IT IS THE ONE THING ON THIS SCREEN THAT IS.
    ADR 0058: a moving instrument is a claimed measurement. The prototype drives
    this readout from `orbEnvelope` at 12 fps because it has no microphone and a
@@ -148,6 +138,11 @@ export function MeetingHud({
    *  strip goes rather than being drawn a second time. */
   bare?: boolean;
 }) {
+  /* `menu` opens it for the three specimens this screen stands side by side —
+     one of them exists to show the menu open. `liveMenu` is the caret actually
+     working, which the specimens never needed and a real window does. */
+  const [liveMenu, setLiveMenu] = useState(false);
+
   return (
     <Hud className={popout ? "ws-hud-popout" : undefined} style={popout?.style}>
       {!bare && (
@@ -256,7 +251,12 @@ export function MeetingHud({
         <MicButton label="Dictate into this note" live />
         <SplitButton
           action={menu ? "Sync template" : "Stop and save"}
-          menu={menu ? <Menu items={HUD_MENU} deskLabel="Runs on the desk" /> : undefined}
+          menu={
+            menu || liveMenu ? (
+              <Menu items={ACTION_MENU} deskLabel="Runs on the desk" />
+            ) : undefined
+          }
+          onToggleMenu={() => setLiveMenu((open) => !open)}
         />
       </FloatBar>
     </Hud>

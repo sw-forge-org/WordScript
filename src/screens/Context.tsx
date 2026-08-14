@@ -73,7 +73,7 @@ import {
   WhoChips,
 } from "@/components/shell";
 import { DESK, DESK_CAP } from "./data";
-import { ACTIONS, CTX, FOLDERS } from "./contextData";
+import { ACTION_MENU, ACTIONS, CTX, FOLDERS } from "./contextData";
 import { MeetingHud } from "./Meeting";
 import { hasNativeHost, openPopout, type PopoutSurface } from "@/windows/popout";
 import type { ScreenProps } from "./props";
@@ -446,6 +446,7 @@ function ContextScreenBody({
   const [tab, setTab] = useState<Tab>("Summary");
   const [way, setWay] = useState<Way>("Write");
   const [recording, setRecording] = useState(false);
+  const [actionMenu, setActionMenu] = useState(false);
   const hud = usePopout();
 
   /* THE HOST OPENS A REAL WINDOW; THE BROWSER DRAWS THE BOX.
@@ -552,10 +553,21 @@ function ContextScreenBody({
                    was open on this screen and the list grew from four entries to
                    six, so it ran up behind the Ask window — two overlays at once,
                    which is a state nobody is ever in. */
+                /* The caret was drawn on both surfaces and wired on neither.
+                   It opens the rest of the templates — the same list the
+                   Actions window edits, derived rather than repeated. */
                 float={
                   <FloatBar>
                     <MicButton label="Dictate into this note" />
-                    <SplitButton action={ACTIONS[0].name} />
+                    <SplitButton
+                      action={ACTIONS[0].name}
+                      menu={
+                        actionMenu ? (
+                          <Menu items={ACTION_MENU} deskLabel={`Runs on ${DESK}`} />
+                        ) : undefined
+                      }
+                      onToggleMenu={() => setActionMenu((open) => !open)}
+                    />
                   </FloatBar>
                 }
                 /* THREE WINDOWS AND THE HUD IS NOT ONE OF THE TWO. Ask and
@@ -978,8 +990,12 @@ function ImportWay() {
   );
 }
 
+/* THE OBJECT OPENS ON ITS OWN. `panel="ask"` stood here because the prototype
+   drew the Ask window open to show what it looks like — but an entry state with
+   a panel already over the thing you came to read is a demonstration, not a
+   default. Ask is one press away and now the press works. */
 export function ContextScreen({ banner }: ScreenProps = {}) {
-  return <ContextScreenBody panel="ask" banner={banner} />;
+  return <ContextScreenBody panel={null} banner={banner} />;
 }
 
 export function ContextActionsScreen() {

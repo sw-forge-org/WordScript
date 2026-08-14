@@ -2240,9 +2240,21 @@
      So it gives ground proportionally and stops at 176 px, which is the width
      at which a row's two lines — a name and `Auto · Clipboard only` under it —
      still both read. `--pane-list-w` carries the derivation; see globals.css. */
+  /* THE ROW HAD TO BE DECLARED, AND EVERYTHING BELOW IT WAS MEASURING A TRACK
+     THAT HAD ALREADY GROWN. Two columns were named and no rows were, so the one
+     implicit row was `auto` — content-sized — and the pane's own `min-height: 0`
+     bounded a box whose contents had already decided how tall it was. Every
+     `overflow-y: auto` underneath then had nothing to scroll against.
+
+     Measured in the gallery at 880 × 640 before the fix: the pane 306 px, the
+     rail inside it 801 px, `Record meeting` and the folder path 460 px below
+     the fold, and `.ws-pane-scroll` reporting `scrollHeight === clientHeight`.
+     It was never a breakpoint problem; the breakpoints below are what the
+     structure needs *after* it is bounded. */
   .ws-pane {
     display: grid;
     grid-template-columns: minmax(0, var(--pane-list-w)) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
     min-height: 0;
     border-top: 1px solid var(--border);
@@ -2330,7 +2342,12 @@
      or Mail. It takes more than one, because "record a meeting" and "write a
      note" are two ways to make the same kind of thing and neither is a
      property of the note that happens to be selected. */
+  /* The foot and the path are chrome, and chrome does not shrink. Both were
+     `flex: 0 1 auto`, so in a short rail they gave up their padding before the
+     list gave up a row — the two things a person needs to be able to reach
+     were the first two to go. */
   .ws-pane-list-foot {
+    flex: none;
     padding: var(--s2);
     border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: var(--s1);
@@ -2342,6 +2359,7 @@
      about somebody else's machine; the row opens the folder picker, which is
      also the honest place to say that moving the root moves the files. */
   .ws-pane-path {
+    flex: none;
     width: 100%;
     padding: var(--s2) var(--s3);
     border-top: 1px solid var(--border);
@@ -3884,6 +3902,16 @@
      in the rail footer precisely so it cannot quietly become a database table
      with folder-shaped rows. */
   .ws-pane-sec { display: flex; flex-direction: column; min-height: 0; }
+  /* THE FOLDERS YIELD TO THE LIST, AND ARE NEVER TAKEN AWAY. The rail holds
+     two sections: what you are looking for, and how you narrow it. When the
+     window is short, the list is the one that has to keep rows — but a folder
+     section that shrank to nothing would remove the navigation instead of
+     compressing it. So it is `flex: none` at a height its own scroller
+     enforces, capped by the tiers at the foot of this file, and the list takes
+     everything left over down to a floor of about three rows. */
+  .ws-pane-sec:not(.ws-grow) { flex: none; }
+  .ws-pane-sec:not(.ws-grow) .ws-folders { min-height: 0; overflow-y: auto; }
+  .ws-pane-sec.ws-grow { min-height: 132px; }
   .ws-pane-sec-head {
     display: flex; align-items: center; gap: var(--s2);
     padding: var(--s3) var(--s3) var(--s2);
@@ -4302,10 +4330,25 @@
 
      Same window family as the meeting HUD: a decoration strip the OS draws
      (ADR 0003), a resize grip, and no invented chrome. */
+  /* A SIZE THAT STOPS, RATHER THAN ONE THAT KNOCKS ON THE EDGE.
+     `max-width` and `max-height` against the column meant the window kept
+     shrinking to whatever was left, and the last readable size was wherever
+     the column happened to end — at which point the body squashes and the
+     thing stops looking like a window at all.
+
+     `clamp` gives it three numbers instead of one, and **the middle one is a
+     proportion**. That is what was actually wrong: 330 × 400 is the size the
+     prototype drew inside a ~700 × 560 detail column — 47 % by 71 % — and
+     pinning the pixels while the column shrank turned the same window into
+     75 % by 90 % of it. It stopped reading as a panel over an object and
+     started reading as the object. The percentages restore the drawn
+     proportion at every column size; 330 × 400 is now the CEILING it reaches
+     at the drawn column and does not exceed, and the floor is where it refuses
+     to get smaller rather than degrading. */
   .ws-chatwin {
     position: absolute; right: var(--s4); bottom: var(--s4);
-    width: 330px; max-width: calc(100% - var(--s5));
-    height: 400px; max-height: calc(100% - var(--s5));
+    width: clamp(288px, 46%, 330px);
+    height: clamp(268px, 72%, 400px);
     display: flex; flex-direction: column;
     border-radius: var(--r-window);
     background: var(--bg-base);
@@ -4550,7 +4593,13 @@
      from a button beside it, so it has to BE the same thing. Two overlays that
      open from adjacent buttons and behave differently teach two rules for one
      gesture. Wider than Ask because it holds a list beside an editor. */
-  .ws-actionswin { width: 520px; height: 440px; }
+  /* Wider than Ask because it holds a list beside an editor, and its floor is
+     higher for the same reason: below about 360 px the two columns stop being
+     two columns. */
+  .ws-actionswin {
+    width: clamp(360px, 74%, 520px);
+    height: clamp(300px, 79%, 440px);
+  }
   /* IN A REAL WINDOW THE CONTENT IS THE WINDOW. The family's fixed size and
      corner anchor exist because a box inside the workspace has to be put
      somewhere; a window is already somewhere, and the compositor owns its
@@ -6280,5 +6329,52 @@
        is one line and the sentence is the paragraph it always was. */
     .ws-sec-head { flex-direction: column; align-items: flex-start; gap: 5px; }
     .ws-sec-head .ws-sec-action { margin-left: 0; align-self: flex-start; }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE HEIGHT TIERS — and why these are viewport queries when every width tier
+   above is a container query.
+
+   ADR 0111 made the width breakpoints container queries and gave the reason:
+   the content column is the window minus a sidebar that is 232 px OR 56 px, so
+   two windows of the same width hand their content columns 176 px apart, and a
+   viewport width predicts nothing. **That argument is about width and does not
+   carry to height.** Nothing between the top of the window and the pane varies
+   with the sidebar; the window IS the quantity. And `container-type:
+   inline-size` cannot answer a block-size question at all — the containers
+   declared in this file measure one axis, and it is not this one.
+
+   THESE TIERS EXIST BECAUSE THE STRUCTURE IS FIXED, NOT INSTEAD OF FIXING IT.
+   The rail's real fault was `.ws-pane` declaring columns and no rows; that is
+   corrected where the grid is declared. What is left after that is a genuine
+   budget question — at 640 px of window the rail has about 300 px for two
+   sections, a search field, a button and a path — and a budget is what a
+   breakpoint is for.
+
+   The numbers are the window's own: `tauri.conf.json` ships the workspace at
+   760 and declares `minHeight: 640`, so 820 is "shorter than shipped" and 700
+   is "approaching the floor".
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  /* Shorter than the shipped window: the folder list keeps about three rows
+     and scrolls for the rest. */
+  @media (max-height: 820px) {
+    .ws-pane-sec:not(.ws-grow) .ws-folders { max-height: 108px; }
+
+    /* THE GALLERY'S OWN MASTHEAD IS PREVIEW CHROME, AND A PANE SCREEN BRINGS
+       ITS OWN. Two mastheads and a picker stood above the pane — measured at
+       136 + 60 + 139 = 335 px of preamble over a 640 px window, which is more
+       than half of it. The screen's masthead stays, because that is the thing
+       being judged; the gallery's goes, because it is the rig. In the product
+       this rule matches nothing: there is only ever one. */
+    .ws-content-inner[data-layout="pane"] > .ws-view-top { display: none; }
+  }
+
+  /* Approaching the declared floor: two rows of folders, and the object list
+     keeps everything else. */
+  @media (max-height: 700px) {
+    .ws-pane-sec:not(.ws-grow) .ws-folders { max-height: 64px; }
   }
 }
