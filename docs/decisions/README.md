@@ -1107,6 +1107,38 @@ Status: Proposed | Accepted | Superseded by NNNN
   therefore named as unfixed and handed to the speech track's F2, which is the
   only step that has `list_native_output_devices`.
 
+- [0151](0151-a-window-that-mounts-late-asks-what-is-running-and-is-told-nothing-about-what-is-over.md):
+  **a window that mounts into a running session asks what is running, and is
+  told nothing about what is over.** Every input to the overlay's surface
+  arrives as an event, so a webview that was recreated mid-capture — about 1,389
+  times in 2.5 days before the watcher fix — rendered nothing while the runtime
+  kept recording. One command, `native_session_snapshot`, answers the stage, the
+  session, when it started, mute, pause and any staged preview; the reducer
+  repaints `capturing` and `processing` and nothing else. **The refusal is the
+  decision.** A session that ended while the window was away already owed and
+  paid the surface that reported it (ADR 0019), and a remount is not a second
+  ending; ADR 0134's obligation — a restored surface must not offer a commit the
+  deadline already took — is discharged by the same fact, because a committed
+  `clipboard_only` preview shows no surface at all. The restore is a round trip,
+  so it applies only to a state no event has touched: whichever of the two lands
+  second, the event is the newer truth.
+
+- [0152](0152-an-open-edit-surface-keeps-the-runtime-waiting-and-a-quiet-one-does-not.md):
+  **an open edit surface keeps the runtime waiting, and a quiet one does not.**
+  ADR 0134 sized its deadline on the premise that it is invisible whenever the
+  window works, and left the edit case unweighed: at ten seconds the runtime
+  committed the *unedited* text and the edit box vanished mid-sentence. The open
+  surface now renews a full deadline every 3 s, with **no release and no held
+  flag** — the case the deadline exists for is a window that dies, and whatever
+  kills it stops the renewals too, so a dead window cannot leave state set that
+  keeps a dictation hostage. The request carries the preview epoch, the same
+  guard ADR 0134 gave the deadline itself, so one in flight across a session
+  change cannot extend the next dictation's deadline. **The evidence is a
+  falsifier that fired on a reading nobody had registered**: a live overlay let
+  the deadline commit a four-character transcript, which the run sheet had
+  pre-declared as proof of a mis-sized deadline and which was in fact a user not
+  answering. A preview nobody is editing therefore keeps its ten seconds.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

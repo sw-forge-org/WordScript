@@ -44,7 +44,7 @@ own, then make the next event decidable.
 | [`overlay-leave-hold-dead-actions.md`](../known-issues/overlay-leave-hold-dead-actions.md) | fixed for its own mechanism; carries the three-mechanism table | Step 1 |
 | [`dev-server-reloads-the-app-mid-session.md`](../known-issues/dev-server-reloads-the-app-mid-session.md) | open, cause located, fix known | Step 2 |
 | [`capture-loses-half-the-recording.md`](../known-issues/capture-loses-half-the-recording.md) | open, 3 detailed events, cause not located | Steps 3, 5, 6 |
-| [`overlay-recording-freeze.md`](../known-issues/overlay-recording-freeze.md) | **reopened 2026-08-13** | Steps 1, 2, 4 |
+| [`overlay-recording-freeze.md`](../known-issues/overlay-recording-freeze.md) | **reopened 2026-08-13**; one of its reported shapes — a blank pill during a live capture after a reload — is answered by step 4 (ADR 0151), the freeze itself is not | Steps 1, 2, 4 |
 | [`sound-output-underruns-and-reopens.md`](../known-issues/sound-output-underruns-and-reopens.md) | **half fixed 2026-08-14**; the underrun class is gone, the routing half is the Speech track's F2 | Step 7 |
 
 Adjacent, do not re-derive:
@@ -52,7 +52,8 @@ Adjacent, do not re-derive:
 owns the second cause of "invisible mid-recording" and carries the log
 discriminator table. Reopened, not this track's to fix.
 
-Owns **ADR 0133, 0134 and 0150 onward** for these records. ADRs 0079–0081, 0083,
+Owns **ADR 0133, 0134 and 0150–0152** for these records, and 0153 onward as they
+come. ADRs 0079–0081, 0083,
 0084 and 0100 belong to **Core hardening**; 0133 continues that line and says so
 in its own References. 0132 is the Speech track's — it landed in `2d5bead` while
 this track was being written, which is why the rule below says to check the
@@ -66,15 +67,16 @@ This table is the state of the track. Update it as steps land.
 
 | Step | What | State | Blocked on |
 |---|---|---|---|
-| 1 | the runtime finishes the session (ADR 0134) | **done 2026-08-14 — acceptance run passed in the native host.** One half of the check still owed: a healthy session logging `path=frontend` | — |
+| 1 | the runtime finishes the session (ADR 0134) | **closed 2026-08-14 — both halves measured.** Eight healthy sessions logged `path=frontend`. The open question it left was decided the same day and built (ADR 0152) | — |
 | 2 | the dev-server watcher | **done 2026-08-14** | — |
 | 3 | the cadence instrument (ADR 0133) | **done 2026-08-14 — and its new field fabricated a loss before it measured one; a 12 s soak against real hardware is what caught it** | — |
-| 4 | the overlay restores itself on mount | open | — (step 1 done) |
+| 4 | the overlay restores itself on mount (ADR 0151) | **done 2026-08-14 — code, tests, and the owner's native-host use. ADR 0152 landed beside it and is observed in the runtime log** | — |
 | 5 | `native-18` into the regression corpus | **done 2026-08-14** | — |
-| 6 | read the next capture event, then fix | **open, and now the only thing between this record and a located cause** | one natural `Short` capture (step 3 done) |
+| 6 | read the next capture event, then fix | **open, and now the only thing between this record and a located cause.** The reading is a command now: `scripts/read-capture-event.sh` | one natural `Short` capture (step 3 done) |
 | 7 | the cue output stream (ADR 0150) | **done 2026-08-14 — and the record's own explanation of the symptom turned out to be wrong; the underrun half is fixed, the routing half is the speech track's** | — |
 
-Opened with all seven open and nothing started, 2026-08-13.
+Opened with all seven open and nothing started, 2026-08-13. **Six of seven are
+closed; step 6 is the track, and it cannot be hurried.**
 
 ### What landed on 2026-08-14
 
@@ -100,10 +102,15 @@ ADR 0134, observed rather than argued.
 
 **Two caveats on that run, because it was not a clean-room.**
 
-**The `path=frontend` half is still owed.** Every session in that run committed
-by deadline, which is explained by the dead overlay and not by the deadline
-being sized wrong — but *explained* is not *measured*. One ordinary dictation
-committed on the pill closes it.
+**The `path=frontend` half was owed and is now paid, by ordinary use rather than
+by a test.** Between 04:26 and 14:58 on 2026-08-14 the runtime log carries
+**eight** `Native session completed path=frontend` lines — 04:26, 04:29, 04:36,
+04:50, 14:37, 14:38, 14:55, 14:58 — against four `path=deadline`. The deadline
+is not the path a healthy session takes, which is what the acceptance run could
+not show from inside a run whose overlay was dead. **Step 1 is closed.**
+
+**And the fourth deadline commit is a finding.** See *The deadline fired under a
+window that was alive* below; it is what ADR 0152 was written for.
 
 **The binary in that run was one build behind.** `target/debug/wordscript`
 started 03:16:03 while the current build was written at 03:16:11, so the running
@@ -268,7 +275,7 @@ about four times**, once while he was dictating. The `vite.config.ts` rule in
 `AGENTS.md` covers the frontend half of this; the native half is the same
 sentence with `cargo` in it.
 
-### What step 1 leaves open, and it is the owner's call
+### What step 1 left open — decided and built 2026-08-14 (ADR 0152)
 
 **An edit that takes longer than ten seconds loses to the deadline.** The edit
 surface is frontend-local until confirm — the preview stays staged the whole
@@ -281,12 +288,129 @@ user's in-progress correction is gone, and typing for more than ten seconds is
 not exotic.
 
 ADR 0134 weighed the abort case ("delete the record that was written") and did
-not weigh this one. It is not a defect against the decision as written, so
-nothing here overrides it. The options, if it turns out to matter: the edit
-surface extends the deadline while it is open, or the deadline is longer while
-an edit is open, or a lost edit is re-offered on the clipboard the way a
-post-delivery edit already is. **All three are decisions, not fixes**, and the
-last is the one the product's existing semantics already point at.
+not weigh this one. Three options stood here: the edit surface extends the
+deadline while it is open, the deadline is longer while an edit is open, or a
+lost edit is re-offered on the clipboard. **The owner chose the first on
+2026-08-14** and ADR 0152 is it: the open surface renews a full deadline every
+3 s and there is no release, so the case the deadline exists for — a window that
+dies — is untouched, because whatever kills the window stops the renewals too.
+
+The second option is the one to keep saying no to. A longer constant moves the
+boundary without finding it, and every second added is a second in which a dying
+window holds a finished dictation.
+
+### The deadline fired under a window that was alive
+
+**2026-08-14, 14:30:18: `native-4`, `text_len=4`, `path=deadline` — and the
+overlay was not dead.** `Overlay parked` is logged at +709.379, 240 ms after the
+commit at +709.127, which is `OVERLAY_LEAVE_MS` exactly; `park_overlay_window`
+has one caller, `sync_overlay_window_visibility(visible: false)`, and only the
+webview calls it. Two later sessions in the same process committed
+`path=frontend`.
+
+The run sheet below pre-registered this as a finding: *if a healthy session ever
+logs `path=deadline`, the deadline is sized wrong.* **The sheet was missing a
+clause.** There are three explanations, not two, and only the first two are
+about sizing:
+
+| The log shows | Reading |
+|---|---|
+| no sign of the window during the preview | the window was gone — the deadline did its job |
+| the window working and losing the race | the deadline is sized wrong — a finding |
+| the window alive and idle | **nobody answered** — not a defect, and the case this one is |
+
+A `clipboard_only` preview waits for a decision, and not deciding is a thing
+people do. So the falsifier now reads: `path=deadline` is evidence against the
+sizing **only when the log also shows the window trying to finish**. ADR 0152
+buys time for the one case where something is genuinely in progress and does not
+touch this one — the transcript reaches the clipboard, history and disk either
+way, which is the whole point of ADR 0134.
+
+### Step 4 and ADR 0152 landed 2026-08-14
+
+**Step 4 is one command and one reducer case, and the interesting half is what
+it refuses to do.** `native_session_snapshot` answers stage, session,
+`started_at_ms`, mute, pause and the staged preview; `RESTORE` repaints
+`capturing` and `processing` and **nothing else**. A session that ended while
+the window was away is not re-reported, because the path that ended it already
+owed and paid the surface that reports it (ADR 0019) — and for the case that
+raises first, a preview the deadline committed, restoring *nothing* is exactly
+what a committed `clipboard_only` preview looks like. ADR 0134's obligation on
+the restore is discharged by the same fact that makes it invisible.
+
+**The restore loses every race it is in**, by a guard in the reducer rather than
+at the call site: it applies only to a state nothing has touched. Removing that
+guard makes a stale snapshot resurrect a finished session as `recording`, which
+is how the test for it was written.
+
+**The pill's timer was the part the step did not mention.** It counted from zero
+at the first active render, so a restored window would have shown `00:00` for a
+minute-old dictation. It is seeded from the runtime's session start now. The
+seed cannot be pause-aware — nothing records how long a capture was paused — so
+a window restored into a paused capture reads one number too high, against a
+blank pill in every case.
+
+**Counts, because a test total is a shared measurement.** `cargo test` 801 → 807
+passing, ignored unchanged at 5: six tests in `core::sessions` for the deferral's
+epoch guard and the three snapshot shapes. Vitest 533 → 541 in the same 42
+files: four in `useRuntime.test.tsx` for the restore and its race, four in
+`OverlayWindow.test.tsx` for the seeded timer and the deferral's renewal.
+`cargo check` 15 warnings, unchanged. Two of the new assertions were made to
+fail first — the deferral's epoch guard commits the wrong staging's deadline
+without it, and the restore's race guard resurrects a finished session.
+
+**What is not covered by a test, stated so it is not assumed.** The deadline's
+wait loop itself — that it wakes, re-reads the commit instant, and sleeps to the
+new one — is held by construction and review, not by an assertion.
+`arm_preview_commit_deadline` needs an `AppHandle` and no test in this repo
+drives one, which is the same gap ADR 0133's `arrived_at` ordering has. What is
+asserted is the half that decides it: the stored instant, who may move it, and
+that a stale epoch cannot. The loop's own behaviour is what the native-host
+check below is for, and the log line `Native preview deadline deferred … waited_ms=`
+is what makes it visible when it runs.
+
+**Both native-host checks were answered the same afternoon, and one of them by
+the product rather than by a test.**
+
+**First, that the running app was the right one.** `target/debug/wordscript`
+started 15:36:55 against a last source write at 15:36:54, so the process the
+owner used carries both decisions. This is checked and stated because the step 1
+record had to state the opposite — its acceptance run was one build behind — and
+a check nobody can date is not a check.
+
+**ADR 0152 ran in the wild and the log holds the whole shape**, session
+`native-2` of that run:
+
+| | |
+|---|---|
+| preview ready | +885.634 |
+| **the old code would have committed here** | **+895.634** |
+| deadline deferred | +895.636, `waited_ms=8656` |
+| deadline deferred | +904.298, `waited_ms=2993` |
+| deadline expired | +907.292 |
+| session completed | +907.552, `path=deadline`, 7 chars |
+
+Read backwards, the two deferral lines date the renewals that caused them: a
+commit instant 8.656 s out at +895.636 was set at +894.292, and one 2.993 s out
+at +904.298 was set at +897.291 — **3.0 s apart, which is
+`PREVIEW_DEADLINE_RENEW_MS` exactly.** Nothing renewed after +897.291, and the
+runtime committed 10.0 s later. That is the designed shape observed rather than
+argued: held while the surface is open, and the ordinary deadline running from
+the last sign of life. The row that matters is the third one — at the instant
+the old code would have taken the text out from under the edit box, the log
+instead says the deadline is 8.7 s further out.
+
+**Step 4's check rests on the owner's report, and the log is consistent without
+proving it.** He reports ordinary use with no problems, which is the check as
+he ran it. Independently, the overlay's React app mounted at +864.577 — 72 ms
+after a capture start — and its first `[ov-repaint]` already reads
+`epoch=recording`. That is what the restore does, and it is also what a
+`recording_started` event arriving just after the listener registered would do;
+this log cannot separate them. **What would separate them is a trace line naming
+the restore**, which is one `diagLog` call in `RESTORE`'s effect and was not
+added, because the surface is dev-only tracing and the session had no reason to
+touch the frontend again. Whoever wants the distinction in a log has a
+one-line way to get it.
 
 ## The order
 
@@ -387,7 +511,7 @@ tests at `capture.rs:2757-2813` and the log-line assertions at `:2882`, `:2918`
 **Do not** fix the three realtime violations named in ADR 0133's Consequences.
 That is Step 6 and it is gated on the measurement.
 
-### Step 4 — the overlay restores itself on mount
+### Step 4 — the overlay restores itself on mount — **done 2026-08-14 (ADR 0151)**
 
 Comfort, not safety: after step 1 a lost window costs a surface, not a
 transcript.
@@ -403,6 +527,14 @@ with the correct elapsed time rather than blank, and a preview committed by the
 deadline comes back as committed rather than as an offer.
 
 **Validates with:** `npm test`, `npm run build`, and a native-host run.
+
+**What landed:** `core::sessions::native_session_snapshot`, a `RESTORE` case in
+`useRuntime`, and a timer seeded from the runtime's session start. The account
+is above under *Step 4 and ADR 0152 landed 2026-08-14*; the second half of the
+*Done when* is answered by the product's own semantics rather than by new code,
+which is the part worth reading before changing it. **The native-host reload is
+still owed** — the suites cover the reducer and the command, and neither can see
+a real webview come back.
 
 ### Step 5 — the first real gap enters the corpus — **done 2026-08-14**
 
@@ -441,6 +573,25 @@ result, not a failure of this step.
 
 **Do not** substitute a forced reproduction for the wait without saying so in
 the record. Route B exists and is withdrawn as a plan, not as an option.
+
+**The reading is a command now** (added 2026-08-14):
+
+```
+scripts/read-capture-event.sh [logfile]
+```
+
+It finds every `verdict=Short` capture in the runtime log, pairs it with its
+cadence line, and applies ADR 0133's pre-registered reading — lock wait
+dominating the longest gap means the app blocked its own audio thread, lock wait
+near zero means the callback genuinely was not called. It exists because the
+risk in this step was never that the reading is hard; it is that the event
+arrives, nobody is looking, and the log rotates.
+
+**It refuses to read the three events already in the record**, and that refusal
+is the feature: they carry no `slowest_lock_wait_ms`, so a suspended stream and
+a self-inflicted stall are one number in them. Run against the current log it
+reports `3 Short capture(s): 0 readable, 3 predating the instrument` — which is
+this step's whole situation in one line.
 
 ### Step 7 — the cue output stream — **done 2026-08-14 (ADR 0150)**
 

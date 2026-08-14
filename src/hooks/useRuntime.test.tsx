@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRuntime } from "./useRuntime";
 import { createAppConfig } from "../test/factories";
 import { createEmptyTextProfileCuration } from "../lib/textProfiles";
+import type { NativeSessionSnapshot } from "../types/ipc";
 
 const invokeMock = vi.fn();
 const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
@@ -54,16 +55,34 @@ function createTestConfig() {
   });
 }
 
+/** What the runtime answers a window that mounts while nothing is running.
+ *  Every test that does not care about the restore gets this one. */
+function createIdleSnapshot(): NativeSessionSnapshot {
+  return {
+    stage: "idle",
+    session_id: null,
+    started_at_ms: null,
+    muted: false,
+    paused: false,
+    pending_preview: null,
+  };
+}
+
 describe("useRuntime", () => {
+  let snapshot: NativeSessionSnapshot;
+
   beforeEach(() => {
     invokeMock.mockReset();
     eventListeners.clear();
     const config = createTestConfig();
+    snapshot = createIdleSnapshot();
 
     invokeMock.mockImplementation((command: string) => {
       switch (command) {
         case "load_app_config":
           return Promise.resolve(config);
+        case "native_session_snapshot":
+          return Promise.resolve(snapshot);
         case "configure_native_trigger":
         case "configure_native_insertion":
         case "configure_native_capture":
@@ -692,5 +711,173 @@ describe("useRuntime", () => {
     });
 
     expect(result.current.state.resultSurfaceOpen).toBe(false);
+  });
+
+  // ── The restore (ADR 0151) ────────────────────────────────────────────────
+  //
+  // A window that mounts into a running session used to render nothing: every
+  // input to its surface arrives as an event, and the events went to a window
+  // that no longer exists.
+
+  it("repaints a capture that was already running when the window mounted", async () => {
+    snapshot = {
+      stage: "capturing",
+      session_id: "native-7",
+      started_at_ms: Date.now() - 42_000,
+      muted: true,
+      paused: false,
+      pending_preview: null,
+    };
+
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.status).toBe("recording"));
+    expect(result.current.state.muted).toBe(true);
+    // The runtime's session start, not the mount: this is what lets the pill
+    // show the elapsed time the capture actually has.
+    expect(result.current.state.recordingStartMs).toBe(snapshot.started_at_ms);
+  });
+
+  it("repaints a staged preview and marks it as the session's one decision surface", async () => {
+    snapshot = {
+      stage: "processing",
+      session_id: "native-8",
+      started_at_ms: Date.now() - 9_000,
+      muted: false,
+      paused: false,
+      pending_preview: {
+        text: "Wir shippen das morgen.",
+        corrected: true,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "ähm wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "clipboard_only",
+          recovery_behavior: "standard",
+        },
+        transform: { applied_rules: ["removed_fillers"], warning: null },
+        preview_epoch: 4,
+        occurred_at_ms: Date.now() - 2_000,
+      },
+    };
+
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.status).toBe("processing"));
+    expect(result.current.state.pendingResult?.final_text).toBe("Wir shippen das morgen.");
+    // The epoch is how the restored edit surface asks the runtime to keep
+    // waiting (ADR 0152), and a restored window is exactly the one that never
+    // saw the event carrying it.
+    expect(result.current.state.pendingResult?.preview_epoch).toBe(4);
+    expect(result.current.state.previewStaged).toBe(true);
+    expect(result.current.state.resultSurfaceOpen).toBe(false);
+
+    // And `previewStaged` earns its keep: the commit that follows must not open
+    // a second decision surface for a session that already had one (ADR 0018).
+    await act(async () => {
+      emit("wordscript-event", {
+        event: "transcription",
+        text: "Wir shippen das morgen.",
+        corrected: true,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "ähm wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "clipboard_only",
+          recovery_behavior: "standard",
+        },
+        transform: { applied_rules: ["removed_fillers"], warning: null },
+        delivery: "clipboard",
+      });
+    });
+
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.state.resultSurfaceOpen).toBe(false);
+  });
+
+  /** ADR 0134's obligation on the restore. The deadline commits a preview whose
+   *  window never came back; a window that mounts afterwards must not be handed
+   *  that preview as something still to decide. */
+  it("offers nothing for a session the deadline already finished", async () => {
+    snapshot = {
+      stage: "completed",
+      session_id: null,
+      started_at_ms: null,
+      muted: false,
+      paused: false,
+      pending_preview: null,
+    };
+
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.config).not.toBeNull());
+
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.state.pendingResult).toBeNull();
+    expect(result.current.state.previewStaged).toBe(false);
+    expect(result.current.state.resultSurfaceOpen).toBe(false);
+  });
+
+  /** The snapshot is a round trip, so a live event can beat it home. Whichever
+   *  arrives second is not automatically newer — the event always is. */
+  it("drops a snapshot that lost its race against a live event", async () => {
+    let releaseSnapshot: (() => void) | null = null;
+    const snapshotArrives = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    const staleSnapshot: NativeSessionSnapshot = {
+      stage: "capturing",
+      session_id: "native-1",
+      started_at_ms: Date.now() - 30_000,
+      muted: true,
+      paused: false,
+      pending_preview: null,
+    };
+    const config = createTestConfig();
+    invokeMock.mockImplementation((command: string) => {
+      switch (command) {
+        case "load_app_config":
+          return Promise.resolve(config);
+        case "native_session_snapshot":
+          return snapshotArrives.then(() => staleSnapshot);
+        default:
+          return Promise.resolve(null);
+      }
+    });
+
+    const { result } = renderHook(() => useRuntime());
+
+    await waitFor(() => expect(result.current.state.config).not.toBeNull());
+
+    // The session this window mounted into ended before the snapshot answered.
+    await act(async () => {
+      emit("wordscript-event", {
+        event: "transcription",
+        text: "Wir shippen das morgen.",
+        corrected: false,
+        provider: "groq",
+        active_profile: "Support reply",
+        raw_text: "wir shippen das morgen",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "auto_paste",
+          recovery_behavior: "standard",
+        },
+        transform: { applied_rules: [], warning: null },
+        delivery: "inserted",
+      });
+    });
+
+    await act(async () => {
+      releaseSnapshot?.();
+      await snapshotArrives;
+    });
+
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.state.muted).toBe(false);
+    expect(result.current.state.recordingStartMs).toBeNull();
+    expect(result.current.state.lastResult?.final_text).toBe("Wir shippen das morgen.");
   });
 });

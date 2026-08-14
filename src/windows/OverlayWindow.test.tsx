@@ -164,6 +164,11 @@ describe("OverlayWindow", () => {
           return Promise.resolve();
         case "sync_overlay_window_visibility":
           return Promise.resolve();
+        // The open edit surface renews the runtime's preview deadline
+        // (ADR 0152). It answers with the new commit instant; nothing in the
+        // overlay reads it, so any number will do.
+        case "defer_pending_transcription_preview_commit":
+          return Promise.resolve(Date.now() + 10_000);
         case "resolve_capture_budget":
           return Promise.resolve({
             provider: "groq",
@@ -2118,5 +2123,136 @@ describe("OverlayWindow", () => {
         }),
       );
     });
+  });
+
+  // ── The window that mounted late, and the one that is still typing ────────
+
+  /** ADR 0151. A window that mounts into a running capture is handed the
+   *  runtime's session start, and the pill has to read the session's age from
+   *  it rather than counting from its own first render. */
+  it("shows the age of the capture it mounted into, not the age of the window", async () => {
+    useRuntimeMock.mockReturnValue(
+      buildIdleResultState({
+        status: "recording",
+        lastTranscription: null,
+        lastResult: null,
+        pendingResult: null,
+        error: null,
+        resultSurfaceOpen: false,
+        recordingStartMs: Date.now() - 42_000,
+      }),
+    );
+
+    render(<OverlayWindow />);
+
+    expect(await screen.findByText("00:42")).toBeInTheDocument();
+  });
+
+  function buildStagedPreviewState(overrides: Record<string, unknown> = {}) {
+    return buildIdleResultState({
+      status: "processing",
+      lastTranscription: null,
+      lastResult: null,
+      error: null,
+      previewStaged: true,
+      resultSurfaceOpen: false,
+      pendingResult: {
+        provider: "groq",
+        active_profile: "Support reply",
+        work_mode: {
+          rewrite_style: "polished",
+          insert_behavior: "clipboard_only",
+          recovery_behavior: "standard",
+        },
+        raw_text: "ähm wir shippen das morgen",
+        final_text: "Wir shippen das morgen.",
+        corrected: true,
+        transform: { applied_rules: ["removed_fillers"], warning: null },
+        history: null,
+        delivery: null,
+        insertion: null,
+        preview_epoch: 4,
+        occurred_at_ms: 1716500000000,
+      },
+      ...overrides,
+    });
+  }
+
+  /** ADR 0152. The runtime's deadline cannot tell a dead window from a user who
+   *  is still typing; at ten seconds it committed the unedited text and took
+   *  the edit box off screen mid-sentence. The open surface now says it is
+   *  there, and keeps saying it. */
+  it("asks the runtime to keep waiting while the edit surface is open", async () => {
+    useRuntimeMock.mockReturnValue(buildStagedPreviewState());
+    render(<OverlayWindow />);
+
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "defer_pending_transcription_preview_commit",
+      expect.anything(),
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("defer_pending_transcription_preview_commit", {
+        epoch: 4,
+      }),
+    );
+  });
+
+  it("keeps asking while it is open and stops the moment it closes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      useRuntimeMock.mockReturnValue(buildStagedPreviewState());
+      render(<OverlayWindow />);
+
+      fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+      await waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith("defer_pending_transcription_preview_commit", {
+          epoch: 4,
+        }),
+      );
+
+      const deferCalls = () =>
+        invokeMock.mock.calls.filter(
+          (call) => call[0] === "defer_pending_transcription_preview_commit",
+        ).length;
+
+      act(() => {
+        vi.advanceTimersByTime(7_000);
+      });
+      // Renewed, not asked once: a single request at open would expire under a
+      // user who is still typing ten seconds later.
+      expect(deferCalls()).toBeGreaterThanOrEqual(3);
+
+      const beforeClose = deferCalls();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+
+      // Nothing to release: the surface stops asking and the runtime's ordinary
+      // deadline runs out on its own. This is the same shape a destroyed
+      // webview has, which is why there is no held state to leak.
+      expect(deferCalls()).toBe(beforeClose);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A post-delivery edit has no deadline behind it — its session ended when the
+   *  text was delivered. Asking there would be a request against whatever
+   *  happens to be staged next. */
+  it("asks for nothing when the edit was opened after delivery", async () => {
+    useRuntimeMock.mockReturnValue(buildIdleResultState());
+    render(<OverlayWindow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText("Edit transcription text")).toBeInTheDocument();
+
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "defer_pending_transcription_preview_commit",
+      expect.anything(),
+    );
   });
 });

@@ -46,6 +46,14 @@ const MODE_CYCLE: ProcessingMode[] = [
 ];
 const OVERLAY_ENTER_MS = 320;
 const OVERLAY_LEAVE_MS = 240;
+// How often an open edit surface tells the runtime it is still there
+// (ADR 0152). Each request buys a full `PREVIEW_COMMIT_DEADLINE_MS` (10 s), so
+// this is three requests of runway: two can be lost — to a busy main thread, to
+// a dropped invoke — before the deadline fires under a window that is genuinely
+// still working. Renewing at the deadline itself would make every single
+// request load-bearing, which is how a comfort feature becomes a way to lose a
+// dictation.
+const PREVIEW_DEADLINE_RENEW_MS = 3000;
 const DRAG_DISTANCE_THRESHOLD = 6;
 const DRAG_CLICK_SUPPRESS_MS = 1000;
 // How long after the last drag signal the drag session is considered over. Long
@@ -1225,6 +1233,7 @@ export default function OverlayWindow() {
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<number | null>(null);
   const sessionActiveRef = useRef(false);
+  const recordingStartMs = state.recordingStartMs;
 
   useEffect(() => {
     const isSessionActive = status === "recording" || status === "processing";
@@ -1241,7 +1250,19 @@ export default function OverlayWindow() {
 
     if (!sessionActiveRef.current) {
       sessionActiveRef.current = true;
-      setElapsed(0);
+      // Seeded from the runtime's session start rather than from zero, which is
+      // the difference between a restored pill and a lying one: a window that
+      // mounts into a running capture (ADR 0151) would otherwise show 0:00 for
+      // a dictation already a minute old. On the live path the two are the same
+      // instant, because RECORDING_STARTED stamps `Date.now()`.
+      //
+      // It is read once, at the start of the session, so the pause-aware tick
+      // below stays the authority afterwards. The seed itself cannot be
+      // pause-aware — the runtime records when a session began and nothing
+      // records how long it was paused — so a window restored into a paused
+      // capture shows the paused time as elapsed. That is one number too high
+      // in the one case, against a blank pill in every case.
+      setElapsed(recordingStartMs ? Math.max(0, Math.floor((Date.now() - recordingStartMs) / 1000)) : 0);
     }
 
     if (timerRef.current) {
@@ -1259,7 +1280,10 @@ export default function OverlayWindow() {
         timerRef.current = null;
       }
     };
-  }, [status, paused]);
+    // `recordingStartMs` is in here because the body reads it. Re-running when
+    // the stop nulls it costs one restarted interval and no visible tick, and
+    // `sessionActiveRef` is what keeps the seed from firing a second time.
+  }, [status, paused, recordingStartMs]);
 
   // The auto-stop, and only once it is close enough to act on.
   //
@@ -1558,6 +1582,40 @@ export default function OverlayWindow() {
       finishSafely(true);
     }
   };
+
+  // AN OPEN EDIT SURFACE KEEPS THE RUNTIME WAITING (ADR 0152).
+  //
+  // The deadline in ADR 0134 finishes a session the window did not, and it does
+  // not know the difference between a window that is gone and a user who is
+  // still typing into it. At ten seconds it committed the UNEDITED text and the
+  // edit box vanished mid-sentence: nothing lost that had not already been
+  // delivered, and the correction the user was making gone.
+  //
+  // So the surface says it is open, repeatedly, and stops saying it the moment
+  // it closes — including by being destroyed, which is the case the deadline
+  // exists for and the one this must not weaken. There is no "release": the
+  // runtime grants a fresh deadline per request, so a window that stops asking
+  // is finished for on the ordinary schedule.
+  //
+  // Only an edit opened on a STAGED preview holds anything. An edit opened from
+  // the result surface is post-delivery — its session has ended and there is no
+  // deadline left to defer, which is exactly what a null `preview_epoch` says.
+  const pendingPreviewEpoch = pendingPreviewResult?.preview_epoch ?? null;
+  useEffect(() => {
+    if (!showEditSurface || pendingPreviewEpoch === null) return;
+
+    const askForMoreTime = () => {
+      // Failure is not reported to the user on purpose: every way this call can
+      // fail means the preview is already settled, and the surface is about to
+      // be taken off screen by the state change that settled it.
+      void invoke("defer_pending_transcription_preview_commit", { epoch: pendingPreviewEpoch })
+        .catch(() => {});
+    };
+
+    askForMoreTime();
+    const interval = window.setInterval(askForMoreTime, PREVIEW_DEADLINE_RENEW_MS);
+    return () => window.clearInterval(interval);
+  }, [showEditSurface, pendingPreviewEpoch]);
 
   const handleEditOpen = () => {
     // Where the edit is opened decides which source has to be live — the same

@@ -5,6 +5,7 @@ import { resolveActiveTextProfile, resolveTextProfileWorkMode } from "../lib/tex
 import type {
   AppConfig,
   BackendEvent,
+  NativeSessionSnapshot,
   RuntimeState,
   RuntimeTranscriptionResult,
 } from "../types/ipc";
@@ -22,6 +23,7 @@ const NATIVE_SYNC_FALLBACK_MS = 1500;
 
 type Action =
   | { type: "READY"; config: AppConfig }
+  | { type: "RESTORE"; snapshot: NativeSessionSnapshot }
   | { type: "RECORDING_STARTED" }
   | { type: "RECORDING_STOPPED" }
   | { type: "PROCESSING" }
@@ -72,8 +74,30 @@ function buildFallbackTranscriptionResult(
     capture_integrity: null,
     insertion: null,
     history: null,
+    // The session this builds a result for has already ended, so there is no
+    // staged preview left to defer (ADR 0152).
+    preview_epoch: null,
     occurred_at_ms: Date.now(),
   };
+}
+
+/** Rebuilds the pending-preview result a mounted window missed (ADR 0151).
+ *
+ *  It goes through the same shape as the live `preview_ready` path rather than a
+ *  second one: the surface a restored window paints has to be the surface a
+ *  window that never left would be painting, or the restore is a third way for a
+ *  preview to be shown and only two are described anywhere. */
+function buildRestoredPreviewResult(
+  snapshot: NativeSessionSnapshot,
+  config: AppConfig | null,
+): RuntimeTranscriptionResult | null {
+  const preview = snapshot.pending_preview;
+  if (!preview) return null;
+
+  return buildRuntimeTranscriptionResult(
+    { event: "preview_ready", ...preview },
+    config,
+  );
 }
 
 function buildRuntimeTranscriptionResult(
@@ -83,6 +107,7 @@ function buildRuntimeTranscriptionResult(
   const activeProfile = config ? resolveActiveTextProfile(config) : null;
 
   return {
+    preview_epoch: payload.preview_epoch ?? null,
     provider: payload.provider ?? null,
     active_profile: payload.active_profile ?? activeProfile?.label ?? null,
     work_mode: payload.work_mode ?? (activeProfile ? resolveTextProfileWorkMode(activeProfile) : null),
@@ -107,6 +132,56 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
   switch (action.type) {
     case "READY":
       return { ...state, config: action.config, error: null, errorAudioRetained: false };
+    case "RESTORE":
+      {
+        // A window that mounts into a running session (ADR 0151). The overlay
+        // is the case that matters — a reload mid-capture used to render
+        // nothing at all, because every input to its surface arrives as an
+        // event and the events had already been delivered to a window that no
+        // longer exists.
+        //
+        // IT LOSES EVERY RACE IT IS IN. The snapshot is asked for on mount and
+        // answers a round trip later, and a real event can arrive in between:
+        // whichever it is, it is newer than this answer. So the restore applies
+        // only to a state nothing has touched yet, and a stale snapshot lands
+        // on a state that has moved and is dropped. Guarding here rather than
+        // at the call site keeps that property in the reducer, where the rest
+        // of the session's atomicity already lives.
+        const untouched =
+          state.status === "idle"
+          && state.pendingResult === null
+          && state.lastResult === null
+          && state.error === null
+          && !state.previewStaged;
+        if (!untouched) return state;
+
+        // Everything but a live capture or a live preview is nothing to
+        // repaint. A session that ended while this window was away already
+        // reported itself to the window that was there (ADR 0019) — and for a
+        // staged preview, a committed one shows no surface at all, so restoring
+        // nothing IS restoring it as committed rather than as an offer.
+        if (action.snapshot.stage !== "capturing" && action.snapshot.stage !== "processing") {
+          return state;
+        }
+
+        const restoredPreview = buildRestoredPreviewResult(action.snapshot, state.config);
+
+        return {
+          ...state,
+          status: action.snapshot.stage === "capturing" ? "recording" : "processing",
+          muted: action.snapshot.muted,
+          paused: action.snapshot.paused,
+          pendingResult: restoredPreview,
+          // The runtime's own session start, so the pill's timer reads the
+          // session's age rather than this window's.
+          recordingStartMs: action.snapshot.started_at_ms,
+          // Sticky for the session, exactly as PREVIEW_READY sets it: a
+          // clipboard_only session that had its decision surface must not be
+          // given a second one when the commit lands (ADR 0018).
+          previewStaged: restoredPreview !== null,
+          resultSurfaceOpen: false,
+        };
+      }
     case "RECORDING_STARTED":
       return {
         ...state,
@@ -422,6 +497,21 @@ export function useRuntime() {
         syncNativeRuntime(config);
       })
       .catch((error) => console.error("load_app_config failed:", error));
+
+    // What is already running (ADR 0151). Asked once per mount, after the
+    // listeners above are registered — the other order has a window in which an
+    // event fires with nobody listening and the snapshot is already on its way,
+    // which is the one arrangement where a live session can be missed by both.
+    void (async () => {
+      try {
+        const snapshot = await invoke<NativeSessionSnapshot>("native_session_snapshot");
+        if (snapshot) dispatch({ type: "RESTORE", snapshot });
+      } catch (error) {
+        // A window that cannot ask still works; it is one session behind until
+        // the next event, which is exactly where it was before this existed.
+        console.error("native_session_snapshot failed:", error);
+      }
+    })();
 
     const nativeUnlisten = listen<{ event: string; status?: { last_transcript?: string | null; last_error?: string | null } }>(
       NATIVE_RUNTIME_EVENT_CHANNEL,

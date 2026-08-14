@@ -13,8 +13,17 @@ Amended 2026-08-14 by runtime-ownership step 1, which added the runtime commit
 deadline to *Clipboard-only commit*. **It read `core/sessions.rs` and the
 session-lifecycle section against what they claim, and nothing else** — it is
 not a drift check on this file and does not inherit the date above for the
-parts it did not read. The clause it added is implemented; its native-host
-acceptance run is owed ([`../tracks/runtime-ownership.md`](../tracks/runtime-ownership.md)).
+parts it did not read. The clause it added is implemented and its acceptance run
+has since passed on both paths ([`../tracks/runtime-ownership.md`](../tracks/runtime-ownership.md)).
+
+Amended 2026-08-14 by runtime-ownership step 4 (ADR 0151) and the decision that
+followed it (ADR 0152), which added the restore snapshot and the edit-surface
+deferral to *Clipboard-only commit* and two commands to the command surface.
+**It read `core/sessions.rs`, `hooks/useRuntime.ts` and the two clauses it
+touched, and nothing else.** Both clauses are implemented and both were
+exercised in the native host the same day — the deferral is in the runtime log
+with its renewal cadence readable from the deferral lines, the restore rests on
+the owner's report.
 
 Amended 2026-08-14 by runtime-ownership step 7 (ADR 0150), which rewrote the
 cue-stream clause in the deviation list: the stream is no longer persistent, and
@@ -246,6 +255,11 @@ Rust core modules in `src-tauri/src/core/`:
 - `switch_active_text_profile`, `set_active_profile_processing_mode`
 - `commit_pending_transcription_preview` (clipboard_only commit; optional
   `text` replaces the preview text for an overlay edit before delivery)
+- `defer_pending_transcription_preview_commit` (an open edit surface asking the
+  runtime for another deadline, epoch-guarded; ADR 0152)
+- `native_session_snapshot` (what is running, for a window that mounted into a
+  session already in progress; ADR 0151). It answers nothing about a session
+  that has ended, and `useRuntime` is its only caller
 - `native_insertion_status` (platform support contract)
 - `check_app_update` (restricted to published GitHub releases)
 - `transcript_store_status`, `reveal_transcript_in_file_manager` (the Markdown
@@ -798,8 +812,9 @@ result surface (ADR 0011a).
 
 **The window is not the only thing that can end this session.** Staging the
 preview arms a runtime deadline of `PREVIEW_COMMIT_DEADLINE_MS` (10 s,
-`core/sessions.rs`, not configurable). If nothing has committed or aborted by
-then, the runtime commits (ADR 0134) -- everything a user can later reach
+`core/sessions.rs`, not configurable). If nothing has committed, aborted or
+asked for more time by then, the runtime commits (ADR 0134) -- everything a user
+can later reach
 (clipboard, `history.json` row, Markdown transcript) is created inside that
 insert, so a window that never comes back would otherwise discard a finished
 dictation with nothing reporting it. Both paths run one body,
@@ -811,6 +826,28 @@ staging it was armed for -- an abort frees the session for a new capture, whose
 preview a stale deadline must not touch. A committed preview closes the edit
 surface with it: the surface reads `isProcessing && pendingResult`, both of
 which the commit clears.
+
+**An open edit surface keeps the runtime waiting** (ADR 0152). While the overlay
+is editing a staged preview it calls
+`defer_pending_transcription_preview_commit` every 3 s, and each call grants a
+fresh `PREVIEW_COMMIT_DEADLINE_MS` from that instant. There is no release: a
+window that stops asking -- because the surface closed, or because the webview
+died -- is finished for on the ordinary deadline, which is the case ADR 0134
+exists for and is deliberately not weakened. The request carries the preview
+epoch, so one in flight across a session change cannot extend the next
+dictation's deadline. A preview nobody is editing keeps its ten seconds: not
+answering is a decision the runtime is allowed to make for the user, and the
+transcript reaches the clipboard, `history.json` and disk either way.
+
+**A window that mounts mid-session asks what is running** (ADR 0151).
+`native_session_snapshot` answers the stage, the session id, when it started,
+mute, pause, and the staged preview if one is still waiting; the UI reducer
+repaints `capturing` and `processing` from it and **nothing else**. A session
+that has already ended is not re-reported -- the path that ended it owed the
+surface that reported it (ADR 0019) -- so a preview the deadline committed comes
+back as no surface at all, which is what a committed `clipboard_only` preview
+looks like anyway. The restore applies only to a state no event has touched, so
+an event that arrives while the snapshot is in flight always wins.
 
 ## Known Deviations / Open Questions
 

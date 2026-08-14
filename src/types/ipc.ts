@@ -146,6 +146,10 @@ export interface RuntimeResultEvent {
   /** What the capture behind this result measured about itself (ADR 0079).
    *  Absent on the paths that never had a capture of their own. */
   capture_integrity?:      CaptureIntegrity | null;
+  /** Which staging a pending preview belongs to (ADR 0152). Present on
+   *  `preview_ready` and on the restore snapshot, absent on every path that
+   *  reports a finished session — there is no deadline left to defer there. */
+  preview_epoch?:          number;
 }
 
 export interface RuntimeTranscriptionResult {
@@ -166,6 +170,10 @@ export interface RuntimeTranscriptionResult {
   /** How much of its own clock the capture kept (ADR 0079). `null` where the
    *  runtime reported none — an older payload, or a path with no capture. */
   capture_integrity:       CaptureIntegrity | null;
+  /** The staging this preview belongs to, so the edit surface can ask the
+   *  runtime to keep waiting (ADR 0152). Null on every finished result: a
+   *  session that has ended has no deadline to defer. */
+  preview_epoch:           number | null;
   occurred_at_ms:          number;
 }
 
@@ -659,6 +667,38 @@ export type BackendEvent =
     }
   | { event: "audio_level";      level: number; rms?: number; waveform?: number[] }
   | { event: "shutdown" };
+
+/** Where the runtime says a session stands. Mirrors `NativeSessionStage` in
+ *  `core::sessions`; the three settled variants are one thing to a window and
+ *  are read as "nothing to repaint". */
+export type NativeSessionStage =
+  | "idle"
+  | "capturing"
+  | "processing"
+  | "completed"
+  | "aborted"
+  | "error";
+
+/** What the runtime hands a window that has just mounted (ADR 0151).
+ *
+ *  It answers one question — what is live right now — and deliberately answers
+ *  nothing about a session that has already ended. The path that ended it owed
+ *  the surface that reported it (ADR 0019); a remount is not a second chance to
+ *  report it. */
+export interface NativeSessionSnapshot {
+  stage:            NativeSessionStage;
+  session_id:       string | null;
+  /** When the runtime started this session, in wall-clock ms. A restored pill
+   *  shows the elapsed time the session actually has instead of counting from
+   *  the remount. */
+  started_at_ms:    number | null;
+  muted:            boolean;
+  paused:           boolean;
+  /** The staged preview, if one is still waiting. Gone the instant the runtime's
+   *  deadline takes it, which is what stops a restored surface from offering a
+   *  commit it has already lost (ADR 0134). */
+  pending_preview:  (RuntimeResultEvent & { occurred_at_ms: number }) | null;
+}
 
 // ── Runtime state (derived in useRuntime) ─────────────────────────────────────
 

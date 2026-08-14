@@ -762,6 +762,17 @@ Additional rules:
   the overlay-freeze record: a reload destroys the heartbeat rather than
   delaying it, so every instrument here read it as silence:
   [known-issues/dev-server-reloads-the-app-mid-session.md](known-issues/dev-server-reloads-the-app-mid-session.md)
+- **a reloaded overlay came back blank while the capture kept running**, **fixed
+  2026-08-14** (ADR 0151, runtime-ownership step 4). Every input to that surface
+  arrives as an event, and the events had gone to a window that no longer
+  existed, so the reducer sat at its initial state and the pill never mounted.
+  The window now asks `native_session_snapshot` on mount and repaints a live
+  capture or a staged preview, with the elapsed time the session actually has.
+  It repaints **only what is live**: a session that ended while the window was
+  away is not re-reported, because the path that ended it already owed the
+  surface that reported it (ADR 0019). Verified in the suites and in the owner's
+  own use of the native host; the runtime log is consistent with the restore but
+  cannot on its own separate it from an event arriving in time
 - **a finished dictation was discarded when its window did not come back**, and
   it was the most damaging open item on the product path. **The runtime finishes
   the session itself since 2026-08-14** (ADR 0134, runtime-ownership step 1):
@@ -774,13 +785,22 @@ Additional rules:
   same evening, under the hardest available condition**: two dictations landed
   in the clipboard, in `history.json` and as Markdown files 10.0 s after their
   preview, in a run where the overlay rendered **no frames at all** — the
-  overlay diagnostic log has zero lines for it. One half is still owed, a
-  healthy session logging `path=frontend`, and the epoch guard has still never
-  run in the wild. **What it left open** is one case ADR 0134 did not weigh: an edit that
-  takes longer than ten seconds loses to the deadline and the unedited text is
+  overlay diagnostic log has zero lines for it. **The other half was paid by
+  ordinary use the same day**: eight healthy sessions logged `path=frontend`
+  between 04:26 and 14:58, so the deadline is demonstrably not the path a
+  working window takes. The epoch guard has still never run in the wild.
+  **What it left open was decided and built the same day.** An edit that takes
+  longer than ten seconds used to lose to the deadline, and the unedited text was
   committed — coherently (the edit surface closes rather than erroring), but the
-  in-progress correction is gone. The record below is the pre-fix statement of
-  the defect. `CLAUDE.md` gives the
+  in-progress correction was gone. Since 2026-08-14 an open edit surface asks the
+  runtime for another deadline every 3 s (ADR 0152), with no hold to release: a
+  window that dies stops asking and is finished for on the ordinary schedule. A
+  preview nobody is editing keeps its ten seconds, which is the case one session
+  actually hit — a live overlay, a four-character transcript, and nobody
+  answering. **The deferral has since run in the product**: a session whose edit
+  surface was open logged `Native preview deadline deferred` at the exact instant
+  the old code would have committed, and committed 10.0 s after the surface
+  stopped asking. The record below is the pre-fix statement of the defect. `CLAUDE.md` gives the
   runtime the insert; the runtime did not have it. Every insert call site is an
   `invoke` from `OverlayWindow.tsx`, and after `preview ready` there was no
   deadline and no fallback — while the clipboard write, the `history.json`

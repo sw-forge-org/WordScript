@@ -1936,6 +1936,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                             "applied_rules": preview.transform.applied_rules,
                                             "warning": preview.transform.warning,
                                         },
+                                        "preview_epoch": preview.preview_epoch,
                                         "capture_integrity": capture_integrity
                                     }),
                                 );
@@ -2768,6 +2769,8 @@ pub fn run() {
             core::text_rules::get_profile_health,
             core::sessions::abort_native_session,
             core::sessions::commit_pending_transcription_preview,
+            core::sessions::defer_pending_transcription_preview_commit,
+            core::sessions::native_session_snapshot,
             core::trigger::native_trigger_status,
             core::trigger::configure_native_trigger,
             core::trigger::pause_native_trigger,

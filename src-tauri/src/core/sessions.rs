@@ -68,7 +68,34 @@ pub struct PendingTranscriptionPreviewEvent {
     pub text: String,
     pub corrected: bool,
     pub transform: PendingTranscriptionPreviewTransform,
+    /// Which staging this payload belongs to. The window carries it back when it
+    /// asks the runtime to wait (ADR 0152), so a request in flight across a
+    /// session change cannot extend the next dictation's deadline.
+    pub preview_epoch: u64,
     pub occurred_at_ms: u64,
+}
+
+/// What a window that has just mounted needs to repaint a session already in
+/// progress (ADR 0151).
+///
+/// It carries only what the surface is drawn from. A session that has already
+/// ended is `stage` and nothing else: the path that ended it owed the surface
+/// that reported it (ADR 0019), and a remount re-reporting it would be a second
+/// surface for one ending.
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeSessionSnapshot {
+    pub stage: NativeSessionStage,
+    pub session_id: Option<String>,
+    /// When the runtime started this session, so a restored pill shows the
+    /// elapsed time the session actually has rather than counting from the
+    /// remount.
+    pub started_at_ms: Option<u64>,
+    pub muted: bool,
+    pub paused: bool,
+    /// The staged preview, if one is still waiting. Absent the instant the
+    /// deadline takes it, which is what keeps a restored surface from offering
+    /// a commit it has already lost (ADR 0134).
+    pub pending_preview: Option<PendingTranscriptionPreviewEvent>,
 }
 
 /// How long the runtime waits for a window to finish a staged preview before it
@@ -132,6 +159,12 @@ struct PendingTranscriptionPreview {
     /// on every path — `force_processing_for_active_capture` reuses one — so
     /// the epoch counts stagings rather than sessions.
     epoch: u64,
+    /// The instant the deadline may commit this preview. Stored rather than
+    /// baked into the sleep so a window that is still working can push it out
+    /// (ADR 0152) — and so that pushing it out is a value the deadline re-reads
+    /// rather than a channel it listens on, which keeps ADR 0134's rule that
+    /// the staged preview IS the cancellation state.
+    commit_at_ms: u64,
     occurred_at_ms: u64,
 }
 
@@ -148,6 +181,7 @@ impl PendingTranscriptionPreview {
                 applied_rules: self.transformed.applied_rules.clone(),
                 warning: self.transformed.warning.clone(),
             },
+            preview_epoch: self.epoch,
             occurred_at_ms: self.occurred_at_ms,
         }
     }
@@ -222,6 +256,7 @@ impl NativeSessionState {
             capture_integrity,
             input_level,
             epoch: self.preview_counter,
+            commit_at_ms: now_ms().saturating_add(PREVIEW_COMMIT_DEADLINE_MS),
             occurred_at_ms: now_ms(),
         };
         let payload = preview.event_payload();
@@ -240,6 +275,68 @@ impl NativeSessionState {
                 .as_ref()
                 .map(|preview| preview.epoch == epoch)
                 .unwrap_or(false)
+    }
+
+    /// When the deadline armed for `epoch` may commit, or `None` if that
+    /// staging is no longer the pending one. One read answers both questions the
+    /// waking deadline has — *is it still mine* and *is it due yet* — so the two
+    /// cannot be answered under different locks and disagree.
+    fn pending_preview_commit_at(&self, epoch: u64) -> Option<u64> {
+        if !matches!(self.stage, NativeSessionStage::Processing) {
+            return None;
+        }
+
+        self.pending_preview
+            .as_ref()
+            .filter(|preview| preview.epoch == epoch)
+            .map(|preview| preview.commit_at_ms)
+    }
+
+    /// The window says it is still on this preview, so the deadline waits
+    /// (ADR 0152).
+    ///
+    /// A full deadline from *now* rather than a pause that has to be lifted: the
+    /// caller renews while its surface is open, and a caller that stops renewing
+    /// — because the user closed the surface, or because the webview died — is
+    /// left with exactly the ordinary window ADR 0134 grants. There is no state
+    /// here that a dead window can leave set.
+    fn defer_pending_preview_commit(&mut self, epoch: u64) -> Result<u64, String> {
+        if !matches!(self.stage, NativeSessionStage::Processing) {
+            return Err("No native session is waiting for a preview commit.".to_string());
+        }
+
+        let preview = self
+            .pending_preview
+            .as_mut()
+            .filter(|preview| preview.epoch == epoch)
+            .ok_or_else(|| {
+                "The staged preview this deferral names is no longer pending.".to_string()
+            })?;
+        preview.commit_at_ms = now_ms().saturating_add(PREVIEW_COMMIT_DEADLINE_MS);
+        Ok(preview.commit_at_ms)
+    }
+
+    /// What a freshly mounted window needs to repaint a live session
+    /// (ADR 0151). `muted` and `paused` are the capture's, passed in rather than
+    /// read here, so this stays a pure read of one lock.
+    fn snapshot(&self, muted: bool, paused: bool) -> NativeSessionSnapshot {
+        NativeSessionSnapshot {
+            stage: self.stage.clone(),
+            session_id: self
+                .active_session
+                .as_ref()
+                .map(|session| session.id.clone()),
+            started_at_ms: self
+                .active_session
+                .as_ref()
+                .map(|session| session.started_at_ms),
+            muted,
+            paused,
+            pending_preview: self
+                .pending_preview
+                .as_ref()
+                .map(|preview| preview.event_payload()),
+        }
     }
 
     /// Takes the staged preview so exactly one path can commit it (ADR 0018).
@@ -453,6 +550,42 @@ pub fn abort_native_session(
     _state: State<'_, Mutex<NativeSessionState>>,
 ) -> Result<NativeSessionStatus, String> {
     abort_from_native(&app, "Capture aborted by native trigger.")
+}
+
+/// What a window that has just mounted asks for (ADR 0151).
+///
+/// One command rather than two, because two round trips can straddle a state
+/// change: a session that ends between them would restore a pill for a capture
+/// that is over.
+///
+/// The capture flags are read *before* the session lock is taken and never
+/// under it — the two mutexes are not held at the same time anywhere in this
+/// process and this is not the place to start. That order also puts the fresher
+/// read on the session, which is what decides the surface; mute and pause only
+/// decorate one it has already chosen.
+#[tauri::command]
+pub fn native_session_snapshot(
+    app: AppHandle,
+    state: State<'_, Mutex<NativeSessionState>>,
+) -> Result<NativeSessionSnapshot, String> {
+    let capture = super::capture::current_status_for_app(&app)?;
+    let state = state.lock().map_err(|error| error.to_string())?;
+    Ok(state.snapshot(capture.muted, capture.paused))
+}
+
+/// The overlay's edit surface says it is still open, so the runtime waits
+/// (ADR 0152).
+///
+/// The window renews this while the surface is open. It is deliberately not a
+/// "hold" that has to be released: whatever kills the window also stops the
+/// renewals, and the deadline then runs out on its own.
+#[tauri::command]
+pub fn defer_pending_transcription_preview_commit(
+    epoch: u64,
+    state: State<'_, Mutex<NativeSessionState>>,
+) -> Result<u64, String> {
+    let mut state = state.lock().map_err(|error| error.to_string())?;
+    state.defer_pending_preview_commit(epoch)
 }
 
 #[tauri::command]
@@ -779,22 +912,42 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
 /// There is no cancellation channel on purpose. The staged preview IS the
 /// cancellation state: a commit or an abort takes it, and a task that wakes to
 /// find it gone does nothing.
+///
+/// A deferral (ADR 0152) is read the same way — as a value on the preview, not
+/// as a message. The task wakes, finds the commit instant has moved, and sleeps
+/// to the new one. Nothing outside can leave this task waiting forever: the
+/// instant only ever moves by a full deadline at a time, so a window that stops
+/// asking is one deadline from being finished for.
 fn arm_preview_commit_deadline<R: Runtime>(app: &AppHandle<R>, session_id: String, epoch: u64) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(PREVIEW_COMMIT_DEADLINE_MS)).await;
+        let mut wake_at_ms = now_ms().saturating_add(PREVIEW_COMMIT_DEADLINE_MS);
+        loop {
+            tokio::time::sleep(Duration::from_millis(wake_at_ms.saturating_sub(now_ms()))).await;
 
-        let still_pending = app
-            .try_state::<Mutex<NativeSessionState>>()
-            .and_then(|state| {
-                state
-                    .lock()
-                    .ok()
-                    .map(|state| state.preview_epoch_is_pending(epoch))
-            })
-            .unwrap_or(false);
-        if !still_pending {
-            return;
+            let commit_at_ms = app
+                .try_state::<Mutex<NativeSessionState>>()
+                .and_then(|state| {
+                    state
+                        .lock()
+                        .ok()
+                        .and_then(|state| state.pending_preview_commit_at(epoch))
+                });
+            // Taken, aborted, or replaced by a later staging: nothing to do.
+            let Some(commit_at_ms) = commit_at_ms else {
+                return;
+            };
+
+            let now = now_ms();
+            if commit_at_ms <= now {
+                break;
+            }
+
+            super::runtime_log::record(format!(
+                "[WordScript] Native preview deadline deferred session_id={session_id} outcome=window_still_editing waited_ms={}",
+                commit_at_ms - now
+            ));
+            wake_at_ms = commit_at_ms;
         }
 
         super::runtime_log::record(format!(
@@ -1273,6 +1426,123 @@ mod tests {
         assert!(!state.preview_epoch_is_pending(epoch));
         let error = state.take_pending_preview(Some(epoch)).unwrap_err();
         assert!(error.contains("No native session is waiting"));
+    }
+
+    #[test]
+    fn a_deferral_pushes_the_commit_a_full_deadline_out() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let epoch = stage_preview(&mut state, "Final transcript");
+
+        let armed = state.pending_preview_commit_at(epoch).unwrap();
+        let deferred = state.defer_pending_preview_commit(epoch).unwrap();
+
+        assert!(
+            deferred >= armed,
+            "a deferral must not bring the commit closer: {deferred} < {armed}"
+        );
+        assert_eq!(state.pending_preview_commit_at(epoch), Some(deferred));
+        // The window is granted the ordinary window from now, not an open-ended
+        // hold — this is the arithmetic that makes a dead window's last
+        // deferral expire on its own (ADR 0152).
+        assert!(deferred.saturating_sub(now_ms()) <= PREVIEW_COMMIT_DEADLINE_MS);
+    }
+
+    /// The failure this exists against: a deferral in flight across a session
+    /// change extends the NEXT dictation's deadline. The epoch is the same guard
+    /// ADR 0134 gave the deadline itself, applied to the request that moves it.
+    #[test]
+    fn a_deferral_may_not_move_a_deadline_it_does_not_name() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("first_hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let first_epoch = stage_preview(&mut state, "First transcript");
+
+        state.abort("user cancelled");
+        state.start_capture("second_hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let second_epoch = stage_preview(&mut state, "Second transcript");
+        let second_commit_at = state.pending_preview_commit_at(second_epoch).unwrap();
+
+        let error = state.defer_pending_preview_commit(first_epoch).unwrap_err();
+
+        assert!(error.contains("no longer pending"));
+        assert_eq!(
+            state.pending_preview_commit_at(second_epoch),
+            Some(second_commit_at),
+            "the staging that is actually pending must keep its own deadline"
+        );
+    }
+
+    #[test]
+    fn a_deferral_finds_nothing_once_the_preview_is_committed() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let epoch = stage_preview(&mut state, "Final transcript");
+
+        state.take_pending_preview(None).unwrap();
+
+        assert!(state.defer_pending_preview_commit(epoch).is_err());
+        assert_eq!(state.pending_preview_commit_at(epoch), None);
+    }
+
+    #[test]
+    fn a_snapshot_carries_a_live_capture_back_to_a_window_that_missed_it() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+
+        let snapshot = state.snapshot(true, false);
+
+        assert_eq!(snapshot.stage, NativeSessionStage::Capturing);
+        assert_eq!(snapshot.session_id.as_deref(), Some("native-1"));
+        // The elapsed time a restored pill shows is the session's, not the
+        // remount's (ADR 0151).
+        assert!(snapshot.started_at_ms.is_some());
+        assert!(snapshot.muted);
+        assert!(!snapshot.paused);
+        assert!(snapshot.pending_preview.is_none());
+    }
+
+    #[test]
+    fn a_snapshot_offers_the_preview_that_is_still_waiting() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let epoch = stage_preview(&mut state, "Final transcript");
+
+        let snapshot = state.snapshot(false, false);
+        let preview = snapshot.pending_preview.expect("a staged preview");
+
+        assert_eq!(snapshot.stage, NativeSessionStage::Processing);
+        assert_eq!(preview.text, "Final transcript");
+        // The window needs the epoch to ask for more time (ADR 0152), and a
+        // restored window is exactly the one that never saw the event carrying
+        // it.
+        assert_eq!(preview.preview_epoch, epoch);
+    }
+
+    /// ADR 0134's obligation on the restore: once the deadline has taken the
+    /// preview, no window may be handed it back as something to commit.
+    #[test]
+    fn a_snapshot_after_the_deadline_committed_offers_nothing() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        let epoch = stage_preview(&mut state, "Final transcript");
+
+        state.take_pending_preview(Some(epoch)).unwrap();
+        state.complete_transcription("Final transcript");
+
+        let snapshot = state.snapshot(false, false);
+
+        assert_eq!(snapshot.stage, NativeSessionStage::Completed);
+        assert!(snapshot.pending_preview.is_none());
+        assert!(
+            snapshot.session_id.is_none(),
+            "a session that ended has nothing live for a window to repaint"
+        );
     }
 
     #[test]

@@ -53,6 +53,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a window that mounts mid-session repaints it, and an open edit surface keeps the runtime waiting (ADR 0151, ADR 0152)
+
+Runtime-ownership steps 4 and the decision step 1 had left to the owner.
+
+- **Reloading the overlay during a capture brings the pill back instead of
+  nothing.** Every input to that surface arrives as an event, so a window that
+  was not there when they fired rendered an empty overlay while the runtime kept
+  recording. It now asks `native_session_snapshot` on mount and repaints a live
+  capture or a staged preview — with the elapsed time the session actually has,
+  read from the runtime's session start rather than counted from the remount.
+- **It repaints what is live and re-reports nothing that is over.** A session
+  that ended while the window was away already reported itself to the window
+  that was there; a remount is not a second chance. For a preview the runtime's
+  deadline committed, that means no surface at all — which is exactly what a
+  committed clipboard-only preview looks like.
+- **Editing a preview for longer than ten seconds no longer loses the edit.**
+  The runtime's commit deadline could not tell a dead window from a user still
+  typing into one: at ten seconds it committed the *unedited* text and the edit
+  box vanished mid-sentence. The open surface now asks for another deadline
+  every three seconds. There is no hold to release — a window that dies stops
+  asking, and the ordinary deadline finishes the session exactly as before.
+- **A preview nobody is editing keeps its ten seconds.** Not answering is a
+  decision the runtime is allowed to make; the transcript reaches the clipboard,
+  the history and the disk either way.
+
 ### Changed — the cue stream stops being held open, and closing it does not answer where it plays (ADR 0150)
 
 - **The cue output stream is opened on demand and closed after 60 s idle.** It

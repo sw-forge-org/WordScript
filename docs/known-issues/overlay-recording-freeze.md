@@ -357,6 +357,20 @@ rather than delaying it, so `[ov-beat]` cannot report it. The third column is
 the capture window; see
 [dev-server-reloads-the-app-mid-session.md](dev-server-reloads-the-app-mid-session.md).
 
+### 2026-08-14 — one of the shapes is no longer this record's
+
+**A blank pill during a live capture, after a reload, is now a restored pill**
+(ADR 0151). The overlay asks the runtime what is running when it mounts, so the
+third row of the table above stops *looking* like a freeze from the user's side:
+the capture keeps running and the pill comes back with the elapsed time the
+session actually has.
+
+**This closes nothing here.** It removes a confusion, not a cause: a reload was
+already distinguishable from a stall by the register triple, and the freeze this
+record is about — the one with a heartbeat gap in it — is untouched. What
+changes is that "the overlay went blank mid-recording" is no longer a report
+that could mean either, because the reload case now repaints itself.
+
 ## Resolution
 
 Open, pending measurement. Remaining order:

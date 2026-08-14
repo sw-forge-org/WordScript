@@ -33,7 +33,7 @@ updated; a kick-off is spent when its unit closes.
 | **GUI port** | 2026-08-04 | **Leg 13 open**; Legs 0–12 closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
-| **Runtime ownership** | 2026-08-13 | **Steps 1, 2, 5, 3 and 7 done 2026-08-14.** Two open; step 6 waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
+| **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
@@ -157,9 +157,9 @@ day** when the last finding turned out not to be a measurement problem at all.
 and recovery. It does not own the insert, and the instruments cannot see where
 it does not.
 
-Owns ADR 0133, 0134 and 0150 onward for its five records — 0135–0149 went to
-Context objects as a range the same week, which is why step 7's decision is 0150
-and not 0138.
+Owns ADR 0133, 0134 and 0150–0152 for its five records, and 0153 onward as they
+come — 0135–0149 went to Context objects as a range the same week, which is why
+step 7's decision is 0150 and not 0138.
 
 **Step 1 was silent data loss and its code landed 2026-08-14.** Every insert
 call site is an `invoke` from `OverlayWindow.tsx`; after `preview ready` the
@@ -171,9 +171,26 @@ mid-preview, and one transcript lost outright to an app restart. ADR 0134 gives
 the runtime a 10 s deadline; the overlay keeps commit and abort. **The
 acceptance run passed the same evening in the native host, in a run where the
 overlay rendered no frames at all** — two dictations reached all three artifacts
-10.0 s after their preview. Still owed: one healthy session logging
-`path=frontend`. **Step 2 is done**: one constant for the watcher and the test
-exclude, 20,393 inotify watches down to 576.
+10.0 s after their preview. **Its second half was paid by ordinary use the same
+day**: eight healthy sessions logged `path=frontend`, so the deadline is
+demonstrably not the path a working window takes. **Step 2 is done**: one
+constant for the watcher and the test exclude, 20,393 inotify watches down to
+576.
+
+**Step 4 landed the same day, and so did the decision step 1 had left to the
+owner.** The overlay asks the runtime what is running when it mounts (ADR 0151)
+and repaints a live capture or a staged preview — and deliberately re-reports
+nothing about a session that ended while it was away, because the path that
+ended it already owed the surface that reported it. **The deadline then fired
+under a window that was demonstrably alive**, which the step's own run sheet had
+pre-registered as proof of a mis-sized deadline. It was not: the log shows a
+window alive and idle, i.e. a user who did not answer in ten seconds, which is a
+third reading the sheet did not have. The answer built is ADR 0152 — an open
+edit surface renews the deadline every 3 s, with no release, so a window that
+dies mid-edit is still finished for on the ordinary schedule. **It ran in the
+product the same afternoon**: a session logged `Native preview deadline
+deferred` at the exact instant the old code would have committed, and committed
+10.0 s after the surface stopped asking.
 
 The rest is why it stayed invisible. The capture cadence timestamps itself
 after taking the app's own mutex, so a suspended stream and a self-blocked
@@ -214,6 +231,10 @@ Speech track's F2.
 waits on one natural `Short` capture, at about 1.5 % of captures, and every
 earlier event in the record is unreadable by construction: they were measured by
 the instrument that could not tell the two hypotheses apart.
+`scripts/read-capture-event.sh` applies ADR 0133's pre-registered reading to
+whatever the log holds, and refuses the three events already in the record for
+exactly that reason — the wait is now one command rather than a procedure
+somebody has to remember.
 
 **It shares `capture-loses-half-the-recording.md` with Core hardening.** That
 track holds the capture *loss* as one of its five invisible-damage records;
