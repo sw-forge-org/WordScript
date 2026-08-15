@@ -1166,6 +1166,21 @@ Status: Proposed | Accepted | Superseded by NNNN
   available for a future surface to bind to by mistake. All four defect
   directions of the sweep now report zero.
 
+- [0156](0156-a-readout-names-a-rule-with-the-readers-own-words-and-an-id-it-cannot-resolve-stays-an-id.md):
+  **a readout names a rule with the reader's own words, and an id it cannot
+  resolve stays an id.** The panel plane is the row class no instrument had
+  reached — Leg 11's and Leg 12's walks never opened a panel, so three classes
+  returned zero samples because nothing rendered them. Opened and measured at
+  800 × 608 CSS px, the plane is at most two lines everywhere except the answer
+  panel's foot, which drew **one fired rule as `dictionary:<id>` across four
+  lines of a 241 px foot** under a comment reading *the rules that fired, BY
+  NAME*. `rule_label` returns an entry's id whenever it has one, so the ids are
+  the runtime's correct answer and the join to the reader's words is the
+  screen's job; an id with no entry behind it is printed unchanged rather than
+  given an invented name. **The instrument counted padding as a line** before it
+  was corrected and calibrated — the third time a measurement tool here has
+  produced the class of finding it was built to detect.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -702,6 +702,45 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
         expansion: item.expansion,
       })),
     [profile?.snippet_entries],
+  );
+
+  /**
+   * A FIRED RULE IS NAMED WITH THE READER'S OWN WORDS, NOT WITH ITS ID.
+   *
+   * `applied_rules` carries `dictionary:<entry id>` and `snippet:<entry id>`:
+   * `transform.rs`'s `rule_label` returns the entry's id whenever it has one
+   * and only slugifies the phrase when it does not. The foot below printed that
+   * string verbatim under a comment that said *the rules that fired, BY NAME* —
+   * a comment asserting a control (ADR 0090), one plane below where Leg 12
+   * found the last one.
+   *
+   * MEASURED, BECAUSE THE WIDTH AND THE STRING HAVE ONE CAUSE (ADR 0092). One
+   * fired rule drew `dictionary:curated-founder-ops-dict-wordscript` across
+   * **four lines** of a 241 px foot at the 800 px window this plane is normally
+   * read at, beside `Close`; the same panel at 992 px drew it on one. Naming
+   * the rule is what fixes both, and shortening the id would have fixed
+   * neither.
+   *
+   * AN UNKNOWN ID IS PRINTED AS IT CAME. A rule can fire from an entry that is
+   * no longer in the profile being read — the analysis is a request over the
+   * draft — and inventing a name for it would be this cluster's own defect:
+   * plausible text that is wrong.
+   */
+  const namedRule = useCallback(
+    (rule: string): string => {
+      const [kind, ...rest] = rule.split(":");
+      const id = rest.join(":");
+      if (kind === "dictionary") {
+        const entry = profile?.dictionary_entries.find((item) => item.id === id);
+        return entry ? `“${entry.phrase}”` : rule;
+      }
+      if (kind === "snippet") {
+        const entry = profile?.snippet_entries.find((item) => item.id === id);
+        return entry ? `“${entry.label || entry.trigger}”` : rule;
+      }
+      return rule;
+    },
+    [profile?.dictionary_entries, profile?.snippet_entries],
   );
 
   /**
@@ -1471,14 +1510,16 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                               body: <p>{analysis?.preview.output || "Nothing yet."}</p>,
                             },
                           ]}
-                          /* THE RULES THAT FIRED, BY NAME. An empty run is
+                          /* THE RULES THAT FIRED, BY NAME — and `namedRule` is
+                             what makes that sentence true rather than a claim
+                             about the id the runtime hands over. An empty run is
                              stated rather than left blank: "nothing applied" is
                              the answer somebody checking a rule they just wrote
                              is most often looking for, and a blank foot reads
                              as a surface that did not run. */
                           foot={
                             analysis?.preview.applied_rules.length
-                              ? analysis.preview.applied_rules.join(" · ")
+                              ? analysis.preview.applied_rules.map(namedRule).join(" · ")
                               : "No rule applied to this sample."
                           }
                         />

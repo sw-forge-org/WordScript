@@ -753,6 +753,57 @@ describe("Profiles, wired", () => {
     expect(patch.mock.calls[0][0].active_text_profile_id).toBe("support");
   });
 
+  /* THE ANSWER NAMES THE RULES IT RAN, WHICH IS WHAT ITS OWN COMMENT CLAIMED
+     WHILE IT PRINTED `dictionary:d1`. `rule_label` in `transform.rs` returns an
+     entry's id whenever it has one, so the ids are what the runtime hands over
+     and the join to the reader's own words is this screen's job. Measured in
+     the native host before it was written: one fired rule drew its id across
+     four lines of a 241 px foot at the 800 px window (Leg 13b). */
+  it("names a fired rule with the reader's own words and leaves an unknown id alone", async () => {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "resolve_capture_budget") return BUDGET;
+      if (command === "get_profile_health") return { level: "green", flags: [] };
+      if (command === "analyze_communication_style") return STYLE_ANALYSIS;
+      if (command === "analyze_text_rules") {
+        return {
+          blocking: false,
+          issues: [],
+          preview: {
+            input: "send the KA closing",
+            output: "send the Kundenanfrage Best regards,\nFelix",
+            /* One of each: an entry this profile holds, and one it does not.
+               An id with no entry behind it is printed as it came — inventing a
+               name for it would be the plausible-and-wrong this surface exists
+               against. */
+            applied_rules: ["dictionary:d1", "snippet:s1", "dictionary:gone-with-another-profile"],
+          },
+          transcription_bias: {
+            dictionary_terms: [],
+            stt_hints: [],
+            ignored_stt_hint_lines: [],
+            over_limit_stt_hint_lines: [],
+            manual_overrides_applied: [],
+            effective_stt_hints_source: "profile terms",
+          },
+          profile_context: { accepted: [], dropped: [], used_chars: 0, max_chars: 400 },
+          vocabulary_repair: { repairable: [], too_short: [], min_chars: 4 },
+          dictionary_count: 1,
+          snippet_count: 1,
+        };
+      }
+      return undefined;
+    });
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config() })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Check against a sample/ }));
+
+    const foot = await screen.findByText(/gone-with-another-profile/);
+    expect(foot.textContent).toContain("“KA”");
+    expect(foot.textContent).toContain("“standard closing”");
+    expect(foot.textContent).not.toContain("dictionary:d1");
+    expect(foot.textContent).not.toContain("snippet:s1");
+  });
+
   it("puts an analysis warning under the rule that caused it", async () => {
     invoked.mockImplementation(async (command: string) => {
       if (command === "resolve_capture_budget") return BUDGET;

@@ -30,7 +30,7 @@ updated; a kick-off is spent when its unit closes.
 
 | Track | Opened | State | Sequence | Start a session with |
 | --- | --- | --- | --- | --- |
-| **GUI port** | 2026-08-04 | **Leg 13b open**; Legs 0–13a closed. Leg 13 split 2026-08-14 | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
+| **GUI port** | 2026-08-04 | **Leg 14 open**; Legs 0–13b closed. Leg 13 split 2026-08-14 and both halves closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
@@ -45,12 +45,27 @@ writing the next leg's brief into it before it stops. Rests on ADR 0054 (the
 port overwrites, it does not migrate) and ADR 0055 (the gallery is the
 acceptance surface).
 
-Owns ADR 0054–0064, 0074–0077, 0082, 0085–0093, 0103, 0104, 0111, 0153.
+Owns ADR 0054–0064, 0074–0077, 0082, 0085–0093, 0103, 0104, 0111, 0153, 0156.
 
-**Leg 13 split on 2026-08-14.** Its first item — the caller sweep in both
-directions over the whole tree — closed as **Leg 13a**, and **Leg 13b is open**
-with the second: the row classes no instrument has reached, the panel plane where
-the port designs rather than carries.
+**Leg 13 split on 2026-08-14 and both halves are closed.** Its first item — the
+caller sweep in both directions over the whole tree — closed as **Leg 13a**; the
+second closed as **Leg 13b** on 2026-08-15: the row classes no instrument had
+reached, the panel plane where the port designs rather than carries.
+
+**13b measured the plane and found one defect, and its shape is the interest.**
+55 samples at 800 × 608 CSS px: everything draws one or two lines except the
+sample answer's foot, which printed `dictionary:<entry id>` across **four lines
+of a 241 px foot** under a comment reading *the rules that fired, BY NAME*. The
+ids are the runtime's correct answer — `rule_label` returns an entry's id
+whenever it has one — so the join to the reader's words is the screen's
+(ADR 0156), and an id with no entry behind it is printed unchanged rather than
+given an invented name. **The panel plane also turned out to carry the narrowest
+text column on the surface**, 241–292 px against ADR 0092's 436 px for a stacked
+row, which is a budget nobody had written down. **Two classes are still
+unmeasured** — `.ws-edit-issues p` and `.ws-flag-what p` need runtime state the
+owner's profile does not have, and that is a population fact rather than a clean
+bill. **13b also adopted the two commits with no leg behind them**, `b330815`
+and `f1b2497`, after three legs had been asked about them.
 
 **13a swept a channel no ADR had asked about and it is the reason it owns 0153.**
 ADR 0089, 0093 and 0103 are all about `invoke`, the frontend calling the runtime;
@@ -65,10 +80,11 @@ insert is its. **It was taken on 2026-08-15 and the channel is removed** (ADR
 0154), so all four defect directions of the sweep now report zero. The sweep is
 `npm run sweep:commands`.
 
-**Two commits on this track have no leg behind them.** `b330815` (the sidebar's
-second width, ADR 0111) landed on 2026-08-11, and the 2026-08-14 `Context.tsx`
-wiring is the second. Neither is one of Leg 13's items. Leg 13b either adopts
-them or files them as their own leg.
+**The two commits with no leg behind them were adopted by Leg 13b** on
+2026-08-15 — `b330815` (the sidebar's second width, ADR 0111) and `f1b2497` (the
+2026-08-14 `Context.tsx` wiring). Neither gets a retroactive leg row, because a
+row is a session. `f1b2497`'s decision half stays the context objects track's:
+the relay owns the surface, that track owns ADR 0137.
 
 ### Core hardening
 
@@ -180,11 +196,14 @@ and recovery. It does not own the insert, and the instruments cannot see where
 it does not.
 
 Owns ADR 0133, 0134, 0150–0152 for its five records, **0154** for the insert
-channel the GUI port's sweep handed it, and 0155 onward as they come — 0135–0149
+channel the GUI port's sweep handed it, and **0155** for the overlay that stops
+being unmapped (`be74233`, 2026-08-15) — 0135–0149
 went to Context objects as a range the same week, which is why step 7's decision
 is 0150 and not 0138, and **0153 went to the GUI port on 2026-08-14** because
-that leg filed first. "Onward as they come" is a direction of travel, not a
-reservation.
+that leg filed first, as **0156 did on 2026-08-15**. "Onward as they come" is a
+direction of travel, not a reservation, and the number line is corrected here by
+whoever notices — **0155's own record is still owed on this track's page**, and
+it is that track's to write.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
 swept the event channel and found `wordscript-native-insert` emitted from three

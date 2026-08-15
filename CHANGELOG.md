@@ -53,6 +53,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the answer that printed rule ids under a comment saying it printed names (ADR 0156)
+
+- **A fired rule is named with the words you wrote it in.** *Check against a
+  sample* listed what applied as `dictionary:curated-founder-ops-dict-wordscript`
+  — the entry's internal id, because `rule_label` returns an id whenever an entry
+  has one — under a comment reading *the rules that fired, BY NAME*. It now reads
+  `“KA” · “standard closing”`, resolved against the profile's own entries. An id
+  with no entry behind it is printed unchanged: a rule can fire from an entry the
+  profile no longer holds, and inventing a name for it would be the plausible-
+  and-wrong this surface exists against.
+- **Measured rather than guessed, and the width was the symptom.** One fired rule
+  drew four lines in a 241 px foot beside `Close` at the 800 × 608 CSS px window
+  the surface is normally read at; the same string at 992 px drew one. Shortening
+  the id would have fixed neither — the string and the width have one cause
+  (ADR 0092).
+- **The panel plane has a measured text column for the first time**: 241–292 px,
+  the narrowest on the surface, against the 436 px ADR 0092 measured for a
+  stacked row. It was the last row class no instrument had reached.
+
 ### Fixed — the black frame at every recording start, which was the window being mapped (ADR 0155)
 
 - **The overlay no longer flashes black when a recording starts.** Every session

@@ -1,8 +1,9 @@
 # WordScript — GUI port relay
 
-Opened 2026-08-04. **Active — Legs 0 through 13a are CLOSED and Leg 13b is
-open.** Leg 13 split on 2026-08-14: 13a is the caller sweep, done; 13b is the
-panel plane, which is the half where the port designs rather than carries.
+Opened 2026-08-04. **Active — Legs 0 through 13b are CLOSED and Leg 14 is
+open.** Leg 13 split on 2026-08-14 and both halves are done: 13a was the caller
+sweep, 13b the panel plane — the half where the port designs rather than
+carries, and the last row class no instrument had reached.
 Its brief is at the foot of this page; the page you paste to start it is
 [`gui-port-relay-kickoff.md`](gui-port-relay-kickoff.md). Two other tracks work
 in the same tree — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so stage
@@ -171,9 +172,14 @@ Leg 13 was open, and it is neither of Leg 13's two items. The 2026-08-14
 `Context.tsx` wiring is the second: four `Open decision` badges removed, three
 drawn states connected, three cases added to `screens.test.tsx`, recorded in
 [`context-objects.md`](context-objects.md) so it is not rediscovered as that
-track's work. Neither claimed a leg, so neither appears in a row. **Leg 13b
-either adopts them into its record or files them as their own leg**; do not
-leave them unattributed a third time.
+track's work. Neither claimed a leg, so neither appears in a row.
+
+**Both were adopted by Leg 13b on 2026-08-15**, after three legs had been asked
+about them. They are this track's work and they sit in its record now rather
+than in nobody's. **`f1b2497`'s decision half is not this track's** — ADR 0137
+is the context-objects track's and stays there; the relay owns the surface, that
+track owns the reason. Neither gets a retroactive leg row: a row is a session,
+and inventing two would make the log disagree with what happened.
 
 ## Leg log
 
@@ -207,7 +213,8 @@ absent leg — it is a leg whose record names its work and not its hash.
 | 11 | 2026-08-11 | | The copy budget **measured** across 123 rows and wrong in all four places it was written. ADR 0092, 0093 |
 | 12 | 2026-08-11 | | The three unmeasured row classes; the sweep run the other way found a caller with no command. ADR 0103, 0104 |
 | 13a | 2026-08-14 | | The sweep run over both channels of the seam; the `invoke` half clean, the event half not. ADR 0153 |
-| **13b** | **open** | | The row classes the panel plane draws |
+| 13b | 2026-08-15 | | The panel plane opened and measured; the answer that printed ids under a comment saying names. ADR 0156. Adopts `b330815` and `f1b2497` |
+| **14** | **open** | | Whatever the panel plane's measured column changes about the copy budget, and the surfaces it has not been asked about |
 
 Legs 1 through 8 are closed and their full records are in
 [`../archive/gui-port-relay-leg-records.md`](../archive/gui-port-relay-leg-records.md).
@@ -883,155 +890,231 @@ capture ran during them and no measurement was contaminated — which is the che
 `CLAUDE.md`'s no-heavy-builds rule actually asks for, rather than a promise not
 to build.
 
-## The prompt for Leg 13b
+### Leg 13b — the panel plane opened, and a comment that had been true about nothing
 
-You are picking up WordScript after Leg 13a. Work in the repo root on `main`. Do
+**ITEM 2 IS DONE AND LEG 13 IS CLOSED.** One ADR (0156). One commit. The two
+orphan commits are adopted, which was item 2's other half.
+
+**THE PLANE IS CLEAN EXCEPT IN ONE PLACE, AND THAT IS THE HEADLINE.** 55 samples
+across six sub-tabs, both answer panels, the head menu and the row menus, at
+**800 × 608 CSS px, dpr 1.25** — Leg 12's window, and the one this plane is
+normally read at. `.ws-edit-question` draws one line at 22–37 characters.
+`.ws-edit-note` draws two at 50–59, which is the drawing's norm (ADR 0092).
+`.ws-menu button` draws one. `.ws-edit-issues p` and `.ws-flag-what p` were
+**not reached**, and that is a population fact rather than a zero: the analysis
+returned no issue for these rules and this profile carries no health flag. They
+are still unmeasured and the next leg should say so rather than inherit a clean
+bill.
+
+**THE ONE DEFECT IS A COMMENT ASSERTING A CONTROL, ONE PLANE BELOW WHERE LEG 12
+FOUND THE LAST ONE.** The sample answer's foot is written under
+*"THE RULES THAT FIRED, BY NAME"* and printed
+`dictionary:curated-founder-ops-dict-wordscript` — **four lines in a 241 px
+foot, beside `Close`, for ONE fired rule.** `transform.rs`'s `rule_label`
+returns an entry's id whenever it has one, so `applied_rules` is a list of ids
+and the screen printed them verbatim. Fixed on the screen that holds the
+entries, in the reader's own words (ADR 0156); an id with no entry behind it is
+printed unchanged, because a rule can fire from an entry the profile no longer
+holds and inventing a name for it is this repository's own failure class. The
+new case in `Profiles.test.tsx` was verified to FAIL first, with exactly the
+string the native host produced.
+
+**THE PANEL PLANE HAS THE NARROWEST TEXT COLUMN ON THE SURFACE AND NOBODY HAD
+WRITTEN IT DOWN.** 241–292 px, against the 436 px ADR 0092 measured for a
+stacked row and the 400–470 px it measured for a badge row. A copy budget for
+this plane is quoted against **that**, and the number moves with the pane rather
+than with the window: at 992 px the panel goes two-column and each column is
+**179 px**, which is narrower than the single column at 800 px. That inversion
+is the container query working, and it is why `Reaches the recognizer (4)` — a
+26-character micro-caps label — draws two lines on the WIDE window and one on
+the narrow one.
+
+**MY INSTRUMENT MANUFACTURED A FINDING BEFORE IT MEASURED ONE. THIRD TIME IN
+THIS REPOSITORY.** Its first line count was `height / line-height`, which is
+right for `.ws-row-hint` — Leg 11's and Leg 12's class, which has neither
+padding nor a border — and wrong for `.ws-raw-foot`, which has both. It reported
+a one-line foot as two, and I nearly wrote that up. It counts the content box
+now, and it was calibrated on a known short and a known long string before any
+number out of it was believed: 3 characters → 1 line, 411 characters → 10 at
+250 px. **Two more of its own artefacts were caught the same way**: it looked
+for a menu entry in the tick that opened the menu and reported four panels as
+unreachable, and a dynamic `import()` handed it a cached module so run 3
+measured run 2's code and reported it as a fresh result.
+
+**Findings for Leg 14.**
+
+1. **THE OWNER RESIZED THE WINDOW MID-MEASUREMENT, FROM 800 TO 992 CSS px.** It
+   is why two of the numbers above exist at two widths. Do not resize it back —
+   the geometry is ADR 0100's and somebody is working at the machine. Price a
+   narrow state by **cloning the node into a box of that width**, which is
+   ADR 0092's technique and what the corrected instrument does.
+2. **`.ws-edit-issues p` AND `.ws-flag-what p` ARE STILL UNMEASURED.** Both need
+   runtime state this profile does not have — an analysis issue, and a health
+   flag. `Profiles.test.tsx` already builds both in jsdom, which cannot report a
+   wrap; reaching them in the host needs a profile deliberately given a
+   conflicting rule. That is a job, not an accident, and it is worth one.
+3. **THE PANEL PLANE IS ALSO IN `Context.tsx` AND WAS NOT WALKED.** `RowMenu` is
+   mounted there (`src/screens/Context.tsx:203`) over `contextData.ts`, a
+   fixture. The walk stayed in Profiles because that is where every panel with
+   real data lives; Context's menu has never been measured either.
+4. **A THREE-DAY-OLD `port:diff` BROWSER WAS HOLDING 9333.** Started 2026-08-12
+   15:15, still alive with dozens of renderers at 16:29 on 2026-08-15 — the
+   stale-browser trap Leg 12 recorded as finding 6, three days on instead of ten
+   hours. `port:diff` did not need to run this leg (Profiles left the gallery in
+   Leg 8, and nothing here touched a gallery screen), so it was left alone
+   rather than killed on the way past. **Check `ss -ltnp | grep 9333` before
+   your first batch** and kill the root PID.
+5. **THE RUST BASELINE IS CARRIED, NOT MEASURED, AND IT MAY HAVE MOVED.** 13a
+   measured 807 passed / 5 ignored and 15 warnings on 2026-08-15 — and
+   `be74233` landed Rust **after** that, so the number is older than the tree.
+   Nothing here touched Rust, so no `cargo` command ran. Re-measure before you
+   quote it.
+6. **ADR 0155 IS NOT ON THE BOARD OR ON ITS OWN TRACK'S PAGE.** It landed with
+   `be74233` on 2026-08-15 (the overlay stops being unmapped) and
+   `IMPLEMENTATION.md` still reads *"0155 onward as they come"* for the runtime
+   ownership track, whose page carries six records and not this seventh. I
+   corrected the board's number line only — the record is that track's to write.
+
+**Checks at the close.** `npm test` **542 passed across 42 files**, against the
+541/42 baseline — **+1 is this leg's own case and nothing else moved**.
+`npm run build` green in 2.16 s. No `cargo` command: no Rust changed. **The
+runtime log stood at 35713 lines before the checks and 35713 after**, so nothing
+was measured while they ran. Across the whole leg it moved 35666 → 35713, and
+all 47 lines are `[trigger] event=register outcome=skipped_idempotent` from the
+webview reloads the instrument's edits caused, plus the tail of a session that
+predates it. **No capture ran, so runtime ownership's step 6 lost nothing** —
+`grep -c "verdict=" `over the window returns 0. Load ran 1.13–1.22 and the suite
+did not flake.
+
+## The prompt for Leg 14
+
+You are picking up WordScript after Leg 13b. Work in the repo root on `main`. Do
 not create a branch. **Four other tracks work in the same tree** — see
 [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run `git status` and
 `git log --oneline -5` before you start, and stage your own paths. Never
 `git add -A`.
 
-**Leg 13 split.** 13a was the caller sweep and it is struck. You are item 2 and
-only item 2: **the row classes no instrument has reached — the panel plane,
-where the port designs rather than carries.**
+**Leg 13 is closed, both halves.** 13a swept the seam, 13b opened the panel
+plane. Your leg is not a continuation of either; it is the first one in a while
+with a choice in front of it, and the choice is item 1 below.
 
 ### What is already true
 
-**The seam is swept and clean, so it is not your job.** `npm run sweep:commands`
-reports both channels: caller with no command, command with no caller,
-unresolvable call sites, listener with no emitter, emitter with no listener.
-Today it is `direction 1: 0 | direction 2: 5 | events 0 | 0` — **all four defect
-directions at zero**, and the five are the orphans ADR 0089 and ADR 0093 triaged.
-`wordscript-native-insert` was the fifth column's one entry and was removed on
-2026-08-15 (ADR 0154). **Re-run the sweep if you add an `invoke` or a `listen`;
-do not rebuild it.**
+**The panel plane is measured and has a number.** 241–292 px of text column at
+an 800 px window, 179 px per column at 992 px where the container query goes
+two-column — **the narrowest text on the surface**, against the 436 px ADR 0092
+measured for a stacked row. Everything on it draws one or two lines. The one
+defect is fixed (ADR 0156): the sample answer printed `dictionary:<id>` under a
+comment saying it printed names.
 
-**A `tauri dev` host was running throughout 13a and may still be.** Writing
-anything under `src-tauri/` rebuilds and restarts the whole app — the process
-dies, the hotkeys go with it, and a dictation in flight is interrupted. The
-runtime ownership track's step 6 is waiting on a natural `Short` capture at about
-1.5 % of captures, and a restart costs whatever was accruing. Say whether a host
-is running before you touch native, and batch the edits.
+**The seam is swept and clean.** `npm run sweep:commands` reports all four
+defect directions at zero. Re-run it if you add an `invoke` or a `listen`; do
+not rebuild it.
 
-**The suite is 541 across 42 files**, not Leg 12's 474 across 39. The difference
-is other tracks' 2026-08-14 work, not a regression. **`cargo test` is 807 passed
-/ 5 ignored and `cargo check` 15 warnings**, both re-measured on 2026-08-15.
+**Two commits are no longer unattributed.** `b330815` and `f1b2497` were adopted
+into Leg 13b's record. Do not re-litigate them.
 
-**Every copy budget is a budget at a CSS viewport** (ADR 0104). The workspace
-lays out at **800 CSS px** while `tauri.conf.json` declares 1000 and a minimum of
-880, because the display scale is 1.25 — the config's pixels and the
-stylesheet's are different units. The floor moved from 12 characters to 10
-between two passes at the same window.
+**The suite is 542 across 42 files** — 541 was 13a's baseline and the +1 is
+13b's own case. **The Rust baseline is stale**: 807 passed / 5 ignored and 15
+warnings were measured on 2026-08-15 by 13a, and `be74233` landed Rust after
+that. Re-measure before quoting it; nothing in 13b touched Rust.
+
+**A capture measurement is still running in ordinary use.** Runtime ownership's
+step 6 waits on one natural `Short` capture at about 1.5 % of captures, and
+`scripts/read-capture-event.sh` reports `3 Short capture(s): 0 readable, 3
+predating the instrument` as of 2026-08-15 16:29. Writing under `src-tauri/`
+restarts the app and costs whatever was accruing. **Prove you did not disturb it
+rather than promising not to:** `wc -l ~/.config/WordScript/logs/wordscript-runtime.log`
+before and after your checks, then read what landed. 13b's HMR reloads moved it
+by 47 lines, every one of them a trigger re-registration, and no capture ran.
 
 ### Read this first
 
-`docs/tracks/gui-port-relay.md` — Leg 13a's record above is your starting state,
-and its findings 1 through 3 are the ones that will cost you. Then ADR 0092, ADR
-0104, ADR 0103, `CLAUDE.md` and `docs/spec/SPEC.md`.
+`docs/tracks/gui-port-relay.md` — Leg 13b's record above is your starting state
+and its six findings are what will cost you. Then ADR 0092, ADR 0104, ADR 0156,
+`CLAUDE.md` and `docs/spec/SPEC.md`.
 
 ### The order
 
-1. **Whatever the row instrument reaches that Leg 12's did not.** It walked
-   views, sections, sub-tabs, `<details>` jobs and the two Add panels. It did
-   **not** open a row menu, a `ConfirmPanel`, a `FlagPanel`, an `AnswerPanel`,
-   the export answer, or any error state — `.ws-edit-question`,
-   `.ws-edit-issues p` and `.ws-flag-what p` returned zero samples because
-   nothing on the walk rendered them. Those are the next unmeasured classes.
-2. **Settle the two commits with no leg behind them.** `b330815` — the sidebar's
-   second width, ADR 0111 — and the 2026-08-14 `Context.tsx` wiring recorded in
-   `docs/tracks/context-objects.md`. Adopt both into your record or file them as
-   their own leg. This is the third leg they have been asked about.
+1. **Pick ONE of the three the measurement leaves open, and say why in your
+   record.** They are not equal and none of them is urgent:
+   - **The two unmeasured classes.** `.ws-edit-issues p` and `.ws-flag-what p`
+     have never been reached by any instrument, in any leg. Both need runtime
+     state the owner's profile does not have — an analysis issue and a health
+     flag — so reaching them means building a profile that has them, in the
+     host. This is the honest completion of 13b and the only item that closes a
+     hole rather than opening one.
+   - **`Context.tsx`'s row menu**, mounted at line 203 over a fixture and never
+     measured. Cheaper, and it is the same class of surface.
+   - **What the panel plane's 241 px does to the copy budget.** ADR 0092 quotes
+     a budget per control; nothing quotes one for a panel. This is a writing
+     job, not a measuring one, and it is the one that can wait longest.
+2. **Whatever you pick, read the drawing before you call anything a defect** —
+   and on this plane there is no drawing, so the ADR is the drawing: 0082 for
+   the editor and the answer, 0085 for the flag panel, 0156 for what a readout
+   may print.
 
 ### The rules you will be judged on
 
-**READ THE DRAWING FOR THE SCREEN BEFORE YOU CALL ANYTHING A DEFECT.** Leg 12
-had `Ceiling` queued as a port defect — a hint whose first token is the badge
-beside it — and `demo.js` draws exactly that, on purpose. ADR 0092's class needs
-the control to be **width-auto AND runtime-filled**; a badge quoting five
-characters is not it.
+**AN INSTRUMENT ASSERTED ONLY TO RUN IS NOT TESTED.** 13b's counted padding as a
+line and reported a one-line foot as two; 13a's produced three false findings
+before it was trusted. Calibrate yours against something you already know —
+13b used a 3-character string that must report one line and a 411-character
+string that must report ten — and make it fail on purpose before you believe a
+zero out of it.
 
-**A CONTROL ASSERTED ONLY TO EXIST IS NOT TESTED.** The overlay's retry test
-passed for eight legs while the retry did nothing, because it never pressed the
-button. Where a control's whole purpose is the call it makes, press it — and
-check the new test FAILS before you keep it.
-
-**AN INSTRUMENT ASSERTED ONLY TO RUN IS NOT TESTED EITHER**, which is 13a's
-version of the same sentence. It reproduced this cluster's failure class three
-times before it was trusted, twice reporting findings that were pure artefact.
-Make yours report something you already know is there before you believe a zero
-out of it.
+**A CONTROL ASSERTED ONLY TO EXIST IS NOT TESTED.** Press it, and check the new
+test FAILS before you keep it.
 
 **MEASURE THE BUDGET, DO NOT CARRY IT**, and quote the viewport with it:
-`window.innerWidth` and `devicePixelRatio`, not the number in `tauri.conf.json`.
+`window.innerWidth` and `devicePixelRatio`, never the number in
+`tauri.conf.json`. The two differ by the 1.25 display scale.
 
-**A COMMENT ASSERTING A CONTROL IS INDISTINGUISHABLE FROM THE CONTROL** (ADR
-0090). Leg 12 found one in `shell.css` claiming a foot never wraps, then wrote a
-replacement that was also wrong until it measured it.
+**PRICE A CONDITIONAL STATE BY CLONING, NEVER BY RESIZING THE WINDOW.** The
+geometry is ADR 0100's and somebody is working at the machine.
 
-**STRIKE THE ITEM WHEN YOU DO IT.** Leg 13a struck item 1 of two.
+**A COMMENT ASSERTING A CONTROL IS INDISTINGUISHABLE FROM THE CONTROL**
+(ADR 0090). Two legs running have now found one that was false.
+
+**STRIKE THE ITEM WHEN YOU DO IT.**
 
 ### What you must NOT do
 
-- **Do not rewrite the prototype's copy.** ADR 0092 lists the rows drawing three
-  lines and they are the drawing's.
-- **Do not rewrite Profiles → Style either**, though it IS port-authored (Leg 12
-  finding 3). Its rows draw 7, 5 and 7 lines at 86–226 px, and that is the width
+- **Do not rewrite the prototype's copy**, and do not rewrite Profiles → Style
+  either — its rows draw 7, 5 and 7 lines at 86–226 px and that is the width
   question ADR 0104 hands to whoever settles ADR 0100.
-- **Do not touch the window geometry.** ADR 0100 is the core-hardening track's
-  and is explicitly a planning direction.
-- **Do not widen the Context opening** beyond the drawn gesture lifted on
-  2026-08-11 — ask.
+- **Do not touch the window geometry.** ADR 0100 is the core-hardening track's.
+- **Do not widen the Context opening** beyond the drawn gesture — ask.
 - **Do not mount any of the six undecided surfaces** (ADRs 0060–0064 plus the
   roadmap candidate). `ia.test.tsx`'s last case asserts none is mounted.
-- **Do not dispose of `wordscript-native-insert`.** ADR 0153 records it; the
-  insert belongs to the runtime ownership track.
-- **Do not edit an existing ADR.** Append-only. **0153 is taken by this track**
-  and the runtime ownership board claims 0153 onward, so it takes 0154 — the
-  number on this page has gone stale four legs running. Grep the whole tree,
-  source and commit messages included.
-- **Do not rename the `settings` window label** without being asked.
-- **Do not migrate a config without a backup path.** `core::backup` is the
-  pattern.
-- **The overlay is still rule 5.**
-- **Leave a temporary instrument out of the commit** and grep for it. Leg 12's
-  was `src/dev/rowAudit.ts` with one hook in `WorkspaceWindow.tsx`, and it needs
-  a timestamped run guard or Fast Refresh interleaves two walks.
+- **Do not edit an existing ADR.** Append-only. **0156 is taken by this track**
+  and 0155 by runtime ownership; the highest number in the tree on 2026-08-15 is
+  0156. Grep the whole tree, source and commit messages included — the number on
+  this page has gone stale five legs running.
+- **Do not write the runtime ownership track's seventh record for it.** ADR 0155
+  is missing from its page and from the board's prose; the board's number line
+  is corrected and the rest is theirs.
+- **Leave a temporary instrument out of the commit** and grep for it. 13b's was
+  `src/dev/panelAudit.ts` with one dynamic import in `WorkspaceWindow.tsx`, and
+  it needs a timestamped run guard or Fast Refresh interleaves two walks — and a
+  cache-busting query, or the second run measures the first run's code.
+- **The overlay is still rule 5.** Never `--no-verify`. Never `pkill`.
 
 ### How to check yourself
 
 - `npm test`, `npm run build`, and `cd src-tauri && cargo test` **only if you
-  touched Rust**. **Watch the TOTAL, not the colour.** The baseline is **541
-  frontend across 42 files**. Under load the suite flakes by about 5;
-  `npx vitest run --no-file-parallelism` is the tiebreaker and `uptime` says
-  whether to reach for it.
-- **A capture measurement is running in ordinary use, so prove you did not
-  disturb it rather than promising not to.** `wc -l
-  ~/.config/WordScript/logs/wordscript-runtime.log` before and after your checks;
-  if it moved, read what landed before trusting any number out of it. 13a's
-  checks moved it by zero lines.
+  touched Rust**. **Watch the TOTAL, not the colour.** The baseline is **542
+  across 42 files**.
 - **`npm run port:diff` TAKES GALLERY IDS OR IT MEASURES NOTHING**, and a name
-  that is not one is dropped in silence. The 25 are the **16 ids in
-  `src/windows/gallery/registry.tsx` except `ds`** plus `models#1 agents#1
-  agents#2 onboarding#1`–`#6`. **Run it in two or three batches** — it crashed at
-  screen 8 and at screen 23 of a single 25-id invocation, and every screen that
-  crashed is exact alone. **Check `ss -ltn | grep 9333` before each batch** and
-  kill a leftover by PID: a crashed run is what creates the stale browser.
-- **The native host is the only instrument for a drawn state.** Rebuild the row
-  instrument from ADR 0092 and Leg 12's record: walk `VIEWS` and `SECTIONS`,
-  click every `button[role=tab]`, set `details.ws-job { open = true }` (a closed
-  `<details>` measures zero), read each run's height against its computed
-  line-height, and POST to a loopback collector — `csp` is `null`, so `fetch`
-  needs no permission. Report the window size in the payload.
-- **Check whether a host and a dev server are ALREADY running before starting
-  one.** `tauri dev` starts its own Vite. `ps -o lstart=` shows whose is whose,
-  `xprop -id <win> _NET_WM_PID` maps a window to its process, and
-  `xdotool getwindowgeometry` is good enough for a width (`xwininfo` is not
-  installed).
-- **Do not raise the window past somebody working at the machine — ask.**
-- **Never `pkill`.** Kill by PID, and stop what you started.
+  that is not one is dropped in silence. **Check `ss -ltnp | grep 9333` first**
+  and kill a leftover by PID — one from 2026-08-12 was still holding the port
+  three days later on 2026-08-15. Run in two or three batches.
+- **The native host is the only instrument for a drawn state.** A dev host is
+  usually already running and it may be the owner's own session — do not kill it
+  and do not raise its window.
 
 ### When it is done
 
-Commit, push to `main`, append your record to the leg log, and write the Leg 14
-prompt. Then report what you did, what you found, and anything the next leg needs
-that is not already written down.
+Commit, push to `main`, append your record to the leg log, and write the Leg 15
+prompt. Then report what you did, what you found, and anything the next leg
+needs that is not already written down.
