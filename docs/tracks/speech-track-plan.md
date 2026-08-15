@@ -754,6 +754,66 @@ path (`is_custom`, discovered from the folder). **`openwhispr`** is the read for
 above twelve rows. Neither answers both halves.
 
 
+### B12. A locked lane says why it is locked, and what this machine has (ADR 0067 rule 1, ROADMAP Phase 5)
+
+**Added 2026-08-15**, out of the owner reading the finished B5/B8/B9-B11
+surface and asking what the next unit of work should be. The finding that
+produced it: **the tab installs models for a lane that cannot be selected.**
+B5 closed ADR 0042's gate — *until in-app installation exists, the local lane
+is expert configuration* — and `docs/STATUS.md` now lists `local` under
+**Implemented core features** as a full lane over `whisper-cli`, ggml models and
+Ollama cleanup. `Models.tsx` still disables it.
+
+**That is not a bug, and the step exists because reading it as one would be the
+mistake.** ADR 0067 rule 1 is explicit: *a surface that OFFERS a lane makes it
+inoperable*, because a control that accepts a click and then asks for a
+credential is the worst possible false affordance. The record even names its own
+expiry — *it expires by being reversed, not by drifting; when the local lane is
+finished, `selectable` grows a name*. **The lane is not finished**: Phase 5
+still owes the acceleration probe, the bundling decision and local streaming
+(F3), and two of those became recorded intents only on 2026-08-15 (ADR 0161).
+
+**So the step is not the reversal.** What is wrong today is narrower and
+entirely fixable: **the lock is silent about itself.** The segment greys out and
+says nothing about why, nothing about what is missing, and nothing about the
+fact that this machine may already have every piece. B10 put a `Preview` tag on
+the lane row, which states *this is drawn* — it does not state *this is
+withheld, and here is where you stand*.
+
+- **Requires** — B5, B8, B10. **No Rust**: `local_setup` on `provider_status`
+  already carries `readiness`, `runner_ready`, `model_ready`, `chat_ready`,
+  `issue_code` and `guidance`, and `useLocalSetup` (B9) already reads it. This
+  step spends a reader that exists.
+- **Touches** — the lane segment's `disabled` rule in `Models.tsx` keeps its
+  behaviour and gains its reason; the `Connection` card, when a locked lane is
+  selected, states what the runtime found on this machine rather than only what
+  the lane would look like. `Onboarding.tsx` renders the same `LANES` table and
+  the same `selectable` list (ADR 0067's second consequence), so whatever is
+  built has to reach it or deliberately not.
+- **The rule it is measured against** is `CLAUDE.md`'s: *do not render fake
+  states; show runtime truth, and when the runtime is not ready, show the next
+  action instead.* Today the surface does neither — it withholds without
+  reporting. **And the distinction this step must not blur**: *not published* is
+  a product decision and *not ready* is a fact about this disk. A machine with
+  `whisper-cli`, a ggml model and Ollama running is READY and still not offered,
+  and saying so plainly is the deliverable.
+- **Validates** — `npm test`, `npm run build`, `port:diff` on `models` (the lane
+  renders only off `Cloud`, so the Cloud default should not move; if it does, an
+  assumption is wrong and the figure belongs in the record). **And the rendered
+  gallery** — four separate defects in the 2026-08-15 session survived green
+  tests and were caught by looking, three of them on this exact card.
+- **Done when** — selecting a locked lane answers three questions without
+  leaving the screen: why it cannot be chosen, what this machine already has,
+  and what would still be needed. **Not done by** removing `disabled` — that is
+  ADR 0067's reversal and belongs to the gate below.
+
+**The release itself is a gate, not a step** — the shape F4 already uses. Making
+`selectable` grow the name `Local` reverses ADR 0067 and requires the lane to be
+*finished*, which is ROADMAP Phase 5's list and not one unit of work: the
+acceleration probe, the bundling decision, guided remediation, and F3's
+streaming shape. **Whoever closes that gate writes the ADR that reverses 0067**,
+in the commit that finishes the lane, exactly as 0067 asks.
+
 ## Stage C — capture
 
 **Independent of A, B and D.** It can run concurrently with the whole provider
@@ -1441,6 +1501,7 @@ Speaking row, so it is flagged rather than assumed.
 | B9 | **done** 2026-08-15 — the naming correction the owner asked for after reading B5/B8 (ADR 0160). *On this machine* closed on a section called **The server** whose endpoint is `127.0.0.1`, while the lane row one tab over spends four lines saying a server is another machine; and **Where models come from** sat at the foot of the tab, which by reading order answered for the language card above it — whose files are in a store that list has never described. The section becomes **Runners on this machine** and both its rows are read (`local_setup` on `provider_status`, which the tab was simply never asking for); provenance moves inside each card; `Self-hosted` reads as **Your server** through `LANE_LABEL` and is stored unchanged. **No Rust, and that was the constraint** — a dev host was running and a write under `src-tauri/` restarts the app. **+6 frontend** (596 total), one made to fail first by restoring the old wording. `port:diff`: `models` `26 \| 242 \| 19` → `26 \| 248 \| 20` (the label is one text difference plus the widths that follow it); **`models#1` moves `0 \| 0 \| 7` → `261 \| 30 \| 16`, and ~246 of that is renumbering** — the same tree with the card placed last measures `15 \| 41 \| 18`. The B7 finding arriving as a bill, and the cost the owner accepted |
 | B10 | **done** 2026-08-15 — the second half of the owner's read (ADR 0161). **`Acceleration` was claiming the reader has no GPU**: `grep -rn "cuda\|rocm\|Metal" src-tauri/src/` returns nothing, so `no CUDA, ROCm or Metal device found` was a literal making a checkable false claim about the machine it ran on — found by an owner with an Nvidia card. **The fix is not deletion**: the sketch is a deliverable and stays, and it declares itself. `PreviewTag` plus a `tag` slot on `Row` — 15 px, ground, at the LABEL because a marker at the control is read after the value it warns about. Three rows on the machine tab carry it, and the lane row carries it off `Cloud`, **which is ADR 0067's badge rule reaching the screen that offers the lane** for the first time. **242 → 163 visible words on the tab** (−33%), the long sentences moved into tooltips. **+3 frontend** (599 total). `port:diff`: `models` unchanged at `26 \| 248 \| 20`, `models#1` `261 \| 30 \| 16` → `262 \| 30 \| 16`. **And the same three defects had a second copy in `LaneRows`' `Local` branch** — the *server* wording, the GPU literal, and *speech and language share one disk*, which ADR 0122 retired — found by looking at the rendered gallery after the tab was edited, tested and green. **Both regression cases were themselves green for the wrong reason first**: rendered with a runtime, every lane but Cloud is `disabled`, so the clicks moved nothing and the assertion measured Cloud four times. They render in the gallery now and were re-proven by restoring the literal. **+4 frontend** (600 total). `port:diff`: `models` `26 \| 248 \| 20`, `models#1` `262 \| 30 \| 16` |
 | B11 | **done** 2026-08-15 — the owner asked why the screen has two tabs at all, and the answer was worth a record (ADR 0162). **ADR 0042's justification is half dead**: ADR 0122 retired *speech and language sit on the same disk*, leaving only the memory argument. **The argument that holds was written nowhere**: a lane is a stored value and an inventory is not, so putting the model library behind `Local` would mean editing the configuration in order to look at the disk. What was actually wrong is that **four of the `Local` lane's five rows restated the tab** — and the cost is measured, not argued: ADR 0160 and ADR 0161 each had to be applied to that branch twice, the second time found by a screenshot after the tests were green. Lane is three rows now, `Manage →` is wired (drawn with no handler since Leg 6), and `Bundled \| Yours` left the lane too — **that one survived the first pass of this very record** and was caught the same way. **+2 frontend** (602 total), both proven by restoring what they forbid. `port:diff` unmoved on both ids, as predicted before the run |
+| B12 | **not started** — added 2026-08-15 out of the owner's *what next*. **The tab installs models for a lane that cannot be selected**: B5 closed ADR 0042's gate and `STATUS.md` lists `local` under implemented features, while `Models.tsx` still disables it. **Not a bug** — ADR 0067 rule 1 makes an offered-but-unfinished lane inoperable on purpose. What is wrong is that **the lock is silent about itself**: no reason, no statement of what this machine already has. **No Rust** — `local_setup` carries the readiness and `useLocalSetup` (B9) already reads it. The distinction it must not blur: *not published* is a product decision, *not ready* is a fact about this disk, and a machine with everything installed is the first case and not the second. **Releasing the lane is a gate, not this step** — that reverses ADR 0067 and needs Phase 5 whole |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and now genuinely the cheapest step in Stage D: D1 extracted the helper it reaches with a second base URL |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |

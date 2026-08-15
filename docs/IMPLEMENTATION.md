@@ -134,7 +134,9 @@ surface is allowed to call a server)**, **B10 (the drawn rows on it saying
 so)**, and **B11 (why it has two tabs, and the lane that was restating one of
 them)**.
 
-Next unblocked: **B2**, **B4**, **E1**, **D3** — whose `Requires` line
+Next unblocked: **B12** (added 2026-08-15, and the cheapest of the set — it
+spends a reader B9 already built and touches no Rust), **B2**, **B4**, **E1**,
+**D3** — whose `Requires` line
 has read D1 and A3 since it was written, both now done — and **D1a**, which
 since B6 spent its drawing half is the adapter alone and the cheapest step in
 Stage D. **B4 is cheaper than it was**: the Ollama listing it would have added
@@ -158,6 +160,27 @@ above a threshold: below it the gallery renders exactly the drawing and
 rows — openwhispr's own number — and the drawn nine keep `models#1` at
 `0 | 0 | 7`. **The cost is that the grown state is unmeasured by the port** and
 held by tests instead, which is the same class of gap Leg 13b named.
+
+**B9, B10 and B11 are one evening and they are all corrections of the surface
+B5 and B8 finished** (ADR 0160, 0161, 0162, 2026-08-15). The owner read it and
+could not tell `Local`, `Self-hosted`, *On this machine* and *The server* apart;
+the last of those named `127.0.0.1` while the lane row one tab over spent four
+lines saying a server is another machine. **The finding for any track is not the
+wording, it is where the wording was found.** Four separate defects survived a
+green suite and were caught by looking at the rendered gallery — twice because
+the same sentence lived in two places, and twice because a test drove a control
+that was `disabled` and measured the default four times under four names. **A
+test that drives a control has to check the control moved**, and a screen with
+two copies of one fact will eventually have two different facts.
+
+**And the evening produced the next step rather than a conclusion.** Asked what
+to do next, the honest answer turned out to be a question about what was already
+there: the tab installs models for a lane that cannot be selected. That is
+**B12**, and writing it up narrowed it — ADR 0067 makes the lock deliberate and
+names its own expiry, so the step is *the lock explains itself* and the release
+is a gate behind Phase 5. **The first draft of that recommendation was too
+coarse and the record is where it got cut down**, which is the argument for
+writing steps before starting them.
 
 **B5 landed 2026-08-15 and it closes a gate that had been open for twelve
 days.** ADR 0042 said *until in-app installation exists, the local lane is
