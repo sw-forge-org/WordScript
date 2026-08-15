@@ -310,6 +310,19 @@ Status: 2026-08-15
   whether or not one of them existed; a machine with nothing installed now says
   so, and the catalogue's rows are offered as *installable*, which is a
   different sentence
+- **and nothing on the disk is hidden from it** (ADR 0159, 2026-08-15). A model
+  the catalogue never heard of is listed with the folder it came from, and there
+  are two ways to add one: a picker that copies the file into the folder
+  WordScript manages, and a folder that is read and **never written to**, so a
+  library on a home server is used where it lies. The language half takes a
+  typed Ollama tag instead, because that server owns its store. **Four sources
+  are unioned into one list and the rank decides which file runs** -- the two
+  environment variables, the folders you add, and the managed directory, in that
+  order
+- **the model list grows a search once it outgrows its drawing.** Below twelve
+  rows the tab is exactly the surface the prototype draws; above it a toolbar
+  appears with a search and an origin filter, which is the pattern the prototype
+  already specifies for History
 - AI Models preflight for the local runtime lane with native runner,
   STT-model, cleanup-endpoint and cleanup-model readiness
 - bounded STT prompt bias for Groq and `local` from active profile

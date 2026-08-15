@@ -77,6 +77,12 @@ describe("the install mirror and the Rust struct", () => {
     );
   });
 
+  it("carries the same fields for ModelFolder", () => {
+    expect(mirrorInterfaceFields(MIRROR, "ModelFolder")).toEqual(
+      rustStructFields(RUST, "ModelFolder"),
+    );
+  });
+
   it("carries the same fields for LocalServerAnswer", () => {
     expect(mirrorInterfaceFields(MIRROR, "LocalServerAnswer")).toEqual(
       rustStructFields(RUST, "LocalServerAnswer"),
@@ -109,6 +115,9 @@ describe("the install mirror and the Rust struct", () => {
   it("reads real fields out of both files rather than passing on two empty lists", () => {
     expect(rustStructFields(RUST, "ManagedModelRow")).toContain("in_use_by");
     expect(mirrorInterfaceFields(MIRROR, "ManagedModelRow")).toContain("in_use_by");
-    expect(rustStructFields(RUST, "ManagedModelRow").length).toBe(9);
+    /* `origin` and `folder` joined in B8 (ADR 0159) — the two fields that let a
+       row say it is the user's own and which folder it came from. */
+    expect(rustStructFields(RUST, "ManagedModelRow")).toContain("origin");
+    expect(rustStructFields(RUST, "ManagedModelRow").length).toBe(11);
   });
 });

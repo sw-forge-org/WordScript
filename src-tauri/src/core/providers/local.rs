@@ -840,26 +840,80 @@ fn fallback_provider_profiles() -> Vec<ProviderProfile> {
     Vec::new()
 }
 
-/// Where a recogniser may be found, in the order the answers outrank each
-/// other.
+/// Where a recogniser may be found, ranked. Highest first.
 ///
-/// **The managed directory is the third source and never the first**
-/// (ADR 0122): an expert who has pointed WordScript at their own whisper.cpp
-/// checkout is not overridden by what this feature installed. The two
-/// environment variables keep their existing precedence between them.
-fn discover_local_provider_profiles() -> Option<Vec<ProviderProfile>> {
+/// **The rank decides which file *runs*; it does not decide which files are
+/// *offered*** (ADR 0159). Those are two questions and B5 answered them with
+/// one mechanism, which was a defect: `discover_local_provider_profiles`
+/// returned on the first source that yielded, so a user with
+/// `WORDSCRIPT_LOCAL_MODEL_DIR` set could install a model in the app and never
+/// see it — the installed file was on the disk, resolvable, and invisible.
+/// ADR 0122's guarantee was *an expert's checkout is never overridden*, and
+/// overriding is a tie-break, not a reason to hide everything else.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LocalModelSource {
+    /// `WORDSCRIPT_LOCAL_MODEL_PATH` — one file, named exactly.
+    ConfiguredFile(PathBuf),
+    /// `WORDSCRIPT_LOCAL_MODEL_DIR` — the expert's own checkout.
+    ConfiguredDir(PathBuf),
+    /// A folder the user added on `AI Models` (ADR 0159). **Never written
+    /// into**: a model on a home server or in somebody's own library is used
+    /// where it lies, because the alternative is a second copy of a file that
+    /// can be 1.6 GB.
+    UserDir(PathBuf),
+    /// What this build installed, under `core::paths::user_data_dir`.
+    Managed(PathBuf),
+}
+
+impl LocalModelSource {
+    /// The word the profile label carries, so a row says where its file is from.
+    fn label(&self) -> &'static str {
+        match self {
+            Self::ConfiguredFile(_) => "configured file",
+            Self::ConfiguredDir(_) => "discovered",
+            Self::UserDir(_) => "your folder",
+            Self::Managed(_) => "installed",
+        }
+    }
+
+    /// The word the surface names this kind of source by. Separate from
+    /// `label`, which goes into a profile label and reads as prose.
+    pub(crate) fn kind_label(&self) -> &'static str {
+        match self {
+            Self::ConfiguredFile(_) => "environment file",
+            Self::ConfiguredDir(_) => "environment folder",
+            Self::UserDir(_) => "your folder",
+            Self::Managed(_) => "managed by WordScript",
+        }
+    }
+
+    /// Whether this surface may remove it. Only a folder added on this screen.
+    pub(crate) fn is_user_dir(&self) -> bool {
+        matches!(self, Self::UserDir(_))
+    }
+
+    pub(crate) fn dir(&self) -> Option<&Path> {
+        match self {
+            Self::ConfiguredFile(_) => None,
+            Self::ConfiguredDir(path) | Self::UserDir(path) | Self::Managed(path) => Some(path),
+        }
+    }
+}
+
+/// Every place this build looks for a recogniser, highest rank first.
+///
+/// Built once per call rather than cached: a user adds a folder on a settings
+/// screen and expects the next read to see it, and an env var can change under
+/// a `tauri dev` restart. Reading four paths is not the cost worth a cache.
+pub(crate) fn local_model_sources() -> Vec<LocalModelSource> {
+    let mut sources = Vec::new();
+
     if let Ok(path) = std::env::var(LOCAL_MODEL_PATH_ENV) {
         let trimmed = path.trim();
         if !trimmed.is_empty() {
-            let explicit_path = PathBuf::from(trimmed);
-            if explicit_path.is_file() {
-                return local_model_name_from_path(&explicit_path).map(|model| {
-                    build_local_provider_profiles(
-                        &model,
-                        Some(preferred_local_decode_preset(&model)),
-                        Some("configured file"),
-                    )
-                });
+            let explicit = PathBuf::from(trimmed);
+            if explicit.is_file() {
+                sources.push(LocalModelSource::ConfiguredFile(explicit));
             }
         }
     }
@@ -867,55 +921,97 @@ fn discover_local_provider_profiles() -> Option<Vec<ProviderProfile>> {
     if let Ok(dir) = std::env::var(LOCAL_MODEL_DIR_ENV) {
         let trimmed = dir.trim();
         if !trimmed.is_empty() {
-            if let Some(profiles) = provider_profiles_in_dir(Path::new(trimmed), "discovered") {
-                return Some(profiles);
+            sources.push(LocalModelSource::ConfiguredDir(PathBuf::from(trimmed)));
+        }
+    }
+
+    /* The user's own folders, in the order they added them. Read from the
+       config rather than from an environment variable, because this is the one
+       source a person sets from inside the application. */
+    for dir in crate::core::config::AppConfig::load_from_disk().local_model_dirs {
+        let trimmed = dir.trim();
+        if !trimmed.is_empty() {
+            sources.push(LocalModelSource::UserDir(PathBuf::from(trimmed)));
+        }
+    }
+
+    sources.push(LocalModelSource::Managed(
+        crate::core::model_install::managed_speech_model_dir(),
+    ));
+
+    sources
+}
+
+/// Every model every source offers, unioned, with the highest-ranked source
+/// winning a name that appears in two places.
+///
+/// **A duplicate is resolved, not listed twice.** Two folders holding
+/// `ggml-small.bin` are one model on this machine as far as a picker is
+/// concerned; which of the two files runs is the rank's answer, and the profile
+/// label says which source won.
+fn discover_local_provider_profiles() -> Option<Vec<ProviderProfile>> {
+    let mut seen: Vec<(String, &'static str)> = Vec::new();
+
+    for source in local_model_sources() {
+        match &source {
+            LocalModelSource::ConfiguredFile(path) => {
+                if let Some(model) = local_model_name_from_path(path) {
+                    if !seen.iter().any(|(name, _)| name == &model) {
+                        seen.push((model, source.label()));
+                    }
+                }
+            }
+            _ => {
+                let Some(dir) = source.dir() else { continue };
+                for model in local_model_names_in_dir(dir) {
+                    if !seen.iter().any(|(name, _)| name == &model) {
+                        seen.push((model, source.label()));
+                    }
+                }
             }
         }
     }
 
-    provider_profiles_in_dir(&crate::core::model_install::managed_speech_model_dir(), "installed")
+    if seen.is_empty() {
+        return None;
+    }
+
+    /* `base` is the default when it is present, and otherwise the first model
+       the highest-ranked source offered — the rule that stood before the union
+       and is unchanged by it. */
+    let default_model = seen
+        .iter()
+        .find(|(name, _)| name == "base")
+        .map(|(name, _)| name.clone())
+        .unwrap_or_else(|| seen[0].0.clone());
+
+    Some(
+        seen.iter()
+            .flat_map(|(model, label)| {
+                build_local_provider_profiles(
+                    model,
+                    (model == &default_model).then_some(preferred_local_decode_preset(model)),
+                    Some(label),
+                )
+            })
+            .collect(),
+    )
 }
 
-/// Every `ggml-*.bin` in one directory, as profiles, or nothing where the
-/// directory holds none.
-///
-/// Extracted when the managed directory became a third source: two callers
-/// walking a directory the same way is one implementation, and the reason the
-/// `WORDSCRIPT_LOCAL_MODEL_DIR` branch used to answer `None` on an unreadable
-/// directory — `read_dir(...).ok()?` — is preserved here rather than quietly
-/// widened into a fall-through.
-fn provider_profiles_in_dir(dir: &Path, source: &str) -> Option<Vec<ProviderProfile>> {
-    let mut discovered = std::fs::read_dir(dir)
-        .ok()?
+/// The `ggml-*.bin` stems one directory holds, sorted, or nothing.
+pub(crate) fn local_model_names_in_dir(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut discovered = entries
         .filter_map(|entry| entry.ok().map(|value| value.path()))
         .filter_map(|path| local_model_name_from_path(&path))
         .collect::<Vec<_>>();
 
     discovered.sort();
     discovered.dedup();
-
-    if discovered.is_empty() {
-        return None;
-    }
-
-    let default_model = discovered
-        .iter()
-        .find(|model| model.as_str() == "base")
-        .cloned()
-        .unwrap_or_else(|| discovered[0].clone());
-
-    Some(
-        discovered
-            .iter()
-            .flat_map(|model| {
-                build_local_provider_profiles(
-                    model,
-                    (model == &default_model).then_some(preferred_local_decode_preset(model)),
-                    Some(source),
-                )
-            })
-            .collect(),
-    )
+    discovered
 }
 
 fn build_local_provider_profiles(
@@ -1315,34 +1411,57 @@ fn resolve_local_model_path(model: &str) -> Result<PathBuf, LocalModelResolution
         return validate_local_model_path(explicit_path);
     }
 
-    if let Ok(path) = std::env::var(LOCAL_MODEL_PATH_ENV) {
-        if !path.trim().is_empty() {
-            let explicit_path = PathBuf::from(path);
-            if explicit_path.is_dir() {
-                return find_local_model_path_in_dir(&explicit_path, requested);
+    /* THE RANK, AND IT IS WHERE PRECEDENCE LIVES (ADR 0159).
+       The library above unions every source so a person sees what they have;
+       this walks them in order so exactly one file runs, and the first source
+       that can answer is the answer. ADR 0122's guarantee is here rather than
+       in the listing: an expert's checkout still wins, it just no longer hides
+       everything else.
+
+       **The env file keeps its old oddity on purpose**: `WORDSCRIPT_LOCAL_MODEL_PATH`
+       pointing at a directory is treated as a directory, which is what it did
+       before this step and what somebody's setup may rely on. */
+    /* **The first source that can answer wins; the first source that FAILED
+       owns the error.** Both halves matter. Falling through means an installed
+       model is reachable even when an environment variable is set, which is the
+       defect this step exists to remove. Keeping the highest-ranked failure as
+       the message means somebody who pointed WordScript at a checkout and
+       mistyped the model name still gets told about their checkout, rather than
+       a generic *nothing is configured* from the bottom of the list. */
+    let mut first_failure: Option<LocalModelResolutionError> = None;
+
+    for source in local_model_sources() {
+        let attempt = match &source {
+            LocalModelSource::ConfiguredFile(explicit) => {
+                if explicit.is_dir() {
+                    find_local_model_path_in_dir(explicit, requested)
+                } else {
+                    validate_local_model_path(explicit.clone())
+                }
             }
+            LocalModelSource::ConfiguredDir(dir)
+            | LocalModelSource::UserDir(dir)
+            | LocalModelSource::Managed(dir) => find_local_model_path_in_dir(dir, requested),
+        };
 
-            return validate_local_model_path(explicit_path);
+        match attempt {
+            Ok(path) => return Ok(path),
+            Err(error) => {
+                if first_failure.is_none() {
+                    /* The managed directory is not an ERROR anyone should hear
+                       about: a machine that has installed nothing has an absent
+                       folder, and *nothing is configured* is the truer sentence
+                       than *not found in a directory you have never seen*. */
+                    if !matches!(source, LocalModelSource::Managed(_)) {
+                        first_failure = Some(error);
+                    }
+                }
+            }
         }
     }
 
-    if let Ok(dir) = std::env::var(LOCAL_MODEL_DIR_ENV) {
-        if !dir.trim().is_empty() {
-            return find_local_model_path_in_dir(&PathBuf::from(dir), requested);
-        }
-    }
-
-    /* THE THIRD SOURCE, AND THE HALF THAT MAKES AN INSTALL WORTH ANYTHING
-       (ADR 0122). Discovery finding a model the decode path cannot then resolve
-       would be an installed model that transcribes nothing — a profile offered,
-       chosen and dead at first capture. It is last, so an expert's environment
-       variable still wins; it is not an error when it holds nothing, so a
-       machine with neither answers `MissingConfiguration` exactly as before. */
-    let managed = crate::core::model_install::managed_speech_model_dir();
-    if managed.is_dir() {
-        if let Ok(path) = find_local_model_path_in_dir(&managed, requested) {
-            return Ok(path);
-        }
+    if let Some(error) = first_failure {
+        return Err(error);
     }
 
     Err(LocalModelResolutionError::MissingConfiguration {
@@ -2435,12 +2554,18 @@ whisper_print_timings: total time = 1337.00 ms
         let _ = std::fs::remove_dir_all(&managed);
     }
 
-    /// **The environment still wins** (ADR 0122). An expert who has pointed
-    /// WordScript at their own whisper.cpp checkout is never overridden by what
-    /// this feature installed, which is why the managed directory is the third
-    /// source and not the first.
+    /// **The listing unions and the resolution ranks** (ADR 0159), and this
+    /// test used to assert the opposite.
+    ///
+    /// B5 read ADR 0122's *an expert's checkout is never overridden* as *and
+    /// nothing else is shown*, so `discover_local_provider_profiles` returned
+    /// on the first source that answered. The consequence was a defect nobody
+    /// would report as one: with `WORDSCRIPT_LOCAL_MODEL_DIR` set, a model
+    /// installed through the app was on the disk, resolvable, and **not
+    /// offered** — the in-app installation quietly did nothing for exactly the
+    /// users most likely to have that variable set. Overriding is a tie-break.
     #[test]
-    fn the_environment_outranks_what_the_installer_put_there() {
+    fn every_source_is_offered_and_the_environment_wins_the_tie() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
         std::env::remove_var(LOCAL_MODEL_PATH_ENV);
@@ -2448,24 +2573,94 @@ whisper_print_timings: total time = 1337.00 ms
         let managed = crate::core::model_install::managed_speech_model_dir();
         let _ = std::fs::remove_dir_all(&managed);
         std::fs::create_dir_all(&managed).expect("create the managed directory");
-        std::fs::write(managed.join("ggml-small.bin"), "model").expect("write small");
+        std::fs::write(managed.join("ggml-small.bin"), "installed").expect("write small");
+        // The same model in both places, so the tie-break is observable.
+        std::fs::write(managed.join("ggml-medium.bin"), "installed-medium")
+            .expect("write medium into the managed dir");
 
         let checkout = std::env::temp_dir().join("wordscript-local-expert-checkout");
-        let _ = std::fs::create_dir_all(&checkout);
-        std::fs::write(checkout.join("ggml-medium.bin"), "model").expect("write medium");
+        let _ = std::fs::remove_dir_all(&checkout);
+        std::fs::create_dir_all(&checkout).expect("create the checkout");
+        std::fs::write(checkout.join("ggml-medium.bin"), "the expert's own")
+            .expect("write medium into the checkout");
         std::env::set_var(LOCAL_MODEL_DIR_ENV, &checkout);
 
         let profiles = provider_profiles();
         assert!(
             profiles.iter().any(|profile| profile.id == "local-medium-fast"),
-            "the expert's directory answers",
+            "the expert's directory is offered",
         );
         assert!(
-            !profiles.iter().any(|profile| profile.id == "local-small-fast"),
-            "and the managed one does not get merged into it",
+            profiles.iter().any(|profile| profile.id == "local-small-fast"),
+            "AND what the installer put there is offered beside it",
+        );
+
+        /* The tie-break, which is where ADR 0122's guarantee actually lives:
+           two folders hold `ggml-medium.bin` and the environment's file runs. */
+        assert_eq!(
+            resolve_local_model_path("medium").expect("medium resolves"),
+            checkout.join("ggml-medium.bin"),
+        );
+        /* And a model only the managed directory has still resolves, which is
+           the half that used to be unreachable. */
+        assert_eq!(
+            resolve_local_model_path("small").expect("small resolves"),
+            managed.join("ggml-small.bin"),
         );
 
         let _ = std::fs::remove_dir_all(&managed);
+        let _ = std::fs::remove_dir_all(&checkout);
+    }
+
+    /// A folder the user added on `AI Models` is read, ranks below both
+    /// environment variables and above the managed directory, and is never
+    /// written into (ADR 0159).
+    #[test]
+    fn a_folder_the_user_added_is_read_and_outranks_the_managed_one() {
+        let _lock = lock_env();
+        let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
+        std::env::remove_var(LOCAL_MODEL_PATH_ENV);
+        std::env::remove_var(LOCAL_MODEL_DIR_ENV);
+
+        let managed = crate::core::model_install::managed_speech_model_dir();
+        let _ = std::fs::remove_dir_all(&managed);
+        std::fs::create_dir_all(&managed).expect("create the managed directory");
+        std::fs::write(managed.join("ggml-base.bin"), "installed").expect("write base");
+
+        let library = std::env::temp_dir().join("wordscript-local-user-library");
+        let _ = std::fs::remove_dir_all(&library);
+        std::fs::create_dir_all(&library).expect("create the library");
+        std::fs::write(library.join("ggml-base.bin"), "the user's own").expect("write base");
+        std::fs::write(library.join("ggml-tiny.bin"), "the user's own").expect("write tiny");
+
+        let mut config = crate::core::config::AppConfig::load_from_disk();
+        config.local_model_dirs = vec![library.display().to_string()];
+        config.save_to_disk().expect("save the folder list");
+
+        /* **Everything is read BEFORE anything is asserted, and the config is
+           restored in between.** `local_model_sources` reads the config from
+           disk, and this suite shares one diverted data directory — a failing
+           assertion here would leave a folder list behind that makes an
+           unrelated test resolve a model it should not have found. That is not
+           a hypothetical: it is what the first run of this test did, and it
+           surfaced three tests away as a wrong `LocalProviderIssueCode`. */
+        let profiles = provider_profiles();
+        let resolved = resolve_local_model_path("base");
+
+        config.local_model_dirs.clear();
+        config.save_to_disk().expect("restore the folder list");
+        let _ = std::fs::remove_dir_all(&managed);
+        let _ = std::fs::remove_dir_all(&library);
+
+        assert!(
+            profiles.iter().any(|profile| profile.id == "local-tiny-fast"),
+            "a model only the user's folder has is offered",
+        );
+        assert_eq!(
+            resolved.expect("base resolves"),
+            library.join("ggml-base.bin"),
+            "and the user's folder outranks the managed one on a shared name",
+        );
     }
 
     #[test]

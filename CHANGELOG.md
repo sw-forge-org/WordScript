@@ -53,6 +53,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — bring your own model, and a list that survives growing (ADR 0159)
+
+- **A model WordScript never heard of shows up on the tab.** Drop a
+  `ggml-*.bin` in the model folder, or pick one with *Add a model…*, and it is
+  listed, usable and removable like any other — with the folder it came from
+  beside it. Before this, the tab was called *On this machine* and listed the
+  catalogue: a file the runtime would happily transcribe with was invisible.
+- **Two ways in, because both are real.** *Add a model…* copies the file into
+  the folder WordScript manages. *Add a folder…* points at a folder and copies
+  **nothing** — a library on a home server or a second disk is used where it
+  lies, and removing the folder later removes no file. The language half takes
+  a typed Ollama tag instead: that server owns its store, so there is no folder
+  to point at.
+- **Every folder is listed, in the order that decides which file runs.** Two
+  folders holding the same model is one model; the higher-ranked one
+  transcribes. A folder on a share that is not mounted says so instead of
+  looking empty.
+- **The list grows a search once it outgrows its drawing** — a toolbar with a
+  search box and an origin filter, above twelve rows. Below that, nothing
+  changes.
+
+### Fixed
+
+- **An in-app install was invisible if you had `WORDSCRIPT_LOCAL_MODEL_DIR`
+  set.** The model was downloaded, verified, on the disk and resolvable — and
+  never offered, because the first model source that answered hid the rest.
+  Precedence is a tie-break now: every folder is listed, and the rank only
+  decides which file runs.
+
 ### Added — the local lane installs its own models (ADR 0122, ADR 0158)
 
 - **`AI Models` → *On this machine* works.** It has been drawn since Leg 6 with

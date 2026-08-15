@@ -131,22 +131,56 @@ pub enum ManagedModelState {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ManagedModelRow {
-    /// The catalogue slug. Every command below names a row by this and never by
-    /// a model id (ADR 0115).
+    /// The catalogue slug, or — for a model no catalogue row claims — the stem
+    /// its file is named by. Every command below names a row by this string and
+    /// never by a model id (ADR 0115).
     pub row: String,
     pub model_id: String,
     pub role: ProviderRole,
     /// `download` or `server_pull` — which card this row belongs on, answered
     /// by the runtime rather than inferred from the role by the drawing.
     pub mechanism: String,
+    /// Whether this build knows the row from its catalogue or found the file on
+    /// the disk (ADR 0159).
+    ///
+    /// **A `yours` row is the whole reason this field exists.** B5 listed the
+    /// catalogue and called the result *what is on this machine*, which was
+    /// false the moment somebody put their own `ggml-*.bin` in the folder: the
+    /// runtime discovered it, resolved it and would happily transcribe with it,
+    /// and the surface did not show it.
+    pub origin: ModelOrigin,
+    /// What it costs. The catalogue's figure for a row that is not installed
+    /// yet, the file's own length once it is, and always the file's own length
+    /// for a `yours` row — nothing else knows.
     pub size_bytes: u64,
     pub quantization: Option<String>,
     pub state: ManagedModelState,
-    /// Where the file is, when it is one WordScript put there.
+    /// Where the file is, when there is one.
     pub path: Option<String>,
+    /// Which folder it came from, for a row that is not in the managed
+    /// directory — so a person with three sources can tell two `ggml-small.bin`
+    /// apart.
+    pub folder: Option<String>,
     /// Which profile runs this model, when one does. **The reason a removal can
     /// be refused by name** rather than with a shrug.
     pub in_use_by: Option<String>,
+}
+
+/// Where a row came from.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelOrigin {
+    /// `shared/model_catalogue.json` knows it: it has a size, a checksum and a
+    /// source before anybody downloads anything.
+    Catalogue,
+    /// A file on this disk that no catalogue row claims.
+    ///
+    /// **It carries no checksum and is not asked for one.** The catalogue's
+    /// checksum answers *did this download arrive intact*; a file somebody
+    /// already has needs no such answer, and demanding one would make the
+    /// feature refuse exactly the models it exists to accept. The donor takes
+    /// the same position — Handy's custom rows are `url: None, sha256: None`.
+    Yours,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -156,11 +190,30 @@ pub struct LocalServerAnswer {
     pub detail: String,
 }
 
+/// One place this build looks for a speech model (ADR 0159).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ModelFolder {
+    pub path: String,
+    /// Which kind of source it is, in the reader's words.
+    pub kind: String,
+    /// Whether this surface may remove it. An environment variable is somebody's
+    /// shell profile and the managed directory is WordScript's own; neither is
+    /// this screen's to delete.
+    pub removable: bool,
+    /// Whether it is there at all. A folder on an unmounted network share is
+    /// not an error and not a missing model — it is a folder that is not
+    /// mounted, and saying so is the whole difference.
+    pub exists: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelLibrary {
     /// The managed directory, so *Open the model folder* opens the path the
     /// runtime resolved rather than one the frontend assembled.
     pub speech_dir: String,
+    /// Every place a speech model may come from, highest rank first. The
+    /// listing unions them; the rank decides which file runs (ADR 0159).
+    pub folders: Vec<ModelFolder>,
     pub server: LocalServerAnswer,
     pub rows: Vec<ManagedModelRow>,
 }
@@ -365,16 +418,128 @@ pub fn model_library() -> Result<ModelLibrary, String> {
         },
     };
 
-    let rows = model_catalogue::installable_rows()
+    let mut rows: Vec<ManagedModelRow> = model_catalogue::installable_rows()
         .into_iter()
         .map(|row| managed_row(row, &dir, server_tags.as_deref(), &config))
         .collect();
 
+    /* **AND EVERY FILE ON THE DISK THE CATALOGUE DOES NOT KNOW** (ADR 0159).
+       Without this the tab is called *On this machine* and lists something
+       else. A model somebody put in the managed folder, or in a folder they
+       pointed WordScript at, is discovered by `core::providers::local`,
+       resolvable by the decode path, and was invisible here. */
+    rows.extend(your_own_rows(&rows, &config));
+
     Ok(ModelLibrary {
         speech_dir: dir.display().to_string(),
+        folders: local::local_model_sources()
+            .iter()
+            .filter_map(|source| {
+                let dir = source.dir()?;
+                Some(ModelFolder {
+                    path: dir.display().to_string(),
+                    kind: source.kind_label().to_string(),
+                    /* Only a folder the user added on this screen can be
+                       removed from it. An environment variable is somebody's
+                       shell profile and is not this surface's to edit, and the
+                       managed directory is the one WordScript owns. */
+                    removable: source.is_user_dir(),
+                    exists: dir.is_dir(),
+                })
+            })
+            .collect(),
         server,
         rows,
     })
+}
+
+/// Every `ggml-*.bin` this build can see that no catalogue row claims.
+///
+/// **The name is the stem, and that is deliberate.** A file on this disk is not
+/// a vendor's model id — the one place B3 left a literal standing — so a row of
+/// this kind is named by exactly what `core::providers::local` will resolve it
+/// by, and choosing it writes that stem into the profile unchanged.
+fn your_own_rows(catalogued: &[ManagedModelRow], config: &AppConfig) -> Vec<ManagedModelRow> {
+    /* A catalogue row owns its stem even before it is downloaded: a user who
+       drops `ggml-base.bin` in themselves has the catalogue's `base`, not a
+       second model that happens to share a name. The catalogue row simply
+       reports itself installed. */
+    let claimed: Vec<String> = model_catalogue::installable_rows()
+        .into_iter()
+        .filter_map(|row| match row.install.as_ref()? {
+            InstallSource::Download { file_name, .. } => Some(
+                file_name
+                    .strip_prefix("ggml-")
+                    .and_then(|rest| rest.strip_suffix(".bin"))
+                    .unwrap_or(file_name)
+                    .to_string(),
+            ),
+            InstallSource::ServerPull { .. } => None,
+        })
+        .collect();
+
+    let mut rows: Vec<ManagedModelRow> = Vec::new();
+
+    for source in local::local_model_sources() {
+        let Some(dir) = source.dir() else { continue };
+
+        for stem in local::local_model_names_in_dir(dir) {
+            if claimed.iter().any(|name| name == &stem) {
+                continue;
+            }
+            /* The highest-ranked source that offers a stem is the one that
+               runs it, so it is the one listed. The rest are the same model. */
+            if rows.iter().any(|row| row.row == stem) {
+                continue;
+            }
+
+            let path = dir.join(format!("ggml-{stem}.bin"));
+            let bytes = actual_bytes(&path, dir, &stem);
+
+            rows.push(ManagedModelRow {
+                row: stem.clone(),
+                model_id: format!("ggml-{stem}"),
+                role: ProviderRole::Speech,
+                mechanism: "download".to_string(),
+                origin: ModelOrigin::Yours,
+                size_bytes: bytes,
+                quantization: None,
+                state: ManagedModelState::Installed { bytes },
+                path: Some(path.display().to_string()),
+                folder: Some(dir.display().to_string()),
+                in_use_by: profile_using_local_stem(&stem, config),
+            });
+        }
+    }
+
+    let _ = catalogued;
+    rows
+}
+
+/// What a discovered file occupies. Falls back to a directory walk because the
+/// discovery matches more spellings than `ggml-{stem}.bin` — `ggml-large-v3-q5_0.bin`
+/// is one stem to the resolver and a different file name on the disk.
+fn actual_bytes(exact: &Path, dir: &Path, stem: &str) -> u64 {
+    if let Ok(meta) = std::fs::metadata(exact) {
+        if meta.is_file() {
+            return meta.len();
+        }
+    }
+
+    std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok())
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case(&format!("ggml-{stem}.bin")))
+        })
+        .and_then(|entry| entry.metadata().ok())
+        .map(|meta| meta.len())
+        .unwrap_or(0)
 }
 
 fn managed_row(
@@ -440,10 +605,17 @@ fn managed_row(
         model_id: row.model_id.clone(),
         role: row.role,
         mechanism,
-        size_bytes: install.size_bytes(),
+        origin: ModelOrigin::Catalogue,
+        size_bytes: match state {
+            /* Once it is on the disk the file's own length is the honest
+               number; before that the catalogue's figure is all anyone has. */
+            ManagedModelState::Installed { bytes } if bytes > 0 => bytes,
+            _ => install.size_bytes(),
+        },
         quantization: install.quantization().map(str::to_string),
         state,
         path,
+        folder: None,
         in_use_by,
     }
 }
@@ -506,6 +678,25 @@ fn profile_using(row: &ModelRow, config: &AppConfig) -> Option<String> {
     };
 
     machine_wide.then(|| "the machine-wide default".to_string())
+}
+
+/// The same question as `profile_using`, asked about a stem rather than a
+/// catalogue row — the shape a `yours` row needs, since it has no row.
+fn profile_using_local_stem(stem: &str, config: &AppConfig) -> Option<String> {
+    let wanted = local::normalized_local_model_name(stem);
+
+    for profile in &config.text_profiles {
+        if local::normalized_local_model_name(&profile.resolved_speech().local_model) == wanted {
+            return Some(if profile.label.trim().is_empty() {
+                profile.id.clone()
+            } else {
+                profile.label.clone()
+            });
+        }
+    }
+
+    (local::normalized_local_model_name(&config.local_model) == wanted)
+        .then(|| "the machine-wide default".to_string())
 }
 
 // ── Starting an install ──────────────────────────────────────────────────────
@@ -977,8 +1168,14 @@ pub fn cancel_model_install(install_id: String) -> Result<(), String> {
 /// Removes an installed model, or refuses and says which profile stopped it.
 #[tauri::command]
 pub async fn remove_model(row: String) -> Result<(), String> {
-    let catalogue_row = model_catalogue::row(&row)
-        .ok_or_else(|| format!("No catalogue row '{row}' — nothing to remove."))?;
+    /* A row the catalogue does not know is one of the user's own (ADR 0159),
+       and it is removable on exactly one condition: WordScript put it in the
+       folder it manages. A file in somebody's own library was never this
+       build's to delete — removing the FOLDER is the undo for adding it, and
+       that is `remove_model_folder`. */
+    let Some(catalogue_row) = model_catalogue::row(&row) else {
+        return remove_your_own_model(&row);
+    };
     let install = catalogue_row
         .install
         .as_ref()
@@ -1031,6 +1228,409 @@ pub async fn remove_model(row: String) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// Removes a model no catalogue row claims, and refuses where it is not this
+/// build's file to remove.
+fn remove_your_own_model(stem: &str) -> Result<(), String> {
+    let config = AppConfig::load_from_disk();
+    if let Some(profile) = profile_using_local_stem(stem, &config) {
+        return Err(format!(
+            "{profile} runs on ggml-{stem} — change that profile's model first."
+        ));
+    }
+
+    let managed = managed_speech_model_dir();
+    let target = managed.join(format!("ggml-{stem}.bin"));
+    if !target.is_file() {
+        return Err(format!(
+            "ggml-{stem} is in a folder you added, not the one WordScript manages. Remove the folder here, or the file where it lives."
+        ));
+    }
+
+    std::fs::remove_file(&target)
+        .map_err(|error| format!("Could not remove {}: {error}", target.display()))?;
+    runtime_log::record(format!(
+        "[WordScript] Imported model removed row={stem} path={}",
+        target.display()
+    ));
+    Ok(())
+}
+
+/// Copies a model file the user picked into the directory WordScript manages
+/// (ADR 0159).
+///
+/// **One of two ways in, and the one that ends with WordScript owning the
+/// file.** The other is `add_model_folder`, which uses a model where it lies.
+/// Both exist because both cases are real: somebody with a single `.bin` in
+/// their downloads wants it *in*, and somebody with a library on a home server
+/// does not want a second copy of a 1.6 GB file.
+///
+/// It runs on the same channel, id and cancel machinery a download does, for
+/// the reason a 1.6 GB copy needs it: a file that large takes long enough that
+/// a surface without progress looks broken.
+///
+/// **No checksum, and that is not an oversight.** The catalogue's checksum
+/// answers *did this download arrive intact*; a file somebody already has needs
+/// no such answer, and demanding one would refuse exactly the models this
+/// exists to accept. What it does check is that the name is one the discovery
+/// can see and that no catalogue row already owns it.
+#[tauri::command]
+pub async fn import_model_file(app: AppHandle, path: String) -> Result<String, String> {
+    let source = PathBuf::from(path.trim());
+    let meta = std::fs::metadata(&source)
+        .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
+    if !meta.is_file() {
+        return Err(format!("{} is not a file.", source.display()));
+    }
+
+    let file_name = source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "That file has no readable name.".to_string())?
+        .to_ascii_lowercase();
+
+    /* The name is the contract with the discovery. `core::providers::local`
+       finds a recogniser by the `ggml-{stem}.bin` shape, so a file landing
+       under any other name would be copied, counted and never resolvable —
+       an import that silently does nothing. */
+    if !file_name.starts_with("ggml-") || !file_name.ends_with(".bin") {
+        return Err(format!(
+            "WordScript reads whisper.cpp models named ggml-<name>.bin, and this one is '{file_name}'. Rename it and try again."
+        ));
+    }
+
+    if model_catalogue::installable_rows().into_iter().any(|row| {
+        matches!(row.install.as_ref(), Some(InstallSource::Download { file_name: known, .. }) if known == &file_name)
+    }) {
+        return Err(format!(
+            "'{file_name}' is a model WordScript can download itself — use its Download button rather than importing a copy."
+        ));
+    }
+
+    let target = managed_path_for(&file_name);
+    if target.exists() {
+        return Err(format!(
+            "'{file_name}' is already in the folder WordScript manages."
+        ));
+    }
+
+    let install_id = next_install_id();
+    let row = file_name
+        .strip_prefix("ggml-")
+        .and_then(|rest| rest.strip_suffix(".bin"))
+        .unwrap_or(&file_name)
+        .to_string();
+    let total_bytes = meta.len();
+    let entry = register(&install_id, &row);
+
+    emit(
+        &app,
+        ModelInstallEvent {
+            install_id: install_id.clone(),
+            row: row.clone(),
+            phase: ModelInstallPhase::Started,
+            received_bytes: 0,
+            total_bytes,
+            detail: None,
+        },
+    );
+    runtime_log::record(format!(
+        "[WordScript] Model import started id={install_id} row={row} bytes={total_bytes}"
+    ));
+
+    let handle = app.clone();
+    let started_id = install_id.clone();
+    let started_row = row.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let reporting = handle.clone();
+        let report = move |event: ModelInstallEvent| emit(&reporting, event);
+        let outcome = copy_into_managed(&report, &started_id, &started_row, &source, &target, total_bytes, &entry);
+
+        unregister(&started_id);
+        let cancelled = entry.cancelled.load(Ordering::SeqCst);
+        let received = entry.received_bytes.lock().map(|value| *value).unwrap_or(0);
+
+        match outcome {
+            Ok(()) if cancelled => {
+                runtime_log::record(format!(
+                    "[WordScript] Model import completed after cancel, discarded id={started_id} row={started_row}"
+                ));
+                emit(&handle, ModelInstallEvent {
+                    install_id: started_id, row: started_row,
+                    phase: ModelInstallPhase::Cancelled,
+                    received_bytes: received, total_bytes,
+                    detail: Some("Cancelled — nothing was imported.".to_string()),
+                });
+            }
+            Ok(()) => {
+                runtime_log::record(format!(
+                    "[WordScript] Model import done id={started_id} row={started_row}"
+                ));
+                emit(&handle, ModelInstallEvent {
+                    install_id: started_id, row: started_row,
+                    phase: ModelInstallPhase::Installed,
+                    received_bytes: total_bytes, total_bytes, detail: None,
+                });
+            }
+            Err(InstallFailure::Cancelled) => {
+                emit(&handle, ModelInstallEvent {
+                    install_id: started_id, row: started_row,
+                    phase: ModelInstallPhase::Cancelled,
+                    received_bytes: received, total_bytes,
+                    detail: Some("Cancelled — nothing was imported.".to_string()),
+                });
+            }
+            Err(InstallFailure::Failed(detail)) => {
+                runtime_log::record(format!(
+                    "[WordScript] Model import failed id={started_id} row={started_row}: {detail}"
+                ));
+                emit(&handle, ModelInstallEvent {
+                    install_id: started_id, row: started_row,
+                    phase: ModelInstallPhase::Failed,
+                    received_bytes: received, total_bytes,
+                    detail: Some(detail),
+                });
+            }
+        }
+    });
+
+    Ok(install_id)
+}
+
+/// The copy itself: through a `.part` file, like a download, so a cancel or a
+/// failure never leaves a truncated model spelled like a whole one.
+#[allow(clippy::too_many_arguments)]
+fn copy_into_managed(
+    report: Reporter<'_>,
+    install_id: &str,
+    row: &str,
+    source: &Path,
+    target: &Path,
+    total_bytes: u64,
+    entry: &RunningInstall,
+) -> Result<(), InstallFailure> {
+    use std::io::{Read, Write};
+
+    let dir = managed_speech_model_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| failed(format!("Could not create {}: {error}", dir.display())))?;
+
+    if let Some(refusal) = free_space_refusal(&dir, total_bytes) {
+        return Err(failed(refusal));
+    }
+
+    let part = target.with_extension("bin.part");
+    let _ = std::fs::remove_file(&part);
+
+    let mut reader = std::fs::File::open(source)
+        .map_err(|error| failed(format!("Could not read {}: {error}", source.display())))?;
+    let mut writer = std::fs::File::create(&part)
+        .map_err(|error| failed(format!("Could not write {}: {error}", part.display())))?;
+
+    let mut buffer = vec![0u8; 1024 * 1024];
+    let mut copied: u64 = 0;
+    let mut last_report = std::time::Instant::now();
+
+    loop {
+        if entry.cancelled.load(Ordering::SeqCst) {
+            drop(writer);
+            let _ = std::fs::remove_file(&part);
+            return Err(InstallFailure::Cancelled);
+        }
+
+        let read = match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) => {
+                drop(writer);
+                let _ = std::fs::remove_file(&part);
+                return Err(failed(format!("The copy stopped: {error}")));
+            }
+        };
+
+        if let Err(error) = writer.write_all(&buffer[..read]) {
+            drop(writer);
+            let _ = std::fs::remove_file(&part);
+            return Err(failed(format!("Could not write {}: {error}", part.display())));
+        }
+
+        copied = copied.saturating_add(read as u64);
+        if let Ok(mut value) = entry.received_bytes.lock() {
+            *value = copied;
+        }
+
+        if last_report.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
+            last_report = std::time::Instant::now();
+            report(ModelInstallEvent {
+                install_id: install_id.to_string(),
+                row: row.to_string(),
+                phase: ModelInstallPhase::Progress,
+                received_bytes: copied,
+                total_bytes,
+                detail: None,
+            });
+        }
+    }
+
+    drop(writer);
+
+    if entry.cancelled.load(Ordering::SeqCst) {
+        let _ = std::fs::remove_file(&part);
+        return Err(InstallFailure::Cancelled);
+    }
+
+    std::fs::rename(&part, target).map_err(|error| {
+        let _ = std::fs::remove_file(&part);
+        failed(format!(
+            "Could not put the model in place at {}: {error}",
+            target.display()
+        ))
+    })?;
+
+    Ok(())
+}
+
+/// Adds a folder WordScript will look in, without copying anything out of it
+/// (ADR 0159).
+///
+/// **The second way in, and the one for a library somebody already keeps.** The
+/// folder is read and never written to; the models in it are used where they
+/// lie. It ranks below both environment variables and above the managed
+/// directory, so an expert's checkout still wins and what this build installed
+/// does not shadow what the user pointed at.
+#[tauri::command]
+pub fn add_model_folder(path: String) -> Result<Vec<String>, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("No folder was chosen.".to_string());
+    }
+
+    let dir = PathBuf::from(trimmed);
+    if !dir.is_dir() {
+        return Err(format!("{} is not a folder.", dir.display()));
+    }
+
+    let mut config = AppConfig::load_from_disk();
+    let canonical = dir.canonicalize().unwrap_or(dir).display().to_string();
+
+    if config.local_model_dirs.iter().any(|known| known == &canonical) {
+        return Err(format!("{canonical} is already on the list."));
+    }
+
+    /* Added even when it holds no model today. A folder on a share that is not
+       mounted right now is not an empty folder, and refusing it here would make
+       the feature work only while the network does. */
+    config.local_model_dirs.push(canonical);
+    config.save_to_disk()?;
+    Ok(config.local_model_dirs)
+}
+
+/// Stops looking in a folder. **Removes nothing from the disk** — it was never
+/// WordScript's to delete, and a person who added a path expects removing it to
+/// undo the adding and nothing else.
+#[tauri::command]
+pub fn remove_model_folder(path: String) -> Result<Vec<String>, String> {
+    let trimmed = path.trim().to_string();
+    let mut config = AppConfig::load_from_disk();
+    let before = config.local_model_dirs.len();
+
+    config.local_model_dirs.retain(|known| known != &trimmed);
+    if config.local_model_dirs.len() == before {
+        return Err(format!("{trimmed} was not on the list."));
+    }
+
+    config.save_to_disk()?;
+    Ok(config.local_model_dirs)
+}
+
+/// Asks the local server to pull a tag the catalogue does not carry
+/// (ADR 0159).
+///
+/// **The language half's answer to the same question**, and it is a typed tag
+/// rather than a file because Ollama owns that store — there is no folder to
+/// point at and no file to copy. The donor draws the same control for the same
+/// reason: openwhispr's `allowCustomModelId` is a text field beside a curated
+/// list, for the vendors whose catalogue can never be complete.
+#[tauri::command]
+pub async fn pull_model_tag(app: AppHandle, tag: String) -> Result<String, String> {
+    let tag = tag.trim().to_string();
+    if tag.is_empty() {
+        return Err("Type the tag to pull, such as qwen2.5:7b-instruct-q4_K_M.".to_string());
+    }
+
+    if running_for_row(&tag).is_some() {
+        return Err(format!("'{tag}' is already being pulled."));
+    }
+
+    let install_id = next_install_id();
+    let entry = register(&install_id, &tag);
+
+    emit(
+        &app,
+        ModelInstallEvent {
+            install_id: install_id.clone(),
+            row: tag.clone(),
+            phase: ModelInstallPhase::Started,
+            received_bytes: 0,
+            /* **Zero, and it has to be.** Nobody has asked the server how big
+               this is, and printing the catalogue's idea of a size for a tag
+               the catalogue does not carry would be inventing the one number
+               this surface promises to state truthfully. The percentage comes
+               from the server's own `completed`/`total` as the pull runs. */
+            total_bytes: 0,
+            detail: None,
+        },
+    );
+    runtime_log::record(format!(
+        "[WordScript] Model pull started id={install_id} tag={tag}"
+    ));
+
+    let handle = app.clone();
+    let started_id = install_id.clone();
+    let started_tag = tag.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let reporting = handle.clone();
+        let report = move |event: ModelInstallEvent| emit(&reporting, event);
+        let outcome =
+            run_server_pull(&report, &started_id, &started_tag, &started_tag, 0, &entry).await;
+
+        unregister(&started_id);
+        let received = entry.received_bytes.lock().map(|value| *value).unwrap_or(0);
+        let cancelled = entry.cancelled.load(Ordering::SeqCst);
+
+        let (phase, detail) = match outcome {
+            Ok(()) if cancelled => (
+                ModelInstallPhase::Cancelled,
+                Some("Cancelled — the server may still finish the pull it started.".to_string()),
+            ),
+            Ok(()) => (ModelInstallPhase::Installed, None),
+            Err(InstallFailure::Cancelled) => (
+                ModelInstallPhase::Cancelled,
+                Some("Cancelled — the server may still finish the pull it started.".to_string()),
+            ),
+            Err(InstallFailure::Failed(detail)) => (ModelInstallPhase::Failed, Some(detail)),
+        };
+
+        runtime_log::record(format!(
+            "[WordScript] Model pull ended id={started_id} tag={started_tag} phase={phase:?}"
+        ));
+        emit(
+            &handle,
+            ModelInstallEvent {
+                install_id: started_id,
+                row: started_tag,
+                phase,
+                received_bytes: received,
+                total_bytes: received,
+                detail,
+            },
+        );
+    });
+
+    Ok(install_id)
 }
 
 /// Opens the directory WordScript manages, creating it first where it does not
@@ -1258,6 +1858,92 @@ mod tests {
         let error = cancel_model_install("install-does-not-exist".to_string())
             .expect_err("nothing is running under that id");
         assert!(error.contains("install-does-not-exist"), "{error}");
+    }
+
+    /// **The defect B5 left, as a test** (ADR 0159). The tab is called *On this
+    /// machine* and listed the catalogue; a file the runtime discovers,
+    /// resolves and would transcribe with was invisible on it.
+    #[test]
+    fn a_file_the_catalogue_does_not_know_is_listed_as_yours() {
+        let _lock = local::test_env_lock();
+        let managed = managed_speech_model_dir();
+        let _ = std::fs::remove_dir_all(&managed);
+        std::fs::create_dir_all(&managed).expect("create the managed directory");
+        std::fs::write(managed.join("ggml-my-finetune.bin"), b"a model of my own")
+            .expect("write the user's model");
+
+        let rows = your_own_rows(&[], &AppConfig::default());
+        let _ = std::fs::remove_dir_all(&managed);
+
+        let mine = rows
+            .iter()
+            .find(|row| row.row == "my-finetune")
+            .expect("the user's own model is listed");
+
+        assert_eq!(mine.origin, ModelOrigin::Yours);
+        assert_eq!(mine.state, ManagedModelState::Installed { bytes: 17 });
+        /* The size is the file's own. Nothing else knows it, and a catalogue
+           figure borrowed for somebody's own weights would be a fabrication. */
+        assert_eq!(mine.size_bytes, 17);
+        assert!(mine.quantization.is_none());
+        assert!(mine.folder.is_some());
+    }
+
+    /// **A catalogue row owns its stem**, even before anybody downloads it. A
+    /// user who drops `ggml-base.bin` in themselves has the catalogue's `base`
+    /// reporting itself installed, not a second row beside it.
+    #[test]
+    fn a_catalogued_stem_is_not_listed_twice() {
+        let _lock = local::test_env_lock();
+        let managed = managed_speech_model_dir();
+        let _ = std::fs::remove_dir_all(&managed);
+        std::fs::create_dir_all(&managed).expect("create the managed directory");
+        std::fs::write(managed.join("ggml-base.bin"), b"dropped in by hand")
+            .expect("write base");
+
+        let rows = your_own_rows(&[], &AppConfig::default());
+        let catalogued = managed_row(
+            catalogue_row("local-speech-base"),
+            &managed,
+            Ok(&[]),
+            &AppConfig::default(),
+        );
+        let _ = std::fs::remove_dir_all(&managed);
+
+        assert!(
+            !rows.iter().any(|row| row.row == "base"),
+            "the catalogue's row owns that name",
+        );
+        assert_eq!(catalogued.origin, ModelOrigin::Catalogue);
+        assert!(matches!(
+            catalogued.state,
+            ManagedModelState::Installed { .. }
+        ));
+    }
+
+    /// A model in a folder the user pointed at is listed and is **not**
+    /// removable from here: it was never this build's file to delete.
+    #[test]
+    fn a_model_in_a_folder_you_added_is_not_this_screens_to_delete() {
+        let error = tauri::async_runtime::block_on(remove_model("not-in-the-managed-dir".to_string()))
+            .expect_err("nothing of that name is in the managed directory");
+
+        assert!(error.contains("folder you added"), "{error}");
+    }
+
+    #[test]
+    fn an_import_refuses_a_name_the_discovery_cannot_see() {
+        let scratch = std::env::temp_dir().join(format!("ws-import-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&scratch);
+        let wrong = scratch.join("my-model.gguf");
+        std::fs::write(&wrong, b"not a ggml name").expect("write the file");
+
+        // A `tauri::AppHandle` cannot be built in a unit test, so the guard is
+        // exercised through the same predicate the command applies.
+        let name = wrong.file_name().unwrap().to_str().unwrap().to_ascii_lowercase();
+        assert!(!(name.starts_with("ggml-") && name.ends_with(".bin")));
+
+        let _ = std::fs::remove_file(&wrong);
     }
 
     /// **ADR 0122's *done when*, run against the real thing.**

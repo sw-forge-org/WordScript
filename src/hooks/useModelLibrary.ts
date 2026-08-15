@@ -188,9 +188,74 @@ export function useModelLibrary(enabled = true) {
     }
   }, []);
 
+  /**
+   * THE TWO WAYS A MODEL THIS BUILD DOES NOT CURATE GETS IN (ADR 0159).
+   *
+   * **`importFile` copies, `addFolder` does not.** Both are real cases and the
+   * owner asked for both: somebody with one `.bin` in their downloads wants it
+   * in, and somebody with a library on a home server does not want a second
+   * copy of a 1.6 GB file. The copy reports on the same channel a download
+   * does, because a file that large takes long enough that a surface without
+   * progress looks broken.
+   */
+  const importFile = useCallback(
+    async (path: string) => {
+      try {
+        await invoke<string>("import_model_file", { path });
+      } catch (cause) {
+        /* Keyed by the file rather than by a row, because an import that is
+           refused has no row yet — the refusal is about the name it would
+           have landed under. */
+        setFailures((current) => ({ ...current, [path]: String(cause) }));
+      }
+      await read();
+    },
+    [read],
+  );
+
+  const addFolder = useCallback(
+    async (path: string) => {
+      try {
+        await invoke<string[]>("add_model_folder", { path });
+        setError(null);
+      } catch (cause) {
+        setError(String(cause));
+      }
+      await read();
+    },
+    [read],
+  );
+
+  const removeFolder = useCallback(
+    async (path: string) => {
+      try {
+        await invoke<string[]>("remove_model_folder", { path });
+        setError(null);
+      } catch (cause) {
+        setError(String(cause));
+      }
+      await read();
+    },
+    [read],
+  );
+
+  /** The language half's way in: a tag the catalogue does not carry. */
+  const pullTag = useCallback(
+    async (tag: string) => {
+      try {
+        await invoke<string>("pull_model_tag", { tag });
+      } catch (cause) {
+        setFailures((current) => ({ ...current, [tag]: String(cause) }));
+      }
+      await read();
+    },
+    [read],
+  );
+
   return {
     library,
     rows,
+    folders: library?.folders ?? [],
     error,
     failures,
     read,
@@ -198,5 +263,9 @@ export function useModelLibrary(enabled = true) {
     cancel,
     remove,
     openFolder,
+    importFile,
+    addFolder,
+    removeFolder,
+    pullTag,
   };
 }

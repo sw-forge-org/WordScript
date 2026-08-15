@@ -743,6 +743,20 @@ describe("AI Models, the per-job override", () => {
 describe("On this machine, wired", () => {
   const LIBRARY = {
     speech_dir: "/home/someone/.config/WordScript/models/speech",
+    folders: [
+      {
+        path: "/home/felix/whisper-models",
+        kind: "your folder",
+        removable: true,
+        exists: true,
+      },
+      {
+        path: "/home/someone/.config/WordScript/models/speech",
+        kind: "managed by WordScript",
+        removable: false,
+        exists: true,
+      },
+    ],
     server: { base_url: "http://127.0.0.1:11434", reachable: true, detail: "Answering." },
     rows: [
       {
@@ -750,10 +764,12 @@ describe("On this machine, wired", () => {
         model_id: "ggml-base",
         role: "speech",
         mechanism: "download",
+        origin: "catalogue",
         size_bytes: 147_951_465,
         quantization: null,
         state: { kind: "installable" },
         path: null,
+        folder: null,
         in_use_by: null,
       },
       {
@@ -761,10 +777,12 @@ describe("On this machine, wired", () => {
         model_id: "ggml-small",
         role: "speech",
         mechanism: "download",
+        origin: "catalogue",
         size_bytes: 487_601_967,
         quantization: null,
         state: { kind: "installed", bytes: 487_601_967 },
         path: "/home/someone/.config/WordScript/models/speech/ggml-small.bin",
+        folder: null,
         in_use_by: "Technical notes",
       },
       {
@@ -772,10 +790,12 @@ describe("On this machine, wired", () => {
         model_id: "qwen2.5-7b-instruct",
         role: "chat",
         mechanism: "server_pull",
+        origin: "catalogue",
         size_bytes: 4_683_086_845,
         quantization: "Q4_K_M",
         state: { kind: "unknown", detail: "Start Ollama at http://127.0.0.1:11434." },
         path: null,
+        folder: null,
         in_use_by: null,
       },
     ],
@@ -870,7 +890,9 @@ describe("On this machine, wired", () => {
     expect(download).toHaveAttribute("title", expect.stringContaining("Start Ollama"));
   });
 
-  it("states the folder the runtime resolved rather than one it assembled", async () => {
+  /* Every folder the runtime looks in, in rank order, and only the one the
+     user added may be removed from here (ADR 0159). */
+  it("lists the folders the runtime resolved rather than ones it assembled", async () => {
     withLibrary();
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
     await openMachineTab();
@@ -880,6 +902,180 @@ describe("On this machine, wired", () => {
         screen.getByText("/home/someone/.config/WordScript/models/speech"),
       ).toBeInTheDocument(),
     );
+    expect(screen.getByText("/home/felix/whisper-models")).toBeInTheDocument();
+
+    /* The managed directory is WordScript's own and an environment variable is
+       somebody's shell profile; neither is this screen's to delete. */
+    expect(
+      screen.getByRole("button", { name: /Stop looking in \/home\/felix\/whisper-models/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /Stop looking in \/home\/someone/,
+      }),
+    ).toBeNull();
+  });
+});
+
+/**
+ * THE LIBRARY AT SCALE, AND THE MODEL THE CATALOGUE DOES NOT KNOW (B8, ADR 0159).
+ *
+ * Two rules with one mechanism between them: a list that is still the drawing
+ * renders as the drawing, and a list that has outgrown it gets the toolbar the
+ * prototype already specifies. The threshold is what keeps `port:diff` pointed
+ * at something real.
+ */
+describe("On this machine, at scale", () => {
+  function speechRow(stem: string, origin: "catalogue" | "yours" = "catalogue") {
+    return {
+      row: stem,
+      model_id: `ggml-${stem}`,
+      role: "speech",
+      mechanism: "download",
+      origin,
+      size_bytes: 148_000_000,
+      quantization: null,
+      state: origin === "yours" ? { kind: "installed", bytes: 612_000_000 } : { kind: "installable" },
+      path: origin === "yours" ? `/home/felix/whisper-models/ggml-${stem}.bin` : null,
+      folder: origin === "yours" ? "/home/felix/whisper-models" : null,
+      in_use_by: null,
+    };
+  }
+
+  function libraryOf(rows: unknown[]) {
+    return {
+      speech_dir: "/managed",
+      folders: [{ path: "/managed", kind: "managed by WordScript", removable: false, exists: true }],
+      server: { base_url: "http://127.0.0.1:11434", reachable: true, detail: "Answering." },
+      rows,
+    };
+  }
+
+  function withRows(rows: unknown[]) {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") return STATUS;
+      if (command === "resolve_provider_tiers") return TIERS;
+      if (command === "model_library") return libraryOf(rows);
+      return undefined;
+    });
+  }
+
+  async function openMachineTab() {
+    await userEvent.click(screen.getByRole("tab", { name: "On this machine" }));
+  }
+
+  /* Below the threshold the surface is exactly what Leg 6 drew, which is what
+     lets the gallery keep measuring it. A search field appearing at nine rows
+     would put a control on the port's subject that the prototype has no
+     counterpart for. */
+  it("shows no search while the list is still the drawing", async () => {
+    withRows([speechRow("base"), speechRow("small"), speechRow("medium")]);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    await waitFor(() => expect(screen.getByText("ggml-base")).toBeInTheDocument());
+    expect(screen.queryByLabelText("Search models")).toBeNull();
+  });
+
+  it("brings out the toolbar once the list has outgrown it, and filters on it", async () => {
+    const many = Array.from({ length: 14 }, (_, index) => speechRow(`model-${index}`));
+    withRows(many);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    const search = await screen.findByLabelText("Search models");
+    expect(search).toBeInTheDocument();
+
+    await userEvent.type(search, "model-7");
+    await waitFor(() => expect(screen.getByText("ggml-model-7")).toBeInTheDocument());
+    expect(screen.queryByText("ggml-model-3")).toBeNull();
+  });
+
+  /* The empty state names the query rather than saying "nothing here": the
+     list is not empty, the filter is. */
+  it("names the query when a filter leaves nothing standing", async () => {
+    const many = Array.from({ length: 14 }, (_, index) => speechRow(`model-${index}`));
+    withRows(many);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    const search = await screen.findByLabelText("Search models");
+    await userEvent.type(search, "nothing-matches-this");
+
+    /* Both cards answer, because one query filters both lists — the toolbar the
+       prototype specifies is one line above the thing it filters, and this tab
+       has two lists under one intent. */
+    await waitFor(() =>
+      expect(screen.getAllByText(/No model here matches/).length).toBeGreaterThan(0),
+    );
+  });
+
+  /* A card with nothing in it is an empty list, not a filter that found
+     nothing. Saying "nothing matches that filter" to somebody who has not
+     typed one is a false sentence about their machine. */
+  it("does not blame a filter nobody set for an empty card", async () => {
+    withRows([speechRow("base")]);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    await waitFor(() => expect(screen.getByText("ggml-base")).toBeInTheDocument());
+    expect(screen.queryByText(/matches that filter/)).toBeNull();
+  });
+
+  /**
+   * **The defect B5 left, from the surface side.** The tab is called *On this
+   * machine* and listed the catalogue; a file the runtime discovers, resolves
+   * and would transcribe with was not on it.
+   */
+  it("lists a model the catalogue does not know, with the folder it came from", async () => {
+    withRows([speechRow("base"), speechRow("my-finetune", "yours")]);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    const row = await waitFor(() => {
+      const node = screen.getByText("ggml-my-finetune").closest(".ws-mdl");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+
+    expect(row).toHaveAttribute("data-state", "installed");
+    /* Its size is the file's own — nothing else knows it, and a catalogue
+       figure borrowed for somebody's own weights would be a fabrication. */
+    expect(within(row).getByText(/612 MB/)).toBeInTheDocument();
+  });
+
+  it("offers both ways in, and they are different actions", async () => {
+    withRows([speechRow("base")]);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    /* One copies a file into the folder WordScript manages; the other points
+       at a folder and copies nothing. The owner asked for both because both
+       cases are real. */
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add a model…" })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Add a folder…" })).toBeInTheDocument();
+  });
+
+  /* The language half's way in: a tag rather than a file, because Ollama owns
+     that store. Disabled until something is typed — a Pull with no tag is a
+     button that can only fail. */
+  it("pulls a tag the catalogue does not carry", async () => {
+    withRows([speechRow("base")]);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    const field = await screen.findByLabelText("Pull a tag");
+    const pull = screen.getByRole("button", { name: "Pull" });
+    expect(pull).toBeDisabled();
+
+    await userEvent.type(field, "gemma3:12b-it-q4_K_M");
+    await waitFor(() => expect(pull).not.toBeDisabled());
+    await userEvent.click(pull);
+
+    expect(invoked).toHaveBeenCalledWith("pull_model_tag", { tag: "gemma3:12b-it-q4_K_M" });
   });
 });
 

@@ -28,19 +28,51 @@ export type ManagedModelState =
   | { kind: "installed"; bytes: number }
   | { kind: "unknown"; detail: string };
 
+/**
+ * Whether this build knows the row from its catalogue or found the file on the
+ * disk (ADR 0159).
+ *
+ * **`yours` is the answer B5 could not give.** That step listed the catalogue
+ * and called the result *what is on this machine*, which stopped being true the
+ * moment somebody put their own `ggml-*.bin` in the folder: the runtime
+ * discovered it, resolved it, would transcribe with it, and the surface did not
+ * show it.
+ */
+export type ModelOrigin = "catalogue" | "yours";
+
 export interface ManagedModelRow {
-  /** The catalogue slug. Every command names a row by this, never by a model id. */
+  /** The catalogue slug, or the file's stem for a model no row claims. */
   row: string;
   model_id: string;
   role: ProviderRole;
   /** `download` (ours) or `server_pull` (the server's). */
   mechanism: "download" | "server_pull";
+  origin: ModelOrigin;
   size_bytes: number;
   quantization: string | null;
   state: ManagedModelState;
   path: string | null;
+  /** Which folder it came from, when it is not the managed one. */
+  folder: string | null;
   /** Which profile runs it, when one does — the reason a removal is refused. */
   in_use_by: string | null;
+}
+
+/**
+ * One place this build looks for a speech model (ADR 0159).
+ *
+ * **The listing unions every folder; the order decides which file runs.** Two
+ * folders holding `ggml-small.bin` are one model as far as a picker is
+ * concerned, and the higher-ranked one is the file that transcribes.
+ */
+export interface ModelFolder {
+  path: string;
+  /** Which kind of source it is, in the reader's words. */
+  kind: string;
+  /** Whether this surface may remove it. Only a folder added here. */
+  removable: boolean;
+  /** Whether it is there at all — an unmounted share is not an empty folder. */
+  exists: boolean;
 }
 
 export interface LocalServerAnswer {
@@ -52,6 +84,8 @@ export interface LocalServerAnswer {
 export interface ModelLibrary {
   /** The directory the runtime manages, resolved by the runtime. */
   speech_dir: string;
+  /** Every place a speech model may come from, highest rank first. */
+  folders: ModelFolder[];
   server: LocalServerAnswer;
   rows: ManagedModelRow[];
 }

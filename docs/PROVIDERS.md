@@ -724,6 +724,34 @@ It fetches the real file, verifies the checksum against the row, and proves both
 the discovery and the decode path find it afterwards with neither environment
 variable set. Run it whenever an `install` block changes.
 
+### Where a local speech model may live, and which one runs
+
+Four sources, and the order is the contract (ADR 0159):
+
+| Rank | Source | Set by |
+| --- | --- | --- |
+| 1 | `WORDSCRIPT_LOCAL_MODEL_PATH` | an environment variable, one file |
+| 2 | `WORDSCRIPT_LOCAL_MODEL_DIR` | an environment variable, one folder |
+| 3 | folders added on `AI Models` | the user, stored in `AppConfig::local_model_dirs` |
+| 4 | the managed directory | what WordScript installed or imported |
+
+**The listing unions them; the rank decides which file runs.** A model in two
+folders is one model as far as the picker is concerned, and the higher-ranked
+file is the one that transcribes. ADR 0122's *an expert's checkout is never
+overridden* lives in the rank, not in the listing -- B5 read it as an early
+return and the consequence was that an in-app install was invisible to anybody
+who had set the environment variable.
+
+**Three ways a model this repo does not curate gets in.** A picker that copies
+the file into the managed folder; a folder that is read and never written to;
+and *Open the model folder*, which is what the file-drop users want. The
+language half has one way and it is different in kind -- a typed Ollama tag,
+because that server owns its store and there is no folder to point at.
+
+**A model you brought carries no checksum and is not asked for one.** The
+catalogue's checksum answers *did this download arrive intact*; a file you
+already have needs no such answer.
+
 **The pull tags are the explicitly quantized ones** -- `qwen2.5:7b-instruct-q4_K_M`
 rather than `qwen2.5:7b-instruct`. Identical bytes today, and the tag then
 states the quantization the surface draws beside it, so the column and the tag

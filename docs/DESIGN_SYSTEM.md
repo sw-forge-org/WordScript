@@ -566,7 +566,18 @@ states what it has: a catalogued model with no file reads as *installable* and
 never as *available*; a language model whose server is not running reads as
 **unknown** with the server's own sentence on it, because nobody looked at that
 disk; and the installed total is a count of files that exist, so a machine with
-nothing on it says `0 installed` rather than borrowing the drawn sample. Its job
+nothing on it says `0 installed` rather than borrowing the drawn sample.
+
+**A CONTROL THAT APPEARS ONLY ABOVE A THRESHOLD IS HOW A PORTED SURFACE GROWS**
+(ADR 0159). The model list gains the `Toolbar`/`ToolbarSearch` pair -- the
+prototype's own rule, *filters belong above the thing they filter, on one line,
+and the count belongs to the list they produce* -- but only past twelve rows.
+Below that the surface is exactly the drawing and the gallery keeps measuring
+it; above it the list is no longer the drawing and a search is the honest
+control. The cost is named rather than hidden: the grown state is outside
+`port:diff`'s reach and is held by tests. **A card with no rows is an empty
+list, not a filter that found nothing** -- only a card that has rows and no
+matches names the query. Its job
 row per job that RUNS a model, which is not the same as one row per job that
 SETS one — Titles states the model it runs and offers no setting, because there
 is none to offer (ADR 0088).

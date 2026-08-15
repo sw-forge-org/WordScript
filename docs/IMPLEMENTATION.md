@@ -32,7 +32,7 @@ updated; a kick-off is spent when its unit closes.
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 14 open**; Legs 0–13b closed. Leg 13 split 2026-08-14 and both halves closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
-| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 13 of ~26 steps done, and the local lane can now install what it needs | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 14 of ~27 steps done, and the local lane installs, imports and finds what it needs | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
@@ -116,7 +116,7 @@ the sequence carry it and the closing-phrase artifact found beside it.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**, **0158**.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**, **0158**, **0159**.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -128,13 +128,33 @@ Done: A1–A6 (the runtime contract), B1 (the capability seam), B3 (the model
 catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
 adapter, and the connection that can now be chosen)**, **B6 (what it means to
 wire a drawing inherited from the demo GUI)**, **B7 (the provider choice at
-the point of use)**, and **B5 (in-app model installation)**.
+the point of use)**, **B5 (in-app model installation)**, and **B8 (that library at
+scale, and the model the catalogue does not know)**.
 
 Next unblocked: **B2**, **B4**, **E1**, **D3** — whose `Requires` line
 has read D1 and A3 since it was written, both now done — and **D1a**, which
 since B6 spent its drawing half is the adapter alone and the cheapest step in
 Stage D. **B4 is cheaper than it was**: the Ollama listing it would have added
 for the local lane is now a `pub(crate)` reader B5 put there.
+
+**B8 landed the same evening and it is mostly a correction of B5.** The tab was
+called *On this machine* and listed the catalogue, so a `ggml-*.bin` somebody
+put in the folder was discovered, resolvable, transcribable and **invisible**;
+and *an expert's checkout is never overridden* (ADR 0122) had been implemented
+as an early return, so with `WORDSCRIPT_LOCAL_MODEL_DIR` set an in-app install
+was never offered at all. **The listing unions every source; the rank decides
+which file runs** (ADR 0159). It also adds the two ways in the owner asked for —
+a picker that copies into the managed folder, and a folder used where it lies —
+plus a typed tag for the language half, which is the only shape available there
+because Ollama owns that store.
+
+**One finding from it is for any track.** A surface that has to grow past its
+drawn size can keep the port its subject by making the new control appear only
+above a threshold: below it the gallery renders exactly the drawing and
+`port:diff` still measures something real. B8's search appears above twelve
+rows — openwhispr's own number — and the drawn nine keep `models#1` at
+`0 | 0 | 7`. **The cost is that the grown state is unmeasured by the port** and
+held by tests instead, which is the same class of gap Leg 13b named.
 
 **B5 landed 2026-08-15 and it closes a gate that had been open for twelve
 days.** ADR 0042 said *until in-app installation exists, the local lane is
@@ -242,8 +262,8 @@ direction of travel, not a reservation, and the number line is corrected here by
 whoever notices — 0155 landed in `be74233` and stood on neither this board nor
 its own track's page until the owner asked for it on 2026-08-15; **the seventh
 record is on the track page now**. 0157 went to the speech track on
-2026-08-15 with B7 and **0158 with B5 the same day**, so **0159 is the next
-free number**.
+2026-08-15 with B7, **0158 with B5 and 0159 with B8 the same day**, so **0160 is
+the next free number**.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
 swept the event channel and found `wordscript-native-insert` emitted from three

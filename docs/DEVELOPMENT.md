@@ -75,8 +75,12 @@ model. Configure the path only when working on this lane:
   `WORDSCRIPT_LOCAL_MODEL_DIR` for a model directory.
   **Neither is required since 2026-08-15** (ADR 0158): `AI Models` ->
   *On this machine* downloads a model into a directory WordScript manages and
-  the runtime finds it there. The two variables stay and still **outrank** what
-  the installer put there, so a checkout of your own is never overridden.
+  the runtime finds it there. The two variables stay and still **outrank** every
+  other source, so a checkout of your own decides which file runs.
+  **They no longer hide the others** (ADR 0159): every folder is listed and only
+  the tie is broken by rank. Folders can also be added on that screen without an
+  environment variable at all, and a model in one is used where it lies rather
+  than copied.
 - Ollama at `http://127.0.0.1:11434`, or `WORDSCRIPT_LOCAL_CHAT_BASE_URL`
 - a local cleanup model selected in settings or through
   `WORDSCRIPT_LOCAL_CHAT_MODEL`

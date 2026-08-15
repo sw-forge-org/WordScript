@@ -15,6 +15,7 @@ import {
   DocLink,
   Field,
   Icon,
+  IconButton,
   Job,
   JobList,
   JobModel,
@@ -22,6 +23,8 @@ import {
   ModelList,
   ModelRow,
   Note,
+  Toolbar,
+  ToolbarSearch,
   ProviderChips,
   Row,
   ScopeTag,
@@ -40,11 +43,14 @@ import {
   LANES,
   LOCAL_VOICE_PRESET,
   libraryModel,
+  LIBRARY_LANGUAGE_ROWS,
+  LIBRARY_SPEECH_ROWS,
   PROVIDERS,
   providerNames,
   type JobKey,
   type LaneName,
 } from "./data";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { formatModelSize, modelInstall } from "@/lib/modelCatalogue";
 import { useModelLibrary } from "@/hooks/useModelLibrary";
 import { buildProfileSpeechPatch } from "@/lib/textProfiles";
@@ -1435,8 +1441,27 @@ function DrawnLibrary() {
    ever seeing. */
 function WiredLibrary() {
   const runtime = useRuntime();
-  const { library, rows, error, failures, install, cancel, remove, openFolder } =
-    useModelLibrary();
+  const {
+    library,
+    rows,
+    folders,
+    error,
+    failures,
+    install,
+    cancel,
+    remove,
+    openFolder,
+    importFile,
+    addFolder,
+    removeFolder,
+    pullTag,
+  } = useModelLibrary();
+
+  /* One query and one origin filter, shared by both cards. Two of each would
+     be two states that disagree about what the user is looking for, and the
+     toolbar the prototype draws is one line above one list. */
+  const [query, setQuery] = useState("");
+  const [origin, setOrigin] = useState<"All models" | "Installed" | "Yours">("All models");
 
   const speech = rows.filter((row) => row.mechanism === "download");
   const language = rows.filter((row) => row.mechanism === "server_pull");
@@ -1455,26 +1480,77 @@ function WiredLibrary() {
     );
   };
 
-  const card = (rowsForCard: ManagedModelRow[]) => (
-    <ModelList>
-      {rowsForCard.map((row) => (
-        <ModelRow
-          key={row.row}
-          {...drawnLibraryRow(row)}
-          state={stateOf(row)}
-          active={Boolean(row.in_use_by)}
-          pct={percentOf(row)}
-          reason={failures[row.row] ?? unreachableReason(row)}
-          onDownload={() => void install(row.row)}
-          onCancel={() =>
-            row.state.kind === "installing" ? void cancel(row.state.install_id) : undefined
-          }
-          onRemove={() => void remove(row.row)}
-          onUse={() => useModel(row)}
-        />
-      ))}
-    </ModelList>
-  );
+  const card = (rowsForCard: ManagedModelRow[]) => {
+    const shown = filterRows(rowsForCard, query, origin);
+
+    /* **The toolbar appears only when the list outgrows the drawing**, and that
+       is what lets this surface grow without the port losing its subject. Nine
+       rows is what Leg 6 drew and what `port:diff` measures; past the threshold
+       the list is no longer the drawing and a search is the honest control.
+       The number is openwhispr's `LIST_SEARCH_THRESHOLD`, borrowed rather than
+       invented — it is the count at which that donor switches a plain list for
+       a searchable one. */
+    const searchable = rowsForCard.length > LIST_SEARCH_THRESHOLD;
+
+    return (
+      <>
+        {searchable && (
+          <Toolbar label="Filter models">
+            <ToolbarSearch>
+              <Field
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search models…"
+                aria-label="Search models"
+              />
+            </ToolbarSearch>
+            <Select
+              value={origin}
+              onChange={(event) => setOrigin(event.target.value as typeof origin)}
+              aria-label="Show"
+            >
+              {(["All models", "Installed", "Yours"] as const).map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Select>
+          </Toolbar>
+        )}
+        {shown.length === 0 && rowsForCard.length > 0 ? (
+          /* **Naming the query rather than saying "nothing here"**, and only
+             where there IS something here: a card with no rows at all is an
+             empty list, not a filter that found nothing, and telling somebody
+             their filter is too narrow when they have not typed one is a false
+             sentence about their own machine. */
+          <Note icon="search">
+            {query.trim()
+              ? `No model here matches “${query.trim()}”.`
+              : "Nothing here matches that filter."}
+          </Note>
+        ) : (
+          <ModelList>
+            {shown.map((row) => (
+              <ModelRow
+                key={row.row}
+                {...drawnLibraryRow(row)}
+                state={stateOf(row)}
+                active={Boolean(row.in_use_by)}
+                pct={percentOf(row)}
+                reason={failures[row.row] ?? unreachableReason(row)}
+                onDownload={() => void install(row.row)}
+                onCancel={() =>
+                  row.state.kind === "installing" ? void cancel(row.state.install_id) : undefined
+                }
+                onRemove={() => void remove(row.row)}
+                onUse={() => useModel(row)}
+              />
+            ))}
+          </ModelList>
+        )}
+      </>
+    );
+  };
 
   return (
     <>
@@ -1486,10 +1562,20 @@ function WiredLibrary() {
           footer={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">{installedSummary(speech)}</StatusBadge>
-              <span className="ws-muted">
-                Model folder:{" "}
-                <span className="ws-mono">{library?.speech_dir ?? "Not read"}</span>
-              </span>
+              {/* THE FIRST OF TWO WAYS IN (ADR 0159): the file is copied into
+                  the folder WordScript manages, so removal, the total and the
+                  discovery all keep one rule. The second — a folder used where
+                  it lies — is the section at the foot of this tab. */}
+              <Button
+                variant="ghost"
+                icon={<Icon name="upload" />}
+                onClick={() => void pickModelFile(importFile)}
+              >
+                Add a model…
+              </Button>
+              <Button variant="ghost" icon={<Icon name="folder" />} onClick={() => void openFolder()}>
+                Open the model folder
+              </Button>
             </span>
           }
         >
@@ -1505,9 +1591,11 @@ function WiredLibrary() {
           footer={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">{installedSummary(language)}</StatusBadge>
-              <Button variant="ghost" icon={<Icon name="folder" />} onClick={() => void openFolder()}>
-                Open the model folder
-              </Button>
+              {/* THE LANGUAGE HALF'S WAY IN, and it is a typed tag rather than
+                  a file because Ollama owns that store: there is no folder to
+                  point at and no file to copy. The donor draws the same control
+                  for the same reason (openwhispr's `allowCustomModelId`). */}
+              <PullTagField onPull={pullTag} />
             </span>
           }
         >
@@ -1525,7 +1613,155 @@ function WiredLibrary() {
         )}
         {error && <Note icon="alert">{error}</Note>}
       </SectionHeader>
+
+      {/* **THE SECOND WAY IN, AND IT GOES LAST.** An addition placed mid-screen
+          on a ported drawing renumbers every section after it (the B7 finding);
+          at the end it is its own nodes and nothing shifts. It is also where it
+          belongs by reading order: the two cards above are what you have, and
+          this is where those files come from. */}
+      <SectionHeader
+        title="Where models come from"
+        description="Every folder WordScript looks in, in the order that decides which file runs when two of them hold the same model."
+      >
+        <Card
+          footer={
+            <span className="ws-rowflex">
+              <Button
+                variant="ghost"
+                icon={<Icon name="folder" />}
+                onClick={() => void pickModelFolder(addFolder)}
+              >
+                Add a folder…
+              </Button>
+              <span className="ws-muted">
+                A folder you add is read and never written to — the models in it stay where they
+                are.
+              </span>
+            </span>
+          }
+        >
+          <CardRows>
+            {folders.map((folder) => (
+              <Row
+                key={folder.path}
+                label={folder.kind}
+                hint={folder.exists ? undefined : "This folder is not there right now — a share that is not mounted is not an empty folder."}
+                control={
+                  <span className="ws-rowflex">
+                    <span className="ws-mono ws-muted">{folder.path}</span>
+                    {!folder.exists && <StatusBadge tone="warning">Not mounted</StatusBadge>}
+                    {folder.removable && (
+                      <IconButton
+                        label={`Stop looking in ${folder.path}`}
+                        icon={<Icon name="trash" />}
+                        tone="danger"
+                        onClick={() => void removeFolder(folder.path)}
+                      />
+                    )}
+                  </span>
+                }
+              />
+            ))}
+          </CardRows>
+        </Card>
+      </SectionHeader>
     </>
+  );
+}
+
+/**
+ * THE COUNT AT WHICH A LIST STOPS BEING A LIST (ADR 0159).
+ *
+ * Borrowed rather than invented: openwhispr's `LIST_SEARCH_THRESHOLD` is the
+ * number that donor switches a plain model list for a searchable, grouped one
+ * at, and it has the scale to have found out. Below it this surface is exactly
+ * the drawing Leg 6 ported and `port:diff` still has its subject; above it the
+ * list is no longer the drawing and a search is the honest control.
+ */
+const LIST_SEARCH_THRESHOLD = 12;
+
+/** The nine rows the drawing carries a sentence for. Everything else renders
+ *  from the runtime's own facts — see `drawnLibraryRow`. */
+const LIBRARY_ROW_IDS = new Set<string>([...LIBRARY_SPEECH_ROWS, ...LIBRARY_LANGUAGE_ROWS]);
+
+/** The rows a query and an origin filter leave standing. */
+function filterRows(
+  rows: ManagedModelRow[],
+  query: string,
+  origin: "All models" | "Installed" | "Yours",
+): ManagedModelRow[] {
+  const needle = query.trim().toLowerCase();
+
+  return rows.filter((row) => {
+    if (origin === "Installed" && row.state.kind !== "installed") return false;
+    if (origin === "Yours" && row.origin !== "yours") return false;
+    if (!needle) return true;
+
+    /* The name, the slug and the drawn sentence. Not the path: a person
+       searching for a model is not searching for a directory, and matching one
+       would make `/home/felix` return every row they own. */
+    const drawn = drawnLibraryRow(row);
+    return (
+      row.model_id.toLowerCase().includes(needle) ||
+      row.row.toLowerCase().includes(needle) ||
+      drawn.detail.toLowerCase().includes(needle)
+    );
+  });
+}
+
+/**
+ * Ask for the model file, then hand the path to the runtime.
+ *
+ * The picker is the frontend's because that is where the dialog plugin lives;
+ * everything after the path — the name check, the free-space check, the copy
+ * and its progress — is the runtime's. A frontend that read the bytes itself
+ * would be a second copy of a 1.6 GB file in the webview's memory.
+ */
+async function pickModelFile(importFile: (path: string) => Promise<void>) {
+  const picked = await openFileDialog({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "whisper.cpp model", extensions: ["bin"] }],
+  });
+  if (typeof picked === "string") await importFile(picked);
+}
+
+async function pickModelFolder(addFolder: (path: string) => Promise<void>) {
+  const picked = await openFileDialog({ multiple: false, directory: true });
+  if (typeof picked === "string") await addFolder(picked);
+}
+
+/**
+ * A tag the catalogue does not carry, typed and pulled.
+ *
+ * Its own component because it holds a draft: the field has to keep what is
+ * being typed, and lifting that into `WiredLibrary` would re-render both model
+ * lists on every keystroke.
+ */
+function PullTagField({ onPull }: { onPull: (tag: string) => Promise<void> }) {
+  const [tag, setTag] = useState("");
+
+  return (
+    <span className="ws-rowflex">
+      <Field
+        value={tag}
+        onChange={(event) => setTag(event.target.value)}
+        placeholder="qwen2.5:7b-instruct-q4_K_M"
+        w="230px"
+        aria-label="Pull a tag"
+      />
+      <Button
+        variant="ghost"
+        icon={<Icon name="download" />}
+        disabled={!tag.trim()}
+        onClick={() => {
+          void onPull(tag.trim());
+          setTag("");
+        }}
+      >
+        Pull
+      </Button>
+    </span>
   );
 }
 
@@ -1533,12 +1769,29 @@ function WiredLibrary() {
  *  from the runtime rather than from the catalogue, because after an install
  *  the file's own length is the honest number. */
 function drawnLibraryRow(row: ManagedModelRow) {
-  const drawn = libraryModel(row.row);
+  const size = formatModelSize(
+    row.state.kind === "installed" ? row.state.bytes : row.size_bytes,
+  );
+
+  /* **A row the drawing has no sentence for still renders** (B8, ADR 0159), and
+     it has to: `libraryModel` throws for anything outside the nine rows Leg 6
+     drew, which was correct while the list WAS those nine and became a crash
+     the moment the tab started listing what is actually on the disk. The
+     drawing keeps its sentence where it has one; everything else is composed
+     from what the runtime knows, which is exactly what the donors do for a
+     model they did not curate — Handy's custom rows read "Not officially
+     supported" because nobody wrote them a description either. */
+  const drawn = LIBRARY_ROW_IDS.has(row.row) ? libraryModel(row.row) : undefined;
+  if (drawn) return { ...drawn, size };
+
   return {
-    ...drawn,
-    size: formatModelSize(
-      row.state.kind === "installed" ? row.state.bytes : row.size_bytes,
-    ),
+    brand: undefined,
+    name: row.model_id,
+    size,
+    detail:
+      row.origin === "yours"
+        ? `yours · ${row.folder ?? "on this machine"}`
+        : [row.quantization, "not described here"].filter(Boolean).join(" · "),
   };
 }
 

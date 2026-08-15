@@ -1218,6 +1218,23 @@ Status: Proposed | Accepted | Superseded by NNNN
   the same channel was visible spelled one way and invisible spelled the other —
   ADR 0153's shape again, fixed by symmetry rather than by a second spelling.
 
+- [0159](0159-the-listing-unions-and-the-rank-decides-and-a-control-that-appears-late-keeps-the-port-its-subject.md):
+  **the listing unions, the rank decides, and a control that appears late keeps
+  the port its subject.** B8, and mostly a correction of B5. `model_library`
+  listed the catalogue and called it *what is on this machine*; and *an expert's
+  checkout is never overridden* (ADR 0122) had been built as an early return, so
+  with `WORDSCRIPT_LOCAL_MODEL_DIR` set an in-app install was on the disk,
+  resolvable and never offered. Overriding is a tie-break. Two ways in, both
+  asked for by the owner and both necessary: a picker that copies into the
+  managed folder, and a folder read where it lies — plus a typed tag for the
+  language half, which is the only shape Ollama's store allows. **The finding
+  that generalises**: a surface that must grow past its drawn size can keep
+  `port:diff` its subject by making the new control appear only above a
+  threshold, at the cost of the grown state being unmeasured by the port. The
+  donors split cleanly — `Handy` for bring-your-own, `openwhispr` for scale —
+  and openwhispr independently carries the same `142MB` / `148000000` duality
+  ADR 0158 corrected.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

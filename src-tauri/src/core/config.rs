@@ -1140,6 +1140,21 @@ pub struct AppConfig {
     pub local_best_of: u8,
     pub local_profile_prompt_settings: Vec<LocalProfilePromptSettings>,
     pub local_profile_decode_settings: Vec<LocalProfileDecodeSettings>,
+    /// Folders the user pointed WordScript at, in the order they added them
+    /// (ADR 0159).
+    ///
+    /// **Machine-wide rather than per profile, and never written into.** A
+    /// model on a home server or in somebody's own whisper.cpp library is a
+    /// property of this installation, not of the writing style it happens to be
+    /// used by; and it is used where it lies, because the alternative is a
+    /// second copy of a file that can be 1.6 GB. `WORDSCRIPT_LOCAL_MODEL_DIR`
+    /// is the same idea for somebody who prefers an environment variable and
+    /// still outranks this at resolution time.
+    ///
+    /// Additive: absent reads as empty, so a config written before this field
+    /// existed needs no migration.
+    #[serde(default)]
+    pub local_model_dirs: Vec<String>,
     pub hotkey: String,
     pub pause_hotkey: String,
     pub abort_hotkey: String,
@@ -1283,6 +1298,7 @@ impl Default for AppConfig {
                 beam_size: default_local_beam_size,
                 best_of: default_local_best_of,
             }],
+            local_model_dirs: Vec::new(),
             hotkey: default_hotkey().to_string(),
             pause_hotkey: default_pause_hotkey().to_string(),
             abort_hotkey: default_abort_hotkey().to_string(),

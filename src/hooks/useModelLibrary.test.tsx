@@ -27,6 +27,9 @@ let emit: (payload: ModelInstallEvent) => void = () => {};
 function library(overrides: Partial<ModelLibrary> = {}): ModelLibrary {
   return {
     speech_dir: "/home/someone/.config/WordScript/models/speech",
+    folders: [
+      { path: "/home/someone/.config/WordScript/models/speech", kind: "managed by WordScript", removable: false, exists: true },
+    ],
     server: { base_url: "http://127.0.0.1:11434", reachable: true, detail: "Answering." },
     rows: [
       {
@@ -34,10 +37,12 @@ function library(overrides: Partial<ModelLibrary> = {}): ModelLibrary {
         model_id: "ggml-base",
         role: "speech",
         mechanism: "download",
+        origin: "catalogue",
         size_bytes: 147_951_465,
         quantization: null,
         state: { kind: "installing", install_id: "install-1", received_bytes: 0 },
         path: null,
+        folder: null,
         in_use_by: null,
       },
       {
@@ -45,10 +50,12 @@ function library(overrides: Partial<ModelLibrary> = {}): ModelLibrary {
         model_id: "qwen2.5-7b-instruct",
         role: "chat",
         mechanism: "server_pull",
+        origin: "catalogue",
         size_bytes: 4_683_086_845,
         quantization: "Q4_K_M",
         state: { kind: "installable" },
         path: null,
+        folder: null,
         in_use_by: null,
       },
     ],

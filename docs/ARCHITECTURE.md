@@ -203,6 +203,11 @@ The active product core lives in `src-tauri/src/core/`.
   be able to reach the reducer (ADR 0018, ADR 0019). The transfer takes a
   reporter closure rather than an `AppHandle`, which is what lets the one path
   that writes to a user's disk be exercised by a test.
+  **`local_model_sources` is where precedence lives** (ADR 0159): four ranked
+  places a recogniser may be, unioned for the listing and walked in order for
+  the resolution. Two folders holding one name are one model; the rank decides
+  which file runs, and the highest-ranked source that FAILED owns the error
+  message.
 - `runtime_log.rs`: buffered structured runtime logs for the diagnostics UI,
   plus a persistent ring-rotated file (`~/.config/WordScript/logs/wordscript-runtime.log`).
 - `history.rs`: persistent native history with raw vs transformed
