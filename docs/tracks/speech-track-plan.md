@@ -70,9 +70,13 @@ then and here from the Runtime ownership and GUI port tracks (ADR 0154, 0155,
 distance to the last paragraph** — the sixth ignored test is B5's network
 acceptance, which is why that count moved too. `cargo check` stays at 15.
 
-**After B8: `cargo test` 838 passed / 6 ignored (+5 on B5's own number after a
-rewrite), frontend 590 across 45 files (+8), `cargo check` still 15, and
-`port:diff` unmoved on both states of `models`.** A step that grows a surface
+**After B8: `cargo test` 838 passed / 6 ignored — 844 counting the ignored, so
++5 on B5's 839 — and frontend 590 across 45 files (+8). `cargo check` still 15,
+and `port:diff` unmoved on both states of `models`.** The +5 is four new cases
+in `model_install` and one in `local`, plus one rewrite that nets zero:
+`the_environment_outranks_what_the_installer_put_there` became
+`every_source_is_offered_and_the_environment_wins_the_tie`, because it asserted
+the defect. A step that grows a surface
 and moves the port by zero is reporting the threshold working, not an absence of
 work.
 
@@ -1433,7 +1437,7 @@ Speaking row, so it is flagged rather than assumed.
 | B3 | **done** 2026-08-12 — `shared/model_catalogue.json` plus its schema, `core::model_catalogue` and `src/lib/modelCatalogue.ts` on the same bytes, rows named by slug, twelve places stopped spelling a model id and a test walks `src/` for the thirteenth, +12 Rust tests and +12 frontend cases, `PROVIDERS.md` disagreement 5 closed and 12 opened |
 | B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
 | B5 | **done** 2026-08-15 — the installation ADR 0042 drew on 2026-08-03 and never got, and that record's gate closes with it (ADR 0158). `CATALOGUE_VERSION` 2 with an additive `install` block on nine local rows; `core::model_install` with five commands, not the three this page estimated; `wordscript-model-event` on its own channel. `fallback_provider_profiles` returns **nothing** where it used to invent four rows for files that may not exist, and the managed directory is the third source in both `discover_local_provider_profiles` **and** `resolve_local_model_path` — the second half is not in ADR 0122's `Touches` line and without it an install is a profile that is dead at first capture. Six drawn sizes were wrong and are corrected (ADR 0128): five were binary units under decimal names, and `gemma-3-4b-it` was a plausible figure for a pull that costs 3.3 GB. **+20 Rust across three modules and +26 frontend across two new files, every one made to fail first**; one further acceptance is `#[ignore]`d and downloads the real 148 MB file — it passed in 19.3 s. `port:diff`: `models` unmoved at `structural 26 \| style 242 \| text 19`, `models#1` `0\|0\|1` → `0\|0\|7` and the six are the corrections. Free space is answered on unix and **unanswered on Windows**, which is the one clause of ADR 0122 this step did not discharge |
-| B8 | **done** 2026-08-15 — the library at scale (ADR 0159). The listing unions every source and the rank decides which file runs, which corrects B5's early return; `AppConfig::local_model_dirs` is a folder list the user sets from the screen; two ways in (`import_model_file` copies, `add_model_folder` does not) plus `pull_model_tag` for the language half. **The search appears only above twelve rows**, openwhispr's own number, so the drawn nine still render as the drawing and `port:diff` is unmoved on `models` (26 \| 242 \| 19) and `models#1` (0 \| 0 \| 7). +9 Rust, +7 frontend, every one made to fail first. A row the drawing has no sentence for used to crash the tab; the first test written against a user's own model found it |
+| B8 | **done** 2026-08-15 — the library at scale (ADR 0159). The listing unions every source and the rank decides which file runs, which corrects B5's early return; `AppConfig::local_model_dirs` is a folder list the user sets from the screen; two ways in (`import_model_file` copies, `add_model_folder` does not) plus `pull_model_tag` for the language half. **The search appears only above twelve rows**, openwhispr's own number, so the drawn nine still render as the drawing and `port:diff` is unmoved on `models` (26 \| 242 \| 19) and `models#1` (0 \| 0 \| 7). **+5 Rust and +8 frontend** (844 and 590 total), every one made to fail first. A row the drawing has no sentence for used to crash the tab; the first test written against a user's own model found it |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and now genuinely the cheapest step in Stage D: D1 extracted the helper it reaches with a second base URL |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |

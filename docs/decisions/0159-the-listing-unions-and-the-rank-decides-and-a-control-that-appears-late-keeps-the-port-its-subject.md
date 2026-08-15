@@ -182,9 +182,11 @@ matches names the query.
   that made an unrelated test resolve a model it should not have found. It
   surfaced three tests away as a wrong `LocalProviderIssueCode`. Everything is
   read before anything is asserted now, and the config is restored in between.
-- **+9 Rust and +7 frontend**, each made to fail first: four Rust mutations and
-  seven frontend ones, in three batches. `cargo test` **838 passed / 6 ignored**,
-  frontend **590 across 45 files**, `cargo check` still 15.
+- **+5 Rust and +8 frontend**, each made to fail first: four Rust mutations and
+  seven frontend ones, in three batches. `cargo test` **838 passed / 6 ignored**
+  — 844 counting the ignored, against B5's 839 — frontend **590 across 45
+  files**, `cargo check` still 15. The Rust delta is four new cases in
+  `model_install` and one in `local`, plus a rewrite that nets zero.
 - **No dependency moved**, so the advisory sweep B5 ran still describes this
   tree.
 - **What is still not verified is the same thing B5 left owed**: the
@@ -195,3 +197,18 @@ matches names the query.
   the third way in and the one that scales to uncurated but downloadable
   weights, and it reopens the checksum question a user pasting a link cannot
   answer. Named here so the next reader knows it was considered.
+
+
+## Correction, same day
+
+**The test counts in this record's first version were wrong**, and so are the
+ones in commit `5962c2f`'s message: it claims *+9 Rust and +7 frontend*. The
+measured figures are **+5 Rust** (839 → 844 counting the ignored) and **+8
+frontend** (582 → 590). The Rust number was inflated by counting a rewritten
+test as a new one and by counting mutation targets as tests.
+
+Recorded rather than silently edited, because
+[`IMPLEMENTATION.md`](../IMPLEMENTATION.md) makes a test count a shared
+measurement and a step that changes one owes the amount and the reason. The
+commit message cannot be corrected without rewriting published history, so it is
+corrected here instead.
