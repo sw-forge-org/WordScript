@@ -957,23 +957,44 @@ measured run 2's code and reported it as a fresh result.
    mounted there (`src/screens/Context.tsx:203`) over `contextData.ts`, a
    fixture. The walk stayed in Profiles because that is where every panel with
    real data lives; Context's menu has never been measured either.
-4. **A THREE-DAY-OLD `port:diff` BROWSER WAS HOLDING 9333.** Started 2026-08-12
-   15:15, still alive with dozens of renderers at 16:29 on 2026-08-15 — the
-   stale-browser trap Leg 12 recorded as finding 6, three days on instead of ten
-   hours. `port:diff` did not need to run this leg (Profiles left the gallery in
-   Leg 8, and nothing here touched a gallery screen), so it was left alone
-   rather than killed on the way past. **Check `ss -ltnp | grep 9333` before
-   your first batch** and kill the root PID.
+4. ~~**A THREE-DAY-OLD `port:diff` BROWSER WAS HOLDING 9333.**~~ **Spent the same
+   session — killed, and the trap closed. See the addendum below.** It had been
+   up since 2026-08-12 15:15 with dozens of renderers: Leg 12's finding 6, three
+   days on instead of ten hours.
 5. **THE RUST BASELINE IS CARRIED, NOT MEASURED, AND IT MAY HAVE MOVED.** 13a
    measured 807 passed / 5 ignored and 15 warnings on 2026-08-15 — and
    `be74233` landed Rust **after** that, so the number is older than the tree.
    Nothing here touched Rust, so no `cargo` command ran. Re-measure before you
    quote it.
-6. **ADR 0155 IS NOT ON THE BOARD OR ON ITS OWN TRACK'S PAGE.** It landed with
-   `be74233` on 2026-08-15 (the overlay stops being unmapped) and
-   `IMPLEMENTATION.md` still reads *"0155 onward as they come"* for the runtime
-   ownership track, whose page carries six records and not this seventh. I
-   corrected the board's number line only — the record is that track's to write.
+6. ~~**ADR 0155 IS NOT ON THE BOARD OR ON ITS OWN TRACK'S PAGE.**~~ **Spent the
+   same session on the owner's instruction — the seventh record is written. See
+   the addendum below.** It had landed with `be74233` on 2026-08-15 while
+   `IMPLEMENTATION.md` still read *"0155 onward as they come"*.
+
+**Addendum, 2026-08-15 — findings 4 and 6 were both spent the same session, on
+the owner's word.** *"ADR 0155 kannst du wieder fixen, den port:diff-Browser
+kannst du auch killen und fixen."*
+
+- **The seventh record is written** and the board's number line with it. ADR 0155
+  now stands on [`runtime-ownership.md`](runtime-ownership.md) with what it hands
+  that track: the park move became effective for the first time, on a record that
+  had measured all 482 parks landing somewhere other than requested *because* GTK
+  does not move a hidden window. **Finding 6 is spent.** 0157 is the next free
+  number.
+- **The three-day-old browser is killed by PID, and the trap it came out of is
+  closed.** `chrome.kill()` sat at the foot of `gallery-port-diff.mjs` and ran
+  only on the happy path — and this script is known to crash mid-walk, at screen
+  8 and screen 23, which is where every stale browser came from. It now dies on
+  `exit`, both signals and both unhandled-error paths. And **a run refuses to
+  start when something already answers CDP on 9333**, naming the PID: a second
+  Chrome cannot bind a taken port, so the wait loop was succeeding against the
+  browser that was already there and measuring its pages in silence.
+  **Finding 4 is spent.**
+- **Both directions of the guard were made to fire before either was believed.**
+  A fake CDP responder on 9333 got `Port 9333 is already answering CDP
+  (StaleChrome/Leg13b-test)`, the right PID and exit 1; a run crashed on purpose
+  with no prototype server behind it and left **zero** chrome processes and a
+  free port, which is the exact shape that produced the stale browser before.
 
 **Checks at the close.** `npm test` **542 passed across 42 files**, against the
 541/42 baseline — **+1 is this leg's own case and nothing else moved**.
@@ -1106,9 +1127,12 @@ geometry is ADR 0100's and somebody is working at the machine.
   touched Rust**. **Watch the TOTAL, not the colour.** The baseline is **542
   across 42 files**.
 - **`npm run port:diff` TAKES GALLERY IDS OR IT MEASURES NOTHING**, and a name
-  that is not one is dropped in silence. **Check `ss -ltnp | grep 9333` first**
-  and kill a leftover by PID — one from 2026-08-12 was still holding the port
-  three days later on 2026-08-15. Run in two or three batches.
+  that is not one is dropped in silence. Run it in two or three batches — it
+  still crashes at screen 8 and screen 23 of a single 25-id invocation, and every
+  screen that crashes is exact alone. **It no longer leaves a browser behind when
+  it does, and it refuses to start when something else has** (Leg 13b's
+  addendum), so a stale 9333 is now a loud failure rather than a silent
+  measurement of somebody else's pages.
 - **The native host is the only instrument for a drawn state.** A dev host is
   usually already running and it may be the owner's own session — do not kill it
   and do not raise its window.

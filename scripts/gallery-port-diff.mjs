@@ -22,7 +22,7 @@
 // blocks — the prototype's `.content-inner` children, the gallery's
 // `.ws-screen-stage` children — so a wrapper on either side shows up as a path
 // that exists on one side only.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -235,7 +235,48 @@ async function drive(tab, spec, n, side) {
 }
 
 let chrome, nextId = 1;
+
+// WHOEVER IS ALREADY ON THE PORT, NAMED — because attaching to them silently is
+// the failure this check has now had twice.
+//
+// A second Chrome cannot bind a taken `--remote-debugging-port`; it exits, and
+// the wait loop below then succeeds against the browser that was ALREADY there.
+// The run measures pages in someone else's browser and says nothing. Leg 12
+// found a ten-hour-old one holding 9333 (finding 6) and Leg 13b found one three
+// days old, still alive with dozens of renderers. Refusing is right: a stale
+// browser is a fact about the machine, and a check that quietly works around it
+// is a check whose zero means nothing.
+async function whoIsOnThePort() {
+  try {
+    const r = await fetch(`http://127.0.0.1:${PORT}/json/version`);
+    if (!r.ok) return null;
+    const v = await r.json();
+    let pid = "";
+    try {
+      const out = execFileSync("ss", ["-ltnp"], { encoding: "utf8" });
+      pid = out.split("\n").find((line) => line.includes(`:${PORT} `))?.match(/pid=(\d+)/)?.[1] ?? "";
+    } catch {
+      // `ss` is not everywhere; the refusal is still correct without a PID.
+    }
+    return { browser: v.Browser ?? "unknown", pid };
+  } catch {
+    return null;
+  }
+}
+
 async function cdp() {
+  const stale = await whoIsOnThePort();
+  if (stale) {
+    console.error(
+      `Port ${PORT} is already answering CDP (${stale.browser}).\n` +
+        "A second Chrome cannot bind it, so this run would have measured that\n" +
+        "browser's pages instead of its own — silently.\n" +
+        (stale.pid
+          ? `Kill it by PID and run again:  kill ${stale.pid}\n`
+          : `Find it with:  ss -ltnp | grep ${PORT}\n`),
+    );
+    process.exit(1);
+  }
   chrome = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${PORT}`,
     "--no-first-run", "--no-default-browser-check", "--disable-gpu",
     "--window-size=1400,1000", "--user-data-dir=/tmp/wordscript-port-diff", "about:blank"],
@@ -244,6 +285,21 @@ async function cdp() {
     try { const r = await fetch(`http://127.0.0.1:${PORT}/json/version`); if (r.ok) break; }
     catch { await sleep(200); }
   }
+}
+
+// THE BROWSER DIES WITH THE RUN, INCLUDING THE RUNS THAT CRASH. `chrome.kill()`
+// at the foot of this file only ever ran on the happy path, and this script is
+// known to crash mid-walk — screen 8 and screen 23 of a 25-id invocation, with
+// different exceptions. That is where every stale browser came from.
+for (const signal of ["exit", "SIGINT", "SIGTERM", "uncaughtException", "unhandledRejection"]) {
+  process.on(signal, (error) => {
+    chrome?.kill();
+    if (error instanceof Error) {
+      console.error(error);
+      process.exit(1);
+    }
+    if (signal !== "exit") process.exit(1);
+  });
 }
 async function newTab(url) {
   const r = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });

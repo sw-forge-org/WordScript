@@ -61,13 +61,20 @@ string that must draw one line and a 411-character string that must draw ten.
 stale** — 807 passed / 5 ignored and 15 warnings were measured on 2026-08-15,
 and `be74233` landed Rust after that. Re-measure before quoting it.
 
-**A THREE-DAY-OLD `port:diff` BROWSER WAS HOLDING 9333** on 2026-08-15 and was
-left alone because this leg had no gallery screen to diff. `ss -ltnp | grep
-9333` before your first batch, and kill the root PID.
+**THE STALE-BROWSER TRAP IS CLOSED AND YOU INHERIT THE FIX, NOT THE PROBLEM.** A
+`port:diff` browser from 2026-08-12 was still holding 9333 three days later,
+because `chrome.kill()` ran only on the happy path and the script crashes
+mid-walk. It now dies on every exit path, and a run **refuses to start** when
+something already answers CDP on 9333, naming the PID — a second Chrome cannot
+bind a taken port, so the old behaviour was to attach to the stale browser and
+measure its pages in silence. Both directions were made to fire before they were
+believed.
 
-**ADR NUMBERS: 0156 is this track's as of 2026-08-15 and it is the highest in
-the tree.** 0155 went to runtime ownership the same day. Grep the whole tree —
-source and commit messages included — never a number written on a page.
+**ADR NUMBERS: the highest in the tree on 2026-08-15 is 0156** and it is this
+track's; 0155 went to runtime ownership the same day, and its seventh record was
+written onto that track's page on the owner's instruction. **0157 is next.** Grep
+the whole tree — source and commit messages included — never a number written on
+a page.
 
 **Never `--no-verify`.** Never `pkill`. Do not raise a window past somebody
 working at the machine — ask.

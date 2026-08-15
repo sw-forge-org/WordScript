@@ -50,10 +50,14 @@ own, then make the next event decidable.
 Adjacent, do not re-derive:
 [`overlay-stranded-off-screen.md`](../known-issues/overlay-stranded-off-screen.md)
 owns the second cause of "invisible mid-recording" and carries the log
-discriminator table. Reopened, not this track's to fix.
+discriminator table. Reopened, not this track's to fix — **but ADR 0155 made its
+park move effective for the first time on 2026-08-15**, which is a risk this
+track now carries and not a fix it owns. See the seventh record below.
 
-Owns **ADR 0133, 0134 and 0150–0152** for these records, and 0153 onward as they
-come. ADRs 0079–0081, 0083,
+Owns **ADR 0133, 0134, 0150–0152** for these records, **0154** for the insert
+channel the GUI port handed over and **0155** for the overlay's map frame, and
+0157 onward as they come — **0153 and 0156 are the GUI port's**, filed on
+2026-08-14 and 2026-08-15 because that track filed first. ADRs 0079–0081, 0083,
 0084 and 0100 belong to **Core hardening**; 0133 continues that line and says so
 in its own References. 0132 is the Speech track's — it landed in `2d5bead` while
 this track was being written, which is why the rule below says to check the
@@ -702,6 +706,46 @@ result out of band is the defect `CLAUDE.md` already forbids for
 `wordscript-native-event`. **If it stays, the SPEC line says what consumes it; if
 it goes, the SPEC line goes with it.** Re-run the sweep with
 `node scripts/command-sweep.mjs` after either.
+
+### A seventh record, 2026-08-15, and no step behind this one either — the overlay's map frame (ADR 0155)
+
+**Filed late.** It landed in `be74233` on 2026-08-15 and this page did not carry
+it until 2026-08-16, while [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) still
+read *"0155 onward as they come"* for a number that was already spent. Found by
+the GUI port's Leg 13b while grepping the tree for its own next free number,
+which is the rule working rather than failing — and the reason the rule exists
+is that a number is cited in a commit before its file lands. **0156 went to that
+leg the same day.**
+
+**It belongs here because it is the same ownership question the track opened
+with.** The overlay flashed the full 480×60 rectangle black at every recording
+start, and every path that already defended against a black surface aimed at a
+different moment: the three `set_background_color(0,0,0,0)` calls answer
+WebKitGTK's documented resize behaviour, and GTK's own paint is transparent
+anyway. The black arrives after GTK, in the compositor, at **map** time — every
+reveal ended in `show()`, which under XWayland is a fresh X11 map, and KWin
+composites a newly mapped window before WebKitGTK has delivered a frame with
+alpha. **The frame the compositor showed was the one nobody in this repository
+owned.**
+
+**The fix is to stop mapping.** On Linux the window is mapped once at setup,
+offscreen, at opacity 0 — the one unavoidable map frame spent where nobody is
+looking — and parking becomes opacity 0 plus click-through plus the offscreen
+move, in that order on the GTK main thread. Windows and macOS keep `hide()`.
+
+**What it hands this track is an open risk rather than a closed one, and it is
+worth reading beside step 6.** A parked overlay is now mapped-but-invisible,
+which is the state
+[`../known-issues/overlay-stranded-off-screen.md`](../known-issues/overlay-stranded-off-screen.md)
+warned about — and **the park move became effective for the first time**. That
+record measured all 482 parks landing somewhere other than requested, because
+GTK does not move a hidden window, and found 31 at the dead-zone corner
+`(3840,1507)` that is its strongest candidate for the 65 strandings. A mapped
+window actually moves. The next reveal overwrites the position through the
+hidden→visible branch, so the exposure is smaller than when those numbers were
+taken — but *whether the park move should simply be deleted* is a question
+ADR 0155 opens and does not answer, and it is this track's kind of question:
+who owns the position, and does anything read it back.
 
 ## Not this track
 

@@ -202,8 +202,9 @@ went to Context objects as a range the same week, which is why step 7's decision
 is 0150 and not 0138, and **0153 went to the GUI port on 2026-08-14** because
 that leg filed first, as **0156 did on 2026-08-15**. "Onward as they come" is a
 direction of travel, not a reservation, and the number line is corrected here by
-whoever notices — **0155's own record is still owed on this track's page**, and
-it is that track's to write.
+whoever notices — 0155 landed in `be74233` and stood on neither this board nor
+its own track's page until the owner asked for it on 2026-08-15; **the seventh
+record is on the track page now**, and 0157 is the next free number.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
 swept the event channel and found `wordscript-native-insert` emitted from three
@@ -212,6 +213,16 @@ as contract (ADR 0153). It was dead weight rather than a gap — every emitter s
 beside a path already delivering the same `NativeInsertResult` — and the owner
 removed it the next day (ADR 0154), on ADR 0018/0019's rule that a session ends
 in exactly one reducer commit.
+
+**A seventh closed the same day and was missing from every page for a day**
+(ADR 0155). The overlay flashed the full rectangle black at every recording
+start, because each reveal ended in `show()` — an X11 map under XWayland, which
+KWin composites before WebKitGTK has delivered a frame with alpha. On Linux the
+window is now mapped once at setup, offscreen at opacity 0, and parking is
+opacity plus click-through; Windows and macOS keep `hide()`. **What it hands the
+track is an open risk**: the park move became effective for the first time, and
+`overlay-stranded-off-screen.md` had measured all 482 parks landing somewhere
+other than requested precisely because GTK does not move a hidden window.
 
 **Step 1 was silent data loss and its code landed 2026-08-14.** Every insert
 call site is an `invoke` from `OverlayWindow.tsx`; after `preview ready` the
