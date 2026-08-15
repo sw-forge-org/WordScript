@@ -730,6 +730,159 @@ describe("AI Models, the per-job override", () => {
   });
 });
 
+/**
+ * ON THIS MACHINE, WIRED — B5 (ADR 0122).
+ *
+ * The tab was drawn and dead since Leg 6: a `downloading` row at 38 %, an
+ * installed total of `284 MB`, and nothing behind any of it. What is asserted
+ * here is the sentence that replaced the sample — that a machine with nothing
+ * installed says so — plus the two rules the surface owes: a row is
+ * *installable* rather than available, and a model a profile runs on cannot be
+ * removed by accident.
+ */
+describe("On this machine, wired", () => {
+  const LIBRARY = {
+    speech_dir: "/home/someone/.config/WordScript/models/speech",
+    server: { base_url: "http://127.0.0.1:11434", reachable: true, detail: "Answering." },
+    rows: [
+      {
+        row: "local-speech-base",
+        model_id: "ggml-base",
+        role: "speech",
+        mechanism: "download",
+        size_bytes: 147_951_465,
+        quantization: null,
+        state: { kind: "installable" },
+        path: null,
+        in_use_by: null,
+      },
+      {
+        row: "local-speech-small",
+        model_id: "ggml-small",
+        role: "speech",
+        mechanism: "download",
+        size_bytes: 487_601_967,
+        quantization: null,
+        state: { kind: "installed", bytes: 487_601_967 },
+        path: "/home/someone/.config/WordScript/models/speech/ggml-small.bin",
+        in_use_by: "Technical notes",
+      },
+      {
+        row: "local-chat-qwen-7b",
+        model_id: "qwen2.5-7b-instruct",
+        role: "chat",
+        mechanism: "server_pull",
+        size_bytes: 4_683_086_845,
+        quantization: "Q4_K_M",
+        state: { kind: "unknown", detail: "Start Ollama at http://127.0.0.1:11434." },
+        path: null,
+        in_use_by: null,
+      },
+    ],
+  };
+
+  function withLibrary(library: unknown = LIBRARY) {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") return STATUS;
+      if (command === "resolve_provider_tiers") return TIERS;
+      if (command === "model_library") return library;
+      return undefined;
+    });
+  }
+
+  async function openMachineTab() {
+    await userEvent.click(screen.getByRole("tab", { name: "On this machine" }));
+  }
+
+  it("counts what is installed rather than drawing a total", async () => {
+    withLibrary();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    /* The drawn sample said `2 installed · 284 MB` on a machine with nothing on
+       it. One speech model is installed here and its bytes are the total. */
+    await waitFor(() => expect(screen.getByText("1 installed · 488 MB")).toBeInTheDocument());
+    /* And the language half has none, which is a sentence rather than a blank. */
+    expect(screen.getByText("0 installed")).toBeInTheDocument();
+    expect(screen.queryByText("2 installed · 284 MB")).toBeNull();
+  });
+
+  it("offers a catalogued model with no file for download rather than as available", async () => {
+    withLibrary();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    const row = await waitFor(() => {
+      const node = screen.getByText("ggml-base").closest(".ws-mdl");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+
+    expect(row).toHaveAttribute("data-state", "available");
+    const download = within(row).getByRole("button", { name: "Download" });
+    expect(download).not.toBeDisabled();
+
+    await userEvent.click(download);
+    expect(invoked).toHaveBeenCalledWith("install_model", { row: "local-speech-base" });
+  });
+
+  /* The refusal ADR 0122 requires, stated before the click rather than after
+     it: deleting the model your dictation runs on and discovering it at the
+     next capture is the fake-state defect with the user's own action as its
+     cause. */
+  it("refuses to remove a model a profile runs on, and names the profile", async () => {
+    withLibrary();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    const row = await waitFor(() => {
+      const node = screen.getByText("ggml-small").closest(".ws-mdl");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+
+    expect(row).toHaveAttribute("data-state", "installed");
+    expect(within(row).getByText("In use")).toBeInTheDocument();
+    const remove = within(row).getByRole("button", { name: /Remove ggml-small/ });
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveAttribute("title", expect.stringContaining("Technical notes"));
+  });
+
+  /**
+   * **A server that is not running does not make its models missing.** Nobody
+   * looked at that disk, and drawing four rows as *not installed* because a
+   * probe failed would be the claim ADR 0106 forbids one layer up.
+   */
+  it("says why a language row cannot be answered for instead of calling it absent", async () => {
+    withLibrary();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    const row = await waitFor(() => {
+      const node = screen.getByText("qwen2.5-7b-instruct").closest(".ws-mdl");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+
+    const download = within(row).getByRole("button", { name: "Download" });
+    expect(download).toBeDisabled();
+    expect(download).toHaveAttribute("title", expect.stringContaining("Start Ollama"));
+  });
+
+  it("states the folder the runtime resolved rather than one it assembled", async () => {
+    withLibrary();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("/home/someone/.config/WordScript/models/speech"),
+      ).toBeInTheDocument(),
+    );
+  });
+});
+
 describe("AI Models, in the gallery", () => {
   it("is the drawing, with every lane selectable and nothing read", () => {
     render(<ModelsScreen />);
@@ -740,6 +893,17 @@ describe("AI Models, in the gallery", () => {
     }
     expect(screen.getAllByText("Set").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Account plan")).not.toBeDisabled();
+    expect(invoked).not.toHaveBeenCalled();
+  });
+
+  /* The machine tab in the gallery is the sample state, and it must not reach
+     for `model_library` at all — the split `CeilingBadge` already makes, held
+     on the one tab that grew a second reader in B5. */
+  it("draws the machine tab from the sample state and reads no library", async () => {
+    render(<ModelsScreen />);
+    await userEvent.click(screen.getByRole("tab", { name: "On this machine" }));
+
+    expect(screen.getByText("2 installed · 284 MB")).toBeInTheDocument();
     expect(invoked).not.toHaveBeenCalled();
   });
 });

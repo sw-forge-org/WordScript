@@ -338,6 +338,9 @@ configuration and the surface says so. ADR 0042 makes this a prerequisite for
 offering the lane, not an improvement to it. **The gate stays here and is
 answered elsewhere:** the work is B5 in the speech track now, and this phase
 stops being gated when that step lands -- not when this page is next edited.
+**B5 landed 2026-08-15 (ADR 0158), so this gate is closed.** What remains of
+the phase is the rest of its scope, and publishing the lane -- ADR 0067's
+preview badge is untouched by the installation and comes off here.
 
 ## Phase 6 - Guided Setup and Packaging
 

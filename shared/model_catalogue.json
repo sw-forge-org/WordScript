@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "One versioned model catalogue, read by the Rust runtime and by the drawing (ADR 0115, scoped by ADR 0120). A row records what a vendor's documentation says about a model, with the source and the read-date that docs/PROVIDERS.md requires of every row it publishes. It is NOT a capability: what this build can operate is core::providers::model_capabilities, and neither answer is derived from the other. Nothing outside this file spells a model id; consumers name a row by its id, which is a stable slug rather than a model name, so a vendor's next generation is a change to model_id here and nowhere else.",
   "providers": [
     {
@@ -260,7 +260,16 @@
       "languages": "multilingual",
       "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
       "read_date": "2026-08-11",
-      "note": "whisper.cpp documents a streaming example and a whisper-server; this build shells out to whisper-cli, which takes a file. So the row says supported and core::providers::local answers Unsupported, and both are right. That gap is the whole reason ADR 0115 keeps the catalogue and the capability apart."
+      "note": "whisper.cpp documents a streaming example and a whisper-server; this build shells out to whisper-cli, which takes a file. So the row says supported and core::providers::local answers Unsupported, and both are right. That gap is the whole reason ADR 0115 keeps the catalogue and the capability apart.",
+      "install": {
+        "kind": "download",
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+        "file_name": "ggml-base.bin",
+        "size_bytes": 147951465,
+        "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+        "source": "huggingface.co/ggerganov/whisper.cpp, file metadata via the Hub tree API (the LFS oid IS the file's SHA256)",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-speech-base-en",
@@ -270,7 +279,16 @@
       "streaming": "supported",
       "languages": "English only",
       "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
-      "read_date": "2026-08-11"
+      "read_date": "2026-08-11",
+      "install": {
+        "kind": "download",
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+        "file_name": "ggml-base.en.bin",
+        "size_bytes": 147964211,
+        "sha256": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+        "source": "huggingface.co/ggerganov/whisper.cpp, file metadata via the Hub tree API (the LFS oid IS the file's SHA256)",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-speech-small",
@@ -280,7 +298,16 @@
       "streaming": "supported",
       "languages": "multilingual",
       "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
-      "read_date": "2026-08-11"
+      "read_date": "2026-08-11",
+      "install": {
+        "kind": "download",
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+        "file_name": "ggml-small.bin",
+        "size_bytes": 487601967,
+        "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        "source": "huggingface.co/ggerganov/whisper.cpp, file metadata via the Hub tree API (the LFS oid IS the file's SHA256)",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-speech-medium",
@@ -290,7 +317,16 @@
       "streaming": "supported",
       "languages": "multilingual",
       "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
-      "read_date": "2026-08-11"
+      "read_date": "2026-08-11",
+      "install": {
+        "kind": "download",
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
+        "file_name": "ggml-medium.bin",
+        "size_bytes": 1533763059,
+        "sha256": "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+        "source": "huggingface.co/ggerganov/whisper.cpp, file metadata via the Hub tree API (the LFS oid IS the file's SHA256)",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-speech-large-v3-turbo",
@@ -301,7 +337,16 @@
       "languages": "multilingual",
       "source": "github.com/ggml-org/whisper.cpp, via docs/PROVIDERS.md § Local",
       "read_date": "2026-08-11",
-      "note": "Same weights as the cloud lane's whisper-large-v3-turbo and not the same thing: this one is a file on this disk that costs 1.6 GB and a load, that one is billed per request and bounded by an upload ceiling."
+      "note": "Same weights as the cloud lane's whisper-large-v3-turbo and not the same thing: this one is a file on this disk that costs 1.6 GB and a load, that one is billed per request and bounded by an upload ceiling.",
+      "install": {
+        "kind": "download",
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
+        "file_name": "ggml-large-v3-turbo.bin",
+        "size_bytes": 1624555275,
+        "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+        "source": "huggingface.co/ggerganov/whisper.cpp, file metadata via the Hub tree API (the LFS oid IS the file's SHA256)",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-chat-qwen-7b",
@@ -311,7 +356,16 @@
       "streaming": "unknown",
       "languages": "multilingual",
       "source": "docs/prototypes/settings-rework/demo.js § LANES, the drawn Local lane",
-      "read_date": "2026-08-12"
+      "read_date": "2026-08-12",
+      "install": {
+        "kind": "server_pull",
+        "runtime": "ollama",
+        "tag": "qwen2.5:7b-instruct-q4_K_M",
+        "size_bytes": 4683086845,
+        "quantization": "Q4_K_M",
+        "source": "registry.ollama.ai/v2/library/qwen2.5/manifests/7b-instruct-q4_K_M, summed manifest layer sizes",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-chat-qwen-14b",
@@ -321,7 +375,16 @@
       "streaming": "unknown",
       "languages": "multilingual",
       "source": "docs/prototypes/settings-rework/demo.js, the drawn language-model library",
-      "read_date": "2026-08-12"
+      "read_date": "2026-08-12",
+      "install": {
+        "kind": "server_pull",
+        "runtime": "ollama",
+        "tag": "qwen2.5:14b-instruct-q4_K_M",
+        "size_bytes": 8988123581,
+        "quantization": "Q4_K_M",
+        "source": "registry.ollama.ai/v2/library/qwen2.5/manifests/14b-instruct-q4_K_M, summed manifest layer sizes",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-chat-llama-3b",
@@ -331,7 +394,16 @@
       "streaming": "unknown",
       "languages": "multilingual",
       "source": "docs/prototypes/settings-rework/demo.js § LANES, the drawn Local lane",
-      "read_date": "2026-08-12"
+      "read_date": "2026-08-12",
+      "install": {
+        "kind": "server_pull",
+        "runtime": "ollama",
+        "tag": "llama3.2:3b-instruct-q4_K_M",
+        "size_bytes": 2019392628,
+        "quantization": "Q4_K_M",
+        "source": "registry.ollama.ai/v2/library/llama3.2/manifests/3b-instruct-q4_K_M, summed manifest layer sizes",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-chat-gemma-4b",
@@ -341,7 +413,16 @@
       "streaming": "unknown",
       "languages": "multilingual",
       "source": "docs/prototypes/settings-rework/demo.js § LANES, the drawn Local lane",
-      "read_date": "2026-08-12"
+      "read_date": "2026-08-12",
+      "install": {
+        "kind": "server_pull",
+        "runtime": "ollama",
+        "tag": "gemma3:4b-it-q4_K_M",
+        "size_bytes": 3338801315,
+        "quantization": "Q4_K_M",
+        "source": "registry.ollama.ai/v2/library/gemma3/manifests/4b-it-q4_K_M, summed manifest layer sizes",
+        "read_date": "2026-08-15"
+      }
     },
     {
       "id": "local-chat-ollama-llama32",

@@ -61,6 +61,22 @@ not say it would. **B6 is also the first step on this page to move `port:diff`
 deliberately**, and it reports the two halves separately because they separate:
 see its entry.
 
+**After B5 the Rust suite reads 833 passed / 6 ignored and the frontend 582
+across 45 files.** Both are +20 and +26 on what this tree carried the morning of
+2026-08-15, and neither number continues the line above it: the last figure this
+page recorded is B1's, and 22 Rust cases plus 39 frontend ones landed between
+then and here from the Runtime ownership and GUI port tracks (ADR 0154, 0155,
+0156 and the two adopted commits). **A step measures its own delta, not the
+distance to the last paragraph** — the sixth ignored test is B5's network
+acceptance, which is why that count moved too. `cargo check` stays at 15.
+
+**How the before-number was taken, since this page forbids the obvious way.**
+`git show HEAD:src/screens/data.ts` swapped into the tree for one `port:diff`
+run and swapped back out — the running dev server picks the file up, the
+measurement is honest, and nothing of anybody else's went near a stash. That is
+the technique the paragraph below asks for, written down now that a second step
+has needed it.
+
 **Do not measure a baseline by stashing this tree.** B1 did, to get the
 before-number honestly, and `git stash push -u` swept the owner's live
 `shell.css`, `Nav.tsx` and `useConfigDraft.ts` edits in with the step's own; the
@@ -524,6 +540,15 @@ talking to the server the user runs.
 **ADR 0042's gate closes here and not before.** *Until in-app installation
 exists, the local lane is expert configuration and the surface says so* — that
 sentence has been live since 2026-08-03 and this is the step that owes it.
+
+**Built 2026-08-15. What it took and what this page got wrong is
+[ADR 0158](../decisions/0158-a-model-is-installable-until-it-is-on-the-disk-and-the-instrument-only-knew-one-spelling.md)**,
+not repeated here. Three things a reader of this section should carry away:
+the command count was three and is five; `resolve_local_model_path` needed the
+managed directory as much as discovery did, and that half is on neither this
+page nor ADR 0122; and the step changed the GUI port's `command-sweep.mjs`,
+because that instrument resolved a channel constant on one side of the seam and
+not on the other.
 
 ### B6. What it means to wire an inherited drawing (ADR 0128)
 
@@ -1269,7 +1294,9 @@ cheapest step in Stage D and the one to reach for when F1 is stuck.
 own stanza because threading them through the main block hides that. They meet
 in one place only — the Ollama listing B4 would add for the local lane is
 already `fetch_local_chat_models_async` in the tree, so whichever lands second
-inherits it rather than writing it again.
+inherits it rather than writing it again. **B5 landed first and did inherit it**:
+`installed_local_chat_tags` is a `pub(crate)` reader over the blocking half of
+that same call, so what B4 adds for this lane is now nothing at all.
 
 **One owner question is live, and it blocks no step in A through F.** *Whether a
 view plus a pop-out is enough at a table* blocks G2's surface (ADR 0064).
@@ -1364,7 +1391,7 @@ Speaking row, so it is flagged rather than assumed.
 | A6 | **done** 2026-08-12 — `core/providers/local.rs`, the id `local`, the alias list empty, the profile prefix `local-*`, four counts unchanged |
 | B3 | **done** 2026-08-12 — `shared/model_catalogue.json` plus its schema, `core::model_catalogue` and `src/lib/modelCatalogue.ts` on the same bytes, rows named by slug, twelve places stopped spelling a model id and a test walks `src/` for the thirteenth, +12 Rust tests and +12 frontend cases, `PROVIDERS.md` disagreement 5 closed and 12 opened |
 | B4 | **not started** — added 2026-08-12 (ADR 0120); the live fetch above the catalogue, gated on B3 |
-| B5 | **not started** — added 2026-08-12 (ADR 0122) on the owner's instruction, out of ROADMAP Phase 5; the installation ADR 0042 drew and never got. Gated on B3 only — **B4 is not a precondition** |
+| B5 | **done** 2026-08-15 — the installation ADR 0042 drew on 2026-08-03 and never got, and that record's gate closes with it (ADR 0158). `CATALOGUE_VERSION` 2 with an additive `install` block on nine local rows; `core::model_install` with five commands, not the three this page estimated; `wordscript-model-event` on its own channel. `fallback_provider_profiles` returns **nothing** where it used to invent four rows for files that may not exist, and the managed directory is the third source in both `discover_local_provider_profiles` **and** `resolve_local_model_path` — the second half is not in ADR 0122's `Touches` line and without it an install is a profile that is dead at first capture. Six drawn sizes were wrong and are corrected (ADR 0128): five were binary units under decimal names, and `gemma-3-4b-it` was a plausible figure for a pull that costs 3.3 GB. **+20 Rust across three modules and +26 frontend across two new files, every one made to fail first**; one further acceptance is `#[ignore]`d and downloads the real 148 MB file — it passed in 19.3 s. `port:diff`: `models` unmoved at `structural 26 \| style 242 \| text 19`, `models#1` `0\|0\|1` → `0\|0\|7` and the six are the corrections. Free space is answered on unix and **unanswered on Windows**, which is the one clause of ADR 0122 this step did not discharge |
 | D1a | **not started** — added 2026-08-11 (ADR 0113); **not gated**, and now genuinely the cheapest step in Stage D: D1 extracted the helper it reaches with a second base URL |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |

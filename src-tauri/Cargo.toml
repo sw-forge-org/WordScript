@@ -39,7 +39,14 @@ serde       = { version = "1", features = ["derive"] }
 serde_json  = "1"
 tokio       = { version = "1", features = ["full"] }
 keyring     = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
-reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
+# `stream` is B5's (ADR 0122): a 1.6 GB model file is read chunk by chunk so the
+# drawn percentage is a measurement rather than a spinner, and so a cancel is
+# noticed inside the transfer rather than after it.
+reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
+# The integrity half of the same step. A downloaded model is verified against
+# the catalogue row's checksum before it is renamed into place, so there is no
+# window in which half a model is spelled like a whole one.
+sha2        = "0.10"
 arboard     = { version = "3.6", features = ["wayland-data-control"] }
 enigo       = "0.6"
 cpal        = "0.17"
@@ -64,6 +71,14 @@ chrono      = { version = "0.4", default-features = false, features = ["clock", 
 # `cargo tree -p gtk` before changing this line.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+
+# `statvfs`, for the one thing ADR 0122 asks up front: whether the model fits
+# before the first byte is requested. Unix only, and the Windows equivalent is
+# deliberately absent rather than written blind — `available_bytes` answers
+# `None` where it cannot compute, which the caller reads as unanswered rather
+# than as either "plenty" or "nothing".
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified.

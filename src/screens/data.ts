@@ -1,5 +1,11 @@
 import type { ListItemBadge, RawTranscript } from "@/components/shell";
-import { laneJobModels, modelId, providerLabel } from "@/lib/modelCatalogue";
+import {
+  formatModelSize,
+  laneJobModels,
+  modelId,
+  modelInstall,
+  providerLabel,
+} from "@/lib/modelCatalogue";
 
 /**
  * THE PROTOTYPE'S SAMPLE DATA, copied out of `demo.js`.
@@ -344,27 +350,52 @@ export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, La
 };
 
 /* ── The drawn model library ────────────────────────────────────────────────
-   What `AI Models`' machine tab and onboarding's download step list, and what
-   the catalogue cannot answer: a size on this disk, a sentence about who the
-   model suits, and whether it is installed. **The catalogue says what a vendor
-   documents; a library row says what is on this machine**, which is why the two
-   are not the same list and why the real one will eventually come off
-   `core::providers::local`'s model directory rather than from either.
+   What `AI Models`' machine tab and onboarding's download step list.
 
-   What the library does NOT carry is the name. That comes off the same
+   **What is left here is the sentence and the mark, and nothing else** (B5,
+   ADR 0122). The size and the quantization moved into the catalogue's install
+   block, which is the last pair of entries on ADR 0115's own inventory of
+   places a model fact was spelled twice: they are now read from the same rows
+   `core::model_install` fetches by, so the number on this surface and the
+   number the download actually costs cannot disagree.
+
+   **The sizes moved and the numbers moved with them.** The drawn `142 MB` and
+   `4.4 GB` were binary units under decimal names, and the catalogue carries the
+   byte counts the two sources publish — so `ggml-base` reads 148 MB, and the
+   `gemma-3-4b-it` row that was drawn at 2.5 GB is a 3.3 GB pull. Correcting a
+   false drawn sentence is ADR 0128's rule and `port:diff`'s movement here is
+   that correction rather than a fidelity loss.
+
+   What the library never carried is the name. That comes off the same
    catalogue row the lane picker offers, so a renamed model is renamed in one
    place and both surfaces follow. */
-const LIBRARY: Record<string, { brand: string; size: string; detail: string }> = {
-  "local-speech-base": { brand: "openai", size: "142 MB", detail: "multilingual · the recommended balance" },
-  "local-speech-base-en": { brand: "openai", size: "142 MB", detail: "English only, more accurate on English" },
-  "local-speech-small": { brand: "openai", size: "466 MB", detail: "multilingual · better on accents" },
-  "local-speech-medium": { brand: "openai", size: "1.5 GB", detail: "multilingual · noticeably slower on CPU" },
-  "local-speech-large-v3-turbo": { brand: "openai", size: "1.6 GB", detail: "multilingual · the best that still runs in real time" },
-  "local-chat-qwen-7b": { brand: "qwen", size: "4.4 GB", detail: "Q4_K_M · the general recommendation" },
-  "local-chat-qwen-14b": { brand: "qwen", size: "8.4 GB", detail: "Q4_K_M · needs a GPU to be pleasant" },
-  "local-chat-llama-3b": { brand: "llama", size: "2.0 GB", detail: "Q4_K_M · fast enough for cleanup on CPU" },
-  "local-chat-gemma-4b": { brand: "gemma", size: "2.5 GB", detail: "Q4_K_M · strong on German" },
+const LIBRARY: Record<string, { brand: string; detail: string }> = {
+  "local-speech-base": { brand: "openai", detail: "multilingual · the recommended balance" },
+  "local-speech-base-en": { brand: "openai", detail: "English only, more accurate on English" },
+  "local-speech-small": { brand: "openai", detail: "multilingual · better on accents" },
+  "local-speech-medium": { brand: "openai", detail: "multilingual · noticeably slower on CPU" },
+  "local-speech-large-v3-turbo": { brand: "openai", detail: "multilingual · the best that still runs in real time" },
+  "local-chat-qwen-7b": { brand: "qwen", detail: "the general recommendation" },
+  "local-chat-qwen-14b": { brand: "qwen", detail: "needs a GPU to be pleasant" },
+  "local-chat-llama-3b": { brand: "llama", detail: "fast enough for cleanup on CPU" },
+  "local-chat-gemma-4b": { brand: "gemma", detail: "strong on German" },
 };
+
+/** The rows the machine tab and onboarding draw, in drawn order per half. */
+export const LIBRARY_SPEECH_ROWS = [
+  "local-speech-base",
+  "local-speech-base-en",
+  "local-speech-small",
+  "local-speech-medium",
+  "local-speech-large-v3-turbo",
+] as const;
+
+export const LIBRARY_LANGUAGE_ROWS = [
+  "local-chat-qwen-7b",
+  "local-chat-llama-3b",
+  "local-chat-gemma-4b",
+  "local-chat-qwen-14b",
+] as const;
 
 /* The two voice presets the desk draws, composed once for the three surfaces
    that show them: `AI Models`' Speaking group, the Agents screen and the agent
@@ -375,11 +406,32 @@ const LIBRARY: Record<string, { brand: string; size: string; detail: string }> =
 export const DESK_VOICE_PRESET = `${providerLabel("cartesia")} ${modelId("cartesia-voice-sonic-3")}`;
 export const LOCAL_VOICE_PRESET = `${modelId("local-voice-kokoro")} (local)`;
 
-/** One library row: the catalogue's name plus what only this disk knows. */
+/**
+ * One library row: the catalogue's name, its install block's size and
+ * quantization, and the one sentence only the drawing has.
+ *
+ * A row the catalogue does not know how to install throws rather than rendering
+ * without a size — the surface's whole promise is that the size is stated
+ * before the download rather than discovered during it, and a row that cannot
+ * keep it does not belong in the list.
+ */
 export function libraryModel(id: string): { brand: string; name: string; size: string; detail: string } {
   const drawn = LIBRARY[id];
   if (!drawn) {
     throw new Error(`no drawn library row for '${id}'`);
   }
-  return { ...drawn, name: modelId(id) };
+
+  const install = modelInstall(id);
+  if (!install) {
+    throw new Error(`library row '${id}' has no install block to state a size from`);
+  }
+
+  const quantization = install.kind === "server_pull" ? `${install.quantization} · ` : "";
+
+  return {
+    brand: drawn.brand,
+    name: modelId(id),
+    size: formatModelSize(install.size_bytes),
+    detail: `${quantization}${drawn.detail}`,
+  };
 }

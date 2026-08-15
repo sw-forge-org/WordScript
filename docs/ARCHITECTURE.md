@@ -189,12 +189,27 @@ The active product core lives in `src-tauri/src/core/`.
   tree. It records what a vendor documents and never what this build can
   operate — that is `providers::model_capabilities`, and the two are held apart
   by a test rather than by a convention (ADR 0115, scoped by ADR 0120).
+- `model_install.rs`: in-app model installation for the local lane (ADR 0122,
+  built as ADR 0158). **Two mechanisms behind one surface, because the two
+  halves do not share a disk**: the speech weights are downloaded into a
+  directory this module manages off `paths::user_data_dir` — so it inherits
+  `WORDSCRIPT_DATA_DIR` and the test redirection — while the language models
+  belong to whatever OpenAI-compatible server the user runs, which is asked to
+  pull and never written into. A download lands in `<file>.bin.part`, is checked
+  against the catalogue row's SHA256, and is renamed into place only then; free
+  space is checked before the first byte, on unix, and answered as *unknown*
+  rather than guessed where this build cannot compute it. Progress travels on
+  `wordscript-model-event` and on neither session channel — a download must not
+  be able to reach the reducer (ADR 0018, ADR 0019). The transfer takes a
+  reporter closure rather than an `AppHandle`, which is what lets the one path
+  that writes to a user's disk be exercised by a test.
 - `runtime_log.rs`: buffered structured runtime logs for the diagnostics UI,
   plus a persistent ring-rotated file (`~/.config/WordScript/logs/wordscript-runtime.log`).
 - `history.rs`: persistent native history with raw vs transformed
   transcript, insert outcome, server-side filters, export, retention policy,
   retry.
-- `paths.rs`: product paths (config, scratchpad, logs).
+- `paths.rs`: product paths (config, scratchpad, logs, and the managed model
+  directory `model_install` hangs off it).
 
 ### Capture and session
 

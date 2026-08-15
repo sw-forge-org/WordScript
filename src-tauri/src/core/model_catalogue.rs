@@ -40,7 +40,10 @@ use serde::Deserialize;
 use super::providers::{ModelSupport, ProviderRole};
 
 /// Bumped when the file's shape changes in a way a reader cannot absorb.
-const CATALOGUE_VERSION: u32 = 1;
+///
+/// 2 added the optional `install` block (ADR 0122). Additive, and there is no
+/// migration because there is no on-disk state: the file is compiled in below.
+const CATALOGUE_VERSION: u32 = 2;
 
 /// Compiled in, like the regression corpus. There is no on-disk override door:
 /// the catalogue is part of the build, and a machine-local one would be a
@@ -90,6 +93,90 @@ pub struct ModelRow {
     pub read_date: String,
     #[serde(default)]
     pub note: Option<String>,
+    /// How this model gets onto this machine, where that is a question about
+    /// this row at all (ADR 0122).
+    ///
+    /// **`None` is the answer for every hosted lane rather than an omission.**
+    /// There is nothing to install for Groq or OpenAI, and a surface asking
+    /// them is asking the wrong lane.
+    #[serde(default)]
+    pub install: Option<InstallSource>,
+}
+
+/// The two mechanisms, because there are two and they do not share a disk
+/// (ADR 0122).
+///
+/// The local speech weights are a file WordScript fetches into a directory it
+/// manages; the local language models belong to whatever server the user runs,
+/// so WordScript asks that server to pull and never places a file beside them.
+/// The same act that is correct for the first is inert for the second — a
+/// `.gguf` dropped into a folder of our own is a file Ollama cannot see, cannot
+/// load and will not list.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InstallSource {
+    Download {
+        url: String,
+        /// What the file is called in the managed directory.
+        ///
+        /// **Stated rather than derived from the URL.**
+        /// `core::providers::local` resolves a recogniser by the
+        /// `ggml-{stem}.bin` shape, and a URL is free to be spelled any way at
+        /// all — a redirect, a query string, a mirror. Deriving the name from
+        /// it would make an install land a file the discovery cannot see.
+        file_name: String,
+        size_bytes: u64,
+        sha256: String,
+        source: String,
+        read_date: String,
+    },
+    ServerPull {
+        runtime: String,
+        /// **Carried beside `model_id`, never derived from it.**
+        /// `qwen2.5:7b-instruct` and `qwen2.5-7b-instruct` are not the same
+        /// string, and rewriting the punctuation would be a guess dressed as a
+        /// lookup.
+        tag: String,
+        size_bytes: u64,
+        quantization: String,
+        source: String,
+        read_date: String,
+    },
+}
+
+impl InstallSource {
+    /// What it costs on a disk — this machine's for a download, the server's
+    /// for a pull.
+    pub fn size_bytes(&self) -> u64 {
+        match self {
+            Self::Download { size_bytes, .. } | Self::ServerPull { size_bytes, .. } => *size_bytes,
+        }
+    }
+
+    /// Where the URL, size and checksum were read, and when. ADR 0122 gives
+    /// `docs/PROVIDERS.md` a maintenance duty over exactly these: a weights
+    /// repository that moves a file breaks an install rather than a claim.
+    pub fn source(&self) -> &str {
+        match self {
+            Self::Download { source, .. } | Self::ServerPull { source, .. } => source,
+        }
+    }
+
+    pub fn read_date(&self) -> &str {
+        match self {
+            Self::Download { read_date, .. } | Self::ServerPull { read_date, .. } => read_date,
+        }
+    }
+
+    /// The quantization where the mechanism knows one. A downloaded ggml file
+    /// carries its quantization in the weights rather than in a column, so the
+    /// download half answers `None` instead of inventing a label for it.
+    pub fn quantization(&self) -> Option<&str> {
+        match self {
+            Self::Download { .. } => None,
+            Self::ServerPull { quantization, .. } => Some(quantization),
+        }
+    }
 }
 
 /// Which row each of the runtime's model defaults resolves to.
@@ -171,6 +258,20 @@ pub fn provider_for_model_id(model_id: &str, role: ProviderRole) -> Option<&'sta
         .iter()
         .find(|row| row.role == role && row.model_id == model_id)
         .map(|row| row.provider.as_str())
+}
+
+/// Every row this build can put on a machine, in catalogue order.
+///
+/// The installer's whole input. A row without an install block is not in the
+/// list at all rather than in it and refused — the surface that lists these is
+/// *what is on this machine*, and a hosted vendor's model has no answer to give
+/// it.
+pub fn installable_rows() -> Vec<&'static ModelRow> {
+    catalogue()
+        .models
+        .iter()
+        .filter(|row| row.install.is_some())
+        .collect()
 }
 
 pub fn default_speech_model() -> &'static str {
@@ -457,5 +558,140 @@ mod tests {
     #[test]
     fn a_slug_with_no_row_is_not_quietly_answered() {
         assert!(row("no-such-row").is_none());
+    }
+
+    /// **The rule B5 states and nothing else could enforce.** A `Download` row
+    /// without a checksum is a file that gets renamed into place unverified,
+    /// which is the one window ADR 0122 exists to close; a row without a size
+    /// is a free-space check that cannot run and a drawn size that is a guess.
+    #[test]
+    fn every_download_row_carries_a_size_and_a_checksum() {
+        let mut checked = 0;
+
+        for row in installable_rows() {
+            let InstallSource::Download {
+                url,
+                file_name,
+                size_bytes,
+                sha256,
+                ..
+            } = row.install.as_ref().expect("installable_rows filtered")
+            else {
+                continue;
+            };
+
+            assert!(
+                url.starts_with("https://"),
+                "[{}] fetches over {url}, which is not https",
+                row.id,
+            );
+            assert!(*size_bytes > 0, "[{}] carries no size", row.id);
+            assert_eq!(
+                sha256.len(),
+                64,
+                "[{}] checksum '{sha256}' is not a SHA256",
+                row.id,
+            );
+            assert!(
+                sha256.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+                "[{}] checksum '{sha256}' is not lowercase hex",
+                row.id,
+            );
+            /* The name the file lands under has to be one
+               `core::providers::local` can discover. A download that lands
+               something else is an install the runtime cannot see, which is
+               the fake-installed state one step past the fake-available one
+               this whole step removes. */
+            assert!(
+                file_name.starts_with("ggml-") && file_name.ends_with(".bin"),
+                "[{}] would land '{file_name}', which local discovery cannot see",
+                row.id,
+            );
+            checked += 1;
+        }
+
+        assert!(checked > 0, "the local speech lane carries download rows");
+    }
+
+    /// A pull tag is its own string, and the point of carrying it is that it is
+    /// allowed to differ from the model id. Asserted rather than assumed
+    /// because deriving one from the other is the shortcut ADR 0122 names.
+    #[test]
+    fn every_server_pull_row_names_its_own_tag() {
+        let mut checked = 0;
+
+        for row in installable_rows() {
+            let InstallSource::ServerPull {
+                runtime,
+                tag,
+                size_bytes,
+                quantization,
+                ..
+            } = row.install.as_ref().expect("installable_rows filtered")
+            else {
+                continue;
+            };
+
+            assert_eq!(runtime, "ollama", "[{}] names an unknown runtime", row.id);
+            assert!(!tag.trim().is_empty(), "[{}] carries no pull tag", row.id);
+            assert!(*size_bytes > 0, "[{}] carries no size", row.id);
+            assert!(
+                !quantization.trim().is_empty(),
+                "[{}] carries no quantization",
+                row.id,
+            );
+            checked += 1;
+        }
+
+        assert!(checked > 0, "the local chat lane carries pull rows");
+    }
+
+    /// The install block's own facts are dated like every other row's
+    /// (ADR 0122's consequence for `docs/PROVIDERS.md`).
+    #[test]
+    fn every_install_block_carries_a_source_and_a_read_date() {
+        for row in installable_rows() {
+            let install = row.install.as_ref().expect("installable_rows filtered");
+
+            assert!(
+                !install.source().trim().is_empty(),
+                "[{}] install carries no source",
+                row.id,
+            );
+
+            let date = install.read_date().as_bytes();
+            assert!(
+                date.len() == 10 && date[4] == b'-' && date[7] == b'-',
+                "[{}] install read_date '{}' is not an ISO date",
+                row.id,
+                install.read_date(),
+            );
+        }
+    }
+
+    /// **A hosted lane carries no install block, and `None` is the answer
+    /// rather than an omission.** There is nothing to install for Groq or
+    /// OpenAI; a row that grew one would put a Download button under a vendor
+    /// whose model has never been on anybody's disk.
+    #[test]
+    fn only_the_local_lane_is_installable() {
+        let catalogue = catalogue();
+
+        for row in &catalogue.models {
+            let lane = catalogue
+                .providers
+                .iter()
+                .find(|provider| provider.id == row.provider)
+                .map(|provider| provider.lane.as_str())
+                .expect("every row names a declared vendor");
+
+            if row.install.is_some() {
+                assert_eq!(
+                    lane, "Local",
+                    "[{}] is installable and sits on the {lane} lane",
+                    row.id,
+                );
+            }
+        }
     }
 }

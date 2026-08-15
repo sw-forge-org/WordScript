@@ -72,7 +72,11 @@ model. Configure the path only when working on this lane:
 
 - `whisper-cli` in `PATH`, or `WORDSCRIPT_LOCAL_WHISPER_CLI`
 - `WORDSCRIPT_LOCAL_MODEL_PATH` for one ggml model, or
-  `WORDSCRIPT_LOCAL_MODEL_DIR` for a model directory
+  `WORDSCRIPT_LOCAL_MODEL_DIR` for a model directory.
+  **Neither is required since 2026-08-15** (ADR 0158): `AI Models` ->
+  *On this machine* downloads a model into a directory WordScript manages and
+  the runtime finds it there. The two variables stay and still **outrank** what
+  the installer put there, so a checkout of your own is never overridden.
 - Ollama at `http://127.0.0.1:11434`, or `WORDSCRIPT_LOCAL_CHAT_BASE_URL`
 - a local cleanup model selected in settings or through
   `WORDSCRIPT_LOCAL_CHAT_MODEL`

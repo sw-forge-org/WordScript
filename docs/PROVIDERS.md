@@ -688,12 +688,55 @@ be taken against.
   `--vad-min-silence-duration-ms`, `--vad-speech-pad-ms`), gated on an env var
   and on a probe of `whisper-cli --help`. **The cloud lane has no VAD at all.**
 
+### Installing a local model, and the duty that comes with it
+
+Source: `huggingface.co/ggerganov/whisper.cpp` (the Hub tree API -- an LFS
+`oid` **is** the file's SHA256) and `registry.ollama.ai/v2/library/*/manifests/*`
+(summed layer sizes), both read 2026-08-15.
+
+**WordScript installs the speech weights and asks the server to pull the
+language ones** (ADR 0122, built as ADR 0158). The two halves do not share a
+disk: Ollama owns its store, so a `.gguf` placed beside its files is one it
+cannot see, cannot load and will not list.
+
+`shared/model_catalogue.json` version 2 carries the facts:
+
+| Half | Block | Fields |
+| --- | --- | --- |
+| Speech | `Download` | `url`, `file_name`, `size_bytes`, `sha256` |
+| Language | `ServerPull` | `runtime`, `tag`, `size_bytes`, `quantization` |
+
+**This is the section's one maintenance duty and it is a real one.** A
+`Download` row's URL, size and checksum are dated facts like every row above,
+and each install block carries its own `source` and `read_date` for exactly that
+reason. **A weights repository that moves a file breaks an install rather than a
+claim** -- the download fails its checksum, removes its part file and installs
+nothing, which is the right failure but still a failure.
+
+The check is one command:
+
+```
+cd src-tauri && cargo test --lib -- --ignored \
+  --exact core::model_install::tests::a_real_download_verifies_installs_and_is_then_found_with_no_environment_variable
+```
+
+It fetches the real file, verifies the checksum against the row, and proves both
+the discovery and the decode path find it afterwards with neither environment
+variable set. Run it whenever an `install` block changes.
+
+**The pull tags are the explicitly quantized ones** -- `qwen2.5:7b-instruct-q4_K_M`
+rather than `qwen2.5:7b-instruct`. Identical bytes today, and the tag then
+states the quantization the surface draws beside it, so the column and the tag
+cannot drift apart.
+
 ### Local language models
 
 Chat runs against an OpenAI-compatible endpoint, `http://127.0.0.1:11434` by
 default, with `"stream": false`. Whether WordScript ships a server of its own or
 talks to the Ollama or LM Studio a user already runs is open and belongs to
-Phase 5.
+Phase 5. **What is decided is that this build talks to the server the user
+runs and owns none of its files**: it asks `POST /api/pull` to fetch a tag and
+`DELETE /api/delete` to drop one, and never writes into that store itself.
 
 ### Local voice: Kokoro-82M
 

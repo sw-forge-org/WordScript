@@ -9,13 +9,15 @@ import { join } from "node:path";
 import {
   CATALOGUE,
   CATALOGUE_VERSION,
+  formatModelSize,
   laneJobModels,
   modelId,
+  modelInstall,
   modelRow,
   providerLabel,
   runtimeDefault,
 } from "./modelCatalogue";
-import { LANES } from "@/screens/data";
+import { LANES, LIBRARY_LANGUAGE_ROWS, LIBRARY_SPEECH_ROWS, libraryModel } from "@/screens/data";
 
 /**
  * The frontend half of ADR 0115. `core::model_catalogue`'s tests hold the same
@@ -94,6 +96,60 @@ describe("the model catalogue", () => {
       expect(runtimeDefault(slot).trim()).not.toBe("");
     }
   });
+
+  /* B5's block (ADR 0122). The Rust suite holds the same rows from the other
+     side; what this half proves is that the drawing can read them, because the
+     size a row states is now the size the download actually costs. */
+  it("carries an install block on every row the library draws, and on nothing else", () => {
+    for (const id of [...LIBRARY_SPEECH_ROWS, ...LIBRARY_LANGUAGE_ROWS]) {
+      expect(modelInstall(id), `${id} has no install block`).toBeDefined();
+    }
+
+    /* A hosted lane carries none, and the absence is the answer: there is
+       nothing to install for Groq, and a Download button under that row would
+       be the surface asking the wrong lane. */
+    expect(modelInstall("groq-speech-turbo")).toBeUndefined();
+    expect(modelInstall("openai-chat-terra")).toBeUndefined();
+  });
+
+  it("keeps the pull tag apart from the model id", () => {
+    const install = modelInstall("local-chat-qwen-7b");
+    expect(install?.kind).toBe("server_pull");
+    if (install?.kind !== "server_pull") throw new Error("unreachable");
+
+    /* The property ADR 0122 carries the tag separately for: rewriting the
+       punctuation of one into the other would be a guess dressed as a lookup. */
+    expect(install.tag).not.toBe(modelId("local-chat-qwen-7b"));
+    expect(install.tag).toContain(":");
+  });
+
+  it("throws for a slug with no row rather than answering that it is not installable", () => {
+    /* Not installable and not a row are different mistakes, and only one of
+       them is this repo naming its own data wrongly. */
+    expect(() => modelInstall("no-such-row")).toThrow(/no-such-row/);
+  });
+
+  /**
+   * **The units, and the correction they carry** (ADR 0128's rule that a false
+   * drawn sentence is corrected).
+   *
+   * The drawing spent `142 MB` on a file Hugging Face lists as 148 MB and
+   * `4.4 GB` on a pull the Ollama library lists as 4.7 GB — binary units under
+   * decimal names, so the number on this surface was never the number on the
+   * page the file comes from. Held against `core::model_install::format_bytes`,
+   * which prints the same two.
+   */
+  it("prints a size in the units the sources publish, and mirrors the runtime", () => {
+    expect(formatModelSize(147_951_465)).toBe("148 MB");
+    expect(formatModelSize(4_683_086_845)).toBe("4.7 GB");
+
+    const rust = readFileSync(
+      join("src-tauri", "src", "core", "model_install.rs"),
+      "utf8",
+    );
+    expect(rust).toContain('assert_eq!(format_bytes(147_951_465), "148 MB");');
+    expect(rust).toContain('assert_eq!(format_bytes(4_683_086_845), "4.7 GB");');
+  });
 });
 
 describe("the drawing", () => {
@@ -104,6 +160,37 @@ describe("the drawing", () => {
     expect(LANES.Enterprise.jobs.assistant.model).toBe(
       laneJobModels("Enterprise", "assistant")?.model,
     );
+  });
+
+  /**
+   * **The last two entries on ADR 0115's own inventory, taken by B5.**
+   *
+   * The size and the quantization were literals in `data.ts` beside the slug
+   * they described, which is one drawn row split across two files — the exact
+   * condition ADR 0115 was written to end. They now come off the install block,
+   * so the number this surface prints and the number the download costs are one
+   * fact.
+   */
+  it("spends no size and no quantization of its own", () => {
+    const speech = libraryModel("local-speech-base");
+    expect(speech.size).toBe(formatModelSize(147_951_465));
+    /* A speech row states no quantization: a ggml file carries it in the
+       weights rather than in a column, and inventing a label for it would be
+       the guess this file exists to remove. */
+    expect(speech.detail).not.toContain("Q4");
+
+    const language = libraryModel("local-chat-qwen-7b");
+    const install = modelInstall("local-chat-qwen-7b");
+    if (install?.kind !== "server_pull") throw new Error("unreachable");
+    expect(language.size).toBe(formatModelSize(install.size_bytes));
+    expect(language.detail.startsWith(`${install.quantization} · `)).toBe(true);
+  });
+
+  it("refuses to draw a library row the catalogue cannot state a size for", () => {
+    /* The surface's whole promise is that the size is stated before the
+       download rather than discovered during it. A row that cannot keep it does
+       not belong in the list, and it says so rather than rendering blank. */
+    expect(() => libraryModel("groq-speech-turbo")).toThrow(/no drawn library row/);
   });
 
   it("keeps the sentence that stands where a model id would", () => {

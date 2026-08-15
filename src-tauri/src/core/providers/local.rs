@@ -826,20 +826,27 @@ fn model_capabilities(model: &str) -> ModelCapabilities {
     }
 }
 
+/// **No profiles at all, and that is the answer B5 replaced four inventions
+/// with** (ADR 0122).
+///
+/// This used to offer `base`, `small`, `medium` and `large-v3` whether or not a
+/// single one of them was on the disk — four rows naming four files that may not
+/// exist, which is the fake-readiness defect the runtime rules forbid, sitting
+/// under the one lane whose whole difficulty is that its dependencies are the
+/// user's problem. What a machine with nothing installed has is nothing
+/// installed; the surface says *installable* about the catalogue's rows
+/// (`core::model_install`), which is a different sentence and a true one.
 fn fallback_provider_profiles() -> Vec<ProviderProfile> {
-    ["base", "small", "medium", "large-v3"]
-        .into_iter()
-        .enumerate()
-        .flat_map(|(index, model)| {
-            build_local_provider_profiles(
-                model,
-                (index == 0).then_some(preferred_local_decode_preset(model)),
-                None,
-            )
-        })
-        .collect()
+    Vec::new()
 }
 
+/// Where a recogniser may be found, in the order the answers outrank each
+/// other.
+///
+/// **The managed directory is the third source and never the first**
+/// (ADR 0122): an expert who has pointed WordScript at their own whisper.cpp
+/// checkout is not overridden by what this feature installed. The two
+/// environment variables keep their existing precedence between them.
 fn discover_local_provider_profiles() -> Option<Vec<ProviderProfile>> {
     if let Ok(path) = std::env::var(LOCAL_MODEL_PATH_ENV) {
         let trimmed = path.trim();
@@ -860,40 +867,55 @@ fn discover_local_provider_profiles() -> Option<Vec<ProviderProfile>> {
     if let Ok(dir) = std::env::var(LOCAL_MODEL_DIR_ENV) {
         let trimmed = dir.trim();
         if !trimmed.is_empty() {
-            let mut discovered = std::fs::read_dir(trimmed)
-                .ok()?
-                .filter_map(|entry| entry.ok().map(|value| value.path()))
-                .filter_map(|path| local_model_name_from_path(&path))
-                .collect::<Vec<_>>();
-
-            discovered.sort();
-            discovered.dedup();
-
-            if !discovered.is_empty() {
-                let default_model = discovered
-                    .iter()
-                    .find(|model| model.as_str() == "base")
-                    .cloned()
-                    .unwrap_or_else(|| discovered[0].clone());
-
-                return Some(
-                    discovered
-                        .iter()
-                        .flat_map(|model| {
-                            build_local_provider_profiles(
-                                model,
-                                (model == &default_model)
-                                    .then_some(preferred_local_decode_preset(model)),
-                                Some("discovered"),
-                            )
-                        })
-                        .collect(),
-                );
+            if let Some(profiles) = provider_profiles_in_dir(Path::new(trimmed), "discovered") {
+                return Some(profiles);
             }
         }
     }
 
-    None
+    provider_profiles_in_dir(&crate::core::model_install::managed_speech_model_dir(), "installed")
+}
+
+/// Every `ggml-*.bin` in one directory, as profiles, or nothing where the
+/// directory holds none.
+///
+/// Extracted when the managed directory became a third source: two callers
+/// walking a directory the same way is one implementation, and the reason the
+/// `WORDSCRIPT_LOCAL_MODEL_DIR` branch used to answer `None` on an unreadable
+/// directory — `read_dir(...).ok()?` — is preserved here rather than quietly
+/// widened into a fall-through.
+fn provider_profiles_in_dir(dir: &Path, source: &str) -> Option<Vec<ProviderProfile>> {
+    let mut discovered = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|value| value.path()))
+        .filter_map(|path| local_model_name_from_path(&path))
+        .collect::<Vec<_>>();
+
+    discovered.sort();
+    discovered.dedup();
+
+    if discovered.is_empty() {
+        return None;
+    }
+
+    let default_model = discovered
+        .iter()
+        .find(|model| model.as_str() == "base")
+        .cloned()
+        .unwrap_or_else(|| discovered[0].clone());
+
+    Some(
+        discovered
+            .iter()
+            .flat_map(|model| {
+                build_local_provider_profiles(
+                    model,
+                    (model == &default_model).then_some(preferred_local_decode_preset(model)),
+                    Some(source),
+                )
+            })
+            .collect(),
+    )
 }
 
 fn build_local_provider_profiles(
@@ -1310,6 +1332,19 @@ fn resolve_local_model_path(model: &str) -> Result<PathBuf, LocalModelResolution
         }
     }
 
+    /* THE THIRD SOURCE, AND THE HALF THAT MAKES AN INSTALL WORTH ANYTHING
+       (ADR 0122). Discovery finding a model the decode path cannot then resolve
+       would be an installed model that transcribes nothing — a profile offered,
+       chosen and dead at first capture. It is last, so an expert's environment
+       variable still wins; it is not an error when it holds nothing, so a
+       machine with neither answers `MissingConfiguration` exactly as before. */
+    let managed = crate::core::model_install::managed_speech_model_dir();
+    if managed.is_dir() {
+        if let Ok(path) = find_local_model_path_in_dir(&managed, requested) {
+            return Ok(path);
+        }
+    }
+
     Err(LocalModelResolutionError::MissingConfiguration {
         requested: requested.to_string(),
     })
@@ -1381,6 +1416,79 @@ fn validate_local_model_path(path: PathBuf) -> Result<PathBuf, LocalModelResolut
     }
 
     Err(LocalModelResolutionError::InvalidPath { path })
+}
+
+/// The process-wide lock every test that moves this module's environment
+/// variables takes.
+///
+/// **At module level rather than inside `mod tests`, because a second module's
+/// tests need it too.** `core::model_install`'s acceptance test clears both
+/// variables to prove an installed model is found without them, and a test
+/// running beside it that sets one would make that proof read as a pass on
+/// somebody else's directory.
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::{Mutex, OnceLock};
+
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
+/// What the surface would be offered, for a test in another module. The
+/// discovery is private and stays private; this is the one reader.
+#[cfg(test)]
+pub(crate) fn provider_profiles_for_test() -> Vec<ProviderProfile> {
+    provider_profiles()
+}
+
+/// Where the decode path would look, for the same reason. Discovery finding a
+/// model this cannot resolve is the half that makes an install worthless, so a
+/// test proving the install has to be able to ask both.
+#[cfg(test)]
+pub(crate) fn resolve_local_model_path_for_test(model: &str) -> Option<PathBuf> {
+    resolve_local_model_path(model).ok()
+}
+
+/// The stem a config value names, normalized — `core::model_install`'s way of
+/// asking whether a profile runs the model it is about to remove.
+///
+/// A thin re-export rather than a second normalizer, because `large`,
+/// `large_v3` and `large-v3` are one model and the rule that says so lives
+/// below. Two spellings of that rule is how a removal refusal would start
+/// disagreeing with the decode path about what is in use.
+pub(crate) fn normalized_local_model_name(model: &str) -> String {
+    normalize_local_model_name(model)
+}
+
+/// Which endpoint the language half talks to, or why it cannot be resolved.
+///
+/// `core::model_install` needs the same answer this module's own chat path
+/// resolves, and resolving it twice is how the installer would start pulling
+/// into a server the pipeline does not use.
+pub(crate) fn local_chat_base_url() -> Result<String, String> {
+    resolve_local_chat_base_url().map_err(|error| error.guidance())
+}
+
+/// The same endpoint, for a surface that only states it. An unresolvable value
+/// answers the configured default rather than an error, because a card printing
+/// *where the server would be* is not the place a URL parse failure belongs —
+/// `local_chat_base_url` is, and that is what the install path calls.
+pub(crate) fn local_chat_base_url_for_display() -> String {
+    resolve_local_chat_base_url().unwrap_or_else(|_| DEFAULT_LOCAL_CHAT_BASE_URL.to_string())
+}
+
+/// Which tags the local model server currently has, or why it could not be
+/// asked.
+///
+/// **Already in the tree, which is the overlap B4 and B5 meet on.**
+/// `fetch_local_chat_models_blocking` is the Ollama listing B4 would have added
+/// for this lane; what the language half of B5 adds on top of it is the pull,
+/// not the list.
+pub(crate) fn installed_local_chat_tags() -> Result<Vec<String>, String> {
+    let base_url = resolve_local_chat_base_url().map_err(|error| error.guidance())?;
+    fetch_local_chat_models_blocking(&base_url).map_err(|error| error.guidance())
 }
 
 fn normalize_local_model_name(model: &str) -> String {
@@ -1773,17 +1881,11 @@ impl LocalChatResolutionError {
 mod tests {
     use super::*;
     use std::ffi::OsString;
-    use std::sync::{Mutex, OnceLock};
 
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
+    /// One lock for the whole process, shared with `core::model_install`'s
+    /// acceptance test — see `super::test_env_lock`.
     fn lock_env() -> std::sync::MutexGuard<'static, ()> {
-        env_lock()
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
+        super::test_env_lock()
     }
 
     struct EnvGuard {
@@ -2249,12 +2351,45 @@ whisper_print_timings: total time = 1337.00 ms
         assert_eq!(model_capabilities("large").model, "large-v3");
     }
 
+    /// **A machine with nothing installed offers nothing** (B5, ADR 0122).
+    ///
+    /// This test used to assert the opposite — that `local-base-fast`,
+    /// `local-base-quality` and `local-medium-quality` are always there — and
+    /// it passed for months on a machine where not one of those four files
+    /// existed. Four rows naming four files that may not exist is the
+    /// fake-readiness defect the runtime rules forbid, and it sat under the one
+    /// lane whose whole difficulty is that its dependencies are the user's
+    /// problem. What replaced the rows is a sentence: the catalogue's models are
+    /// *installable*, which `core::model_install` answers and which is not the
+    /// same claim.
     #[test]
-    fn local_profiles_expose_quality_vs_latency_modes() {
+    fn nothing_installed_offers_no_profiles_rather_than_four_invented_ones() {
         let _lock = lock_env();
         let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
         std::env::remove_var(LOCAL_MODEL_PATH_ENV);
         std::env::remove_var(LOCAL_MODEL_DIR_ENV);
+        let managed = crate::core::model_install::managed_speech_model_dir();
+        let _ = std::fs::remove_dir_all(&managed);
+
+        assert!(
+            provider_profiles().is_empty(),
+            "a machine with no model file and no environment variable offers nothing",
+        );
+    }
+
+    /// The property the test above was really about, measured where a model
+    /// actually is: every model gets both presets, and the preset decides the
+    /// mode.
+    #[test]
+    fn local_profiles_expose_quality_vs_latency_modes() {
+        let _lock = lock_env();
+        let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
+        let dir = std::env::temp_dir().join("wordscript-local-preset-pairs");
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("ggml-base.bin"), "model").expect("write base");
+        std::fs::write(dir.join("ggml-medium.bin"), "model").expect("write medium");
+        std::env::remove_var(LOCAL_MODEL_PATH_ENV);
+        std::env::set_var(LOCAL_MODEL_DIR_ENV, &dir);
 
         let profiles = provider_profiles();
 
@@ -2267,6 +2402,70 @@ whisper_print_timings: total time = 1337.00 ms
         assert!(profiles.iter().any(|profile| {
             profile.id == "local-medium-quality" && profile.mode == ProviderMode::Quality
         }));
+    }
+
+    /// **An installed model is found with no environment variable set.**
+    /// ADR 0122's own *done when*, and the half that makes an install worth
+    /// anything: discovery has to see the file AND the decode path has to
+    /// resolve it, or the result is a profile that is offered, chosen and dead
+    /// at first capture.
+    #[test]
+    fn an_installed_model_is_found_with_no_environment_variable() {
+        let _lock = lock_env();
+        let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
+        std::env::remove_var(LOCAL_MODEL_PATH_ENV);
+        std::env::remove_var(LOCAL_MODEL_DIR_ENV);
+
+        let managed = crate::core::model_install::managed_speech_model_dir();
+        let _ = std::fs::remove_dir_all(&managed);
+        std::fs::create_dir_all(&managed).expect("create the managed directory");
+        std::fs::write(managed.join("ggml-small.bin"), "model").expect("write small");
+
+        let profiles = provider_profiles();
+        assert!(
+            profiles.iter().any(|profile| profile.id == "local-small-fast"),
+            "the managed directory is discovered as a third source",
+        );
+        assert_eq!(
+            resolve_local_model_path("small").expect("the installed model resolves"),
+            managed.join("ggml-small.bin"),
+            "and the decode path resolves the same file",
+        );
+
+        let _ = std::fs::remove_dir_all(&managed);
+    }
+
+    /// **The environment still wins** (ADR 0122). An expert who has pointed
+    /// WordScript at their own whisper.cpp checkout is never overridden by what
+    /// this feature installed, which is why the managed directory is the third
+    /// source and not the first.
+    #[test]
+    fn the_environment_outranks_what_the_installer_put_there() {
+        let _lock = lock_env();
+        let _env = EnvGuard::capture(&[LOCAL_MODEL_PATH_ENV, LOCAL_MODEL_DIR_ENV]);
+        std::env::remove_var(LOCAL_MODEL_PATH_ENV);
+
+        let managed = crate::core::model_install::managed_speech_model_dir();
+        let _ = std::fs::remove_dir_all(&managed);
+        std::fs::create_dir_all(&managed).expect("create the managed directory");
+        std::fs::write(managed.join("ggml-small.bin"), "model").expect("write small");
+
+        let checkout = std::env::temp_dir().join("wordscript-local-expert-checkout");
+        let _ = std::fs::create_dir_all(&checkout);
+        std::fs::write(checkout.join("ggml-medium.bin"), "model").expect("write medium");
+        std::env::set_var(LOCAL_MODEL_DIR_ENV, &checkout);
+
+        let profiles = provider_profiles();
+        assert!(
+            profiles.iter().any(|profile| profile.id == "local-medium-fast"),
+            "the expert's directory answers",
+        );
+        assert!(
+            !profiles.iter().any(|profile| profile.id == "local-small-fast"),
+            "and the managed one does not get merged into it",
+        );
+
+        let _ = std::fs::remove_dir_all(&managed);
     }
 
     #[test]

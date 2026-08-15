@@ -32,7 +32,7 @@ updated; a kick-off is spent when its unit closes.
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 14 open**; Legs 0–13b closed. Leg 13 split 2026-08-14 and both halves closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
-| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 12 of ~26 steps done, and the provider choice now stands where a job starts | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 13 of ~26 steps done, and the local lane can now install what it needs | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
@@ -116,7 +116,7 @@ the sequence carry it and the closing-phrase artifact found beside it.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**, **0158**.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -127,13 +127,29 @@ account and is not updated by later work.
 Done: A1–A6 (the runtime contract), B1 (the capability seam), B3 (the model
 catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
 adapter, and the connection that can now be chosen)**, **B6 (what it means to
-wire a drawing inherited from the demo GUI)**, and **B7 (the provider choice at
-the point of use)**.
+wire a drawing inherited from the demo GUI)**, **B7 (the provider choice at
+the point of use)**, and **B5 (in-app model installation)**.
 
-Next unblocked: **B2**, **B4**, **B5**, **E1**, **D3** — whose `Requires` line
+Next unblocked: **B2**, **B4**, **E1**, **D3** — whose `Requires` line
 has read D1 and A3 since it was written, both now done — and **D1a**, which
 since B6 spent its drawing half is the adapter alone and the cheapest step in
-Stage D.
+Stage D. **B4 is cheaper than it was**: the Ollama listing it would have added
+for the local lane is now a `pub(crate)` reader B5 put there.
+
+**B5 landed 2026-08-15 and it closes a gate that had been open for twelve
+days.** ADR 0042 said *until in-app installation exists, the local lane is
+expert configuration and the surface says so*; it exists (ADR 0158). The part
+worth knowing outside this track is what it removed rather than what it added:
+`fallback_provider_profiles` used to offer `base`, `small`, `medium` and
+`large-v3` **whether or not one of them was on the disk**, and it now offers
+nothing — a machine with nothing installed says so, and the catalogue's rows are
+offered as *installable*, which is a different sentence. Six drawn sizes were
+corrected under ADR 0128's rule, five of them because the drawing printed binary
+units under decimal names. **And the step changed the GUI port's
+`command-sweep.mjs`**: that instrument resolved a channel constant on the
+frontend side and only a string literal on the Rust side, so
+`wordscript-model-event` read as a listener waiting for nothing while five emit
+sites stood beside it. Same shape as ADR 0153, fixed by symmetry.
 
 **B7 landed 2026-08-15 and the reusable half is the part to know about.** The
 job ladder — lane, vendor, credential, model — was `Models.tsx`' internals and
@@ -226,7 +242,8 @@ direction of travel, not a reservation, and the number line is corrected here by
 whoever notices — 0155 landed in `be74233` and stood on neither this board nor
 its own track's page until the owner asked for it on 2026-08-15; **the seventh
 record is on the track page now**. 0157 went to the speech track on
-2026-08-15 with B7, so **0158 is the next free number**.
+2026-08-15 with B7 and **0158 with B5 the same day**, so **0159 is the next
+free number**.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
 swept the event channel and found `wordscript-native-insert` emitted from three

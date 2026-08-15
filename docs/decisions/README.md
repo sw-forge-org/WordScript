@@ -1201,6 +1201,23 @@ Status: Proposed | Accepted | Superseded by NNNN
   every following section and measured `187 | 80 | 33` with not one of the 187 a
   fidelity loss; at the end it measures `63 | 0 | 9`, its own node count.
 
+- [0158](0158-a-model-is-installable-until-it-is-on-the-disk-and-the-instrument-only-knew-one-spelling.md):
+  **a model is installable until it is on the disk, and the instrument only knew
+  one spelling.** What building B5 took, against ADR 0122's plan. The
+  installation exists, so ADR 0042's twelve-day-old gate closes.
+  `fallback_provider_profiles` offered `base`, `small`, `medium` and `large-v3`
+  **whether or not one of them existed** and now offers nothing — *installable*
+  is a different sentence from *available*, and it is the true one.
+  `resolve_local_model_path` needed the managed directory as much as discovery
+  did, and that half is on neither ADR 0122 nor the plan: an install the decode
+  path cannot resolve is a profile that is dead at first capture. The command
+  count was estimated at three and is five. Six drawn sizes were corrected under
+  ADR 0128, five of them binary units printed under decimal names. **And the
+  finding that is not about models**: `command-sweep.mjs` resolved a channel
+  constant on the frontend side and only a string literal on the Rust side, so
+  the same channel was visible spelled one way and invisible spelled the other —
+  ADR 0153's shape again, fixed by symmetry rather than by a second spelling.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

@@ -45,6 +45,11 @@ import {
   type JobKey,
   type LaneName,
 } from "./data";
+import { formatModelSize, modelInstall } from "@/lib/modelCatalogue";
+import { useModelLibrary } from "@/hooks/useModelLibrary";
+import { buildProfileSpeechPatch } from "@/lib/textProfiles";
+import type { ManagedModelRow } from "@/types/models";
+import type { ModelState } from "@/components/shell";
 import { formatBudgetDuration, useCaptureBudget } from "@/hooks/useCaptureBudget";
 import { useProviderSeam } from "@/hooks/useProviderSeam";
 import {
@@ -1281,60 +1286,24 @@ function ModelsTab({
    ONE TAB FOR BOTH KINDS, because it is one installation: speech models and
    language models sit on the same disk, under the same runtime, and compete for
    the same memory. Split across the two things that consume them, the total —
-   the number that matters when a model is 4 GB — would be invisible. */
+   the number that matters when a model is 4 GB — would be invisible.
+
+   **AND THE TWO HALVES DO NOT SHARE A DISK** (B5, ADR 0122). Half of ADR 0042's
+   argument for one tab did not survive contact with the tree: the local chat
+   role does not run a model, it talks to one Ollama runs, and Ollama owns its
+   store. So WordScript downloads the speech weights into a directory it manages
+   and asks the server to pull the language ones, and each card says which. The
+   memory claim is the half that carries the tab, and it is still true.
+
+   TWO COMPONENTS RATHER THAN ONE WITH A CONDITIONAL HOOK — the split
+   `CeilingBadge` and `ModelsScreen` already make, for the same reason: the
+   gallery asserts NO runtime state, so it must not reach for `model_library`
+   at all. */
 function MachineTab() {
+  const wired = useWired();
   return (
     <>
-      <SectionHeader
-        title="Speech models"
-        description="Downloaded once, loaded by the local speech runner. Larger is more accurate and slower."
-      >
-        <Card
-          footer={
-            <span className="ws-rowflex">
-              <StatusBadge tone="plan">2 installed · 284 MB</StatusBadge>
-              <span className="ws-muted">
-                Speech runner: <span className="ws-mono">/usr/bin/whisper-cli</span>
-              </span>
-            </span>
-          }
-        >
-          <ModelList>
-            <ModelRow {...libraryModel("local-speech-base")} state="installed" active />
-            <ModelRow {...libraryModel("local-speech-base-en")} state="installed" />
-            <ModelRow {...libraryModel("local-speech-small")} state="downloading" pct={38} />
-            <ModelRow {...libraryModel("local-speech-medium")} />
-            <ModelRow {...libraryModel("local-speech-large-v3-turbo")} />
-          </ModelList>
-        </Card>
-      </SectionHeader>
-
-      <SectionHeader
-        title="Language models"
-        description="Downloaded once, served to every writing job by the server below."
-      >
-        <Card
-          footer={
-            <span className="ws-rowflex">
-              <StatusBadge tone="plan">2 installed · 6.4 GB</StatusBadge>
-              <DrawnButton variant="ghost" icon={<Icon name="folder" />}>
-                Open the model folder
-              </DrawnButton>
-            </span>
-          }
-        >
-          <ModelList>
-            <ModelRow {...libraryModel("local-chat-qwen-7b")} state="installed" active />
-            <ModelRow {...libraryModel("local-chat-llama-3b")} state="installed" />
-            <ModelRow {...libraryModel("local-chat-gemma-4b")} />
-            <ModelRow {...libraryModel("local-chat-qwen-14b")} />
-          </ModelList>
-        </Card>
-        <Note>
-          The sizes are on disk. Loading one costs roughly the same again in memory, and a model
-          that does not fit does not fail at download time — it fails at first use.
-        </Note>
-      </SectionHeader>
+      {wired ? <WiredLibrary /> : <DrawnLibrary />}
 
       <SectionHeader
         title="The server"
@@ -1393,6 +1362,235 @@ function MachineTab() {
       </Note>
     </>
   );
+}
+
+/* ── The library, as the gallery draws it ───────────────────────────────────
+   The sample state Leg 6 ported, unchanged in shape and now stating its sizes
+   from the catalogue rather than from a literal beside them (ADR 0115's last
+   inventory entry, taken by B5). A drawn row has no handler and no reason, so
+   it renders exactly the tree `port:diff` measures. */
+function DrawnLibrary() {
+  return (
+    <>
+      <SectionHeader
+        title="Speech models"
+        description="Downloaded once, loaded by the local speech runner. Larger is more accurate and slower."
+      >
+        <Card
+          footer={
+            <span className="ws-rowflex">
+              <StatusBadge tone="plan">2 installed · 284 MB</StatusBadge>
+              <span className="ws-muted">
+                Speech runner: <span className="ws-mono">/usr/bin/whisper-cli</span>
+              </span>
+            </span>
+          }
+        >
+          <ModelList>
+            <ModelRow {...libraryModel("local-speech-base")} state="installed" active />
+            <ModelRow {...libraryModel("local-speech-base-en")} state="installed" />
+            <ModelRow {...libraryModel("local-speech-small")} state="downloading" pct={38} />
+            <ModelRow {...libraryModel("local-speech-medium")} />
+            <ModelRow {...libraryModel("local-speech-large-v3-turbo")} />
+          </ModelList>
+        </Card>
+      </SectionHeader>
+
+      <SectionHeader
+        title="Language models"
+        description="Downloaded once, served to every writing job by the server below."
+      >
+        <Card
+          footer={
+            <span className="ws-rowflex">
+              <StatusBadge tone="plan">2 installed · 6.4 GB</StatusBadge>
+              <DrawnButton variant="ghost" icon={<Icon name="folder" />}>
+                Open the model folder
+              </DrawnButton>
+            </span>
+          }
+        >
+          <ModelList>
+            <ModelRow {...libraryModel("local-chat-qwen-7b")} state="installed" active />
+            <ModelRow {...libraryModel("local-chat-llama-3b")} state="installed" />
+            <ModelRow {...libraryModel("local-chat-gemma-4b")} />
+            <ModelRow {...libraryModel("local-chat-qwen-14b")} />
+          </ModelList>
+        </Card>
+        <Note>
+          The sizes are on disk. Loading one costs roughly the same again in memory, and a model
+          that does not fit does not fail at download time — it fails at first use.
+        </Note>
+      </SectionHeader>
+    </>
+  );
+}
+
+/* ── The library, as this machine actually has it (B5, ADR 0122) ────────────
+   Same two cards, same rows, and every number read rather than drawn. The
+   footers are the one place the difference is loudest: `2 installed · 284 MB`
+   was a sample, and what stands here is a count of files that exist plus the
+   bytes they occupy. A machine with nothing installed reads `0 installed`,
+   which is the sentence four invented profile rows used to prevent anyone from
+   ever seeing. */
+function WiredLibrary() {
+  const runtime = useRuntime();
+  const { library, rows, error, failures, install, cancel, remove, openFolder } =
+    useModelLibrary();
+
+  const speech = rows.filter((row) => row.mechanism === "download");
+  const language = rows.filter((row) => row.mechanism === "server_pull");
+
+  /* The active profile decides what `In use` means, and writing it is what the
+     drawn `Use` button was always for. A gallery render never reaches here. */
+  const useModel = (row: ManagedModelRow) => {
+    if (!runtime) return;
+    runtime.patch(
+      buildProfileSpeechPatch(
+        runtime.config,
+        row.role === "speech"
+          ? { local_model: localStemOf(row) }
+          : { local_correction_model: pullTagOf(row) ?? row.model_id },
+      ),
+    );
+  };
+
+  const card = (rowsForCard: ManagedModelRow[]) => (
+    <ModelList>
+      {rowsForCard.map((row) => (
+        <ModelRow
+          key={row.row}
+          {...drawnLibraryRow(row)}
+          state={stateOf(row)}
+          active={Boolean(row.in_use_by)}
+          pct={percentOf(row)}
+          reason={failures[row.row] ?? unreachableReason(row)}
+          onDownload={() => void install(row.row)}
+          onCancel={() =>
+            row.state.kind === "installing" ? void cancel(row.state.install_id) : undefined
+          }
+          onRemove={() => void remove(row.row)}
+          onUse={() => useModel(row)}
+        />
+      ))}
+    </ModelList>
+  );
+
+  return (
+    <>
+      <SectionHeader
+        title="Speech models"
+        description="Downloaded once, loaded by the local speech runner. Larger is more accurate and slower."
+      >
+        <Card
+          footer={
+            <span className="ws-rowflex">
+              <StatusBadge tone="plan">{installedSummary(speech)}</StatusBadge>
+              <span className="ws-muted">
+                Model folder:{" "}
+                <span className="ws-mono">{library?.speech_dir ?? "Not read"}</span>
+              </span>
+            </span>
+          }
+        >
+          {card(speech)}
+        </Card>
+      </SectionHeader>
+
+      <SectionHeader
+        title="Language models"
+        description="Pulled once by the server below, which owns the files. WordScript never puts one beside them."
+      >
+        <Card
+          footer={
+            <span className="ws-rowflex">
+              <StatusBadge tone="plan">{installedSummary(language)}</StatusBadge>
+              <Button variant="ghost" icon={<Icon name="folder" />} onClick={() => void openFolder()}>
+                Open the model folder
+              </Button>
+            </span>
+          }
+        >
+          {card(language)}
+        </Card>
+        <Note>
+          The sizes are on disk. Loading one costs roughly the same again in memory, and a model
+          that does not fit does not fail at download time — it fails at first use.
+        </Note>
+        {/* The server's own answer, stated where its models are listed. A card
+            that showed four rows as "not installed" because nothing asked the
+            server would be claiming about a disk nobody looked at. */}
+        {library && !library.server.reachable && (
+          <Note icon="alert">{library.server.detail}</Note>
+        )}
+        {error && <Note icon="alert">{error}</Note>}
+      </SectionHeader>
+    </>
+  );
+}
+
+/** The drawn half of a live row: the mark and the sentence, with the size read
+ *  from the runtime rather than from the catalogue, because after an install
+ *  the file's own length is the honest number. */
+function drawnLibraryRow(row: ManagedModelRow) {
+  const drawn = libraryModel(row.row);
+  return {
+    ...drawn,
+    size: formatModelSize(
+      row.state.kind === "installed" ? row.state.bytes : row.size_bytes,
+    ),
+  };
+}
+
+function stateOf(row: ManagedModelRow): ModelState {
+  switch (row.state.kind) {
+    case "installed":
+      return "installed";
+    case "installing":
+      return "downloading";
+    /* An unknown row draws as available with the server's sentence on it.
+       Inventing a fourth appearance for "nobody asked the disk" would put a
+       state on this surface that the runtime does not have. */
+    default:
+      return "available";
+  }
+}
+
+function percentOf(row: ManagedModelRow): number {
+  if (row.state.kind !== "installing" || row.size_bytes <= 0) return 0;
+  return Math.min(100, Math.round((row.state.received_bytes / row.size_bytes) * 100));
+}
+
+function unreachableReason(row: ManagedModelRow): string | undefined {
+  if (row.in_use_by && row.state.kind === "installed") {
+    return `${row.in_use_by} runs on this model — change that profile first.`;
+  }
+  return row.state.kind === "unknown" ? row.state.detail : undefined;
+}
+
+/** `2 installed · 284 MB`, counted rather than drawn. */
+function installedSummary(rows: ManagedModelRow[]): string {
+  const installed = rows.filter((row) => row.state.kind === "installed");
+  const bytes = installed.reduce(
+    (total, row) => total + (row.state.kind === "installed" ? row.state.bytes : 0),
+    0,
+  );
+  return installed.length === 0
+    ? "0 installed"
+    : `${installed.length} installed · ${formatModelSize(bytes)}`;
+}
+
+/** What the config calls a local recogniser: the stem, never the file name. */
+function localStemOf(row: ManagedModelRow): string {
+  const install = modelInstall(row.row);
+  if (install?.kind !== "download") return row.model_id;
+  return install.file_name.replace(/^ggml-/, "").replace(/\.bin$/, "");
+}
+
+/** What the config calls a local language model: the server's tag. */
+function pullTagOf(row: ManagedModelRow): string | undefined {
+  const install = modelInstall(row.row);
+  return install?.kind === "server_pull" ? install.tag : undefined;
 }
 
 /* The prototype's `seg()` and `toggle()`: a demo control that moves its own

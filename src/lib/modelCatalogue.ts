@@ -36,6 +36,38 @@ export type CatalogueProvider = {
   lane: string;
 };
 
+/**
+ * How a model gets onto this machine, where that is a question about the row at
+ * all (ADR 0122).
+ *
+ * **Two variants because there are two mechanisms and they do not share a
+ * disk.** WordScript downloads the speech weights into a directory it manages;
+ * the language models belong to whatever server the user runs, so it asks that
+ * server to pull and never places a file beside them. Absent is the answer for
+ * every hosted lane rather than an omission — there is nothing to install for
+ * Groq or OpenAI.
+ */
+export type InstallSource =
+  | {
+      kind: "download";
+      url: string;
+      file_name: string;
+      size_bytes: number;
+      sha256: string;
+      source: string;
+      read_date: string;
+    }
+  | {
+      kind: "server_pull";
+      runtime: string;
+      /** Carried beside `model_id` and never derived from it. */
+      tag: string;
+      size_bytes: number;
+      quantization: string;
+      source: string;
+      read_date: string;
+    };
+
 export type ModelRow = {
   id: string;
   provider: string;
@@ -46,6 +78,7 @@ export type ModelRow = {
   source: string;
   read_date: string;
   note?: string;
+  install?: InstallSource;
 };
 
 export type LaneJobModels = {
@@ -76,8 +109,8 @@ export type RuntimeDefaultSlot =
    test and by `core::model_catalogue`'s, which reads the same bytes. */
 export const CATALOGUE = raw as unknown as Catalogue;
 
-/** The version this build was written against. */
-export const CATALOGUE_VERSION = 1;
+/** The version this build was written against. 2 added the install block. */
+export const CATALOGUE_VERSION = 2;
 
 /**
  * The row an id names.
@@ -140,4 +173,38 @@ export function laneJobModels(
 /** What the runtime falls back to when a config names no model. */
 export function runtimeDefault(slot: RuntimeDefaultSlot): string {
   return modelId(CATALOGUE.runtime_defaults[slot]);
+}
+
+/**
+ * How a row is installed, or nothing where it is not this build's to install.
+ *
+ * Throws for a slug that names no row at all, like every other accessor here —
+ * *not installable* and *not a row* are different mistakes and only one of them
+ * is this repo naming its own data wrongly.
+ */
+export function modelInstall(id: string): InstallSource | undefined {
+  return modelRow(id).install;
+}
+
+/**
+ * A size in the units both sources publish about these files.
+ *
+ * **Decimal, and the choice is the correction B5 made** (ADR 0128's rule that a
+ * false drawn sentence is corrected). The drawing carried `142 MB` for a file
+ * Hugging Face lists as 148 MB and `4.4 GB` for a pull the Ollama library lists
+ * as 4.7 GB — binary units under decimal names, so the number on this surface
+ * and the number on the page the file comes from were never the same number.
+ * `formatUploadSize` says MiB for the opposite reason: an upload ceiling is
+ * documented in MiB by every vendor that states one, so MiB is what agrees with
+ * the runtime's own refusal there.
+ *
+ * Mirrors `core::model_install::format_bytes`; `modelCatalogue.test.ts` holds
+ * the two together on the rows the drawing spends.
+ */
+export function formatModelSize(bytes: number): string {
+  const GB = 1_000_000_000;
+  const MB = 1_000_000;
+  return bytes >= GB
+    ? `${(bytes / GB).toFixed(1)} GB`
+    : `${Math.round(bytes / MB)} MB`;
 }

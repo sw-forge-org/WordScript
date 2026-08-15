@@ -1,6 +1,9 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-15 (stage B7, and it read
+Status: created 2026-07-24, last drift check 2026-08-15 (stage B5, and it read
+only the event-channel section, which gained `wordscript-model-event` — a
+channel that carries an install and may never set session state; the stage B7
+pass before it read
 only the capability-seam clause it extends — the inert-reason list, which gained
 a sixth entry — and the per-job override clause B6 left; the stage B6 pass
 before it read
@@ -305,6 +308,16 @@ Tauri event channels and their payload discriminators are separate contracts:
   carries the whole config for the Settings form, the mode event is the named
   signal the overlay listens on. Settings saves used to emit only `ready` and
   reached the overlay through a config-identity side effect (ADR 0024).
+- `wordscript-model-event` carries `ModelInstallEvent` (`install_id`, `row`,
+  `phase`, `received_bytes`, `total_bytes`, `detail`) for an in-app model
+  install, where `phase` is one of `started`, `progress`, `verifying`,
+  `installed`, `failed`, `cancelled` (ADR 0122, ADR 0158). **It is deliberately
+  not one of the session channels and may never set session state**: a download
+  is not a session, and ADR 0018/0019's rule that a session ends in exactly one
+  reducer commit is enforced here by the channel simply not having the door. An
+  install that completes after its cancel is discarded, reported as `cancelled`,
+  and recorded in the runtime log.
+
 There is no separate insert event. `wordscript-native-insert` was emitted from
 three sites in `core::insertion` and listened to by nothing; the same
 `NativeInsertResult` already reaches the frontend as the `insertion` field of

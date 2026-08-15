@@ -560,7 +560,13 @@ implementation with two sets of props, and a component that exists only under
 AI Models renders capabilities and setup from native status. For
 `local`, its `On this machine` tab shows the speech runner, STT model,
 cleanup endpoint, and cleanup model as a native preflight checklist. It does not
-infer readiness from environment variables or paths. Its job list carries one
+infer readiness from environment variables or paths. **Since 2026-08-15 that tab
+also installs** (ADR 0122, built as ADR 0158), and three rules govern how it
+states what it has: a catalogued model with no file reads as *installable* and
+never as *available*; a language model whose server is not running reads as
+**unknown** with the server's own sentence on it, because nobody looked at that
+disk; and the installed total is a count of files that exist, so a machine with
+nothing on it says `0 installed` rather than borrowing the drawn sample. Its job
 row per job that RUNS a model, which is not the same as one row per job that
 SETS one — Titles states the model it runs and offers no setting, because there
 is none to offer (ADR 0088).

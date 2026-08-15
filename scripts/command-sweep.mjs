@@ -247,9 +247,36 @@ function stringConstants(paths) {
 
 const RUST_SRC = join(ROOT, "src-tauri", "src");
 
+/**
+ * `const NAME: &str = "literal"` across the Rust tree, so an emitted channel
+ * held in a constant resolves.
+ *
+ * **The frontend half has had this since it was written and the Rust half had
+ * not**, which made the two sides of the same sweep read the same code
+ * differently: a channel spelled as a literal was seen and the identical
+ * channel spelled as a constant was invisible. B5 tripped it — the model
+ * install channel is a `pub const` on both sides, and the sweep reported its
+ * listener as waiting for nothing while five emit sites stood beside it. The
+ * fix is symmetry rather than a second spelling of the string in Rust, which is
+ * what the alternative would have cost.
+ */
+function rustStringConstants() {
+  const table = new Map();
+  for (const path of walk(RUST_SRC).filter((entry) => entry.endsWith(".rs"))) {
+    const source = readFileSync(path, "utf8");
+    const pattern = /\b(?:pub\s+)?(?:pub\s*\([^)]*\)\s+)?(?:const|static)\s+([A-Z][A-Z0-9_]*)\s*:\s*&(?:'static\s+)?str\s*=\s*"([^"]+)"/g;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      table.set(match[1], match[2]);
+    }
+  }
+  return table;
+}
+
 /** Every `.emit(...)`/`.emit_to(...)` name in Rust, spanning lines. */
 function emittedEvents() {
   const found = new Map(); // name -> [{ file, line }]
+  const constants = rustStringConstants();
   const files = walk(RUST_SRC).filter((path) => path.endsWith(".rs"));
   for (const path of files) {
     const raw = readFileSync(path, "utf8");
@@ -275,12 +302,25 @@ function emittedEvents() {
         toSkip -= 1;
       }
       while (i < raw.length && /[\s]/.test(raw[i])) i += 1;
-      if (raw[i] !== '"') continue;
-      i += 1;
+
       let name = "";
-      while (i < raw.length && raw[i] !== '"') {
-        name += raw[i];
+      if (raw[i] === '"') {
         i += 1;
+        while (i < raw.length && raw[i] !== '"') {
+          name += raw[i];
+          i += 1;
+        }
+      } else {
+        /* A bare identifier — a channel held in a constant, possibly through a
+           path (`model_install::MODEL_EVENT_CHANNEL`). Resolved against the
+           table above; one that resolves to nothing is left alone rather than
+           reported, because the Rust half has no unresolvable bucket and
+           inventing one is the GUI port's call rather than this step's. */
+        const identifier = /^[A-Za-z_][\w:]*/.exec(raw.slice(i, i + 120));
+        if (!identifier) continue;
+        const resolved = constants.get(identifier[0].split("::").pop());
+        if (!resolved) continue;
+        name = resolved;
       }
       if (!name) continue;
       if (!found.has(name)) found.set(name, []);

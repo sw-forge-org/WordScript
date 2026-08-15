@@ -7,7 +7,7 @@
   "properties": {
     "version": {
       "type": "integer",
-      "description": "Catalogue schema version. Bump on incompatible changes; core::model_catalogue asserts against it."
+      "description": "Catalogue schema version. Bump on incompatible changes; core::model_catalogue asserts against it. 2 adds the optional `install` block (ADR 0122) — additive, and there is no migration because there is no on-disk state: the file is compiled into the binary through include_str!."
     },
     "description": {
       "type": "string"
@@ -85,6 +85,70 @@
           "note": {
             "type": "string",
             "description": "What the columns cannot carry about this row. Sparse on purpose: the prose survey is docs/PROVIDERS.md and this file does not become a second one."
+          },
+          "install": {
+            "description": "How this model gets onto this machine, where that is a question about this row at all (ADR 0122). Absent is the answer for every hosted lane rather than an omission: there is nothing to install for Groq or OpenAI, and a surface asking them is asking the wrong lane. Two variants because there are two mechanisms and they do not share a disk — WordScript downloads the speech weights into a directory it manages, and asks the server the user runs to pull the language ones. Carries its own source and read-date: a weights repository that moves a file breaks an install rather than a claim, so these facts are dated like every other row here.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["kind", "url", "file_name", "size_bytes", "sha256", "source", "read_date"],
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "download" },
+                  "url": {
+                    "type": "string",
+                    "description": "Where the weights are fetched from. Followed through redirects; the file this lands is WordScript's own.",
+                    "format": "uri"
+                  },
+                  "file_name": {
+                    "type": "string",
+                    "description": "What the file is called in the managed directory. Stated rather than derived from the URL, because core::providers::local resolves a recogniser by the ggml-{stem}.bin shape and a URL is free to be spelled any way at all.",
+                    "pattern": "^ggml-[a-z0-9.-]+\\.bin$"
+                  },
+                  "size_bytes": {
+                    "type": "integer",
+                    "description": "The exact size, so free space can be checked before the first byte is requested and the drawn size is a fact rather than an estimate.",
+                    "minimum": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "description": "Checked against the .part file before it is renamed into place. The reason the row carries a checksum and not only a size: there must be no window in which half a model is spelled like a whole one.",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "source": { "type": "string", "minLength": 1 },
+                  "read_date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["kind", "runtime", "tag", "size_bytes", "quantization", "source", "read_date"],
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "server_pull" },
+                  "runtime": {
+                    "type": "string",
+                    "description": "Which server is asked. WordScript owns none of these files and never places one beside them.",
+                    "enum": ["ollama"]
+                  },
+                  "tag": {
+                    "type": "string",
+                    "description": "What the server is asked to pull. Carried beside model_id and never derived from it: qwen2.5:7b-instruct and qwen2.5-7b-instruct are not the same string, and rewriting the punctuation would be a guess dressed as a lookup.",
+                    "minLength": 1
+                  },
+                  "size_bytes": {
+                    "type": "integer",
+                    "description": "What the pull costs on the server's disk, summed over the manifest's layers.",
+                    "minimum": 1
+                  },
+                  "quantization": {
+                    "type": "string",
+                    "description": "The drawn library's second literal, beside the size. Stated by the tag itself wherever a quantized tag exists, so this column and the tag cannot drift apart."
+                  },
+                  "source": { "type": "string", "minLength": 1 },
+                  "read_date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+                }
+              }
+            ]
           }
         }
       }

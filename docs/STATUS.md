@@ -295,6 +295,21 @@ Status: 2026-08-15
   implementation and every vendor policy is the adapter's own
 - `local` as a full local runtime lane over external `whisper-cli`,
   local ggml models and local Ollama cleanup (STT plus cleanup, not STT-only)
+- **in-app model installation for that lane** (ADR 0122, built as ADR 0158,
+  2026-08-15). `AI Models` -> *On this machine* downloads the speech weights
+  into a directory WordScript manages, verifies each against the catalogue's
+  SHA256 before naming it, and asks the local server to pull the language ones
+  -- Ollama owns those files and WordScript never places one beside them.
+  Progress travels on `wordscript-model-event`, its own channel. **A model a
+  profile runs on cannot be removed**, and the refusal names the profile.
+  ADR 0042's gate -- *until in-app installation exists, the local lane is
+  expert configuration and the surface says so* -- is closed. **The lane is
+  still unpublished**: ADR 0067's preview badge stays until Phase 5
+- **nothing on that tab claims a model that is not on the disk.** The local
+  lane used to offer `base`, `small`, `medium` and `large-v3` as profiles
+  whether or not one of them existed; a machine with nothing installed now says
+  so, and the catalogue's rows are offered as *installable*, which is a
+  different sentence
 - AI Models preflight for the local runtime lane with native runner,
   STT-model, cleanup-endpoint and cleanup-model readiness
 - bounded STT prompt bias for Groq and `local` from active profile

@@ -53,6 +53,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the local lane installs its own models (ADR 0122, ADR 0158)
+
+- **`AI Models` → *On this machine* works.** It has been drawn since Leg 6 with
+  a size per row, a percentage and an installed total, and nothing behind any of
+  it. Now a speech model downloads with real progress, is verified against a
+  SHA256 the catalogue carries, and is found afterwards **with no environment
+  variable set** — by the picker and by the decode path both.
+- **The two halves say who owns the file.** WordScript downloads the speech
+  weights into a folder it manages; the language models belong to the Ollama you
+  run, so it asks that server to pull and never puts a file beside its own. One
+  tab, because a 4 GB language model and a 1.6 GB speech model compete for the
+  memory of the same machine, and a total split across two screens is invisible
+  exactly when it matters.
+- **A download that does not fit is refused before the first byte** rather than
+  after the last one, and a checksum that does not match removes the part file
+  and installs nothing. There is no window in which half a model is spelled like
+  a whole one.
+- **A model your profile runs on cannot be removed by accident**, and the
+  refusal names the profile.
+
+### Changed
+
+- **The local lane stopped offering four models it did not have.** It listed
+  `base`, `small`, `medium` and `large-v3` as profiles whether or not one of
+  them was on the disk. A machine with nothing installed now says so, and the
+  catalogue's rows are offered as *installable* — a different sentence, and a
+  true one. This closes a gate open since 2026-08-03: *until in-app installation
+  exists, the local lane is expert configuration and the surface says so.*
+- **Six drawn model sizes were wrong and are corrected.** Five printed binary
+  units under decimal names — `ggml-base` reads 148 MB rather than 142 MB, and
+  `qwen2.5-7b-instruct` 4.7 GB rather than 4.4 GB, which is what the pages those
+  files come from say. The sixth was simply a guess: `gemma-3-4b-it` is a 3.3 GB
+  pull, not 2.5 GB.
+
 ### Added — the provider choice moved to where the file is (ADR 0129, ADR 0131, ADR 0157)
 
 - **A surface that starts a job now names where it runs, before it runs it.**
