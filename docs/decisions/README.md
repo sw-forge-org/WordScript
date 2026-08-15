@@ -1235,6 +1235,55 @@ Status: Proposed | Accepted | Superseded by NNNN
   and openwhispr independently carries the same `142MB` / `148000000` duality
   ADR 0158 corrected.
 
+- [0160](0160-a-server-is-a-machine-that-is-not-this-one-and-the-runners-here-are-named-for-what-they-run.md):
+  **a server is a machine that is not this one, and the runners here are named
+  for what they run.** B9. The word *server* meant a different machine in each
+  of the two places it appeared: the lane row spends four lines establishing
+  *a server you operate, on another machine*, and one tab over a section called
+  *The server* carried `127.0.0.1:11434`. `Self-hosted` now READS as *Your
+  server* through `LANE_LABEL` and is STORED unchanged, because the lane names
+  are keys both runtimes read out of `shared/model_catalogue.json`. The section
+  becomes *Runners on this machine* and both its rows are read rather than
+  drawn — `local_setup` on `provider_status` had carried the answer since
+  before B5 and the tab was simply never asking. **`Not read` is a third state**:
+  a probe that failed and a runner that is absent are different facts.
+
+- [0161](0161-a-drawn-row-says-so-beside-its-own-label-and-the-sketch-is-the-deliverable.md):
+  **a drawn row says so beside its own label, and the sketch is the
+  deliverable.** B10. `Acceleration` printed *no CUDA, ROCm or Metal device
+  found* while `grep -rn "cuda\|rocm\|Metal" src-tauri/src/` returns nothing —
+  a specific, checkable, false claim about the reader's own hardware, found by
+  an owner with an Nvidia card. **The fix is not deletion**: the sketch is a
+  deliverable and stays, and it declares itself. `PreviewTag` plus a `tag` slot
+  on `Row`, at the LABEL rather than at the control, because a marker read
+  after the value it warns about is read too late.
+
+- [0162](0162-the-lane-is-a-choice-and-the-tab-is-an-inventory-and-that-is-why-there-are-two.md):
+  **the lane is a choice, the tab is an inventory, and that is why there are
+  two.** B11. ADR 0042's justification for one tab is half dead — ADR 0122
+  retired *speech and language sit on the same disk* — and the argument that
+  holds was written nowhere: a lane is a stored value and an inventory is not,
+  so putting the library behind `Local` would mean editing the configuration in
+  order to look at the disk. Four of the `Local` lane's five rows restated the
+  tab, and the cost is measured rather than argued: ADR 0160 and ADR 0161 each
+  had to be applied to that branch twice.
+
+- [0163](0163-a-withheld-lane-states-what-the-product-owes-and-separately-what-this-disk-already-has.md):
+  **a withheld lane states what the product owes, and separately what this disk
+  already has.** B12, out of one finding: *the tab installs models for a lane
+  that cannot be selected.* The lock is right — ADR 0067 rule 1 — and it was
+  silent, which folded two different facts into one dimmed control. **Not
+  published** is a decision about the product and moves when Phase 5 closes;
+  **not ready** is a fact about this disk and moves when something is
+  installed. A machine with `whisper-cli`, a ggml model and Ollama answering is
+  READY and still not offered, and saying so plainly is the deliverable. Two
+  rows, wired-only, so `port:diff` is unmoved by construction; `local_setup` is
+  read once for the whole screen because the probe spawns a process. **No
+  Rust** — everything it states was already on the wire. **And a marker that
+  can only render in a state the product never enters is a marker the product
+  does not have**: ADR 0161's `Preview` tag on the lane row is conditioned on a
+  lane other than `Cloud` being selected, which this very lock forbids.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

@@ -1,6 +1,6 @@
 # WordScript — the implementation board
 
-Status: 2026-08-15
+Status: 2026-08-16
 
 **This page answers one question: what is being built right now, by whom, and
 where does its sequence live.** It is the entry point for a session that is
@@ -32,7 +32,7 @@ updated; a kick-off is spent when its unit closes.
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 14 open**; Legs 0–13b closed. Leg 13 split 2026-08-14 and both halves closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
-| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 14 of ~27 steps done, and the local lane installs, imports and finds what it needs | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 15 of ~27 steps done, and the lane that installs what it needs now says why it still cannot be chosen | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
@@ -116,7 +116,7 @@ the sequence carry it and the closing-phrase artifact found beside it.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**, **0158**, **0159**.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**–**0163**.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -131,11 +131,10 @@ wire a drawing inherited from the demo GUI)**, **B7 (the provider choice at
 the point of use)**, **B5 (in-app model installation)**, **B8 (that library at
 scale, and the model the catalogue does not know)**, **B9 (what that
 surface is allowed to call a server)**, **B10 (the drawn rows on it saying
-so)**, and **B11 (why it has two tabs, and the lane that was restating one of
-them)**.
+so)**, **B11 (why it has two tabs, and the lane that was restating one of
+them)**, and **B12 (why the lane it installs for still cannot be chosen)**.
 
-Next unblocked: **B12** (added 2026-08-15, and the cheapest of the set — it
-spends a reader B9 already built and touches no Rust), **B2**, **B4**, **E1**,
+Next unblocked: **B2**, **B4**, **E1**,
 **D3** — whose `Requires` line
 has read D1 and A3 since it was written, both now done — and **D1a**, which
 since B6 spent its drawing half is the adapter alone and the cheapest step in
@@ -181,6 +180,23 @@ names its own expiry, so the step is *the lock explains itself* and the release
 is a gate behind Phase 5. **The first draft of that recommendation was too
 coarse and the record is where it got cut down**, which is the argument for
 writing steps before starting them.
+
+**B12 landed 2026-08-16 and it is the smallest step on this track with the
+widest finding** (ADR 0163). What it built is two rows: a withheld lane states
+what the *product* still owes and, separately, what *this disk* already has —
+because a machine with `whisper-cli`, a ggml model and Ollama answering is
+READY and still not offered, and one dimmed control said the same nothing about
+that machine as about an empty one. The lock itself is untouched; ADR 0067 rule
+1 is right and reversing it is Phase 5's gate.
+
+**The finding is for any track that marks a state.** ADR 0161 put a `Preview`
+tag on the lane row conditioned on the selected lane not being `Cloud` — and
+with a runtime present, the lock makes that state unreachable, so **the marker
+renders only in the gallery**. The expression is correct; what is wrong is that
+a marker whose only reachable state is one the product never enters is a marker
+the product does not have. **The mechanical half generalises too**: a disabled
+`<button>` fires no mouse events, so it can carry neither tooltip nor hint, and
+any reason attached to one is invisible by construction.
 
 **B5 landed 2026-08-15 and it closes a gate that had been open for twelve
 days.** ADR 0042 said *until in-app installation exists, the local lane is
@@ -293,7 +309,9 @@ with B9** — the naming correction the owner asked for after reading the finish
 B5/B8 surface — plus **0161 with B10**, the marker that lets a half-wired screen
 say which of its rows are drawings, and **0162 with B11**, which answers why AI
 Models has two tabs and removes the duplication that made 0160 and 0161 each
-land twice, so **0163 is the next free number**.
+land twice, plus **0163 with B12** — the withheld lane stating what the
+product owes apart from what the disk already has — so **0164 is the next free
+number**.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
 swept the event channel and found `wordscript-native-insert` emitted from three

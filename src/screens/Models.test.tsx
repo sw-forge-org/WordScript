@@ -1424,3 +1424,159 @@ describe("On this machine, and what a server is", () => {
     expect(screen.queryByText("Where models come from")).toBeNull();
   });
 });
+
+/**
+ * A LOCKED LANE SAYS WHY, AND WHERE THIS MACHINE STANDS (B12, ADR 0163).
+ *
+ * **The lock itself is not on trial and these cases assert that it holds.**
+ * ADR 0067 rule 1 keeps `Local`, `Your server` and `Enterprise` inoperable;
+ * what B12 changes is that the card now says why, and — for the one lane the
+ * runtime actually carries — what is already installed and what is not.
+ *
+ * **The distinction every case here is really about** is *not published*
+ * against *not ready*. A machine with `whisper-cli`, a ggml model and Ollama
+ * answering is READY and still not offered, and a surface that folds those two
+ * into one greyed control is the silence this step closes.
+ */
+describe("A lane that is locked says why", () => {
+  const READY = {
+    readiness: "ready",
+    runner_ready: true,
+    model_ready: true,
+    chat_ready: true,
+    issue_code: null,
+    resolved_runner: "/usr/bin/whisper-cli",
+    resolved_model: "/home/someone/models/ggml-base.bin",
+    resolved_chat_base_url: "http://127.0.0.1:11434",
+    resolved_chat_model: "llama3.2:latest",
+    available_chat_models: ["llama3.2:latest"],
+    guidance: "Local runtime helper, STT model and AI cleanup model are ready.",
+  };
+
+  /** `local` answers about the disk, every other provider about a vendor. One
+   *  answer for both would let a cloud reply stand in for the local probe. */
+  function withSetup(setup: unknown) {
+    invoked.mockImplementation(async (command, args) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") {
+        const request = (args as { request?: { provider: string } } | undefined)?.request;
+        return request?.provider === "local" ? { ...STATUS, local_setup: setup } : STATUS;
+      }
+      if (command === "resolve_provider_tiers") return TIERS;
+      if (command === "model_library") {
+        return {
+          speech_dir: "/home/someone/.config/WordScript/models/speech",
+          folders: [],
+          server: { base_url: "http://127.0.0.1:11434", reachable: true, detail: "Answering." },
+          rows: [],
+        };
+      }
+      return undefined;
+    });
+  }
+
+  /** The row carrying a sentence, as a row — the label is a `<b>` holding the
+   *  name and the `Preview` tag, so no element's text is the name alone. */
+  async function rowSaying(text: RegExp): Promise<HTMLElement> {
+    const sentence = await screen.findByText(text);
+    const row = sentence.closest(".ws-row");
+    expect(row, `no row saying ${text}`).not.toBeNull();
+    return row as HTMLElement;
+  }
+
+  const WITHHELD = /Not offered yet: Phase 5 still owes/;
+  const NO_ADAPTER_ROW = /Neither has an adapter/;
+
+  it("says a ready machine is withheld by the product and not by the disk", async () => {
+    withSetup(READY);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const row = await rowSaying(WITHHELD);
+    /* All three questions, in one row: why it cannot be chosen, what this
+       machine has, and what is left. The third is Phase 5's list, not a
+       setup step, and that is the whole point of the case. */
+    expect(within(row).getByText("Ready")).toBeInTheDocument();
+    expect(within(row).getByText(/whisper-cli/)).toBeInTheDocument();
+    expect(within(row).getByText(/the product, not the setup/)).toBeInTheDocument();
+    expect(within(row).getByText(/acceleration probe/)).toBeInTheDocument();
+
+    /* AND THE LOCK STILL HOLDS. Stating the reason is not offering the lane —
+       removing `disabled` is ADR 0067's reversal and is not this step. */
+    const lane = screen.getByRole("group", { name: "Lane" });
+    expect(within(lane).getByRole("button", { name: LANE_LABEL.Local })).toBeDisabled();
+  });
+
+  it("counts what is installed rather than saying setup is needed about all of it", async () => {
+    withSetup({
+      ...READY,
+      readiness: "setup_required",
+      model_ready: false,
+      resolved_model: null,
+      issue_code: "missing_model",
+      guidance: "Point WORDSCRIPT_LOCAL_MODEL_DIR at a directory containing ggml-base.bin.",
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const row = await rowSaying(WITHHELD);
+    expect(within(row).getByText("2 of 3 ready")).toBeInTheDocument();
+    /* Named forwards and backwards: what is there, and what is not. A row that
+       only said *setup required* would read the same on a machine with none of
+       the three. */
+    expect(
+      within(row).getByText(/has whisper-cli and Ollama with a language model/),
+    ).toBeInTheDocument();
+    expect(within(row).getByText(/would still need a speech model/)).toBeInTheDocument();
+  });
+
+  it("says nothing about the disk when the probe did not answer", async () => {
+    /* `local_setup: null` is the probe failing, not an empty machine — the
+       distinction ADR 0160 already made one tab over, held here because this
+       row is the one that would otherwise tell somebody to install what they
+       have. */
+    withSetup(null);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const row = await rowSaying(WITHHELD);
+    expect(within(row).getByText("Not read")).toBeInTheDocument();
+    expect(within(row).queryByText(/would still need/)).toBeNull();
+    expect(within(row).queryByText(/none of the three/)).toBeNull();
+  });
+
+  it("separates the lane that is withheld from the two that were never built", async () => {
+    withSetup(READY);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const drawn = await rowSaying(NO_ADAPTER_ROW);
+    expect(within(drawn).getByText("No adapter")).toBeInTheDocument();
+    /* Both rows are marked `Preview`, and they are not the same sentence: one
+       lane is finished enough to run and withheld, two have nothing behind
+       them at all. */
+    expect(within(drawn).getByText("Preview")).toBeInTheDocument();
+    expect(within(await rowSaying(WITHHELD)).getByText("Preview")).toBeInTheDocument();
+    expect(within(drawn).queryByText("Ready")).toBeNull();
+  });
+
+  it("opens the tab that holds the detail its sentence summarises", async () => {
+    withSetup(READY);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const row = await rowSaying(WITHHELD);
+    await userEvent.click(within(row).getByRole("button", { name: "Manage" }));
+
+    /* The door moved something: the machine tab is the one place the three
+       parts are listed by name, and a summary that cannot reach it makes the
+       reader hunt for what it just told them. */
+    expect(await screen.findByText("Runners on this machine")).toBeInTheDocument();
+    expect(screen.queryByText(WITHHELD)).toBeNull();
+  });
+
+  it("has no lock to explain in the gallery, and probes no disk to explain it with", async () => {
+    render(<ModelsScreen />);
+
+    /* The gallery has no runtime, so it has no lock and no machine — which is
+       why this whole surface is wired-only and `port:diff` does not move. */
+    expect(screen.queryByText(WITHHELD)).toBeNull();
+    expect(screen.queryByText(NO_ADAPTER_ROW)).toBeNull();
+    expect(invoked).not.toHaveBeenCalled();
+  });
+});

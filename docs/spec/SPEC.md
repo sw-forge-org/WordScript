@@ -1,6 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-15 (stage B5, and it read
+Status: created 2026-07-24, last drift check 2026-08-16 (stage B12, and it read
+only the two clauses that say what an inert control on `AI Models` states —
+the surface-truth clause, which now covers a withheld LANE and not only a
+vendor without an adapter, and the screen's entry in the port inventory, which
+called all three unoffered lanes *drawn* when one of them is built; the stage
+B5 pass before it read
 only the event-channel section, which gained `wordscript-model-event` — a
 channel that carries an install and may never set session state; the stage B7
 pass before it read
@@ -157,6 +162,18 @@ runtime in three values now, because a vendor the screen never asked about has
 not been found to be without a key. A vendor with no adapter stays offered and
 disabled with its reason — an inherited drawing is an inventory of intent, and
 what is unbuilt stays visible rather than tidied away (ADR 0128).
+
+**And a lane that is withheld states two things apart** (ADR 0163, 2026-08-16).
+`Local`, `Your server` and `Enterprise` cannot be selected while a runtime is
+present, which is ADR 0067 rule 1 and is unchanged. What the Connection card
+now adds is the reason, as rows rather than as an attribute a disabled button
+could never carry: **what the product still owes** — for `Local`, ROADMAP
+Phase 5's remaining list; for the other two, that neither has an adapter — and,
+separately, **what this disk already has**, read from `local_setup` as `Ready`,
+`N of 3 ready` or `Not read`. The two are never folded: *not published* is a
+decision that moves when Phase 5 closes, *not ready* is a fact that moves when
+something is installed, and a machine with every piece installed is the first
+case and not the second.
 
 Consolidated spec (Layer 1, Lean mode). This is the authoritative
 machine-facing summary of what WordScript is and how its parts fit together.
@@ -980,7 +997,10 @@ an event that arrives while the snapshot is in flight always wins.
     decision inbox receives a fallen-back delivery and nothing else, the desk
     (Phase 8) and a meeting's open questions (V2) have no receiver; AI Models —
     the Groq connection is real, the other three lanes and every job override
-    are drawn and inert (ADR 0065, ADR 0067).
+    are inoperable, each stating its own reason (ADR 0065, ADR 0067, ADR 0163).
+    **Two of those lanes are drawn and one is withheld**: `Your server` and
+    `Enterprise` have no adapter, while `local` is a runtime lane that installs
+    its own models and is not offered until Phase 5 finishes it.
   - **drawn, not wired** (four, each stating why): Context (V2 — the context
     object does not exist in the runtime), Notes & Meetings (V2), Agents
     (Phase 8, ADR 0030), Integrations (Phase 8).

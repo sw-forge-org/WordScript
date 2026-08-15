@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-15
+Status: 2026-08-16
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -305,6 +305,14 @@ Status: 2026-08-15
   ADR 0042's gate -- *until in-app installation exists, the local lane is
   expert configuration and the surface says so* -- is closed. **The lane is
   still unpublished**: ADR 0067's preview badge stays until Phase 5
+- **and the surface now says why it is unpublished, and where this machine
+  stands** (ADR 0163, 2026-08-16). The lane segment greyed three lanes out and
+  explained none of them. `AI Models` -> *Connection* states the two facts
+  apart: what ROADMAP Phase 5 still owes, and what `local_setup` found on this
+  disk -- `Ready`, `2 of 3 ready` or `Not read`, with the missing piece named.
+  A machine with `whisper-cli`, a ggml model and Ollama answering is READY and
+  still not offered, and the row says exactly that. **The lock is unchanged**:
+  making the lane selectable reverses ADR 0067 and is Phase 5's gate
 - **nothing on that tab claims a model that is not on the disk.** The local
   lane used to offer `base`, `small`, `medium` and `large-v3` as profiles
   whether or not one of them existed; a machine with nothing installed now says

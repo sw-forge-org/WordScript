@@ -158,6 +158,18 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      inert control, it is a false one: it says the four lanes are the same thing
      with different names. */
   const [lane, setLane] = useState<LaneName>("Cloud");
+  /* ONE `local_setup` READ FOR THE WHOLE SCREEN, AND IT MOVED UP HERE IN B12
+     (ADR 0163). Both tabs state where this machine stands now — the connection
+     card says whether the withheld lane is withheld by the product or by the
+     disk, and the machine tab lists the two runners — and `inspect_local_setup`
+     spawns `whisper-cli --help` and probes the Ollama endpoint to answer. Two
+     hooks would be two probes for one fact, which is the cost ADR 0124 already
+     refused once at ten.
+
+     **`enabled` is what keeps the gallery clean.** This component renders in
+     both states, so the hook is unconditional and its call is not: with no
+     runtime nothing is invoked, and `Models.test.tsx` asserts exactly that. */
+  const { setup, asked } = useLocalSetup(Boolean(runtime));
 
   const surface = (
     <>
@@ -182,10 +194,12 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           lane={lane}
           onLane={setLane}
           runtime={runtime}
+          setup={setup}
+          asked={asked}
           onManage={() => setTab("On this machine")}
         />
       ) : (
-        <MachineTab />
+        <MachineTab setup={setup} asked={asked} />
       )}
 
       <Note>
@@ -903,15 +917,160 @@ function LaneJobRow({
   );
 }
 
+/* ── The three lanes that cannot be picked ──────────────────────────────────
+   WHY THEY ARE GREY, AND WHERE THIS MACHINE STANDS (B12, ADR 0163).
+
+   **The lock is right and its silence was not.** ADR 0067 rule 1 says a
+   surface that OFFERS a lane makes it inoperable, because a control that
+   accepts a click and then asks for a credential is the worst false affordance
+   there is. So the segment above stays disabled. What was missing is that it
+   said nothing: three greyed words, no reason, and — since B5 — an *On this
+   machine* tab busily installing models for a lane the reader cannot select.
+
+   **TWO REASONS, NOT ONE, AND THE STEP EXISTS TO KEEP THEM APART.** *Not
+   published* is a decision about the product; *not ready* is a fact about this
+   disk. `Your server` and `Enterprise` have no adapter, so both sentences say
+   the same thing and one row carries them. `Local` is the row where they come
+   apart: the runtime runs it, B5 installs for it, and a machine with
+   `whisper-cli`, a ggml model and Ollama answering is READY and still not
+   offered. Saying that plainly is the deliverable — the alternative is a
+   surface that withholds without reporting, which is `CLAUDE.md`'s rule broken
+   in both directions at once.
+
+   **WIRED ONLY, AND THAT IS WHY `port:diff` DOES NOT MOVE.** There is nothing
+   to draw here: the gallery has no runtime, so it has no lock and no disk to
+   report on. The known cost is B8's — what appears only in the product is held
+   by tests rather than by the port (ADR 0159) — and the cases are in
+   `Models.test.tsx`.
+
+   **AND IT IS NOT A SECOND COPY OF THE `Local` LANE ROWS** (ADR 0162). Those
+   render only when `lane === "Local"`, which with a runtime never happens,
+   because this very lock forbids it. The two never appear together. */
+function LockedLanes({
+  setup,
+  asked,
+  onManage,
+}: {
+  setup: LocalProviderSetupStatus | null;
+  asked: boolean;
+  onManage?: () => void;
+}) {
+  const standing = localStanding(setup, asked);
+  return (
+    <>
+      <Row
+        label="Local"
+        tag={
+          <PreviewTag title="Built and withheld, not drawn. The runtime carries this lane and On this machine installs for it; what is withheld is OFFERING it, until ROADMAP Phase 5 has finished it — the acceleration probe, whether Ollama ships with WordScript, and streaming." />
+        }
+        hint={`${LOCAL_WITHHELD} ${standing.sentence}`}
+        control={
+          <span className="ws-rowflex">
+            <StatusBadge tone={standing.tone}>{standing.badge}</StatusBadge>
+            {/* THE SAME DOOR THE DRAWN LANE ROW HAS, for the same reason: the
+                detail behind this sentence — which runner, which files, how
+                large — is one tab away and a row that names a state without
+                reaching it makes the reader hunt for what it just told them. */}
+            <Button variant="ghost" icon={<Icon name="arrow" />} onClick={onManage}>
+              Manage
+            </Button>
+          </span>
+        }
+      />
+      <Row
+        label={`${LANE_LABEL["Self-hosted"]} and ${LANE_LABEL.Enterprise}`}
+        tag={<PreviewTag title="Drawn, not built. Their rows show the shape each lane will have; nothing behind either runs a job yet." />}
+        hint="Neither has an adapter yet, so there is nothing behind either one to run a job. Their rows show what each lane will ask for once there is."
+        control={<StatusBadge tone="plan">No adapter</StatusBadge>}
+      />
+    </>
+  );
+}
+
+/** WHY THE LANE IS WITHHELD — the product's half, and it is stated once.
+ *
+ *  Three surfaces on this screen have already carried one fact in two places
+ *  and drifted (ADR 0160, ADR 0161, ADR 0162, all applied twice). The machine's
+ *  half varies per disk and is composed below; this half does not vary at all,
+ *  so it is a constant and the roadmap is its owner. */
+const LOCAL_WITHHELD =
+  "Not offered yet: Phase 5 still owes the acceleration probe, the bundling decision and streaming.";
+
+/** The three things the lane needs on this disk, in the order they are used. */
+const LOCAL_PARTS: { ready: (setup: LocalProviderSetupStatus) => boolean; name: string }[] = [
+  { ready: (setup) => setup.runner_ready, name: "whisper-cli" },
+  { ready: (setup) => setup.model_ready, name: "a speech model" },
+  { ready: (setup) => setup.chat_ready, name: "Ollama with a language model" },
+];
+
+/**
+ * WHERE THIS MACHINE STANDS, IN ONE BADGE AND ONE SENTENCE.
+ *
+ * **`Not read` is a third answer and it is the one that must not be guessed**
+ * (ADR 0160). `local_setup` comes back `null` when the probe failed or has not
+ * run, and reading that as *nothing is installed* would tell somebody their
+ * `whisper-cli` is missing because a command errored.
+ *
+ * **The count is on the badge because it is the question the reader has.** A
+ * lane greyed out over a machine that has all three is a different situation
+ * from one greyed out over a machine that has none, and `Needs setup` says the
+ * same words about both.
+ */
+function localStanding(
+  setup: LocalProviderSetupStatus | null,
+  asked: boolean,
+): { tone: "success" | "warning" | "plan"; badge: string; sentence: string } {
+  if (!asked || !setup) {
+    return {
+      tone: "plan",
+      badge: "Not read",
+      sentence: "What this machine already has was not read — On this machine lists it.",
+    };
+  }
+
+  const has = LOCAL_PARTS.filter((part) => part.ready(setup)).map((part) => part.name);
+  const needs = LOCAL_PARTS.filter((part) => !part.ready(setup)).map((part) => part.name);
+
+  if (needs.length === 0) {
+    return {
+      tone: "success",
+      badge: "Ready",
+      sentence: `This machine already has every piece the lane needs — ${listWords(has)} — so what is missing here is the product, not the setup.`,
+    };
+  }
+
+  return {
+    tone: "warning",
+    badge: `${has.length} of ${LOCAL_PARTS.length} ready`,
+    sentence:
+      has.length === 0
+        ? `This machine has none of the three yet: it would need ${listWords(needs)}.`
+        : `This machine has ${listWords(has)}; it would still need ${listWords(needs)}.`,
+  };
+}
+
+/** `a, b and c`. Written here rather than reached for, because the one thing it
+ *  is used on is a list of at most three known strings. */
+function listWords(words: string[]): string {
+  if (words.length <= 1) return words[0] ?? "";
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
 function ModelsTab({
   lane,
   onLane,
   runtime,
+  setup,
+  asked,
   onManage,
 }: {
   lane: LaneName;
   onLane: (lane: LaneName) => void;
   runtime?: WorkspaceRuntime;
+  /** What the runtime found on this disk, read once for the whole screen
+   *  (B12). `null` after `asked` is the probe failing, not a runner missing. */
+  setup: LocalProviderSetupStatus | null;
+  asked: boolean;
   /** Threaded from `ModelsScreen`, which owns the tab state (ADR 0162). A prop
    *  through one level rather than a context: `Wired` exists because the job
    *  ladder renders four controls deep, and this is one row on one card. */
@@ -963,7 +1122,15 @@ function ModelsTab({
                          and none of them is integrated — including Local,
                          which the runtime DOES carry as `local` and
                          which the owner ruled is treated like the other two
-                         everywhere it comes up, because it is not finished. */
+                         everywhere it comes up, because it is not finished.
+
+                         **THE RULE KEEPS ITS BEHAVIOUR AND GAINS ITS REASON**
+                         (B12, ADR 0163). A disabled `<button>` fires no mouse
+                         events, so it can carry no tooltip and no hint — the
+                         reason has to be text somewhere else on the card, and
+                         `LockedLanes` below is where it is. Nothing here
+                         changes: removing this line is ADR 0067's reversal and
+                         belongs to the commit that finishes the lane. */
                       disabled: Boolean(runtime) && value !== "Cloud",
                     }),
                   )}
@@ -974,6 +1141,11 @@ function ModelsTab({
               }
             />
             <LaneRows lane={lane} runtime={runtime} onManage={onManage} />
+            {/* AFTER THE CONNECTION'S OWN ROWS, NOT BETWEEN THEM. The reader
+                came here to see the lane they are on; what they cannot pick is
+                the second question, and answering it first would put three
+                withheld lanes above their own API key. */}
+            {runtime && <LockedLanes setup={setup} asked={asked} onManage={onManage} />}
           </CardRows>
         </Card>
       </SectionHeader>
@@ -1371,9 +1543,19 @@ function ModelsTab({
    **AND THE ORDER PUTS THEM FIRST.** A model list above the thing that loads it
    asks the reader to hold two unexplained nouns until the bottom of the tab;
    the runners are the subject the two libraries are about. */
-function MachineTab() {
+function MachineTab({
+  setup,
+  asked,
+}: {
+  /** Read by `ModelsScreen` for the whole screen since B12, because the
+   *  connection card states the same thing one tab over and the probe spawns a
+   *  process. Passed in rather than read here — a second `useLocalSetup` would
+   *  be a second probe of one disk. */
+  setup: LocalProviderSetupStatus | null;
+  asked: boolean;
+}) {
   const wired = useWired();
-  return wired ? <WiredMachineTab /> : <DrawnMachineTab />;
+  return wired ? <WiredMachineTab setup={setup} asked={asked} /> : <DrawnMachineTab />;
 }
 
 /** The tab with nothing read: the runners as the drawing has them, then the
@@ -1395,10 +1577,19 @@ function DrawnMachineTab() {
  * needs the language half's answer and the libraries need the rows, and both
  * come out of the same call — a second `useModelLibrary` here would be a second
  * command probing the same network endpoint for one card.
+ *
+ * **And `local_setup` arrives the same way now, from one level further up**
+ * (B12). It used to be read here; the connection card on the other tab states
+ * the same disk, so the read moved to `ModelsScreen` and both tabs share it.
  */
-function WiredMachineTab() {
+function WiredMachineTab({
+  setup,
+  asked,
+}: {
+  setup: LocalProviderSetupStatus | null;
+  asked: boolean;
+}) {
   const library = useModelLibrary();
-  const { setup, asked } = useLocalSetup();
 
   return (
     <>

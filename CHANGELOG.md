@@ -53,6 +53,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a lane you cannot pick now says why, and what your machine already has (ADR 0163)
+
+- **The greyed lanes stopped being silent.** `Local`, `Your server` and
+  `Enterprise` have been dimmed on *AI Models* with no explanation at all — no
+  reason, no timeline, and no acknowledgement that your machine might already
+  have everything the Local lane needs. Two rows on the Connection card answer
+  it now.
+- **Local says where you stand.** `Ready`, `2 of 3 ready` or `Not read`, read
+  from the same probe *On this machine* uses — with the pieces you have and the
+  ones you do not named in the row. A machine with `whisper-cli`, a speech
+  model and Ollama running is told plainly that what is missing is the product
+  and not its setup.
+- **And what is still owed is named.** The lane is not offered yet because
+  Phase 5 still owes the acceleration probe, the bundling decision and
+  streaming. `Your server` and `Enterprise` are a different sentence and get
+  their own row: neither has an adapter behind it yet.
+- **Nothing became clickable.** The lock is deliberate — a lane that accepts a
+  click and then cannot run your dictation is worse than one that says why it
+  is waiting — and it comes off in the release that finishes the lane.
+
 ### Changed — the Local lane stops restating the tab next to it (ADR 0162)
 
 - **The Local lane is three rows instead of five.** Four of the five were a
