@@ -583,6 +583,40 @@
   .ws-scope:hover { color: var(--fg); border-color: var(--border-strong); }
   .ws-scope svg { width: 10px; height: 10px; }
 
+  /* A DRAWN ROW SAYS SO BESIDE ITS OWN LABEL (ADR 0161). `PreviewBanner`
+     answers for a screen and is the wrong size for a card where four rows are
+     read and three are drawings — the state AI Models reached once B5 and B8
+     wired half of it.
+
+     GROUND RATHER THAN A BORDER, and that is what separates it from
+     `.ws-scope` at a glance: a scope tag is a control you can press and carries
+     the outline that says so, while this is a caption and must not read as one
+     more thing to click. It is also why there is no tone colour — the accent
+     means primary action, active selection or live capture, and *this is not
+     built yet* is none of the three. */
+  .ws-ptag {
+    display: inline-flex; align-items: center;
+    margin-left: 7px;
+    height: 15px; padding: 0 5px;
+    border-radius: var(--r-small);
+    background: color-mix(in srgb, var(--fg-muted) 13%, transparent);
+    font-stretch: var(--w-micro);
+    letter-spacing: var(--ls-micro);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    vertical-align: 1px;
+  }
+  /* A stop has to interrupt, so it keeps the outline the preview drops
+     (`PreviewBanner`'s withdrawn variant, at row scale). */
+  .ws-ptag[data-tone="withdrawn"] {
+    background: none;
+    border: 1px solid var(--border-strong);
+    color: var(--fg-dim);
+  }
+
   /* ═════════════════════════════════════════════════════════════════════════
      THE WINDOW — demo.css §2, minus the mock.
 

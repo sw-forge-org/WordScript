@@ -16,7 +16,7 @@ import { SubtitlesScreen } from "./Subtitles";
 import { TranslateScreen } from "./Translate";
 import { ConversationScreen } from "./Conversation";
 import { AgentOverlayScreen } from "./AgentOverlay";
-import { HISTORY, LANES, PROVIDERS, RECENT } from "./data";
+import { HISTORY, LANE_LABEL, LANES, PROVIDERS, RECENT } from "./data";
 import { ACTIONS, CTX } from "./contextData";
 
 /**
@@ -220,7 +220,7 @@ describe("AI Models", () => {
 
   it("says a job is not on this lane rather than offering an empty picker", () => {
     render(<ModelsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Self-hosted" }));
+    fireEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
     expect(screen.getAllByText("Not on this lane")).toHaveLength(3);
     expect(screen.getByText(LANES["Self-hosted"].jobs.dictation.none!)).toBeInTheDocument();
   });

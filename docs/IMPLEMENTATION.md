@@ -128,8 +128,11 @@ Done: A1–A6 (the runtime contract), B1 (the capability seam), B3 (the model
 catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
 adapter, and the connection that can now be chosen)**, **B6 (what it means to
 wire a drawing inherited from the demo GUI)**, **B7 (the provider choice at
-the point of use)**, **B5 (in-app model installation)**, and **B8 (that library at
-scale, and the model the catalogue does not know)**.
+the point of use)**, **B5 (in-app model installation)**, **B8 (that library at
+scale, and the model the catalogue does not know)**, **B9 (what that
+surface is allowed to call a server)**, **B10 (the drawn rows on it saying
+so)**, and **B11 (why it has two tabs, and the lane that was restating one of
+them)**.
 
 Next unblocked: **B2**, **B4**, **E1**, **D3** — whose `Requires` line
 has read D1 and A3 since it was written, both now done — and **D1a**, which
@@ -262,8 +265,12 @@ direction of travel, not a reservation, and the number line is corrected here by
 whoever notices — 0155 landed in `be74233` and stood on neither this board nor
 its own track's page until the owner asked for it on 2026-08-15; **the seventh
 record is on the track page now**. 0157 went to the speech track on
-2026-08-15 with B7, **0158 with B5 and 0159 with B8 the same day**, so **0160 is
-the next free number**.
+2026-08-15 with B7, **0158 with B5 and 0159 with B8 the same day**, and **0160
+with B9** — the naming correction the owner asked for after reading the finished
+B5/B8 surface — plus **0161 with B10**, the marker that lets a half-wired screen
+say which of its rows are drawings, and **0162 with B11**, which answers why AI
+Models has two tabs and removes the duplication that made 0160 and 0161 each
+land twice, so **0163 is the next free number**.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
 swept the event channel and found `wordscript-native-insert` emitted from three

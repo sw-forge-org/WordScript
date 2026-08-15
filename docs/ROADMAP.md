@@ -311,6 +311,22 @@ guided on-device runtime lane.
   a crash -- the pattern the donor uses for its own sidecars, and a real piece
   of packaging work rather than a flag. **Which server, and whether to bundle
   at all, is open and belongs to this phase.**
+  **The surface draws the choice and today only one answer exists** (ADR 0161).
+  `tauri.conf.json` declares no `externalBin` and no `resources`, and nothing in
+  the tree ships an Ollama -- so *Bundled* names an option that has never been
+  built, while the segment sat on it as though it were the default. The row now
+  carries a `PreviewTag` saying so, which is the honest state until this phase
+  answers the question. **Bundling an Ollama is therefore a recorded intent, not
+  something the product implies it already does.**
+- **Nothing detects acceleration, and the surface used to claim otherwise**
+  (ADR 0161). `grep -rn "cuda\|rocm\|Metal" src-tauri/src/` returns nothing:
+  there is no CUDA, ROCm or Metal probe anywhere in the runtime. The AI Models
+  row read `CPU only · no CUDA, ROCm or Metal device found`, which is a false
+  statement of fact on any machine with a card in it, and the owner found it by
+  being told he has no GPU. The claim is gone and the drawn badge is marked as a
+  preview. **A real probe belongs to this phase**, because which device is
+  present is the fact that decides whether a 7B model is usable at all -- and
+  the model library already spends a paragraph telling people that size matters.
 - **Local streaming recognition, and it is the same decision one level down.**
   `whisper-cli` takes a file and cannot stream. whisper.cpp offers three shapes
   instead -- the `stream` example, `whisper-server`, or linking the documented C

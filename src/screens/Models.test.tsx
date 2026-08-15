@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ModelsScreen } from "./Models";
+import { LANE_LABEL } from "./data";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -147,10 +148,15 @@ describe("AI Models, wired", () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const lane = screen.getByRole("group", { name: "Lane" });
-    /* ADR 0065 part 1: no lane is deleted, moved or reworded. */
-    expect(within(lane).getByRole("button", { name: "Cloud" })).not.toBeDisabled();
-    for (const name of ["Local", "Self-hosted", "Enterprise"]) {
-      expect(within(lane).getByRole("button", { name }), name).toBeDisabled();
+    /* ADR 0065 part 1: no lane is deleted or moved. Asked by LABEL rather than
+       by identifier since ADR 0160 — `Self-hosted` is stored and `Your server`
+       is read, and what this case is about is what the user can reach. */
+    expect(within(lane).getByRole("button", { name: LANE_LABEL.Cloud })).not.toBeDisabled();
+    for (const lane_ of ["Local", "Self-hosted", "Enterprise"] as const) {
+      expect(
+        within(lane).getByRole("button", { name: LANE_LABEL[lane_] }),
+        lane_,
+      ).toBeDisabled();
     }
   });
 
@@ -1084,8 +1090,11 @@ describe("AI Models, in the gallery", () => {
     render(<ModelsScreen />);
 
     const lane = screen.getByRole("group", { name: "Lane" });
-    for (const name of ["Cloud", "Local", "Self-hosted", "Enterprise"]) {
-      expect(within(lane).getByRole("button", { name }), name).not.toBeDisabled();
+    for (const lane_ of ["Cloud", "Local", "Self-hosted", "Enterprise"] as const) {
+      expect(
+        within(lane).getByRole("button", { name: LANE_LABEL[lane_] }),
+        lane_,
+      ).not.toBeDisabled();
     }
     expect(screen.getAllByText("Set").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Account plan")).not.toBeDisabled();
@@ -1101,5 +1110,317 @@ describe("AI Models, in the gallery", () => {
 
     expect(screen.getByText("2 installed · 284 MB")).toBeInTheDocument();
     expect(invoked).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE WORD *SERVER* MEANS ONE THING ON THIS SCREEN (ADR 0160).
+ *
+ * The lane row spends four lines establishing that a server is a machine which
+ * is NOT this one, and the machine tab then closed on a section called *The
+ * server* whose endpoint is `127.0.0.1`. These cases hold the two halves of the
+ * fix: the lane reads *Your server* while still being stored as `Self-hosted`,
+ * and nothing on *On this machine* calls anything a server at all.
+ */
+describe("On this machine, and what a server is", () => {
+  const SETUP = {
+    readiness: "ready",
+    runner_ready: true,
+    model_ready: true,
+    chat_ready: true,
+    issue_code: null,
+    resolved_runner: "/usr/bin/whisper-cli",
+    resolved_model: "/home/someone/models/ggml-base.bin",
+    resolved_chat_base_url: "http://127.0.0.1:11434",
+    resolved_chat_model: "llama3.2:latest",
+    available_chat_models: ["llama3.2:latest"],
+    guidance: "",
+  };
+
+  const EMPTY_LIBRARY = {
+    speech_dir: "/home/someone/.config/WordScript/models/speech",
+    folders: [],
+    server: { base_url: "http://127.0.0.1:11434", reachable: true, detail: "Answering." },
+    rows: [],
+  };
+
+  /** `provider_status` answers per provider here, which the older fixtures did
+   *  not need: the runner card asks about `local` while the connection rows ask
+   *  about the cloud vendor, and one answer for both would let a cloud reply
+   *  stand in for the local probe. */
+  function withSetup(
+    setup: unknown = SETUP,
+    library: Record<string, unknown> = EMPTY_LIBRARY,
+  ) {
+    invoked.mockImplementation(async (command, args) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") {
+        const request = (args as { request?: { provider: string } } | undefined)?.request;
+        return request?.provider === "local" ? { ...STATUS, local_setup: setup } : STATUS;
+      }
+      if (command === "resolve_provider_tiers") return TIERS;
+      if (command === "model_library") return library;
+      return undefined;
+    });
+  }
+
+  async function openMachineTab() {
+    await userEvent.click(screen.getByRole("tab", { name: "On this machine" }));
+  }
+
+  it("reads the lane as Your server and still stores it as Self-hosted", () => {
+    render(<ModelsScreen />);
+
+    const lane = screen.getByRole("group", { name: "Lane" });
+    expect(within(lane).getByRole("button", { name: "Your server" })).toBeInTheDocument();
+    expect(within(lane).queryByRole("button", { name: "Self-hosted" })).toBeNull();
+    /* The identifier did not move: `Cloud`, `Local` and `Enterprise` are keys in
+       the shared catalogue, and this is a label. */
+    expect(LANE_LABEL["Self-hosted"]).toBe("Your server");
+  });
+
+  it("names the two runners rather than calling one of them a server", async () => {
+    withSetup();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    await screen.findByText("/usr/bin/whisper-cli");
+    expect(screen.getByText("Runners on this machine")).toBeInTheDocument();
+    expect(screen.getAllByText("http://127.0.0.1:11434").length).toBeGreaterThan(0);
+
+    /* THE RULE, AS A MEASUREMENT. The old section title was *The server* and the
+       card below it said *Language models need an OpenAI-compatible server in
+       front of them* about a process on this disk. The word may appear on this
+       tab only where it points at the lane that IS another machine — and after
+       the prose cut (ADR 0161) it appears nowhere at all, which is the stronger
+       state and the one this asserts. `queryAllByText` rather than
+       `getAllByText` is what lets the case say *none* instead of throwing on
+       it. */
+    const said = screen.queryAllByText(/\bservers?\b/i).map((node) => node.textContent ?? "");
+    for (const sentence of said) {
+      expect(sentence, sentence).toMatch(/Your server lane/);
+    }
+    expect(screen.queryByText("The server")).toBeNull();
+  });
+
+  it("says the speech runner was not found rather than staying silent", async () => {
+    withSetup({
+      ...SETUP,
+      runner_ready: false,
+      resolved_runner: null,
+      guidance: "Install whisper-cli or set WORDSCRIPT_LOCAL_RUNNER.",
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    expect(await screen.findByText("Not found")).toBeInTheDocument();
+    expect(
+      screen.getByText("Install whisper-cli or set WORDSCRIPT_LOCAL_RUNNER."),
+    ).toBeInTheDocument();
+  });
+
+  it("distinguishes a probe that failed from a runner that is absent", async () => {
+    /* `local_setup: null` is the runtime not answering, and the card says so.
+       Drawing *Not found* here would tell somebody a binary is missing from a
+       disk nobody looked at — the defect ADR 0106 recorded one layer up. */
+    withSetup(null);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    expect(await screen.findByText("Not read")).toBeInTheDocument();
+    expect(screen.queryByText("Not found")).toBeNull();
+  });
+
+  it("states the language runner as not running when nothing answers", async () => {
+    withSetup(SETUP, {
+      ...EMPTY_LIBRARY,
+      server: {
+        base_url: "http://127.0.0.1:11434",
+        reachable: false,
+        detail: "Start Ollama at http://127.0.0.1:11434.",
+      },
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    expect(await screen.findByText("Not running")).toBeInTheDocument();
+  });
+
+  /**
+   * THE SKETCH STAYS AND THE SKETCH DECLARES ITSELF (ADR 0161).
+   *
+   * The owner's rule for this stage of the build: a row that is planned but not
+   * wired keeps its drawing, because the drawing is how anyone knows what the
+   * finished thing looks like — and it carries a marker, so nobody mistakes it
+   * for a reading. These cases hold the three rows on this tab that are
+   * drawings, and the one that used to make a false claim about hardware.
+   */
+  it("marks every drawn row on the runner card and none of the read ones", async () => {
+    withSetup();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+    await screen.findByText("/usr/bin/whisper-cli");
+
+    const runners = screen.getByText("Runners on this machine").closest("section")!;
+    const tagged = within(runners)
+      .getAllByText("Preview")
+      .map((tag) => tag.parentElement?.textContent ?? "");
+
+    expect(tagged).toEqual([
+      "Who runs OllamaPreview",
+      "Keep it warmPreview",
+      "AccelerationPreview",
+    ]);
+  });
+
+  /**
+   * ON EVERY SURFACE OF THIS SCREEN, NOT ONLY THE ONE BEING EDITED.
+   *
+   * **This case is wider than its first draft because the narrow version
+   * passed while the defect was still on screen.** The first version checked
+   * the machine tab, went green, and the Local lane's own `Acceleration` row —
+   * a second copy of the same literal, in `LaneRows` — kept telling the reader
+   * he has no GPU. It was caught by looking at the rendered screen, which is
+   * the check a test is supposed to replace. So the assertion walks both tabs
+   * and every lane instead of the one place the edit happened.
+   */
+  /* **RENDERED WITHOUT A RUNTIME, AND THAT IS LOAD-BEARING.** With one, every
+     lane but Cloud is `disabled` (ADR 0065), so a `userEvent.click` on `Local`
+     moves nothing and the case measures the Cloud lane four times under four
+     names — green, and blind to the branch it exists to check. The first draft
+     of both cases did exactly that. The gallery render is where all four lanes
+     are reachable, which makes it the surface these two belong on. */
+  it("claims nothing about the reader's GPU anywhere on the screen", async () => {
+    render(<ModelsScreen />);
+
+    const gpuClaim = /no CUDA, ROCm or Metal device/;
+
+    for (const lane of ["Cloud", "Local", "Your server", "Enterprise"]) {
+      await userEvent.click(screen.getByRole("button", { name: lane }));
+      expect(screen.queryByText(gpuClaim), lane).toBeNull();
+    }
+
+    /* **AND THE LANE NO LONGER HAS THE BADGE AT ALL** (ADR 0162): acceleration
+       is a property of the machine, so it is stated once, on the tab that owns
+       the machine. The duplicate here is what let ADR 0161's fix be applied
+       to one copy and miss the other. */
+    await userEvent.click(screen.getByRole("button", { name: "Local" }));
+    expect(screen.queryByText("CPU only")).toBeNull();
+
+    await openMachineTab();
+    expect(screen.queryByText(gpuClaim)).toBeNull();
+    /* The badge stays there — the owner keeps the sketch, and the sketch is how
+       the shape of the finished row is decided. Only the measurement it never
+       took is gone. */
+    expect(screen.getByText("CPU only")).toBeInTheDocument();
+  });
+
+  /**
+   * THE LANE SUMMARISES THE INSTALLATION, IT DOES NOT RESTATE IT (ADR 0162).
+   *
+   * **This case exists because removing the duplicate rows made an older one
+   * pass for free.** The GPU case above walks every lane asserting the claim is
+   * absent; with the `Acceleration` row deleted from `Local`, that lane
+   * satisfies it by having nothing to check. Counting the rows is what keeps
+   * the deletion deliberate — if someone restores a fourth row here, this fails
+   * and the reviewer has to say which one it is and why the tab does not own
+   * it.
+   */
+  it("keeps the Local lane to the three rows that are about the connection", async () => {
+    render(<ModelsScreen />);
+    await userEvent.click(screen.getByRole("button", { name: "Local" }));
+
+    const connection = screen.getByText("Connection").closest("section") as HTMLElement;
+    const labels = Array.from(connection.querySelectorAll(".ws-row-text > b")).map((node) =>
+      /* The lane row's own `PreviewTag` rides inside the label, so the tag text
+         comes off before the label is compared. */
+      (node.textContent ?? "").replace(/Preview$/, ""),
+    );
+
+    expect(labels).toEqual(["Lane", "Language runner", "Credential", "Installed models"]);
+
+    /* **AND NO CONTROL IS DUPLICATED EITHER**, which the row count alone does
+       not catch: `Bundled | Yours` survived the first cut inside the surviving
+       `Language runner` row while the count already read three. Which program
+       runs belongs to the tab that lists the runners. */
+    expect(within(connection).queryByRole("group", { name: "Language runner" })).toBeNull();
+    expect(within(connection).queryByRole("button", { name: "Bundled" })).toBeNull();
+  });
+
+  it("opens the machine tab from the lane's Manage button", async () => {
+    render(<ModelsScreen />);
+    await userEvent.click(screen.getByRole("button", { name: "Local" }));
+
+    /* Drawn since Leg 6 with no handler: the lane named a total it could not
+       reach. Everything else on this lane stays a drawing; a door is the one
+       inert control that costs the reader the thing it names. */
+    await userEvent.click(screen.getByRole("button", { name: "Manage" }));
+
+    expect(screen.getByText("Runners on this machine")).toBeInTheDocument();
+    expect(screen.queryByText("Connection")).toBeNull();
+  });
+
+  it("calls nothing on this machine a server, on either tab", async () => {
+    render(<ModelsScreen />);
+
+    /* The Local lane's `Runtime` row read *The server that loads a language
+       model* about a process on `127.0.0.1` — ADR 0160's defect, in the branch
+       that record did not touch. Measured over the rows' own sentences rather
+       than the whole subtree: the segment carries a button LABELLED `Your
+       server`, which is the lane's name and not a claim about this machine. */
+    const hints = () =>
+      Array.from(document.querySelectorAll(".ws-row-hint")).map((n) => n.textContent ?? "");
+
+    await userEvent.click(screen.getByRole("button", { name: "Local" }));
+    expect(hints().filter((h) => /\bservers?\b/i.test(h))).toEqual([]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Your server" }));
+    expect(hints().filter((h) => /\bservers?\b/i.test(h)).length).toBeGreaterThan(0);
+  });
+
+  it("badges a drawn lane on the screen that offers it, which ADR 0067 asked for", async () => {
+    render(<ModelsScreen />);
+
+    /* Measured on the Lane row itself rather than on the section: the Local
+       lane's own `Acceleration` row carries a second tag, so a section-wide
+       count would pass for the wrong reason. */
+    const laneRow = () => screen.getByText("Lane").closest(".ws-row") as HTMLElement;
+
+    expect(within(laneRow()).queryByText("Preview")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Local" }));
+    expect(within(laneRow()).getByText("Preview")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Cloud" }));
+    expect(within(laneRow()).queryByText("Preview")).toBeNull();
+  });
+
+  it("puts the folder list under the card whose files it describes", async () => {
+    withSetup(SETUP, {
+      ...EMPTY_LIBRARY,
+      folders: [
+        {
+          path: "/home/felix/whisper-models",
+          kind: "your folder",
+          removable: true,
+          exists: true,
+        },
+      ],
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await openMachineTab();
+
+    /* It stood at the foot of the tab titled *Where models come from*, which by
+       reading order answered for the language card above it — whose files are in
+       a store this list has never described. Both halves now answer for
+       themselves, under the same label, inside their own section. */
+    const speech = screen.getByText("Speech models").closest("section");
+    const language = screen.getByText("Language models").closest("section");
+
+    expect(within(speech!).getByText("/home/felix/whisper-models")).toBeInTheDocument();
+    expect(within(speech!).getByText("Where these come from")).toBeInTheDocument();
+    expect(within(language!).getByText("Where these come from")).toBeInTheDocument();
+    expect(within(language!).getByText("Ollama's store")).toBeInTheDocument();
+    expect(screen.queryByText("Where models come from")).toBeNull();
   });
 });

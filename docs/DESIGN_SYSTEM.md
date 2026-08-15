@@ -503,6 +503,19 @@ implementation with two sets of props, and a component that exists only under
 - **A preview says so on the surface, every time.** `PreviewBanner` is a chip and
   one line, 26 px. Its withdrawn variant keeps a box and a border, because a stop
   is exactly the case that has to interrupt.
+- **And a single drawn row says so beside its own label** with `PreviewTag`
+  (ADR 0161). The banner answers for a screen; once half a screen is wired --
+  the state AI Models reached with B5 and B8 -- a banner is either a lie about
+  the wired half or a caveat the reader learns to skip. The tag is 15 px, ground
+  rather than a border, no tone colour, and it rides inside the label line via
+  `Row`'s `tag` slot. **It sits at the label and not at the control**, because a
+  marker at the value is read after the value: `CPU only` was believed first and
+  corrected second. **It is never a `StatusBadge`** -- a badge states what the
+  runtime found, the tag states that nothing looked, and one shape for both puts
+  *this is a drawing* on the same axis as *this is what your machine says*. The
+  sentence explaining what the row will do belongs in the tag's `title`, not in
+  a permanent line. **A sketch may show a shape; it may not assert a measurement
+  it did not take.**
 - **A row states its scope when its value is not the window's.** *Settings means
   this machine*; anything a profile owns carries a `ScopeTag` naming the profile
   and linking to it.

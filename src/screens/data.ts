@@ -198,6 +198,31 @@ export const HISTORY: Transcript[] = [
 
 export type LaneName = "Cloud" | "Local" | "Self-hosted" | "Enterprise";
 
+/**
+ * WHAT A LANE IS CALLED ON THE SURFACE, WHICH IS NOT WHAT IT IS CALLED IN THE
+ * TREE (ADR 0160).
+ *
+ * **`Self-hosted` reads as a category and the lane is a place.** The word
+ * collided with the one thing on this screen that is genuinely a server on this
+ * machine — the language runner at `127.0.0.1` — so a reader who learned
+ * *server means another machine* from the lane row met the same word one tab
+ * over meaning the opposite. The lane is *your server*; the local runner is not
+ * a server on this surface at all.
+ *
+ * **The identifier does not move, and that is deliberate.** `Cloud`, `Local`
+ * and `Enterprise` are keys in `shared/model_catalogue.json`, which both
+ * runtimes read (ADR 0115), so renaming the value would be a rename across the
+ * seam for a wording fix. ADR 0121 already settled the general form of this:
+ * what a lane is *called* belongs on the surface, not in a string that is
+ * serialized. A label is the surface half of that same rule.
+ */
+export const LANE_LABEL: Record<LaneName, string> = {
+  Cloud: "Cloud",
+  Local: "Local",
+  "Self-hosted": "Your server",
+  Enterprise: "Enterprise",
+};
+
 export type Provider = {
   name: string;
   lane: LaneName;

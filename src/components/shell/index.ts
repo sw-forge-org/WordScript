@@ -34,6 +34,7 @@ export { SubTabs } from "./SubTabs";
 export type { SubTabItem } from "./SubTabs";
 export { SectionHeader } from "./SectionHeader";
 export { PreviewBanner } from "./PreviewBanner";
+export { PreviewTag } from "./PreviewTag";
 export { EmptyState } from "./EmptyState";
 export { DangerRow } from "./DangerRow";
 export { Toolbar, ToolbarSearch } from "./Toolbar";

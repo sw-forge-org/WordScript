@@ -53,6 +53,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the Local lane stops restating the tab next to it (ADR 0162)
+
+- **The Local lane is three rows instead of five.** Four of the five were a
+  second copy of *On this machine* rather than a summary of it — the runner,
+  its endpoint, the installed total and the acceleration all appeared twice.
+  What is left is what the lane is actually about: which runner, whether it
+  answers, no credential needed, and how much is installed.
+- **`Manage →` works now.** It has been drawn in that row since the first port
+  with nothing behind it; it opens *On this machine*.
+- **Why the two tabs stay.** A lane is a stored setting, so putting the model
+  library behind it would mean changing your configuration in order to look at
+  your own disk. What is installed belongs to the machine and outlives every
+  lane switch — so the tab answers what is here, and the lane answers what
+  WordScript uses.
+
+### Changed — a drawn row says so, and one of them was claiming you have no GPU (ADR 0161)
+
+- **The surface stopped telling you what hardware you have.** The Acceleration
+  row read `CPU only · no CUDA, ROCm or Metal device found`. There is no
+  detection in the runtime at all — the sentence was a literal — so on any
+  machine with a card in it, it was a specific false claim about your own
+  computer. The claim is gone. The badge stays, marked as a drawing.
+- **Every row that is a drawing now says so, beside its own label.** A small
+  `Preview` tag, with what the row will do once built in its tooltip. Three rows
+  on *On this machine* carry it — *Who runs Ollama*, *Keep it warm*,
+  *Acceleration* — and the lane row carries it whenever a drawn lane is
+  selected, which is what ADR 0067 asked for and this screen never had.
+- **`Bundled` is marked as unbuilt.** WordScript ships no Ollama today; only
+  *Yours* is real. The choice stays drawn because it is a real decision that
+  Phase 5 will make.
+- **A third of the words are gone from that tab** — 242 to 163 — without losing
+  a fact. The explanations that mattered moved into tooltips; the ones that
+  existed only to disambiguate a word stopped being necessary when the word
+  stopped being ambiguous.
+- **The Local lane's connection rows had the same three problems and are fixed
+  too.** They called Ollama a server, repeated the GPU claim, and said speech
+  and language models share one disk — which stopped being true when the
+  language half moved into Ollama's own store.
+
+### Changed — a server is a machine that is not this one (ADR 0160)
+
+- **The tab stopped calling this machine a server.** *On this machine* closed
+  on a section titled *The server* whose endpoint is `127.0.0.1`, while the
+  lane row one tab over spends four lines establishing that a server is a
+  machine that is **not** this one. One word, two places, opposite meanings.
+  What is actually here is two programs that run models, so the card is now
+  **Runners on this machine** and names them: `whisper-cli` for speech, Ollama
+  for language.
+- **Both runner rows are read rather than drawn.** The resolved path, whether
+  the runner was found, the endpoint and whether it answers all come from the
+  runtime. A probe that failed reads *Not read* rather than *Not found* — the
+  runtime not answering and a binary being absent are different sentences.
+- **The `Self-hosted` lane reads as *Your server*.** The stored value is
+  unchanged; only what you see moved, so the word *server* now names exactly
+  one thing on this screen.
+- **Where models come from is answered inside each card.** The folder list sat
+  at the foot of the tab, which by reading order made it the answer for the
+  *Language models* card above it — whose files live in a store that list has
+  never described. Speech models now carries its folders, and Language models
+  says in one row that Ollama owns its store and WordScript never writes there.
+
 ### Added — bring your own model, and a list that survives growing (ADR 0159)
 
 - **A model WordScript never heard of shows up on the tab.** Drop a

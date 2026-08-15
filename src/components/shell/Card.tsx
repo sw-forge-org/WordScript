@@ -168,6 +168,10 @@ export interface RowProps {
   /** Marks a value that belongs to the active profile rather than to this
    *  machine. Rendered between the text and the control. */
   scope?: React.ReactNode;
+  /** Marks a row that is a drawing rather than a reading (ADR 0161). Rendered
+   *  beside the label, because a marker at the control is read after the value
+   *  it is warning about. Takes a `PreviewTag`. */
+  tag?: React.ReactNode;
   danger?: boolean;
   /** A deep-link target. `settingsAnchors.ts` is the only thing that sets one
    *  — a native caller names the CONTROL and the row is where it lands. */
@@ -189,6 +193,7 @@ export function Row({
   control,
   layout = "inline",
   scope,
+  tag,
   danger,
   id,
   className,
@@ -205,7 +210,15 @@ export function Row({
     >
       {(label || hint) && (
         <div className="ws-row-text">
-          {label && <b>{label}</b>}
+          {label && (
+            /* The tag rides inside the label line rather than above it: a row
+               whose marker took its own line would be two rows tall for the
+               half of this screen that is still a drawing. */
+            <b>
+              {label}
+              {tag}
+            </b>
+          )}
           {hint && <span className="ws-row-hint">{hint}</span>}
         </div>
       )}

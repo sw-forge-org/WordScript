@@ -221,6 +221,15 @@ constants themselves were not re-derived and carry their own provenance
   property of the lane. Synthesis on that lane is unread and unclaimed.
 - these terms must not be conflated in UI and docs while the second
   production lane and the guided setup path are still missing.
+- **The surface reads `Self-hosted` as *Your server*, and stores it unchanged**
+  (ADR 0160). The rule above was being broken in the one place it mattered
+  most: *On this machine* carried a section titled *The server* whose endpoint
+  is `127.0.0.1`, so the word named both a remote machine and this one. On the
+  AI Models screen *server* now means only a machine that is not this one; the
+  two local programs are the **speech runner** (`whisper-cli`) and the
+  **language runner** (Ollama). `LANE_LABEL` in `src/screens/data.ts` is the
+  only place the display name lives — the union member, and the catalogue keys
+  both runtimes read, do not move.
 
 ### Transcript delivery modes (delivery contract)
 

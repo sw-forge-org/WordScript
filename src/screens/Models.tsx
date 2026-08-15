@@ -23,6 +23,7 @@ import {
   ModelList,
   ModelRow,
   Note,
+  PreviewTag,
   Toolbar,
   ToolbarSearch,
   ProviderChips,
@@ -40,6 +41,7 @@ import {
 import {
   DESK,
   DESK_VOICE_PRESET,
+  LANE_LABEL,
   LANES,
   LOCAL_VOICE_PRESET,
   libraryModel,
@@ -52,9 +54,10 @@ import {
 } from "./data";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { formatModelSize, modelInstall } from "@/lib/modelCatalogue";
+import { useLocalSetup } from "@/hooks/useLocalSetup";
 import { useModelLibrary } from "@/hooks/useModelLibrary";
 import { buildProfileSpeechPatch } from "@/lib/textProfiles";
-import type { ManagedModelRow } from "@/types/models";
+import type { LocalServerAnswer, ManagedModelRow } from "@/types/models";
 import type { ModelState } from "@/components/shell";
 import { formatBudgetDuration, useCaptureBudget } from "@/hooks/useCaptureBudget";
 import { useProviderSeam } from "@/hooks/useProviderSeam";
@@ -82,7 +85,7 @@ import {
   selectableProviderNames,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
-import type { ProviderRole } from "@/types/providers";
+import type { LocalProviderSetupStatus, ProviderRole } from "@/types/providers";
 /* THE LADDER MOVED OUT IN B7 (ADR 0129) and this screen is now one of its two
    callers rather than its owner. What stayed here is the connection, the lane
    segment and the model library — what configures a lane, as opposed to what
@@ -175,7 +178,12 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
       />
 
       {tab === "Models" ? (
-        <ModelsTab lane={lane} onLane={setLane} runtime={runtime} />
+        <ModelsTab
+          lane={lane}
+          onLane={setLane}
+          runtime={runtime}
+          onManage={() => setTab("On this machine")}
+        />
       ) : (
         <MachineTab />
       )}
@@ -211,40 +219,57 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      Cloud        a provider, from a chip row, and one key
      Local        a runtime, installed models, and no credential at all
      Self-hosted  a URL you operate, a typed model id, an optional token
-     Enterprise   an account and a region, with three credential shapes */
-function LaneRows({ lane, runtime }: { lane: LaneName; runtime?: WorkspaceRuntime }) {
+     Enterprise   an account and a region, with three credential shapes
+
+   AND THE THIRD ONE IS READ AS *Your server* (ADR 0160). The identifier is
+   unchanged; only what a reader sees is, because *server* now names exactly one
+   thing on this screen — a machine that is not this one. */
+function LaneRows({
+  lane,
+  runtime,
+  onManage,
+}: {
+  lane: LaneName;
+  runtime?: WorkspaceRuntime;
+  /** Opens *On this machine*. The lane summarises the installation; the tab
+   *  owns it, and a summary that names a total has to be able to reach it. */
+  onManage?: () => void;
+}) {
   if (lane === "Local") {
     return (
       <>
+        {/* THREE ROWS, AND IT WAS FIVE (ADR 0162).
+            **This branch was a second copy of the machine tab, not a summary of
+            it.** Four of its five rows restated what that tab already owns —
+            the runner, its endpoint, the installed total and the acceleration
+            — and the cost was measured rather than argued: ADR 0160 and
+            ADR 0161 each had to be applied twice, and the second application
+            was found by a screenshot after the first was tested and green.
+
+            THE CUT IS *WHICH ONE DO WE USE* AGAINST *WHAT IS ON THE DISK*.
+            A lane is a stored choice; an installation belongs to the machine
+            and outlives every lane switch. So the connection card keeps the
+            reachability and the credential — the two facts that are about
+            talking to the runner — and everything about the files is one
+            number and a door.
+
+            AND THE DRAWING ALREADY HAD THE DOOR. `Manage` has been in this row
+            since Leg 6 with no handler on it; the intent was always that the
+            lane points and the tab holds. */}
+        {/* **AND `Bundled | Yours` IS NOT HERE EITHER**, which the first pass at
+            this record left standing. Which program runs is a fact about the
+            machine and belongs to the tab that lists the runners; whether this
+            lane can reach it is the connection question and belongs here. The
+            duplicate was caught the same way its three predecessors were — by
+            looking at the rendered screen after the tests were green. */}
         <Row
-          label="Runtime"
-          hint="The server that loads a language model. WordScript can ship and manage one, or talk to the Ollama or LM Studio you already run."
+          label="Language runner"
+          hint="Ollama or LM Studio, on this machine. Started on demand by whichever job needs it."
           control={
             <span className="ws-rowflex">
               <SelectMark name="ollama" />
-              <InertSegment options={["Bundled", "Yours"]} active="Bundled" label="Runtime" />
-            </span>
-          }
-        />
-        <Row
-          label="State"
-          hint="Probed natively, and started on demand by whichever job needs it. Nothing here is read from an environment variable."
-          control={
-            <span className="ws-rowflex">
               <StatusBadge tone="success">Running</StatusBadge>
               <span className="ws-mono ws-muted">127.0.0.1:11434</span>
-            </span>
-          }
-        />
-        <Row
-          label="Installed models"
-          hint="Speech and language share one disk and one total, so they are installed in one place."
-          control={
-            <span className="ws-rowflex">
-              <StatusBadge tone="plan">4 models · 6.7 GB</StatusBadge>
-              <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
-                Manage
-              </DrawnButton>
             </span>
           }
         />
@@ -254,12 +279,18 @@ function LaneRows({ lane, runtime }: { lane: LaneName; runtime?: WorkspaceRuntim
           control={<StatusBadge tone="success">Not needed</StatusBadge>}
         />
         <Row
-          label="Acceleration"
-          hint="Detected, not configured. A CPU-only machine runs the small models and struggles above 7B — which is worth knowing before a 4 GB download, not after."
+          label="Installed models"
+          hint="Managed on the other tab, because a model stays on the disk whichever lane you pick."
           control={
             <span className="ws-rowflex">
-              <StatusBadge tone="warning">CPU only</StatusBadge>
-              <span className="ws-muted">no CUDA, ROCm or Metal device</span>
+              <StatusBadge tone="plan">4 models · 6.7 GB</StatusBadge>
+              {/* A REAL BUTTON, NOT A `DrawnButton`. Everything else on this
+                  lane is a drawing and stays one; navigation is the exception,
+                  because a door that does not open is the one inert control
+                  that costs the reader the thing it names. */}
+              <Button variant="ghost" icon={<Icon name="arrow" />} onClick={onManage}>
+                Manage
+              </Button>
             </span>
           }
         />
@@ -272,7 +303,7 @@ function LaneRows({ lane, runtime }: { lane: LaneName; runtime?: WorkspaceRuntim
       <>
         <Row
           label="URL"
-          hint="An OpenAI-compatible server you operate, on another machine. Not the on-device lane."
+          hint="An OpenAI-compatible server you operate, on another machine. Not the Local lane, which runs here."
           control={<DrawnField defaultValue="http://10.0.0.2:8080/v1" w="230px" aria-label="URL" />}
         />
         <Row
@@ -286,7 +317,7 @@ function LaneRows({ lane, runtime }: { lane: LaneName; runtime?: WorkspaceRuntim
         />
         <Row
           label="Credential"
-          hint="Optional. Some self-hosted servers take a bearer token, most take none."
+          hint="Optional. Some servers take a bearer token, most take none."
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">None</StatusBadge>
@@ -876,10 +907,15 @@ function ModelsTab({
   lane,
   onLane,
   runtime,
+  onManage,
 }: {
   lane: LaneName;
   onLane: (lane: LaneName) => void;
   runtime?: WorkspaceRuntime;
+  /** Threaded from `ModelsScreen`, which owns the tab state (ADR 0162). A prop
+   *  through one level rather than a context: `Wired` exists because the job
+   *  ladder renders four controls deep, and this is one row on one card. */
+  onManage?: () => void;
 }) {
   return (
     <>
@@ -898,13 +934,31 @@ function ModelsTab({
           <CardRows>
             <Row
               label="Lane"
+              /* ADR 0067 ASKED FOR THIS BADGE AND THIS SCREEN NEVER CARRIED IT
+                 (ADR 0161). The record's rule is *preview badge everywhere it
+                 is offered*, and the only surface that honoured it was the
+                 workspace status strip — while the screen that actually offers
+                 the lane said nothing on the row itself. Three of the four are
+                 drawn, so the tag follows the selection rather than naming one
+                 lane: what is true of `Local` here is true of the other two. */
+              tag={
+                lane === "Cloud" ? undefined : (
+                  <PreviewTag
+                    title={`${LANE_LABEL[lane]} is drawn, not built. The rows below show the shape it will have; nothing on this lane runs a job yet.`}
+                  />
+                )
+              }
               hint="Where this runs. Everything below follows from it."
               control={
                 <SegmentControl
                   options={(["Cloud", "Local", "Self-hosted", "Enterprise"] as LaneName[]).map(
                     (value) => ({
                       value,
-                      label: value,
+                      /* THE LABEL IS NOT THE IDENTIFIER (ADR 0160). `Self-hosted`
+                         is stored and `Your server` is read, because the word
+                         *server* had to mean one thing on this screen and the
+                         local runner had taken it. */
+                      label: LANE_LABEL[value],
                       /* ADR 0065 and ADR 0067. Three lanes are drawn in full
                          and none of them is integrated — including Local,
                          which the runtime DOES carry as `local` and
@@ -919,7 +973,7 @@ function ModelsTab({
                 />
               }
             />
-            <LaneRows lane={lane} runtime={runtime} />
+            <LaneRows lane={lane} runtime={runtime} onManage={onManage} />
           </CardRows>
         </Card>
       </SectionHeader>
@@ -1304,69 +1358,203 @@ function ModelsTab({
    TWO COMPONENTS RATHER THAN ONE WITH A CONDITIONAL HOOK — the split
    `CeilingBadge` and `ModelsScreen` already make, for the same reason: the
    gallery asserts NO runtime state, so it must not reach for `model_library`
-   at all. */
+   at all.
+
+   **AND THE TAB WAS SAYING *SERVER* ABOUT THIS MACHINE** (ADR 0160). It closed
+   on a section called *The server* whose endpoint is `127.0.0.1` — while the
+   lane row one tab over spends four lines establishing that a server is a
+   machine that is NOT this one. One word, two places, opposite meanings. What
+   is actually here is two programs that run models, so that is what the card
+   is now called and what it lists: `whisper-cli` for speech, Ollama for
+   language, each stated from what the runtime resolved rather than drawn.
+
+   **AND THE ORDER PUTS THEM FIRST.** A model list above the thing that loads it
+   asks the reader to hold two unexplained nouns until the bottom of the tab;
+   the runners are the subject the two libraries are about. */
 function MachineTab() {
   const wired = useWired();
+  return wired ? <WiredMachineTab /> : <DrawnMachineTab />;
+}
+
+/** The tab with nothing read: the runners as the drawing has them, then the
+ *  sample library. This is the tree `port:diff` measures. */
+function DrawnMachineTab() {
   return (
     <>
-      {wired ? <WiredLibrary /> : <DrawnLibrary />}
-
-      <SectionHeader
-        title="The server"
-        description="Language models need an OpenAI-compatible server in front of them."
-      >
-        <Card>
-          <CardRows>
-            <Row
-              label="Who runs it"
-              hint="Bundled: WordScript ships and manages it. Yours: it only talks to what you run."
-              control={
-                <InertSegment options={["Bundled", "Yours"]} active="Bundled" label="Who runs it" />
-              }
-            />
-            <Row
-              label="Endpoint"
-              control={
-                <span className="ws-rowflex">
-                  <DrawnField defaultValue="http://127.0.0.1:11434/v1" w="210px" aria-label="Endpoint" />
-                  <StatusBadge tone="success">Answering</StatusBadge>
-                </span>
-              }
-            />
-            <Row
-              label="State"
-              hint="Started on demand by whichever job is on the local lane, stopped when the last one leaves it."
-              control={
-                <span className="ws-rowflex">
-                  <StatusBadge tone="success">Running · 1 job</StatusBadge>
-                  <DrawnButton variant="ghost">Restart</DrawnButton>
-                </span>
-              }
-            />
-            <Row
-              label="Keep it warm"
-              hint="Skips the load on the first dictation after an idle period, at the cost of the memory the model occupies."
-              control={<InertToggle label="Keep it warm" />}
-            />
-            <Row
-              label="Acceleration"
-              hint="Detected, not configured. A CPU-only machine runs the small models and struggles above 7B."
-              control={
-                <span className="ws-rowflex">
-                  <StatusBadge tone="warning">CPU only</StatusBadge>
-                  <span className="ws-muted">no CUDA, ROCm or Metal device found</span>
-                </span>
-              }
-            />
-          </CardRows>
-        </Card>
-      </SectionHeader>
-
-      <Note icon="privacy">
-        Nothing on this tab sends anything anywhere. It is the one lane where that is true by
-        construction rather than by promise.
-      </Note>
+      <DrawnRunners />
+      <DrawnLibrary />
+      <MachinePrivacyNote />
     </>
+  );
+}
+
+/**
+ * The tab with every number read.
+ *
+ * **One `model_library` read for the whole tab, passed down.** The runner card
+ * needs the language half's answer and the libraries need the rows, and both
+ * come out of the same call — a second `useModelLibrary` here would be a second
+ * command probing the same network endpoint for one card.
+ */
+function WiredMachineTab() {
+  const library = useModelLibrary();
+  const { setup, asked } = useLocalSetup();
+
+  return (
+    <>
+      <WiredRunners setup={setup} asked={asked} server={library.library?.server ?? null} />
+      <WiredLibrary library={library} />
+      <MachinePrivacyNote />
+    </>
+  );
+}
+
+function MachinePrivacyNote() {
+  return (
+    <Note icon="privacy">
+      Nothing on this tab sends anything anywhere. It is the one lane where that is true by
+      construction rather than by promise.
+    </Note>
+  );
+}
+
+/* ── The two runners ────────────────────────────────────────────────────────
+   THE ROWS THAT ARE READ ARE THE FIRST TWO, and the three below them are the
+   drawing's, because nothing in this build answers them yet: which Ollama runs,
+   whether it is kept warm, and what acceleration exists are all real questions
+   with no reader.
+
+   **AND EACH OF THE THREE NOW SAYS SO** (ADR 0161). Leaving them drawn is
+   ADR 0065's rule; leaving them SILENT was the defect. `no CUDA, ROCm or Metal
+   device found` is a literal — `grep -rn "cuda\|rocm\|Metal" src-tauri/src`
+   returns nothing — so on a machine with an Nvidia card the surface was making
+   a specific false claim about the reader's own hardware. The owner's rule is
+   that the sketch stays and the sketch declares itself, which is what the tag
+   is for. **The long sentence moves into the tag's tooltip**: what a row will
+   do once it is built is worth one hover and is not worth a permanent line. */
+function RunnerCard({ children }: { children: ReactNode }) {
+  return (
+    <SectionHeader title="Runners on this machine" description="The two programs that run models here.">
+      <Card>
+        <CardRows>
+          {children}
+          <Row
+            label="Who runs Ollama"
+            tag={
+              <PreviewTag title="Not built. WordScript ships no Ollama today — tauri.conf.json bundles no binary — so only Yours is real." />
+            }
+            hint="Ship one with WordScript, or use the Ollama you already run."
+            control={
+              <InertSegment options={["Bundled", "Yours"]} active="Bundled" label="Who runs Ollama" />
+            }
+          />
+          <Row
+            label="Keep it warm"
+            tag={<PreviewTag title="Not built. Nothing reads this toggle and no model is held loaded between dictations." />}
+            hint="Trades memory for a faster first dictation after idle."
+            control={<InertToggle label="Keep it warm" />}
+          />
+          <Row
+            label="Acceleration"
+            tag={<PreviewTag title="Not built. Nothing in the runtime detects CUDA, ROCm or Metal yet, so this badge is a drawing and not a reading of your hardware." />}
+            hint="A CPU-only machine struggles above 7B."
+            control={<StatusBadge tone="plan">CPU only</StatusBadge>}
+          />
+        </CardRows>
+      </Card>
+    </SectionHeader>
+  );
+}
+
+function DrawnRunners() {
+  return (
+    <RunnerCard>
+      <Row
+        label="Speech runner"
+        hint="One file in, one transcript back."
+        control={
+          <span className="ws-rowflex">
+            <StatusBadge tone="success">Ready</StatusBadge>
+            <span className="ws-mono ws-muted">/usr/bin/whisper-cli</span>
+          </span>
+        }
+      />
+      <Row
+        label="Language runner"
+        hint="Started on demand by whichever job is on the Local lane."
+        control={
+          <span className="ws-rowflex">
+            <StatusBadge tone="success">Answering</StatusBadge>
+            <span className="ws-mono ws-muted">http://127.0.0.1:11434</span>
+          </span>
+        }
+      />
+    </RunnerCard>
+  );
+}
+
+/**
+ * The same two rows, from `local_setup` and `model_library` (ADR 0160).
+ *
+ * **`Not read` is a third state and both rows can be in it.** A probe that
+ * failed and a runner that is absent are different facts, and the badge that
+ * conflates them would tell somebody `whisper-cli` is missing because a command
+ * errored.
+ */
+function WiredRunners({
+  setup,
+  asked,
+  server,
+}: {
+  setup: LocalProviderSetupStatus | null;
+  asked: boolean;
+  server: LocalServerAnswer | null;
+}) {
+  return (
+    <RunnerCard>
+      <Row
+        label="Speech runner"
+        hint={
+          setup && !setup.runner_ready
+            ? setup.guidance
+            : "whisper-cli. WordScript hands it a file and reads one transcript back."
+        }
+        control={
+          <span className="ws-rowflex">
+            {!asked || !setup ? (
+              <StatusBadge tone="plan">Not read</StatusBadge>
+            ) : setup.runner_ready ? (
+              <StatusBadge tone="success">Ready</StatusBadge>
+            ) : (
+              <StatusBadge tone="warning">Not found</StatusBadge>
+            )}
+            {setup?.resolved_runner && (
+              <span className="ws-mono ws-muted">{setup.resolved_runner}</span>
+            )}
+          </span>
+        }
+      />
+      <Row
+        label="Language runner"
+        hint={
+          server && !server.reachable
+            ? server.detail
+            : "Ollama, on this machine. Started on demand by whichever job is on the Local lane."
+        }
+        control={
+          <span className="ws-rowflex">
+            {!server ? (
+              <StatusBadge tone="plan">Not read</StatusBadge>
+            ) : server.reachable ? (
+              <StatusBadge tone="success">Answering</StatusBadge>
+            ) : (
+              <StatusBadge tone="warning">Not running</StatusBadge>
+            )}
+            {server && <span className="ws-mono ws-muted">{server.base_url}</span>}
+          </span>
+        }
+      />
+    </RunnerCard>
   );
 }
 
@@ -1380,14 +1568,14 @@ function DrawnLibrary() {
     <>
       <SectionHeader
         title="Speech models"
-        description="Downloaded once, loaded by the local speech runner. Larger is more accurate and slower."
+        description="WordScript manages these files. Larger is more accurate and slower."
       >
         <Card
           footer={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">2 installed · 284 MB</StatusBadge>
               <span className="ws-muted">
-                Speech runner: <span className="ws-mono">/usr/bin/whisper-cli</span>
+                In <span className="ws-mono">~/.local/share/wordscript/models</span>
               </span>
             </span>
           }
@@ -1404,7 +1592,7 @@ function DrawnLibrary() {
 
       <SectionHeader
         title="Language models"
-        description="Downloaded once, served to every writing job by the server below."
+        description="Ollama owns these files. WordScript asks it to pull one."
       >
         <Card
           footer={
@@ -1439,7 +1627,7 @@ function DrawnLibrary() {
    bytes they occupy. A machine with nothing installed reads `0 installed`,
    which is the sentence four invented profile rows used to prevent anyone from
    ever seeing. */
-function WiredLibrary() {
+function WiredLibrary({ library: source }: { library: ReturnType<typeof useModelLibrary> }) {
   const runtime = useRuntime();
   const {
     library,
@@ -1455,7 +1643,7 @@ function WiredLibrary() {
     addFolder,
     removeFolder,
     pullTag,
-  } = useModelLibrary();
+  } = source;
 
   /* One query and one origin filter, shared by both cards. Two of each would
      be two states that disagree about what the user is looking for, and the
@@ -1556,7 +1744,7 @@ function WiredLibrary() {
     <>
       <SectionHeader
         title="Speech models"
-        description="Downloaded once, loaded by the local speech runner. Larger is more accurate and slower."
+        description="WordScript manages these files. Larger is more accurate and slower."
       >
         <Card
           footer={
@@ -1565,7 +1753,7 @@ function WiredLibrary() {
               {/* THE FIRST OF TWO WAYS IN (ADR 0159): the file is copied into
                   the folder WordScript manages, so removal, the total and the
                   discovery all keep one rule. The second — a folder used where
-                  it lies — is the section at the foot of this tab. */}
+                  it lies — is the folder list directly below. */}
               <Button
                 variant="ghost"
                 icon={<Icon name="upload" />}
@@ -1581,48 +1769,13 @@ function WiredLibrary() {
         >
           {card(speech)}
         </Card>
-      </SectionHeader>
 
-      <SectionHeader
-        title="Language models"
-        description="Pulled once by the server below, which owns the files. WordScript never puts one beside them."
-      >
-        <Card
-          footer={
-            <span className="ws-rowflex">
-              <StatusBadge tone="plan">{installedSummary(language)}</StatusBadge>
-              {/* THE LANGUAGE HALF'S WAY IN, and it is a typed tag rather than
-                  a file because Ollama owns that store: there is no folder to
-                  point at and no file to copy. The donor draws the same control
-                  for the same reason (openwhispr's `allowCustomModelId`). */}
-              <PullTagField onPull={pullTag} />
-            </span>
-          }
-        >
-          {card(language)}
-        </Card>
-        <Note>
-          The sizes are on disk. Loading one costs roughly the same again in memory, and a model
-          that does not fit does not fail at download time — it fails at first use.
-        </Note>
-        {/* The server's own answer, stated where its models are listed. A card
-            that showed four rows as "not installed" because nothing asked the
-            server would be claiming about a disk nobody looked at. */}
-        {library && !library.server.reachable && (
-          <Note icon="alert">{library.server.detail}</Note>
-        )}
-        {error && <Note icon="alert">{error}</Note>}
-      </SectionHeader>
-
-      {/* **THE SECOND WAY IN, AND IT GOES LAST.** An addition placed mid-screen
-          on a ported drawing renumbers every section after it (the B7 finding);
-          at the end it is its own nodes and nothing shifts. It is also where it
-          belongs by reading order: the two cards above are what you have, and
-          this is where those files come from. */}
-      <SectionHeader
-        title="Where models come from"
-        description="Every folder WordScript looks in, in the order that decides which file runs when two of them hold the same model."
-      >
+        {/* **THE FOLDER LIST BELONGS TO THE SPEECH CARD** (ADR 0160). It stood
+            at the foot of the tab under the title *Where models come from*,
+            which by reading order answered for the card directly above it — the
+            language one, whose files are in a store this list has never
+            described. `folders` is `local_model_sources()`, speech only, and it
+            is now stated where its subject is. */}
         <Card
           footer={
             <span className="ws-rowflex">
@@ -1641,6 +1794,11 @@ function WiredLibrary() {
           }
         >
           <CardRows>
+            <Row
+              label="Where these come from"
+              hint="Highest first — when two hold the same model, the higher one runs."
+              control={<StatusBadge tone="plan">{folders.length} searched</StatusBadge>}
+            />
             {folders.map((folder) => (
               <Row
                 key={folder.path}
@@ -1664,6 +1822,56 @@ function WiredLibrary() {
             ))}
           </CardRows>
         </Card>
+      </SectionHeader>
+
+      <SectionHeader
+        title="Language models"
+        description="Ollama owns these files. WordScript asks it to pull one."
+      >
+        <Card
+          footer={
+            <span className="ws-rowflex">
+              <StatusBadge tone="plan">{installedSummary(language)}</StatusBadge>
+              {/* THE LANGUAGE HALF'S WAY IN, and it is a typed tag rather than
+                  a file because Ollama owns that store: there is no folder to
+                  point at and no file to copy. The donor draws the same control
+                  for the same reason (openwhispr's `allowCustomModelId`). */}
+              <PullTagField onPull={pullTag} />
+            </span>
+          }
+        >
+          {card(language)}
+        </Card>
+        {/* THE LANGUAGE HALF'S ANSWER TO THE SAME QUESTION (ADR 0160), and it
+            is one row rather than a list because there is one store and it is
+            not WordScript's. Stating the endpoint here rather than a directory
+            is the honest form: the runtime knows which server it asks, and it
+            does not know where that server keeps its files. */}
+        <Card>
+          <CardRows>
+            <Row
+              label="Where these come from"
+              hint="Ollama's own store, which is why a pull is a tag rather than a file."
+              control={
+                <span className="ws-rowflex">
+                  <StatusBadge tone="plan">Ollama's store</StatusBadge>
+                  {library && <span className="ws-mono ws-muted">{library.server.base_url}</span>}
+                </span>
+              }
+            />
+          </CardRows>
+        </Card>
+        <Note>
+          The sizes are on disk. Loading one costs roughly the same again in memory, and a model
+          that does not fit does not fail at download time — it fails at first use.
+        </Note>
+        {/* The runner's own answer, stated where its models are listed. A card
+            that showed four rows as "not installed" because nothing asked it
+            would be claiming about a disk nobody looked at. */}
+        {library && !library.server.reachable && (
+          <Note icon="alert">{library.server.detail}</Note>
+        )}
+        {error && <Note icon="alert">{error}</Note>}
       </SectionHeader>
     </>
   );
