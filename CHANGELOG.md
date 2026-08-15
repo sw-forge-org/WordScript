@@ -53,6 +53,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the black frame at every recording start, which was the window being mapped (ADR 0155)
+
+- **The overlay no longer flashes black when a recording starts.** Every session
+  ran park→reveal, and every reveal ended in `show()` — an X11 map under
+  XWayland. KWin composites a newly mapped window before WebKitGTK has delivered
+  its first frame with alpha, so one frame showed the uninitialised backing
+  store: the full 480×60 rectangle, black. The existing
+  `set_background_color(0,0,0,0)` calls answer the resize case and cannot reach
+  this one, and GTK's own paint is transparent either way — the black arrives
+  after GTK, in the compositor.
+- **On Linux the window is now mapped exactly once, at setup, offscreen and at
+  opacity 0, and never unmapped again.** Parking is opacity 0 plus
+  click-through. An opacity gate *around* the map was tried first and only
+  softened it: KWin does not reliably apply `_NET_WM_WINDOW_OPACITY` to the
+  first frame of a window it is just starting to manage, so the map had to stop
+  happening rather than be timed against. Windows and macOS keep `hide()` —
+  the map frame is an X11/KWin behaviour.
+- **The placement path is untouched**, which is what made the unmap removable at
+  all: the hidden→visible guard reads `OVERLAY_WINDOW_SHOWN`, not the native map
+  state, and park still clears it. One consequence is open and recorded in
+  [known-issues/overlay-stranded-off-screen.md](docs/known-issues/overlay-stranded-off-screen.md):
+  the offscreen park move never landed on a hidden window and now does.
+
 ### Removed — the second insert channel, which nothing had ever listened to (ADR 0153, ADR 0154)
 
 - **`wordscript-native-insert` is gone.** It was emitted from three sites in

@@ -239,9 +239,40 @@ reveals that dominate a session carry no placement and would drown the signal.
 - Counter-check without the fix: `xdotool getwindowgeometry <id>` against
   `xrandr --listmonitors` shows the dead zone directly.
 
+## Addendum 2026-08-15 — the park move stopped being a no-op
+
+Finding 3 above measured the park move as never effective: all 482 parks
+reported an `applied` position different from the requested one, because GTK
+does not move a hidden window. **That premise no longer holds.** ADR 0155
+removed the unmap from the Linux park — the overlay is mapped once at setup and
+parked through opacity 0 plus click-through instead, because every X11 map
+presents one black frame and that was the flash on every recording start. A
+mapped window actually moves, so the park move now lands, and where it lands is
+whatever KWin clamps it to.
+
+For this record that cuts both ways and neither has been measured since:
+
+- The 31 parks that ended at the dead-zone corner `(3840,1507/1508)` — the
+  strongest candidate here for what produces the strandings — came from a move
+  that mostly did not apply. Now it always does.
+- The exposure is nevertheless smaller than when those numbers were taken. The
+  next reveal overwrites the parked position through the hidden→visible branch,
+  and that branch is now reliably entered: `OVERLAY_WINDOW_SHOWN` replaced
+  `window.is_visible()`, which lies on XWayland and is why the branch used to be
+  skipped.
+
+Step 1 of "What to do about it, in order" (correlate park to the next reveal's
+`reason` in the existing log) is therefore worth re-running against a build that
+carries ADR 0155, and its earlier conclusion — that the move is dead code that
+logs — has to be re-derived rather than reused. Deleting the move outright is
+now the cheaper branch than it was, since opacity carries the parking on Linux
+and the move protects nothing there.
+
 ## References
 
 - [ADR 0022](../decisions/0022-a-window-on-no-monitor-is-never-a-position-the-user-chose.md)
+- [ADR 0155](../decisions/0155-the-overlay-stops-being-unmapped-because-every-map-costs-one-black-frame.md):
+  why the park no longer unmaps, and what that does to the move measured here
 - [overlay-recording-freeze.md](overlay-recording-freeze.md): the report this was
   mistaken for
 - [overlay-leave-hold-dead-actions.md](overlay-leave-hold-dead-actions.md): the

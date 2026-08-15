@@ -152,8 +152,8 @@ capture, session state machine, insert decisions.
 
 `src-tauri/src/lib.rs` is the product shell. It holds: window setup for
 overlay and settings; native visibility and positioning for the overlay
-(bottom-center reveal, offscreen parking in idle via `window.hide()` in
-`park_overlay_window`); monitor- and anchor-based overlay placement plus
+(bottom-center reveal, offscreen parking in idle via `park_overlay_window` --
+opacity 0 plus click-through on Linux, `window.hide()` elsewhere, ADR 0155); monitor- and anchor-based overlay placement plus
 persistence of the last manual drag position (host repositions for
 reveal/hide/surface changes must not overwrite the remembered position as
 new user intent); Linux overlay specifics (fixed sizes 480x60 flat /

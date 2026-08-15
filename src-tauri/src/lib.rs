@@ -2,7 +2,7 @@ use std::{
     fs::OpenOptions,
     io::{Read, Seek, SeekFrom, Write},
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Mutex, Once,
     },
     time::Duration,
@@ -96,6 +96,46 @@ static OVERLAY_WINDOW_SHOWN: AtomicBool = AtomicBool::new(false);
 // ONE `set_size` per frame with ONE height instead of 2–3 competing heights.
 static OVERLAY_PENDING_REVEAL: Mutex<Option<(OverlaySurface, Option<f64>, Option<f64>)>> = Mutex::new(None);
 static OVERLAY_REVEAL_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
+// ── Opacity gate against the black map frame ────────────────────────────────
+// Every session start runs park→reveal, and every reveal ends in `show()` —
+// which on X11 (the app forces GDK_BACKEND=x11, see main.rs) is a fresh window
+// map. KWin composites that newly mapped window before WebKitGTK has delivered
+// its first frame with alpha, so for exactly one frame the uninitialised
+// backing store is presented: a black 440×60 block, the full window, gone
+// again in the next frame. The three `set_background_color(0,0,0,0)` calls in
+// the reveal path cannot catch it — GTK's own paint is already transparent
+// (tao paints with alpha 0 under `auto_transparent`); the black arrives after
+// GTK, in the compositor, at map time.
+//
+// The fix is to make the map happen while the window is fully transparent to
+// the compositor, and only then bring it up:
+//
+//   * `park_overlay_window` and app setup set GTK window opacity to 0.0, so a
+//     map is never presented opaque. Both run far ahead of the next reveal,
+//     which matters: opacity travels the `run_on_main_thread` queue while
+//     `show()` travels tao's window-request queue, and the two have no
+//     guaranteed order relative to each other. Setting opacity right before
+//     `show()` would be a race; setting it at park time is not.
+//   * every reveal schedules `schedule_overlay_fade_in`, which restores 1.0
+//     after OVERLAY_MAP_FADE_IN_MS on the GTK main loop.
+//
+// Restoring on EVERY reveal (not just the hidden→visible one) is what keeps a
+// dropped fade-in from leaving the overlay permanently invisible — which would
+// be a far worse bug than the flash. It also closes the race where the Rust
+// StartCapture reveal maps the window and the frontend's `recording_started`
+// reveal lands ~10 ms later: that second reveal schedules its own delayed
+// fade-in rather than setting 1.0 immediately into the still-unpainted map.
+//
+// The generation counter invalidates in-flight fade-ins: a session aborted
+// within the fade window parks the window while a timer is still pending, and
+// that timer would otherwise raise opacity on a hidden window — leaving 1.0 in
+// place for the next map, i.e. the flash back. Park bumps the generation; a
+// timer whose generation is stale does nothing.
+static OVERLAY_MAP_GENERATION: AtomicU64 = AtomicU64::new(0);
+// Two frames at 60 Hz plus headroom. It is added to the delay between hotkey
+// and visible pill, so it stays as small as the flash allows.
+const OVERLAY_MAP_FADE_IN_MS: u64 = 40;
 
 // ── Diagnose-Infrastruktur (plan 1784433288646, Phase 1.2) ──────────────────
 // Permanent debug-only log sink for the overlay window. The frontend writes
@@ -609,6 +649,53 @@ fn should_oscillate_flat_reveal(surface: OverlaySurface, _was_visible: bool) -> 
     !matches!(surface, OverlaySurface::EditMode)
 }
 
+// Sets GTK window opacity on the overlay. Linux-only: tao exposes no opacity,
+// so this reaches the GtkWindow directly — which is also why the caller must
+// already be on the GTK main thread. `gtk_window()` hands out a non-Send
+// handle, so every path that parks or reveals from another thread has to hop
+// through `run_on_main_thread` first. See the note at OVERLAY_MAP_GENERATION.
+#[cfg(target_os = "linux")]
+fn set_overlay_opacity_on_main_thread<R: Runtime>(app: &AppHandle<R>, opacity: f64) {
+    use gtk::prelude::WidgetExt;
+    if let Some(window) = app.get_webview_window("overlay") {
+        if let Ok(gtk_window) = window.gtk_window() {
+            gtk_window.set_opacity(opacity);
+        }
+    }
+}
+
+// Brings the overlay back up a couple of frames after a reveal, so the resize
+// that precedes it is composited while the window is still invisible — the
+// newly exposed area of a resized transparent window stays black on WebKitGTK
+// until the background colour is re-asserted, and that re-assert is one frame
+// behind. Opacity and click-through are restored together, so the pill never
+// eats a click while it cannot be seen.
+//
+// Generation-gated: a park between scheduling and firing invalidates the timer,
+// so opacity is never raised on a window that has since been parked.
+#[cfg(target_os = "linux")]
+fn schedule_overlay_fade_in<R: Runtime>(app: &AppHandle<R>) {
+    let app_handle = app.clone();
+    let generation = OVERLAY_MAP_GENERATION.load(Ordering::Relaxed);
+    let _ = app.run_on_main_thread(move || {
+        gtk::glib::timeout_add_local_once(
+            Duration::from_millis(OVERLAY_MAP_FADE_IN_MS),
+            move || {
+                if OVERLAY_MAP_GENERATION.load(Ordering::Relaxed) != generation {
+                    return;
+                }
+                set_overlay_opacity_on_main_thread(&app_handle, 1.0);
+                if let Some(window) = app_handle.get_webview_window("overlay") {
+                    let _ = window.set_ignore_cursor_events(false);
+                }
+            },
+        );
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn schedule_overlay_fade_in<R: Runtime>(_app: &AppHandle<R>) {}
+
 // Reveals/resizes the overlay window. Two WebKitGTK/Linux constraints shape this:
 //   1. After a set_size, WebKitGTK does NOT re-paint the newly exposed area of a
 //      transparent window as transparent — it stays black. So the transparent
@@ -823,6 +910,12 @@ fn reveal_overlay_window_impl<R: Runtime>(
                 let _ = window.show();
             }
         }
+
+        // Bring the window back up after the map frame has passed. Scheduled on
+        // every reveal, not just the hidden→visible one: it is what makes a
+        // lost fade-in self-heal instead of leaving the overlay invisible.
+        // See the opacity gate note at OVERLAY_MAP_GENERATION.
+        schedule_overlay_fade_in(app);
     }
 }
 
@@ -887,46 +980,94 @@ fn park_overlay_window<R: Runtime>(app: &AppHandle<R>) {
         let (window_width, window_height) = OverlaySurface::Compact.dimensions();
         let _ = window.set_size(LogicalSize::new(window_width, window_height));
         let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-        // The park position is a request, not a guarantee. X11/KWin refuses to
-        // place a window fully outside the screen and clamps it back to the
-        // edge of the union bounding box: measured on the reporting machine,
-        // (4392,1640) was requested and (3840,1508) applied. Parking is
-        // therefore carried by `hide()` below, not by the move — the move only
-        // helps on compositors that honour it. Both are kept because `hide()`
-        // alone has been unreliable enough on XWayland to warrant the belt.
-        //
-        // The consequence is recorded so it stays visible rather than being
-        // rediscovered: on a layout whose bottom-right corner lies on a
-        // monitor, a parked-but-not-hidden pill is visible there.
-        let requested = overlay_offscreen_position(&window);
-        if let Some(position) = requested {
-            let _ = window.set_position(position);
-        }
-        // Read back before hiding: GTK does not move a hidden window, so a
-        // position sampled after `hide()` reports the pre-park coordinates and
-        // would make the log claim something it did not measure.
-        let applied = overlay_current_logical_rect(&window).map(|(x, y, _, _)| (x, y));
 
-        // Hide so the next reveal() runs the hidden→visible branch (which sets
-        // the position). Without this the window stays visible-but-offscreen
-        // after parking, and reveal's "only set_position on hidden→visible"
-        // guard (drag-snap protection) skips re-positioning — the overlay then
-        // vanishes from the 2nd transcription onward.
-        let _ = window.hide();
+        // Invalidates any fade-in still in flight from the reveal this park is
+        // ending: otherwise a session aborted inside the fade window would
+        // raise opacity back to 1.0 on a window that has just been parked.
+        OVERLAY_MAP_GENERATION.fetch_add(1, Ordering::Relaxed);
 
-        core::runtime_log::record(format!(
-            "[WordScript] Overlay parked requested={} applied={}",
-            requested
-                .map(|position| format!("({:.0},{:.0})", position.x, position.y))
-                .unwrap_or_else(|| "none".to_string()),
-            applied
-                .map(|(x, y)| format!("({x:.0},{y:.0})"))
-                .unwrap_or_else(|| "unknown".to_string()),
-        ));
+        park_overlay_surface(app, &window);
 
         // Clear authoritative visibility so the next reveal repositions + shows.
         OVERLAY_WINDOW_SHOWN.store(false, Ordering::Relaxed);
     }
+}
+
+// Linux park: opacity 0 and click-through, WITHOUT unmapping the window.
+//
+// `hide()` used to live here, and it is what made every session start map the
+// window again — and every map hands the compositor one opaque frame before
+// WebKitGTK has delivered its first frame with alpha. That frame is the black
+// 480×60 block on every recording start. An opacity gate around the map only
+// softened it (KWin does not reliably apply _NET_WM_WINDOW_OPACITY to the very
+// first frame of a window it is just starting to manage), so the map itself has
+// to stop happening: the overlay is mapped exactly once, at setup, offscreen
+// and at opacity 0, and stays mapped for the rest of the process.
+//
+// What made `hide()` load-bearing was reveal's "only set_position on
+// hidden→visible" guard — the drag-snap protection. Without a park that clears
+// visibility, the overlay stopped being repositioned and vanished from the 2nd
+// transcription onward. That guard reads OVERLAY_WINDOW_SHOWN, not the native
+// map state (window.is_visible() lies on XWayland), and park still clears it —
+// so dropping the unmap leaves the placement path untouched.
+//
+// Order matters and is why this runs on the GTK main thread: opacity is set
+// directly on the GtkWindow and takes effect immediately, while the move is
+// queued behind it. The reverse order would drag a still-visible pill across
+// the screen on every session end.
+#[cfg(target_os = "linux")]
+fn park_overlay_surface<R: Runtime>(app: &AppHandle<R>, _window: &tauri::WebviewWindow<R>) {
+    let app_handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(window) = app_handle.get_webview_window("overlay") else {
+            return;
+        };
+        set_overlay_opacity_on_main_thread(&app_handle, 0.0);
+        // A mapped overlay would otherwise keep eating clicks at its parked
+        // spot for the whole gap between two sessions.
+        let _ = window.set_ignore_cursor_events(true);
+        let requested = overlay_offscreen_position(&window);
+        if let Some(position) = requested {
+            let _ = window.set_position(position);
+        }
+        let applied = overlay_current_logical_rect(&window).map(|(x, y, _, _)| (x, y));
+        record_overlay_park(requested, applied);
+    });
+}
+
+// Non-Linux park: unchanged. The map frame this works around is an X11/KWin
+// behaviour, and `hide()` is the erprobte path on Windows and macOS — there is
+// no reason to hand those platforms an untested parking mechanism.
+#[cfg(not(target_os = "linux"))]
+fn park_overlay_surface<R: Runtime>(_app: &AppHandle<R>, window: &tauri::WebviewWindow<R>) {
+    // The park position is a request, not a guarantee. X11/KWin refuses to
+    // place a window fully outside the screen and clamps it back to the edge of
+    // the union bounding box: measured on the reporting machine, (4392,1640)
+    // was requested and (3840,1508) applied. Parking is therefore carried by
+    // `hide()`, not by the move — the move only helps on compositors that
+    // honour it.
+    let requested = overlay_offscreen_position(window);
+    if let Some(position) = requested {
+        let _ = window.set_position(position);
+    }
+    // Read back before hiding: GTK does not move a hidden window, so a position
+    // sampled after `hide()` reports the pre-park coordinates and would make the
+    // log claim something it did not measure.
+    let applied = overlay_current_logical_rect(window).map(|(x, y, _, _)| (x, y));
+    let _ = window.hide();
+    record_overlay_park(requested, applied);
+}
+
+fn record_overlay_park(requested: Option<LogicalPosition<f64>>, applied: Option<(f64, f64)>) {
+    core::runtime_log::record(format!(
+        "[WordScript] Overlay parked requested={} applied={}",
+        requested
+            .map(|position| format!("({:.0},{:.0})", position.x, position.y))
+            .unwrap_or_else(|| "none".to_string()),
+        applied
+            .map(|(x, y)| format!("({x:.0},{y:.0})"))
+            .unwrap_or_else(|| "unknown".to_string()),
+    ));
 }
 
 fn overlay_offscreen_position<R: Runtime>(
@@ -2712,6 +2853,38 @@ pub fn run() {
 
             if let Some(rebuild_lab) = app.get_webview_window("rebuild-lab") {
                 install_hide_on_close(&rebuild_lab);
+            }
+
+            // The one map in the whole process. The overlay ships as
+            // `visible: false`, so without this the first recording would map
+            // it — and that map is the black flash (see park_overlay_surface).
+            // Doing it here spends the flash once, offscreen and at opacity 0,
+            // where nobody is looking; from here on the window stays mapped and
+            // parking is opacity plus click-through.
+            //
+            // Opacity is set directly on the GtkWindow and takes effect at once,
+            // while position and show() are queued behind it — so the window is
+            // already transparent when it is mapped. Setup runs on the GTK main
+            // thread, which is what makes that ordering available.
+            //
+            // OVERLAY_WINDOW_SHOWN is deliberately NOT set: the tracker means
+            // "logically revealed", and the first real reveal must still run the
+            // hidden→visible branch that places the window.
+            // Click-through comes AFTER show(): tao answers it with
+            // `window.window().unwrap()` on the GdkWindow, which only exists
+            // once the widget is realized. On a window that has never been
+            // mapped that unwrap aborts the process. Both requests travel the
+            // same FIFO window-request queue, so ordering them here is enough.
+            // Opacity, by contrast, must stay in front of show() — it is set on
+            // the widget directly and has to be in place before the map.
+            #[cfg(target_os = "linux")]
+            if let Some(overlay) = app.get_webview_window("overlay") {
+                set_overlay_opacity_on_main_thread(app.handle(), 0.0);
+                if let Some(position) = overlay_offscreen_position(&overlay) {
+                    let _ = overlay.set_position(position);
+                }
+                let _ = overlay.show();
+                let _ = overlay.set_ignore_cursor_events(true);
             }
 
             let initial_config = AppConfig::load_from_disk();

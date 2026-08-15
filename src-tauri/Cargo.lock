@@ -6657,6 +6657,7 @@ dependencies = [
  "chrono",
  "cpal",
  "enigo",
+ "gtk",
  "hound",
  "keyring",
  "regex",

@@ -53,6 +53,18 @@ semver      = "1"
 # `clock` is what carries `Local`; nothing else in the crate is used.
 chrono      = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
+# Direct access to the GtkWindow behind the overlay, for the one thing tao does
+# not expose: window opacity. It carries the fade-in that hides the black X11
+# map frame (see the overlay opacity gate in `lib.rs`). The crate is already in
+# the tree transitively via tauri/wry; this only makes it nameable.
+#
+# The version MUST track whatever tauri's gtk is. Two gtk versions in one tree
+# means `WebviewWindow::gtk_window()` returns an `ApplicationWindow` from the
+# other one, and the call stops compiling. On a tauri upgrade, check
+# `cargo tree -p gtk` before changing this line.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [features]
 # This feature is used for production builds or when a dev server is not specified.
 # DO NOT REMOVE!!

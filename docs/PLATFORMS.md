@@ -96,6 +96,15 @@ KDE Plasma 6 via KWin script (`packaging/kwin-wordscript-overlay/`),
 installed with
 `kpackagetool6 --type=KWin/Script -i packaging/kwin-wordscript-overlay && qdbus org.kde.KWin /KWin reconfigure`.
 
+The overlay window is mapped exactly once, at setup, offscreen and at opacity 0;
+after that it is never unmapped. Parking is opacity 0 plus click-through, not
+`hide()` -- under XWayland KWin composites a newly mapped window before
+WebKitGTK has delivered its first frame with alpha, so every map presents one
+black frame at full window size. Timing does not help against it (KWin does not
+reliably apply `_NET_WM_WINDOW_OPACITY` to that first frame), which is why the
+map is spent once instead. Windows and macOS keep `hide()`. Derivation and the
+open question about the park move: ADR 0155.
+
 Open observation: the overlay is reported to freeze mid-capture at irregular
 intervals, pill and seconds timer and all input at once, while capture and
 pipeline continue normally. Seen so far only under `npm run tauri dev` on

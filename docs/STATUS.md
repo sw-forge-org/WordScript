@@ -339,9 +339,10 @@ Status: 2026-08-14
   display anchor, movement-threshold dragging, native offscreen parking in idle,
   and state-specific right-side spacing
 - Linux overlay with fixed window sizes (480x60 flat / 460x164 edit),
-  `set_background_color` on every reveal, `park_overlay_window` with
-  `hide()`, XWayland default with native-Wayland opt-in, KWin script for
-  always-on-top on KDE Plasma 6
+  `set_background_color` on every reveal, `park_overlay_window` parking through
+  opacity 0 plus click-through on a window that is mapped once and never
+  unmapped (ADR 0155), XWayland default with native-Wayland opt-in, KWin script
+  for always-on-top on KDE Plasma 6
 - atomic overlay state swap on new triggers (recording starts in the same
   render that the previous epoch disappears) and on session end: the native
   completion event only mirrors the transcript text, so `status`, `lastResult`

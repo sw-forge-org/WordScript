@@ -29,8 +29,10 @@ constants themselves were not re-derived and carry their own provenance
   Intersection, not containment, so a pill hanging over an edge keeps its
   dragged position (ADR 0022)
 - The park move is best-effort: X11/KWin clamps an off-screen position back onto
-  the screen edge, so parking is carried by `hide()`. Requested and applied
-  positions are logged
+  the screen edge. Requested and applied positions are logged
+- On Linux the overlay is mapped once at setup and never unmapped; parking is
+  opacity 0 plus click-through, and `hide()` is the park only on Windows and
+  macOS. Every map costs one black frame under XWayland (ADR 0155)
 - CSS variables: `--ov-shadow: none`, `--ov-shadow-recording: none` in
   `overlay-pill.css`
 - `pointer-events: auto` on `.ov-scope` (not `none` on overlay-roots)
