@@ -31,11 +31,27 @@ export function DropZone({
   title,
   hint,
   onClick,
+  onFile,
+  accept,
 }: {
   band?: boolean;
   title: string;
   hint: ReactNode;
   onClick?: () => void;
+  /**
+   * THE FILE ITSELF, WHERE A CALLER WANTS IT (B7).
+   *
+   * **Its only consumer today reads `size` and nothing else.** ADR 0129's
+   * picker greys a vendor that cannot take this many bytes, and a size cannot
+   * be known before there is a file — so without this the constraint is built
+   * and permanently unobservable, which is a guard nobody can trust.
+   *
+   * Reading the file, transcribing it and producing an object is the context
+   * object track's C2, not this. The drawing does not change: the input is
+   * `display: none` behind the same button.
+   */
+  onFile?: (file: File) => void;
+  accept?: string;
 }) {
   const text = (
     <>
@@ -43,11 +59,33 @@ export function DropZone({
       <span>{hint}</span>
     </>
   );
-  return (
+
+  const zone = (
     <button type="button" className="ws-dropzone" data-band={band ? "" : undefined} onClick={onClick}>
       <Icon name="upload" />
       {band ? <span className="ws-dz-text">{text}</span> : text}
     </button>
+  );
+
+  if (!onFile) return zone;
+
+  /* A label wrapping the button rather than a click handler reaching for a ref:
+     the element already carries the picker, the keyboard behaviour and the
+     accessibility contract. The button keeps `type="button"` so it does not
+     submit anything it happens to stand inside. */
+  return (
+    <label className="ws-dropzone-pick">
+      <input
+        type="file"
+        accept={accept}
+        style={{ display: "none" }}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onFile(file);
+        }}
+      />
+      {zone}
+    </label>
   );
 }
 

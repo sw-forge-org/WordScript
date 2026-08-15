@@ -76,7 +76,8 @@ import { DESK, DESK_CAP } from "./data";
 import { ACTION_MENU, ACTIONS, CTX, FOLDERS } from "./contextData";
 import { MeetingHud } from "./Meeting";
 import { hasNativeHost, openPopout, type PopoutSurface } from "@/windows/popout";
-import type { ScreenProps } from "./props";
+import { JobProviderPicker } from "@/components/jobProvider";
+import type { PartlyWiredScreenProps, ScreenProps, WorkspaceRuntime } from "./props";
 
 /**
  * CONTEXT — `SCREENS.context`, and its two other panels.
@@ -440,7 +441,8 @@ function ContextScreenBody({
   panel: initialPanel = "ask",
   mode: initialMode = "read",
   banner,
-}: { panel?: Panel; mode?: Mode } & ScreenProps) {
+  runtime,
+}: { panel?: Panel; mode?: Mode } & PartlyWiredScreenProps) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [panel, setPanel] = useState<Panel>(initialPanel);
   const [tab, setTab] = useState<Tab>("Summary");
@@ -514,7 +516,12 @@ function ContextScreenBody({
         }
         detail={
           intake ? (
-            <IntakeDetail way={way} onWay={setWay} onBack={() => setMode("read")} />
+            <IntakeDetail
+              way={way}
+              onWay={setWay}
+              onBack={() => setMode("read")}
+              runtime={runtime}
+            />
           ) : (
             <>
               <PaneDetailHead
@@ -797,10 +804,12 @@ function IntakeDetail({
   way,
   onWay,
   onBack,
+  runtime,
 }: {
   way: Way;
   onWay: (way: Way) => void;
   onBack: () => void;
+  runtime?: WorkspaceRuntime;
 }) {
   return (
     <>
@@ -828,7 +837,7 @@ function IntakeDetail({
         <NoteBody className="ws-intake-body">
           {way === "Write" && <WriteWay />}
           {way === "Record" && <RecordWay />}
-          {way === "Import" && <ImportWay />}
+          {way === "Import" && <ImportWay runtime={runtime} />}
           <Note icon="list">
             What is running is in the list on the left with its state on the row. There is no
             second queue: a file being transcribed is a context object without a transcript yet.
@@ -919,15 +928,40 @@ function RecordWay() {
   );
 }
 
-function ImportWay() {
+function ImportWay({ runtime }: { runtime?: WorkspaceRuntime }) {
   const [speakers, setSpeakers] = useState(true);
+  /* THE FILE'S SIZE, WHICH IS THE FACT THAT DECIDES THE PICKER (ADR 0129).
+     Nothing else about the file is read here: reading it, sending it and
+     producing an object is the context object track's C2. Until one is chosen
+     this is `null` and every vendor answers on its own merits, which is the
+     honest state rather than a constraint invented before there is a file. */
+  const [file, setFile] = useState<File | null>(null);
+
   return (
     <>
+      {/* ABOVE THE DROP ZONE, WHICH IS WHERE ADR 0129 PUTS IT. A surface that
+          begins a long, expensive and irreversible operation states where it is
+          about to send the audio BEFORE the gesture that starts it, not in a
+          settings screen the user would have to already have visited. */}
+      <JobProviderPicker
+        jobKey="upload"
+        cap="stt"
+        runtime={runtime}
+        fileBytes={file ? file.size : null}
+        summary="Transcription settings"
+        hint={
+          file
+            ? `${file.name} · ${(file.size / (1024 * 1024)).toFixed(1)} MiB`
+            : undefined
+        }
+      />
       <Intake>
         <DropZone
           band
           title="Drop audio or video, or click to browse"
           hint="MP3, WAV, M4A, WebM, OGG, FLAC · up to 25 MiB per file on your Free plan"
+          accept="audio/*,video/*"
+          onFile={setFile}
         />
         <IntakeOr />
         <IntakeLink label="Paste a link">
@@ -994,8 +1028,8 @@ function ImportWay() {
    drew the Ask window open to show what it looks like — but an entry state with
    a panel already over the thing you came to read is a demonstration, not a
    default. Ask is one press away and now the press works. */
-export function ContextScreen({ banner }: ScreenProps = {}) {
-  return <ContextScreenBody panel={null} banner={banner} />;
+export function ContextScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
+  return <ContextScreenBody panel={null} banner={banner} runtime={runtime} />;
 }
 
 export function ContextActionsScreen() {

@@ -217,6 +217,30 @@ export interface ProviderStatusRequest {
 
 export type GroqProviderStatus = ProviderStatus;
 
+/**
+ * WHETHER ONE VENDOR TAKES A FILE OF A KNOWN SIZE (B7, ADR 0129).
+ *
+ * Mirrors `core::capture_budget::UploadCapacity`. **Four answers, and the pair
+ * that must not be folded is `unbounded` and `unknown`**: a lane that uploads
+ * nothing accepts any file, and a vendor with no adapter accepts none because
+ * there is no path to it. The runtime keeps them apart and so does this.
+ *
+ * `max_seconds` is the same ceiling stated in recording time — what
+ * `resolve_capture_budget` answers forward, carried here so a surface can say
+ * what a byte limit means without deriving it a second time (ADR 0034).
+ */
+export type UploadCapacity =
+  | { kind: "unknown" }
+  | { kind: "unbounded" }
+  | { kind: "fits"; max_bytes: number; max_seconds: number }
+  | { kind: "too_large"; max_bytes: number; max_seconds: number; detail: string };
+
+/** One vendor's answer about one file. */
+export interface ProviderUploadCapacity {
+  provider: string;
+  capacity: UploadCapacity;
+}
+
 export interface ValidateProviderApiKeyResponse {
   ok: boolean;
   provider: string;

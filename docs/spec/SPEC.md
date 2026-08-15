@@ -1,6 +1,9 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-12 (stage B6, and it read
+Status: created 2026-07-24, last drift check 2026-08-15 (stage B7, and it read
+only the capability-seam clause it extends — the inert-reason list, which gained
+a sixth entry — and the per-job override clause B6 left; the stage B6 pass
+before it read
 only the provider-axis clause it made false — *the per-job override is still
 writable by no surface* — plus the surface-truth clause beside it; the stage B1
 pass before it read only the capability-seam clauses and the deviation entry
@@ -450,6 +453,24 @@ UI implementation details, not Rust event names or Tauri channels.
   with a three-direction test as its keeper, because `data.ts` may not carry a
   runtime id and the model catalogue may not declare a vendor without model
   rows. Built.
+- **A job's provider is chosen where the job starts** (ADR 0129, ADR 0131,
+  ADR 0157), 2026-08-15. Two surfaces do it today — the import intake and the
+  translation window — and each states the resolved provider and model as a
+  sentence before the work begins, with the same ladder `AI Models` renders
+  behind a collapsed disclosure. **Nothing new is stored**:
+  `providers.overrides[job]` is the same per-profile map, and
+  `resolveConfigJobProvider` is still the only resolution path. A **sixth**
+  reason a row can be inert joins the five above — *the file is past what this
+  vendor accepts in one request* — and it is the first that depends on the thing
+  being sent rather than on the vendor alone, which is why it cannot be answered
+  by a settings table. `resolve_upload_capacity` answers which
+  `(provider, model, tier)` accepts a given number of bytes, reading the plan off
+  the config so a surface cannot answer against one the pipeline is not on; it
+  reports *unbounded* and *unknown* as different answers, and **never reroutes
+  the audio** — the option greys, the reason is stated, and the vendor that fits
+  is offered. Built for the two surfaces that exist; the meeting HUD, the
+  translation window's own picker, Live subtitles and the agent overlay carry the
+  same obligation into the step that builds each.
 - **`voice` is the ninth `JobKey`** (ADR 0109). The union carries eight and four
   records already write contracts against the ninth; the drawn `Speaking` job
   sits outside the lane axis and that is the shape the type follows. Where the

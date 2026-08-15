@@ -53,6 +53,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the provider choice moved to where the file is (ADR 0129, ADR 0131, ADR 0157)
+
+- **A surface that starts a job now names where it runs, before it runs it.**
+  The import intake states *Using Groq · whisper-large-v3* above the drop zone
+  and the translation window states the model that translates, each with the
+  full ladder — lane, vendor, credential, model — behind a collapsed
+  `Transcription settings` disclosure. Most uploads take the connection; the
+  person who needs to change it gets the whole stack rather than a button to a
+  settings screen and back.
+- **A vendor too small for your file greys itself and says both numbers**, and
+  the audio is never rerouted around it. The one that fits is offered; choosing
+  is yours. Sending a recording to a vendor nobody picked is a data decision
+  wearing the costume of a convenience.
+- **`Cloud.upload` lost its drawn override to OpenAI.** Nothing backed it: no
+  recorded file ceiling favoured it, only `whisper-1` accepts the response
+  format that row needs most, and it cost a second credential on a fresh
+  install for a job that would otherwise run. The question it answered badly —
+  which vendor takes this file — moved to where the file's size is known.
+  `docs/PROVIDERS.md` open disagreements 6 and 12 are closed with it.
+
+### Changed
+
+- **The job ladder is a shared component rather than `AI Models`' internals.**
+  Three surfaces render it now, so it moved to `src/components/jobProvider.tsx`
+  under ADR 0055's one-implementation rule. What configures a lane — the
+  connection card, the lane segment, the model library — stayed. The move
+  measured **zero** on `npm run port:diff`, proven by reverting the override and
+  landing back on the baseline exactly.
+- **The capture ceiling can be asked in the other direction.**
+  `resolve_upload_capacity` answers which `(provider, model, tier)` accepts a
+  given number of bytes. `Unbounded` and `Unknown` are kept apart — a lane that
+  uploads nothing accepts any file, a vendor with no adapter accepts none — so a
+  picker cannot report the second as the first.
+- **The size constraint outranks a missing credential.** A key can be added; a
+  file will not get smaller. It still yields to a missing adapter, a denied
+  role, an unanswered runtime and a pending read.
+
+
 ### Fixed — the answer that printed rule ids under a comment saying it printed names (ADR 0156)
 
 - **A fired rule is named with the words you wrote it in.** *Check against a

@@ -27,6 +27,7 @@ import type {
   ProviderRole,
   ProviderStatus,
   RegisteredProvider,
+  UploadCapacity,
 } from "@/types/providers";
 
 /**
@@ -167,7 +168,24 @@ export function isCompleteCapabilityBlock(
  * screen whose runtime is broken.
  */
 export type InertReason = {
-  kind: "no_adapter" | "role_denied" | "no_credential" | "not_answered" | "pending";
+  kind:
+    | "no_adapter"
+    | "role_denied"
+    | "no_credential"
+    | "not_answered"
+    | "pending"
+    /**
+     * The file is past what this vendor accepts in one request (B7, ADR 0129).
+     *
+     * **A constraint the runtime can compute, and the first of its family.**
+     * The other four are answers about the vendor; this one is an answer about
+     * the vendor AND the thing being sent, so it cannot be known until there is
+     * a file — which is the whole argument for moving the choice to the point
+     * of use. ADR 0131 names a sibling that has not landed yet, a lane that
+     * cannot stream under a control that needs streaming, and says explicitly
+     * that it must reuse this mechanism rather than invent a second.
+     */
+    | "upload_too_large";
   sentence: string;
 };
 
@@ -299,6 +317,62 @@ export function credentialStateFor(
   if (!credential) return "unknown";
 
   return credential.configured ? "set" : "missing";
+}
+
+/**
+ * A size in the units the vendors themselves document limits in.
+ *
+ * MiB because that is what every recorded ceiling in `docs/PROVIDERS.md` is
+ * stated in and what `groq.rs` and `openai.rs` print in their own refusals. A
+ * surface that said "26.2 MB" against a runtime that said "25 MiB" would be two
+ * numbers for one limit, which is the drift ADR 0034 is about.
+ */
+export function formatUploadSize(bytes: number): string {
+  const mib = bytes / (1024 * 1024);
+  if (mib >= 10) return `${Math.round(mib)} MiB`;
+  if (mib >= 1) return `${mib.toFixed(1)} MiB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
+}
+
+/**
+ * Whether a vendor can be operated for a role AND take this particular file
+ * (B7, ADR 0129).
+ *
+ * **The size is asked after the vendor and before the credential, and the order
+ * is the finding.** A vendor with no adapter or a denied role cannot take the
+ * file for a reason that has nothing to do with its size, so those answers
+ * stand. A missing credential is one action away from working; a file past the
+ * ceiling is not — no key makes it smaller — so the harder constraint is the
+ * one the user is told about.
+ *
+ * **`capacity` undefined means not asked yet, and it changes nothing.** The
+ * runtime cannot be read before there is a file, and a surface that greyed
+ * every vendor while waiting for the answer would be inventing a constraint out
+ * of its own latency — the `pending` rule one axis over.
+ */
+export function resolveUploadAnswer(
+  drawnName: string,
+  role: ProviderRole,
+  answers: RuntimeAnswers,
+  fileBytes: number | null,
+  capacity: UploadCapacity | undefined,
+): ProviderAnswer {
+  const base = resolveProviderAnswer(drawnName, role, answers);
+
+  /* Everything except a missing credential is a harder answer than the size,
+     so it wins. `not_answered` and `pending` included: a runtime that has not
+     said what a vendor can do has not said what it accepts either. */
+  if (!base.operable && base.reason.kind !== "no_credential") return base;
+
+  if (capacity?.kind !== "too_large" || fileBytes === null) return base;
+
+  return {
+    operable: false,
+    reason: {
+      kind: "upload_too_large",
+      sentence: `${drawnName} accepts ${formatUploadSize(capacity.max_bytes)} per file and this one is ${formatUploadSize(fileBytes)} — ${capacity.detail}.`,
+    },
+  };
 }
 
 /** Which drawn vendors on a lane can be operated for a role, by drawn name. */

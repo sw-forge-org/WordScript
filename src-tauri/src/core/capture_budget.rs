@@ -94,6 +94,80 @@ impl CaptureBudget {
     }
 }
 
+/// Whether one provider accepts a file of a known size (B7, ADR 0129).
+///
+/// **The capture ceiling asked in the other direction.** Everything above turns
+/// a limit into *how long may a recording be*; a file that already exists asks
+/// *which of these vendors will take this many bytes*, and the answer decides
+/// whether an option on the picker is offered or greyed.
+///
+/// Four answers rather than a bool, and each one is a different sentence on the
+/// surface. `Unbounded` and `Unknown` are the pair that must not be folded
+/// together: a lane that uploads nothing genuinely accepts any file, and a
+/// vendor this build has no adapter for accepts nothing because there is no
+/// path to it at all. Reporting the second as the first is how a picker offers
+/// a routing that cannot run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum UploadCapacity {
+    /// No adapter, or no speech role on the one there is. The runtime has no
+    /// limit to state because it has no path to the vendor.
+    Unknown,
+    /// Nothing on this lane is bound by request size — the local runtime reads
+    /// the file where it lies, and a self-hosted endpoint is the user's own.
+    Unbounded,
+    /// Bounded by request size, and the file is inside it.
+    Fits {
+        max_bytes: u64,
+        /// Seconds of WordScript's own export that fit, so a surface can say
+        /// what the ceiling means in recording time rather than only in bytes.
+        max_seconds: u64,
+    },
+    /// Bounded, and the file is past it. **The audio is never rerouted for
+    /// this** (ADR 0129): the option greys, the reason is stated, and the
+    /// vendor that would work is offered beside it.
+    TooLarge {
+        max_bytes: u64,
+        max_seconds: u64,
+        /// The vendor's own phrasing of what binds — "the 25 MiB upload size on
+        /// your free plan" — carried rather than reconstructed, so the sentence
+        /// on the picker is the sentence the settings row already uses.
+        detail: String,
+    },
+}
+
+/// Whether `provider` accepts `bytes` under `model` and `tier_id`.
+///
+/// **A lane bound by decode time is `Unbounded` here and that is correct rather
+/// than a gap.** `realtime_factor` bounds how long a recording may be, not how
+/// large a file may be, and the local lane decodes a file it never sends. A
+/// ceiling borrowed from the other shape of limit would grey an option for a
+/// reason that does not apply to it.
+pub fn upload_capacity(provider: &str, model: &str, tier_id: &str, bytes: u64) -> UploadCapacity {
+    let Some(limits) = providers::capture_limits_if_known(provider, model, tier_id) else {
+        return UploadCapacity::Unknown;
+    };
+
+    let Some(max_bytes) = limits.max_audio_bytes else {
+        return UploadCapacity::Unbounded;
+    };
+
+    let max_seconds = CaptureBudget::seconds_for_upload_limit(max_bytes);
+
+    if bytes <= max_bytes {
+        UploadCapacity::Fits {
+            max_bytes,
+            max_seconds,
+        }
+    } else {
+        UploadCapacity::TooLarge {
+            max_bytes,
+            max_seconds,
+            detail: limits.detail,
+        }
+    }
+}
+
 /// Headroom between the auto-stop and the ceiling.
 ///
 /// The ceiling is exact arithmetic on an estimate: the capture monitor checks
@@ -431,6 +505,104 @@ mod tests {
         // The 720 s default fits under it and is therefore untouched.
         assert_eq!(budget.auto_stop_seconds, 720);
         assert!(!budget.auto_stop_clamped);
+    }
+
+    // ── The ceiling asked in the other direction (B7, ADR 0129) ──────────────
+
+    const MIB: u64 = 1024 * 1024;
+
+    #[test]
+    fn a_file_inside_the_plan_fits_and_says_what_the_ceiling_is() {
+        let capacity = upload_capacity("groq", "whisper-large-v3", "", 20 * MIB);
+        match capacity {
+            UploadCapacity::Fits {
+                max_bytes,
+                max_seconds,
+            } => {
+                assert_eq!(max_bytes, 25 * MIB);
+                // The same 819 s the forward direction reports for this plan.
+                assert_eq!(max_seconds, 819);
+            }
+            other => panic!("20 MiB is inside the free plan, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_file_past_the_plan_is_refused_and_carries_the_vendors_own_reason() {
+        let capacity = upload_capacity("groq", "whisper-large-v3", "", 40 * MIB);
+        match capacity {
+            UploadCapacity::TooLarge {
+                max_bytes, detail, ..
+            } => {
+                assert_eq!(max_bytes, 25 * MIB);
+                // Not reconstructed here: the picker states what the settings
+                // row already states, or the two drift into two sentences for
+                // one fact.
+                assert!(
+                    detail.contains("25 MiB"),
+                    "the reason must name the limit, got {detail:?}"
+                );
+            }
+            other => panic!("40 MiB is past the free plan, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_boundary_is_inclusive_because_the_vendor_accepts_it() {
+        // `groq.rs` refuses at `> GROQ_FREE_TIER_MAX_AUDIO_BYTES`, so a file of
+        // exactly the limit is sent and accepted. A picker that greyed it here
+        // would refuse an upload the runtime would have made.
+        assert!(matches!(
+            upload_capacity("groq", "whisper-large-v3", "", 25 * MIB),
+            UploadCapacity::Fits { .. }
+        ));
+        assert!(matches!(
+            upload_capacity("groq", "whisper-large-v3", "", 25 * MIB + 1),
+            UploadCapacity::TooLarge { .. }
+        ));
+    }
+
+    #[test]
+    fn a_paid_plan_moves_the_answer_rather_than_the_question() {
+        let free = upload_capacity("groq", "whisper-large-v3", "", 40 * MIB);
+        let dev = upload_capacity(
+            "groq",
+            "whisper-large-v3",
+            crate::core::providers::groq::GROQ_DEV_TIER_ID,
+            40 * MIB,
+        );
+        assert!(matches!(free, UploadCapacity::TooLarge { .. }));
+        assert!(
+            matches!(dev, UploadCapacity::Fits { .. }),
+            "the developer plan takes 40 MiB, got {dev:?}"
+        );
+    }
+
+    #[test]
+    fn a_lane_bound_by_decode_time_has_no_upload_ceiling() {
+        // The local runtime reads the file where it lies. `realtime_factor`
+        // bounds how LONG a recording may be, and borrowing it as a size limit
+        // would grey an option for a reason that does not apply to it.
+        assert_eq!(
+            upload_capacity("local", "base", "", 4_000 * MIB),
+            UploadCapacity::Unbounded
+        );
+    }
+
+    #[test]
+    fn a_vendor_with_no_adapter_is_unknown_rather_than_unbounded() {
+        // THE CONFLATION THIS ENUM EXISTS FOR. `capture_limits` answers
+        // `unbounded()` here and is right to — the budget wants a number. Asked
+        // in this direction that same answer would tell the user their file
+        // fits a vendor there is no path to at all.
+        assert_eq!(
+            upload_capacity("some-future-provider", "any", "", 1),
+            UploadCapacity::Unknown
+        );
+        assert_ne!(
+            upload_capacity("some-future-provider", "any", "", 1),
+            UploadCapacity::Unbounded
+        );
     }
 
     #[test]

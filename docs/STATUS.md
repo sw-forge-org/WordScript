@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-14
+Status: 2026-08-15
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -127,7 +127,10 @@ Status: 2026-08-14
   Every one carries its reason. **The per-job PROVIDER override left this list
   on 2026-08-12** (B6, ADR 0128) and the model override did not — the provider
   a job runs on is stored and writable, what model it runs there is still
-  drawing. **A vendor with no adapter stays on the list deliberately**: it is
+  drawing. **And since 2026-08-15 that same override is settable where a job
+  starts** (B7, ADR 0129), not only on the settings screen: the import intake
+  and the translation window each state the resolved provider and model as a
+  sentence and carry the whole ladder behind a collapsed disclosure. **A vendor with no adapter stays on the list deliberately**: it is
   offered, disabled and carries its reason, because an inherited drawing is the
   inventory of what the product still owes.
   **Four things left that list on 2026-08-10.**
@@ -203,9 +206,15 @@ Status: 2026-08-14
 - the capability seam between the drawing and the runtime (ADR 0106 and
   ADR 0124, 2026-08-12): `AI Models` asks the runtime whether a drawn row can be
   operated instead of reading the hand-maintained `PROVIDERS` table for it, and
-  **a row that cannot says which of four things stopped it** — no adapter
-  exists, the lane denies that role, the role has no credential, or the answer
-  came back incomplete. `registered_providers()` answers for the whole registry
+  **a row that cannot says which of five things stopped it** — no adapter
+  exists, the lane denies that role, the role has no credential, the answer came
+  back incomplete, or (since 2026-08-15, B7) **the file is past what that vendor
+  accepts in one request**. The last is the only one that depends on what is
+  being sent rather than on the vendor, so it is answered at the point of use by
+  `resolve_upload_capacity` and never by a settings table; it outranks a missing
+  credential, because a key can be added and a file will not get smaller
+  (ADR 0157), and a vendor that cannot take the file is greyed with its reason
+  rather than routed around. `registered_providers()` answers for the whole registry
   in one call and reads no credential, so **a vendor's absence from that list is
   how *no adapter* is stated**; the alternative was ten `provider_status` calls
   and ten secret-store reads for a screen that merely opened. The drawn table

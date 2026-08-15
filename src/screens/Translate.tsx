@@ -37,6 +37,7 @@ import {
   TranslateWindow,
   ViewTop,
 } from "@/components/shell";
+import { JobProviderPicker } from "@/components/jobProvider";
 
 /**
  * TRANSLATION — `SCREENS.translate`, a wide preview.
@@ -386,6 +387,19 @@ export function TranslateScreen() {
             />
           </CardRows>
         </Card>
+      </SectionHeader>
+
+      {/* WHERE THE JOB RUNS, STATED ON THE SURFACE THAT STARTS IT (ADR 0131).
+          The general rule is that every surface starting a job names where it
+          runs; this window is one of the two that exist today, so it is one of
+          the two B7 does. It is the `translate` JobKey and therefore the model
+          provider — a different axis from the route per language (ADR 0064) and
+          from the voice below, which is a role no adapter serves yet. */}
+      <SectionHeader
+        title="Where the translation runs"
+        description="A translation is a model output. The window that produces it names the model, rather than sending you to a settings screen to find out what it just used."
+      >
+        <JobProviderPicker jobKey="translate" cap="llm" summary="Translation model" />
       </SectionHeader>
 
       <Note icon="about">

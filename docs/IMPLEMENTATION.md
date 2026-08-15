@@ -1,6 +1,6 @@
 # WordScript — the implementation board
 
-Status: 2026-08-14
+Status: 2026-08-15
 
 **This page answers one question: what is being built right now, by whom, and
 where does its sequence live.** It is the entry point for a session that is
@@ -32,7 +32,7 @@ updated; a kick-off is spent when its unit closes.
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 14 open**; Legs 0–13b closed. Leg 13 split 2026-08-14 and both halves closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
-| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 11 of ~26 steps done, and the first adapter has landed | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Speech** | 2026-08-11 | **Stage A closed, Stage B running**; 12 of ~26 steps done, and the provider choice now stands where a job starts | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
@@ -116,7 +116,7 @@ the sequence carry it and the closing-phrase artifact found beside it.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -126,13 +126,34 @@ account and is not updated by later work.
 
 Done: A1–A6 (the runtime contract), B1 (the capability seam), B3 (the model
 catalogue), C3 (the soak night, which returned zero), **D1 (OpenAI — the first
-adapter, and the connection that can now be chosen)**, and **B6 (what it means
-to wire a drawing inherited from the demo GUI)**.
+adapter, and the connection that can now be chosen)**, **B6 (what it means to
+wire a drawing inherited from the demo GUI)**, and **B7 (the provider choice at
+the point of use)**.
 
-Next unblocked: **B2**, **B4**, **B5**, **B7**, **E1**, **D3** — whose
-`Requires` line has read D1 and A3 since it was written, both now done — and
-**D1a**, which since B6 spent its drawing half is the adapter alone and the
-cheapest step in Stage D.
+Next unblocked: **B2**, **B4**, **B5**, **E1**, **D3** — whose `Requires` line
+has read D1 and A3 since it was written, both now done — and **D1a**, which
+since B6 spent its drawing half is the adapter alone and the cheapest step in
+Stage D.
+
+**B7 landed 2026-08-15 and the reusable half is the part to know about.** The
+job ladder — lane, vendor, credential, model — was `Models.tsx`' internals and
+is now `src/components/jobProvider.tsx`, because three surfaces render it rather
+than one. **The extraction measured zero on `port:diff`**, proven by putting the
+removed `upload` override back and landing on `structural 9 | style 217 | text
+12` exactly; the movement that screen does show is that override and nothing
+else (ADR 0129). The runtime gained `resolve_upload_capacity` — *which
+`(provider, model, tier)` accepts N bytes*, the capture ceiling asked backwards
+— and a sixth `InertReason` kind that **outranks a missing credential**, because
+a key can be added and a file will not get smaller (ADR 0157). Whoever draws a
+control a non-streaming lane cannot operate reuses that mechanism rather than
+inventing a second, which ADR 0131 already required.
+
+**One finding is for any track, not just this one.** An addition placed
+mid-screen on a ported drawing renumbers every section after it: the translation
+window's picker measured `187 | 80 | 33` where the information architecture
+wants it, with **not one of the 187 a fidelity loss**. At the end of the screen
+the same component measures `63 | 0 | 9`. An addition goes last unless the
+drawing itself is being revised.
 
 **C1 was on that list until 2026-08-14 and came off it, on a measurement rather
 than on a dependency.** It rewrites `core::capture`, which the Runtime ownership
@@ -204,7 +225,8 @@ that leg filed first, as **0156 did on 2026-08-15**. "Onward as they come" is a
 direction of travel, not a reservation, and the number line is corrected here by
 whoever notices — 0155 landed in `be74233` and stood on neither this board nor
 its own track's page until the owner asked for it on 2026-08-15; **the seventh
-record is on the track page now**, and 0157 is the next free number.
+record is on the track page now**. 0157 went to the speech track on
+2026-08-15 with B7, so **0158 is the next free number**.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port
 swept the event channel and found `wordscript-native-insert` emitted from three

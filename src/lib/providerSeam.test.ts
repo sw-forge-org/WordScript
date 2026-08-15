@@ -7,7 +7,9 @@ import {
   NO_ANSWERS,
   operableProviderNames,
   PROVIDER_CAPABILITY_FIELDS,
+  formatUploadSize,
   resolveProviderAnswer,
+  resolveUploadAnswer,
   roleForDrawnCapability,
   RUNTIME_IDS,
   runtimeIdFor,
@@ -356,5 +358,109 @@ describe("what the surface asks", () => {
        forbids that — it declines to answer a runtime question from it. */
     const noAdapter = { registered: [registered()], statuses: {} };
     expect(connectionCapabilitySentence("xAI", noAdapter)).toContain("no adapter");
+  });
+});
+
+/**
+ * THE SIZE CONSTRAINT (B7, ADR 0129).
+ *
+ * The other four `InertReason` kinds answer about a vendor; this one answers
+ * about a vendor AND the file, which is why it cannot be known until there is
+ * one — and why the choice moved to the point of use at all.
+ */
+describe("the upload size constraint", () => {
+  const answers = {
+    registered: [registered()],
+    statuses: { groq: status() },
+  };
+
+  const tooLarge = {
+    kind: "too_large" as const,
+    max_bytes: 25 * 1024 * 1024,
+    max_seconds: 819,
+    detail: "the 25 MiB upload size on your free plan",
+  };
+
+  it("greys a vendor too small for this file and names both numbers", () => {
+    const answer = resolveUploadAnswer("Groq", "speech", answers, 40 * 1024 * 1024, tooLarge);
+    expect(answer.operable).toBe(false);
+    if (answer.operable) throw new Error("unreachable");
+    expect(answer.reason.kind).toBe("upload_too_large");
+    /* Both sizes, because one of them alone leaves the reader doing the
+       comparison the surface already did. */
+    expect(answer.reason.sentence).toContain("25 MiB");
+    expect(answer.reason.sentence).toContain("40 MiB");
+    expect(answer.reason.sentence).toContain("free plan");
+  });
+
+  it("lets a file that fits through untouched", () => {
+    const fits = { kind: "fits" as const, max_bytes: 25 * 1024 * 1024, max_seconds: 819 };
+    expect(resolveUploadAnswer("Groq", "speech", answers, 20 * 1024 * 1024, fits).operable).toBe(
+      true,
+    );
+  });
+
+  it("claims nothing before there is a file", () => {
+    /* A surface that greyed every vendor while waiting for an answer would be
+       inventing a constraint out of its own latency. */
+    expect(resolveUploadAnswer("Groq", "speech", answers, null, undefined).operable).toBe(true);
+  });
+
+  it("keeps a harder answer rather than replacing it with the size", () => {
+    /* A vendor with no adapter cannot take the file for a reason that has
+       nothing to do with how big it is, and saying "too large" there would
+       send the fix in the wrong direction. */
+    const answer = resolveUploadAnswer("Mistral", "speech", answers, 40 * 1024 * 1024, tooLarge);
+    expect(answer.operable).toBe(false);
+    if (answer.operable) throw new Error("unreachable");
+    expect(answer.reason.kind).toBe("no_adapter");
+  });
+
+  it("outranks a missing credential, because no key makes the file smaller", () => {
+    const missingKey = {
+      registered: [registered()],
+      statuses: {
+        groq: status({
+          role_credentials: [
+            {
+              provider: "groq",
+              role: "speech" as const,
+              kind: "api_key" as const,
+              configured: false,
+              storage: "os_secret_store",
+              key_preview: null,
+              missing: "an API key",
+            },
+          ],
+        }),
+      },
+    };
+
+    /* Without the file it is the credential that is worth saying. */
+    const withoutFile = resolveUploadAnswer("Groq", "speech", missingKey, null, undefined);
+    expect(withoutFile.operable).toBe(false);
+    if (withoutFile.operable) throw new Error("unreachable");
+    expect(withoutFile.reason.kind).toBe("no_credential");
+
+    /* With it, the harder constraint is the one the user is told about.  */
+    const withFile = resolveUploadAnswer(
+      "Groq",
+      "speech",
+      missingKey,
+      40 * 1024 * 1024,
+      tooLarge,
+    );
+    expect(withFile.operable).toBe(false);
+    if (withFile.operable) throw new Error("unreachable");
+    expect(withFile.reason.kind).toBe("upload_too_large");
+  });
+
+  it("states a size in the units the vendors document theirs in", () => {
+    /* MiB, because that is what `docs/PROVIDERS.md`, `groq.rs` and `openai.rs`
+       all say. "26.2 MB" against a runtime saying "25 MiB" is two numbers for
+       one limit. */
+    expect(formatUploadSize(25 * 1024 * 1024)).toBe("25 MiB");
+    expect(formatUploadSize(1.5 * 1024 * 1024)).toBe("1.5 MiB");
+    expect(formatUploadSize(400 * 1024)).toBe("400 KiB");
   });
 });

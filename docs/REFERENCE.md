@@ -187,7 +187,13 @@ constants themselves were not re-derived and carry their own provenance
 - **A row that cannot be operated says which of four things stopped it**: no
   adapter exists, the lane denies that role, the role has no credential, or the
   runtime's answer was incomplete. A fifth state -- the read has not come back
-  -- claims nothing and leaves the surface's existing reason standing. One
+  -- claims nothing and leaves the surface's existing reason standing. **A sixth
+  arrived with B7** (ADR 0129, ADR 0157, 2026-08-15): the file is past what this
+  vendor accepts in one request. It is the only one that depends on what is
+  being sent rather than on the vendor, so it is answered by
+  `resolve_upload_capacity` at the point of use and never by a settings table --
+  and it **outranks a missing credential**, because a key can be added and a
+  file will not get smaller. One
   greyed control with one hint conflated the first three, which is the defect
   ADR 0106 recorded.
 - **Groq's recognition path takes a language as a hint, not as a question.**

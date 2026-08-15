@@ -268,7 +268,22 @@ export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, La
     jobs: {
       dictation: offered("Cloud", "dictation"),
       meetings: offered("Cloud", "meetings"),
-      upload: { ...offered("Cloud", "upload"), override: "OpenAI" },
+      /* THE OVERRIDE IS GONE, AND THIS IS WHERE ADR 0128'S OPEN PARAGRAPH WAS
+         ANSWERED (ADR 0129, B7). It read `override: "OpenAI"` since Leg 6 — a
+         drawn default nothing backed: `docs/PROVIDERS.md` records a file
+         ceiling for Groq and none for OpenAI, no source claims OpenAI
+         transcribes an upload better, and only `whisper-1` accepts the
+         `verbose_json` this row needs most (ADR 0126). It also cost a second
+         credential on a fresh install for a job that would otherwise run.
+
+         The answer was not a better default. **The question moved to where it
+         can be answered** — the intake, with the file in hand and its size
+         known — so the row here follows the connection like every other job,
+         and the picker at the point of use is what decides. Two overridden
+         jobs remain, `translate` and `assistant`, and both name a vendor with
+         no adapter at all: under ADR 0128's second rule those literals stay as
+         the record of an intent, and they are a G3 question. */
+      upload: offered("Cloud", "upload"),
       cleanup: offered("Cloud", "cleanup"),
       rewrite: offered("Cloud", "rewrite"),
       translate: { ...offered("Cloud", "translate"), override: "Anthropic" },

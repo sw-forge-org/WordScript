@@ -1181,6 +1181,26 @@ Status: Proposed | Accepted | Superseded by NNNN
   was corrected and calibrated — the third time a measurement tool here has
   produced the class of finding it was built to detect.
 
+- [0157](0157-the-size-outranks-a-missing-key-and-the-ladder-stops-being-one-screens-internals.md):
+  **the size outranks a missing key, and the ladder stops being one screen's
+  internals.** Five rules that came out of building B7, none of which ADR 0129
+  or ADR 0131 answers. The sixth `InertReason` kind sits **above a missing
+  credential and below everything else** — ADR 0106 normally prefers the
+  credential sentence because it is one action from working, but no key makes a
+  file smaller. `capture_limits` folds *this lane is unbounded* into *this build
+  cannot answer* and is right to for the capture budget; `capture_limits_if_known`
+  keeps them apart for the picker, which is the missing-field-is-not-a-false rule
+  one axis over. The job ladder moved out of `Models.tsx` because three surfaces
+  render it, on the line *what configures a lane* against *what states where one
+  job runs* — **and the move measured zero on `port:diff`**, proven by reverting
+  the removed override and landing on the baseline exactly. The drawn drop zone
+  gained a real file picker reading `size` and nothing else, because a size
+  constraint with no file is a guard nobody can ever watch work. **And an
+  addition to a ported screen goes last**: placed mid-screen where the
+  information architecture wants it, the translation window's picker renumbered
+  every following section and measured `187 | 80 | 33` with not one of the 187 a
+  fidelity loss; at the end it measures `63 | 0 | 9`, its own node count.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

@@ -195,10 +195,13 @@ describe("AI Models", () => {
   it("marks an overridden job and names where it went, and leaves the rest default", () => {
     const { container } = render(<ModelsScreen />);
     const overridden = container.querySelectorAll(".ws-jobmodel[data-override]");
-    /* Cloud overrides exactly three of eight: upload, translate and the
-       assistant. Every other job says `default`, which is the one fact the list
-       exists for. */
-    expect(overridden).toHaveLength(3);
+    /* TWO OF EIGHT SINCE B7, AND THE THIRD LEAVING IS THE POINT (ADR 0129).
+       `upload` carried a drawn `override: "OpenAI"` that nothing backed, and it
+       is gone rather than corrected: the question it answered badly — which
+       vendor takes this file — moved to the intake, where the file's size is
+       known. What is left is `translate` and `assistant`, both naming a vendor
+       with no adapter, which under ADR 0128 stay as the record of an intent. */
+    expect(overridden).toHaveLength(2);
     /* Eight jobs carry the suffix. The desk's voice is `mark: null` — off the
        connection's axis entirely — so it gets neither a mark nor `default`,
        which would be claiming it follows something. */
@@ -506,6 +509,39 @@ describe("Context · intake", () => {
       screen.getByText(/“Write a note” is gone/),
     ).toBeInTheDocument();
   });
+
+  /* B7, ADR 0129: the import way names where it is about to send the audio,
+     before the gesture that sends it, and carries the whole ladder behind a
+     collapsed disclosure rather than a button to another screen. */
+  it("names where the upload runs, above the drop zone rather than after it", () => {
+    const { container } = render(<ContextIntakeScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+
+    const resolved = screen.getByText(/Using Groq/);
+    expect(resolved).toBeInTheDocument();
+
+    /* ABOVE, not merely present. A surface that states where a long and
+       irreversible operation is going AFTER the control that starts it has
+       stated it too late. `compareDocumentPosition` rather than a snapshot,
+       because the assertion is the order and nothing else. */
+    const zone = container.querySelector(".ws-dropzone")!;
+    expect(
+      resolved.compareDocumentPosition(zone) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("puts the full ladder behind a collapsed disclosure, not a trip to settings", () => {
+    const { container } = render(<ContextIntakeScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+
+    const disclosure = container.querySelector("details.ws-disc")!;
+    expect(disclosure).not.toBeNull();
+    /* Collapsed: most uploads take the connection, and the ladder is for the
+       person who needs to change it. */
+    expect(disclosure.hasAttribute("open")).toBe(false);
+    expect(within(disclosure as HTMLElement).getByLabelText("Provider")).toBeInTheDocument();
+    expect(within(disclosure as HTMLElement).getByLabelText("Model")).toBeInTheDocument();
+  });
 });
 
 describe("Meeting capture", () => {
@@ -657,6 +693,25 @@ describe("Translation", () => {
     expect(screen.getAllByRole("button", { name: "Silent" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Out loud", pressed: true })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "In your ear", pressed: true })).toBeInTheDocument();
+  });
+
+  /* B7, ADR 0131: every surface that starts a job names where it runs. This
+     window is the second of the two that exist today. */
+  it("names the model that translates rather than sending the reader to settings", () => {
+    const { container } = render(<TranslateScreen />);
+    expect(screen.getByText(/Using Anthropic/)).toBeInTheDocument();
+
+    const disclosure = container.querySelector("details.ws-disc")!;
+    expect(disclosure).not.toBeNull();
+    expect(within(disclosure as HTMLElement).getByLabelText("Provider")).toBeInTheDocument();
+  });
+
+  it("leaves the voice row alone, because a voice is a role nothing serves yet", () => {
+    /* ADR 0119 gives the spoken translation its own two rows and F1 builds
+       them. B7 owns the MODEL provider — a different axis — so the voice row
+       keeps its door rather than being quietly absorbed into this picker. */
+    render(<TranslateScreen />);
+    expect(screen.getByRole("button", { name: "Open AI Models" })).toBeInTheDocument();
   });
 });
 

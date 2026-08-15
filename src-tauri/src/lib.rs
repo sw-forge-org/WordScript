@@ -2517,6 +2517,62 @@ fn resolve_provider_tiers(provider: String) -> Vec<core::providers::ProviderTier
     core::providers::provider_tiers(&provider)
 }
 
+/// One vendor a picker is about to offer, and the model it would run.
+///
+/// Both halves, for the reason `capture_limits` takes both (ADR 0110): the
+/// answer is a property of the pair. A caller that knows only the vendor sends
+/// an empty model and gets that vendor's answer for its default.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct UploadCandidate {
+    provider: String,
+    #[serde(default)]
+    model: String,
+}
+
+/// What one candidate answers about a file of a known size.
+#[derive(Debug, Clone, serde::Serialize)]
+struct ProviderUploadCapacity {
+    provider: String,
+    capacity: core::capture_budget::UploadCapacity,
+}
+
+/// Which of these vendors accepts a file of `bytes` (B7, ADR 0129, ADR 0131).
+///
+/// **The one question a settings table cannot answer**, and the reason the
+/// provider choice moved to the point of use: the file's size is the fact that
+/// decides it, and it is not known until there is a file.
+///
+/// **The plan is read here rather than passed in.** It is `provider_tier` on
+/// the config, the same value `resolve_capture_budget` spends, so a picker
+/// cannot answer against a plan the pipeline is not on. Each provider
+/// interprets the id itself and falls back to its own default for one it does
+/// not know, which is what makes one stored plan safe to ask every vendor with.
+///
+/// **It answers per candidate and never picks one.** A vendor that cannot take
+/// the file is reported as such; choosing the one that can is the user's, and
+/// rerouting audio to a vendor nobody picked is a data decision wearing the
+/// costume of a convenience (ADR 0129).
+#[tauri::command]
+fn resolve_upload_capacity(
+    bytes: u64,
+    candidates: Vec<UploadCandidate>,
+) -> Vec<ProviderUploadCapacity> {
+    let tier = core::config::AppConfig::load_from_disk().provider_tier;
+
+    candidates
+        .into_iter()
+        .map(|candidate| ProviderUploadCapacity {
+            capacity: core::capture_budget::upload_capacity(
+                &candidate.provider,
+                &candidate.model,
+                &tier,
+                bytes,
+            ),
+            provider: candidate.provider,
+        })
+        .collect()
+}
+
 /// Show (and focus) the settings window, optionally at a specific control.
 ///
 /// `target` is a semantic anchor for a control (`capture.auto_stop`), not an
@@ -2920,6 +2976,7 @@ pub fn run() {
             core::config::switch_active_text_profile,
             resolve_capture_budget,
             resolve_provider_tiers,
+            resolve_upload_capacity,
             open_settings_window,
             open_rebuild_lab_window,
             overlay_monitor_options,

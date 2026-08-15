@@ -646,6 +646,34 @@ since B6; this is that value drawn a second time. `resolveConfigJobProvider`
 stays the one door, which is the rule A4 wrote when it refused to let call sites
 reach into the map.
 
+**B7, as it landed 2026-08-15.** Four things the step decided that this entry
+did not, all of them in [ADR 0157](../decisions/0157-the-size-outranks-a-missing-key-and-the-ladder-stops-being-one-screens-internals.md):
+
+- **The ladder was extracted rather than copied.** `Follows`, the two contexts
+  and the `Drawn*` wrappers moved to `src/components/jobProvider.tsx`; the
+  connection card, the lane segment and the model library stayed on `AI Models`.
+  The line is *what configures a lane* against *what states where one job runs*.
+  **The move measured zero on `port:diff`**, proven by reverting the override
+  and re-measuring back to `9 | 217 | 12` exactly.
+- **The size beats a missing credential.** ADR 0106 usually prefers the
+  credential sentence — one action from working — but no key makes a file
+  smaller, so the constraint that cannot be fixed is the one stated. It still
+  yields to no-adapter, role-denied, not-answered and pending.
+- **`Unbounded` and `Unknown` are two answers.** `capture_limits` folds them and
+  is right to for the budget; `capture_limits_if_known` keeps them apart for the
+  picker, or a vendor with no adapter reads as one that accepts anything.
+- **The drop zone gained a real file picker**, reading `size` and nothing else.
+  Without it the guard could never fire. Reading, sending and producing an
+  object is the context object track's C2 and was not built here.
+
+**And one placement finding worth carrying to the next step that adds to a
+ported screen.** The translation window's picker was first placed where the
+information architecture wants it, mid-screen, which renumbered every section
+after it: `port:diff` went `0 | 0 | 9` → `187 | 80 | 33` with **not one of the
+187 a fidelity loss**. Moved to the end of the screen it measures `63 | 0 | 9`,
+63 being exactly the nodes it adds. An addition to a ported screen goes last
+unless the drawing itself is being revised.
+
 **It closes open disagreements 6 and 12**, both of which live on the `upload`
 row: 12 dissolves with the override, and 6 shrinks to which model upload takes
 on the connection.
@@ -1344,7 +1372,7 @@ Speaking row, so it is flagged rather than assumed.
 | B1 | **done** 2026-08-12 — `registered_providers()` answers for the whole table in one call, `src/lib/providerSeam.ts` is the third thing ADR 0106 named, five states rather than three, the two tests that record required both exist and both were made to fail before they were trusted (ADR 0124). +3 Rust tests, +25 frontend across 2 new files, `port:diff` unmoved at `structural 6 \| style 213 \| text 12` |
 | D1 | **done** 2026-08-12 — `core/providers/openai.rs` plus one registry line, on a transport and a credential store extracted from `groq.rs` in the same commit (ADR 0113, ADR 0126). `verbose_json` turned out to be `whisper-1`-only on this vendor, so the response format is per model and `ModelCapabilities` is non-vacuous for the first time. **The connection became writable** (ADR 0127) — the chip row, the credential row and every job row read one stored answer, so *a second lane can be operated* is a fact rather than a registry entry. +17 Rust tests, +3 frontend, `port:diff` **unmoved** at `structural 6 \| style 213 \| text 12`, no dependency moved |
 | B6 | **done** 2026-08-12 — added the same day on the owner's instruction. The override reads the config in the product and the drawn literal in the gallery, so `port:diff` is unmoved at `structural 6 \| style 213 \| text 12` for that half; the `stt` correction moves it to `structural 9 \| style 217 \| text 12` and that movement **is** the correction. The literal `Set` badge is gone, an unbuilt vendor is offered and disabled with its reason, and the provider select escapes its own inert reason. +6 frontend cases in `Models.test.tsx`, +3 in `providerSeam.test.ts`, all nine made to fail first. `PROVIDERS.md` disagreements 10, 11 and 13 closed |
-| B7 | **not started** — added 2026-08-13 (ADR 0129); the picker at the point of use, on B6 only. Closes disagreements 6 and 12 and answers the paragraph ADR 0128 left open. **ADR 0135 gave its form for the surfaces that run longer than one request**: a sentence in the chrome, a collapsed ladder behind it, effective from the next turn, and a per-line provider on the record. The upload intake is the degenerate case — one request, so no next turn |
+| B7 | **done** 2026-08-15 — the picker at the point of use, on both surfaces that exist. `src/components/jobProvider.tsx` is the ladder extracted out of `Models.tsx` (ADR 0055's one-implementation rule, not a second copy), and **the extraction moved `port:diff` by zero**, proven by putting the removed override back and re-measuring. `resolve_upload_capacity` answers which `(provider, model, tier)` accepts N bytes; `capture_limits_if_known` keeps *this lane is unbounded* apart from *this build cannot answer*, which is ADR 0106's missing-field rule one axis over; and the sixth `InertReason` kind **outranks a missing credential and yields to every other reason** — a key can be added and a file will not get smaller (ADR 0157). `DropZone` gained `onFile` because a size constraint with no file is a guard nobody can ever watch work. **+6 Rust, +14 frontend across 3 files**, every one made to fail before it was trusted. `port:diff`: `models` 9\|217\|12 → 26\|242\|19 (the override alone), `translate` 0\|0\|9 → 63\|0\|9 (its own 63 nodes and nothing shifted), `contextintake` unmoved — the picker sits behind the `Import` way. Disagreements 6 and 12 closed. **ADR 0135's form for surfaces that run longer than one request is owed by the surfaces that do not exist yet**; the upload intake is the degenerate case it names — one request, so no next turn |
 | C4 | **not started** — added 2026-08-13 (ADR 0130), corrected the same day (ADR 0131), extended 2026-08-14 (ADR 0135). The capture half is C1. What is real: the default lane cannot stream, nothing records a context window, and diarization is a third requirement. Two of its "open questions" were withdrawn — the prototype had already answered them. **The fourth `InertReason` kind now has two callers** (`Live transcript`, and `Never` retention), and the copilot is **two** consumers — an embedding per turn plus a model call on a hit — of which the first has no axis |
 | D3 | **not started, and not blocked** — its `Requires` line reads D1 and A3, both done. The graph below draws a `B2` line into its column that no `Requires` line supports; the line is decorative and the `Requires` is the contract |
 | C1–C2 | **not started, and deliberately not next** — no dependency blocks C1, but `core::capture` is under measurement until runtime-ownership step 6 has read one natural `Short` capture. The reason and its cost are on C1 itself; C2 requires C1 and inherits the wait |

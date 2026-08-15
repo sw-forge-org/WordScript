@@ -1009,6 +1009,11 @@ corrected sentences turned out to have counterparts in the drawing. A wrong
 sentence in a survey is an edit; the same sentence on a surface is a
 disagreement, because the gallery owns it (ADR 0057).
 
+**Three are closed as of 2026-08-15, all three by code.** Number 5 went with
+the catalogue (stage B3); **6 and 12 went with B7** (ADR 0129, ADR 0157), which
+removed the `upload` override rather than correcting it — 12 dissolved with the
+row it lived on, and 6 became a catalogue lookup. Nine remain open.
+
 **And to twelve on 2026-08-12, while one closed.** Stage B3 built the catalogue
 ADR 0115 specified, which closed number 5 the way the preamble demands -- by the
 drawing and the runtime agreeing, in code. The same step opened number 12,
@@ -1075,11 +1080,19 @@ and ADR 0109's rule points the same way.
    test walks `src/` to prove no file outside the catalogue spells a catalogued
    id. **This is the one disagreement on this list closed by code**, which is
    the bar the preamble sets for all of them.
-6. **Scheduled 2026-08-13 as B7's** (ADR 0129), together with 12 — both live on
-   the `upload` row and the override is what carries them. Removing it dissolves
-   12 and reduces this one to *which model does upload take on the connection*,
-   which the catalogue answers. **Not closed until the code lands.** The
-   original entry follows.
+6. ~~**`Cloud.upload` draws a per-job provider override to OpenAI.**~~
+   **Closed 2026-08-15 by B7** (ADR 0129, ADR 0157), which is the bar this
+   preamble sets: the drawing and the runtime agreeing, in code. The override is
+   removed from `data.ts`, so the row follows the connection like the other
+   five, and *which model does upload take* is the catalogue's answer for
+   `lanes.Cloud.upload` rather than a literal beside a vendor name. **The
+   question it answered badly did not disappear — it moved to where it can be
+   answered**: the import intake asks the runtime which vendors accept this many
+   bytes, with the file in hand. `screens.test.tsx` asserts two overridden jobs
+   where it asserted three, and `port:diff` on `models` moves from
+   `structural 9 | style 217 | text 12` to `26 | 242 | 19` — that movement is
+   this closure and was proven to have no other cause. The original entry
+   follows.
 
    **`Cloud.upload` already draws a per-job provider override to OpenAI**, and
    the model it defaults to is `whisper-1` -- the one OpenAI documents as
@@ -1142,6 +1155,14 @@ and ADR 0109's rule points the same way.
 12. **Scheduled 2026-08-13 as B7's** (ADR 0129), with 6. It dissolves rather
     than being corrected: there is no override to be inconsistent with once the
     picker moves to the point of upload. The original entry follows.
+
+    ~~**`Cloud.upload` offers a Groq model id under its OpenAI override.**~~
+    **Closed 2026-08-15 by B7** (ADR 0129), and it dissolved rather than being
+    decided: the override is gone, so `whisper-large-v3` is no longer a Groq id
+    sitting under an OpenAI vendor — it is a Groq id on a row that follows a
+    Groq connection, which is what the catalogue said all along. Neither of the
+    two bad options this entry named was taken: nothing was dropped from the
+    drawing and nothing was catalogued twice. The original entry follows.
 
     **`Cloud.upload` offers a Groq model id under its OpenAI override.** Added
     2026-08-12; **found by the catalogue rather than by a reading**, which is

@@ -464,11 +464,31 @@ pub fn provider_tiers(provider: &str) -> Vec<ProviderTier> {
 /// The dispatch every other provider capability already uses. The capture
 /// budget calls this and knows nothing about any particular lane.
 pub fn capture_limits(provider: &str, model: &str, tier_id: &str) -> ProviderCaptureLimits {
+    capture_limits_if_known(provider, model, tier_id)
+        .unwrap_or_else(ProviderCaptureLimits::unbounded)
+}
+
+/// The same question, with the two answers `capture_limits` folds together kept
+/// apart (B7).
+///
+/// `capture_limits` returns `unbounded()` both for a lane that declares no limit
+/// and for a provider this build has never heard of, and for its caller that is
+/// right: the capture budget wants a number and the configured maximum is the
+/// honest one in either case. **Asked in the other direction it is not right.**
+/// *This lane is not bound by request size* and *this build cannot answer for
+/// that vendor* are different sentences to put under a greyed option, and
+/// collapsing them would tell a user their file fits a provider nothing here
+/// knows anything about — the missing-field-is-not-a-false rule (ADR 0106) one
+/// axis over.
+pub fn capture_limits_if_known(
+    provider: &str,
+    model: &str,
+    tier_id: &str,
+) -> Option<ProviderCaptureLimits> {
     registry::resolve_entry(provider)
         .ok()
         .and_then(|entry| entry.speech)
         .map(|speech| speech.capture_limits(model, tier_id))
-        .unwrap_or_else(ProviderCaptureLimits::unbounded)
 }
 
 /// What a model does on this provider (ADR 0110).
