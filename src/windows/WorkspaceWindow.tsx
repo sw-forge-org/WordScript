@@ -15,7 +15,11 @@ import {
   WindowShell,
 } from "@/components/shell";
 import { runtimeDefault } from "@/lib/modelCatalogue";
-import { drawnNameFor, SELF_HOSTED_PROVIDER_ID } from "@/lib/providerSeam";
+import {
+  DEFAULT_PROVIDER_ID,
+  drawnNameFor,
+  SELF_HOSTED_PROVIDER_ID,
+} from "@/lib/providerSeam";
 import { useColorScheme, type ColorScheme } from "@/hooks/useColorScheme";
 import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useNavRail } from "@/hooks/useNavRail";
@@ -32,6 +36,7 @@ import {
   type SettingsAnchor,
 } from "@/lib/settingsAnchors";
 import type { WorkspaceRuntime } from "@/screens/props";
+import type { ProviderCommandError, ProviderStatus } from "@/types/providers";
 import { SettingsSheet } from "./workspace/SettingsSheet";
 import { HelpMenu } from "./workspace/HelpMenu";
 import { CommandPalette } from "./workspace/palette";
@@ -118,17 +123,38 @@ export default function WorkspaceWindow() {
   /* The recogniser's vendor. This block decides whether the workspace reads
      ready to dictate, so it is `dictation`'s job on the provider axis and not a
      machine-wide field (ADR 0094) — a profile that cleans up locally does not
-     make the listening lane local. */
+     make the listening lane local.
+
+     **ONE DERIVATION, AND IT IS THE STORED ID** (D1c). This was two: a
+     `selectedProvider` here that collapsed every cloud vendor onto `groq`
+     because `ProviderId` had two arms, and a `connectionProvider` further down
+     that read the id properly for the strip's own sentence. So the strip named
+     the connection and the chip beside it asked the runtime about a different
+     one — two copies of *which vendor is this*, the defect ADR 0123 is about,
+     with the copies visibly disagreeing on one line of the window. The union is
+     gone; there is nothing left to collapse onto and nothing to keep in step. */
   const providerSource = form ?? state.config;
-  const selectedProvider =
-    providerSource && resolveJobProvider(resolveActiveTextProfile(providerSource), "dictation")
-      .provider === "local"
-      ? "local"
-      : "groq";
-  const selectedLocalModel =
-    selectedProvider === "local"
+  const connectionProvider = providerSource
+    ? resolveJobProvider(resolveActiveTextProfile(providerSource), "dictation").provider
+    : DEFAULT_PROVIDER_ID;
+  /* The drawn name, for the sentences below. A registered id always has one —
+     `providerSeam.test.ts` holds that direction — so the fallback is reachable
+     only for an id the runtime has already refused, which the error branch
+     answers before any sentence here is read. */
+  const connectionName = drawnNameFor(connectionProvider) ?? "Groq";
+  /* THE MODEL THE STATUS IS ASKED ABOUT FOLLOWS THE CONNECTION TOO, and for the
+     same reason the strip's fact does: `form.model` is the CLOUD model field,
+     and asking about it over a lane that is sent `self_hosted_model` is the
+     wrong id one field over from the wrong vendor. It answers
+     `model_capabilities`, which nothing on this window reads yet — so this is
+     the half of the defect that was latent rather than visible, fixed in the
+     same derivation rather than left for the surface that first reads it. */
+  const selectedModel =
+    connectionProvider === "local"
       ? form?.local_model ?? state.config?.local_model ?? "base"
-      : null;
+      : connectionProvider === SELF_HOSTED_PROVIDER_ID
+        ? form?.self_hosted_model ?? state.config?.self_hosted_model ?? null
+        : form?.model ?? state.config?.model ?? null;
   /* The last fallback is the runtime's own default, read from the catalogue
      rather than spelled here (ADR 0115): a config that has never been written
      names no model, and a second copy of what `core::config` falls back to is a
@@ -136,14 +162,19 @@ export default function WorkspaceWindow() {
      whisper.cpp file stem that `core::providers::local` resolves to
      `ggml-{stem}.bin`, not a vendor's model id. */
   const selectedCleanupModel =
-    selectedProvider === "local"
+    connectionProvider === "local"
       ? form?.local_correction_model ?? state.config?.local_correction_model ?? runtimeDefault("local_correction")
       : form?.correction_model ?? state.config?.correction_model ?? runtimeDefault("correction");
-  const { status: providerStatus } = useProvider(selectedProvider, selectedLocalModel, selectedCleanupModel);
-  const providerReady =
-    selectedProvider === "local"
-      ? providerStatus?.local_setup?.readiness === "ready"
-      : providerStatus?.credential.configured;
+  /* **AND IT ASKS NOBODY UNTIL IT KNOWS WHO TO ASK** — found by rendering this
+     window, not by the suite. `connectionProvider` falls back to the default so
+     the sentences below have a name, and passing that name to the hook meant a
+     `groq` keyring read on every launch whose answer was discarded the moment
+     the config arrived. `null` is the seam's `pending` in one argument. */
+  const { status: providerStatus, lastError: providerError } = useProvider(
+    providerSource ? connectionProvider : null,
+    selectedModel,
+    selectedCleanupModel,
+  );
 
   /* Deep links from outside this window — today the overlay's auto-stop tab,
      which states a number and then offers the control that sets it.
@@ -262,24 +293,7 @@ export default function WorkspaceWindow() {
         ? state.paused
           ? { tone: "warning" as const, label: "Paused", title: "Recording is paused." }
           : { tone: "accent" as const, label: "Recording", title: "Recording is active." }
-        : providerReady
-          ? {
-              tone: "success" as const,
-              label: "Ready",
-              title:
-                selectedProvider === "local"
-                  ? providerStatus?.local_setup?.guidance ?? "The local lane is configured."
-                  : "The Groq key is present and the native runtime is configured.",
-            }
-          : {
-              tone: "warning" as const,
-              label: selectedProvider === "local" ? "Needs local setup" : "Needs key",
-              title:
-                selectedProvider === "local"
-                  ? providerStatus?.local_setup?.guidance ??
-                    "Configure whisper-cli, a local STT model and a local cleanup model."
-                  : "Add a Groq key before transcription can run.",
-            };
+        : connectionReadiness(connectionProvider, connectionName, providerStatus, providerError);
 
   if (!form) {
     return (
@@ -341,21 +355,17 @@ export default function WorkspaceWindow() {
      have read it too, over `form.model`, which is the CLOUD model field and not
      the id that server is sent.
 
-     **It reads the STORED id rather than `selectedProvider` above**, which
-     collapses every cloud vendor onto `groq` because `useProvider` and the
-     credential chip beside it still take the two-valued `ProviderId` D1 left.
-     Widening that is the credential chip's own question and not this strip's;
-     what this strip owes is the name of the connection, and it has it. */
-  const connectionProvider = resolveJobProvider(
-    resolveActiveTextProfile(providerSource ?? form),
-    "dictation",
-  ).provider;
+     **`connectionProvider` is derived once, at the top of this component**
+     (D1c). It was derived twice: here for this fact, and as `selectedProvider`
+     above for the chip, which folded every cloud vendor onto `groq`. Two
+     derivations of one fact, side by side on one line, disagreeing — the strip
+     naming OpenAI while the chip beside it reported the Groq key. */
   const lane =
     connectionProvider === "local"
       ? `Local runtime · ${form.local_model} · preview`
       : connectionProvider === SELF_HOSTED_PROVIDER_ID
         ? `Your server · ${form.self_hosted_model || "no model id"}`
-        : `${drawnNameFor(connectionProvider) ?? "Groq"} cloud · ${form.model}`;
+        : `${connectionName} cloud · ${form.model}`;
   const work = activeProfile.work_mode;
   const target = work?.insert_behavior === "clipboard_only" ? "Clipboard only" : "Insert at cursor";
   const mode = work?.processing_mode ?? "auto";
@@ -484,4 +494,117 @@ export default function WorkspaceWindow() {
       )}
     </WindowShell>
   );
+}
+
+/**
+ * WHETHER THIS MACHINE CAN DICTATE, AND WHAT TO DO IF IT CANNOT (D1c).
+ *
+ * **Five answers where there were two**, and the two were `local` and *everyone
+ * else is Groq missing a key*. On the one line of the window that is never
+ * scrolled away, an OpenAI connection read `Needs key` about a Groq key it does
+ * not use, a `Your server` connection with no URL typed read the same, and a
+ * runtime that had not answered yet read it too — a warning asserted out of
+ * this window's own latency.
+ *
+ * The order is the argument:
+ *
+ * 1. **A refusal is the runtime's sentence, not a guess at what it meant.** An
+ *    id no adapter claims comes back from `registry::resolve_entry` saying so,
+ *    and that sentence names the connection the reader has to change. Reading
+ *    it as *missing key* would send them to a credential row for a vendor that
+ *    has no row.
+ * 2. **Nothing read yet claims nothing** — `providerSeam`'s `pending` rule at
+ *    the one place that had never heard of it. The runtime may refine this
+ *    answer; it may not be pre-empted by a warning.
+ * 3. **`local` is a disk, not a credential**, which it always was.
+ * 4. **The SPEECH role answers, not the folded `credential` block** (ADR 0105).
+ *    The question this strip asks is *can I dictate*, and the fold is
+ *    conservative across every role the vendor serves — on a vendor whose chat
+ *    key is missing and whose speech key is not, the fold says no to a machine
+ *    that can dictate perfectly well.
+ * 5. **What is missing is the runtime's word for it where the runtime has one.**
+ *    `Your server` is the lane that proves this is not pedantry: nothing is
+ *    missing there that a key would fix — it is a URL, or a model id, and
+ *    `LaneConfiguration::missing` already says which in a sentence written for
+ *    a reader. A second copy of that reasoning here would be a fourth surface
+ *    deriving this lane's state for itself, which is exactly what D1b's
+ *    `self_hosted_endpoint` block exists to prevent.
+ */
+function connectionReadiness(
+  provider: string,
+  connectionName: string,
+  status: ProviderStatus | null,
+  error: ProviderCommandError | null,
+) {
+  if (error) {
+    return { tone: "warning" as const, label: "Needs attention", title: error.message };
+  }
+
+  if (!status) {
+    return {
+      tone: "neutral" as const,
+      label: "Checking",
+      title: "Reading this connection's state from the runtime.",
+    };
+  }
+
+  if (provider === "local") {
+    return status.local_setup?.readiness === "ready"
+      ? {
+          tone: "success" as const,
+          label: "Ready",
+          title: status.local_setup?.guidance ?? "The local lane is configured.",
+        }
+      : {
+          tone: "warning" as const,
+          label: "Needs local setup",
+          title:
+            status.local_setup?.guidance ??
+            "Configure whisper-cli, a local STT model and a local cleanup model.",
+        };
+  }
+
+  const speech = status.role_credentials?.find((row) => row.role === "speech");
+
+  /* The runtime answered and did not say what it holds for the role that
+     dictates. `providerSeam`'s `not_answered`, in the same words and for the
+     same reason: reading an absent field as `false` is a surface silently
+     claiming a state nobody measured. */
+  if (!speech) {
+    return {
+      tone: "neutral" as const,
+      label: "Not read",
+      title: `The runtime answered for ${connectionName} without saying what it holds for speech recognition.`,
+    };
+  }
+
+  if (provider === SELF_HOSTED_PROVIDER_ID) {
+    const endpoint = status.self_hosted_endpoint;
+    return speech.configured
+      ? {
+          tone: "success" as const,
+          label: "Ready",
+          /* What it will do, not that it works: nothing here has asked the
+             server anything, and `Reachability` on the connection card is the
+             control that does — deliberately on demand (D1b). */
+          title: `Dictations go to ${endpoint?.base_url ?? "your server"} as ${endpoint?.model ?? "the model id on the connection"}.`,
+        }
+      : {
+          tone: "warning" as const,
+          label: "Needs your server",
+          title: speech.missing ?? "Configure the server on this connection.",
+        };
+  }
+
+  return speech.configured
+    ? {
+        tone: "success" as const,
+        label: "Ready",
+        title: `The ${connectionName} key is present and the native runtime is configured.`,
+      }
+    : {
+        tone: "warning" as const,
+        label: "Needs key",
+        title: `Add the ${connectionName} key before transcription can run.`,
+      };
 }

@@ -53,6 +53,20 @@ import type {
  */
 export const SELF_HOSTED_PROVIDER_ID = "self_hosted";
 
+/**
+ * The id a config that names nothing resolves to. Mirrors
+ * `core::providers::DEFAULT_PROVIDER_ID`.
+ *
+ * **A default, not a fallback for a value that failed to resolve.** The runtime
+ * reads an empty provider as this one, because a config that has never been
+ * written names nothing and refusing it would make a fresh install inert
+ * (`registry::resolve_entry`); an id that IS written and is not in the registry
+ * gets an error there and a sentence here, and must never be quietly replaced
+ * by this constant. That substitution is what the two-valued `ProviderId` did
+ * to every cloud vendor until D1c.
+ */
+export const DEFAULT_PROVIDER_ID = "groq";
+
 export const RUNTIME_IDS: Record<string, string> = {
   Groq: "groq",
   OpenAI: "openai",

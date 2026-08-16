@@ -1,5 +1,22 @@
-export type ProviderId = "groq" | "local";
-
+/**
+ * THERE IS NO `ProviderId` UNION HERE, AND ITS ABSENCE IS THE POINT (D1c).
+ *
+ * `ProviderId = "groq" | "local"` stood at the top of this file until D1c — the
+ * frontend half of the closed enum dispatch `core::providers::registry`
+ * replaced (ADR 0094), kept alive by one hook's parameter for four adapters
+ * longer than the runtime had it. **Every other id on this side is already a
+ * `string`**: `ProviderStatus.provider`, `RegisteredProvider.provider`,
+ * `resolveJobProvider().provider` and `laneForProviderId()` all are, because a
+ * registry that grows a row must not need a type edit to be asked about.
+ *
+ * What a union bought was a compile-time check that a caller names a provider
+ * this build has. What it cost was the opposite of that check: a caller holding
+ * `openai` had to *narrow* to something in the union, and the narrowing that
+ * was written folded every cloud vendor onto `groq` — a credential chip
+ * reporting the Groq key over an OpenAI connection. The runtime already answers
+ * *this id has no adapter* (`registry::resolve_entry`), and that answer is a
+ * sentence a surface can show; a `never` from `tsc` is not.
+ */
 export type ProviderErrorKind =
   | "missing_api_key"
   | "secret_store_unavailable"

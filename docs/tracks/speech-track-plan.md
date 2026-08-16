@@ -107,6 +107,9 @@ reporting an unmoved number as if it were coverage.
 **After D1b: `cargo test` 870 passed / 6 ignored (+6), frontend 627 across 45
 files (+10), `cargo check` still 15, and `port:diff` unmoved — `models`
 `26 | 248 | 20`, `models#1` `262 | 30 | 16`, re-measured rather than quoted.**
+**After D1c the same evening: frontend 637 across 45 files (+10 cases in the
+same file count), no Rust touched and therefore no cargo number re-measured,
+and `port:diff` unmoved on four ids including both onboarding states.**
 The frontend baseline this step started from is **617**, not D1a's 613: the four
 between them are the Context objects track's privacy commit (`4c9fa5a`,
 ADR 0138) and are named here so the next step does not read them as speech
@@ -1308,6 +1311,67 @@ The harness walks the screens named on its command line, so a step that reports
 the bare run as evidence has reported a green light for free. The numbers here
 were taken as `node scripts/gallery-port-diff.mjs models 'models#1'`.
 
+### D1c. The chip beside the strip asks about the same connection (ADR 0166) — **added and done 2026-08-16**
+
+**It is D1b's last paragraph made a step, which is what D1b was to D1a.** That
+record fixed the status strip's own sentence and named what it left: *the
+credential chip beside that strip is still two-valued — `ProviderId` is
+`"groq" | "local"` and `useProvider` takes it, which is D1's leftover and the
+GUI port's surface.*
+
+- **Requires** — D1b (the connection this side reads), A4. **Not gated on an
+  owner decision.**
+- **Touches** — `src/types/providers.ts` (the union, deleted),
+  `src/lib/providerSeam.ts` (`DEFAULT_PROVIDER_ID`, mirroring the runtime's),
+  `src/hooks/useProvider.ts` (a `string`, and `null` for *do not ask yet*),
+  `src/windows/WorkspaceWindow.tsx` (one derivation for the strip and the chip,
+  five readiness answers), plus `src/screens/Onboarding.tsx` for the three
+  sentences on it that are false today. **No Rust file moves** — `provider_status`
+  has taken a string since ADR 0094.
+- **Validates** — `npm test` and `npm run build`; a case per decision, each
+  proven by breaking what it guards; `port:diff` on `onboarding`, `onboarding#2`,
+  `models` and `models#1`, which **cannot move and must not be reported as
+  coverage** — the harness measures the AI Models step on lane `Cloud`, and every
+  row this step touches is a segment click away from where it looks. **And a read
+  of the rendered window**, which is where the last six defects on this surface
+  came from.
+- **Done when** — a machine on OpenAI reads `OpenAI cloud` beside a chip that
+  asked OpenAI, a machine on `Your server` with nothing typed is told to type a
+  URL rather than to add a key, and a machine whose config names a vendor with no
+  adapter reads the runtime's own refusal.
+
+**As it landed, and the type is the part to know about.** The union bought a
+compile-time check that a caller names a provider this build has. What it cost
+was the opposite: a caller holding `openai` had to narrow to something in the
+union, and the narrowing that was written folded every cloud vendor onto `groq`.
+**The runtime already answers the question the union was pretending to** —
+`registry::resolve_entry` refuses an unknown id with a sentence that names the
+connection, and a sentence is worth more on a surface than a `never` from `tsc`.
+
+**The suite could not have caught the last two, and the mock is why.**
+`useProvider` was mocked as `() => ({ status: { credential: { configured: true } } })`
+— a constant. *Who was asked* was not a question any case could put, so the chip
+and the strip disagreed for two adapters with every test passing. **A mock that
+ignores its arguments cannot hold a claim about arguments**, and making it a
+function of the provider is what turned the rendered finding into a case.
+
+**Two defects came out of rendering the window with the suite already green**,
+which is the seventh and eighth on this surface: `Needs key` printed while the
+read was still outstanding, and a `groq` keyring read on every launch whose
+answer was discarded when the config arrived. The second was invisible in the
+strip — the window renders *Connecting to runtime…* until the config lands, so
+nothing wrong was ever on screen — and visible only in what the stub had been
+asked.
+
+**Onboarding.tsx is reached for the first time, and only where it was false.**
+Three records in a row named it as deliberately unreached (ADR 0163, 0164, 0165)
+and the file went on saying *A chat endpoint does not transcribe* about a lane
+D1a had registered `speech: Some, chat: None`. The fields on that step still
+store nowhere and still should: ADR 0060 decided the flow's lifecycle and left it
+to Phase 6, and says what holds until then. **When it is wired, the rows to
+render are `Models.tsx`'s**, through the `useWired` split that file already has —
+the same move this flow's Local branch already makes with `ModelList`.
+
 ### D2. The streaming contract (ADR 0095)
 
 - **Requires** — D1, C1.
@@ -1746,6 +1810,7 @@ Speaking row, so it is flagged rather than assumed.
 | B12 | **done** 2026-08-16 — added 2026-08-15 out of the owner's *what next*. **The tab installs models for a lane that cannot be selected**: B5 closed ADR 0042's gate and `STATUS.md` lists `local` under implemented features, while `Models.tsx` still disables it. **Not a bug** — ADR 0067 rule 1 makes an offered-but-unfinished lane inoperable on purpose. What is wrong is that **the lock is silent about itself**: no reason, no statement of what this machine already has. **No Rust** — `local_setup` carries the readiness and `useLocalSetup` (B9) already reads it. The distinction it must not blur: *not published* is a product decision, *not ready* is a fact about this disk, and a machine with everything installed is the first case and not the second. **Releasing the lane is a gate, not this step** — that reverses ADR 0067 and needs Phase 5 whole. **As it landed (ADR 0163): two rows, not one**, because `Local` is built-and-withheld while `Your server` and `Enterprise` have no adapter, and one row would have said the same nothing about both. The product's half is a constant with one owner; the disk's half is composed from `runner_ready`, `model_ready` and `chat_ready` forwards and backwards — `Ready` / `2 of 3 ready` / `Not read`. **Wired-only, so `port:diff` is unmoved by construction** (`models` 26 \| 248 \| 20, `models#1` 262 \| 30 \| 16, measured against `git show HEAD:` back to back) and the grown state is held by tests, which is B8's known cost. `local_setup` moved up to `ModelsScreen` and both tabs share one read, because the probe spawns `whisper-cli --help` — two hooks would be the cost ADR 0124 refused at ten. **+6 frontend** (608 total), each proven by five mutations before it was trusted. **And the finding for any track**: ADR 0161's `Preview` tag on the lane row is conditioned on a lane other than `Cloud` being selected, which the lock forbids — so it renders only in the gallery. A marker whose only reachable state is one the product never enters is a marker the product does not have |
 | D1a | **done** 2026-08-16 — added 2026-08-11 (ADR 0113), landed as ADR 0164. `core/providers/openrouter.rs` and `core/providers/self_hosted.rs`, both **speech only** and both a base URL on D1's helper — the record's claim, spent and held: neither file contains a transport. **The adapters were the cheap half.** OpenRouter is the first entry to register fewer roles than its drawn row claims, and the seam derived *the lane denies the role* from a capability the registry ties to `entry.chat.is_some()` — so it would have printed *"OpenRouter does not do chat completion"* about a vendor documenting `/chat/completions`. `no_adapter` is answerable per role now, from the drawn `stt`/`llm` boolean against the block. **Two more things it broke and fixed**: `every_registered_vendor_carries_a_row_for_every_role_it_serves` looped `[Speech, Chat]` against its own name and now asks `ProviderEntry::roles()`; and B12's *"neither has an adapter yet"* went half false overnight, so `LockedLanes` is one row per reason with `Your server` reading **adapter built, nowhere to type the endpoint** — the lock is untouched and its reversal is still ADR 0067's own commit. `isSecureEndpoint` existed **nowhere in the tree** and is ported from the donor whole, dotted-quad parser included, because `starts_with("10.")` admits `10.example.com`. The self-hosted lane catalogues nothing, substitutes no default model, bounds no upload and stores no credential — four deliberate absences, each one a place a guess would have read as a measurement. **+26 Rust (864 / 6 ignored) and +5 frontend (613), every case proven by breaking what it guards**; `cargo check` 15; `port:diff` unmoved on both ids and `ALL EXACT` elsewhere — **and unmoved because unreachable**: the gallery opens on `Cloud`, so the corrected Self-hosted rows are never measured, which is B8's cost again |
 | D1b | **done** 2026-08-16 — added the same day out of D1a's own last paragraph, landed as ADR 0165. The lane D1a adapted gets somewhere to type its endpoint: `AppConfig::self_hosted_base_url` and `self_hosted_model` typed on the connection card, the optional bearer token in the OS secret store under `self_hosted.speech.api_key`, and the three environment variables demoted to the fallback for a machine nobody has typed on — **what is typed outranks them**, which is the reverse of ADR 0122's precedence and is deliberate: a field that stores a value the runtime ignores is the false affordance ADR 0067 rule 1 exists to prevent. **The registry invariant is what had to give.** `requires_api_key == credential_kinds.contains(ApiKey)` held only while every lane answered *may* and *must* the same way; `whisper-server` issues no token and speaches and LocalAI may, so the equality becomes an implication plus a behavioural claim — a lane accepting no kind must refuse to store one. **ADR 0067 rule 1 is then reversed for this lane on its own terms** and `LockedLanes` drops the row whose reason is spent rather than rewording it. Three smaller things travel: the lane downgrades a `verbose_json` request to `json`, because it claims no segments and a server that does not know the spelling answers 400 to the whole dictation; `capture.rs` gains the branch that stops a catalogued CLOUD model id being sent to somebody's own server, and it is the only line of that file this step moves; and the screen derives its lane from the stored connection instead of holding lane state, because a machine on its own server that opened `AI Models` on `Cloud` would describe a connection the runtime is not using. **+6 Rust (870 / 6 ignored) and +10 frontend (627 across 45 files), every one made to fail first**; `cargo check` 15; `port:diff` unmoved at `models` 26 \| 248 \| 20 and `models#1` 262 \| 30 \| 16 — **and unmoved because unreachable**, which is B8's cost again (ADR 0159). **Two false sentences were found by rendering the workspace after the suite was green**: the screen's banner still counted three drawn lanes, and the status strip said `Groq cloud` for every non-local connection — wrong for OpenAI since D1 and wrong for this lane now |
+| D1c | **done** 2026-08-16 — added the same day out of D1b's own last paragraph, landed as ADR 0166. **The other half of the line D1b half-fixed**: that step made the status strip name the connection and left the credential chip beside it asking `groq` about every cloud vendor, because `ProviderId = "groq" | "local"` is the frontend remnant of the dispatch ADR 0094 replaced and **a caller cannot narrow to a union with no arm for the value it holds**. The union is deleted rather than widened — every other id on this side is a `string` already — the window derives the connection once for both, and the readiness sentence reads **the speech role rather than the folded credential block** (ADR 0105), with what is missing taken from the runtime's own sentence, which is what makes `Your server` come out right with no special case. **Two more defects were found by rendering the window after the suite was green** (the seventh and eighth on this surface): an outstanding read printed `Needs key` out of the window's own latency, and every launch spent a keyring read on the default before the config had said who the connection was — `null` now means *do not ask yet*. **The mock was the reason the suite could not see either**: `useProvider` was mocked as a constant, so *who was asked* was not a question any case could put. Also the first commit to reach `Onboarding.tsx`, and only where it was false: its Self-hosted step claimed the lane cannot transcribe, which D1a inverted, and the two rows ADR 0163 named now declare themselves. +10 frontend cases (637 across 45 files) — seven on the workspace window, three on the onboarding flow — each made to fail first across twelve mutations; no Rust moved. `port:diff` `onboarding` `0 | 0 | 0`, `onboarding#2` `0 | 0 | 0`, `models` `26 | 248 | 20`, `models#1` `262 | 30 | 16` — **all four unmoved, and the two onboarding numbers unmoved because the harness measures that step on lane `Cloud` while every row this step touches sits behind a lane segment it never clicks** |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |

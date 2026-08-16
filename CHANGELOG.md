@@ -53,6 +53,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the readiness chip reports the connection you are actually on (ADR 0166)
+
+- **`Needs key` no longer means the Groq key when you are not on Groq.** The
+  chip at the bottom edge of every view asked the runtime about Groq for every
+  cloud connection — so a machine on OpenAI was told about a key it does not
+  use, and a machine on `Your server`, which needs no key at all, was told to
+  add one.
+- **`Your server` is told what it is actually missing.** A URL, or the model id
+  to send — in the runtime's own words, naming the row on the connection card
+  where you fix it, rather than pointing at a credential that would not have
+  helped.
+- **A connection this build has no adapter for says so.** If the stored
+  connection names a vendor WordScript cannot run, the chip carries the
+  runtime's refusal instead of implying a missing key.
+- **Nothing is claimed while the answer is still on its way.** The chip read
+  `Needs key` for the moment between opening a window and the runtime replying;
+  it now says `Checking` until there is something to report.
+- **One fewer secret-store read per window.** Every workspace launch asked about
+  Groq before the config had said what the connection was, and threw the answer
+  away.
+- **Onboarding stops saying your own server cannot transcribe.** The setup
+  flow's `Your server` step had it backwards: that lane does the listening, and
+  it is the writing jobs that need another connection. Its `Local` step also
+  stated a bundled model server, a CPU-only verdict and 32 GB of RAM as facts
+  about your machine — nothing reads any of the three, and each now says on the
+  row that it is a drawing.
+
 ### Added — Your server has somewhere to type its endpoint, and can be chosen (ADR 0165)
 
 - **Type the URL of your own server on the screen that offers it.**

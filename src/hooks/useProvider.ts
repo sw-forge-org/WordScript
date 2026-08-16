@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_PROVIDER_ID } from "@/lib/providerSeam";
 import type {
   ProviderCommandError,
   ProviderErrorAction,
   ProviderCredentialStatus,
-  ProviderId,
   ProviderStatus,
   ValidateProviderApiKeyResponse,
 } from "../types/providers";
@@ -41,8 +41,29 @@ export function providerErrorActionLabel(action: ProviderErrorAction) {
   }
 }
 
+/**
+ * One vendor's status, asked by the id the config actually holds (D1c).
+ *
+ * **The parameter was `ProviderId = "groq" | "local"` for four adapters longer
+ * than the runtime had a closed set**, and a caller cannot narrow to a union
+ * that has no arm for the value it holds — so `WorkspaceWindow` folded every
+ * cloud vendor onto `groq` and the credential chip reported the wrong vendor's
+ * key. `string` is what `provider_status` takes; an id no adapter claims comes
+ * back as a `ProviderCommandError` on `lastError`, which is an answer to show
+ * rather than a type error to prevent.
+ *
+ * **`null` MEANS DO NOT ASK YET, and it is not the same as the default.** Found
+ * by rendering the window: every workspace launch read the secret store for
+ * `groq` before the config had arrived, because the caller had to name someone
+ * and the default is the only name available before there is a config to read
+ * one from. That answer was then thrown away when the real connection resolved
+ * — a keyring read per window for a vendor this machine may not use, which is
+ * the cost ADR 0124 refused at ten and is no more justified at one. A caller
+ * that does not yet know who to ask says so, and gets the `pending` state
+ * rather than a stale vendor's answer.
+ */
 export function useProvider(
-  providerId: ProviderId = "groq",
+  providerId: string | null = DEFAULT_PROVIDER_ID,
   model?: string | null,
   correctionModel?: string | null,
 ) {
@@ -53,6 +74,7 @@ export function useProvider(
   const [lastValidation, setLastValidation] = useState<ValidateProviderApiKeyResponse | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!providerId) return null;
     setIsLoading(true);
     try {
       const next = await invoke<ProviderStatus>("provider_status", {
@@ -75,7 +97,13 @@ export function useProvider(
     }
   }, [correctionModel, model, providerId]);
 
+  /* THE THREE CREDENTIAL DOORS TAKE THE SAME GUARD. A `null` provider is *no
+     connection resolved yet*, and `resolve_entry` reads an empty provider as
+     the default — so an unguarded save would write somebody's key to `groq`
+     because the config had not loaded. Nothing calls these with `null` today;
+     the guard is what keeps that true. */
   const saveApiKey = useCallback(async (apiKey: string) => {
+    if (!providerId) return null;
     setIsLoading(true);
     try {
       const credential = await invoke<ProviderCredentialStatus>("save_provider_api_key", {
@@ -96,6 +124,7 @@ export function useProvider(
   }, [providerId, refresh]);
 
   const clearApiKey = useCallback(async () => {
+    if (!providerId) return null;
     setIsLoading(true);
     try {
       const credential = await invoke<ProviderCredentialStatus>("clear_provider_api_key", {
@@ -116,6 +145,7 @@ export function useProvider(
   }, [providerId, refresh]);
 
   const validateApiKey = useCallback(async (apiKey?: string) => {
+    if (!providerId) return null;
     setIsLoading(true);
     try {
       const validation = await invoke<ValidateProviderApiKeyResponse>("validate_provider_api_key", {

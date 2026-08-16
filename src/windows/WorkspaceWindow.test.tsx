@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WorkspaceWindow from "./WorkspaceWindow";
 import { createAppConfig } from "../test/factories";
 
@@ -10,13 +10,22 @@ const CONFIG = createAppConfig();
    because one thing this window reads out of the config is the colour scheme,
    and asserting that it is adopted needs a config that does not already agree
    with the default. Reset in `afterEach`. */
-let runtimeConfig = CONFIG;
+let runtimeConfig: typeof CONFIG | null = CONFIG;
 
-const { invoke, saveConfig, listeners, openUrl } = vi.hoisted(() => ({
+const { invoke, saveConfig, listeners, openUrl, provider } = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(undefined),
   saveConfig: vi.fn(async (next: unknown) => next),
   listeners: new Map<string, (event: { payload: unknown }) => void>(),
   openUrl: vi.fn().mockResolvedValue(undefined),
+  /* WHAT THE PROVIDER SEAM ANSWERED, AND WHO IT WAS ASKED ABOUT (D1c).
+     `asked` is half the point: until this commit the mock was a constant, so
+     the case that the chip asks about the connection the strip names could not
+     be written — the two disagreed for two adapters and every test passed. */
+  provider: {
+    asked: [] as (string | null)[],
+    answers: new Map<string, unknown>(),
+    failure: null as unknown,
+  },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -33,15 +42,71 @@ vi.mock("../hooks/useRuntime", () => ({
   }),
 }));
 vi.mock("../hooks/useProvider", () => ({
-  useProvider: () => ({ status: { credential: { configured: true } } }),
+  useProvider: (providerId: string | null) => {
+    provider.asked.push(providerId);
+    return {
+      status: providerId ? provider.answers.get(providerId) ?? null : null,
+      lastError: provider.failure,
+    };
+  },
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+
+/** A config whose active profile dictates through one named vendor (ADR 0094). */
+function configOn(providerId: string, overrides: Parameters<typeof createAppConfig>[0] = {}) {
+  const config = createAppConfig(overrides);
+  const active = config.text_profiles.find(
+    (profile) => profile.id === config.active_text_profile_id,
+  )!;
+  active.providers = { default: providerId, overrides: {} };
+  return config;
+}
+
+/** A `provider_status` shaped like the runtime's, for one vendor and one role. */
+function providerStatus(
+  providerId: string,
+  role: Partial<{ configured: boolean; missing: string | null; kind: string | null }> = {},
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    provider: providerId,
+    default_profile: "fast",
+    credential: { provider: providerId, configured: true, storage: "os_secret_store", key_preview: null },
+    profiles: [],
+    capabilities: {},
+    model_capabilities: {},
+    role_credentials: [
+      {
+        provider: providerId,
+        role: "speech",
+        kind: "api_key",
+        configured: true,
+        storage: "os_secret_store",
+        key_preview: null,
+        missing: null,
+        ...role,
+      },
+    ],
+    local_setup: null,
+    self_hosted_endpoint: null,
+    ...extra,
+  };
+}
+
+/* The default answer is set before each case rather than after, so the first
+   one is not the only case running against an empty map. */
+beforeEach(() => {
+  provider.answers.set("groq", providerStatus("groq"));
+});
 
 afterEach(() => {
   cleanup();
   listeners.clear();
   vi.clearAllMocks();
   runtimeConfig = CONFIG;
+  provider.asked.length = 0;
+  provider.answers.clear();
+  provider.failure = null;
   document.documentElement.removeAttribute("data-theme");
 });
 
@@ -167,12 +232,7 @@ describe("WorkspaceWindow", () => {
    * the workspace and looking at it, which is the fifth time on this surface.
    */
   it("names the self-hosted connection rather than calling it Groq", async () => {
-    const config = createAppConfig({ self_hosted_model: "faster-whisper-medium" });
-    const active = config.text_profiles.find(
-      (profile) => profile.id === config.active_text_profile_id,
-    )!;
-    active.providers = { default: "self_hosted", overrides: {} };
-    runtimeConfig = config;
+    runtimeConfig = configOn("self_hosted", { self_hosted_model: "faster-whisper-medium" });
 
     const { container } = render(<WorkspaceWindow />);
     await waitFor(() =>
@@ -181,6 +241,136 @@ describe("WorkspaceWindow", () => {
       ),
     );
     expect(container.querySelector(".ws-win-foot")).not.toHaveTextContent("Groq cloud");
+  });
+
+  /**
+   * D1c — THE OTHER HALF OF THE SAME LINE, and D1b said so in its own record:
+   * the strip was made to name the connection while the chip beside it went on
+   * asking `groq` about every cloud vendor, because `ProviderId` had two arms
+   * and a caller holding `openai` had to narrow to one of them.
+   */
+  it("asks the runtime about the connection the strip names", async () => {
+    runtimeConfig = configOn("openai");
+    provider.answers.set("openai", providerStatus("openai"));
+
+    const { container } = render(<WorkspaceWindow />);
+    await waitFor(() => expect(provider.asked).toContain("openai"));
+    expect(provider.asked).not.toContain("groq");
+    expect(container.querySelector(".ws-win-foot")).toHaveTextContent("OpenAI cloud");
+  });
+
+  it("names the vendor whose key is missing rather than always naming Groq", async () => {
+    runtimeConfig = configOn("openai");
+    provider.answers.set(
+      "openai",
+      providerStatus("openai", { configured: false, missing: "API key for speech recognition" }),
+    );
+
+    const { container } = render(<WorkspaceWindow />);
+    const strip = container.querySelector(".ws-win-foot");
+    await waitFor(() => expect(strip).toHaveTextContent("Needs key"));
+    expect(strip).toHaveAttribute("title", "Add the OpenAI key before transcription can run.");
+  });
+
+  /**
+   * **NOTHING IS MISSING HERE THAT A KEY WOULD FIX**, which is the case that
+   * makes reading `RoleCredentialStatus.missing` a rule rather than a
+   * preference: this lane needs a URL and a model id, `LaneConfiguration`
+   * already says which in a sentence written for a reader, and `Needs key` sent
+   * that reader to a credential row that would not have helped.
+   */
+  it("states what the self-hosted lane is missing, in the runtime's own words", async () => {
+    runtimeConfig = configOn("self_hosted");
+    provider.answers.set(
+      "self_hosted",
+      providerStatus(
+        "self_hosted",
+        { configured: false, kind: null, missing: "No server is configured yet. Type the base URL." },
+        { self_hosted_endpoint: { base_url: null, base_url_source: "unset", base_url_problem: null, model: null, model_source: "unset" } },
+      ),
+    );
+
+    const { container } = render(<WorkspaceWindow />);
+    const strip = container.querySelector(".ws-win-foot");
+    await waitFor(() => expect(strip).toHaveTextContent("Needs your server"));
+    expect(strip).not.toHaveTextContent("Needs key");
+    expect(strip).toHaveAttribute("title", "No server is configured yet. Type the base URL.");
+  });
+
+  /**
+   * A config naming an id no adapter claims is refused by `resolve_entry` with
+   * a sentence that names the connection. Read as *missing key*, it sent the
+   * reader to a credential row for a vendor that has none.
+   */
+  it("shows the runtime's refusal for a connection it has no adapter for", async () => {
+    runtimeConfig = configOn("anthropic");
+    provider.failure = {
+      kind: "invalid_request",
+      message: "Provider 'anthropic' is not supported yet.",
+      status: null,
+      retry_after_seconds: null,
+      retryable: false,
+      user_action: "change_request",
+    };
+
+    const { container } = render(<WorkspaceWindow />);
+    const strip = container.querySelector(".ws-win-foot");
+    await waitFor(() => expect(strip).toHaveTextContent("Needs attention"));
+    expect(strip).not.toHaveTextContent("Needs key");
+    expect(strip).toHaveAttribute("title", "Provider 'anthropic' is not supported yet.");
+  });
+
+  /**
+   * `providerSeam`'s `pending` rule, at the one place that had never heard of
+   * it: an outstanding read is not a missing credential, and a warning printed
+   * out of this window's own latency is a claim nobody measured.
+   */
+  it("claims nothing while the runtime has not answered", () => {
+    provider.answers.clear();
+
+    const { container } = render(<WorkspaceWindow />);
+    const strip = container.querySelector(".ws-win-foot");
+    expect(strip).toHaveTextContent("Checking");
+    expect(strip).not.toHaveTextContent("Needs key");
+    expect(strip).not.toHaveTextContent("Ready");
+  });
+
+  /**
+   * **FOUND BY RENDERING THE WINDOW, WITH THIS FILE ALREADY GREEN.** The strip
+   * read correctly for all six connections and the stub had still been asked
+   * `groq` first every time: `connectionProvider` falls back to the default so
+   * the sentences have a name, and handing that name to the hook spends a
+   * keyring read on a vendor this machine may not use, whose answer is thrown
+   * away the moment the config lands. Seventh defect on this surface found by
+   * looking at it (ADR 0160-0165 hold the other six).
+   */
+  it("asks nobody until the config says who the connection is", () => {
+    runtimeConfig = null;
+
+    render(<WorkspaceWindow />);
+    expect(provider.asked).toEqual([null]);
+  });
+
+  it("still reads the local lane off the disk rather than off a credential", async () => {
+    runtimeConfig = configOn("local");
+    provider.answers.set(
+      "local",
+      providerStatus(
+        "local",
+        { kind: null },
+        {
+          local_setup: {
+            readiness: "setup_required",
+            guidance: "whisper-cli was not found on this machine.",
+          },
+        },
+      ),
+    );
+
+    const { container } = render(<WorkspaceWindow />);
+    const strip = container.querySelector(".ws-win-foot");
+    await waitFor(() => expect(strip).toHaveTextContent("Needs local setup"));
+    expect(strip).toHaveAttribute("title", "whisper-cli was not found on this machine.");
   });
 });
 

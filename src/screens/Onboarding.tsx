@@ -15,6 +15,7 @@ import {
   OnboardingRail,
   OnboardingStepHead,
   PreviewBanner,
+  PreviewTag,
   ProviderMark,
   Row,
   SectionHeader,
@@ -152,6 +153,23 @@ function Microphone() {
 }
 
 /**
+ * WHY A LANE IS NOT OFFERED, PER LANE, OR NOTHING WHERE IT IS (D1c).
+ *
+ * Two lanes can be operated as of D1b and carry no tag: `Cloud` since Leg 6 and
+ * `Your server` since ADR 0165 reversed ADR 0067 rule 1 over it. The other two
+ * are withheld for reasons that are not the same reason, and merging them is
+ * what ADR 0163 forbids — `Local` is finished in the runtime and held back by
+ * the product, `Enterprise` has no adapter at all. A tag that said *drawn, not
+ * built* over `Local` would be false about a lane whose runtime works.
+ */
+const LANE_NOT_OFFERED: Partial<Record<LaneName, string>> = {
+  Local:
+    "Built and withheld, not drawn. The runtime carries this lane and can install for it; what is withheld is OFFERING it, until ROADMAP Phase 5 has finished it.",
+  Enterprise:
+    "Drawn, not built. The rows show the shape this lane will have; WordScript has no adapter behind it yet.",
+};
+
+/**
  * THE STEP THIS FLOW WAS MISSING ENTIRELY. Setup asked for a provider in one
  * line and never mentioned that the same connection drives cleanup, translation
  * and the assistant — so the first surprise arrived later, in settings, as five
@@ -171,6 +189,17 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
         <CardRows>
           <Row
             label="Lane"
+            /* ADR 0161'S TAG, ON THE SCREEN ADR 0163 FOUND WITHOUT IT (D1c).
+               `AI Models` marks the lane it is sitting on when that lane is not
+               operable, and this flow renders the same segment and marked
+               nothing — so a reader who walked to step three and pressed
+               `Local` was shown a lane with no statement about it anywhere.
+
+               **The two withheld lanes are withheld for different reasons and
+               the tag says which**, rather than borrowing one sentence for
+               both: `AI Models` splits exactly this way (ADR 0163), because a
+               withheld row is only ever as true as the reason it names. */
+            tag={LANE_NOT_OFFERED[lane] && <PreviewTag title={LANE_NOT_OFFERED[lane]} />}
             hint="Cloud sends audio and text to a provider you hold a key for. Local keeps everything on this machine and needs a download."
             control={
               <InertSegment
@@ -287,10 +316,20 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
                   </span>
                 }
               />
+              {/* INVERTED, BECAUSE THE LANE WENT THE OTHER WAY (D1c).
+                  This row read *A chat endpoint does not transcribe.
+                  Recognition needs the Cloud or Local lane; the writing jobs
+                  use your server* — written when the lane was a drawing of a
+                  `/chat/completions` host. D1a registered it with
+                  `speech: Some, chat: None` and D1b gave it somewhere to type
+                  its endpoint, so both halves of that sentence are now the
+                  wrong way round: it listens, and it is the writing jobs that
+                  need another connection. The words are the seam's own for
+                  this exact shape (`connectionCapabilitySentence`). */}
               <Row
                 label="Speech"
-                hint="A chat endpoint does not transcribe. Recognition needs the Cloud or Local lane; the writing jobs use your server."
-                control={<StatusBadge tone="warning">Needs another lane</StatusBadge>}
+                hint="Your server does the listening — WordScript posts the audio to its transcription endpoint. Speech only: the writing jobs stay on whichever connection can write."
+                control={<StatusBadge tone="success">This lane</StatusBadge>}
               />
             </>
           )}
@@ -334,8 +373,22 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
             </Card>
             <Card>
               <CardRows>
+                {/* THE SECOND COPY ADR 0163 NAMED AND LEFT (D1c). ADR 0161
+                    marked these two claims on `AI Models`; the same two stood
+                    unmarked here, one step of a flow away, and the reason they
+                    survived is the reason ADR 0161 gives for finding them at
+                    all — nobody looked at the rendered screen.
+
+                    **`Detected, not configured` is the sharpest form of it**:
+                    the row says out loud that it read the machine, and nothing
+                    in `src-tauri/` reads either fact. The drawing stays and
+                    declares itself, which is the owner's rule (ADR 0161); it is
+                    not deleted, because the sketch is the deliverable. */}
                 <Row
                   label="Server"
+                  tag={
+                    <PreviewTag title="Not built. WordScript ships no Ollama today — tauri.conf.json bundles no binary — so a server you already run is the only real answer." />
+                  }
                   hint="WordScript ships one and starts it when a job needs it. If you already run Ollama or LM Studio, point it there instead in Settings."
                   control={
                     <span className="ws-rowflex">
@@ -348,7 +401,10 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
                 />
                 <Row
                   label="This machine"
-                  hint="Detected, not configured. CPU-only runs the small models and struggles above 7B."
+                  tag={
+                    <PreviewTag title="Not built. Nothing in the runtime detects CUDA, ROCm or Metal, or reads how much memory this machine has — the badge and the number are a drawing, not a reading of your hardware." />
+                  }
+                  hint="CPU-only runs the small models and struggles above 7B."
                   control={
                     <span className="ws-rowflex">
                       <StatusBadge tone="warning">CPU only</StatusBadge>

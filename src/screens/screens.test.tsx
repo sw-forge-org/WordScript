@@ -289,6 +289,74 @@ describe("Onboarding", () => {
     expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0);
   });
 
+  /**
+   * D1c. **THE SENTENCE WENT FALSE UNDER THE SCREEN AND NOTHING HELD IT.**
+   *
+   * This row read *A chat endpoint does not transcribe. Recognition needs the
+   * Cloud or Local lane; the writing jobs use your server* — true of a drawing
+   * of a `/chat/completions` host, and inverted the moment D1a registered the
+   * lane `speech: Some, chat: None`. Two records went by naming this file as
+   * unreached (ADR 0164, ADR 0165) while the falsehood sat behind a lane
+   * segment nothing in the suite ever clicked.
+   */
+  it("says the self-hosted lane listens, which is the half it actually does", () => {
+    render(<OnboardingScreen />);
+    for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Self-hosted" }));
+
+    expect(screen.queryByText("Needs another lane")).not.toBeInTheDocument();
+    expect(screen.queryByText(/A chat endpoint does not transcribe/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Your server does the listening/)).toBeInTheDocument();
+  });
+
+  /**
+   * ADR 0161's tag, on the screen ADR 0163 found without it — and **the two
+   * withheld lanes name different reasons**, because a withheld row is only as
+   * true as the reason it gives.
+   */
+  it("marks a lane it cannot offer, and only for the reason that lane has", () => {
+    const { container } = render(<OnboardingScreen />);
+    for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const laneRow = () => screen.getByText("Lane").closest(".ws-row") as HTMLElement;
+
+    /* Two lanes are operable as of ADR 0165 and carry nothing. */
+    expect(laneRow().querySelector(".ws-ptag")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Self-hosted" }));
+    expect(laneRow().querySelector(".ws-ptag")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Local" }));
+    expect(laneRow().querySelector(".ws-ptag")).toHaveAttribute(
+      "title",
+      expect.stringContaining("Built and withheld"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enterprise" }));
+    expect(laneRow().querySelector(".ws-ptag")).toHaveAttribute(
+      "title",
+      expect.stringContaining("no adapter"),
+    );
+    expect(container.querySelectorAll(".ws-ptag")).toHaveLength(1);
+  });
+
+  /**
+   * ADR 0163 named this second copy and left it for whoever wires the flow:
+   * the same two claims ADR 0161 marked on `AI Models` stood unmarked here,
+   * one step of a flow away, stating a bundled binary that does not exist and
+   * a hardware reading nothing in `src-tauri/` performs.
+   */
+  it("declares the local rows that state facts about the reader's machine", () => {
+    render(<OnboardingScreen />);
+    for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Local" }));
+
+    for (const label of ["Server", "This machine"]) {
+      const row = screen.getByText(label).closest(".ws-row") as HTMLElement;
+      expect(row.querySelector(".ws-ptag")).not.toBeNull();
+    }
+    /* The row said out loud that it had read the machine. Nothing reads it. */
+    expect(screen.queryByText(/Detected, not configured/)).not.toBeInTheDocument();
+  });
+
   it("states what it deliberately left out, on the last step and not the first", () => {
     render(<OnboardingScreen />);
     expect(screen.queryByText("Deliberately not in this flow")).not.toBeInTheDocument();

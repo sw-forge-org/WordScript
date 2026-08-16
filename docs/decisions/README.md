@@ -1341,6 +1341,24 @@ Status: Proposed | Accepted | Superseded by NNNN
   `Groq cloud` for every non-local connection — and both were found by rendering
   the workspace and looking at it, which is the fifth time on this surface.
 
+- [0166](0166-a-surface-asks-about-the-connection-it-is-on-for-the-role-it-needs-and-about-nothing-until-it-knows-which.md):
+  **A surface asks about the connection it is on, for the role it needs, and
+  about nothing at all until it knows which.** D1c, closing the leftover ADR
+  0165 named: `ProviderId = "groq" | "local"` is deleted rather than widened —
+  the frontend half of the dispatch ADR 0094 replaced, and **a caller cannot
+  narrow to a union with no arm for the value it holds**, so the narrowing that
+  was written folded every cloud vendor onto `groq` and the credential chip
+  reported the Groq key over an OpenAI connection. The window derives the
+  connection once, for the strip's fact and the chip's question together;
+  **the speech role answers rather than the folded credential block** (ADR
+  0105), and what is missing is the runtime's own sentence, which is what makes
+  `Your server` come out right without a special case. Two more found by
+  rendering it: an outstanding read printed *Needs key* out of the window's own
+  latency, and every launch spent a keyring read on the default before the
+  config had said who the connection was. Also the first commit to reach
+  `Onboarding.tsx`, and only where it was false — its Self-hosted step claimed
+  the lane cannot transcribe, which D1a inverted.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
