@@ -1087,6 +1087,24 @@ Status: Proposed | Accepted | Superseded by NNNN
   record its own track has not finished reading is how a summary drifts from
   what it summarises.
 
+- [0138](0138-a-retention-rule-names-the-collection-it-governs-and-the-copilot-does-not-read-your-dictations.md):
+  **two pickers governed a collection they never named, and nobody could say
+  what the copilot would be given.** `Stored transcripts` sat two rows above
+  `Context objects` on `Privacy & Data`, and a meeting produces a transcript —
+  so the cap read as covering meetings and covered only dictations. It governs
+  the dictation history alone, on all seven modes, because every path commits
+  through one funnel and the mode is a field rather than a store (ADR 0074).
+  One card per collection makes that structural. Three further findings from the
+  same read: **both prune rules bind** (age, then count) where the row named one;
+  **ADR 0039's seven-days-or-twenty-files audio sweep was absent** from a screen
+  listing two other durations; and `Notes & Meetings` was a **door with an arrow
+  and no handler**, which `has no door left that cannot act` could not catch
+  because it asserts `toBeEnabled()`. The reach question is settled the way ADR
+  0074 already leans: **the copilot's index is the context-object collection and
+  the dictation history is not in it**, so the retention picker is disk hygiene
+  and not an AI-reach control — which the screen now promises in as many words,
+  binding whoever builds the index.
+
 - [0150](0150-the-cue-stream-closes-when-it-is-idle-and-closing-it-does-not-answer-where-it-plays.md):
   **the cue stream was held open for the process lifetime, and ADR 0010 had
   already written down what would overturn that.** Its fallback — *"closing the

@@ -6,6 +6,7 @@ import {
   Card,
   CardRows,
   Icon,
+  PreviewTag,
   Row,
   SectionHeader,
   Select,
@@ -34,6 +35,28 @@ import type { WiredScreenProps } from "./props";
  * object than a transcript and an hour of audio is a different size of promise,
  * so a retention rule that silently governed only dictations would be the more
  * dangerous half unstated.
+ *
+ * A RULE NAMES THE COLLECTION IT GOVERNS, ON THE CARD IT SITS IN (ADR 0138).
+ * Four rows under one heading made the cap read as covering everything above a
+ * horizon it never touched: `Stored transcripts` sat two rows above
+ * `Context objects`, and a meeting produces a transcript, so the natural reading
+ * was that the picker capped meetings too. It never did — `history_limit` and
+ * `history_retention_days` govern the DICTATION history and nothing else, on
+ * every one of the seven modes, because every path commits through the one
+ * funnel `record_entry_with_work_mode` and the mode is a field on the record
+ * rather than a second store (ADR 0074). One card per collection is what makes
+ * that structural instead of a sentence somebody has to find.
+ *
+ * THE THIRD RULE IS AUDIO'S AND IT WAS MISSING ENTIRELY. ADR 0039 keeps a
+ * failed capture for seven days or twenty files. Two rules drawn and a third
+ * omitted is worse than three drawn, because the omitted one covers the
+ * recording rather than the text.
+ *
+ * WHAT MAY READ IT IS ITS OWN SECTION, and it exists because the question was
+ * asked of the retention rows and they could not answer it. If the dictation
+ * history fed the meeting copilot's index, `Keep all` would quietly be an
+ * AI-reach setting; ADR 0138 rules that it does not, and the section states the
+ * rule so the picker above stays what it looks like.
  *
  * "DANGER ZONE" WAS A THIRD RED SIGNAL on top of the red row label and the red
  * button, and the least useful of the three: it names a neighbourhood rather
@@ -302,12 +325,15 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
 
       <SectionHeader
         title="How long things are kept"
-        description="History and context objects, on this machine."
+        description="Two collections and one recording, each under its own rule."
       >
-        <Card>
+        <Card
+          title="Dictation history"
+          description="Every dictation, whatever mode ran on it — the failed ones too."
+        >
           <CardRows>
             <Row
-              label="Stored transcripts"
+              label="Stored dictations"
               hint="The oldest is dropped when the cap is reached."
               control={
                 <Select
@@ -315,7 +341,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                     onChange={(event) =>
                       runtime.patch({ history_limit: Number(event.target.value) })
                     }
-                    aria-label="Stored transcripts"
+                    aria-label="Stored dictations"
                   >
                     {/* A stored cap the drawing does not offer stays selectable,
                         so the row shows what is set rather than silently moving
@@ -333,7 +359,12 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="Retention"
-              hint="Older entries are pruned automatically."
+              /* BOTH RULES BIND, AND THE OLD SENTENCE HID THE SECOND ONE.
+                 `prune_entries` sweeps by age first and then by count, so a
+                 reader who set `Keep all` still loses the 1001st dictation. A
+                 retention row that says only "older entries are pruned" is
+                 describing half of its own mechanism. */
+              hint="Whichever binds first: this age, or the cap above."
               control={
                 <Select
                     value={String(runtime.config.history_retention_days)}
@@ -359,9 +390,30 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                   </Select>
               }
             />
+            {/* THE THIRD RETENTION RULE IN THE PRODUCT, AND THIS SCREEN DID NOT
+                CARRY IT. ADR 0039 keeps a capture when a second attempt could
+                survive the failure and sweeps it at seven days or twenty files.
+                It is built (`core::capture::prune_retained_captures`), it is a
+                raw recording of everything the microphone heard, and a privacy
+                screen that lists two rules and omits the one covering audio is
+                omitting the most sensitive of the three. It states rather than
+                sets: the numbers are ADR 0039's, not a preference. */}
             <Row
-              label="Context objects"
-              hint="Meetings, uploads and notes are files in a folder you chose. Nothing prunes them, and nothing will without asking."
+              label="A failure's audio"
+              hint="Kept so a retry can use it. A successful dictation's is discarded at once."
+              control={<StatusBadge tone="plan">7 days · 20 files</StatusBadge>}
+            />
+          </CardRows>
+        </Card>
+
+        <Card
+          title="Context objects"
+          description="Meetings, uploads, links, notes and kept conversations."
+        >
+          <CardRows>
+            <Row
+              label="Pruning"
+              hint="Nothing prunes them, and nothing will without asking."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">Kept until you delete</StatusBadge>
@@ -377,15 +429,55 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="Meeting audio"
-              hint="Kept under its own budget rather than sharing a dictation's, because twenty meetings are not twenty dictations. The rule that ends one is set where a meeting is configured."
+              hint="Its own budget, set where a meeting is configured."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">Own budget</StatusBadge>
-                  <Button variant="ghost" icon={<Icon name="arrow" />}>
+                  {/* THE DOOR WAS DRAWN AND DEAD. It carried an arrow, named a
+                      screen and had no handler, on the one surface whose own
+                      docblock claims every door acts — which is ADR 0020's
+                      defect surviving inside the file that states the rule.
+                      `notesettings` is a section, so it is where `Keep the
+                      audio` actually stands. */}
+                  <Button
+                    variant="ghost"
+                    icon={<Icon name="arrow" />}
+                    onClick={() => runtime.open?.({ section: "notesettings" })}
+                  >
                     Notes &amp; Meetings
                   </Button>
                 </span>
               }
+            />
+          </CardRows>
+        </Card>
+      </SectionHeader>
+
+      {/* WHAT IS KEPT AND WHAT MAY READ IT ARE TWO QUESTIONS, and this screen
+          answered only the first. The retention rows above look like tidying
+          until a reader learns that a model is given some of what they hold —
+          at which point the same picker is the strongest privacy control in the
+          product and never said so. ADR 0138 settles the reach so that it is
+          NOT: the copilot's index is the context-object collection, and the
+          dictation history is not in it. */}
+      <SectionHeader
+        title="What may read what is kept"
+        description="Nothing on a schedule, and the copilot's reach is bounded."
+      >
+        <Card>
+          <CardRows>
+            <Row
+              label="The copilot's index"
+              tag={
+                <PreviewTag title="Decided in ADR 0138 and not built. The copilot itself is the context-object track's Stage E5, behind roadmap gate 3; this row states the rule that step is bound by." />
+              }
+              hint="Its hints come from meetings, uploads and notes, never from dictations."
+              control={<StatusBadge tone="success">Context objects only</StatusBadge>}
+            />
+            <Row
+              label="The rules above"
+              hint="They govern disk, not reach. Keeping more shows a model nothing more."
+              control={<StatusBadge tone="success">No AI consequence</StatusBadge>}
             />
           </CardRows>
         </Card>
@@ -404,9 +496,15 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
               hint="Files on this machine, under paths you can open."
               control={<StatusBadge tone="success">This machine</StatusBadge>}
             />
+            {/* "THEN DISCARDED" WAS TRUE OF THE SUCCESSFUL HALF ONLY. A
+                retryable failure keeps its capture on this machine (ADR 0039),
+                which is the opposite of discarded and is the case a reader of a
+                privacy screen most wants to know about. The numbers stay in the
+                retention section, where a duration belongs; this row owns the
+                question that section does not answer — whether it leaves. */}
             <Row
               label="Audio"
-              hint="Sent to the selected provider for transcription, then discarded. The local lane sends nothing."
+              hint="Sent to the provider, then discarded — a failure's is kept here for a retry."
               control={<StatusBadge tone="plan">Provider, then discarded</StatusBadge>}
             />
             <Row

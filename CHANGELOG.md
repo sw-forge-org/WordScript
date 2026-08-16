@@ -53,6 +53,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Privacy says which things a retention rule keeps, and what may read them (ADR 0138)
+
+- **The retention rules name their collection.** `Settings → Privacy & Data`
+  drew a cap and an age above two rows naming *other* collections, so the cap
+  read as covering meetings — a meeting produces a transcript, after all. It
+  never did. The section is now one card per collection: **Dictation history**
+  holds the cap and the age, **Context objects** holds the meetings, uploads,
+  links, notes and kept conversations that nothing prunes.
+- **The cap covers every dictation, whatever mode ran on it** — cleanup,
+  rewrite, translate, agent, prompt enhance, verbatim, and the ones that failed
+  or produced nothing. That was always true and was never written down; the card
+  says it now.
+- **Both prune rules bind, and the row used to name one.** The sweep drops what
+  is too old and then what is past the cap, so `Keep all` still loses the
+  record beyond the limit. The row reads *whichever binds first*.
+- **The audio rule is on the screen at last.** A failed dictation keeps its
+  recording so a retry can use it — seven days or twenty files, whichever comes
+  first. That has shipped since ADR 0039 and the privacy screen listed two
+  durations without it, while `Audio` promised *then discarded* without saying
+  that a failure's is not.
+- **The copilot will not read your dictation history.** A meeting's hints come
+  from meetings, uploads and notes, and from nothing you dictated into another
+  application. Which means the retention picker is disk housekeeping and not a
+  hidden control over what a model is shown — the screen now says both.
+- **A door that named a screen and went nowhere now goes there.**
+  `Notes & Meetings` had an arrow and no destination.
+
 ### Added — OpenRouter transcribes, and so does a server you run yourself (ADR 0164)
 
 - **OpenRouter can be picked for the listening jobs.** One key reaching several

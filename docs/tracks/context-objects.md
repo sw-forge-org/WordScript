@@ -57,6 +57,7 @@ content.
 | [`../decisions/0064-…`](../decisions/0064-the-translation-window-is-a-view-with-a-pop-out-and-a-conversation-is-kept-only-if-you-say-so.md) | consent as a field; opt-in leaves nothing behind; the next-utterance rule |
 | [`../decisions/0135-…`](../decisions/0135-retention-is-a-guard-rather-than-a-timer-the-copilot-runs-on-turns-and-the-picker-is-a-sentence-with-a-sheet-behind-it.md) | retention as a holder set, the copilot per turn, the picker's form |
 | [`../decisions/0136-…`](../decisions/0136-what-is-taken-from-the-donor-and-the-one-thing-it-does-that-must-not-be.md) | the four mechanisms adopted, the three owed additions, the platform refusal |
+| [`../decisions/0138-…`](../decisions/0138-a-retention-rule-names-the-collection-it-governs-and-the-copilot-does-not-read-your-dictations.md) | which collection each retention rule governs, and the bound on the copilot's index |
 | [`../ROADMAP.md`](../ROADMAP.md) | *Meeting capture* — gate 3 is the only one left, and it blocks Stage E alone |
 | [`../PLATFORMS.md`](../PLATFORMS.md) | *Meeting surfaces* — the five capabilities per OS and the rule that none of them ships as universal when it is not |
 | [`../PROVIDERS.md`](../PROVIDERS.md) | what a lane serves; Stage B's summary and Stage E's transcription both spend one |
@@ -125,6 +126,17 @@ nothing else.
   speech-track C4's `Live transcript` toggle. Whichever lands first builds it.
 - **D4. Deleting the audio is its own action and does not delete the note**
   (ADR 0136).
+- **D5. The index is bounded, and the bound is already printed on a privacy
+  screen** (ADR 0138). The copilot's index is **this collection and not the
+  dictation history** — two roots, two lifecycles, two export controls, and
+  joining them at the index would join them at the most expensive point in the
+  product to be wrong. A dictation reaches the index only by becoming an object
+  here, which is something a person does. **Owed before E5, not during it.**
+  **Done when** whatever builds the index cannot see `history.json`, and
+  `Privacy → What may read what is kept` reads the runtime instead of stating a
+  rule. **If a later step wants the history in the index it repeals ADR 0138 and
+  edits that sentence in the same commit** — the screen currently promises
+  *keeping more shows a model nothing more*.
 
 ### Stage E — the meeting, behind roadmap gate 3
 
@@ -139,7 +151,8 @@ prompt on the target platforms*. It blocks this stage and nothing above it.
 - **E4. Diarization** — three stages, of which only the first two are audio.
 - **E5. The copilot** — one index lookup per finished turn, a model only on a
   hit, off by default for ADR 0047's reason. **Two consumers, and the embedding
-  one has no axis in any track today.**
+  one has no axis in any track today.** **Reads D5's collection and nothing
+  else** (ADR 0138).
 - **E6. The recording disclosure**, posted into the call, optional, and making
   no claim about consent (ADR 0136). ADR 0064's field is the other half.
 

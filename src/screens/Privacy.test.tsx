@@ -56,7 +56,7 @@ describe("Privacy & Data, wired", () => {
     });
     render(<PrivacyScreen runtime={runtime} />);
 
-    expect(screen.getByLabelText("Stored transcripts")).toHaveValue("200");
+    expect(screen.getByLabelText("Stored dictations")).toHaveValue("200");
     expect(screen.getByLabelText("Retention")).toHaveValue("30");
 
     await userEvent.selectOptions(screen.getByLabelText("Retention"), "0");
@@ -72,7 +72,7 @@ describe("Privacy & Data, wired", () => {
     });
     render(<PrivacyScreen runtime={runtime} />);
 
-    const select = screen.getByLabelText("Stored transcripts") as HTMLSelectElement;
+    const select = screen.getByLabelText("Stored dictations") as HTMLSelectElement;
     expect(select).toHaveValue("750");
     expect([...select.options].map((option) => option.value)).toEqual([
       "50",
@@ -114,14 +114,86 @@ describe("Privacy & Data, wired", () => {
     }
   });
 
-  it("opens the two surfaces its rows name", async () => {
+  /* ENABLED IS NOT THE SAME AS WIRED, AND THAT IS THE HOLE THIS PAIR CLOSES.
+     `Notes & Meetings` shipped with an arrow, a screen's name and no handler:
+     the case above passes it, because a `Button` with no `onClick` is enabled.
+     Only calling it can tell the two apart, so every door that names a surface
+     is pressed here rather than counted there. */
+  it("opens the three surfaces its rows name", async () => {
     const open = vi.fn();
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true, open })} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Open Context" }));
     expect(open).toHaveBeenCalledWith({ view: "context" });
+    await userEvent.click(screen.getByRole("button", { name: "Notes & Meetings" }));
+    expect(open).toHaveBeenCalledWith({ section: "notesettings" });
     await userEvent.click(screen.getByRole("button", { name: "Open AI Models" }));
     expect(open).toHaveBeenCalledWith({ section: "models" });
+  });
+});
+
+/**
+ * WHICH COLLECTION A RULE GOVERNS, AND WHAT MAY READ IT (ADR 0138).
+ *
+ * The owner asked the question these cases answer — *is the cap about all
+ * transcriptions or only some of them, and does the copilot read what it
+ * keeps* — of a screen that stated neither. Both answers are now on the
+ * surface, so both are asserted from it.
+ */
+describe("Privacy & Data · which collection, and who reads it", () => {
+  it("names the collection each retention rule governs, on the card that holds it", () => {
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    /* The cap and the age sit under `Dictation history`; `Context objects` is a
+       different card, which is the whole of what four rows under one heading
+       could not say. */
+    const dictation = screen.getByText("Dictation history").closest(".ws-card");
+    expect(dictation).not.toBeNull();
+    const inDictation = within(dictation as HTMLElement);
+    expect(inDictation.getByLabelText("Stored dictations")).toBeInTheDocument();
+    expect(inDictation.getByLabelText("Retention")).toBeInTheDocument();
+    expect(
+      screen.getByText("Every dictation, whatever mode ran on it — the failed ones too."),
+    ).toBeInTheDocument();
+
+    const context = screen.getByText("Context objects").closest(".ws-card");
+    expect(context).not.toBeNull();
+    expect(within(context as HTMLElement).queryByLabelText("Stored dictations")).toBeNull();
+  });
+
+  it("states that both rules bind rather than only the age", () => {
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    /* `prune_entries` sweeps by age and then by count, so `Keep all` still
+       loses the record past the cap. The old sentence described half of it. */
+    expect(inRow("Retention").getByText("Whichever binds first: this age, or the cap above."))
+      .toBeInTheDocument();
+  });
+
+  it("carries the audio rule the screen used to omit", () => {
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    /* ADR 0039 is built and was unstated here: a raw recording of everything the
+       microphone heard, kept for days. */
+    expect(inRow("A failure's audio").getByText("7 days · 20 files")).toBeInTheDocument();
+    expect(
+      inRow("Audio").getByText("Sent to the provider, then discarded — a failure's is kept here for a retry."),
+    ).toBeInTheDocument();
+  });
+
+  it("bounds the copilot's reach and marks the rule as unbuilt", () => {
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const row = inRow("The copilot's index");
+    expect(row.getByText("Context objects only")).toBeInTheDocument();
+    /* The rule is decided; the mechanism is not, and the row says which of the
+       two it is rather than reading as a reading of the runtime (ADR 0161). */
+    expect(row.getByText("Preview")).toBeInTheDocument();
+    expect(
+      inRow("The rules above").getByText(
+        "They govern disk, not reach. Keeping more shows a model nothing more.",
+      ),
+    ).toBeInTheDocument();
   });
 });
 
