@@ -3048,6 +3048,8 @@ pub fn run() {
             core::capture::list_native_input_devices,
             core::capture::toggle_native_capture_mute,
             core::capture::toggle_native_capture_pause,
+            core::capture::retained_capture_status,
+            core::capture::discard_retained_captures,
             core::input_monitor::start_input_monitor,
             core::input_monitor::renew_input_monitor,
             core::input_monitor::stop_input_monitor,

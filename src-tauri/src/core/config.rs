@@ -386,6 +386,23 @@ pub const fn default_typing_baseline_wpm() -> u32 {
 /// anybody has recorded — a baseline outside this is a typo, not a claim.
 pub const TYPING_BASELINE_RANGE: (u32, u32) = (10, 200);
 
+/// How many dictations the index holds, at most (ADR 0185).
+///
+/// A CEILING, NOT A PREFERENCE, AND THAT IS THE WHOLE CHANGE. `history_limit`
+/// was a picker on Privacy & Data beside the retention days, and two caps over
+/// one list meant neither could be read: `prune_entries` sweeps by age and then
+/// by count, so `Keep all` still dropped the 1001st record and a reader who set
+/// ninety days lost a fortnight's dictation to a number they had chosen without
+/// being told what it did. This machine's own config stood at fifty, which is
+/// why the activity calendar could draw a single column.
+///
+/// Nobody reasons about their own privacy in units of *the last two hundred
+/// dictations* — they reason in months. So the months stayed a setting, the
+/// count became the index's own limit, and the screen states it rather than
+/// offering it. A thousand transcripts is a few hundred kilobytes of text, so
+/// this bounds the index rather than the disk.
+pub const HISTORY_CEILING: usize = 1000;
+
 /// The languages Translate offers, as ISO 639-1 codes paired with the English
 /// name the prompt uses.
 ///
@@ -1415,7 +1432,7 @@ impl Default for AppConfig {
             play_startup_sound: default_play_startup_sound(),
             log_level: "INFO".to_string(),
             temp_audio_dir: String::new(),
-            history_limit: 200,
+            history_limit: HISTORY_CEILING,
             history_retention_days: 90,
             agent_name: DEFAULT_AGENT_NAME.to_string(),
             agent_model: default_agent_model().to_string(),
@@ -1787,7 +1804,12 @@ impl AppConfig {
         );
         self.color_scheme = normalize_color_scheme(&self.color_scheme);
         self.overlay_monitor = normalize_overlay_monitor_value(&self.overlay_monitor);
-        self.history_limit = self.history_limit.clamp(25, 1000);
+        /* PINNED RATHER THAN CLAMPED (ADR 0185). The count stopped being a
+           setting, so a stored value is a leftover from when it was one — and a
+           leftover that silently overrides the retention rule the reader DID
+           set. Raising it here is the migration: there is one ceiling, every
+           install is on it, and the screen can state it as a fact. */
+        self.history_limit = HISTORY_CEILING;
         self.history_retention_days = self.history_retention_days.min(3650);
         work_mode_rewritten
     }
@@ -3082,8 +3104,28 @@ mod tests {
 
         config.normalize_for_runtime();
 
-        assert_eq!(config.history_limit, 25);
+        assert_eq!(config.history_limit, HISTORY_CEILING);
         assert_eq!(config.history_retention_days, 3650);
+    }
+
+    /// ADR 0185. The count cap is no longer a preference, so a config carrying
+    /// one — this machine's own stood at fifty — must come back on the ceiling
+    /// rather than keep quietly out-pruning the retention rule beside it.
+    #[test]
+    fn a_stored_count_cap_is_raised_to_the_ceiling_rather_than_honoured() {
+        let mut config = AppConfig {
+            history_limit: 50,
+            history_retention_days: 90,
+            ..AppConfig::default()
+        };
+
+        config.normalize_for_runtime();
+
+        assert_eq!(config.history_limit, HISTORY_CEILING);
+        assert_eq!(
+            config.history_retention_days, 90,
+            "the rule the reader did set stays theirs"
+        );
     }
 
     #[test]

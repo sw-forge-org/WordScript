@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
 use super::capture::{CaptureIntegrity, InputLevelSummary};
-use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
+use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode, HISTORY_CEILING};
 use super::insertion::{
     insert_transcription_from_legacy, NativeClipboardRestoreStatus, NativeInsertDriver,
     NativeInsertMode, NativeInsertRecoveryAction, NativeInsertResult,
@@ -17,6 +17,11 @@ use super::runtime_log;
 use super::sessions::now_ms;
 use super::transform::{finalize_with_text_rules, NativeTransformConfig, NativeTransformResult};
 
+/// A capacity hint for the deque and the count the retention tests drive the
+/// policy with. NOT the product's cap: since ADR 0185 that is one value,
+/// `config::HISTORY_CEILING`, and it is not a setting. Allocating a thousand
+/// records up front for a history that usually holds a handful is the reason
+/// this stays its own smaller number.
 const DEFAULT_HISTORY_LIMIT: usize = 200;
 const MS_PER_DAY: u64 = 86_400_000;
 
@@ -1307,7 +1312,7 @@ fn runtime_history_policy() -> (usize, u32) {
     if let Ok(guard) = history_policy_override().lock() {
         if let Some((history_limit, history_retention_days)) = *guard {
             return (
-                history_limit.clamp(25, 1000),
+                history_limit.clamp(25, HISTORY_CEILING),
                 history_retention_days.min(3650),
             );
         }
@@ -1320,8 +1325,11 @@ fn runtime_history_policy() -> (usize, u32) {
     )
 }
 
+/// The ceiling, whatever the file says. `normalize_for_runtime` already pins
+/// the field (ADR 0185); this is the second lock, because the sweep that drops
+/// a record must not be the place a stale value gets one last say.
 fn configured_history_limit(config: &AppConfig) -> usize {
-    config.history_limit.clamp(25, 1000)
+    config.history_limit.clamp(25, HISTORY_CEILING)
 }
 
 fn configured_history_retention_days(config: &AppConfig) -> u32 {

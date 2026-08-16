@@ -32,6 +32,15 @@ function inRow(label: string) {
   return within(row as HTMLElement);
 }
 
+/** Since ADR 0185 the three collections answer the same question in the same
+ *  words — `Kept for` — so a row query alone is ambiguous by design and the
+ *  card is what disambiguates it, for the test as for the reader. */
+function inCard(title: string) {
+  const card = screen.getByText(title).closest(".ws-card");
+  if (!card) throw new Error(`No card titled ${title}`);
+  return within(card as HTMLElement);
+}
+
 /**
  * Privacy & Data is still in the gallery, so its fidelity is still measured in
  * `screens.test.tsx`. This is the other half: two retention rules and one
@@ -51,37 +60,258 @@ describe("Privacy & Data, wired", () => {
     const patch = vi.fn();
     const runtime = createWorkspaceRuntime({
       active: true,
-      config: createAppConfig({ history_limit: 200, history_retention_days: 30 }),
+      config: createAppConfig({ history_limit: 1000, history_retention_days: 30 }),
       patch,
     });
     render(<PrivacyScreen runtime={runtime} />);
 
-    expect(screen.getByLabelText("Stored dictations")).toHaveValue("200");
-    expect(screen.getByLabelText("Retention")).toHaveValue("30");
+    expect(screen.getByLabelText("Kept for")).toHaveValue("30");
 
-    await userEvent.selectOptions(screen.getByLabelText("Retention"), "0");
-    /* `Keep all` is 0 in the config, which is the runtime's own encoding of
-       "do not prune" rather than a sentinel invented here. */
+    await userEvent.selectOptions(screen.getByLabelText("Kept for"), "0");
+    /* `No age limit` is 0 in the config, which is the runtime's own encoding of
+       "do not prune by age" rather than a sentinel invented here. */
     expect(patch).toHaveBeenCalledWith({ history_retention_days: 0 });
   });
 
-  it("keeps a stored value the drawing does not offer rather than moving the user", () => {
+  /**
+   * ADR 0185. Two pickers over one list meant neither could be read: the count
+   * swept after the age, so `Keep all` still dropped the 1001st record and a
+   * ninety-day rule was broken by a number nobody was told the meaning of. The
+   * count is the index's ceiling now — stated, not offered — and the rule the
+   * reader sets is a duration in the unit the question is asked in.
+   */
+  it("offers no count cap, and states the ceiling the runtime holds", () => {
+    const patch = vi.fn();
+    render(
+      <PrivacyScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: createAppConfig({ history_limit: 1000, history_retention_days: 90 }),
+          patch,
+        })}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Stored dictations")).toBeNull();
+    expect(inRow("The index's ceiling").getByText("Newest 1000")).toBeTruthy();
+
+    /* Stating it must not write it: the row reads the config, and a screen that
+       patched on render would put its own opinion of the ceiling on disk. */
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("asks how long in months rather than in days nobody counts", () => {
+    render(
+      <PrivacyScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: createAppConfig({ history_retention_days: 90 }),
+        })}
+      />,
+    );
+
+    const select = screen.getByLabelText("Kept for") as HTMLSelectElement;
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      "7 days",
+      "1 month",
+      "3 months",
+      "1 year",
+      "No age limit",
+    ]);
+    /* Never `Keep all`, which is the one thing the runtime has never done. */
+    expect(screen.queryByText("Keep all")).toBeNull();
+  });
+
+  it("keeps a stored retention the drawing does not offer rather than moving the user", () => {
+    render(
+      <PrivacyScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: createAppConfig({ history_retention_days: 45 }),
+        })}
+      />,
+    );
+
+    const select = screen.getByLabelText("Kept for") as HTMLSelectElement;
+    expect(select).toHaveValue("45");
+    expect([...select.options].map((option) => option.value)).toEqual([
+      "7",
+      "30",
+      "90",
+      "365",
+      "0",
+      "45",
+    ]);
+  });
+
+  /**
+   * ADR 0185, the other half. The screen recited ADR 0039's rule — seven days,
+   * twenty files — and could not say whether anything was under it, which is
+   * the question a privacy screen is actually opened with. A raw WAV of
+   * everything the microphone heard is the most sensitive thing this product
+   * holds, so the count is read from the runtime and never assumed.
+   */
+  it("says nothing is parked when nothing is, and draws no door onto an empty folder", async () => {
+    invoked.mockImplementation(async (command) =>
+      command === "retained_capture_status"
+        ? {
+            count: 0,
+            bytes: 0,
+            oldest_age_ms: null,
+            max_age_days: 7,
+            max_files: 20,
+            directory: "/tmp/ws",
+          }
+        : undefined,
+    );
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await waitFor(() => {
+      expect(inRow("On this machine now").getByText("Nothing kept")).toBeTruthy();
+    });
+    /* A button that would delete nothing is the fake affordance rule 7
+       forbids. */
+    expect(inRow("On this machine now").queryByRole("button", { name: "Delete now" })).toBeNull();
+  });
+
+  it("counts what a failure left behind and deletes it on request", async () => {
+    invoked.mockImplementation(async (command) => {
+      if (command === "retained_capture_status") {
+        return {
+          count: 3,
+          bytes: 4_200_000,
+          oldest_age_ms: 2 * 24 * 3_600_000,
+          max_age_days: 7,
+          max_files: 20,
+          directory: "/tmp/ws",
+        };
+      }
+      if (command === "discard_retained_captures") {
+        return {
+          count: 0,
+          bytes: 0,
+          oldest_age_ms: null,
+          max_age_days: 7,
+          max_files: 20,
+          directory: "/tmp/ws",
+        };
+      }
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await waitFor(() => {
+      expect(inRow("On this machine now").getByText("3 files · 4.2 MB · oldest 2 days old")).toBeTruthy();
+    });
+
+    await userEvent.click(inRow("On this machine now").getByRole("button", { name: "Delete now" }));
+
+    expect(invoked).toHaveBeenCalledWith("discard_retained_captures");
+    /* The row redraws from the answer rather than from an assumption about what
+       the command did, and it names the cost: the retry the file was kept for
+       is gone with it. */
+    await waitFor(() => {
+      expect(inRow("On this machine now").getByText("Nothing kept")).toBeTruthy();
+    });
+    expect(
+      screen.getByText(/can no longer be retried from its audio/),
+    ).toBeTruthy();
+  });
+
+  it("claims nothing about the disk when the runtime does not answer", async () => {
+    invoked.mockImplementation(async (command) => {
+      if (command === "retained_capture_status") throw new Error("no such folder");
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await waitFor(() => {
+      expect(inRow("On this machine now").getByText("Not read")).toBeTruthy();
+    });
+    /* Not `Nothing kept`: a status the screen could not read is not a statement
+       that the folder is empty. */
+    expect(inRow("On this machine now").queryByText("Nothing kept")).toBeNull();
+  });
+
+  /**
+   * ADR 0182. The baseline was eight anonymous numbers in a dropdown, which
+   * asks the reader for a figure about themselves that almost nobody has
+   * measured and offers no way to enter the one a person who HAS measured it
+   * knows. Three descriptions and a field, and the field is what these cases
+   * are about: it is the half a `Select` could not do.
+   */
+  it("takes a typing baseline nobody offered, and presses no preset for it", async () => {
+    const patch = vi.fn();
     const runtime = createWorkspaceRuntime({
       active: true,
-      config: createAppConfig({ history_limit: 750 }),
+      config: createAppConfig({ typing_baseline_wpm: 40 }),
+      patch,
     });
     render(<PrivacyScreen runtime={runtime} />);
 
-    const select = screen.getByLabelText("Stored dictations") as HTMLSelectElement;
-    expect(select).toHaveValue("750");
-    expect([...select.options].map((option) => option.value)).toEqual([
-      "50",
-      "100",
-      "200",
-      "500",
-      "750",
-      "1000",
-    ]);
+    const field = screen.getByLabelText("Typing baseline in words a minute");
+    await userEvent.clear(field);
+    await userEvent.type(field, "58");
+
+    expect(patch).toHaveBeenLastCalledWith({ typing_baseline_wpm: 58 });
+
+    /* And once the config holds it, no preset claims it: a hand-entered figure
+       is the reader's own, and a pressed segment beside it would say the
+       product had rounded them into a category. Rendered from the stored value
+       rather than asserted after the keystrokes, because the runtime in a test
+       records the patch instead of applying it. */
+    cleanup();
+    render(
+      <PrivacyScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: createAppConfig({ typing_baseline_wpm: 58 }),
+        })}
+      />,
+    );
+    expect(screen.getByLabelText("Typing baseline in words a minute")).toHaveValue("58");
+    for (const name of ["Two fingers · 30", "Average · 40", "Touch typist · 70"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+    }
+  });
+
+  it("writes no baseline at all for a value that is not one", async () => {
+    const patch = vi.fn();
+    const runtime = createWorkspaceRuntime({
+      active: true,
+      config: createAppConfig({ typing_baseline_wpm: 40 }),
+      patch,
+    });
+    render(<PrivacyScreen runtime={runtime} />);
+
+    const field = screen.getByLabelText("Typing baseline in words a minute");
+    await userEvent.clear(field);
+    /* Typing `7` on the way to `70` must not put a 7 wpm divisor on disk, and
+       an empty field is not a baseline of nothing. */
+    expect(patch).not.toHaveBeenCalled();
+    await userEvent.type(field, "7");
+    expect(patch).not.toHaveBeenCalled();
+    expect(field).toHaveAttribute("data-invalid");
+
+    await userEvent.type(field, "0");
+    expect(patch).toHaveBeenLastCalledWith({ typing_baseline_wpm: 70 });
+  });
+
+  it("takes a preset as the whole answer for a reader who does not know theirs", async () => {
+    const patch = vi.fn();
+    const runtime = createWorkspaceRuntime({
+      active: true,
+      config: createAppConfig({ typing_baseline_wpm: 40 }),
+      patch,
+    });
+    render(<PrivacyScreen runtime={runtime} />);
+
+    expect(screen.getByRole("button", { name: "Average · 40" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Touch typist · 70" }));
+    expect(patch).toHaveBeenLastCalledWith({ typing_baseline_wpm: 70 });
   });
 
   it("clears the history through the runtime and then says what happened", async () => {
@@ -144,41 +374,73 @@ describe("Privacy & Data · which collection, and who reads it", () => {
   it("names the collection each retention rule governs, on the card that holds it", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* The cap and the age sit under `Dictation history`; `Context objects` is a
-       different card, which is the whole of what four rows under one heading
-       could not say. */
+    /* The age rule and the ceiling sit under `Dictation history`; the parked
+       recording and the context objects are cards of their own, which is the
+       whole of what four rows under one heading could not say. */
     const dictation = screen.getByText("Dictation history").closest(".ws-card");
     expect(dictation).not.toBeNull();
     const inDictation = within(dictation as HTMLElement);
-    expect(inDictation.getByLabelText("Stored dictations")).toBeInTheDocument();
-    expect(inDictation.getByLabelText("Retention")).toBeInTheDocument();
+    expect(inDictation.getByLabelText("Kept for")).toBeInTheDocument();
+    expect(inDictation.getByText("The index's ceiling")).toBeInTheDocument();
     expect(
       screen.getByText("Every dictation, whatever mode ran on it — the failed ones too."),
     ).toBeInTheDocument();
 
     const context = screen.getByText("Context objects").closest(".ws-card");
     expect(context).not.toBeNull();
-    expect(within(context as HTMLElement).queryByLabelText("Stored dictations")).toBeNull();
+    expect(within(context as HTMLElement).queryByText("The index's ceiling")).toBeNull();
   });
 
-  it("states that both rules bind rather than only the age", () => {
+  /**
+   * ADR 0185. The sentence this replaces — "whichever binds first: this age, or
+   * the cap above" — was true, and its existence was the defect: it only had to
+   * be written because the screen offered two rules over one list. One rule
+   * needs no reconciliation sentence, and the ceiling states itself.
+   */
+  it("states one rule for the reader and one ceiling for the index", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* `prune_entries` sweeps by age and then by count, so `Keep all` still
-       loses the record past the cap. The old sentence described half of it. */
-    expect(inRow("Retention").getByText("Whichever binds first: this age, or the cap above."))
-      .toBeInTheDocument();
+    expect(
+      inCard("Dictation history").getByText(
+        "Older dictations are deleted with their transcript files. Nothing else prunes them.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      inRow("The index's ceiling").getByText(/Beyond this the oldest drops out/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Whichever binds first: this age, or the cap above.")).toBeNull();
   });
 
-  it("carries the audio rule the screen used to omit", () => {
+  it("gives the audio a failure parks a card of its own", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* ADR 0039 is built and was unstated here: a raw recording of everything the
-       microphone heard, kept for days. */
-    expect(inRow("A failure's audio").getByText("7 days · 20 files")).toBeInTheDocument();
+    /* ADR 0039's rule is not a dictation-history row: a raw recording of
+       everything the microphone heard is its own collection, and ADR 0185 moved
+       it out of the card whose rule is that a card names what it governs. */
+    const audio = screen.getByText("Audio from a failed dictation").closest(".ws-card");
+    expect(audio).not.toBeNull();
+    const inAudio = within(audio as HTMLElement);
+    expect(inAudio.getByText("7 days · 20 files")).toBeInTheDocument();
+    expect(inAudio.getByText("On this machine now")).toBeInTheDocument();
+
     expect(
       inRow("Audio").getByText("Sent to the provider, then discarded — a failure's is kept here for a retry."),
     ).toBeInTheDocument();
+  });
+
+  /* The context collection has no store in the runtime, so both rows state a
+     decided rule rather than an observed one — and say which (rule 7). */
+  it("marks the context rules as decided rather than observed", () => {
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const context = inCard("Context objects");
+    expect(context.getByText("Until you delete them")).toBeInTheDocument();
+    expect(context.getAllByText("Preview")).toHaveLength(2);
+    const meeting = inRow("Meeting audio");
+    expect(meeting.getByText("Preview")).toBeInTheDocument();
+    /* `Own budget` named the existence of a setting instead of the rule. */
+    expect(meeting.getByText("Until the note is saved")).toBeInTheDocument();
+    expect(screen.queryByText("Own budget")).toBeNull();
   });
 
   it("bounds the copilot's reach and marks the rule as unbuilt", () => {

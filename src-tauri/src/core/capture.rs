@@ -2452,45 +2452,125 @@ fn restrict_capture_permissions(path: &std::path::Path) {
 #[cfg(not(unix))]
 fn restrict_capture_permissions(_path: &std::path::Path) {}
 
-/// Prune captures kept for a retry, oldest first.
-///
-/// Reads the same directory `capture_temp_dir` writes to, using the on-disk
-/// config rather than a live capture's, so it can run at startup when no
-/// capture exists. Failures are logged and swallowed: a sweep that cannot run
-/// must never take a session down with it.
-pub fn prune_retained_captures() {
+/// The directory retained captures live in, from the on-disk config rather than
+/// a live capture's, so it resolves at startup when no capture exists.
+fn retained_capture_dir() -> PathBuf {
     let config = super::config::AppConfig::load_from_disk();
-    let directory = if config.temp_audio_dir.trim().is_empty() {
+    if config.temp_audio_dir.trim().is_empty() {
         user_data_dir().join("tmp")
     } else {
         PathBuf::from(config.temp_audio_dir.trim())
+    }
+}
+
+/// Every capture this app wrote and still holds, newest first.
+///
+/// ONLY FILES THIS APP WROTE. `temp_audio_dir` is user-configurable, so "every
+/// .wav in the directory" would delete the user's own recordings the moment
+/// they point it at a folder that has some — neither the sweep nor the button
+/// on Privacy & Data is allowed to be destructive outside what it created. The
+/// name pattern is the one `start_native_capture` writes (`capture-<n>.wav`).
+///
+/// Newest first, because the count rule keeps the most recent — the ones a
+/// retry is most likely to want.
+fn retained_captures() -> Vec<(std::time::SystemTime, PathBuf, u64)> {
+    let Ok(entries) = std::fs::read_dir(retained_capture_dir()) else {
+        return Vec::new();
     };
 
-    let Ok(entries) = std::fs::read_dir(&directory) else {
-        return;
-    };
-
-    let mut captures: Vec<(std::time::SystemTime, PathBuf)> = entries
+    let mut captures: Vec<(std::time::SystemTime, PathBuf, u64)> = entries
         .flatten()
-        // Only files this app wrote. `temp_audio_dir` is user-configurable, so
-        // "every .wav in the directory" would delete the user's own recordings
-        // the moment they point it at a folder that has some — a sweep is not
-        // allowed to be destructive outside what it created. The name pattern
-        // is the one `start_native_capture` writes (`capture-<n>.wav`).
         .filter(|entry| is_retained_capture_file(&entry.path()))
         .filter_map(|entry| {
-            let modified = entry.metadata().ok()?.modified().ok()?;
-            Some((modified, entry.path()))
+            let metadata = entry.metadata().ok()?;
+            Some((metadata.modified().ok()?, entry.path(), metadata.len()))
         })
         .collect();
 
-    // Newest first, so the count rule keeps the most recent — the ones a retry
-    // is most likely to want.
     captures.sort_by(|a, b| b.0.cmp(&a.0));
+    captures
+}
+
+/// What is actually parked on this machine right now (ADR 0185).
+///
+/// A RETENTION RULE WITHOUT A READING IS HALF AN ANSWER. "Seven days, twenty
+/// files" states what MAY be kept; the question a privacy screen is opened with
+/// is whether anything IS. Nothing parked is the most reassuring sentence the
+/// screen can print, and it could not print it.
+#[derive(Debug, Clone, Serialize)]
+pub struct RetainedCaptureStatus {
+    pub count: usize,
+    pub bytes: u64,
+    /// Age of the oldest file in milliseconds, absent when there is none. An
+    /// age rather than a timestamp: the rule it is read against is a duration,
+    /// and a clock skew between write and read must not produce a future date.
+    pub oldest_age_ms: Option<u64>,
+    pub max_age_days: u64,
+    pub max_files: usize,
+    pub directory: String,
+}
+
+fn retained_capture_status_now() -> RetainedCaptureStatus {
+    let captures = retained_captures();
+    let now = std::time::SystemTime::now();
+    let oldest_age_ms = captures
+        .last()
+        .and_then(|(modified, _, _)| now.duration_since(*modified).ok())
+        .map(|age| age.as_millis().min(u128::from(u64::MAX)) as u64);
+
+    RetainedCaptureStatus {
+        count: captures.len(),
+        bytes: captures.iter().map(|(_, _, bytes)| *bytes).sum(),
+        oldest_age_ms,
+        max_age_days: RETAINED_CAPTURE_MAX_AGE.as_secs() / (24 * 60 * 60),
+        max_files: RETAINED_CAPTURE_MAX_FILES,
+        directory: retained_capture_dir().to_string_lossy().to_string(),
+    }
+}
+
+#[tauri::command]
+pub fn retained_capture_status() -> Result<RetainedCaptureStatus, String> {
+    Ok(retained_capture_status_now())
+}
+
+/// Delete every parked capture now, and answer with what is left.
+///
+/// THE ONE DOOR ON THE SCREEN THAT SHORTENS THE SEVEN DAYS. The sweep is
+/// automatic and the numbers are ADR 0039's, so before this the only way to be
+/// rid of a recording of your own voice was to wait a week. It costs the retry
+/// the file was kept for, which is why it is a button somebody presses rather
+/// than anything the runtime decides.
+///
+/// Answers with the status rather than a count, so the row it feeds redraws
+/// from one shape whichever call produced it.
+#[tauri::command]
+pub fn discard_retained_captures() -> Result<RetainedCaptureStatus, String> {
+    let captures = retained_captures();
+    let mut removed = 0usize;
+    for (_, path, _) in &captures {
+        if std::fs::remove_file(path).is_ok() {
+            removed += 1;
+        }
+    }
+
+    runtime_log::record(format!(
+        "[WordScript] Retained captures discarded on request removed={removed} of={}",
+        captures.len(),
+    ));
+
+    Ok(retained_capture_status_now())
+}
+
+/// Prune captures kept for a retry, oldest first.
+///
+/// Failures are logged and swallowed: a sweep that cannot run must never take a
+/// session down with it.
+pub fn prune_retained_captures() {
+    let captures = retained_captures();
 
     let now = std::time::SystemTime::now();
     let mut removed = 0usize;
-    for (index, (modified, path)) in captures.iter().enumerate() {
+    for (index, (modified, path, _)) in captures.iter().enumerate() {
         let too_old = now
             .duration_since(*modified)
             .map(|age| age > RETAINED_CAPTURE_MAX_AGE)

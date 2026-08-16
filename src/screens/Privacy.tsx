@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import {
   Button,
   Card,
   CardRows,
+  Field,
   Icon,
   PreviewTag,
   Row,
   SectionHeader,
+  SegmentControl,
   Select,
   StatusBadge,
   ViewTop,
@@ -19,6 +21,7 @@ import {
   textProfileFromRulesDocument,
   textRulesDocumentFromProfile,
 } from "@/lib/textProfiles";
+import type { RetainedCaptureStatus } from "@/types/history";
 import type { TextRulesAnalysis, TextRulesDocument } from "@/types/textRules";
 import type { WiredScreenProps } from "./props";
 
@@ -47,10 +50,22 @@ import type { WiredScreenProps } from "./props";
  * rather than a second store (ADR 0074). One card per collection is what makes
  * that structural instead of a sentence somebody has to find.
  *
- * THE THIRD RULE IS AUDIO'S AND IT WAS MISSING ENTIRELY. ADR 0039 keeps a
- * failed capture for seven days or twenty files. Two rules drawn and a third
- * omitted is worse than three drawn, because the omitted one covers the
- * recording rather than the text.
+ * ONE RULE THE READER SETS, AND IT IS A DURATION (ADR 0185). Two pickers over
+ * one list — a count and an age — meant neither could be read, because
+ * `prune_entries` sweeps by age and THEN by count: `Keep all` still dropped the
+ * 1001st record, and ninety days was a promise the count broke without saying
+ * so. Nobody reasons about their own privacy in units of *the last two hundred
+ * dictations*; they reason in months, which is now what the picker offers. The
+ * count became the index's ceiling — stated in its own row, pinned in
+ * `normalize_for_runtime`, and no longer anybody's preference.
+ *
+ * THE THIRD COLLECTION IS AUDIO'S, AND IT IS A CARD RATHER THAN A ROW. ADR 0039
+ * keeps a failed capture for seven days or twenty files, and that row sat inside
+ * `Dictation history` — under the very card whose rule is that a card names its
+ * collection. A raw WAV is not a history entry. It is also the most sensitive
+ * thing this product holds, so the card states what the rule ALLOWS and, since
+ * ADR 0185, what is actually parked: `retained_capture_status` counts it and
+ * `discard_retained_captures` is the one door that shortens the seven days.
  *
  * WHAT MAY READ IT IS ITS OWN SECTION, and it exists because the question was
  * asked of the retention rows and they could not answer it. If the dictation
@@ -62,10 +77,9 @@ import type { WiredScreenProps } from "./props";
  * button, and the least useful of the three: it names a neighbourhood rather
  * than a consequence.
  *
- * EVERY DOOR ON THIS SCREEN ACTS. The retention rules are config
- * (`history_limit`, `history_retention_days`), Clear is
- * `clear_transcription_history_entries`, and the three that had no command at
- * all are `core::backup`:
+ * EVERY DOOR ON THIS SCREEN ACTS. The retention rule is config
+ * (`history_retention_days`), Clear is `clear_transcription_history_entries`,
+ * and the three that had no command at all are `core::backup`:
  *
  *   - **Full export** is `export_full_backup` — the config, the history index
  *     and the transcript files as one archive, which is what "everything
@@ -108,9 +122,8 @@ import type { WiredScreenProps } from "./props";
  * hold and the way back is deleting the profile the import just made — one
  * confirmed click on the screen the row points at.
  */
-const HISTORY_LIMITS = [50, 100, 200, 500, 1000];
-
-/** The typing speeds `Time saved` can be measured against (ADR 0178).
+/** The three answers to *how fast do you type* that need no measurement
+ *  (ADR 0178, shaped by ADR 0182).
  *
  *  THE BASELINE IS THE FIGURE. The same four weeks of dictation read 43 minutes
  *  saved against 40 words a minute and 15 against 60 — everything else on that
@@ -118,20 +131,132 @@ const HISTORY_LIMITS = [50, 100, 200, 500, 1000];
  *  in the frontend until somebody asked how accurate the tile actually was, and
  *  the honest answer was "as accurate as a guess nobody was shown".
  *
- *  Forty is the ordinary figure for sustained prose typing and is the default.
- *  The rest of the range is what a real writer might set: somebody who types all
- *  day is faster, and somebody working on a phone keyboard is not. */
-const TYPING_BASELINES = [20, 30, 40, 50, 60, 70, 80, 100];
+ *  THREE NAMED SPEEDS AND A FIELD, RATHER THAN EIGHT ANONYMOUS NUMBERS. A drop
+ *  down of `20 · 30 · 40 …` asks the reader for a figure about themselves that
+ *  almost nobody has ever measured, and offers no way to enter the one number
+ *  somebody who HAS measured it actually knows. The presets answer the first
+ *  reader — they describe how you type, not how fast — and the field answers the
+ *  second, at whatever value they hold.
+ *
+ *  Forty is the ordinary figure for sustained prose typing and stays the
+ *  default; thirty is two fingers looking at the keys; seventy is a touch
+ *  typist who writes all day. */
+export const TYPING_BASELINE_PRESETS: { value: number; label: string }[] = [
+  { value: 30, label: "Two fingers" },
+  { value: 40, label: "Average" },
+  { value: 70, label: "Touch typist" },
+];
 
-/** The drawn options, with the value each one means. `Keep all` is 0 in the
- *  config, which is the runtime's own encoding of "do not prune". */
+/** What the field will take. The low end is below any real typist and the high
+ *  end is above the world record; both exist to stop a hand-typed value from
+ *  turning the tile into an absurdity, not to police the reader. */
+const BASELINE_MIN = 10;
+const BASELINE_MAX = 200;
+
+/**
+ * THE ONE CONTROL FOR THE ONE NUMBER `Time saved` IS DIVIDED BY, drawn here and
+ * imported by Onboarding — the same precedent `InertSegment` sets, and for the
+ * same reason: two copies of a control this load-bearing would drift.
+ *
+ * THE FIELD IS DRAFTED RATHER THAN LIVE. Typing `70` passes through `7`, and a
+ * control that wrote every keystrokes' worth of value would put a 7 wpm baseline
+ * on disk on the way to a valid one. The draft holds what is being typed, the
+ * value is only handed over when it is inside the range, and a value outside it
+ * marks the field instead of being swallowed.
+ */
+export function TypingBaseline({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (wpm: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? String(value);
+  const parsed = Number(shown.trim());
+  const usable =
+    /^\d{1,3}$/.test(shown.trim()) && parsed >= BASELINE_MIN && parsed <= BASELINE_MAX;
+
+  return (
+    <span className="ws-rowflex">
+      <SegmentControl
+        aria-label="How you type"
+        /* A value no segment holds presses none of them, which is what a
+           hand-entered 58 should look like: the reader set a number of their
+           own and the presets are not claiming it. */
+        value={String(value)}
+        options={TYPING_BASELINE_PRESETS.map((preset) => ({
+          value: String(preset.value),
+          label: `${preset.label} · ${preset.value}`,
+        }))}
+        onChange={(next) => {
+          setDraft(null);
+          onChange(Number(next));
+        }}
+      />
+      <Field
+        w="52px"
+        inputMode="numeric"
+        value={shown}
+        invalid={!usable}
+        aria-label="Typing baseline in words a minute"
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const next = Number(event.target.value.trim());
+          if (
+            /^\d{1,3}$/.test(event.target.value.trim()) &&
+            next >= BASELINE_MIN &&
+            next <= BASELINE_MAX
+          ) {
+            onChange(next);
+          }
+        }}
+        /* Leaving the field gives the display back to the config, so an
+           abandoned half-typed number does not sit there looking like a
+           setting. */
+        onBlur={() => setDraft(null)}
+      />
+      <span className="ws-muted">wpm</span>
+    </span>
+  );
+}
+
+/** The drawn options, with the value each one means (ADR 0185).
+ *
+ *  MONTHS, BECAUSE THAT IS THE UNIT THE QUESTION IS ASKED IN. Nobody holds an
+ *  opinion about thirty days; they hold one about a month. The config stores
+ *  days either way — the label is the reader's unit and the number is the
+ *  runtime's.
+ *
+ *  `No age limit` is 0, which is the runtime's own encoding of "do not prune by
+ *  age". It is NOT "keep all", which is what this option used to say and what
+ *  the runtime has never done: the ceiling below still drops the oldest. A
+ *  picker may not promise what the sweep beside it takes back. */
 const RETENTIONS: { value: number; label: string }[] = [
   { value: 7, label: "7 days" },
-  { value: 30, label: "30 days" },
-  { value: 90, label: "90 days" },
+  { value: 30, label: "1 month" },
+  { value: 90, label: "3 months" },
   { value: 365, label: "1 year" },
-  { value: 0, label: "Keep all" },
+  { value: 0, label: "No age limit" },
 ];
+
+/** A parked recording's size, in the decimal units the rest of the product
+ *  states file sizes in (`formatModelSize`'s reasoning, one order down: these
+ *  are megabytes of WAV, not gigabytes of model). */
+function formatCaptureSize(bytes: number): string {
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1000))} KB`;
+}
+
+/** How old the oldest parked recording is, against a rule stated in days. Whole
+ *  words rather than `2d`, because this row is read once and in prose. */
+function formatCaptureAge(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return "under an hour old";
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} old`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} old`;
+}
 
 /** The profile a rules file becomes, named after the file it came from. The
  *  export's own suggested name is stripped back off, so a round trip does not
@@ -153,7 +278,14 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
      within a screen of each other, and a single message would leave a reader
      guessing which one it answered. */
   const [busy, setBusy] = useState<
-    "export" | "import" | "reset" | "rules-export" | "rules-import" | "activity" | null
+    | "export"
+    | "import"
+    | "reset"
+    | "rules-export"
+    | "rules-import"
+    | "activity"
+    | "captures"
+    | null
   >(null);
   const [exported, setExported] = useState<string | null>(null);
   const [imported, setImported] = useState<string | null>(null);
@@ -161,6 +293,30 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
   const [rulesExported, setRulesExported] = useState<string | null>(null);
   const [rulesImported, setRulesImported] = useState<string | null>(null);
   const [activityReset, setActivityReset] = useState<string | null>(null);
+
+  /* WHAT IS PARKED, READ FROM THE RUNTIME RATHER THAN ASSUMED (ADR 0185). The
+     row states a count, so it may only draw one the runtime produced — `null`
+     while nothing has answered yet, and the row says nothing about files in the
+     meantime rather than claiming zero. */
+  const [captures, setCaptures] = useState<RetainedCaptureStatus | null>(null);
+  const [capturesNote, setCapturesNote] = useState<string | null>(null);
+
+  const readCaptures = useCallback(async () => {
+    try {
+      const answer = await invoke<RetainedCaptureStatus>("retained_capture_status");
+      setCaptures(typeof answer?.count === "number" ? answer : null);
+    } catch {
+      /* Silent: a status this row could not read is a row that states the rule
+         and no reading, which is what `null` already draws. A privacy screen
+         must not turn its own failure into a claim about the disk. */
+      setCaptures(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!runtime.active) return;
+    void readCaptures();
+  }, [runtime.active, readCaptures]);
 
   /* WHICH PROFILE THE EXPORT MEANS. It opens on the active one because that is
      the profile the reader is currently being written by, and it is a local
@@ -194,6 +350,24 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
       setActivityReset("Every all-time figure is back to nothing. Counting starts again with your next dictation.");
     } catch (cause) {
       setActivityReset(String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /* THE DOOR THAT SHORTENS THE SEVEN DAYS. Everything else about a retained
+     capture is automatic, so before this the only way to be rid of a recording
+     of your own voice was to wait a week. It costs the retry the file was kept
+     for, which is why the row says so and the runtime never does this by
+     itself. */
+  const discardCaptures = async () => {
+    setBusy("captures");
+    try {
+      const answer = await invoke<RetainedCaptureStatus>("discard_retained_captures");
+      setCaptures(typeof answer?.count === "number" ? answer : null);
+      setCapturesNote("Deleted. A failed dictation can no longer be retried from its audio.");
+    } catch (cause) {
+      setCapturesNote(String(cause));
     } finally {
       setBusy(null);
     }
@@ -356,7 +530,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
 
       <SectionHeader
         title="How long things are kept"
-        description="Two collections and one recording, each under its own rule."
+        description="Three collections, each under its own rule, and only the first one is yours to set."
       >
         <Card
           title="Dictation history"
@@ -364,45 +538,19 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
         >
           <CardRows>
             <Row
-              label="Stored dictations"
-              hint="The oldest is dropped when the cap is reached."
-              control={
-                <Select
-                    value={String(runtime.config.history_limit)}
-                    onChange={(event) =>
-                      runtime.patch({ history_limit: Number(event.target.value) })
-                    }
-                    aria-label="Stored dictations"
-                  >
-                    {/* A stored cap the drawing does not offer stays selectable,
-                        so the row shows what is set rather than silently moving
-                        the user to a neighbouring value. */}
-                    {(HISTORY_LIMITS.includes(runtime.config.history_limit)
-                      ? HISTORY_LIMITS
-                      : [...HISTORY_LIMITS, runtime.config.history_limit].sort((a, b) => a - b)
-                    ).map((limit) => (
-                      <option key={limit} value={limit}>
-                        {limit}
-                      </option>
-                    ))}
-                  </Select>
-              }
-            />
-            <Row
-              label="Retention"
-              /* BOTH RULES BIND, AND THE OLD SENTENCE HID THE SECOND ONE.
-                 `prune_entries` sweeps by age first and then by count, so a
-                 reader who set `Keep all` still loses the 1001st dictation. A
-                 retention row that says only "older entries are pruned" is
-                 describing half of its own mechanism. */
-              hint="Whichever binds first: this age, or the cap above."
+              label="Kept for"
+              /* THE ONE RULE, AND ITS HINT NO LONGER HAS TO EXPLAIN A SECOND
+                 ONE. It used to read "whichever binds first: this age, or the
+                 cap above" — a sentence that only exists because the screen
+                 offered two rules over one list (ADR 0185). */
+              hint="Older dictations are deleted with their transcript files. Nothing else prunes them."
               control={
                 <Select
                     value={String(runtime.config.history_retention_days)}
                     onChange={(event) =>
                       runtime.patch({ history_retention_days: Number(event.target.value) })
                     }
-                    aria-label="Retention"
+                    aria-label="Kept for"
                   >
                     {(RETENTIONS.some((r) => r.value === runtime.config.history_retention_days)
                       ? RETENTIONS
@@ -421,18 +569,88 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                   </Select>
               }
             />
-            {/* THE THIRD RETENTION RULE IN THE PRODUCT, AND THIS SCREEN DID NOT
-                CARRY IT. ADR 0039 keeps a capture when a second attempt could
-                survive the failure and sweeps it at seven days or twenty files.
-                It is built (`core::capture::prune_retained_captures`), it is a
-                raw recording of everything the microphone heard, and a privacy
-                screen that lists two rules and omits the one covering audio is
-                omitting the most sensitive of the three. It states rather than
-                sets: the numbers are ADR 0039's, not a preference. */}
+            {/* THE COUNT, STATED RATHER THAN OFFERED (ADR 0185). It is drawn
+                from `history_limit` rather than from a constant of this
+                screen's own, because the runtime pins that field and a second
+                copy of the number here would be the one to go stale. */}
             <Row
-              label="A failure's audio"
-              hint="Kept so a retry can use it. A successful dictation's is discarded at once."
-              control={<StatusBadge tone="plan">7 days · 20 files</StatusBadge>}
+              label="The index's ceiling"
+              hint="Beyond this the oldest drops out, whatever the rule above says. It bounds the index, not your privacy — a thousand transcripts is a few hundred kilobytes of text."
+              control={
+                <StatusBadge tone="plan">Newest {runtime.config.history_limit}</StatusBadge>
+              }
+            />
+          </CardRows>
+        </Card>
+
+        {/* ITS OWN CARD, BECAUSE IT IS ITS OWN COLLECTION. This stood as a
+            fourth row inside `Dictation history` — under the card whose rule is
+            that a card names what it governs. ADR 0039 keeps a capture when a
+            second attempt could survive the failure; a raw WAV of everything
+            the microphone heard is not a history entry, and it is the most
+            sensitive thing this product holds. */}
+        <Card
+          title="Audio from a failed dictation"
+          description="Kept so a retry can use it. A successful dictation's recording is discarded at once."
+        >
+          <CardRows>
+            <Row
+              label="Kept for"
+              /* It states rather than sets: the numbers are ADR 0039's, not a
+                 preference, and the row draws them from the runtime's own
+                 answer rather than repeating them here. */
+              hint="Whichever comes first. Set by the product, not by you."
+              control={
+                <StatusBadge tone="plan">
+                  {captures
+                    ? `${captures.max_age_days} days · ${captures.max_files} files`
+                    : "7 days · 20 files"}
+                </StatusBadge>
+              }
+            />
+            {/* A RULE WITHOUT A READING IS HALF AN ANSWER. "Seven days, twenty
+                files" says what MAY be kept; the question this screen is opened
+                with is whether anything IS — and `Nothing kept` is the most
+                reassuring sentence it can print. The button appears only when
+                there is something to delete, because a door onto an empty
+                directory is the fake affordance rule 7 forbids. */}
+            <Row
+              label="On this machine now"
+              hint={
+                capturesNote ??
+                (captures === null
+                  ? "Read from the folder these are written to."
+                  : captures.count === 0
+                    ? "Nothing is parked. Every capture so far was either transcribed or swept."
+                    : `In ${captures.directory}. Deleting them now means a failed dictation can no longer be retried from its audio.`)
+              }
+              control={
+                <span className="ws-rowflex">
+                  {captures === null ? (
+                    <StatusBadge tone="neutral">Not read</StatusBadge>
+                  ) : captures.count === 0 ? (
+                    <StatusBadge tone="success">Nothing kept</StatusBadge>
+                  ) : (
+                    <StatusBadge tone="warning">
+                      {captures.count} file{captures.count === 1 ? "" : "s"} ·{" "}
+                      {formatCaptureSize(captures.bytes)}
+                      {captures.oldest_age_ms === null
+                        ? ""
+                        : ` · oldest ${formatCaptureAge(captures.oldest_age_ms)}`}
+                    </StatusBadge>
+                  )}
+                  {captures !== null && captures.count > 0 && (
+                    <Button
+                      variant="danger"
+                      busy={busy === "captures"}
+                      disabled={busy !== null}
+                      onClick={() => void discardCaptures()}
+                    >
+                      Delete now
+                    </Button>
+                  )}
+                </span>
+              }
             />
           </CardRows>
         </Card>
@@ -442,12 +660,26 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
           description="Meetings, uploads, links, notes and kept conversations."
         >
           <CardRows>
+            {/* THE COLLECTION DOES NOT EXIST YET, AND THE ROWS MAY NOT IMPLY
+                THAT IT DOES. There is no context store in the runtime, so both
+                rows state a decided rule rather than an observed one — which is
+                exactly what `PreviewTag` marks (rule 7, ADR 0161). "Pruning"
+                also went: it named the mechanism where the reader asks about
+                the outcome. */}
+            {/* THE SAME QUESTION IN THE SAME WORDS, ONCE PER CARD. Three
+                collections each answer `Kept for`, so the screen reads as one
+                question asked three times rather than three rules that happen
+                to be nearby — and the answers differ in the badge, which is
+                where a difference belongs. */}
             <Row
-              label="Pruning"
-              hint="Nothing prunes them, and nothing will without asking."
+              label="Kept for"
+              tag={
+                <PreviewTag title="The rule is decided; the collection is the context-object track's own stage and is not built. Nothing on this machine holds a context object yet." />
+              }
+              hint="Nothing prunes them on a schedule, and nothing will without asking."
               control={
                 <span className="ws-rowflex">
-                  <StatusBadge tone="plan">Kept until you delete</StatusBadge>
+                  <StatusBadge tone="plan">Until you delete them</StatusBadge>
                   <Button
                     variant="ghost"
                     icon={<Icon name="arrow" />}
@@ -460,10 +692,17 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="Meeting audio"
-              hint="Its own budget, set where a meeting is configured."
+              tag={
+                <PreviewTag title="Drawn on Notes & Meetings and not wired. The default stated here is that screen's own." />
+              }
+              /* "OWN BUDGET" NAMED NOTHING. A reader of a retention section
+                 wants the rule, and the rule is drawn one door away as `Keep
+                 the audio` — so this row states its default instead of pointing
+                 at the existence of a setting. */
+              hint="An hour of a call is a different promise from a dictation, so it has its own rule where a meeting is configured."
               control={
                 <span className="ws-rowflex">
-                  <StatusBadge tone="plan">Own budget</StatusBadge>
+                  <StatusBadge tone="plan">Until the note is saved</StatusBadge>
                   {/* THE DOOR WAS DRAWN AND DEAD. It carried an arrow, named a
                       screen and had no handler, on the one surface whose own
                       docblock claims every door acts — which is ADR 0020's
@@ -686,30 +925,21 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
           <CardRows>
             <Row
               label="Typing baseline"
+              /* STACKED, BECAUSE THE CONTROL IS THREE SEGMENTS AND A FIELD.
+                 ADR 0092's rule is that `.ws-row-ctl` takes its width off the
+                 text column; a composite this wide on an inline row would leave
+                 the hint reading ten characters to a line. */
+              layout="stack"
               /* THE ROW STATES THE SWING RATHER THAN THE UNIT. A reader who does
                  not know that this number IS the figure will leave it at 40 and
                  take the result for a measurement — which is exactly the reading
                  the ≈ on the tile exists to prevent. */
-              hint="Time saved is your dictated words at this typing speed, less the time you spent dictating them. Nothing here has ever watched you type."
+              hint="Time saved is your dictated words at this typing speed, less the time you spent dictating them. Nothing here has ever watched you type — pick the description that fits, or enter your own figure."
               control={
-                <Select
-                  value={String(runtime.config.typing_baseline_wpm ?? 40)}
-                  onChange={(event) =>
-                    runtime.patch({ typing_baseline_wpm: Number(event.target.value) })
-                  }
-                  aria-label="Typing baseline"
-                >
-                  {(TYPING_BASELINES.includes(runtime.config.typing_baseline_wpm ?? 40)
-                    ? TYPING_BASELINES
-                    : [...TYPING_BASELINES, runtime.config.typing_baseline_wpm ?? 40].sort(
-                        (a, b) => a - b,
-                      )
-                  ).map((wpm) => (
-                    <option key={wpm} value={wpm}>
-                      {wpm} words a minute
-                    </option>
-                  ))}
-                </Select>
+                <TypingBaseline
+                  value={runtime.config.typing_baseline_wpm ?? 40}
+                  onChange={(wpm) => runtime.patch({ typing_baseline_wpm: wpm })}
+                />
               }
             />
           </CardRows>

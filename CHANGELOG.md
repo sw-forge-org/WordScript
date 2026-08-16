@@ -53,6 +53,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — retention is one rule you set, and the audio a failure parks can be counted and deleted (ADR 0185)
+
+- **One picker, and it asks in months.** `Privacy & Data` offered a count and an
+  age over the same list, and both bound: `prune_entries` sweeps by age and then
+  by count, so `Keep all` still dropped the 1001st record and a ninety-day rule
+  was broken by a number the reader set once without being told what it did. The
+  rule is now `Kept for` — 7 days · 1 month · 3 months · 1 year · No age limit —
+  because that is the unit the question is asked in. `Keep all` is gone as a
+  label; the runtime has never done it.
+- **The count became the index's ceiling.** `history_limit` is pinned to
+  `config::HISTORY_CEILING` (1000) on load and stated on the screen as
+  `Newest 1000` rather than offered. It bounds the index, not your privacy — a
+  thousand transcripts is a few hundred kilobytes of text. Any stored value is
+  raised to it, including the `50` on the machine this was measured on, which is
+  why the activity calendar there could only ever draw one column.
+- **The audio a failed dictation parks is its own card, and it now says what is
+  actually there.** It sat as a fourth row under `Dictation history`, which is
+  the card whose own rule is that a card names its collection. New commands
+  `retained_capture_status` and `discard_retained_captures` mean the screen can
+  print `Nothing kept` — or a count, a size and the age of the oldest, with a
+  `Delete now` beside it. It deletes only files this app wrote, in the directory
+  it writes to, and it names its cost: a failed dictation can no longer be
+  retried from its audio.
+- **The context rows stopped implying a runtime.** There is no context store
+  yet, so both rows carry `PreviewTag`; `Pruning` became `Kept for` like every
+  other collection, and `Own budget` became the rule it actually stands for —
+  `Until the note is saved`.
+
 ### Changed — every figure on Home is now measured the way its label reads (ADR 0176-0181)
 
 - **Words per minute is a speaking rate.** It divided the DELIVERED text by the

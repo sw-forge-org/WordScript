@@ -35,6 +35,24 @@ export interface TranscriptionHistoryStorageStatus {
   path: string;
 }
 
+/** What a failed dictation left parked on this machine (ADR 0185).
+ *
+ *  A RAW RECORDING IS THE MOST SENSITIVE THING THE PRODUCT HOLDS, and until
+ *  this shape existed Privacy & Data could only recite the rule — seven days,
+ *  twenty files — without saying whether anything was under it. `count: 0` is
+ *  the answer the screen is most often opened for.
+ *
+ *  `oldest_age_ms` is an age rather than a date because the rule it is read
+ *  against is a duration, and it is absent when there is nothing to age. */
+export interface RetainedCaptureStatus {
+  count: number;
+  bytes: number;
+  oldest_age_ms: number | null;
+  max_age_days: number;
+  max_files: number;
+  directory: string;
+}
+
 /** Where transcripts are written as files (ADR 0074). `exists` is false on a
  *  machine that has not dictated since the store existed — the root is still
  *  the true answer to where the next one lands, which is why it is stated
