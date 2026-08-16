@@ -87,6 +87,12 @@ export { Sources } from "./Sources";
 export { Matrix, MATRIX_FRAMES, vu } from "./Matrix";
 export type { Frame } from "./Matrix";
 export { Waveform } from "./Waveform";
+export {
+  DigitCounter,
+  RESERVED_POSITIONS,
+  counterDigits,
+  counterFrame,
+} from "./DigitCounter";
 
 /* ── The icon set, the orchestrator's body, the provider marks — Leg 2b ── */
 export { Icon } from "./Icon";
@@ -96,7 +102,7 @@ export type { OrbState } from "./Orb";
 export { ProviderMark, ProviderSprite, ProviderChips, brandSymbolId } from "./ProviderMark";
 
 /* ── The workspace grammar — Leg 2b ── */
-export { HomeOpen, HeroInvoke, HeroFacts, KeyCap } from "./HomeHero";
+export { HomeOpen, HeroInvoke, HeroFacts, HomeDisplay, StatTile } from "./HomeHero";
 export { ListRows, ListItem, RawPanel, AnswerPanel, Reorder } from "./ListItem";
 export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
 export { EditorPanel, ConfirmPanel, FlagPanel } from "./EditorPanel";

@@ -40,7 +40,8 @@ Status: 2026-08-16
   Insert, Hotkeys, History, Privacy & Data, **Profiles**. **Wired in part, each
   stating on itself exactly what it cannot read:** AI Models (two operable lanes
   of four since 2026-08-16 — Cloud and `Your server`), Home (two of the decision
-  inbox's three sources have no receiver). **Not wireable at all**, and carrying a banner for that reason
+  inbox's three sources have no receiver; two of the four activity counters are
+  drawn). **Not wireable at all**, and carrying a banner for that reason
   rather than for a missing commit: Context (V2), Notes & Meetings (V2), Agents
   (Phase 8, ADR 0030), Integrations (Phase 8).
 - **The profile health flag acts, and Profiles lost its banner with it**
@@ -113,6 +114,16 @@ Status: 2026-08-16
 - **Home's decision inbox receives a fallen-back delivery** and draws nothing
   when nothing is owed (ADR 0076). The desk and a meeting's open questions still
   have no receiver.
+- **Home reports what it measured, once it has measured anything** (ADR 0171,
+  2026-08-16). Words per minute and time saved over the last seven days are read
+  from history and each states how many records it was computed over —
+  `capture_integrity` is absent on a retry and on every record older than the
+  measurement, so the figure is over what was timed and says so. Time saved
+  carries `≈`, because its typing baseline is an assumption. Apps and Languages
+  are drawn: no record stores the target application, and `entry.language` is
+  the setting rather than what was recognised. Before the first measured
+  dictation the block carries the instruction instead, and the 42 px keycaps are
+  gone — the shortcut is in the hero's fact line.
 - **The colour scheme survives a restart** (`AppConfig.color_scheme`, light /
   dark / system). It is machine-wide rather than per profile, and `system` is a
   deferral resolved at render time, so `<html data-theme>` always carries

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import {
   Card,
   CardRows,
+  DigitCounter,
   MATRIX_FRAMES,
   Matrix,
   Note,
@@ -143,9 +144,73 @@ const CELLS: Array<{
   },
 ];
 
+/**
+ * THE COUNTER — the composite frame the digit alphabet does not ship.
+ *
+ * Three cells, and the first two exist to be compared: one digit and four sit in
+ * a box of exactly the same width, which is the whole claim the component makes.
+ * The third is the reading that does not exist, which is a dark display rather
+ * than a lit zero — those are two different facts and the component refuses to
+ * spell one as the other.
+ */
+const COUNTERS: Array<{ name: string; reads: string; description: string; render: ReactNode }> = [
+  {
+    name: "One digit",
+    reads: "7",
+    description:
+      "Right-aligned in four reserved positions. The three unlit slots are the space the number grows into.",
+    render: <DigitCounter value={7} size={6} gap={2} ariaLabel="7" />,
+  },
+  {
+    name: "Four digits",
+    reads: "1,240",
+    description:
+      "The same box, filled. Nothing on the row moves when 99 becomes 100, which is what makes a counter readable at a glance.",
+    render: <DigitCounter value={1240} size={6} gap={2} ariaLabel="1,240" />,
+  },
+  {
+    name: "No reading",
+    reads: "—",
+    description:
+      "A dark display asserts nothing. A lit 0 would assert that the runtime counted none, and that is a different claim.",
+    render: <DigitCounter value={null} size={6} gap={2} ariaLabel="No reading yet" />,
+  },
+];
+
 export function Motion() {
   return (
     <div className="flex flex-col gap-[var(--gap-block)]">
+      <SectionHeader
+        title="The counter"
+        description="A number built out of the matrix's ten digit frames — N glyphs with one blank column between them, right-aligned in four reserved positions. There is no alphabet and no separator, so a label beside a counter stays ordinary text."
+      >
+        <Card>
+          <div className="ws-mx-lab">
+            {COUNTERS.map((cell) => (
+              <figure key={cell.name} className="ws-mx-cell">
+                <div className="ws-mx-stage">{cell.render}</div>
+                <figcaption>
+                  <b>{cell.name}</b>
+                  <span className="ws-mx-mode ws-mono">{cell.reads}</span>
+                  <span>{cell.description}</span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+          <CardRows>
+            <Row
+              label="Reserved positions"
+              hint="Four, and it is the selection rule rather than a layout preference: rates, ratios, small sets and windows all settle inside four digits. A cumulative total runs away, ends up abbreviated, and stops being a counter."
+              control={<span className="ws-mono ws-muted">4</span>}
+            />
+            <Row
+              label="Overflow"
+              hint="A value too long for the reserved positions widens the frame. Dropping a leading digit would state a wrong number, which is worse than a box that grew."
+              control={<span className="ws-mono ws-muted">widen, never truncate</span>}
+            />
+          </CardRows>
+        </Card>
+      </SectionHeader>
       <SectionHeader
         title="The matrix"
         description="A dot-matrix readout. One component, four frame sources and a level mode — ported whole from ElevenLabs UI (MIT), because a subset of a component is a different component."

@@ -1,22 +1,26 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Button,
   Card,
   HeroFacts,
   HeroInvoke,
+  HomeDisplay,
   HomeOpen,
   Icon,
   IconButton,
-  KeyCap,
+  Keycaps,
   ListRows,
   Owed,
   OwedList,
+  PreviewTag,
   SectionHeader,
+  StatTile,
   TranscriptRow,
 } from "@/components/shell";
 import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
+import { TYPING_BASELINE_WPM, timeSavedMinutes, wordsPerMinute } from "@/lib/activity";
 import { relativeTime } from "@/lib/format";
 import { readTriggerStatus } from "@/lib/shortcuts";
 import {
@@ -41,6 +45,17 @@ import type { PartlyWiredScreenProps } from "./props";
  * lane/model/target row that stood between them are gone — the first moved into
  * the hero's foot, the second to the window's bottom edge, where it is readable
  * from every view instead of only from this one.
+ *
+ * THE OPENING BLOCK HAS TWO LIVES, AND THE SWITCH IS WHETHER IT HAS ANYTHING TO
+ * SAY. An instruction is read exactly once, so the keycaps give the position up
+ * as soon as the runtime has measured a dictation, and the counters take it. The
+ * gate is `wordsPerMinute` rather than a count of records, and that is deliberate
+ * in both directions: a fresh profile sees the instruction rather than four
+ * zeroes, and a profile whose records all predate the capture measurement sees it
+ * too, because a display with nothing to display is the same defect wearing a
+ * different face. One rule — the display appears when it has a reading — and the
+ * gallery falls out of it rather than being special-cased: no runtime, no
+ * records, no readings, so the gallery draws the instruction.
  *
  * THE HERO'S SENTENCE IS THE ACTIVATION MODE'S, not the drawing's. "Hold in any
  * app to dictate / Release to stop" is true of exactly one of the three modes
@@ -86,20 +101,29 @@ function heroCopy(mode: string): { title: string; description: string } {
   };
 }
 
-/** The drawn caps, and the runtime's when there is one. `Ctrl + Super` is the
- *  runtime's display; `wide` is the drawing's own treatment of the long cap. */
-function keyCaps(display: string) {
-  const parts = display.split(" + ").filter(Boolean);
-  return (
-    <>
-      {parts.map((part, index) => (
-        <Fragment key={`${part}-${index}`}>
-          {index > 0 && <span className="ws-plus">+</span>}
-          <KeyCap wide={part.length > 4}>{part}</KeyCap>
-        </Fragment>
-      ))}
-    </>
-  );
+/** The gesture, as one word for the fact line. `heroCopy` writes the same three
+ *  modes as a sentence; this is the verb out of it. */
+function invokeVerb(mode: string): string {
+  if (mode === "hold") return "Hold";
+  if (mode === "double_tap") return "Double tap";
+  return "Press";
+}
+
+/**
+ * The runtime's resolved display, normalised for `Keycaps`.
+ *
+ * The trigger status spells a chord `Ctrl + Super` and `config.hotkey` spells the
+ * same chord `Ctrl+Super`; `Keycaps` splits on `+` and would otherwise draw a cap
+ * with a space inside it. Splitting and trimming reads both spellings and keeps
+ * no key table of its own — the runtime remains the authority on what a chord is
+ * called (T9).
+ */
+function keycapCombo(display: string): string {
+  return display
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("+");
 }
 
 export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
@@ -140,7 +164,17 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
 
   const profile = runtime ? resolveActiveTextProfile(runtime.config) : null;
   const profileMode = profile ? resolveTextProfileWorkMode(profile).processing_mode : undefined;
-  const copy = heroCopy(runtime?.config.activation_mode ?? "hold");
+  const activation = runtime?.config.activation_mode ?? "hold";
+  const copy = heroCopy(activation);
+
+  /* THE TWO READINGS THE RECORD CAN ALREADY GIVE, derived in `lib/activity` and
+     never here — a rate is the thing this screen is most able to get quietly
+     wrong, so it is computed in one tested place and this file only renders it.
+     Both are `null` when nothing was measured, which is what the display gates
+     on and what the counter draws as a dark box rather than as a zero. */
+  const wpm = runtime ? wordsPerMinute(entries) : null;
+  const saved = runtime ? timeSavedMinutes(entries) : null;
+  const display = wpm !== null;
 
   /* THE ONE SOURCE OF ADR 0044'S THREE THAT HAS A RECEIVER (ADR 0076). A
      delivery that fell back to the clipboard or to the scratchpad is a
@@ -231,23 +265,68 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           inside a masthead it does not have. */}
       {banner}
       <HomeOpen>
-        <HeroInvoke
-          keys={
-            runtime ? (
-              keyCaps(trigger ?? runtime.config.hotkey)
-            ) : (
-              <>
-                <KeyCap>Ctrl</KeyCap>
-                <span className="ws-plus">+</span>
-                <KeyCap wide>Super</KeyCap>
-              </>
-            )
-          }
-          title={runtime ? copy.title : "Hold in any app to dictate"}
-          description={
-            runtime ? copy.description : "Release to stop. What it produces goes to the cursor you left."
-          }
-        />
+        {display ? (
+          <HomeDisplay>
+            {/* WORDS PER MINUTE. Words from the record, seconds from the
+                capture's own clock — and the foot names the two counts, because
+                `capture_integrity` is null on a retry and on every record older
+                than the measurement. A rate over a denominator that silently
+                skipped half the records is a plausible wrong number, which is a
+                worse failure than a missing one. */}
+            <StatTile
+              label="Words per minute"
+              value={wpm!.value}
+              ariaLabel={`${Math.round(wpm!.value)} words per minute`}
+              foot={`${wpm!.timed} of ${wpm!.total} runs measured`}
+              title="Words from the record, seconds from the capture's own clock. A retry has no capture of its own and records written before that measurement carry no clock, so neither is in this average."
+            />
+            {/* TIME SAVED. The one figure on this row derived from an
+                assumption rather than from a measurement, and the foot carries
+                the `≈` that says so. A rolling window rather than a total: a
+                lifetime figure built from a pruned history grows, sticks at the
+                limit and then runs backwards. */}
+            <StatTile
+              label="Time saved"
+              value={saved ? saved.value : null}
+              ariaLabel={
+                saved
+                  ? `About ${Math.round(saved.value)} minutes saved in the last 7 days`
+                  : "No reading for the last 7 days"
+              }
+              foot={saved ? "≈ minutes, last 7 days" : "nothing measured in 7 days"}
+              title={`The same words and seconds, against a ${TYPING_BASELINE_WPM} words-per-minute typing baseline. The baseline is an assumption and not a measurement — nothing here has watched you type — which is what the ≈ is for.`}
+            />
+            {/* DRAWN, AND SHOWING NO FIGURE AT ALL (ADR 0161). The tag sits at
+                the label, where it is read before the value rather than after
+                it, and the counter draws a dark display: inventing a 3 here
+                would be worse than a visible gap. */}
+            <StatTile
+              label="Apps"
+              tag={
+                <PreviewTag title="No history field stores the target application. `core::workspace_context` resolves it for the transform context and never writes it down; recording where a person dictates is a new collection, and the retention rule has to name it before the tile can count anything." />
+              }
+              value={null}
+              ariaLabel="No reading yet"
+              foot="no field on the record"
+            />
+            <StatTile
+              label="Languages"
+              tag={
+                <PreviewTag title="The record stores the configured language, not the recognised one. The provider returns one and it is spent on recogniser repair rather than written to the record, so a count today would count how often the setting was changed." />
+              }
+              value={null}
+              ariaLabel="No reading yet"
+              foot="the setting, not the reading"
+            />
+          </HomeDisplay>
+        ) : (
+          <HeroInvoke
+            title={runtime ? copy.title : "Hold in any app to dictate"}
+            description={
+              runtime ? copy.description : "Release to stop. What it produces goes to the cursor you left."
+            }
+          />
+        )}
         <HeroFacts
           action={
             <Button
@@ -259,6 +338,18 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
             </Button>
           }
         >
+          {/* THE SHORTCUT'S PERMANENT HOME. It left the top of the screen with
+              the 42 px caps and it did not leave the screen: the reader who has
+              forgotten which keys to press has to find them somewhere, and the
+              standing facts are where the facts that do not change with the next
+              dictation live. The keys are the runtime's resolved display, never
+              the raw token (T9). */}
+          <span>
+            {`${invokeVerb(activation)} `}
+            <Keycaps combo={keycapCombo(trigger ?? runtime?.config.hotkey ?? "Ctrl+Super")} />
+            {" in any app"}
+          </span>
+          <span className="ws-sep">·</span>
           {/* ONE TEXT NODE EITHER SIDE OF THE `<b>`, exactly as the prototype
               writes it. A JSX `{" "}` is a SECOND text node, and three of this
               row's spans measured 0.015px wide of the prototype because of it —

@@ -92,9 +92,15 @@ export interface SurfaceEntry<Id extends string> {
  * runtime. `registry.test.tsx` reads only whether a row has one — a screen that
  * reads half of what it draws keeps its banner and its gallery entry, and says
  * WHICH half is missing rather than repeating a generic sentence.
+ *
+ * THE CHIP MAY NAME WHICH OF THE TWO IT IS. `Preview` over a screen that reads
+ * most of what it draws is a caveat the reader learns to skip, and Home — where
+ * the inbox, the record and now two of the four counters are runtime truth — was
+ * the sharpest instance of it. `lead` is the chip's word; the sentence then says
+ * what is drawn instead of spending its opening on the grade again.
  */
-function saysSo(what: string): ReactNode {
-  return <PreviewBanner>{what}</PreviewBanner>;
+function saysSo(what: string, lead?: string): ReactNode {
+  return <PreviewBanner lead={lead}>{what}</PreviewBanner>;
 }
 
 export const VIEWS: SurfaceEntry<ViewId>[] = [
@@ -102,7 +108,10 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     id: "home",
     label: "Home",
     icon: "home",
-    banner: saysSo("Wired in part — the decision inbox receives a fallen-back delivery and nothing else; the desk (Phase 8) and a meeting's open questions (V2) have no receiver."),
+    banner: saysSo(
+      "Words per minute and time saved are measured; apps and languages are drawn, because no record stores a target application and the language on a record is the setting rather than what was recognised. The decision inbox receives a fallen-back delivery and nothing else — the desk (Phase 8) and a meeting's open questions (V2) have no receiver.",
+      "Wired in part",
+    ),
     render: (props) => <HomeScreen {...props} />,
   },
   {

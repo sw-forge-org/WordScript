@@ -38,7 +38,12 @@ import { ACTIONS, CTX } from "./contextData";
 afterEach(cleanup);
 
 describe("Home", () => {
-  it("opens on the shortcut rather than on a button that cannot record", () => {
+  /* THE CAPS MOVED AND THE CLAIM DID NOT. Home opened on two 42 px keycaps
+     until the activity display took that position; the shortcut is now stated
+     in the fact line, at the size a sentence can hold it, and this case follows
+     it there. What it holds is unchanged: the screen names the shortcut,
+     because that is how the product is used. */
+  it("names the shortcut rather than offering a button that cannot record", () => {
     render(<HomeScreen />);
     expect(screen.getByText("Ctrl")).toBeInTheDocument();
     expect(screen.getByText("Super")).toBeInTheDocument();

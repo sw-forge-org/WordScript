@@ -1,14 +1,15 @@
 # The home activity track
 
-Opened 2026-08-16. **Open, nothing built.** Both the orientation page and the
-sequence — start a session here.
+Opened 2026-08-16. **Stage A steps A1 and A2 are landed; A3, A4 and A5 are
+open.** Both the orientation page and the sequence — start a session here.
 
-Owns **ADR 0171–0180**. None is written yet: the decisions on this page were
-made in conversation with the owner and are recorded here rather than as
-records, because an ADR is append-only and nothing has been built against these
-yet. The session that lands Stage A writes the first one. Grep the tree before
-claiming a number — six tracks share `main` and a number gets cited in source
-before its file lands.
+Owns **ADR 0171–0180**.
+[ADR 0171](../decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md)
+is written and covers what A1 and A2 built. The remaining decisions on this page
+are recorded here rather than as records, because an ADR is append-only and
+nothing has been built against them yet; the session that lands them writes the
+next one. Grep the tree before claiming a number — six tracks share `main` and a
+number gets cited in source before its file lands.
 
 ## Why this track exists
 
@@ -224,14 +225,64 @@ Considered and not taken:
   — sits on react-day-picker. A datepicker engine is too much machine for a
   heatmap.
 
+## The record — A1 and A2, 2026-08-16
+
+Session one. Unit was Stage A steps A1 and A2, both complete; the calendar was
+not touched. The decisions on this page were built, not re-opened. Everything
+below is in
+[ADR 0171](../decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md)
+in its durable form; what is here is what the next session needs and what the
+step cost.
+
+**What landed.** `DigitCounter` (`components/shell/DigitCounter.tsx`) with
+`counterFrame` and `counterDigits`, and its gallery entry as a third section on
+the Design System's Motion page — three cells, `7`, `1,240` and no reading, so
+the equal box width is judged by looking as well as by measuring. The four tiles
+and the empty state on Home, with the readings derived in `lib/activity.ts`
+(`wordsPerMinute`, `timeSavedMinutes`, `timedRuns`, `wordsIn`) rather than in the
+screen. The 42 px caps are gone entirely and the shortcut is in the fact line as
+`Keycaps`. Home's banner chip reads **Wired in part**.
+
+**Suite: 667 → 697 over 46 → 48 files.** Thirty cases added, none deleted: 10 for
+the counter, 11 for the derivations, 9 for the display. Three existing cases were
+rewritten in place — the two the Traps section predicted, plus one it did not,
+below. `npm run build` clean. No `cargo` command; nothing under `src-tauri/` was
+touched. A dev host was running for the whole session and was left running.
+Runtime log 5899 → 6201 lines, which is that host's own output; no capture
+measurement was in flight.
+
+**The four Traps all applied and all held.** `Home.test.tsx`'s keycap case moved
+to the fact line rather than being deleted; `port:diff home` is recorded below
+as intended divergence — **Home is no longer a ported screen**; nothing under
+`src-tauri/` was written while the host was up; and `capture_integrity`'s nulls
+are the reason both measured tiles print `N of M runs measured` on themselves.
+
+**Two more traps came out of building rather than reading**, and both are now in
+the Traps section: a test pinned to the word `Preview` that no step could have
+graded a banner without hitting, and an SVG presentation attribute that beats
+every rule in `shell.css`. **A3 will meet the second one** — it draws a much
+bigger SVG in the same wrapper.
+
+**One number the next session inherits.** The counter's 2 x 2 tier is derived
+from the counter's own width: four tracks of 136 px plus three 16 px gaps need
+592 px of content and the column spends 64 px on inset, so the tier sits at a
+656 px column. **A 470 px calendar has its own arithmetic** and does not inherit
+this one.
+
+**One observation, not a change.** The empty state is lighter than what it
+replaced: the first-run instruction is a 16 px lead line with the caps below it
+in the fact row, where it used to be two 42 px objects. That is what A2 asked
+for and it was built as asked. It is worth a look with the owner before A5,
+because A5 is the step that could give the reader a way back to it.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
 
 | Step | What | Done means |
 |---|---|---|
-| **A1** | The digit counter component: composite frame from `digits`, four reserved positions, right-aligned. Gallery entry. | It renders 7 and 1,240 without the box changing width |
-| **A2** | The four tiles on Home, **and the empty state in the same step**. Keycaps out — `KeyCap`, `keyCaps()` and `.ws-keycap` are Home-only and go entirely. The shortcut moves into the hero's fact line as the small `Keycaps` (the one `Context.tsx` uses). | Words per minute and time saved read from history; apps and languages carry `PreviewTag`; **a profile with no dictations sees the instruction, not four zeroes** |
+| **A1 · done** | The digit counter component: composite frame from `digits`, four reserved positions, right-aligned. Gallery entry. | It renders 7 and 1,240 without the box changing width |
+| **A2 · done** | The four tiles on Home, **and the empty state in the same step**. Keycaps out — `KeyCap`, `keyCaps()` and the cap style block are Home-only and went entirely. The shortcut moved into the hero's fact line as the small `Keycaps` (the one `Context.tsx` uses). | Words per minute and time saved read from history; apps and languages carry `PreviewTag`; **a profile with no dictations sees the instruction, not four zeroes** |
 | **A3** | The calendar, vendored and converted to circles on the matrix palette, 26 weeks, growing with the install. | A day's colour steps with that day's dictation count |
 | **A4** | The day tooltip. Dictations real; meetings and uploads present as preview lines. | Hovering a day names its composition |
 | **A5** | The switch, its indicator, and persistence. **Touches Rust** — the preference is a field on `AppConfig`, on the shape `useNavRail` already uses. | The choice survives a restart |
@@ -254,24 +305,50 @@ the data half is the named track's.
 
 ## Traps
 
-Found by reading the tree on 2026-08-16, before any session opened. Each one is
-cheap to walk into and expensive to notice later.
+The first four were found by reading the tree on 2026-08-16, before any session
+opened; the last two by building A1 and A2 the same day. Each one is cheap to
+walk into and expensive to notice later.
 
-**`Home.test.tsx:150` asserts the keycaps by name.** It reads `.ws-keycap` and
-expects `["Ctrl", "Super"]`. A2 deletes that class, so the test goes red — and a
-red test at the end of a step is exactly where an agent under pressure deletes a
-case instead of rewriting it. **The shortcut is still displayed after A2**, in
-the fact line, so the assertion moves to the new element rather than
-disappearing. If the suite loses a case here, the step is wrong.
+**A TEST CAN BE PINNED TO A WORD RATHER THAN TO A FACT, and `ia.test.tsx:64` was.**
+It rendered every screen carrying a banner and asserted `/Preview/i` appeared —
+which is the same thing as *a banner rendered* only for as long as every chip
+says `Preview`. A2 graded Home's chip **Wired in part** and the case went red for
+saying something honest. It now reads the `.ws-banner` element and asserts its
+chip is non-empty. **Any step that grades another screen's banner would have hit
+the same wall**, and the general form is worth carrying: a case that stands in
+for a structural fact must assert the structure, or the first honest change is
+the failing one.
+
+**AN SVG PRESENTATION ATTRIBUTE BEATS EVERY RULE IN `shell.css`, AND THE UNIT
+SUITE CANNOT SEE IT.** `DigitCounter` is capped at its natural width so a narrow
+column can shrink it, and `.ws-counter svg { width: 100% }` — the obvious
+spelling — changed nothing at all. An SVG `width`/`height` attribute is a
+*presentational hint*, which is unlayered, and **unlayered author styles beat
+layered ones regardless of specificity**; every rule in `shell.css` lives inside
+`@layer components`. The result was a 118 px tile holding a 136 px display
+hanging out of its card. `max-width` is a property the attribute does not set, so
+that is what the rule uses. jsdom applies no stylesheet, so this was found by
+rendering the workspace in a browser with a `__TAURI_INTERNALS__` stub and
+measuring `getBoundingClientRect()` against the box. **A3 draws a far bigger SVG
+in the same wrapper**: measure it, do not read the CSS and believe it.
+
+**`Home.test.tsx:150` asserted the keycaps by name — SPENT, A2.** It read
+`.ws-keycap` and expected `["Ctrl", "Super"]`; A2 deleted that class and the case
+went red, which is exactly where an agent under pressure deletes a case instead
+of rewriting it. It moved to the fact line, where the shortcut still is, and
+gained a second assertion that no element with `keycap` in its class remains
+anywhere. **`screens.test.tsx`'s Home case had the same shape** and moved the
+same way. Left here because the shape recurs: if the suite loses a case at the
+end of a step, the step is wrong.
 
 **`port:diff` takes screen names as arguments and will one day be pointed at
-`home`.** It is not in CI and nothing forces it, but a later session running
-`npm run port:diff home` will get a large diff against `demo.js` and has no way
-to know it is intended. That is not a regression: **the prototype has no
-activity display, and Home stops being a ported screen at A2.** Record it in the
-step's own record so the next reader finds it. (Note also that `port:diff` with
-no screen names walks nothing and reports a free ALL EXACT — a green run proves
-nothing unless it names screens.)
+`home` — LIVE, and now expected.** It is not in CI and nothing forces it, but a
+later session running `npm run port:diff home` will get a large diff against
+`demo.js` and has no way to know it is intended. That is not a regression: **the
+prototype has no activity display, and Home stopped being a ported screen at
+A2.** This paragraph and ADR 0171 are the record that says so. (Note also that
+`port:diff` with no screen names walks nothing and reports a free ALL EXACT — a
+green run proves nothing unless it names screens.)
 
 **A5 is not a frontend step.** Persisting the view choice means a field on
 `AppConfig`, which means writing under `src-tauri/` — a full rebuild, the app
@@ -285,53 +362,63 @@ by a summed `recorded_seconds` that silently skipped half the records is a
 plausible, wrong number — the failure class `core-hardening.md` exists for. The
 average is over what was measured, and the tile says so.
 
-## The prompt for the first session
+## The prompt for the next session
 
-You are opening the **home activity** track. Work in the repo root on `main`.
+You are continuing the **home activity** track. Work in the repo root on `main`.
 Do not create a branch. **Five other tracks work in the same tree** — see
 [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run `git status` and
 `git log --oneline -5` before you start, and stage your own paths. Never
 `git add -A`.
 
-**Read first:** this page in full, then `src/screens/Home.tsx`,
-`src/components/shell/HomeHero.tsx`, `src/components/ui/matrix.tsx`, ADR 0161
-(how a drawn row declares itself), ADR 0076 (why the decision inbox draws
-nothing when nothing is owed), `CLAUDE.md` and `docs/spec/SPEC.md`.
+**A1 and A2 are landed.** Read the record above before anything else; it names
+what exists, what it cost and two traps that are not in the tree's own comments.
 
-**Your unit is Stage A, steps A1 and A2, both complete.** Not the calendar —
-A3 and A4 are worth their own session, and A5 touches Rust.
+**Read first:** this page in full, then
+[ADR 0171](../decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md),
+`src/screens/Home.tsx`, `src/components/shell/DigitCounter.tsx` (the composite
+frame you are about to draw a much bigger one beside),
+`src/components/ui/matrix.tsx`, `src/lib/activity.ts` (where a reading is
+derived, and where the calendar's day buckets belong too), ADR 0161, `CLAUDE.md`
+and `docs/spec/SPEC.md`.
 
-**Read the Traps section above before you write anything.** All four apply to
-your unit.
+**Your unit is A3 and A4** — the calendar and its day tooltip. Not A5: it puts a
+field on `AppConfig`, which means writing under `src-tauri/`, a full rebuild and
+a dead dictation if one is in flight. Until A5 lands, **the block shows the tiles
+and the calendar is not reachable from the product** — so mount it in the
+gallery, on the Design System page beside the counter, and say so in your record.
+Do not invent a temporary toggle to see your own work; a control that is not the
+decided one is a control somebody will ship.
 
-**A1 and A2 are done when all of this is true**, and not before:
+**A3 and A4 are done when all of this is true**, and not before:
 
-- A counter renders 7 and 1,240 in the same box width, right-aligned in four
-  reserved digit positions.
-- `KeyCap`, `keyCaps()` and the `.ws-keycap` block are gone from the tree, and
-  `grep -rn "ws-keycap" src/` returns nothing. `Keycaps` — the other, smaller
-  component — is untouched; it is used elsewhere.
-- The shortcut is still readable on Home after the change.
-- Words per minute and time saved come from history, with `capture_integrity`'s
-  nulls handled explicitly and visibly.
-- Apps and languages carry `PreviewTag` and **show no figure at all**.
-- A profile with no dictations sees the instruction, not four zeroes.
-- Home's banner chip reads **Wired in part**, not *Preview*, and its sentence
-  names what is drawn.
-- `Home.test.tsx`'s keycap case is rewritten against the new element, not
-  deleted, and the suite count moved by a number you can explain.
+- `@uiw/react-heat-map` is vendored under `src/components/ui/` with the
+  provenance header `matrix.tsx` uses — source URL, commit, fetch date, local
+  changes marked WORDSCRIPT — and is not a dependency in `package.json`.
+- The cells are circles on the matrix ramp (`--fg-muted` unlit through four steps
+  to `--accent`), via `rectRender`, not a fork.
+- 26 weeks, and **the display grows with the installation** — a fresh install
+  draws as many weeks as it has existed, filling rightwards. 365 grey cells on
+  day one reads as a defect.
+- A day's step comes from that day's dictation count, derived in
+  `lib/activity.ts` under test, not in the screen.
+- **The rendered SVG width is measured against its box**, not assumed from the
+  CSS. See the second new trap; this is the step it was written for.
+- The tooltip names a day's composition: dictations real, meetings and uploads
+  present as preview lines that state they have no origin yet — never a zero,
+  because a zero claims a count.
+- The suite count moved by a number you can explain, and no case was deleted.
 
 **The decisions on this page are made.** If one turns out to be wrong when it
 meets the code, say so in your record and stop — do not quietly substitute a
 different design.
 
-**If you run short, stop after A1 and hand over.** A finished A1 plus an honest
-brief beats a half-landed A2 that leaves Home without an instruction and without
-working tiles.
+**If you run short, stop after A3 and hand over.** A vendored, correct calendar
+with no tooltip is a step; a calendar whose colours or growth rule are guessed is
+a step somebody has to undo.
 
 **Three rules with teeth here:**
 
-1. **Never render a number the runtime did not produce.** A drawn tile carries
+1. **Never render a number the runtime did not produce.** A drawn reading carries
    `PreviewTag` and shows no figure at all — an invented 3 is worse than a
    visible gap, and this is the rule ADR 0161 exists for.
 2. **A dev host may be running.** Check `pgrep -af "tauri dev"`. Do not write
@@ -343,7 +430,9 @@ working tiles.
 
 **Validation:** `npm test` and `npm run build`. Quote the suite count as a delta
 against the baseline you measured at the start, and say what the difference is.
-No `cargo` command unless you touched Rust — A1 and A2 should not.
+No `cargo` command unless you touched Rust — A3 and A4 should not. Run
+`npm audit` if you vendor anything that pulls a dependency; the intent is that
+nothing new lands in `package.json` at all.
 
 **Before you stop**, write your record into this page above the sequence, update
 the sequence rows you closed, and write the next session's brief in place of

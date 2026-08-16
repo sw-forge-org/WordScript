@@ -61,11 +61,24 @@ describe("the information architecture", () => {
     }
   });
 
+  /* WHAT IS HELD IS THAT THE BANNER IS THERE, NOT WHICH WORD ITS CHIP CARRIES.
+     This case read `/Preview/i` off the rendered screen, which was the same
+     thing while every banner said `Preview` — and stopped being the same thing
+     the moment a screen graded itself: Home reads its inbox, its record and two
+     of its four counters from the runtime, so its chip says `Wired in part`.
+     Pinning the vocabulary here would make the honest word the failing one. */
   it("renders the banner it carries, on the screen it carries it for", () => {
     for (const entry of [...VIEWS, ...SECTIONS]) {
       if (!entry.banner) continue;
-      render(<>{entry.render({ banner: entry.banner, runtime: createWorkspaceRuntime() })}</>);
-      expect(screen.getAllByText(/Preview/i).length, entry.id).toBeGreaterThan(0);
+      const { container } = render(
+        <>{entry.render({ banner: entry.banner, runtime: createWorkspaceRuntime() })}</>,
+      );
+      const banner = container.querySelector(".ws-banner");
+      expect(banner, `${entry.id} does not render the banner it carries`).not.toBeNull();
+      expect(
+        banner!.querySelector(".ws-banner-tag")?.textContent?.trim(),
+        `${entry.id} renders a banner with no grade on it`,
+      ).toBeTruthy();
       cleanup();
     }
   });

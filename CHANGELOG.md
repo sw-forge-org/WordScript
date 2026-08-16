@@ -53,6 +53,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Home stops explaining itself and starts reporting (ADR 0171)
+
+- **Home's opening block has two lives.** An instruction is read exactly once,
+  and the two 42 px keycaps held the most prominent surface in the product
+  forever. Before your first measured dictation the block still carries the
+  instruction; after it, four counters. The shortcut keeps a permanent home in
+  the standing fact line below, at the size a sentence can hold — it is still
+  the runtime's resolved keys and never the raw token.
+- **Two of the four counters are measured, and they say what they were measured
+  over.** Words per minute is your total words over the seconds your captures
+  actually recorded; time saved is the last seven days against a typing
+  baseline. A retry and every record older than the capture measurement carry no
+  clock, so the tile prints `5 of 6 runs measured` on itself rather than
+  averaging over a denominator that quietly skipped them.
+- **Time saved is marked as an approximation, because its baseline is one.**
+  Nothing in WordScript has ever watched you type; the 40 words-per-minute
+  figure is an assumption, so the tile carries `≈` and names it on hover.
+- **Apps and Languages are drawn, and show no figure at all.** No record stores
+  which application you dictated into, and the language on a record is the
+  setting rather than what was recognised. Both carry the preview tag at their
+  label and light no pixel — an invented 3 is worse than a visible gap.
+- **A counter with no reading is dark, not zero.** A lit `0` claims the runtime
+  counted none; a dark display claims nothing. Numbers are drawn on the
+  dot-matrix readout in four reserved positions, right-aligned, so nothing on
+  the row moves when 99 becomes 100.
+- **A profile with no dictations sees the instruction, not four zeroes** — and
+  so does a profile whose records all predate the capture measurement. A display
+  with nothing to display reads as broken for the same reason four zeroes do.
+- **Home's banner chip says what it is.** `Wired in part` rather than `Preview`,
+  over a screen whose inbox, record list and mode line are all runtime truth,
+  and the sentence now names what is drawn instead of repeating the grade.
+
 ### Added — the input-level row measures your microphone before you dictate (ADR 0170)
 
 - **The waveform moves, and the runtime is what moves it.** It was drawn at rest

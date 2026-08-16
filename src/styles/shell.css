@@ -3517,54 +3517,72 @@
   .ws-dl i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
 
   /* ═════════════════════════════════════════════════════════════════════════
-     HOME'S HERO — the shortcut, made the object.
+     HOME'S OPENING BLOCK — the instruction, and then the display.
 
      Home's whole job at rest is to answer two questions — is this thing ready,
      and how do I start it — and the shipped answer to the second was a sentence
      in the view description. That sentence is the single most important fact in
      the product and it was set at 13 px in the colour reserved for things you
-     may skip.
+     may skip. So the shortcut became the object: two 42 px keycaps, built the
+     way a key is built, in the most prominent position the product has.
 
-     So the shortcut becomes the object. Not a graphic of a shortcut: keycaps
-     built the way a key is built, because the thing being named is a physical
-     act. The panel behind them is gone (thirteenth pass) — a cap is already a
-     raised object, and a raised object on a raised panel is one plane too many.
+     THE CAPS ARE GONE AND THAT IS THE POINT (home activity track, A2). AN
+     INSTRUCTION IS READ EXACTLY ONCE. After the first day the best surface in
+     the product was spent on a sentence nobody reads again, while the reader had
+     no idea what the tool had actually done for them. So the block has two
+     lives: before the first measured dictation it carries the instruction, and
+     after it the counters. The shortcut is still stated — in the fact line
+     below, as the 20 px `Keycaps` a sentence can hold — because a shortcut you
+     have read still has to be findable when you forget it.
+
+     THE CAP BLOCK AND ITS ROW WENT WITH THEM. Both were Home's alone; nothing
+     else in the tree drew a 42 px cap, and nothing draws one now.
      ═════════════════════════════════════════════════════════════════════════ */
 
   .ws-home-open { display: flex; flex-direction: column; gap: var(--s5); }
 
   .ws-hero-invoke { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
-  .ws-hero-keys { display: flex; align-items: center; gap: 7px; }
-  .ws-hero-keys .ws-plus { color: var(--fg-muted); font-size: var(--t-lead); }
 
-  /* The cap. Four values do the whole job: a lit top edge, a body gradient that
-     falls away from it, a dark front lip below the label, and a cast shadow.
-     `--cap-base` is the lip — it is a real 3 px of the element rather than a
-     border, so the cap has a front face and not just an outline. */
-  .ws-keycap {
-    --cap-base: 3px;
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 46px; height: 42px;
-    padding: 0 12px calc(var(--cap-base));
-    border-radius: 9px;
-    background:
-      linear-gradient(180deg,
-        color-mix(in srgb, var(--bg-elevated) 82%, white) 0%,
-        var(--bg-elevated) 46%,
-        color-mix(in srgb, var(--bg-elevated) 88%, black) 100%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
-      inset 0 calc(-1 * var(--cap-base)) 0 color-mix(in srgb, black 34%, transparent),
-      0 2px 0 color-mix(in srgb, black 46%, transparent),
-      0 4px 10px -2px rgba(0, 0, 0, 0.5);
-    color: var(--fg);
-    font-stretch: var(--w-label);
-    font-size: var(--t-lead);
-    font-weight: 560;
-    line-height: 1;
-    letter-spacing: 0;
+  /* THE COUNTERS. Four tiles reading left to right as one sentence: this is how
+     fast you speak, this is what it gives you back, everywhere, in these
+     languages. Equal tracks rather than `auto-fit`, because four items in a
+     grid that fits three wrap to 3 + 1, which reads as a broken row rather than
+     as a narrow one. The tier at the foot of this file takes them to 2 x 2. */
+  .ws-home-display {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--s5) var(--s4);
   }
-  .ws-keycap[data-wide] { min-width: 74px; }
+  .ws-tile { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+  .ws-tile-label {
+    display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+  /* The basis, not a caption. Every tile states what its figure was computed
+     over, because a rate whose denominator silently skipped half the records is
+     a plausible wrong number rather than a missing one. */
+  .ws-tile-foot {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
+    color: var(--fg-muted);
+    line-height: 1.4;
+  }
+
+  /* THE COUNTER NEVER OUTGROWS ITS TILE, AND IT TAKES `max-width` TO SAY SO.
+     The component hands over its natural width in `--counter-w` and the span is
+     capped there; the SVG inside it carries `width` and `height` as SVG
+     PRESENTATION ATTRIBUTES, and those beat every rule in this file — a
+     presentational hint is unlayered, and unlayered author styles win over
+     layered ones whatever their specificity. Measured in the running app: a
+     118 px tile held a 136 px display hanging out of it, and `width: 100%` here
+     changed nothing at all. `max-width` is a property the attribute does not
+     set, so it lands, and the viewBox scales the drawing to match. Same class of
+     trap as the Matrix wrapper's `inline-flex`, one layer further out. */
+  .ws-counter { display: block; width: 100%; max-width: var(--counter-w); }
+  .ws-counter svg { max-width: 100%; }
+  /* No reading is a dark display, and it is deliberately not a lit zero: a zero
+     states that the runtime counted none, and nothing here counted. */
+  .ws-counter[data-unlit] { opacity: 0.5; }
 
   .ws-hero-invoke .ws-what {
     display: flex; flex-direction: column; gap: 2px;
@@ -3588,6 +3606,10 @@
   }
   .ws-hero-facts b { color: var(--fg-dim); font-weight: 550; }
   .ws-hero-facts .ws-sep { opacity: 0.5; }
+  /* The shortcut, inside a sentence. A 20 px cap on a 12 px line rides the
+     baseline it was never drawn for, so it is centred on the text instead — the
+     same treatment every other sentence that holds a chord gets. */
+  .ws-hero-facts .ws-kbd { vertical-align: middle; margin: 0 2px; }
   /* THE ACTION WRAPS INSTEAD OF OVERFLOWING. `.ws-grow` is `flex: 1` with a
      zero basis, so on a wrapping row it never took a line of its own — it took
      whatever the facts left and its button, which does not shrink, hung over
@@ -6300,6 +6322,21 @@
      that the card stops reading as a card on a ground. */
   @container ws-column (max-width: 620px) {
     .ws-content-inner { --content-pad: var(--s6); }
+  }
+
+  /* HOME'S COUNTERS GO 2 x 2 BEFORE THEY GO SMALL, AND THE NUMBER IS DERIVED
+     RATHER THAN CHOSEN. A counter is a picture of a number: it may shrink, but
+     every pixel it loses comes off legibility, so the tier is set where four
+     tracks stop being able to hold one at its natural 136 px.
+
+     Four tracks of 136 with three 16 px gaps need 592 px of content, and the
+     column spends 64 px of itself on inset above the 620 px tier — so 656 px is
+     the last column width at which four fit whole. Below it the display is two
+     up and every counter is full size again, at the cost of one row of height.
+     The sentence the four tiles make still reads in the same order, left to
+     right and then down. */
+  @container ws-column (max-width: 656px) {
+    .ws-home-display { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   @container ws-column (max-width: 460px) {
