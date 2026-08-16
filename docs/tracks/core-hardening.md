@@ -13,13 +13,14 @@ You are picking up WordScript's core loop after two hardening passes. Work in
 `/home/felixontv/localdev/sw-labs.localdev/brands.localdev/sw-forge-org/WordScript-master/WordScript`
 on `main`. Do not create a branch. `src-tauri/` is open.
 
-**Read all six records before touching any of them.** They are one failure
+**Read all seven records before touching any of them.** They are one failure
 class — output that is fluent, grammatical, plausible and wrong, with nothing
 downstream carrying evidence that a substitution happened:
 `capture-loses-half-the-recording.md`, `transcription-accuracy.md`,
 `stt-prompt-leaks-into-the-transcript.md`, `singular-address-becomes-plural.md`,
-`cleanup-invents-tokens-on-broken-input.md`, and — added 2026-08-13 —
-`cleanup-flips-the-grammatical-person.md`. Then ADRs 0079, 0080, 0081, 0083
+`cleanup-invents-tokens-on-broken-input.md`, — added 2026-08-13 —
+`cleanup-flips-the-grammatical-person.md`, and — added 2026-08-16 —
+`dictation-comes-back-in-english.md`. Then ADRs 0079, 0080, 0081, 0083
 and 0084, and `CLAUDE.md`.
 
 ## Where the cluster actually stands
@@ -36,6 +37,7 @@ What two passes bought is that the cluster went from invisible to instrumented.
 | Mishearings at large | **Yes, unmeasured** | One instance in the corpus; still no WER, no rate |
 | Cleanup invents tokens | **Yes, groups A and C** | No new guardrail; rate unchanged |
 | **Cleanup flips the person** | **Yes, 1 in 200, found 2026-08-13** | Nothing. The corpus carries the case and both negative directions; **no rule was written on purpose** — see step 6 |
+| **Dictation comes back in English** | **Yes, 7 of 50, found 2026-08-16** | Nothing. Four causes ruled out; the language is never pinned because the control is drawn and unwired, and **the detected language is discarded**, so there is no instrument yet |
 
 ## What the second pass did
 

@@ -103,6 +103,24 @@ status change. Resolved bugs remain as references for the same failure class.
   phrases at all**. The one mechanism that does catch them is the segment
   confidence gate, which is Groq-only. A fix cannot simply add the words: *Vielen
   Dank* is ordinary German and would be stripped out of a dictated sign-off.
+- [dictation-comes-back-in-english.md](dictation-comes-back-in-english.md):
+  **open, reported and measured 2026-08-16** — German dictation returned as
+  fluent English. **7 of 50 records (14 %)**: one wholly translated, six with an
+  English stretch inside German, and one candidate excluded because the owner
+  was reading English UI copy aloud, which is the boundary any rule here has to
+  survive. Distinct from the hallucination record above: the output is a clean
+  translation, not an artifact, so no post-processing filter can see it. Four
+  causes are ruled out on the record — the mode axis (Auto has four exits and
+  **Translate is on none of them**, though no test pins that), the AI stage, the
+  translations endpoint, and prompt bias (every `vocabulary_hints` entry
+  opted out, including the `Commit` the owner suspected). What is left is that
+  **`speech.language` is empty and cannot be set**: the `AI Models` row is a
+  `DrawnSelect` with no handler whose `ScopeTag` links to Profiles, and Profiles
+  carries only the Translate mode's `translate_target_language`. No shape-B
+  passage starts in the first 17 % of a transcript, so the recognizer starts
+  right and drifts. **The detected language is read for the repair gate and then
+  discarded**, so no rate can be computed from the existing corpus and the
+  German-only repairs are silently skipped on exactly the records that need them.
 - [capture-shortcut-recording.md](capture-shortcut-recording.md): resolved for
   the activation modes — shortcut recording, manual entry, normalization,
   registration and activation-mode failures in Capture and Modes, including the
