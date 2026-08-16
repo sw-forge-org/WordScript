@@ -683,6 +683,15 @@ export type BackendEvent =
       audio_retained?: boolean;
     }
   | { event: "audio_level";      level: number; rms?: number; waveform?: number[] }
+  /** The same measurement while NO capture is running — `core::input_monitor`,
+   *  which General opens to answer "is this microphone set right" before there
+   *  is anything to answer it with. A channel of its own on purpose: a surface
+   *  that draws `audio_level` is drawing a recording, and this is not one. */
+  | { event: "input_monitor_level"; level: number; rms?: number }
+  /** The monitor gave the microphone back. `lease_expired` means the window
+   *  that asked for it went away without saying so; `stream_error` means the
+   *  device did. */
+  | { event: "input_monitor_stopped"; reason: string; message?: string }
   | { event: "shutdown" };
 
 /** Where the runtime says a session stands. Mirrors `NativeSessionStage` in

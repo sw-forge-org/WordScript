@@ -8,6 +8,7 @@ pub mod confidence_gate;
 pub mod config;
 pub mod hallucination_detect;
 pub mod history;
+pub mod input_monitor;
 pub mod insertion;
 pub mod mode_router;
 pub mod model_catalogue;

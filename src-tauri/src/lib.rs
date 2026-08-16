@@ -19,6 +19,7 @@ pub mod core;
 mod v1_slice;
 
 use crate::core::capture::{NativeCaptureConfig, NativeCaptureState};
+use crate::core::input_monitor::InputMonitorState;
 use crate::core::config::{AppConfig, OverlayAnchor, OverlayPositionMode};
 use crate::core::insertion::{NativeInsertionConfig, NativeInsertionState};
 use crate::core::sessions::NativeSessionState;
@@ -2867,6 +2868,7 @@ pub fn run() {
         .manage(Mutex::new(NativeCaptureState::load(
             NativeCaptureConfig::load_from_disk(),
         )))
+        .manage(Mutex::new(InputMonitorState::default()))
         .manage(Mutex::new(NativeInsertionState::load(
             NativeInsertionConfig::load_from_disk(),
         )))
@@ -3025,6 +3027,10 @@ pub fn run() {
             core::capture::list_native_input_devices,
             core::capture::toggle_native_capture_mute,
             core::capture::toggle_native_capture_pause,
+            core::input_monitor::start_input_monitor,
+            core::input_monitor::renew_input_monitor,
+            core::input_monitor::stop_input_monitor,
+            core::input_monitor::input_monitor_status,
             core::insertion::native_insertion_status,
             core::insertion::insert_text_native,
             core::insertion::restore_last_transcript,

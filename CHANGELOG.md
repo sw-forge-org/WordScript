@@ -53,6 +53,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the input-level row measures your microphone before you dictate (ADR 0170)
+
+- **The waveform moves, and the runtime is what moves it.** It was drawn at rest
+  because the only way to animate it was the vendored component's own
+  `getUserMedia`, which would have WordScript hold a second capture device for
+  as long as a settings page is open. `core::input_monitor` opens the configured
+  input read-only instead, stores no audio, and reports level and RMS every
+  42 ms — the same cadence a capture reports at.
+- **The meter under it is live without a dictation.** It used to read only
+  `audio_level`, which exists only while a capture runs, so the row asked "is
+  this microphone set right" and could not answer until you were already
+  recording.
+- **A capture always wins.** Starting a dictation stops the monitor before it
+  opens its own stream, and the monitor refuses to start while a capture runs.
+- **The microphone is open only while you are looking at the meter.** General
+  being on screen is not enough — the window has to be focused. On top of that
+  the monitor holds a 45-second lease the screen renews; a window that
+  disappears without cleanup has its microphone closed by the runtime.
+- **The verdict is about a phrase, not about a frame.** Decided per reading it
+  flipped between "Good" and "Too quiet" several times a sentence — correct
+  every frame, unreadable — and since the two sentences are different lengths
+  the card resized with every flip. It is now decided over 2.5 seconds, a
+  clipping warning stands for 1.5 seconds after the syllable that caused it, the
+  quoted dBFS is that window's peak, and the line reserves two lines of height
+  so the card cannot resize at all.
+- **The bar and the waveform run at the display's rate, not React's.** Both read
+  the level from a ref inside an animation frame and interpolate between the
+  runtime's reports with meter ballistics. Driving them through React state
+  re-rendered the whole settings screen twenty-four times a second, which is
+  what made a correct meter look stuttery.
+
 ### Fixed — the learned-word badge is on screen long enough to read (ADR 0169)
 
 - **The badge stays for 4 seconds instead of 0.28.** It was built for about two

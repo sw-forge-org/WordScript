@@ -1304,6 +1304,11 @@ fn toggle_native_capture_pause_inner<R: Runtime>(
 pub fn start_native_capture<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<NativeCaptureStatus, String> {
+    // A dictation may never lose its device to a settings screen. The input
+    // monitor is read-only and stoppable; a capture is neither, so it goes
+    // first and unconditionally.
+    super::input_monitor::stop_for_app(app);
+
     let state = app
         .try_state::<Mutex<NativeCaptureState>>()
         .ok_or_else(|| "Native capture state is not available.".to_string())?;

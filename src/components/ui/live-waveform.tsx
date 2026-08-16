@@ -2,7 +2,13 @@
  * Source: apps/www/registry/elevenlabs-ui/ui/live-waveform.tsx @ 6e5b681c01ee
  * Fetched 2026-08-03. ui.elevenlabs.io serves a Vercel bot check (HTTP 429),
  * so the registry CLI cannot reach it; the repository is the source of record.
- * Local changes are marked WORDSCRIPT. */
+ * Local changes are marked WORDSCRIPT.
+ *
+ * ONE DEVIATION, and a re-sync has to carry it forward:
+ *
+ * 1. `externalLevel` — a 0..1 level the component did not measure itself, in
+ *    place of the microphone upstream opens. Every upstream path is untouched
+ *    when it is null, which is its default. */
 "use client"
 
 import { useEffect, useRef, type HTMLAttributes } from "react"
@@ -13,6 +19,32 @@ export type LiveWaveformProps = HTMLAttributes<HTMLDivElement> & {
   active?: boolean
   processing?: boolean
   deviceId?: string
+  /* WORDSCRIPT — DEVIATION 1: A LEVEL THIS COMPONENT DID NOT MEASURE ITSELF.
+   *
+   * Upstream has exactly one source of audio: `active` opens the microphone
+   * through `getUserMedia` and an `AnalyserNode`. In this product the runtime
+   * already owns the microphone — a capture emits `audio_level`, and
+   * `core::input_monitor` emits `input_monitor_level` when no capture is
+   * running — so a second opener in the webview would be a second application
+   * holding the same device, which is what ADR 0063's call detection watches
+   * for.
+   *
+   * Pass a 0..1 level here and the drawing runs off it instead: no
+   * `getUserMedia`, no `AudioContext`, upstream's geometry and upstream's
+   * scrolling mode unchanged. `null` or omitted leaves every upstream path
+   * exactly as it was.
+   *
+   * THE SCALE IS THE CALLER'S. What counts as a full-height bar is a product
+   * decision about a microphone, not a fact about drawing, so this takes a
+   * number that is already normalised.
+   *
+   * A REF AND NOT A VALUE, and this is the part that decides the frame rate.
+   * The runtime reports twenty-four times a second; passing that as a prop
+   * re-renders the tree that owns this canvas twenty-four times a second, and
+   * on a settings screen that is enough layout work to lose animation frames —
+   * measured as a visibly stuttering trace. A ref is read inside the animation
+   * loop and renders nothing. */
+  externalLevel?: { current: number } | null
   barWidth?: number
   barHeight?: number
   barGap?: number
@@ -36,6 +68,7 @@ export const LiveWaveform = ({
   active = false,
   processing = false,
   deviceId,
+  externalLevel = null,
   barWidth = 3,
   barGap = 1,
   barRadius = 1.5,
@@ -71,6 +104,14 @@ export const LiveWaveform = ({
   const needsRedrawRef = useRef(true)
   const gradientCacheRef = useRef<CanvasGradient | null>(null)
   const lastWidthRef = useRef(0)
+  /* WORDSCRIPT — deviation 1. The level arrives at the runtime's cadence
+   * (42 ms) and the drawing runs at the display's, so the animation loop reads
+   * the latest value from the caller's ref rather than from a prop that would
+   * re-render this tree twenty-four times a second. */
+  const envelopeRef = useRef(0)
+  const lastFrameRef = useRef(0)
+
+  const driven = externalLevel !== null && externalLevel !== undefined
 
   const heightStyle = typeof height === "number" ? `${height}px` : height
 
@@ -235,7 +276,10 @@ export const LiveWaveform = ({
 
   // Handle microphone setup and teardown
   useEffect(() => {
-    if (!active) {
+    // WORDSCRIPT — deviation 1: a driven waveform never opens a device, even if
+    // a caller sets `active` as well. There is one microphone owner and it is
+    // the runtime.
+    if (!active || driven) {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop())
         streamRef.current = null
@@ -318,6 +362,7 @@ export const LiveWaveform = ({
     }
   }, [
     active,
+    driven,
     deviceId,
     fftSize,
     smoothingTimeConstant,
@@ -340,8 +385,43 @@ export const LiveWaveform = ({
       // Render waveform
       const rect = canvas.getBoundingClientRect()
 
+      /* WORDSCRIPT — deviation 1: the driven path, in place of the analyser.
+       *
+       * ONE BAR PER FRAME, not one per event. The runtime reports every 42 ms
+       * and the display refreshes about every 16, so pushing the raw reading
+       * would repeat each value two or three times and the trace would climb in
+       * visible steps. What is drawn instead is an envelope that follows the
+       * reading: fast to rise so a syllable is not softened away, slower to
+       * fall so the shape of a phrase stays readable. It is a meter's
+       * ballistics, not invented signal — the envelope can only ever go where
+       * the measurement takes it.
+       *
+       * dt-CORRECT for the same reason the prototype's is: a dropped frame must
+       * not produce a jump. */
+      if (driven) {
+        const previous = lastFrameRef.current || currentTime
+        const dt = Math.min(Math.max(currentTime - previous, 0), 100)
+        lastFrameRef.current = currentTime
+
+        const target = Math.min(Math.max(externalLevel?.current ?? 0, 0), 1)
+        const tau = target > envelopeRef.current ? 45 : 180
+        envelopeRef.current +=
+          (target - envelopeRef.current) * (1 - Math.exp(-dt / tau))
+        if (envelopeRef.current < 0.001) envelopeRef.current = 0
+
+        historyRef.current.push(envelopeRef.current)
+
+        /* Trimmed to what is on screen rather than to `historySize`: at this
+         * row's width the canvas holds around 150 bars and upstream's default
+         * of 60 would leave the left two thirds permanently empty. */
+        const slots = Math.max(1, Math.floor(rect.width / (barWidth + barGap)))
+        while (historyRef.current.length > slots) historyRef.current.shift()
+
+        needsRedrawRef.current = true
+      }
+
       // Update audio data if active
-      if (active && currentTime - lastUpdateRef.current > updateRate) {
+      if (active && !driven && currentTime - lastUpdateRef.current > updateRate) {
         lastUpdateRef.current = currentTime
 
         if (analyserRef.current) {
@@ -411,12 +491,12 @@ export const LiveWaveform = ({
       }
 
       // Only redraw if needed
-      if (!needsRedrawRef.current && !active) {
+      if (!needsRedrawRef.current && !active && !driven) {
         rafId = requestAnimationFrame(animate)
         return
       }
 
-      needsRedrawRef.current = active
+      needsRedrawRef.current = active || driven
       ctx.clearRect(0, 0, rect.width, rect.height)
 
       const computedBarColor =
@@ -523,6 +603,8 @@ export const LiveWaveform = ({
     }
   }, [
     active,
+    driven,
+    externalLevel,
     processing,
     sensitivity,
     updateRate,
@@ -543,7 +625,7 @@ export const LiveWaveform = ({
       ref={containerRef}
       style={{ height: heightStyle }}
       aria-label={
-        active
+        active || driven
           ? "Live audio waveform"
           : processing
             ? "Processing audio"
@@ -552,7 +634,9 @@ export const LiveWaveform = ({
       role="img"
       {...props}
     >
-      {!active && !processing && (
+      {/* WORDSCRIPT — deviation 1: a driven waveform is drawing its own floor,
+          so the dotted at-rest rule underneath it would be a second line. */}
+      {!active && !driven && !processing && (
         <div className="border-muted-foreground/20 absolute top-1/2 right-0 left-0 -translate-y-1/2 border-t-2 border-dotted" />
       )}
       <canvas

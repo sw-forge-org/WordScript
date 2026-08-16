@@ -18,6 +18,7 @@ import {
   Waveform,
 } from "@/components/shell";
 import { useInputLevel } from "@/hooks/useInputLevel";
+import { useInputMonitor } from "@/hooks/useInputMonitor";
 import type { OverlayAnchor, OverlayPositionMode } from "@/types/ipc";
 import type { WiredScreenProps } from "./props";
 
@@ -48,16 +49,16 @@ import type { WiredScreenProps } from "./props";
  * overlay window already reads are written from here, as the pre-port
  * `OverlayTab` wrote them.
  *
- * THE ONE FACT WITH NO SOURCE IS THE WAVEFORM, and it is the shape rather than
- * the measurement. `Waveform`'s `active` makes upstream open a microphone with
- * `getUserMedia`, so driving it here would have WordScript hold a second
- * capture device for as long as a settings page is open — the very thing
- * ADR 0063's call detection watches for. The runtime's `audio_level` event
- * carries one scalar and no sample history, which is what a waveform needs, so
- * it stays at rest and the fact is on the relay's §2.5 list. The MEASUREMENT
- * under it is live: `InputLevelMeter` reads the runtime's own event and its
- * verdict line says in dBFS what the reading means, including "Speak to measure
- * the level." when nothing has arrived yet.
+ * EVERY FACT ON THIS SCREEN NOW HAS A SOURCE, and the waveform was the last one
+ * without (ADR 0170). It was drawn at rest because the only way to move it was
+ * `Waveform`'s `active`, which has upstream open a microphone with
+ * `getUserMedia` — WordScript holding a second capture device for as long as a
+ * settings page is open, the very thing ADR 0063's call detection watches for.
+ * The measurement is the runtime's instead: `core::input_monitor` opens the
+ * configured device read-only while this screen is on top, and BOTH the shape
+ * and the meter under it are that one reading. The verdict line still says in
+ * dBFS what it means, including "Speak to measure the level." before anything
+ * has arrived.
  */
 
 interface NativeInputDevice {
@@ -120,6 +121,11 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
   const [monitorError, setMonitorError] = useState<string | null>(null);
 
   const level = useInputLevel(active);
+  /* WHAT MAKES THE ROW LIVE WHEN NOTHING IS BEING RECORDED. The runtime opens
+     the microphone read-only while this screen is on top, and gives it back the
+     moment it is not — see `useInputMonitor` for why focus is part of the
+     condition and ADR 0170 for why the measurement is Rust's. */
+  const monitor = useInputMonitor(active);
 
   const rescan = useCallback(async () => {
     setRescanning(true);
@@ -272,16 +278,22 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
                 check afterwards. Reversing them puts the decision boundary
                 where the eye is during the only moment it is not being read.
 
-                Drawn at rest even here: `active` opens a microphone of its own
-                (ADR 0058, and the header of this file). The meter beneath it is
-                the live one. */}
+                BOTH MOVE OFF THE SAME MEASUREMENT (ADR 0170), and neither opens
+                a device: `level` is the runtime's reading, the waveform draws
+                its shape over the last few seconds and the meter draws the
+                instant against the threshold. `active` is still never passed —
+                that is the prop that would have this webview open a second
+                microphone. */}
             <Row
               layout="stack"
               label="Input level"
               hint="A capture that never crosses the mark is discarded as empty."
             >
-              <Waveform ariaLabel="Live input, last few seconds" />
-              <InputLevelMeter reading={level} />
+              <Waveform
+                ariaLabel="Live input, last few seconds"
+                level={monitor.monitoring || level.active ? level.levelRef : null}
+              />
+              <InputLevelMeter stream={level} />
               <Note tail={<DocLink>Why not here</DocLink>}>
                 Set the level itself in your system sound settings — it is shared with every app
                 using this microphone.

@@ -1,7 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-16 (the account-plan axis,
-which read the provider clause: **a plan is keyed by the vendor that sold it**
+Status: created 2026-07-24, last drift check 2026-08-16 (the input-level axis,
+which read the events clause: **the runtime measures the microphone before
+there is a capture** — `input_monitor_level` is its own discriminator so
+`audio_level` keeps meaning "a capture is producing this", the monitor is
+leased and a capture always takes the device back (ADR 0170); the account-plan
+axis before it read the provider clause: **a plan is keyed by the vendor that sold it**
 — `provider_plans` replaces the one machine-wide `provider_tier`, both readers
 look their own vendor up, and the settings row states a ceiling it cannot offer
 a choice between rather than drawing a control that decides nothing (ADR 0167,
@@ -332,6 +336,14 @@ Tauri event channels and their payload discriminators are separate contracts:
   completed result and owns `lastResult`. Every `transcription` payload carries
   `delivery` (`inserted` | `clipboard`, from `NativeInsertMode::delivery_label`)
   so the UI never has to infer what happened to the text.
+- `audio_level` on that same union means **a capture is producing this** and is
+  emitted only from inside one. The microphone measured with no capture running
+  is `input_monitor_level` (`level`, `rms`, every 42 ms) from
+  `core::input_monitor`, ended by `input_monitor_stopped` (`reason`) -- a
+  separate discriminator precisely so a surface that draws `audio_level` never
+  reports a recording that is not happening. The monitor is started and stopped
+  by whichever surface displays it, holds a renewable 45 s lease, and is stopped
+  unconditionally by `start_native_capture` (ADR 0170).
 - `wordscript-native-event` carries native session-status snapshots with
   payload event names such as `recording_started`, `recording_stopped`,
   `processing`, `transcription`, `transcription_corrected`, `empty`, `aborted`

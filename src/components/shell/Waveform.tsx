@@ -18,9 +18,17 @@ import { cn } from "@/lib/utils";
  * measuring nothing is the fake state the runtime rules forbid. The prototype
  * animates it from a synthetic envelope because it has no microphone at all;
  * the product has one, which is exactly why the gallery must not touch it.
+ *
+ * `level` IS HOW IT MOVES IN THE PRODUCT (ADR 0170). The runtime measures the
+ * microphone — a capture through `audio_level`, `core::input_monitor` through
+ * `input_monitor_level` when no capture is running — and the drawing runs off
+ * that reading. Same geometry, same scrolling, one microphone owner. A surface
+ * that passes nothing still draws at rest, which is what the gallery needs and
+ * what a screen with no measurement to show must do.
  */
 export function Waveform({
   active = false,
+  level = null,
   /** The prototype's geometry: full width of its row, 40 px tall. The gallery's
    *  component page overrides it to swatch scale through `.ws-state`. */
   height = 40,
@@ -29,6 +37,11 @@ export function Waveform({
   ariaLabel,
 }: {
   active?: boolean;
+  /** A ref holding the runtime's 0..1 reading — `levelRef` from
+   *  `useInputLevel`. A ref rather than a number so the twenty-four readings a
+   *  second reach the canvas without re-rendering the screen around it.
+   *  `null` draws the row at rest. */
+  level?: { current: number } | null;
   height?: number;
   /** Colours the drawing without the drawing knowing about palettes. */
   tone?: "voice" | "quiet" | "hot";
@@ -38,6 +51,7 @@ export function Waveform({
   return (
     <LiveWaveform
       active={active}
+      externalLevel={level}
       height={height}
       barColor="var(--wave-fg)"
       fadeEdges={false}

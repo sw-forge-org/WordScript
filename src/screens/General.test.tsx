@@ -7,6 +7,12 @@ import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    isFocused: async () => true,
+    onFocusChanged: async () => () => undefined,
+  }),
+}));
 
 const invoked = vi.mocked(invoke);
 
@@ -27,6 +33,9 @@ beforeEach(() => {
     if (command === "list_native_input_devices") return DEVICES;
     if (command === "native_capture_status") {
       return { is_recording: false, device_name: null, active_capture_id: null };
+    }
+    if (command === "start_input_monitor" || command === "renew_input_monitor") {
+      return { monitoring: true, device_name: "Yeti Nano Analog Stereo" };
     }
     if (command === "overlay_monitor_options") {
       return [
@@ -88,13 +97,31 @@ describe("General", () => {
     expect(screen.getByLabelText("Input device")).toHaveValue("Unplugged USB mic");
   });
 
-  it("draws the waveform at rest — it would open a second microphone of its own", async () => {
+  /* THE ROW MEASURES, AND IT MEASURES THROUGH THE RUNTIME (ADR 0170). Both
+     halves matter and they are one test: a waveform that never moves cannot
+     answer "is this microphone set right", and a waveform that answers it by
+     opening its own device is a second application on the same microphone. */
+  it("has the runtime open the microphone so the row is live before any capture", async () => {
     const { container } = render(<GeneralScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("start_input_monitor"));
+
+    // Driven by the runtime's reading: the at-rest dotted rule is what a
+    // waveform with no source draws, and this one has one.
     const wave = container.querySelector(".ws-wave-live")!;
-    /* ADR 0058, and the runtime's `audio_level` carries one scalar rather than
-       the sample history a waveform needs. The measurement below it is live. */
-    expect(wave.querySelector(".border-dotted")).not.toBeNull();
+    await waitFor(() => expect(wave.querySelector(".border-dotted")).toBeNull());
+
+    // Nothing has arrived yet, and the verdict says exactly that rather than
+    // implying a level was measured.
     expect(screen.getByText("Speak to measure the level.")).toBeInTheDocument();
+  });
+
+  it("gives the microphone back when the screen is left", async () => {
+    const { rerender } = render(<GeneralScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("start_input_monitor"));
+
+    rerender(<GeneralScreen runtime={createWorkspaceRuntime({ active: false })} />);
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("stop_input_monitor"));
   });
 
   it("writes every sound control to the field the runtime reads", async () => {

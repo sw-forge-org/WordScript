@@ -1953,12 +1953,19 @@
   }
   .ws-level[data-state="quiet"] .ws-level-fill { background: var(--fg-muted); }
   .ws-level[data-state="hot"] .ws-level-fill { background: var(--danger); }
+  /* TWO LINES OF ROOM, ALWAYS, and it is a layout fact rather than a
+     typographic one. The verdicts are different lengths — "Good — peak
+     -11 dBFS." sets one line where the too-quiet sentence sets two — so a line
+     that is only as tall as its current sentence resizes the card underneath
+     it every time the verdict changes. Reserving the taller of the two makes
+     the change a change of words, which is what it is. */
   .ws-level .ws-level-verdict {
     font-stretch: var(--w-label);
     letter-spacing: var(--ls-label);
     font-size: var(--t-label);
     color: var(--fg-dim);
-    display: flex; align-items: center; gap: 6px;
+    display: flex; align-items: flex-start; gap: 6px;
+    min-height: calc(2 * 1.45em);
   }
   .ws-level[data-state="ok"] .ws-level-verdict { color: var(--success); }
   /* TOO QUIET AND TOO HOT WERE BOTH --danger, and they are not the same
