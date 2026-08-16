@@ -40,8 +40,8 @@ Status: 2026-08-16
   Insert, Hotkeys, History, Privacy & Data, **Profiles**. **Wired in part, each
   stating on itself exactly what it cannot read:** AI Models (two operable lanes
   of four since 2026-08-16 — Cloud and `Your server`), Home (two of the decision
-  inbox's three sources have no receiver; two of the four activity counters are
-  drawn). **Not wireable at all**, and carrying a banner for that reason
+  inbox's three sources have no receiver; **all four activity counters report a
+  measurement since 2026-08-16**). **Not wireable at all**, and carrying a banner for that reason
   rather than for a missing commit: Context (V2), Notes & Meetings (V2), Agents
   (Phase 8, ADR 0030), Integrations (Phase 8).
 - **The profile health flag acts, and Profiles lost its banner with it**
@@ -114,18 +114,11 @@ Status: 2026-08-16
 - **Home's decision inbox receives a fallen-back delivery** and draws nothing
   when nothing is owed (ADR 0076). The desk and a meeting's open questions still
   have no receiver.
-- **Home reports what it measured, once it has measured anything** (ADR 0171,
-  2026-08-16). Words per minute and time saved over the last seven days are read
-  from history and each states how many records it was computed over —
-  `capture_integrity` is absent on a retry and on every record older than the
-  measurement. **Words per minute is throughput rather than speaking rate** — the
-  capture clock runs from start to stop, so thinking pauses are in the
-  denominator; the tile says so on hover. Time saved carries `≈`, because its
-  typing baseline is an assumption. Apps and Languages
-  are drawn: no record stores the target application, and `entry.language` is
-  the setting rather than what was recognised. Before the first measured
-  dictation the block carries the instruction instead, and the 42 px keycaps are
-  gone — the shortcut is in the hero's fact line.
+- **Home reports what it measured, once the record has anything to say** (ADR 0171,
+  ADR 0177, 2026-08-16). Before the first dictation the block carries the
+  instruction; after it, the counters — and a counter with no reading of its own
+  draws a dark display rather than a zero. The 42 px keycaps are gone; the
+  shortcut is in the hero's fact line.
 - **Home's counters are all-time, and a ledger keeps them** (ADR 0174, ADR 0175,
   2026-08-16). `core::activity_ledger` holds one row per day — counts and
   durations, never text — because history is pruned by age and by count and
@@ -134,8 +127,29 @@ Status: 2026-08-16
   hallucinated ones); Turnaround is the median wait from speaking to text and is
   the one figure that answers to a model or lane change; Time saved stays on four
   weeks. `Apps` was retired rather than deferred — the target application is only
-  resolved on a direct paste, and a clipboard delivery has none. `Languages` is
-  still drawn, waiting on B1.
+  resolved on a direct paste, and a clipboard delivery has none.
+- **Every figure on that row is measured the way its label reads** (ADR 0177
+  through ADR 0181, 2026-08-16). **Words per minute is a SPEAKING rate**: spoken
+  words (the raw transcript, before any mode transform) over speech seconds — the
+  recorded window less every gap of half a second or more, measured in the audio
+  callback. Gaps shorter than that are the spaces between words and stay in.
+  **Time saved** divides words and seconds that came from the same runs, excludes
+  the modes that generate their own text, and measures against
+  `config.typing_baseline_wpm` (default 40, set in Privacy & Data) — it swings the
+  figure threefold across the range a real writer types at, so it may not be a
+  constant. **Turnaround** starts when the capture stops rather than when the
+  audio file already exists, so the encode is inside the wait. **Languages** is
+  read off the delivered text by `core::language_detect` — offline, seventy
+  languages, refusing anything too short or too ambiguous — because Groq treats
+  the language as a request hint and never names one in its answer.
+- **The lifetime figures cannot fall, and one button clears them** (ADR 0176,
+  ADR 0179, 2026-08-16). A day row that ages out of the 800-day file is retired
+  INTO the totals rather than dropped; `activity.json` travels in the full backup
+  and an import merges it by field-wise maximum, so a restore can only raise a
+  figure and restoring twice changes nothing. Clearing the transcription history
+  does not touch it and neither does deleting a transcript — the one door is
+  *Reset activity statistics* in Privacy & Data, and a reset ledger never seeds
+  itself back from whatever history still holds.
 - **Home's opening block carries a calendar or the counters, and the choice
   survives a restart** (ADR 0172, ADR 0173, 2026-08-16). Twenty-six weeks of dictation as
   circles on the matrix ramp, one per day, with the day's composition on hover;

@@ -526,6 +526,12 @@ export interface AppConfig {
   /// tiles. Only the block's own toggle writes it; there is no settings row
   /// (decision 9 of the home activity track).
   home_activity_calendar?:  boolean;
+  /// The typing speed `Time saved` measures against, in words a minute
+  /// (ADR 0178). It is the one input to that tile that is not a measurement, and
+  /// it moves the answer more than everything else combined — four weeks of the
+  /// same dictation read 43 minutes saved at 40 wpm and 15 at 60. Defaults to
+  /// 40; the runtime clamps it to 10..200 because it divides.
+  typing_baseline_wpm?:     number;
   /// Global fallback for profiles that predate the per-profile modes block. The
   /// real control is `ProfileModesSettings.collect_workspace_context`.
   auto_detect_mode?:        boolean;

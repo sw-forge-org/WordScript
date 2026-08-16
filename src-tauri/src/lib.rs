@@ -1668,6 +1668,22 @@ fn handle_audio_ready<R: Runtime + 'static>(
     // case that already explains itself. A fluent transcript from a too-quiet
     // microphone explains nothing, and the text cannot be asked.
     let input_level = Some(payload.input_level);
+    /* The three of them as one, because they belong to one capture and are
+       absent together everywhere else (ADR 0177). `speech_seconds` is `None`
+       rather than `0.0` on a payload from before the speech clock: a capture
+       that produced words did not contain no speech, and a zero would divide
+       into a rate nobody could see going wrong. */
+    let capture_facts = core::history::CaptureFacts {
+        integrity: capture_integrity,
+        input_level,
+        speech_seconds: (payload.speech_seconds > 0.0).then_some(payload.speech_seconds),
+    };
+    /* WHERE THE WAIT ACTUALLY BEGAN (ADR 0181). `pipeline_started_at` starts
+       when the audio file already exists — after the buffer was drained,
+       downmixed, resampled, trimmed and encoded — and the reader waited through
+       all of that with nothing on screen. The capture measured it and handed it
+       over; everything that reports a turnaround adds it. */
+    let export_ms = payload.export_ms;
     // The initial prompt this request will actually send. Held here rather than
     // rebuilt after the response, because a rebuild can drift from what went
     // out and the whole point of the echo strip is that we know the exact
@@ -1984,7 +2000,8 @@ fn handle_audio_ready<R: Runtime + 'static>(
                    and this is the moment there is text to deliver. Everything
                    after it depends on where the text is going, and the clipboard
                    path has no observable end at all (decision 6). */
-                let turnaround_ms = pipeline_started_at.elapsed().as_millis() as u64;
+                let turnaround_ms =
+                    export_ms + pipeline_started_at.elapsed().as_millis() as u64;
 
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transform done elapsed_ms={} corrected={} output_len={} rules={}",
@@ -2024,8 +2041,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         heard_text.clone(),
                         transformed,
                         Some(effective_mode.clone()),
-                        capture_integrity,
-                        input_level,
+                        capture_facts.clone(),
                     );
                     core::runtime_log::record(format!(
                         "[WordScript] Native pipeline empty result elapsed_ms={}",
@@ -2063,8 +2079,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             heard_text.clone(),
                             transformed.clone(),
                             Some(effective_mode.clone()),
-                            capture_integrity,
-                            input_level,
+                            capture_facts.clone(),
                         ) {
                             Ok(preview) => {
                                 core::runtime_log::record(format!(
@@ -2133,8 +2148,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 &result,
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
-                                capture_integrity,
-                                input_level,
+                                capture_facts.clone(),
                                 Some(turnaround_ms),
                             )
                             .ok();
@@ -2250,8 +2264,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 &result,
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
-                                capture_integrity,
-                                input_level,
+                                capture_facts.clone(),
                                 Some(turnaround_ms),
                             );
                             let error = result
@@ -2324,8 +2337,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 error.clone(),
                                 Some(effective_mode.clone()),
                                 transcript_title.clone(),
-                                capture_integrity,
-                                input_level,
+                                capture_facts.clone(),
                             );
                             core::runtime_log::record(format!(
                                 "[WordScript] Native pipeline insertion failed session_id={} elapsed_ms={} error={}",
@@ -2392,8 +2404,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     requested_language.clone(),
                     error.message.clone(),
                     keep_audio.then(|| cleanup_path.clone()),
-                    capture_integrity,
-                    input_level,
+                    capture_facts.clone(),
                 );
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transcription failed session_id={} elapsed_ms={} kind={:?} message={}",
@@ -3047,6 +3058,7 @@ pub fn run() {
             core::insertion::clear_native_scratchpad,
             core::history::transcription_history_entries,
             core::activity_ledger::read_activity_ledger,
+            core::activity_ledger::reset_activity_ledger,
             core::history::transcription_history_storage_status,
             core::transcript_store::transcript_store_status,
             core::backup::export_full_backup,

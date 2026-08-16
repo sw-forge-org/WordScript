@@ -4,7 +4,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
-use super::capture::{CaptureIntegrity, InputLevelSummary};
 use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::history;
 use super::insertion::{insert_transcription_from_legacy, NativeInsertResult};
@@ -144,14 +143,11 @@ struct PendingTranscriptionPreview {
     /// profile's mode is changed underneath it, and the record has to state
     /// what ran (ADR 0075).
     effective_mode: Option<ProcessingMode>,
-    /// What the capture behind this preview measured about itself (ADR 0079).
-    /// Carried for the same reason `effective_mode` is: the commit writes the
-    /// record, and by then the capture is long over.
-    capture_integrity: Option<CaptureIntegrity>,
-    /// What the microphone delivered into it, carried alongside the verdict for
-    /// the same reason: the commit writes the record, and by then the capture
-    /// is long over.
-    input_level: Option<InputLevelSummary>,
+    /// What the capture behind this preview measured about itself — the
+    /// integrity verdict (ADR 0079), the input level, and the speech clock
+    /// (ADR 0177). Carried for the same reason `effective_mode` is: the commit
+    /// writes the record, and by then the capture is long over.
+    capture: history::CaptureFacts,
     /// Which staging this preview came from. The deadline armed for one preview
     /// may not commit another: an abort inside the deadline window frees the
     /// session for a new capture, and that capture can stage its own preview
@@ -239,8 +235,7 @@ impl NativeSessionState {
         raw_text: String,
         transformed: NativeTransformResult,
         effective_mode: Option<ProcessingMode>,
-        capture_integrity: Option<CaptureIntegrity>,
-        input_level: Option<InputLevelSummary>,
+        capture: history::CaptureFacts,
     ) -> Result<(u64, PendingTranscriptionPreviewEvent), String> {
         if !matches!(self.stage, NativeSessionStage::Processing) || self.active_session.is_none() {
             return Err("No native session is waiting for a preview commit.".to_string());
@@ -253,8 +248,7 @@ impl NativeSessionState {
             raw_text,
             transformed,
             effective_mode,
-            capture_integrity,
-            input_level,
+            capture,
             epoch: self.preview_counter,
             commit_at_ms: now_ms().saturating_add(PREVIEW_COMMIT_DEADLINE_MS),
             occurred_at_ms: now_ms(),
@@ -681,8 +675,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                 &result,
                 preview.effective_mode.clone(),
                 title.clone(),
-                preview.capture_integrity,
-                preview.input_level,
+                preview.capture.clone(),
                 /* THE PARKED PATH HAS NO TURNAROUND TO REPORT. Its text was
                    produced in a session that ended some time ago and is being
                    delivered now; the interval between the two is how long the
@@ -765,7 +758,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                             })),
                             "delivery": result.insert_mode.delivery_label(),
                             "insertion": result,
-                            "capture_integrity": preview.capture_integrity
+                            "capture_integrity": preview.capture.integrity
                         }),
                     );
                     // The delivery point for this mode: the user committed and
@@ -801,8 +794,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                 &result,
                 preview.effective_mode.clone(),
                 title.clone(),
-                preview.capture_integrity,
-                preview.input_level,
+                preview.capture.clone(),
                 None,
             );
             let error = result
@@ -835,8 +827,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                 error.clone(),
                 preview.effective_mode,
                 title,
-                preview.capture_integrity,
-                preview.input_level,
+                preview.capture.clone(),
             );
             let _ = fail_processing_session_from_native_error(app, &session_id, &error);
             let _ = app.emit(
@@ -882,8 +873,7 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
     raw_text: String,
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
-    capture_integrity: Option<CaptureIntegrity>,
-    input_level: Option<InputLevelSummary>,
+    capture: history::CaptureFacts,
 ) -> Result<PendingTranscriptionPreviewEvent, String> {
     let (epoch, payload, session_id) = {
         let state = app
@@ -896,8 +886,7 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
             raw_text,
             transformed,
             effective_mode,
-            capture_integrity,
-            input_level,
+            capture,
         )?;
         (epoch, payload, state.processing_session_id())
     };
@@ -1335,8 +1324,7 @@ mod tests {
                     warning: None,
                 },
                 None,
-                None,
-                None,
+                history::CaptureFacts::none(),
             )
             .unwrap();
         epoch
@@ -1360,8 +1348,7 @@ mod tests {
                     warning: None,
                 },
                 None,
-                None,
-                None,
+                history::CaptureFacts::none(),
             )
             .unwrap();
 

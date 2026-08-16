@@ -105,4 +105,16 @@ export interface TranscriptionHistoryEntry {
    *  quiet", and neither can be told from the text
    *  (`docs/known-issues/transcription-accuracy.md`). */
   input_level: InputLevelSummary | null;
+  /** The recorded window with the thinking pauses taken out (ADR 0177), in
+   *  seconds. The only honest denominator for a SPEAKING rate: the capture clock
+   *  beside it is the open microphone, so a rate built on it drops by however
+   *  long the reader spent working out their next sentence.
+   *
+   *  `null` on a retry and on every entry written before the speech clock
+   *  existed — never zero, because a record that produced words cannot have had
+   *  no speech in it. */
+  speech_seconds?: number | null;
+  /** Milliseconds from the capture stopping to the text existing (ADR 0181).
+   *  `null` wherever that clock never ran. */
+  turnaround_ms?: number | null;
 }

@@ -7,9 +7,12 @@ import {
   dayKey,
   ledgerBuckets,
   ledgerKeyToDayKey,
+  ledgerLanguages,
+  ledgerPauseShare,
   ledgerTimeSaved,
   ledgerMedianTurnaround,
   ledgerMedianWpm,
+  ledgerTotals,
   type ActivityLedger,
   type LedgerDay,
 } from "./activity";
@@ -34,12 +37,20 @@ function key(daysBack: number): string {
   ).padStart(2, "0")}`;
 }
 
+/** A day as the runtime writes one: every group filled and consistent with
+ *  itself, so a case that wants to break one group has to say so. */
 function row(overrides: Partial<LedgerDay> = {}): LedgerDay {
   return {
     dictations: 1,
     words: 100,
+    spoken_words: 100,
     recorded_seconds: 60,
+    speech_seconds: 60,
     timed: 1,
+    voiced: 1,
+    saved_runs: 1,
+    saved_words: 100,
+    saved_seconds: 60,
     longest_seconds: 60,
     ...overrides,
   };
@@ -50,12 +61,14 @@ function ledger(
   rates: number[] = [],
   turnarounds: number[] = [],
   startedOn?: string,
+  extra: Partial<ActivityLedger> = {},
 ): ActivityLedger {
   return {
     started_on: startedOn ?? Object.keys(days).sort()[0] ?? null,
     days,
     rate_buckets: bucketsFor(rates),
     turnaround_buckets: turnaroundBucketsFor(turnarounds),
+    ...extra,
   };
 }
 
@@ -179,8 +192,11 @@ describe("words per minute — a median, all time", () => {
   });
 
   it("says how many runs it was computed over, and how many there were", () => {
+    /* `voiced` and not `timed`: the histogram holds the runs that carried the
+       SPEECH clock, and a foot naming the capture clock instead would claim a
+       denominator the median was not read off (ADR 0177). */
     const reading = ledgerMedianWpm(
-      ledger({ [key(0)]: row({ dictations: 5, timed: 2 }) }, [80, 100]),
+      ledger({ [key(0)]: row({ dictations: 5, timed: 4, voiced: 2 }) }, [80, 100]),
     )!;
     expect(reading.timed).toBe(2);
     expect(reading.total).toBe(5);
@@ -196,21 +212,65 @@ describe("words per minute — a median, all time", () => {
 });
 
 describe("time saved, the one figure that stays windowed", () => {
-  it("measures the words against the typing baseline and subtracts the speaking", () => {
+  it("measures the credited words against the typing baseline and subtracts the dictating", () => {
     /* 400 words at 40 wpm is 10 minutes of typing; they were said in 120 s. */
     const reading = ledgerTimeSaved(
-      ledger({ [key(0)]: row({ words: 400, recorded_seconds: 120 }) }),
+      ledger({ [key(0)]: row({ saved_words: 400, saved_seconds: 120 }) }),
       NOW,
     )!;
     expect(TYPING_BASELINE_WPM).toBe(40);
     expect(reading.value).toBeCloseTo(8, 6);
   });
 
+  /* ADR 0178. The baseline is the whole figure — the same four weeks read three
+     times as much saved at 40 wpm as at 120 — so it is the reader's to set and
+     this function may not carry an opinion of its own. */
+  it("DIVIDES BY THE BASELINE IT IS GIVEN, because that number is the answer", () => {
+    const source = ledger({ [key(0)]: row({ saved_words: 400, saved_seconds: 120 }) });
+
+    expect(ledgerTimeSaved(source, NOW, 40)!.value).toBeCloseTo(8, 6);
+    expect(ledgerTimeSaved(source, NOW, 60)!.value).toBeCloseTo(4.666_666, 4);
+    expect(ledgerTimeSaved(source, NOW, 80)!.value).toBeCloseTo(3, 6);
+  });
+
+  it("falls back to the default rather than dividing by a baseline of zero", () => {
+    /* A config somebody hand-edited must not turn a tile into an infinity. */
+    const source = ledger({ [key(0)]: row({ saved_words: 400, saved_seconds: 120 }) });
+    expect(ledgerTimeSaved(source, NOW, 0)!.value).toBeCloseTo(8, 6);
+    expect(ledgerTimeSaved(source, NOW, Number.NaN)!.value).toBeCloseTo(8, 6);
+  });
+
+  /* ADR 0178's whole point: the first build summed a day's words — all of
+     them — against the seconds of only the runs that carried a clock, so words
+     from runs with no clock inflated the saving they never contributed time to.
+     The runtime now writes the pair, and this reads the pair. */
+  it("READS ONE SET OF RUNS AND NOT TWO", () => {
+    const reading = ledgerTimeSaved(
+      ledger({
+        [key(0)]: row({
+          /* Five dictations. Two of them were credited: 400 words in 120 s.
+             The other three delivered 5,000 words that may not be counted —
+             generated prose, or a run with no clock at all. */
+          dictations: 5,
+          words: 5400,
+          saved_runs: 2,
+          saved_words: 400,
+          saved_seconds: 120,
+        }),
+      }),
+      NOW,
+    )!;
+
+    expect(reading.value).toBeCloseTo(8, 6);
+    expect(reading.timed).toBe(2);
+    expect(reading.total).toBe(5);
+  });
+
   it("LOOKS AT FOUR WEEKS AND NOTHING BEFORE THEM, while the rate looks at everything", () => {
     const source = ledger(
       {
-        [key(1)]: row({ words: 400, recorded_seconds: 120 }),
-        [key(SAVED_WINDOW_DAYS + 5)]: row({ words: 4000, recorded_seconds: 1200 }),
+        [key(1)]: row({ saved_words: 400, saved_seconds: 120 }),
+        [key(SAVED_WINDOW_DAYS + 5)]: row({ saved_words: 4000, saved_seconds: 1200 }),
       },
       [200, 200],
     );
@@ -227,7 +287,7 @@ describe("time saved, the one figure that stays windowed", () => {
 
   it("keeps the oldest day inside the window rather than off it by one", () => {
     const edge = ledgerTimeSaved(
-      ledger({ [key(SAVED_WINDOW_DAYS - 1)]: row({ words: 400, recorded_seconds: 120 }) }),
+      ledger({ [key(SAVED_WINDOW_DAYS - 1)]: row({ saved_words: 400, saved_seconds: 120 }) }),
       NOW,
     );
     expect(edge).not.toBeNull();
@@ -236,15 +296,28 @@ describe("time saved, the one figure that stays windowed", () => {
   it("floors at zero rather than reporting negative minutes saved", () => {
     /* 10 words in 120 s: slower than typing them would have been. */
     expect(
-      ledgerTimeSaved(ledger({ [key(0)]: row({ words: 10, recorded_seconds: 120 }) }), NOW)!.value,
+      ledgerTimeSaved(
+        ledger({ [key(0)]: row({ saved_words: 10, saved_seconds: 120 }) }),
+        NOW,
+      )!.value,
     ).toBe(0);
   });
 
-  it("is null when the window holds nothing that timed itself", () => {
+  it("is null when the window holds nothing that may be credited", () => {
     expect(ledgerTimeSaved(null, NOW)).toBeNull();
     expect(ledgerTimeSaved(ledger({}), NOW)).toBeNull();
     expect(
-      ledgerTimeSaved(ledger({ [key(90)]: row({ words: 400, recorded_seconds: 120 }) }), NOW),
+      ledgerTimeSaved(
+        ledger({ [key(90)]: row({ saved_words: 400, saved_seconds: 120 }) }),
+        NOW,
+      ),
+    ).toBeNull();
+    /* A day of nothing but generated text: words delivered, nothing credited. */
+    expect(
+      ledgerTimeSaved(
+        ledger({ [key(0)]: row({ words: 900, saved_runs: 0, saved_words: 0, saved_seconds: 0 }) }),
+        NOW,
+      ),
     ).toBeNull();
   });
 });
@@ -270,5 +343,78 @@ describe("turnaround — the one figure a setting can move", () => {
     /* Past ten seconds is a failure rather than a measurement, but it still
        happened, and dropping it would edit the distribution silently. */
     expect(ledgerMedianTurnaround(ledger({}, [], [30000, 40000, 50000]))!).toBe(9975);
+  });
+});
+
+describe("the totals, which may never fall (ADR 0176)", () => {
+  it("COUNTS THE DAYS THAT HAVE AGED OUT OF THE FILE", () => {
+    /* The failure this exists against: the ledger keeps 800 day rows so the file
+       cannot grow without bound, and the build before this one simply dropped
+       the 801st — so every lifetime figure started falling after two years and
+       two months. A retired row leaves the file and its numbers do not. */
+    const totals = ledgerTotals(
+      ledger({ [key(0)]: row({ dictations: 2, words: 200 }) }, [], [], undefined, {
+        retired: row({ dictations: 900, words: 90_000, saved_runs: 900 }),
+        retired_through: key(801),
+      }),
+    );
+
+    expect(totals.dictations).toBe(902);
+    expect(totals.words).toBe(90_200);
+  });
+
+  it("is all zeroes rather than a throw when there is no ledger", () => {
+    expect(ledgerTotals(null).dictations).toBe(0);
+    expect(ledgerTotals(null).words).toBe(0);
+  });
+
+  it("reads a day written before a field existed as zero rather than as NaN", () => {
+    /* A row from schema 1 has no `spoken_words` and no `saved_*`. Summing
+       `undefined` would produce NaN and draw it. */
+    const legacy = { dictations: 1, words: 100, recorded_seconds: 60, timed: 1, longest_seconds: 60 } as LedgerDay;
+    const totals = ledgerTotals(ledger({ [key(0)]: legacy }));
+
+    expect(totals.words).toBe(100);
+    expect(totals.spoken_words).toBe(0);
+    expect(Number.isNaN(totals.saved_seconds)).toBe(false);
+  });
+});
+
+describe("the pause share, which is why the rate moved (ADR 0177)", () => {
+  it("reports how much of the open microphone was thinking rather than speaking", () => {
+    /* Sixty seconds recorded, forty of them speech. */
+    const share = ledgerPauseShare(
+      ledger({ [key(0)]: row({ recorded_seconds: 60, speech_seconds: 40, voiced: 1 }) }),
+    )!;
+    expect(share).toBeCloseTo(1 / 3, 6);
+  });
+
+  it("is null where nothing carried the speech clock, which is not a share of zero", () => {
+    expect(ledgerPauseShare(null)).toBeNull();
+    expect(
+      ledgerPauseShare(
+        ledger({ [key(0)]: row({ voiced: 0, speech_seconds: 0 }) }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("the languages, measured on the text (ADR 0180)", () => {
+  it("ranks them most-used first", () => {
+    const languages = ledgerLanguages(
+      ledger({ [key(0)]: row() }, [], [], undefined, { languages: { en: 12, de: 40, fr: 3 } }),
+    );
+
+    expect(languages.map(({ code }) => code)).toEqual(["de", "en", "fr"]);
+    expect(languages[0].count).toBe(40);
+  });
+
+  it("is empty rather than invented where nothing has been measured", () => {
+    expect(ledgerLanguages(null)).toEqual([]);
+    expect(ledgerLanguages(ledger({ [key(0)]: row() }))).toEqual([]);
+    /* A code with no runs behind it is not a language this reader dictates in. */
+    expect(
+      ledgerLanguages(ledger({}, [], [], undefined, { languages: { de: 0 } })),
+    ).toEqual([]);
   });
 });

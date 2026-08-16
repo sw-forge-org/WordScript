@@ -26,10 +26,14 @@ import {
   SAVED_WINDOW_DAYS,
   TYPING_BASELINE_WPM,
   ledgerBuckets,
+  ledgerLanguages,
+  ledgerPauseShare,
   ledgerTimeSaved,
   ledgerMedianTurnaround,
   ledgerMedianWpm,
+  ledgerTotals,
 } from "@/lib/activity";
+import { TRANSLATE_LANGUAGES } from "@/types/ipc";
 import { useActivityLedger } from "@/hooks/useActivityLedger";
 import { relativeTime } from "@/lib/format";
 import { readTriggerStatus } from "@/lib/shortcuts";
@@ -56,16 +60,19 @@ import type { PartlyWiredScreenProps } from "./props";
  * the hero's foot, the second to the window's bottom edge, where it is readable
  * from every view instead of only from this one.
  *
- * THE OPENING BLOCK HAS TWO LIVES, AND THE SWITCH IS WHETHER IT HAS ANYTHING TO
- * SAY. An instruction is read exactly once, so the keycaps give the position up
- * as soon as the runtime has measured a dictation, and the counters take it. The
- * gate is `wordsPerMinute` rather than a count of records, and that is deliberate
- * in both directions: a fresh profile sees the instruction rather than four
- * zeroes, and a profile whose records all predate the capture measurement sees it
- * too, because a display with nothing to display is the same defect wearing a
- * different face. One rule — the display appears when it has a reading — and the
- * gallery falls out of it rather than being special-cased: no runtime, no
- * records, no readings, so the gallery draws the instruction.
+ * THE OPENING BLOCK HAS TWO LIVES, AND THE SWITCH IS WHETHER THE RECORD HAS
+ * ANYTHING TO SAY. An instruction is read exactly once, so the keycaps give the
+ * position up as soon as the ledger holds a dictation, and the counters take it.
+ *
+ * The gate was `wordsPerMinute !== null` until ADR 0177 made that a SPEAKING
+ * rate: every record written before the speech clock existed has none, so an
+ * installation with months of dictation behind it was handed the instruction
+ * again, as if it had never started. One tile's silence is not the record's. The
+ * gate is now `ledgerTotals(ledger).dictations > 0`, and a tile with no reading
+ * of its own draws a dark display — which is ADR 0161's rule and the reason four
+ * zeroes never appear. The gallery falls out of it rather than being
+ * special-cased: no runtime, no ledger, no dictations, so it draws the
+ * instruction.
  *
  * THE HERO'S SENTENCE IS THE ACTIVATION MODE'S, not the drawing's. "Hold in any
  * app to dictate / Release to stop" is true of exactly one of the three modes
@@ -91,6 +98,65 @@ import type { PartlyWiredScreenProps } from "./props";
  */
 
 const RECENT_LIMIT = 5;
+
+/** What the rate tile says on hover.
+ *
+ *  ONE SENTENCE, AND THE PAUSE SHARE IF IT IS KNOWN. A tooltip is read standing
+ *  up: the reader wants to know what the number is, not how it is derived, and a
+ *  paragraph in a hover card is a paragraph nobody finishes. The derivation
+ *  lives in the ADR, where somebody who wants it will look. */
+function rateTitle(measured: boolean, pauseShare: number | null): string {
+  if (!measured) {
+    return "Waiting for your next dictation.";
+  }
+  if (pauseShare === null) return "Words you spoke, over the time you spent speaking.";
+  return `Words you spoke, over the time you spent speaking. ${Math.round(
+    pauseShare * 100,
+  )} % of your microphone time was pauses, and is left out.`;
+}
+
+/** The English name for a measured language code.
+ *
+ *  THE DETECTOR REACHES PAST WHAT THIS PRODUCT TRANSLATES BETWEEN — seventy
+ *  languages against Translate's eight — so a table of the eight would leave a
+ *  Swedish dictation labelled `SV`. `Intl.DisplayNames` already knows every code
+ *  either side can produce and is in both engines this runs in, which is why
+ *  there is no third language list in this repository.
+ *
+ *  A code it does not know comes back unchanged, and then the code itself is the
+ *  label: naming a language wrongly is worse than showing its code. */
+function languageLabel(code: string): string {
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(code);
+    if (name && name.toLowerCase() !== code.toLowerCase()) return name;
+  } catch {
+    /* An invalid tag throws rather than answering. Fall through. */
+  }
+  return (
+    TRANSLATE_LANGUAGES.find((language) => language.code === code)?.label ?? code.toUpperCase()
+  );
+}
+
+/** The line under the languages figure: the one you mostly dictate in, and how
+ *  many others there are.
+ *
+ *  A LIST DOES NOT SCALE AND THE FIGURE ALREADY COUNTS. Three names fit and ten
+ *  are a smear, so the foot answers the question the number cannot — which
+ *  language you actually work in — and leaves the rest to the count. */
+function languageFoot(languages: { code: string; count: number }[]): string {
+  const [first, ...rest] = languages;
+  if (rest.length === 0) return languageLabel(first.code);
+  return `mostly ${languageLabel(first.code)} · +${rest.length}`;
+}
+
+/** The hover, capped at three. Beyond that a tooltip becomes a table. */
+function languageTitle(languages: { code: string; count: number }[]): string {
+  const named = languages
+    .slice(0, 3)
+    .map(({ code, count }) => `${languageLabel(code)} ${count}`)
+    .join(", ");
+  return languages.length > 3 ? `${named}, and ${languages.length - 3} more.` : `${named}.`;
+}
 
 function heroCopy(mode: string): { title: string; description: string } {
   if (mode === "hold") {
@@ -190,8 +256,22 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      on and what the counter draws as a dark box rather than as a zero. */
   const wpm = ledgerMedianWpm(ledger);
   const turnaround = ledgerMedianTurnaround(ledger);
-  const saved = ledgerTimeSaved(ledger);
-  const display = wpm !== null;
+  /* THE READER'S OWN BASELINE (ADR 0178), not a constant. It is the one input to
+     this tile that was never measured, and it moves the answer threefold across
+     the range a real writer types at — so the number that goes in comes from the
+     config, and the tooltip names it. */
+  const baseline = runtime?.config.typing_baseline_wpm ?? TYPING_BASELINE_WPM;
+  const saved = ledgerTimeSaved(ledger, Date.now(), baseline);
+  const pauseShare = ledgerPauseShare(ledger);
+  const languages = ledgerLanguages(ledger);
+  /* THE GATE IS THE RECORD, NOT ANY ONE TILE (ADR 0171, corrected by ADR 0177).
+     It read `wpm !== null` until the rate became a speaking rate, and every
+     record already on disk was written before the speech clock existed — so an
+     installation with months of dictation behind it was shown the instruction
+     again, as if it had never started. What decides between the two lives of
+     this block is whether the RECORD has anything to say; a tile with no reading
+     of its own draws a dark display, which is exactly what ADR 0161 asks for. */
+  const display = ledgerTotals(ledger).dictations > 0;
 
   /* THE OTHER LIFE OF THE SAME BLOCK (decision 1). The calendar and the tiles
      are alternatives rather than companions — one is your rhythm, the other is
@@ -310,24 +390,30 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
               <ActivityCalendar buckets={buckets} />
             ) : (
               <HomeDisplay>
-                {/* WORDS PER MINUTE. Words from the record, seconds from the
-                    capture's own clock — and the foot names the two counts, because
-                    `capture_integrity` is null on a retry and on every record older
-                    than the measurement. A rate over a denominator that silently
-                    skipped half the records is a plausible wrong number, which is a
-                    worse failure than a missing one. */}
+                {/* WORDS PER MINUTE — a SPEAKING rate since ADR 0177, and
+                    three things had to change for it to deserve the name: the
+                    median (already right), the spoken words rather than the
+                    delivered ones, and the speech clock rather than the open
+                    microphone. The foot names what it was computed over, because
+                    a rate whose denominator silently skipped half the records is
+                    a plausible wrong number, which is worse than a missing one. */}
                 <StatTile
                   label="Words per minute"
-                  value={wpm!.value}
-                  ariaLabel={`${Math.round(wpm!.value)} words per minute`}
-                  foot="median · all time"
-                  title="Your middle dictation's rate. The clock counts thinking pauses too, so it reads below your speaking rate."
+                  value={wpm ? wpm.value : null}
+                  ariaLabel={
+                    wpm
+                      ? `${Math.round(wpm.value)} words per minute`
+                      : "No speaking rate measured yet"
+                  }
+                  foot={wpm ? `median · ${wpm.timed} dictations` : "from your next dictation"}
+                  title={rateTitle(wpm !== null, pauseShare)}
                 />
                 {/* TIME SAVED. The one figure on this row derived from an
-                    assumption rather than from a measurement, and the foot carries
-                    the `≈` that says so. A rolling window rather than a total: a
-                    lifetime figure built from a pruned history grows, sticks at the
-                    limit and then runs backwards. */}
+                    assumption rather than from a measurement, and the foot
+                    carries the `≈` that says so. A rolling window rather than a
+                    total: a lifetime figure stops being something a reader can
+                    hold. Words and seconds come from the SAME runs (ADR 0178),
+                    and generated text is not among them. */}
                 <StatTile
                   label="Time saved"
                   value={saved ? saved.value : null}
@@ -337,12 +423,8 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                       : "No reading for the last four weeks"
                   }
                   foot={saved ? "≈ minutes · last 4 weeks" : "nothing yet · last 4 weeks"}
-                  title={`Against a ${TYPING_BASELINE_WPM} words-per-minute typing baseline — an assumption, not a measurement. That is what the ≈ is for.`}
+                  title={`Your words at ${baseline} wpm of typing, less the time you dictated them. The baseline is a guess — change it in Privacy & Data.`}
                 />
-                {/* DRAWN, AND SHOWING NO FIGURE AT ALL (ADR 0161). The tag sits at
-                    the label, where it is read before the value rather than after
-                    it, and the counter draws a dark display: inventing a 3 here
-                    would be worse than a visible gap. */}
                 {/* THE ONE TILE THAT ANSWERS TO A SETTING. `Apps` stood here
                     and could not work: the target application is only resolved
                     where the text is pasted directly, and 49 of this machine's
@@ -350,7 +432,8 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                     target to name. Anything downstream of the insert is outside
                     what this product can see — the same boundary that rules out
                     "time until the text is with you" and "how much you edited
-                    afterwards". Turnaround is inside it at both ends. */}
+                    afterwards". Turnaround is inside it at both ends, and since
+                    ADR 0181 it starts where the wait does. */}
                 <StatTile
                   label="Turnaround"
                   value={turnaround}
@@ -360,17 +443,33 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                       : `${Math.round(turnaround)} milliseconds from speaking to text`
                   }
                   foot={turnaround === null ? "nothing timed yet" : "ms · median · all time"}
-                  title="How long from you stopping to the text being ready. Moves when you change the model or the lane."
+                  title="From you stopping to the text being ready. Moves with the model and the lane."
                 />
+                {/* LANGUAGES, MEASURED ON THE TEXT (ADR 0180). It carried a
+                    `PreviewTag` and no figure while the plan was to pass the
+                    provider's `response.language` through — which would never
+                    have arrived: Groq treats language as a request hint and its
+                    response names none, and the local lane has no field for it.
+                    Reading the delivered text works on every lane and offline. */}
                 <StatTile
                   label="Languages"
-                  tag={
-                    <PreviewTag title="The record stores the configured language, not the recognised one. The provider returns one and it is spent on recogniser repair rather than written to the record, so a count today would count how often the setting was changed." />
+                  value={languages.length > 0 ? languages.length : null}
+                  ariaLabel={
+                    languages.length > 0
+                      ? `${languages.length} languages dictated`
+                      : "No language measured yet"
                   }
-                  value={null}
-                  ariaLabel="No reading yet"
-                      foot="the setting, not the reading"
-                    />
+                  /* THE FOOT NAMES THE ONE YOU MOSTLY DICTATE IN AND COUNTS THE
+                     REST. Every language on one line was fine at two and a smear
+                     at ten, and the tile's own figure already says how many there
+                     are — what it cannot say is which one you actually work in. */
+                  foot={languages.length > 0 ? languageFoot(languages) : "from your next dictation"}
+                  title={
+                    languages.length > 0
+                      ? `Measured on the text, not on your language setting. ${languageTitle(languages)}`
+                      : "Measured on the text once a dictation is long enough to be sure of."
+                  }
+                />
               </HomeDisplay>
             )}
           </HomeSwitch>

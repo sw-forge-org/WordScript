@@ -109,7 +109,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     label: "Home",
     icon: "home",
     banner: saysSo(
-      "Words per minute and time saved are measured; apps and languages are drawn, because no record stores a target application and the language on a record is the setting rather than what was recognised. The decision inbox receives a fallen-back delivery and nothing else — the desk (Phase 8) and a meeting's open questions (V2) have no receiver.",
+      "All four counters report a measurement. The decision inbox receives a fallen-back delivery and nothing else — the desk (Phase 8) and a meeting's open questions (V2) have no receiver, and the calendar counts dictations only for the same reason.",
       "Wired in part",
     ),
     render: (props) => <HomeScreen {...props} />,

@@ -53,6 +53,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — every figure on Home is now measured the way its label reads (ADR 0176-0181)
+
+- **Words per minute is a speaking rate.** It divided the DELIVERED text by the
+  time the microphone was open, so Cleanup's removed filler cost a few percent
+  and Prompt Enhance — where a model writes two hundred words from fifteen spoken
+  ones — would have entered the record at several hundred words a minute. It now
+  divides what you SAID by the time you spent saying it: the runtime measures
+  speech in the audio callback and subtracts any gap of half a second or more as
+  a thinking pause. Gaps shorter than that are the spaces between words and stay
+  in, because removing those would report a rate nobody speaks at. The tooltip
+  states what share of your microphone time was pauses.
+- **Time saved credits only what you would have typed.** Words and seconds now
+  come from the same runs or from neither — a day holding one untimed record used
+  to credit its words against no time at all — and Agent and Prompt Enhance
+  contribute nothing to it, because nobody would have typed a model's essay.
+- **The typing baseline is yours to set.** It was 40 words a minute, hard-coded,
+  and it is the whole figure: the same four weeks read 43 minutes saved at 40 and
+  15 at 60. Privacy & Data → *Activity figures* now carries it, and the tile's
+  hover names the value it used.
+- **Turnaround starts when you stop speaking.** The clock used to start once the
+  audio file already existed, so draining, resampling, trimming and encoding the
+  capture — all of it in front of a reader looking at nothing — was outside the
+  figure.
+- **Languages counts what came back, not what you configured.** Groq treats the
+  language as a request hint and never names one in its answer, and the local
+  lane has no field for it, so the planned route would have left the tile dark on
+  the two lanes most dictations take. The language is read off the delivered text
+  in the runtime, offline, across seventy languages — and a dictation too short
+  or too ambiguous to be sure of is counted in none of them rather than guessed
+  at.
+
+### Added — the lifetime figures cannot fall, and there is a button that clears them
+
+- **A day that ages out of the ledger is retired into the totals rather than
+  dropped.** The file still keeps 800 day rows so it cannot grow without bound;
+  before this, every all-time figure would have started falling after two years
+  and two months of daily use. Nothing in the ledger subtracts any more.
+- **The figures are in the full backup.** They were the one thing in a WordScript
+  archive that could not be rebuilt from anything else, and a restore on a new
+  machine set them to zero. An import now MERGES them by taking the larger of the
+  two figures field by field, so restoring the same archive twice changes nothing
+  and a restore can only ever raise a total.
+- **Privacy & Data → Delete and reset → Reset activity statistics.** The one door
+  that lowers these numbers. Clearing your transcription history does not, and
+  deleting a single transcript does not; the row says so.
+
+### Fixed
+
+- **The turnaround was never written to a record.** `history_entry_from_insert_result`
+  took the measurement as an argument and stored `None`, so the histogram behind
+  the tile could never fill and the tile stayed dark on a machine with sixty
+  dictations in it.
+- **Home stopped showing the instruction to readers who had already started.**
+  The choice between "press this to dictate" and the counters hung on one tile
+  having a reading; it now hangs on whether the record has anything to say at
+  all, and a tile with nothing to report draws a dark display instead.
+
 ### Added — Home's counters are all-time now, and there is a record that does not forget (ADR 0174, ADR 0175)
 
 - **Words per minute and the calendar read a ledger, not your history.** History

@@ -181,6 +181,31 @@ German repair pass, so the two defects compound silently.
   `raw_german_with_english_terms_is_untouched`, and it is the reason a
   post-processing filter cannot be the fix here.
 
+## What is now measured, and what it changes for this record
+
+**The delivered text's language is detected in the runtime and counted per day**
+([ADR 0180](../decisions/0180-the-lane-that-most-dictations-take-never-names-a-language-so-the-language-is-measured-on-the-text.md),
+`core::language_detect`). That was built for Home's `Languages` tile and it lands
+on this defect by accident: a reader whose German dictations come back in English
+now sees a language appear in their own figures that they never dictated in.
+
+It measures the OUTPUT and therefore cannot on its own prove a drift — a genuinely
+English dictation looks identical. What it gives this record is a rate: how often
+a machine whose profiles all say German produces English text, counted rather
+than eyeballed over fifty records.
+
+**The two ends this record names are still missing.** Nothing writes
+`SpeechSettings::language`, and no screen offers it. The detector does not change
+that, and it is not a substitute for pinning the language — it is the instrument
+that would let a fix be checked.
+
+**And the breadth question belongs here rather than to that tile.** The detector
+knows seventy languages; Whisper transcribes around ninety; `TRANSLATE_LANGUAGES`
+offers eight. When the per-profile dictation language finally gets a control, its
+list is the RECOGNISER'S reach and not the detector's, and Translate's list is a
+third thing again — what the chat model can translate INTO. Three questions, three
+lists, and the one in `core::language_detect` answers none of the other two.
+
 ## Related
 
 - `transcription-hallucination.md` — names "lose the intended language" and

@@ -94,19 +94,25 @@ function historyEntry(
 }
 
 /** A record of `words` words whose capture timed itself for `seconds`. */
+/** A record with both clocks on it: the capture window, and the speech window
+ *  inside it (ADR 0177). They are equal here unless a case says otherwise, so a
+ *  test that does not care about pauses reads the rate it expects. */
 function timedEntry(
   words: number,
   seconds: number,
   overrides: Partial<TranscriptionHistoryEntry> = {},
 ): TranscriptionHistoryEntry {
+  const text = Array.from({ length: words }, (_, i) => `w${i}`).join(" ");
   return historyEntry({
-    transformed_transcript: Array.from({ length: words }, (_, i) => `w${i}`).join(" "),
+    raw_transcript: text,
+    transformed_transcript: text,
     capture_integrity: {
       wall_seconds: seconds,
       recorded_seconds: seconds,
       missing_ratio: 0,
       verdict: "intact",
     },
+    speech_seconds: seconds,
     ...overrides,
   });
 }
@@ -117,59 +123,98 @@ function timedEntry(
  *  so a test that only mocks the record list mocks the wrong half. This folds
  *  the same records into the same shape the command returns, which keeps every
  *  assertion below meaning what it says. */
-function ledgerFor(entries: TranscriptionHistoryEntry[]) {
-  const days: Record<string, unknown> = {};
+function ledgerFor(
+  entries: TranscriptionHistoryEntry[],
+  /* The language tally is measured by the RUNTIME on the delivered text
+     (ADR 0180) and is not a field on the record, so a test that wants one says
+     so rather than having it derived from `w0 w1 w2`. */
+  languages: Record<string, number> = {},
+) {
+  const days: Record<string, Record<string, number>> = {};
+  /* The rate histogram the runtime keeps: one bucket per word a minute, over
+     SPOKEN words and SPEECH seconds (ADR 0177). The median is read off this and
+     not off the day rows, so a mock without it mocks the wrong half. */
+  const rate_buckets = new Array<number>(400).fill(0);
+  const turnaround_buckets = new Array<number>(400).fill(0);
+
   for (const entry of entries) {
     if (entry.retry_of) continue;
-    const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
-    const words = text.trim().split(/\s+/).filter(Boolean).length;
-    if (words === 0) continue;
+    const delivered = entry.transformed_transcript ?? entry.raw_transcript ?? "";
+    const words = wordsIn(delivered);
+    const spoken = wordsIn(entry.raw_transcript ?? "");
+    if (words === 0 && spoken === 0) continue;
 
     const at = new Date(entry.created_at_ms);
     const key = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(
       at.getDate(),
     ).padStart(2, "0")}`;
     const seconds = entry.capture_integrity?.recorded_seconds ?? 0;
+    const speech = entry.speech_seconds ?? 0;
+    /* Generated prose is delivered and is not credited against typing
+       (ADR 0178) — the runtime decides this from the mode, and so does this. */
+    const credited = entry.effective_mode !== "agent" && entry.effective_mode !== "prompt_enhance";
     const day = (days[key] ??= {
       dictations: 0,
       words: 0,
+      spoken_words: 0,
       recorded_seconds: 0,
+      speech_seconds: 0,
       timed: 0,
+      voiced: 0,
+      saved_runs: 0,
+      saved_words: 0,
+      saved_seconds: 0,
       longest_seconds: 0,
-    }) as Record<string, number>;
+    });
 
     day.dictations += 1;
     day.words += words;
+    day.spoken_words += spoken;
     if (seconds > 0) {
       day.recorded_seconds += seconds;
       day.timed += 1;
       day.longest_seconds = Math.max(day.longest_seconds, seconds);
+      if (credited && words > 0) {
+        day.saved_runs += 1;
+        day.saved_words += words;
+        day.saved_seconds += seconds;
+      }
+    }
+    if (speech > 0) {
+      day.speech_seconds += speech;
+      day.voiced += 1;
+      if (spoken > 0) rate_buckets[Math.min(Math.floor((spoken / speech) * 60), 399)] += 1;
+    }
+    if (typeof entry.turnaround_ms === "number") {
+      turnaround_buckets[Math.min(Math.floor(entry.turnaround_ms / 25), 399)] += 1;
     }
   }
-  /* The rate histogram the runtime keeps: one bucket per word a minute. The
-     median is read off this and not off the day rows, so a mock without it
-     mocks the wrong half. */
-  const rate_buckets = new Array<number>(400).fill(0);
-  for (const entry of entries) {
-    if (entry.retry_of) continue;
-    const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
-    const words = text.trim().split(/\s+/).filter(Boolean).length;
-    const seconds = entry.capture_integrity?.recorded_seconds ?? 0;
-    if (words === 0 || seconds <= 0) continue;
-    rate_buckets[Math.min(Math.floor((words / seconds) * 60), 399)] += 1;
-  }
-  return { started_on: Object.keys(days).sort()[0] ?? null, days, rate_buckets };
+
+  return {
+    started_on: Object.keys(days).sort()[0] ?? null,
+    days,
+    rate_buckets,
+    turnaround_buckets,
+    languages,
+  };
+}
+
+function wordsIn(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 /** The base mock with a chosen set of records behind it. */
-function mockRuntimeHistory(entries: TranscriptionHistoryEntry[]) {
+function mockRuntimeHistory(
+  entries: TranscriptionHistoryEntry[],
+  languages: Record<string, number> = {},
+) {
   invoked.mockImplementation(async (command: string) => {
     if (command === "native_trigger_status") return TRIGGER;
     if (command === "resolve_current_processing_mode") {
       return { mode: "cleanup", auto_detected: false, detected_from: null };
     }
     if (command === "transcription_history_entries") return entries;
-    if (command === "read_activity_ledger") return ledgerFor(entries);
+    if (command === "read_activity_ledger") return ledgerFor(entries, languages);
     if (command === "transcription_history_storage_status") return { path: "/tmp/history.json" };
     if (command === "transcript_store_status") {
       return { root: "/tmp/WordScript/transcripts", exists: true };
@@ -297,19 +342,23 @@ describe("Home · the display", () => {
     expect(container.querySelector(".ws-home-display")).toBeNull();
   });
 
-  /* The other face of the same defect: records exist, none of them timed
-     itself, so there is nothing to display. A display with nothing to display
-     is four dark boxes, which reads as broken for the same reason four zeroes
-     do. */
-  it("keeps the instruction where every record predates the capture clock", async () => {
+  /* THE GATE IS THE RECORD AND NOT ANY ONE TILE (ADR 0177's correction). It
+     was `wordsPerMinute !== null` until the rate became a speaking rate — and
+     every record written before the speech clock existed has none, so an
+     installation with months of dictation behind it was shown the instruction
+     again, as if it had never started. A tile with no reading of its own draws a
+     dark display; a reader with no dictations at all gets the instruction. */
+  it("shows the display to a record that has something to say, whatever any one tile knows", async () => {
     mockRuntimeHistory([
       historyEntry({ id: "old", transformed_transcript: "words but no clock at all" }),
     ]);
     const { container } = render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await screen.findByRole("heading", { name: /Recent/ });
-    expect(container.querySelector(".ws-home-display")).toBeNull();
-    expect(screen.getByText("Press in any app to dictate")).toBeInTheDocument();
+    expect(container.querySelector(".ws-home-display")).not.toBeNull();
+    expect(screen.queryByText("Press in any app to dictate")).not.toBeInTheDocument();
+    /* And the rate says it has nothing rather than inventing one. */
+    expect(screen.getByLabelText("No speaking rate measured yet")).toBeInTheDocument();
   });
 
   it("reads words per minute out of the record and drops the instruction", async () => {
@@ -335,7 +384,11 @@ describe("Home · the display", () => {
     ]);
     render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    expect(await screen.findByText("median · all time")).toBeInTheDocument();
+    /* The foot names the scope and the count it was read off: one of the two
+       records carried the speech clock, and the median is that one run. A foot
+       that said `all time` alone would let a reader take a single run for a
+       settled figure. */
+    expect(await screen.findByText("median · 1 dictations")).toBeInTheDocument();
     expect(screen.queryByText(/runs timed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/of 2/)).not.toBeInTheDocument();
   });
@@ -370,47 +423,53 @@ describe("Home · the display", () => {
    * invented 3 is worse than a visible gap. The two drawn tiles carry the tag at
    * their own label and light no pixel at all.
    */
-  it("draws the one remaining sketch with a tag and no figure whatsoever", async () => {
-    mockRuntimeHistory([timedEntry(400, 120)]);
+  /**
+   * NOT ONE TILE ON THIS ROW IS A SKETCH ANY MORE (ADR 0180). `Apps` was retired
+   * because the target application is unobservable on a clipboard delivery, and
+   * `Languages` carried a tag while the plan was to pass the provider's
+   * `response.language` through — which would never have arrived on the two
+   * lanes this product runs on. It is measured on the delivered text now.
+   */
+  it("carries no preview tag at all, because every tile reports a measurement", async () => {
+    mockRuntimeHistory([timedEntry(400, 120)], { de: 30, en: 4 });
     const { container } = render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await screen.findByLabelText("200 words per minute");
-
-    /* `Apps` used to stand beside this one and could never work: the target
-       application is only resolved where the text is pasted directly, and a
-       clipboard delivery has no target to name. It was replaced by Turnaround,
-       which is measured at both ends inside the runtime. */
     expect(screen.queryByText("Apps")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".ws-ptag")).toHaveLength(0);
 
-    for (const label of ["Languages"]) {
-      const tile = screen.getByText(label).closest(".ws-tile") as HTMLElement;
-      expect(tile.querySelector(".ws-ptag"), label).not.toBeNull();
-      /* No lit pixel, and the counter says so on itself so the surface can dim
-         it. A lit `0` would claim the runtime counted none. */
-      expect(tile.querySelector(".ws-counter"), label).toHaveAttribute("data-unlit");
-      expect(tile.querySelectorAll(".matrix-pixel-active"), label).toHaveLength(0);
-    }
-
-    /* And the two measured tiles carry no tag: the marker is what separates a
-       drawing from a reading, so it may not sit on a reading. */
-    for (const label of ["Words per minute", "Time saved", "Turnaround"]) {
+    for (const label of ["Words per minute", "Time saved", "Turnaround", "Languages"]) {
       const tile = screen.getByText(label).closest(".ws-tile") as HTMLElement;
       expect(tile.querySelector(".ws-ptag"), label).toBeNull();
     }
   });
 
-  it("names what each drawn tile is waiting for, on the tag rather than in the row", async () => {
+  /* ADR 0180. The tile counts what came BACK, and names the languages under the
+     figure so a `2` is not a number the reader has to interpret. */
+  it("counts the languages the text came back in, most-used first", async () => {
+    mockRuntimeHistory([timedEntry(400, 120)], { de: 30, en: 4, sv: 1 });
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findByLabelText("3 languages dictated")).toBeInTheDocument();
+    /* THE FOOT NAMES ONE AND COUNTS THE REST. Ten languages on one line is a
+       smear, and the figure above already says how many there are — what it
+       cannot say is which one the reader actually works in. Named through
+       `Intl.DisplayNames`, so a language this product does not translate
+       between is still a name rather than a code. */
+    expect(screen.getByText("mostly German · +2")).toBeInTheDocument();
+  });
+
+  /* A counter with no reading is dark rather than zero (ADR 0161), and that
+     holds for the newest measurement on the row as much as for the oldest. */
+  it("draws no language figure at all until something has been measured", async () => {
     mockRuntimeHistory([timedEntry(400, 120)]);
-    const { container } = render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await screen.findByLabelText("200 words per minute");
-    const tags = [...container.querySelectorAll(".ws-ptag")].map((tag) => tag.getAttribute("title"));
-    /* One left. `Apps` was not wired up, it was retired: the target application
-       is unobservable on a clipboard delivery, which is most of them. */
-    expect(tags).toHaveLength(1);
-    /* The language on a record is the SETTING. A tile counting it today would
-       count how often the setting was changed. */
-    expect(tags[0]).toContain("not the recognised one");
+    const tile = screen.getByText("Languages").closest(".ws-tile") as HTMLElement;
+    expect(tile.querySelector(".ws-counter")).toHaveAttribute("data-unlit");
+    expect(tile.querySelectorAll(".matrix-pixel-active")).toHaveLength(0);
+    expect(screen.getByText("from your next dictation")).toBeInTheDocument();
   });
 });
 

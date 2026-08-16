@@ -10,15 +10,25 @@
 //!
 //! **What an archive holds is what a machine can hand to another machine.** The
 //! config as it is written to disk — which is already scrubbed of secrets — the
-//! history index, and the transcripts the index names. The API key is NOT in it
-//! and cannot be: it lives in the OS secret store, which is the one thing about
-//! this machine that does not travel, and the import says so rather than
-//! leaving somebody to find out.
+//! history index, the transcripts the index names, and the ACTIVITY LEDGER. The
+//! API key is NOT in it and cannot be: it lives in the OS secret store, which is
+//! the one thing about this machine that does not travel, and the import says so
+//! rather than leaving somebody to find out.
+//!
+//! **The ledger is in the archive because it is the only thing here that cannot
+//! be rebuilt** (ADR 0179). History is pruned and the transcripts are files; the
+//! lifetime figures are an accumulation, and an accumulation that is not in the
+//! backup is an accumulation that a restore silently sets back to zero. It is
+//! also the one part of an archive that is MERGED rather than replaced — see
+//! `ActivityLedger::raise_to`, which takes the larger of the two figures field
+//! by field so that restoring an archive can only ever raise a total, and
+//! restoring the same one twice changes nothing at all.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::activity_ledger::{self, ActivityLedger};
 use super::config::AppConfig;
 use super::history;
 use super::paths::{config_file_path, transcripts_dir, user_data_dir};
@@ -41,6 +51,12 @@ pub struct BackupArchive {
     /// that names files on the machine it came from restores nothing on
     /// another one.
     pub transcripts: Vec<ArchivedTranscript>,
+    /// The all-time figures. `None` in an archive written before ADR 0179, which
+    /// imports as "this archive knows nothing about your totals" and therefore
+    /// leaves them alone — the correct reading, and the reason this is an
+    /// `Option` rather than a defaulted empty ledger.
+    #[serde(default)]
+    pub activity: Option<ActivityLedger>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +187,9 @@ pub fn export_full_backup(request: BackupPathRequest) -> Result<ExportBackupResp
 
     let history_count = history.len();
     let transcript_count = transcripts.len();
+    /* Read rather than required: a ledger that will not load is not a reason to
+       refuse an export of everything else. */
+    let activity = activity_ledger::snapshot().ok();
 
     let archive = BackupArchive {
         version: ARCHIVE_VERSION,
@@ -179,6 +198,7 @@ pub fn export_full_backup(request: BackupPathRequest) -> Result<ExportBackupResp
         config,
         history,
         transcripts,
+        activity,
     };
 
     let raw = serde_json::to_string_pretty(&archive)
@@ -239,6 +259,20 @@ pub fn import_full_backup(request: BackupPathRequest) -> Result<ImportBackupResp
     let transcript_count = restore_transcripts(&archive.transcripts);
     let history_count = archive.history.len();
     history::replace_entries_from_backup(archive.history)?;
+
+    /* MERGED AND NOT REPLACED, WHICH IS THE ONE PLACE THIS COMMAND DOES NOT
+       OVERWRITE (ADR 0179). Everything else in an archive is a state to restore;
+       the ledger is an accumulation, and a restore that lowered a lifetime total
+       would break the one promise the ledger makes. A failure is logged rather
+       than raised: the import has already succeeded by this point, and the
+       figures are derived. */
+    if let Some(activity) = &archive.activity {
+        if let Err(error) = activity_ledger::merge_from_archive(activity) {
+            runtime_log::record(format!(
+                "[WordScript] Full import could not merge the activity ledger error={error}"
+            ));
+        }
+    }
 
     runtime_log::record(format!(
         "[WordScript] Full import applied from={} snapshot={} history={history_count} transcripts={transcript_count}",

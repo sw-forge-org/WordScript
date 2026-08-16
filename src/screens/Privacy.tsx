@@ -110,6 +110,19 @@ import type { WiredScreenProps } from "./props";
  */
 const HISTORY_LIMITS = [50, 100, 200, 500, 1000];
 
+/** The typing speeds `Time saved` can be measured against (ADR 0178).
+ *
+ *  THE BASELINE IS THE FIGURE. The same four weeks of dictation read 43 minutes
+ *  saved against 40 words a minute and 15 against 60 — everything else on that
+ *  tile is measured, and this one number swings it threefold. It was a constant
+ *  in the frontend until somebody asked how accurate the tile actually was, and
+ *  the honest answer was "as accurate as a guess nobody was shown".
+ *
+ *  Forty is the ordinary figure for sustained prose typing and is the default.
+ *  The rest of the range is what a real writer might set: somebody who types all
+ *  day is faster, and somebody working on a phone keyboard is not. */
+const TYPING_BASELINES = [20, 30, 40, 50, 60, 70, 80, 100];
+
 /** The drawn options, with the value each one means. `Keep all` is 0 in the
  *  config, which is the runtime's own encoding of "do not prune". */
 const RETENTIONS: { value: number; label: string }[] = [
@@ -140,13 +153,14 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
      within a screen of each other, and a single message would leave a reader
      guessing which one it answered. */
   const [busy, setBusy] = useState<
-    "export" | "import" | "reset" | "rules-export" | "rules-import" | null
+    "export" | "import" | "reset" | "rules-export" | "rules-import" | "activity" | null
   >(null);
   const [exported, setExported] = useState<string | null>(null);
   const [imported, setImported] = useState<string | null>(null);
   const [reset, setReset] = useState<string | null>(null);
   const [rulesExported, setRulesExported] = useState<string | null>(null);
   const [rulesImported, setRulesImported] = useState<string | null>(null);
+  const [activityReset, setActivityReset] = useState<string | null>(null);
 
   /* WHICH PROFILE THE EXPORT MEANS. It opens on the active one because that is
      the profile the reader is currently being written by, and it is a local
@@ -165,6 +179,23 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
       setCleared(true);
     } finally {
       setClearing(false);
+    }
+  };
+
+  /* THE ONE DOOR THAT LOWERS THE LIFETIME FIGURES (ADR 0176), and it is here
+     rather than a side effect of the row above it. Deleting a transcript is
+     housekeeping and must not cost somebody their record of a year's dictation;
+     wanting that record gone is a separate intention and gets a control that
+     says what it does. */
+  const resetActivity = async () => {
+    setBusy("activity");
+    try {
+      await invoke("reset_activity_ledger");
+      setActivityReset("Every all-time figure is back to nothing. Counting starts again with your next dictation.");
+    } catch (cause) {
+      setActivityReset(String(cause));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -645,8 +676,49 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
       </SectionHeader>
 
       <SectionHeader
+        title="Activity figures"
+        description="What Home's counters are measured against. The figures themselves live in their own file and outlast the history above."
+      >
+        <Card
+          title="Time saved"
+          description="The one figure on Home derived from an assumption rather than from a measurement."
+        >
+          <CardRows>
+            <Row
+              label="Typing baseline"
+              /* THE ROW STATES THE SWING RATHER THAN THE UNIT. A reader who does
+                 not know that this number IS the figure will leave it at 40 and
+                 take the result for a measurement — which is exactly the reading
+                 the ≈ on the tile exists to prevent. */
+              hint="Time saved is your dictated words at this typing speed, less the time you spent dictating them. Nothing here has ever watched you type."
+              control={
+                <Select
+                  value={String(runtime.config.typing_baseline_wpm ?? 40)}
+                  onChange={(event) =>
+                    runtime.patch({ typing_baseline_wpm: Number(event.target.value) })
+                  }
+                  aria-label="Typing baseline"
+                >
+                  {(TYPING_BASELINES.includes(runtime.config.typing_baseline_wpm ?? 40)
+                    ? TYPING_BASELINES
+                    : [...TYPING_BASELINES, runtime.config.typing_baseline_wpm ?? 40].sort(
+                        (a, b) => a - b,
+                      )
+                  ).map((wpm) => (
+                    <option key={wpm} value={wpm}>
+                      {wpm} words a minute
+                    </option>
+                  ))}
+                </Select>
+              }
+            />
+          </CardRows>
+        </Card>
+      </SectionHeader>
+
+      <SectionHeader
         title="Delete and reset"
-        description="Both take effect immediately and cannot be undone."
+        description="All three take effect immediately and cannot be undone."
       >
         <Card>
           <CardRows>
@@ -666,6 +738,27 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                   onClick={() => void clear()}
                 >
                   Clear
+                </Button>
+              }
+            />
+            <Row
+              label="Reset activity statistics"
+              /* IT NAMES WHAT SURVIVES CLEARING HISTORY, because that is the
+                 question this row answers: the figures are their own file and
+                 deleting transcripts does not touch them (ADR 0176). */
+              hint={
+                activityReset ??
+                "Clears every all-time figure on Home — dictations, words, rates, languages. Your transcripts and settings stay. Clearing the history above does NOT do this."
+              }
+              danger
+              control={
+                <Button
+                  variant="danger"
+                  busy={busy === "activity"}
+                  disabled={busy !== null}
+                  onClick={() => void resetActivity()}
+                >
+                  Clear figures
                 </Button>
               }
             />

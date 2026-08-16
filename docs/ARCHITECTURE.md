@@ -212,7 +212,26 @@ The active product core lives in `src-tauri/src/core/`.
   plus a persistent ring-rotated file (`~/.config/WordScript/logs/wordscript-runtime.log`).
 - `history.rs`: persistent native history with raw vs transformed
   transcript, insert outcome, server-side filters, export, retention policy,
-  retry.
+  retry. It is also the ONE FUNNEL every finished record passes through, which
+  is why the transcript file (ADR 0074) and the activity ledger (ADR 0174) are
+  both written from it rather than from their callers.
+- `activity_ledger.rs`: the all-time figures behind Home's counters — one row per
+  DAY of counts and durations, never text, plus two fixed-width histograms for
+  the medians. It exists because `history.json` is pruned by age and by count, so
+  a total summed from it grows, sticks at the limit and then runs backwards.
+  **Nothing in it subtracts**: a day row past the 800-day horizon is folded into
+  `retired` on its way out, so a lifetime figure is monotone by construction and
+  not by care (ADR 0176). It travels in the full backup and an import raises it
+  field by field rather than replacing it (ADR 0179); the one control that lowers
+  it is the reset in Privacy & Data, whose `reset_at_ms` stamp is what stops the
+  history seed from quietly undoing the button.
+- `language_detect.rs`: which language a delivered transcript came back in,
+  measured locally over `whatlang` and answered as ISO 639-1 (ADR 0180). It
+  exists because the provider route cannot work here — Groq treats language as a
+  request hint and never names one in its response, and the local lane has no
+  field for it — and because `entry.language` is the CONFIGURED language, so
+  counting it would count how often a dropdown was changed. Refuses anything too
+  short or too ambiguous rather than guessing.
 - `paths.rs`: product paths (config, scratchpad, logs, and the managed model
   directory `model_install` hangs off it).
 

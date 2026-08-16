@@ -376,6 +376,16 @@ impl TranslateAddressForm {
     }
 }
 
+/// Words a minute, for the typing baseline `Time saved` divides by.
+pub const fn default_typing_baseline_wpm() -> u32 {
+    40
+}
+
+/// The range a typing baseline may take. The floor is not zero because this
+/// number is a divisor, and the ceiling is above the fastest sustained typing
+/// anybody has recorded — a baseline outside this is a typo, not a claim.
+pub const TYPING_BASELINE_RANGE: (u32, u32) = (10, 200);
+
 /// The languages Translate offers, as ISO 639-1 codes paired with the English
 /// name the prompt uses.
 ///
@@ -1296,6 +1306,23 @@ pub struct AppConfig {
     /// is deliberately no settings row (decision 9).
     #[serde(default)]
     pub home_activity_calendar: bool,
+    /// The typing speed `Time saved` measures against, in words a minute
+    /// (ADR 0178).
+    ///
+    /// IT IS AN ASSUMPTION AND IT IS THE WHOLE FIGURE. Nothing in this product
+    /// has ever watched the reader type and nothing will, so the baseline is the
+    /// one input to that tile that is not a measurement — and it moves the
+    /// answer by more than everything else combined: on the machine this was
+    /// written against, four weeks of dictation came out at 43 minutes saved
+    /// against 40 wpm and 15 against 60. A figure that swings threefold on a
+    /// number nobody chose is a figure nobody should be shown, which is why this
+    /// is a setting rather than a constant.
+    ///
+    /// FORTY IS THE DEFAULT because it is the ordinary figure for sustained
+    /// prose typing. Somebody who writes all day is faster and should say so.
+    /// Zero and absurd values are clamped rather than trusted — this divides.
+    #[serde(default = "default_typing_baseline_wpm")]
+    pub typing_baseline_wpm: u32,
     #[serde(default)]
     pub auto_detect_mode: bool,
     #[serde(default)]
@@ -1399,6 +1426,7 @@ impl Default for AppConfig {
             color_scheme: default_color_scheme(),
             workspace_nav_rail: false,
             home_activity_calendar: false,
+            typing_baseline_wpm: default_typing_baseline_wpm(),
             translate_same_language: TranslateSameLanguage::default(),
             translate_address_form: TranslateAddressForm::default(),
             auto_detect_mode: true,
@@ -1672,6 +1700,13 @@ impl AppConfig {
     /// recomputing it on every load. See `normalize_text_profiles`.
     pub(crate) fn normalize_for_runtime(&mut self) -> bool {
         let work_mode_rewritten = self.normalize_text_profiles();
+        /* CLAMPED RATHER THAN TRUSTED, because this one is a DIVISOR. A config
+           hand-edited to zero would make every minute of dictation save an
+           infinite amount of time, and the tile would draw whatever a division
+           by zero produces. */
+        self.typing_baseline_wpm = self
+            .typing_baseline_wpm
+            .clamp(TYPING_BASELINE_RANGE.0, TYPING_BASELINE_RANGE.1);
         self.adopt_provider_plan_axis();
         self.local_model = normalize_local_model_value(&self.local_model);
         self.local_profile = normalize_local_profile_id(&self.local_profile, &self.local_model);

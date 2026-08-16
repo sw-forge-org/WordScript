@@ -11,6 +11,7 @@ pub mod hallucination_detect;
 pub mod history;
 pub mod input_monitor;
 pub mod insertion;
+pub mod language_detect;
 pub mod mode_router;
 pub mod model_catalogue;
 pub mod model_install;

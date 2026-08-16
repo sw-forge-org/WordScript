@@ -189,14 +189,15 @@ to *yes* shortens the banner.
 
 | Reading | Today | What it needs |
 |---|---|---|
-| **Words per minute** | **yes** | words from `transformed_transcript ?? raw_transcript`, seconds from `capture_integrity.recorded_seconds`. That field is `null` on retries and on entries older than the measurement, so the average is over what was measured and says so |
-| **Time saved** | **yes** | the same two, against a typing baseline. The baseline is an assumption, not a measurement — it is rendered with `≈` |
+| **Words per minute** | **yes, and rebuilt** | SPOKEN words (`raw_transcript`) over SPEECH seconds — the recorded window less the thinking pauses, measured in the audio callback ([ADR 0177](../decisions/0177-a-rate-that-counts-a-models-words-over-an-open-microphone-is-not-a-speaking-rate.md)). The first build divided delivered words by the open microphone, which reported how verbose the model is over how long somebody left the microphone on |
+| **Time saved** | **yes, and rebuilt** | `saved_words / baseline − saved_seconds / 60`, over the runs that carried a clock AND did not generate their own text ([ADR 0178](../decisions/0178-time-saved-may-only-credit-what-somebody-would-have-typed-and-the-baseline-is-the-readers-to-set.md)). The baseline is a setting now, because it swings the figure threefold across the range a real writer types at |
 | **Longest dictation** | **yes** | max `recorded_seconds` |
 | **Dictations per day** | **yes** | `created_at_ms` |
 | **Apps** | **no** | `core::workspace_context` already resolves `app_name`, `bundle_id` and `category` for the transform context, but **no history field stores it**. Needs a field, and a privacy decision — recording which applications a person dictates into is a new collection, and the retention rule has to name it (ADR 0138's shape) |
-| **Languages** | **no** | `entry.language` is `optional_non_empty(&app_config.language)` — the **setting**, not what was recognized. The provider does return `response.language` (`core/history.rs`), but it is passed to recognizer repair and never written to the record. A tile counting it today would count how often the setting was changed. Tied to the core-hardening record where a German dictation returns in English |
+| **Languages** | **yes, by a different route** | B1's plan — pass `response.language` through — was measured and delivers nothing: Groq reports `reports_detected_language: Unsupported` and the local lane has no field for it, so on the two lanes most dictations take, nothing would ever arrive. Measured on the DELIVERED TEXT instead, in the runtime, offline ([ADR 0180](../decisions/0180-the-lane-that-most-dictations-take-never-names-a-language-so-the-language-is-measured-on-the-text.md)). Still tied to the core-hardening record where a German dictation returns in English — it now makes that defect countable |
 | **Meetings, uploads in the calendar** | **no** | origins that do not exist. [`context-objects.md`](context-objects.md) owns them; the calendar reserves the tooltip lines and shows them only once an origin can produce one |
-| **Anything lifetime-scoped** | **no** | `history_limit: 200` and `history_retention_days: 90`, pruned on **every** read. A total built from history grows, sticks at 200, then runs backwards. Either every figure is labelled with its window, or the runtime keeps counters that survive pruning. **Stage A takes the window labels; Stage B decides on counters** |
+| **Anything lifetime-scoped** | **yes** | `core::activity_ledger`, and since [ADR 0176](../decisions/0176-a-lifetime-figure-that-can-fall-is-not-a-lifetime-figure-so-a-pruned-day-is-retired-and-only-a-button-clears-it.md) a pruned day is RETIRED into the totals rather than dropped, so no figure can fall. It is in the full backup and merges by field-wise maximum ([ADR 0179](../decisions/0179-the-ledger-is-the-only-thing-in-an-archive-that-cannot-be-rebuilt-so-a-restore-raises-it-and-never-replaces-it.md)), and the one control that clears it is a red button in Privacy & Data |
+| **Turnaround** | **yes, and corrected** | Measured from the capture STOPPING rather than from the audio file already existing, so the encode is inside the figure ([ADR 0181](../decisions/0181-the-wait-starts-when-you-stop-speaking-not-when-the-file-is-already-written.md)). The value was also being dropped on the floor by `history_entry_from_insert_result`, which is why the tile was dark on a machine with sixty dictations in it |
 
 ## How the unbuilt half declares itself
 
@@ -610,6 +611,8 @@ asks for one.
 | **A4 · done** | The day tooltip. Dictations real; meetings and uploads present as preview lines. | Hovering a day names its composition |
 | **A5 · done** | The switch, its indicator, and persistence. `AppConfig.home_activity_calendar`, additive, on `workspace_nav_rail`'s shape. | The choice survives a restart |
 
+| **A6 · done** | **The correction pass** — the owner read the four formulas back and asked whether each one means what its label says. Three did not, one was never stored, and the ledger could fall. [ADR 0176](../decisions/0176-a-lifetime-figure-that-can-fall-is-not-a-lifetime-figure-so-a-pruned-day-is-retired-and-only-a-button-clears-it.md) through [ADR 0181](../decisions/0181-the-wait-starts-when-you-stop-speaking-not-when-the-file-is-already-written.md). | Words per minute divides spoken words by speech seconds; time saved divides one set of runs against a baseline the reader owns; turnaround starts at the capture stop and is actually written to the record; languages counts what came back; the ledger cannot fall, travels in the backup and has a reset |
+
 **A2 carries the empty state and A5 does not.** The first draft of this sequence
 put it in A5, which would have left every build between A2 and A5 showing a
 fresh profile four zeroes and no instruction — the exact state decision 7
@@ -621,7 +624,7 @@ the data half is the named track's.
 
 | Step | What | Waits on |
 |---|---|---|
-| **B1** | Recognized language on the record — pass `response.language` through, config as fallback | speech / core-hardening |
+| **B1 · replaced** | ~~Recognized language on the record — pass `response.language` through~~. Measured on the delivered text instead ([ADR 0180](../decisions/0180-the-lane-that-most-dictations-take-never-names-a-language-so-the-language-is-measured-on-the-text.md)); the provider route delivers nothing on Groq or the local lane. **What is still owed by the speech track is language BREADTH elsewhere**: the per-profile dictation language is drawn and unwired, and Translate offers eight languages — neither is this tile's table, which covers what can be detected rather than what can be dictated or translated into | speech / core-hardening |
 | **B2** | Target application on the record, plus the retention rule that names the new collection | privacy decision, runtime ownership |
 | **B3 · done** | Lifetime counters that survive pruning — `core::activity_ledger`, one row per day, counts only ([ADR 0174](../decisions/0174-all-time-figures-need-a-record-that-does-not-forget-so-the-ledger-is-counts-per-day-and-never-text.md)) | this track |
 | **B4** | Meetings and uploads as calendar origins | [`context-objects.md`](context-objects.md) |

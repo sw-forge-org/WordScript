@@ -371,6 +371,23 @@ describe("Privacy & Data · export, import and reset", () => {
     );
     expect(screen.getByRole("heading", { name: "Delete and reset" })).toBeInTheDocument();
     expect(screen.queryByText(/danger zone/i)).not.toBeInTheDocument();
-    expect(container.querySelectorAll(".ws-row[data-danger]")).toHaveLength(2);
+    /* Three since ADR 0176: clearing the history no longer takes the lifetime
+       figures with it, so wanting those gone is its own door. */
+    expect(container.querySelectorAll(".ws-row[data-danger]")).toHaveLength(3);
+  });
+
+  /* ADR 0176. The figures are their own file — deleting transcripts must not
+     cost somebody their record of a year's dictation — so the one control that
+     clears them says so where a reader looks for destructive doors. */
+  it("clears the lifetime figures through their own door, not through the history's", async () => {
+    const user = userEvent.setup();
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await user.click(screen.getByRole("button", { name: "Clear figures" }));
+
+    expect(invoked).toHaveBeenCalledWith("reset_activity_ledger");
+    expect(
+      await screen.findByText(/Every all-time figure is back to nothing/),
+    ).toBeInTheDocument();
   });
 });

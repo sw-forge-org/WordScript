@@ -53,6 +53,24 @@ const TRIM_PAD_MS: u64 = 150;
 const TRIM_SILENCE_THRESHOLD: f32 = 0.005;
 /// Shortest capture that still gets transcribed, measured after the trim.
 const MIN_SPEECH_MS: u64 = 200;
+
+/// How long the microphone has to stay quiet before the quiet counts as a
+/// THINKING PAUSE rather than as part of speaking (ADR 0177).
+///
+/// The whole point of the figure this feeds: `recorded_seconds` is the open
+/// microphone, so a rate built on it is throughput and not articulation — the
+/// pause while somebody works out the next sentence sits in the denominator and
+/// drags the reading tens of words a minute below anything anybody would
+/// recognise as their speaking rate.
+///
+/// FIVE HUNDRED MILLISECONDS, AND THE THRESHOLD IS THE WHOLE DESIGN. Ordinary
+/// speech is full of short gaps — between words, at a comma, around a breath —
+/// and they run well under 300 ms. Subtracting those would not remove the
+/// pauses, it would remove the spaces between words and report a rate nobody
+/// speaks at. A gap of half a second is somebody thinking; anything shorter is
+/// somebody talking. Only runs that reach this length are subtracted, and the
+/// whole run goes, because the reader was not speaking for any of it.
+const PAUSE_MIN_MS: u64 = 500;
 /// The fraction of its own wall clock a capture may be missing before it has to
 /// say so. Derived from the 2026-08-03 measurement and re-run on 2026-08-10 over
 /// 608 paired captures: the healthy ones lose a median of 0.1 % and at most
@@ -469,6 +487,17 @@ pub struct AudioReadyEvent {
     /// a retained capture replayed from an older build — still deserializes.
     #[serde(default = "CaptureIntegrity::unmeasured")]
     pub capture_integrity: CaptureIntegrity,
+    /// The recorded window with the thinking pauses removed (ADR 0177), in
+    /// seconds. `0.0` on a payload written before the speech clock existed,
+    /// which the pipeline reads as "not measured" rather than as "no speech" —
+    /// a capture that produced words cannot have had none.
+    #[serde(default)]
+    pub speech_seconds: f64,
+    /// Milliseconds spent draining, resampling, trimming and encoding the
+    /// capture — the first half of the wait, which the turnaround clock used to
+    /// start after (ADR 0181).
+    #[serde(default)]
+    pub export_ms: u64,
     pub audio_path: String,
     pub audio_duration_seconds: f64,
     #[serde(flatten)]
@@ -564,6 +593,18 @@ struct SharedCaptureData {
     sum_squares: f64,
     samples: Vec<i16>,
     max_samples: usize,
+    /// The thinking-pause accounting (ADR 0177), in samples of the buffer the
+    /// capture actually keeps — the same denominator `recorded_seconds` is
+    /// derived from, so speech can never exceed the window it is part of.
+    ///
+    /// `silent_run_samples` is the quiet stretch currently running;
+    /// `pause_samples` is the sum of the stretches that reached
+    /// `pause_min_samples` and are therefore pauses rather than the gaps between
+    /// words. A run is banked at the callback that ENDS it, and the one still
+    /// open at the stop is banked there.
+    silent_run_samples: u64,
+    pause_samples: u64,
+    pause_min_samples: u64,
     rebuild_in_progress: bool,
     // Level-emit accounting (overlay-recording-freeze investigation). The
     // overlay renders once per delivered `audio_level`, so a shortfall against
@@ -1361,6 +1402,12 @@ pub fn start_native_capture<R: Runtime + 'static>(
         sum_squares: 0.0,
         samples: Vec::new(),
         max_samples,
+        silent_run_samples: 0,
+        pause_samples: 0,
+        pause_min_samples: (u64::from(stream_config.sample_rate)
+            * u64::from(stream_config.channels.max(1))
+            * PAUSE_MIN_MS)
+            / 1000,
         rebuild_in_progress: false,
         level_emits_attempted: 0,
         level_emits_failed: 0,
@@ -1406,6 +1453,14 @@ pub enum CaptureOutcome {
 }
 
 pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutcome, String> {
+    /* WHERE THE WAIT ACTUALLY BEGINS (ADR 0181). Everything from here to the
+       written file — draining the buffer, downmixing, resampling, trimming the
+       silence and encoding the WAV — happens while the reader is standing there
+       with nothing on screen, and until now the turnaround clock started AFTER
+       all of it. It is measured on the monotonic clock and handed to the
+       pipeline in the payload, because the two ends live in different threads
+       and a wall clock between them would be a wall clock nobody can trust. */
+    let stopped_at = Instant::now();
     let state = app
         .try_state::<Mutex<NativeCaptureState>>()
         .ok_or_else(|| "Native capture state is not available.".to_string())?;
@@ -1418,35 +1473,45 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         let _ = active.stream.pause();
     }
 
-    let (has_voice_activity, samples, level, level_emits, effective_wall, cadence) = active
-        .shared
-        .lock()
-        .map_err(|error| error.to_string())
-        .map(|shared| {
-            // One clock for both accountings, and it is the one that excludes
-            // paused stretches — `effective_elapsed` already owns that
-            // arithmetic for the silence timeout, so restating it here would be
-            // a second definition of the same thing.
-            let effective_wall = effective_elapsed(&shared);
-            (
-                shared.has_voice_activity,
-                shared.samples.clone(),
-                InputLevelSummary::new(
-                    shared.peak_observed,
-                    shared.clipped_samples,
-                    shared.measured_samples,
-                    shared.sum_squares,
-                ),
-                LevelEmitSummary::new(
+    let (has_voice_activity, samples, pause_samples, level, level_emits, effective_wall, cadence) =
+        active
+            .shared
+            .lock()
+            .map_err(|error| error.to_string())
+            .map(|mut shared| {
+                // One clock for both accountings, and it is the one that excludes
+                // paused stretches — `effective_elapsed` already owns that
+                // arithmetic for the silence timeout, so restating it here would be
+                // a second definition of the same thing.
+                let effective_wall = effective_elapsed(&shared);
+                /* The quiet stretch still running when the capture stopped. It
+                   is banked HERE and only here, because no callback will ever
+                   end it — and a dictation that finishes with somebody thinking
+                   about whether they are done ends in exactly this state. */
+                if shared.silent_run_samples >= shared.pause_min_samples {
+                    shared.pause_samples += shared.silent_run_samples;
+                }
+                shared.silent_run_samples = 0;
+                (
+                    shared.has_voice_activity,
+                    shared.samples.clone(),
+                    shared.pause_samples,
+                    InputLevelSummary::new(
+                        shared.peak_observed,
+                        shared.clipped_samples,
+                        shared.measured_samples,
+                        shared.sum_squares,
+                    ),
+                    LevelEmitSummary::new(
+                        effective_wall,
+                        shared.level_emits_attempted,
+                        shared.level_emits_failed,
+                        shared.slowest_level_emit,
+                    ),
                     effective_wall,
-                    shared.level_emits_attempted,
-                    shared.level_emits_failed,
-                    shared.slowest_level_emit,
-                ),
-                effective_wall,
-                shared.cadence.clone(),
-            )
-        })?;
+                    shared.cadence.clone(),
+                )
+            })?;
 
     let integrity = CaptureIntegrity::new(
         effective_wall,
@@ -1454,6 +1519,14 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         active.sample_rate,
         active.channels,
     );
+
+    /* THE SPEECH CLOCK (ADR 0177): the recorded window with the thinking pauses
+       taken out. Derived from the same sample count as `recorded_seconds` and
+       clamped into it, so it is a PART of the capture rather than a second
+       opinion about its length. */
+    let pause_seconds =
+        capture_duration_seconds(pause_samples as usize, active.sample_rate, active.channels);
+    let speech_seconds = (integrity.recorded_seconds - pause_seconds).max(0.0);
 
     // Always recorded, including for discarded captures: the shortfall between
     // expected and attempted level emits is the runtime-side measurement for
@@ -1478,6 +1551,21 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         integrity.recorded_seconds,
         integrity.missing_ratio,
         integrity.verdict,
+    ));
+
+    // The pause share, on every capture. It is what says whether the rate on
+    // Home is a speaking rate or a throughput reading dressed as one, and it is
+    // the only place the two can be compared after the fact.
+    runtime_log::record(format!(
+        "[WordScript] Capture speech clock recorded_seconds={:.3} speech_seconds={:.3} pause_seconds={:.3} pause_share={:.3}",
+        integrity.recorded_seconds,
+        speech_seconds,
+        pause_seconds,
+        if integrity.recorded_seconds > 0.0 {
+            pause_seconds / integrity.recorded_seconds
+        } else {
+            0.0
+        },
     ));
 
     for line in cadence_log_lines(&cadence, &integrity) {
@@ -1546,6 +1634,10 @@ pub fn stop_native_capture<R: Runtime>(app: &AppHandle<R>) -> Result<CaptureOutc
         event: "audio_ready".to_string(),
         input_level: level,
         capture_integrity: integrity,
+        speech_seconds,
+        // Last, so it covers everything the reader waited through on this side
+        // of the seam — the encode above included.
+        export_ms: stopped_at.elapsed().as_millis() as u64,
         audio_path: audio_path.to_string_lossy().to_string(),
         audio_duration_seconds,
         config: active.config.clone(),
@@ -1958,12 +2050,38 @@ fn process_samples<R: Runtime>(
             );
         }
 
+        let kept_before = shared.samples.len();
         for sample in &normalized_samples {
             peak = peak.max(sample.abs());
             rms += sample.powi(2);
             if !paused && shared.samples.len() < shared.max_samples {
                 shared.samples.push(f32_to_i16(*sample));
             }
+        }
+
+        /* THE THINKING-PAUSE ACCOUNTING (ADR 0177), counted over the samples the
+           capture KEPT rather than over the ones that arrived. That is what
+           guarantees the speech clock is a part of the recorded window and not a
+           second, slightly different measurement of it: a paused stretch pushes
+           nothing and a capture that has hit its length cap pushes nothing, and
+           neither may contribute a pause to a window it is not in.
+
+           A muted stretch pushes ZEROED samples, so it falls out here as quiet
+           and is subtracted. That is correct rather than incidental — nobody was
+           being recorded while the microphone was muted. */
+        let kept = (shared.samples.len() - kept_before) as u64;
+        if kept > 0 {
+            let minimum = shared.pause_min_samples;
+            let (mut run, mut pauses) = (shared.silent_run_samples, shared.pause_samples);
+            observe_speech(
+                &mut run,
+                &mut pauses,
+                minimum,
+                kept,
+                peak > DEFAULT_VOICE_THRESHOLD,
+            );
+            shared.silent_run_samples = run;
+            shared.pause_samples = pauses;
         }
 
         // Level statistics for the whole capture, so an empty result can name
@@ -2168,6 +2286,33 @@ fn trim_leading_trailing_silence(samples: &[i16], sample_rate: u32) -> Vec<i16> 
 /// this rejects clicks, coughs and breath noise without ever swallowing a
 /// short dictation. A gate that silently eats real speech is a worse failure
 /// than a hallucination that the post-transcription filters can still catch.
+/// One callback's worth of the thinking-pause accounting (ADR 0177).
+///
+/// A quiet stretch is only subtracted once it is LONG ENOUGH TO BE A PAUSE, and
+/// it is banked at the callback that ends it rather than as it accumulates —
+/// which is what makes the rule "a gap of half a second or more, in full"
+/// instead of "everything after the first half second of every gap". The two
+/// differ by whether the reader's own comma counts against them.
+///
+/// Its own function so the arithmetic that decides a headline figure is testable
+/// without an audio device, a stream and an app handle.
+fn observe_speech(
+    silent_run_samples: &mut u64,
+    pause_samples: &mut u64,
+    pause_min_samples: u64,
+    kept_samples: u64,
+    voiced: bool,
+) {
+    if voiced {
+        if *silent_run_samples >= pause_min_samples {
+            *pause_samples += *silent_run_samples;
+        }
+        *silent_run_samples = 0;
+    } else {
+        *silent_run_samples += kept_samples;
+    }
+}
+
 fn min_speech_ms() -> u64 {
     std::env::var("WORDSCRIPT_MIN_SPEECH_MS")
         .ok()
@@ -2453,6 +2598,8 @@ mod tests {
             event: "audio_ready".to_string(),
             input_level: level_summary_for_tests(0.4, 0, 16_000),
             capture_integrity: CaptureIntegrity::unmeasured(),
+            speech_seconds: 0.0,
+            export_ms: 0,
             audio_path: "/tmp/capture.wav".to_string(),
             audio_duration_seconds: 3.0,
             config: config.clone(),
@@ -2829,6 +2976,9 @@ mod tests {
             sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
+            silent_run_samples: 0,
+            pause_samples: 0,
+            pause_min_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
@@ -3408,6 +3558,8 @@ mod tests {
                 16_000,
                 1,
             ),
+            speech_seconds: 0.0,
+            export_ms: 0,
             audio_path: "/tmp/capture.wav".to_string(),
             audio_duration_seconds: 12.0,
             config: NativeCaptureConfig::default(),
@@ -3490,6 +3642,59 @@ mod tests {
         assert_eq!(f32_to_i16(1.5), i16::MAX);
         assert_eq!(f32_to_i16(-1.5), i16::MIN + 1);
         assert_eq!(f32_to_i16(0.0), 0);
+    }
+
+    /// ADR 0177. One second of speech, two seconds of thinking, one more second
+    /// of speech: three seconds of open microphone, one of which was a pause.
+    #[test]
+    fn a_gap_long_enough_to_be_thinking_is_subtracted_in_full() {
+        let rate = 48_000u64;
+        let minimum = rate / 2;
+        let (mut run, mut pauses) = (0u64, 0u64);
+
+        observe_speech(&mut run, &mut pauses, minimum, rate, true);
+        observe_speech(&mut run, &mut pauses, minimum, rate, false);
+        observe_speech(&mut run, &mut pauses, minimum, rate, true);
+
+        assert_eq!(pauses, rate, "the whole quiet second is a pause");
+        assert_eq!(run, 0);
+    }
+
+    /// The failure the threshold exists against: subtracting the gaps BETWEEN
+    /// WORDS would not remove the thinking, it would remove the spaces and
+    /// report a rate nobody speaks at.
+    #[test]
+    fn the_gaps_between_words_are_speech_and_are_not_subtracted() {
+        let rate = 48_000u64;
+        let minimum = rate / 2;
+        let (mut run, mut pauses) = (0u64, 0u64);
+
+        /* Ten 100 ms gaps — a comma, a breath, the space after a word. Not one
+           of them reaches half a second, so not one of them is a pause. */
+        for _ in 0..10 {
+            observe_speech(&mut run, &mut pauses, minimum, rate / 10, false);
+            observe_speech(&mut run, &mut pauses, minimum, rate / 10, true);
+        }
+
+        assert_eq!(pauses, 0);
+    }
+
+    /// A quiet run that is still open when the capture stops has no callback
+    /// left to end it, which is why `stop_native_capture` banks it — a dictation
+    /// that ends with somebody wondering whether they are finished ends here.
+    #[test]
+    fn a_run_still_open_is_only_a_pause_once_it_is_long_enough() {
+        let rate = 48_000u64;
+        let minimum = rate / 2;
+        let (mut run, mut pauses) = (0u64, 0u64);
+
+        observe_speech(&mut run, &mut pauses, minimum, rate, true);
+        observe_speech(&mut run, &mut pauses, minimum, rate / 5, false);
+        assert!(run < minimum, "200 ms is not yet a pause");
+        assert_eq!(pauses, 0);
+
+        observe_speech(&mut run, &mut pauses, minimum, rate, false);
+        assert!(run >= minimum, "1.2 s is");
     }
 
     #[test]
@@ -3730,6 +3935,9 @@ mod tests {
             sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
+            silent_run_samples: 0,
+            pause_samples: 0,
+            pause_min_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
@@ -3766,6 +3974,9 @@ mod tests {
             sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
+            silent_run_samples: 0,
+            pause_samples: 0,
+            pause_min_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
@@ -3802,6 +4013,9 @@ mod tests {
             sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
+            silent_run_samples: 0,
+            pause_samples: 0,
+            pause_min_samples: 0,
             rebuild_in_progress: false,
             level_emits_attempted: 0,
             level_emits_failed: 0,
@@ -3900,6 +4114,9 @@ mod tests {
             sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
+            silent_run_samples: 0,
+            pause_samples: 0,
+            pause_min_samples: 0,
             rebuild_in_progress: true,
             level_emits_attempted: 0,
             level_emits_failed: 0,
@@ -3936,6 +4153,9 @@ mod tests {
             sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
+            silent_run_samples: 0,
+            pause_samples: 0,
+            pause_min_samples: 0,
             rebuild_in_progress: true,
             level_emits_attempted: 0,
             level_emits_failed: 0,
@@ -3968,6 +4188,9 @@ mod tests {
             sum_squares: 0.0,
             samples: vec![],
             max_samples: 0,
+            silent_run_samples: 0,
+            pause_samples: 0,
+            pause_min_samples: 0,
             rebuild_in_progress: true,
             level_emits_attempted: 0,
             level_emits_failed: 0,

@@ -145,6 +145,18 @@ pub struct TranscriptionHistoryEntry {
     /// transcription.
     #[serde(default)]
     pub input_level: Option<InputLevelSummary>,
+    /// The recorded window with the thinking pauses taken out (ADR 0177), in
+    /// seconds.
+    ///
+    /// It is the only honest denominator for a SPEAKING rate:
+    /// `capture_integrity.recorded_seconds` is the open microphone, so a rate
+    /// built on it drops by however long the reader spent working out their next
+    /// sentence. `None` on a retry and on every record written before the speech
+    /// clock existed — never zero, because a record that produced words cannot
+    /// have had no speech in it, and a zero here would be a division nobody
+    /// could see going wrong.
+    #[serde(default)]
+    pub speech_seconds: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -192,6 +204,53 @@ pub struct RecordHistoryEntryRequest {
     /// What the microphone delivered, from the same capture and on the same
     /// terms.
     pub input_level: Option<InputLevelSummary>,
+    /// The recorded window with the thinking pauses removed (ADR 0177), from
+    /// that same capture and absent in the same places.
+    pub speech_seconds: Option<f64>,
+}
+
+/// The three things a CAPTURE knows about itself, carried as one.
+///
+/// They are one parameter rather than three because they travel together on
+/// every path and are absent together on every other: a retry has no capture, a
+/// parked delivery has no capture, and an upload has no capture. Passing them
+/// separately meant a signature of eleven positional arguments where two
+/// `Option<f64>` sat next to each other — and the next measurement would have
+/// made it twelve.
+#[derive(Debug, Clone, Default)]
+pub struct CaptureFacts {
+    /// How much of its own clock the capture kept (ADR 0079).
+    pub integrity: Option<CaptureIntegrity>,
+    /// What the microphone delivered: peak, mean, and the speech threshold.
+    pub input_level: Option<InputLevelSummary>,
+    /// The recorded window minus the thinking pauses (ADR 0177).
+    pub speech_seconds: Option<f64>,
+}
+
+impl CaptureFacts {
+    /// What a path with no capture of its own reports — a retry above all.
+    pub fn none() -> Self {
+        Self::default()
+    }
+}
+
+/// Whether a mode's output may be credited against a typing baseline
+/// (ADR 0178).
+///
+/// **Agent and Prompt Enhance GENERATE text.** Fifteen spoken words become two
+/// hundred written ones, and none of the two hundred is time the reader saved by
+/// not typing them — they would never have typed them at all. Counting that
+/// output against a typing speed invents hours out of a model's verbosity, which
+/// is the most flattering possible way to be wrong.
+///
+/// Everything else transcribes or tidies what was said, including Translate: a
+/// translation is still the reader's own sentence and they would have had to
+/// produce it somehow.
+pub fn mode_credits_typing(mode: Option<&ProcessingMode>) -> bool {
+    !matches!(
+        mode,
+        Some(ProcessingMode::Agent) | Some(ProcessingMode::PromptEnhance)
+    )
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -426,6 +485,7 @@ fn record_entry_with_work_mode(
         capture_integrity: request.capture_integrity,
         turnaround_ms: request.turnaround_ms,
         input_level: request.input_level,
+        speech_seconds: request.speech_seconds,
     };
 
     store.entries.push_front(entry.clone());
@@ -445,20 +505,36 @@ fn record_entry_with_work_mode(
        dictation that reached the cursor has succeeded; failing it because an
        aggregate could not be written would be the tail wagging the dog. */
     if entry.retry_of.is_none() {
-        let words = entry
+        /* TWO WORD COUNTS, BECAUSE THE TWO FIGURES ASK DIFFERENT QUESTIONS
+           (ADR 0177). The delivered text is what reached the cursor and is what
+           a typing baseline is measured against; the raw transcript is what was
+           SAID, and it is the only numerator a speaking rate may divide. Under
+           Cleanup they differ by the filler that was removed, and under Prompt
+           Enhance by an order of magnitude. */
+        let delivered = entry
             .transformed_transcript
             .as_deref()
             .or(entry.raw_transcript.as_deref())
-            .map(|text| text.split_whitespace().count() as u64)
-            .unwrap_or(0);
+            .unwrap_or_default();
         if let Err(error) = super::activity_ledger::record(super::activity_ledger::LedgerContribution {
             created_at_ms: entry.created_at_ms,
-            words,
+            words: super::activity_ledger::word_count(delivered),
+            spoken_words: entry
+                .raw_transcript
+                .as_deref()
+                .map(super::activity_ledger::word_count)
+                .unwrap_or_default(),
             recorded_seconds: entry
                 .capture_integrity
                 .as_ref()
                 .map(|integrity| integrity.recorded_seconds),
+            speech_seconds: entry.speech_seconds,
             turnaround_ms: entry.turnaround_ms,
+            credited: mode_credits_typing(entry.effective_mode.as_ref()),
+            /* MEASURED ON THE TEXT, NEVER READ OFF `entry.language` (ADR 0180),
+               which is the configured hint and would count how often a dropdown
+               was changed. */
+            language: super::language_detect::detect(delivered),
         }) {
             super::runtime_log::record(format!(
                 "[WordScript] Activity ledger write failed error={error}"
@@ -802,6 +878,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 capture_integrity: None,
                 turnaround_ms: None,
                 input_level: None,
+                speech_seconds: None,
             },
             Some(app_config.resolved_active_text_profile_work_mode()),
         )?
@@ -840,8 +917,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             // capture measurement belongs to that session's record and is not
             // copied forward onto a run that never made a capture — and neither
             // is a turnaround, which would time a re-run rather than a dictation.
-            None,
-            None,
+            CaptureFacts::none(),
             None,
         )?;
 
@@ -897,16 +973,13 @@ pub fn history_entry_from_insert_result(
     effective_mode: Option<ProcessingMode>,
     // What the model called it (ADR 0077), or `None` for the first words.
     title: Option<String>,
-    // What the capture measured about itself (ADR 0079). `None` on a retry,
+    // What the capture measured about itself — integrity (ADR 0079), input
+    // level, and the speech clock (ADR 0177). `CaptureFacts::none()` on a retry,
     // which has no capture of its own.
-    capture_integrity: Option<CaptureIntegrity>,
-    // What the microphone delivered during that same capture, and `None` in the
-    // same places for the same reason.
-    input_level: Option<InputLevelSummary>,
-    // Milliseconds from the capture handing over its audio to the text
-    // existing (decision 6). `None` wherever the caller did not run that clock —
-    // a retry, and the parked path, whose delay is the park's rather than the
-    // runtime's.
+    capture: CaptureFacts,
+    // Milliseconds from the capture STOPPING to the text existing (ADR 0181).
+    // `None` wherever the caller did not run that clock — a retry, and the
+    // parked path, whose delay is the park's rather than the runtime's.
     turnaround_ms: Option<u64>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
@@ -950,9 +1023,15 @@ pub fn history_entry_from_insert_result(
             clipboard_restore: Some(insert_result.clipboard_restore),
             error: insert_result.error.clone(),
             audio_path: None,
-            capture_integrity,
-            input_level,
-            turnaround_ms: None,
+            capture_integrity: capture.integrity,
+            input_level: capture.input_level,
+            speech_seconds: capture.speech_seconds,
+            /* THE CALLER'S CLOCK, WHICH THIS DROPPED ON THE FLOOR. It arrived
+               as an argument and was written as `None`, so every record on the
+               product's main path reported no turnaround at all and the
+               histogram behind the tile could never fill. Found when the tile
+               stayed dark on a machine with sixty dictations in it. */
+            turnaround_ms,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -966,10 +1045,8 @@ pub fn record_insert_failure(
     error: String,
     effective_mode: Option<ProcessingMode>,
     title: Option<String>,
-    capture_integrity: Option<CaptureIntegrity>,
-    // What the microphone delivered during that same capture, and `None` in the
-    // same places for the same reason.
-    input_level: Option<InputLevelSummary>,
+    // What the capture measured about itself, carried as one (ADR 0177).
+    capture: CaptureFacts,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -1004,8 +1081,11 @@ pub fn record_insert_failure(
             clipboard_restore: None,
             error: Some(error),
             audio_path: None,
-            capture_integrity,
-            input_level,
+            capture_integrity: capture.integrity,
+            input_level: capture.input_level,
+            speech_seconds: capture.speech_seconds,
+            /* No turnaround on this path and that is not an oversight: the text
+               never reached the reader, so there is no wait that ended. */
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
@@ -1025,10 +1105,8 @@ pub fn record_transcription_failure(
     language: Option<String>,
     error: String,
     audio_path: Option<String>,
-    capture_integrity: Option<CaptureIntegrity>,
-    // What the microphone delivered during that same capture, and `None` in the
-    // same places for the same reason.
-    input_level: Option<InputLevelSummary>,
+    // What the capture measured about itself, carried as one (ADR 0177).
+    capture: CaptureFacts,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -1065,8 +1143,9 @@ pub fn record_transcription_failure(
             clipboard_restore: None,
             error: Some(error),
             audio_path,
-            capture_integrity,
-            input_level,
+            capture_integrity: capture.integrity,
+            input_level: capture.input_level,
+            speech_seconds: capture.speech_seconds,
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
@@ -1078,10 +1157,8 @@ pub fn record_empty_result(
     raw_transcript: String,
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
-    capture_integrity: Option<CaptureIntegrity>,
-    // What the microphone delivered during that same capture, and `None` in the
-    // same places for the same reason.
-    input_level: Option<InputLevelSummary>,
+    // What the capture measured about itself, carried as one (ADR 0177).
+    capture: CaptureFacts,
 ) -> Result<TranscriptionHistoryEntry, String> {
     // An empty result has no text, so no file and nothing to name.
     let title: Option<String> = None;
@@ -1121,8 +1198,9 @@ pub fn record_empty_result(
             // The one place the verdict matters most: an empty result and a
             // capture that recorded nothing look identical on the record, and
             // only this number tells them apart.
-            capture_integrity,
-            input_level,
+            capture_integrity: capture.integrity,
+            input_level: capture.input_level,
+            speech_seconds: capture.speech_seconds,
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
@@ -1478,9 +1556,12 @@ fn reset_store_for_tests() {
 mod tests {
     use super::*;
 
+    /* THE LEDGER'S LOCK, NOT A SECOND ONE. Recording a history entry writes
+       into the activity ledger, and the ledger's own tests count what is in it —
+       two locks would let those two run at once and put this module's words into
+       that module's assertions. */
     fn test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+        super::super::activity_ledger::test_lock()
     }
 
     fn test_history_path(test_name: &str) -> PathBuf {
@@ -1539,6 +1620,7 @@ mod tests {
                 capture_integrity: None,
                 turnaround_ms: None,
                 input_level: None,
+                speech_seconds: None,
             })
             .expect("record history entry");
         }
@@ -1595,6 +1677,7 @@ mod tests {
             capture_integrity: None,
             turnaround_ms: None,
             input_level: None,
+            speech_seconds: None,
         })
         .expect("first history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1630,6 +1713,7 @@ mod tests {
             capture_integrity: None,
             turnaround_ms: None,
             input_level: None,
+            speech_seconds: None,
         })
         .expect("second history entry");
 
@@ -1683,6 +1767,7 @@ mod tests {
             capture_integrity: None,
             turnaround_ms: None,
             input_level: None,
+            speech_seconds: None,
         })
         .expect("groq history entry");
 
@@ -1719,6 +1804,7 @@ mod tests {
             capture_integrity: None,
             turnaround_ms: None,
             input_level: None,
+            speech_seconds: None,
         })
         .expect("local runtime history entry");
 
@@ -1783,6 +1869,7 @@ mod tests {
             capture_integrity: None,
             turnaround_ms: None,
             input_level: None,
+            speech_seconds: None,
         })
         .expect("first export history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1818,6 +1905,7 @@ mod tests {
             capture_integrity: None,
             turnaround_ms: None,
             input_level: None,
+            speech_seconds: None,
         })
         .expect("second export history entry");
 
@@ -1882,6 +1970,7 @@ mod tests {
                 fallback_acknowledged: false,
                 capture_integrity: None,
                 input_level: None,
+                speech_seconds: None,
                 turnaround_ms: None,
             },
             TranscriptionHistoryEntry {
@@ -1921,6 +2010,7 @@ mod tests {
                 fallback_acknowledged: false,
                 capture_integrity: None,
                 input_level: None,
+                speech_seconds: None,
                 turnaround_ms: None,
             },
             TranscriptionHistoryEntry {
@@ -1960,6 +2050,7 @@ mod tests {
                 fallback_acknowledged: false,
                 capture_integrity: None,
                 input_level: None,
+                speech_seconds: None,
                 turnaround_ms: None,
             },
         ]);
@@ -2023,8 +2114,7 @@ mod tests {
             },
             None,
             None,
-            None,
-            None,
+            CaptureFacts::none(),
             None,
         )
         .expect("history entry from insert result");
@@ -2104,6 +2194,7 @@ mod tests {
             capture_integrity: None,
             turnaround_ms: None,
             input_level: None,
+            speech_seconds: None,
         }
     }
 
@@ -2412,6 +2503,7 @@ mod tests {
             fallback_acknowledged: false,
             capture_integrity: None,
             input_level: None,
+            speech_seconds: None,
             turnaround_ms: None,
         }
     }
