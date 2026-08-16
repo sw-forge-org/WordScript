@@ -3,6 +3,12 @@
 Status: **open, reported and measured 2026-08-16.** Nothing is fixed. The
 control that would address it is drawn but not wired, which is the finding.
 
+**One of the four exclusions was withdrawn the same evening.** *Not prompt bias*
+was argued from `use_as_prompt_hint: false`, a field nothing has read since ADR
+0035. A 65-byte, entirely English initial prompt *was* sent on the affected
+record, resolved to the character from the log. See
+[the correction](#correction-2026-08-16-prompt-bias-is-not-ruled-out-and-the-prompt-was-english).
+
 Reported by the owner after `Auto` produced a fully English text from German
 speech, with the hypothesis that anglicisms in the dictation are what triggers
 it. **The hypothesis is right about the trigger and wrong about where it acts.**
@@ -92,12 +98,16 @@ Four plausible causes, each ruled out on this record rather than by argument:
   `raw_transcript`, which is the provider's response before any transform.
 - **Not the translations endpoint.** Every lane posts to
   `/audio/transcriptions`; `/audio/translations` appears nowhere in the tree.
-- **Not prompt bias**, which is the hypothesis this repo has already paid for
+- ~~**Not prompt bias**, which is the hypothesis this repo has already paid for
   once (`stt-prompt-leaks-into-the-transcript.md`, ADR 0032). On the affected
   record the profile is `bias_mode: conservative`,
   `manual_bias.cloud_include_profile_terms: false`, and **all five
   `vocabulary_hints` have `use_as_prompt_hint: false`** — including `Commit`,
-  the term the owner suspected. No initial prompt was sent at all.
+  the term the owner suspected. No initial prompt was sent at all.~~
+  **Withdrawn 2026-08-16, same day: this bullet is false and the owner was
+  right.** An initial prompt *was* sent, it was **entirely English**, and the
+  runtime log carries its length. See
+  [the correction below](#correction-2026-08-16-prompt-bias-is-not-ruled-out-and-the-prompt-was-english).
 
 ## The cause chain
 
@@ -206,6 +216,83 @@ list is the RECOGNISER'S reach and not the detector's, and Translate's list is a
 third thing again — what the chat model can translate INTO. Three questions, three
 lists, and the one in `core::language_detect` answers none of the other two.
 
+## Correction 2026-08-16: prompt bias is not ruled out, and the prompt was English
+
+Found the same evening while documenting an unrelated report, from the runtime
+log of the very record above.
+
+**The claim was that no initial prompt was sent.** The log line for
+`history-1786892965394-50`, the fully-English case, is:
+
+```text
+[1786892962649] Groq transcription start file=capture-5.wav model=whisper-large-v3-turbo prompt_chars=65
+[1786892963560] Transcription coverage duration_seconds=86.111 covered_seconds=86.120 uncovered_ratio=0.0000 last_segment_avg_logprob=-1.066 verdict=Complete
+```
+
+A prompt of 65 bytes was sent. Reconstructing it from the profile as it stood at
+17:09:22 — `Commit` had been promoted at 17:07:28, and `select_recognizer_slots`
+puts terms under seven characters first — gives
+
+```text
+Likely phrases: Commit; decision log; weekly update; action items
+```
+
+which is **exactly 65 characters**. The prompt is resolved; it is not a guess.
+
+### Why the bullet was wrong, and it is the same trap this repo has fallen into before
+
+`use_as_prompt_hint` has not been the recogniser opt-in since **ADR 0035**. The
+field is a migration remnant that nothing reads, and `config.rs` says so in its
+own doc comment. The runtime allocates slots itself, deliberately preferring the
+*short* terms, so `false` on every entry means nothing at all.
+
+`transcript-stops-before-the-audio-does.md` already records this exact
+correction for the previous term list — *"`use_as_prompt_hint` is `false` on all
+three, and that is irrelevant"*. Reading the field as an opt-in is now the second
+documented wrong turn it has caused. **The check is `prompt_chars` in the runtime
+log, or `select_recognizer_slots` over the profile — never that boolean.**
+
+`bias_mode: conservative` and `cloud_include_profile_terms: false` do not
+suppress it either; neither reaches the slot allocation on the capture path.
+
+### What this does to the record
+
+**The English-prompt hypothesis is now the strongest one this record has**, and
+it is not a new mechanism — it is this repo's own written reasoning turned
+around. `BLANK_STATE_RECOGNIZER_PROMPT` is bilingual **on purpose**, and its doc
+comment gives the reason:
+
+> an initial prompt biases the decoder toward the language it is written in, and
+> this product's real register is German dictation carrying English technical
+> terms.
+
+The floor obeys that rule. `Likely phrases: …` does not: the marker is English,
+and on this profile all four terms are English too. So the profile that carries
+vocabulary sends a **wholly English prefix** ahead of German speech, while the
+profile that carries none sends a bilingual one. **The blank-state floor is
+better protected against this defect than a configured profile is** — which is
+the opposite of what anyone would assume, and it is testable without a build.
+
+Two consequences worth stating before anyone acts:
+
+1. **This does not overturn the cause chain.** `speech.language` being empty and
+   unsettable is still true and still the fix that pins the outcome. What
+   changes is that a second, cheaper lever now exists.
+2. **It is one record.** Whether the six shape-B records also ran with English
+   prompts is unchecked; `prompt_chars` is in the log for every one of them, and
+   the seven affected against the forty-three clean is a comparison this record
+   can make with no code at all. **Do that before proposing anything.**
+
+### The overlap with the other records
+
+`stt-prompt-leaks-into-the-transcript.md` gained an event the same evening in
+which the marker was echoed **with its colon and its first term**, and the term
+was delivered. That is the same prompt, on the same profile, reaching the output
+by a different route. Between them the two records now show this prompt
+displacing content, surviving into delivered text, and standing as the best
+available explanation for an English output — which makes the term-list
+question larger than either record alone.
+
 ## Related
 
 - `transcription-hallucination.md` — names "lose the intended language" and
@@ -216,7 +303,9 @@ lists, and the one in `core::language_detect` answers none of the other two.
   filter can see.
 - `transcription-accuracy.md` — lists "whether language mix is a factor" under
   *What is not known*. This is a partial answer to that line.
-- `stt-prompt-leaks-into-the-transcript.md` — the bias path, ruled out above.
+- `stt-prompt-leaks-into-the-transcript.md` — the bias path. **Not ruled out;**
+  the exclusion above was withdrawn the same day and the prompt is now known to
+  have been entirely English.
 - `singular-address-becomes-plural.md` — the repairs that are gated on the
   detected language this defect corrupts.
 - ADR 0041 — Translate is a mode, which is why the mode axis is innocent here.

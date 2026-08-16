@@ -31,7 +31,7 @@ updated; a kick-off is spent when its unit closes.
 | Track | Opened | State | Sequence | Start a session with |
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 14 open**; Legs 0–13b closed. Leg 13 split 2026-08-14 and both halves closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
-| **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record; a **seventh record** joined the cluster 2026-08-16 (dictation returned in English) with no step yet | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
+| **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record. **2026-08-16 added three steps (8–10) and three records** from one annotated screenshot: a leaked prompt term reached the delivery, the English-drift record's *not prompt bias* exclusion was withdrawn, and two instruments — the raw panel's stage sentence and the record's model field — were found reporting things the runtime did not do | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running, Stage D opened**; 18 of ~29 steps done, and the workspace's own strip now names whichever connection it is on | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of the original seven done 2026-08-14; an eighth step added 2026-08-16.** Steps 6 and 8 are open and both wait on an event nobody can schedule — a natural `Short` capture, and a learned word — each with its instrument already in place | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
@@ -91,9 +91,11 @@ the relay owns the surface, that track owns ADR 0137.
 
 Follows the cluster in [`known-issues/`](known-issues/) where the damage is
 invisible — output that is fluent, grammatical, plausible and wrong, with
-nothing downstream carrying evidence that a substitution happened. Six records
-are one failure class; **none of them is closed and two never will be in the
-ordinary sense**, because the rule is that lost content is reported, never
+nothing downstream carrying evidence that a substitution happened. **Nine
+records** are one failure class as of 2026-08-16 — the two newest being about the
+evidence itself rather than the pipeline, where the record carries the fact and
+the readout says something else. **None of them is closed and two never will be
+in the ordinary sense**, because the rule is that lost content is reported, never
 replaced.
 
 Owns ADR 0079–0081, 0083, 0084, 0100.
@@ -111,6 +113,25 @@ this did not run in. **No rule was written**, on this track's own evidence
 standard — the corpus carries the case and the same construction handled
 correctly two days earlier, which is one flip and one non-flip. Steps 6 and 7 of
 the sequence carry it and the closing-phrase artifact found beside it.
+
+**2026-08-16: one screenshot produced three steps, three records and one
+withdrawn exclusion**, and the pattern in it is that the instruments failed
+before the pipeline did. A leaked prompt term was **delivered** — the strip
+removes the marker and a one-term echo cannot clear the two-distinctive-word
+floor that exists to protect what the speaker actually said. The English-drift
+record's *not prompt bias* bullet was withdrawn: it rested on
+`use_as_prompt_hint`, a field nothing has read since ADR 0035, and the request
+carried a 65-byte **entirely English** prompt ahead of German speech. And two
+readouts were found lying — the raw panel called a sixteen-byte prompt strip *"The
+AI stage rewrote it"*, which is how the defect arrived filed against the wrong
+stage, and **all 50 history records name `whisper-large-v3` while every request
+went to `whisper-large-v3-turbo`**, which misattributes every per-model rate this
+track has published. Steps 8, 9 and 10; step 9 is a measurement that needs no
+code.
+
+**The owner restated the standing requirement the same day, for all processing
+modes**: improve the grammar, never change the meaning. The track page carries
+it and what it does and does not license.
 
 ### Speech
 

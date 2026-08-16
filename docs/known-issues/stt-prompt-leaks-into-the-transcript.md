@@ -18,6 +18,14 @@ recording whose audio the capture had kept in full. Recorded with the numbers in
 The prompt in both was `"Likely phrases: Agenten; etwas"` — two ordinary German
 words the runtime had learned by itself, not terms anybody opted in.
 
+**2026-08-16: the strip is not a floor, and one term shipped.** The marker
+arrived *with* its colon and *with* its first term, and the term was delivered
+as a sentence of its own. Section
+[2026-08-16 below](#2026-08-16-the-echo-kept-its-colon-carried-a-term-and-the-term-shipped)
+carries it; it corrects the "without its colon and without its terms"
+characterisation this record made on 2026-08-10 and names the guard that let the
+term through.
+
 ## What is sent
 
 `core::transcription_hints::build_transcription_prompt` puts one of two things
@@ -209,6 +217,118 @@ The working rule this replaces was "a sentence that matches nothing may be a
 mishearing — ask". It is now sharper: **a sentence matching the prompt text
 above is WordScript's own, is never something the speaker said, and can be
 deleted on sight without asking.** Grep the two strings; they are constants.
+
+## 2026-08-16: the echo kept its colon, carried a term, and the term shipped
+
+Reported by the owner from the History panel, with the screenshot annotated by
+hand: a box around `Likely phrases:" Commit.` in **Heard** labelled *letztes
+gelerntes Wort*, a box after `Commit.` in **Written** labelled *~2 Sätze
+fehlen*, and the observation that the paragraph no longer means what was said.
+
+Record `history-1786910918745-50`, 2026-08-16 22:08:38 +02:00, profile
+`Founder ops notes` (`curated-founder-ops`), mode `cleanup`, Groq. Transcript
+file `~/WordScript/transcripts/2026/08/16-2208-gehirnstruktur-und-bewusstsein.md`.
+
+```text
+raw_transcript          …dass das 3D-Modell sich in die Neuronen verwendet wird. Likely phrases:" Commit.
+transformed_transcript  …dass das 3D-Modell sich in die Neuronen verwendet wird. Commit.
+applied_rules           prompt_echo_stripped, post_corrected
+```
+
+```text
+Groq transcription start     model=whisper-large-v3-turbo prompt_chars=53
+Groq transcription complete  elapsed_ms=824 text_len=340 duration=Some(53.614809088)
+Recognizer repair applied    rules=prompt_echo_stripped heard_len=340 repaired_len=324
+```
+
+### What was in the prompt, to the byte
+
+`select_recognizer_slots` over the profile's seven `vocabulary_hints` yields
+four slots. Terms below `vocabulary_repair::MIN_TERM_CHARS` (7) sort first, and
+among equals the profile's own order stands:
+
+| Slot | Term | Chars | Origin | Learned |
+| --- | --- | --- | --- | --- |
+| 1 | `Commit` | 6 | learned | 2026-08-16 17:07:28 |
+| 2 | `heißt` | 5 | learned | 2026-08-16 17:45:44 |
+| 3 | `Agenten` | 7 | learned | 2026-08-16 18:46:14 |
+| 4 | `decision log` | 12 | user | — |
+
+`build_transcription_prompt` makes that
+`"Likely phrases: Commit; heißt; Agenten; decision log"` — 52 characters, **53
+bytes** because of the `ß`, matching the logged `prompt_chars=53` exactly. The
+same chain of evidence as 2026-08-12, on a new list.
+
+**The owner's annotation is right about the kind of word and worth sharpening
+about the reason.** `Commit` is a learned term, but it is the *oldest* of the
+three, not the newest. It leads the prompt because it is the *shortest* — ADR
+0035 ranks terms below the repair floor first, on the argument that a long
+product name is recoverable afterwards and a six-letter word is not. The slot
+allocator is behaving exactly as specified. `Agenten`, the word standing at the
+break in two of the three 2026-08-12 events, is still in the list five days
+later, one slot further down.
+
+### Two corrections to this record
+
+**1. The echo is not always missing its colon and its terms.** This record
+stated on 2026-08-10 that `Likely phrases` arrives *"without its colon and
+without its terms"*. Here it arrives as `Likely phrases:" Commit.` — marker,
+colon, a stray `"`, and slot 1. The regex handles the marker either way
+(`\s*:?`), so the *fix* was not built on the wrong shape; the *description*
+was, and anyone reasoning about what to strip next would have been misled by it.
+
+**2. `prompt_echo_stripped` on a record does not mean the echo is gone.** The
+strip removed 16 bytes — `Likely phrases: ` — and stopped. What remained,
+`" Commit.`, is one sentence carrying one word, and the sentence pass requires
+`MIN_DISTINCTIVE_MATCHES = 2` distinctive words before it deletes a sentence.
+One term can never reach two.
+
+**That floor is not a bug and must not simply be lowered.** It is the guard
+this record's own 2026-08-10 finding demanded — the owner had said the prompt
+text out loud mid-dictation, and a rule that removes prompt words on sight
+removes what he said. A one-word threshold would delete a genuine `Commit.`
+from a dictation about a commit — and this owner dictates about commits: the
+term only exists in the profile at all because `vocabulary_learning` promoted
+it out of his own transcripts, and `16-2107-code-commit-und-push.md` the same
+evening reads *"kannst du committen und pushen"*. The word is live vocabulary,
+not a foreign token that can be deleted on sight.
+
+So the failure is real and the obvious fix is wrong. What distinguishes the two
+cases is not the word count:
+
+- a leaked term arrives **immediately after the marker we just removed**, and
+- it is the **term we ourselves sent**, in **slot order**.
+
+Both facts are available at the strip — the prompt is carried from the request
+(ADR 0080) — and neither is used. A term adjacent to a stripped marker is a
+different claim from a term found anywhere in the text, and that adjacency is
+what a fix should read. **No rule was written here**, on this track's evidence
+standard: one event.
+
+### Why it is the worst shape for the reader
+
+A bare capitalised noun with a full stop is indistinguishable from something
+the speaker said. `Commit.` reads as an instruction in the register of a
+founder-ops note, and the record it sits on carries `prompt_echo_stripped`,
+which reads as *handled*. This is the ADR 0036 failure — visible damage made
+invisible — applied to the fix for the ADR 0036 failure, one layer further in.
+
+### Where the meaning went, and where it did not
+
+The owner reported that the paragraph is scrambled and read the AI stage as the
+cause. **The AI stage did not do it.** Removing the 16 bytes from
+`raw_transcript` yields `transformed_transcript` character for character, so
+`cleanup` changed nothing whatever on this record — `post_corrected` is on it,
+and the correction returned the text it was given. Everything the owner objects
+to in **Written** was already in **Heard**, which is the provider's response
+before any transform.
+
+That the owner concluded otherwise is itself a defect and has its own record:
+[heard-and-written-do-not-say-which-stage-changed-what.md](heard-and-written-do-not-say-which-stage-changed-what.md).
+The panel told him *"The AI stage rewrote it."*
+
+The missing content is measured in
+[transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md).
 
 ## Related
 

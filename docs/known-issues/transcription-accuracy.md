@@ -186,6 +186,44 @@ anything. **Recorded as a measured limit with a named cost rather than lowered
 on the strength of one case** — the population that would justify moving it is
 more `overlay_edit` records, and there is one.
 
+### 2026-08-16: a whole paragraph loses its sense, and there is no ground truth for it
+
+Reported by the owner from the History panel — *"der komplette Absatz wurde
+verdreht, es gibt keinen Sinn mehr, wie er da steht"* — on record
+`history-1786910918745-50`, `Founder ops notes`, mode `cleanup`, Groq. The
+delivered text ends:
+
+> …das heißt die Synapsen und die Neuronen als Architektur gemappt, die dazu
+> führen, dass das 3D-Modell sich in die Neuronen verwendet wird.
+
+The final clause is not German that means anything, and the paragraph as a whole
+does not carry the argument he made.
+
+**Two of the three stages are cleared, and by measurement rather than by
+inspection.** `raw_transcript` minus the sixteen bytes `strip_prompt_echo`
+removed is `transformed_transcript` character for character, so the AI stage
+returned the text it was handed. What the owner objects to was already in the
+recogniser's output. His follow-up rule is the right one and it was not broken
+here: *improve the grammar, do not change the meaning* — in every processing
+mode, not only Cleanup.
+
+**It is not a corpus entry, and that is the point worth recording.** This record
+already holds one genuine mishearing and it is usable precisely because
+`overlay_edit` carried the owner's own retyped word. Here nothing does. The audio
+is swept, the speaker's memory is not a fixture, and a reconstruction of what he
+*probably* said would be exactly the invented ground truth this cluster refuses
+elsewhere. So the case is filed as a report and not as evidence.
+
+What it *does* contribute is a bound: about 175 characters of this dictation are
+missing outright, measured against a neighbouring dictation of near-identical
+speech length five minutes earlier
+([transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md)).
+**A paragraph missing a third of its sentences reads as scrambled whether or not
+any individual word was misheard**, so this event is not clean evidence for the
+headline complaint either — it is content loss first. The distinction matters for
+the WER this record still does not have: a density-based instrument would find
+this one, and no word-level one would.
+
 ## What is not known
 
 Everything that would make this actionable:

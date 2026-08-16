@@ -50,7 +50,14 @@ status change. Resolved bugs remain as references for the same failure class.
   restores the displaced words — a wholly-echoed transcript comes back empty —
   and `raw_transcript` deliberately keeps the leak so the rate stays measurable.
   The uncomfortable part stands: ADR 0036's mitigation for the subtitle
-  attractor is this defect's cause.
+  attractor is this defect's cause. **2026-08-16 corrects the record twice.** The
+  echo does not always arrive without its colon and its terms — one arrived as
+  `Likely phrases:" Commit.`, and `Commit`, slot 1 of the prompt, **was
+  delivered**: the sentence pass needs two distinctive words before it deletes a
+  sentence, and one term can never reach two. That floor is the guard against
+  deleting what the speaker said and must not simply be lowered; what a fix
+  should read is adjacency to the marker it just removed. So
+  `prompt_echo_stripped` on a record does not mean the echo is gone.
 - [transcription-accuracy.md](transcription-accuracy.md): **open, partly
   measured** — dictated words come back as different words, often enough that a
   dictated brief has to be re-read before it is trusted (owner, 2026-08-10).
@@ -90,6 +97,14 @@ status change. Resolved bugs remain as references for the same failure class.
   dictation is gone. The prompt is resolved to the character —
   `"Likely phrases: Agenten; etwas"`, two auto-learned ordinary German words —
   which ties this record to the prompt-leak one and gives it a ten-second test.
+  **A fourth event on 2026-08-16 passed every instrument**: capture `Intact`,
+  cadence `no_gaps`, level `Ok`, coverage `Complete`, and
+  `last_segment_avg_logprob=-0.192` — *inside* the healthy band, which removes
+  confidence as a detector. 41.5 s of voice activity produced 313 characters
+  against 11.8 chars/s on a 41.1 s dictation five minutes earlier: about 175
+  characters short, and the owner had estimated two sentences by eye. The
+  ten-second test the record asks for was still not run, and the failure
+  recurred with the new slot-1 term standing at the break.
 - [transcription-hallucination.md](transcription-hallucination.md): mitigated —
   raw transcription language drift and hallucination. The approved slice landed
   on 2026-07-29 (ADR 0015, ADR 0016): the capture config now reaches the runtime
@@ -124,6 +139,30 @@ status change. Resolved bugs remain as references for the same failure class.
   right and drifts. **The detected language is read for the repair gate and then
   discarded**, so no rate can be computed from the existing corpus and the
   German-only repairs are silently skipped on exactly the records that need them.
+  **One of its four exclusions was withdrawn the same evening.** *Not prompt
+  bias* rested on `use_as_prompt_hint: false`, a field nothing has read since
+  ADR 0035; the affected record was sent a 65-byte, **entirely English** initial
+  prompt, resolved to the character from the log. The floor prompt is bilingual
+  on purpose because a prompt biases the decoder toward its own language — and
+  `Likely phrases: …` is not, which makes a configured profile *less* protected
+  than a blank one.
+- [heard-and-written-do-not-say-which-stage-changed-what.md](heard-and-written-do-not-say-which-stage-changed-what.md):
+  **open, found 2026-08-16** — the raw panel's foot chooses between "Identical"
+  and "The AI stage rewrote it" on a string comparison. On a record whose two
+  texts differ only by the sixteen bytes `strip_prompt_echo` removed, it said the
+  AI stage rewrote it, and the owner reported a cleanup defect against a
+  paragraph the cleanup had not touched. `applied_rules` is on the record, is in
+  scope in `rawOf`, and is not read for the sentence. The mirror case — equal
+  texts with a stage that ran — was found the same way on 2026-08-10 and does
+  have a sentence; this fourth case was never added.
+- [the-record-names-the-connection-model-not-the-one-that-listened.md](the-record-names-the-connection-model-not-the-one-that-listened.md):
+  **open, found 2026-08-16** — `active_model_for_provider` reads `config.model`
+  while the capture path sends the active profile's `speech.model`. All 50
+  records in the owner's history read `whisper-large-v3`; every request in the
+  log went to `whisper-large-v3-turbo`. Every per-model rate this directory
+  carries is filed under a model no request used, and a two-model comparison
+  cannot be run from `history.json` at all, because the field does not vary with
+  what was sent.
 - [capture-shortcut-recording.md](capture-shortcut-recording.md): resolved for
   the activation modes — shortcut recording, manual entry, normalization,
   registration and activation-mode failures in Capture and Modes, including the

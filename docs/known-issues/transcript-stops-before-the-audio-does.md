@@ -13,6 +13,11 @@ words where the speech was. The second shape reads `uncovered_ratio=0.0000
 verdict=Complete` while half the dictation is gone. **The recurring word at the
 break — `Agenten` — is ours**, and the evidence chain to it is below.
 
+**2026-08-16: a fourth event, four days later, with every instrument green and
+the confidence signal inside the healthy band.** The prompt's slot-1 term stands
+at the break again, on a new term list. Section
+[2026-08-16 22:08 below](#2026-08-16-2208--a-fourth-event-and-every-instrument-passed-it).
+
 First reported: 2026-08-12 00:16, by the owner — *"Jetzt gerade eben wurde ein
 Teil meines vorherigen Diktats verschluckt, der letzte Teil."*
 Affected area: `core::providers` — the speech lane, not `core::capture`.
@@ -187,6 +192,75 @@ duration for an innocent reason too: a long dictation contains more thinking and
 more pauses. What it establishes is that the two events above are not isolated
 enough to be dismissed; what proves the loss in those two cases is the
 mid-sentence stop and the 11.7 s uncovered tail.
+
+## 2026-08-16 22:08 — a fourth event, and every instrument passed it
+
+Reported by the owner from the History panel with the missing tail marked by
+hand: *~2 Sätze fehlen*. Record `history-1786910918745-50`, 54 s, profile
+`Founder ops notes`, mode `cleanup`, Groq.
+
+```text
+Capture integrity       wall_seconds=54.007 recorded_seconds=53.975 missing_ratio=0.0006 verdict=Intact
+Capture callback cadence callbacks=4649 longest_gap_ms=21 gaps_over_200ms=0 signature=no_gaps
+Capture input level     peak_dbfs=-3.1 rms_dbfs=-23.0 clipped_ratio=0.0000 verdict=Ok
+Groq transcription start model=whisper-large-v3-turbo prompt_chars=53
+Transcription coverage  duration_seconds=53.615 covered_seconds=53.620 uncovered_ratio=0.0000 last_segment_avg_logprob=-0.192 verdict=Complete
+```
+
+**Four instruments, four green verdicts, and the dictation is about a third
+short.** This is the second shape again — the recogniser reaches the end of the
+audio and puts our own prompt where the speech was — and the transcript ends:
+
+> …dass das 3D-Modell sich in die Neuronen verwendet wird. Likely phrases:" Commit.
+
+`Commit` is slot 1 of `"Likely phrases: Commit; heißt; Agenten; decision log"`,
+resolved to the byte in
+[stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md).
+`Agenten` — the break word of two of the three 2026-08-12 events — is still in
+the list, one slot further down.
+
+### How much is missing, measured against the same speaker minutes earlier
+
+`speech_seconds` (voice-activity seconds, new on the record) makes the density
+argument sharper than the duration bands below, because it removes the pauses
+that made those bands only suggestive:
+
+| Record | Time | Speech | Recogniser chars | chars/s |
+| --- | --- | --- | --- | --- |
+| `…910617343-50` | 22:03:37 | 41.10 s | 485 | 11.80 |
+| `…910719305-50` | 22:05:19 | 64.71 s | 721 | 11.14 |
+| **`…910918745-50`** | **22:08:38** | **41.52 s** | **313** (338 less the 25-char echo) | **7.54** |
+
+Same speaker, same profile, same mode, same lane, inside six minutes, and a
+neighbour of almost identical speech length. At the neighbour's density this
+recording should have produced roughly 490 characters; it produced 313. **The
+deficit is about 175 characters — two sentences, which is what the owner
+estimated by eye.**
+
+Eight of the fifty records in history carry `speech_seconds` at all, so this is
+a comparison and not a rate. It is a much better-controlled comparison than the
+duration table further down.
+
+### What this event costs the two candidate instruments
+
+- **Coverage is confirmed blind to this shape**, as the record already said —
+  `uncovered_ratio=0.0000`, `verdict=Complete`.
+- **`last_segment_avg_logprob` does not separate it.** The three earlier events
+  read `-0.378` and `-0.366` against a healthy band of `-0.171` to `-0.231`, and
+  hypothesis 2 rests partly on that gap. This one reads **`-0.192`** — inside
+  the healthy band, on a transcript missing a third of its content. One
+  observation does not refute the temperature hypothesis, but it does remove
+  confidence as a *detector*: a density-based measure is now the only proposed
+  instrument that would have caught this event.
+
+### The ten-second test was never run, and this is what that cost
+
+*What would settle it* below asks for the learned terms to be deleted from the
+active profile. They were not, four days on. The profile now carries three
+learned terms instead of three others, the newest of them promoted at 17:07 on
+the day of this event, and the failure recurred with the new slot-1 term
+standing at the break. **The test is now cheaper to justify and no harder to
+run.**
 
 ## Hypotheses
 

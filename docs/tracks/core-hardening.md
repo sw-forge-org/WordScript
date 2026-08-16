@@ -23,6 +23,17 @@ downstream carrying evidence that a substitution happened:
 `dictation-comes-back-in-english.md`. Then ADRs 0079, 0080, 0081, 0083
 and 0084, and `CLAUDE.md`.
 
+**Two more joined the cluster on 2026-08-16 and they are about the instruments
+rather than the pipeline** — `heard-and-written-do-not-say-which-stage-changed-what.md`
+and `the-record-names-the-connection-model-not-the-one-that-listened.md`. Read
+them before quoting any number from `history.json`: the first one caused a defect
+to be reported against the wrong stage, and the second means every per-model rate
+on this track names a model no request used.
+
+`transcript-stops-before-the-audio-does.md` has always been read alongside the
+prompt-leak record rather than listed beside it; since its fourth event on
+2026-08-16 it has a row of its own in the table below, so read it too.
+
 ## Where the cluster actually stands
 
 **None of the six records is closed, and two of them never will be in the
@@ -32,12 +43,15 @@ What two passes bought is that the cluster went from invisible to instrumented.
 | Record | Still occurring? | What exists now |
 |---|---|---|
 | Capture loses audio | **Yes, cause still unlocated** | Reported (0079); a callback cadence and a named signature (0083); the soak ran 2026-08-12 and returned **zero events in 8 h** (0084), which moved the suspicion into the app, and a live event on 2026-08-13 then refuted that too. **The instrument half now belongs to the runtime ownership track** (ADR 0133) — read that record before appending to it |
-| Prompt leak | **Yes in the recogniser, 12.5 % of raw** | Removed from the delivery (0080); displaced words stay gone |
+| Prompt leak | **Yes in the recogniser, 12.5 % of raw — and 2026-08-16 one leaked term reached the delivery through the strip** | Removed from the delivery (0080); displaced words stay gone. The strip is not a floor: a one-term echo cannot clear `MIN_DISTINCTIVE_MATCHES`, so `prompt_echo_stripped` on a record does not mean the echo is gone. Step 8 |
 | Pluralized address | **Yes, one of three shapes** | Two repaired (0081), third out of reach by design |
 | Mishearings at large | **Yes, unmeasured** | One instance in the corpus; still no WER, no rate |
 | Cleanup invents tokens | **Yes, groups A and C** | No new guardrail; rate unchanged |
 | **Cleanup flips the person** | **Yes, 1 in 200, found 2026-08-13** | Nothing. The corpus carries the case and both negative directions; **no rule was written on purpose** — see step 6 |
-| **Dictation comes back in English** | **Yes, 7 of 50, found 2026-08-16** | Nothing. Four causes ruled out; the language is never pinned because the control is drawn and unwired, and **the detected language is discarded**, so there is no instrument yet |
+| **Dictation comes back in English** | **Yes, 7 of 50, found 2026-08-16** | Nothing. Three causes ruled out — the fourth, *not prompt bias*, **was withdrawn the same evening**: a 65-byte, entirely English initial prompt was sent, resolved to the character from the log. The language is never pinned because the control is drawn and unwired, and **the detected language is discarded**. Step 9 |
+| **The transcript stops before the audio does** | **Yes — a fourth event 2026-08-16, four days after the third** | Instrumented 2026-08-12, nothing reacts. The new event **passed every instrument**, `last_segment_avg_logprob=-0.192` included, which removes confidence as a detector and leaves text density as the only proposal that would have caught it. The ten-second test the record asks for — delete the learned terms — has still not been run. Steps 8 and 9 |
+| **The panel names the wrong stage** | **Yes, all records where a rule fired and the texts differ**, found 2026-08-16 | Nothing. The foot picks its sentence by string comparison while `applied_rules` sits unread in the same function. It reported a 16-byte prompt strip as *"The AI stage rewrote it."* and a cleanup defect was filed against a paragraph cleanup never touched. Step 10 |
+| **The record names the wrong model** | **Yes, 50 of 50**, found 2026-08-16 | Nothing. History reads `config.model`; the capture path sends the profile's `speech.model`. Every per-model rate this track has published is misattributed. Step 10 |
 
 ## What the second pass did
 
@@ -221,6 +235,72 @@ rather than compacted, because the items are cited by number elsewhere.
    exists for exactly that kind of two-signal rule. Corpus entry
    `recognizer_appends_a_closing_phrase` pins today's behaviour, which is that
    nothing fires.
+
+8. **One leaked term survived the strip, and the obvious fix is forbidden.**
+   Added 2026-08-16 from a single annotated screenshot of the History panel; the
+   evidence is in
+   [`known-issues/stt-prompt-leaks-into-the-transcript.md`](../known-issues/stt-prompt-leaks-into-the-transcript.md).
+   The echo arrived as `Likely phrases:" Commit.` — **with** its colon and
+   **with** slot 1 of the prompt — and `strip_prompt_echo` removed the marker
+   and stopped. What remained is one sentence carrying one word, and the
+   sentence pass requires `MIN_DISTINCTIVE_MATCHES = 2`.
+
+   **Do not lower that floor.** It is the guard this record's own 2026-08-10
+   finding demanded, and `Commit` is live vocabulary the owner dictates. What
+   separates the two cases is **adjacency to the marker just removed** and
+   **slot order in the prompt we sent** — both available at the strip, because
+   ADR 0080 carries the prompt from the request, and neither used. One event, so
+   corpus first.
+
+9. **The English prompt is the leading candidate for the English drift, and the
+   exclusion that stood against it was false.** Added 2026-08-16;
+   [`known-issues/dictation-comes-back-in-english.md`](../known-issues/dictation-comes-back-in-english.md)
+   carries the correction. *Not prompt bias* was argued from
+   `use_as_prompt_hint: false` — a field nothing has read since ADR 0035, and
+   the **second** time that boolean has produced a wrong turn in this
+   directory. The affected record was sent
+   `"Likely phrases: Commit; decision log; weekly update; action items"`,
+   65 characters, matching the logged `prompt_chars=65` exactly.
+
+   `BLANK_STATE_RECOGNIZER_PROMPT` is bilingual on purpose *because a prompt
+   biases the decoder toward its own language*. `Likely phrases: …` is not, so a
+   profile with vocabulary sends a wholly English prefix ahead of German speech
+   and a blank profile does not. **This step is a measurement, not a fix:**
+   `prompt_chars` is in the log for all fifty records, and 7 affected against 43
+   clean is a comparison that needs no code. Run it before proposing anything.
+
+10. **The instruments themselves are now two records.** Added 2026-08-16, both
+    found on the single record above:
+    [`known-issues/heard-and-written-do-not-say-which-stage-changed-what.md`](../known-issues/heard-and-written-do-not-say-which-stage-changed-what.md)
+    and
+    [`known-issues/the-record-names-the-connection-model-not-the-one-that-listened.md`](../known-issues/the-record-names-the-connection-model-not-the-one-that-listened.md).
+    The first misattributed a defect to the wrong stage in the field; the second
+    files **all 50 records** under a model no request used, which is the
+    attribution every rate on this track carries. Fix the model resolution
+    before the next per-model number is quoted.
+
+## The rule the owner stated, 2026-08-16
+
+Reported alongside the screenshot, and it applies to **every processing mode**,
+not only Cleanup:
+
+> Es sollte verbessert werden — ein bisschen die Grammatik und so weiter — aber
+> nicht der komplette Sinn geändert werden.
+
+It is not a new requirement so much as the sentence this whole cluster is
+defending, said plainly by the person the output is for. Two consequences for
+work on this track:
+
+- **A guardrail that only reads the cleanup lane is not enough.** ADR 0081 moved
+  the recogniser repair ahead of the mode branch for exactly this reason, and
+  every mode-scoped guard written since is scoped narrower than the rule.
+- **It does not license a rewrite-detector.** The cluster's standing rule is that
+  lost or altered content is *reported*, never *replaced* — a stage that decides
+  the meaning changed and then repairs it is the defect wearing a badge.
+
+Note for the record that on the report that produced this rule, cleanup was
+**innocent**: `transformed_transcript` is `raw_transcript` minus sixteen bytes.
+The meaning was already gone when the recogniser handed it over.
 
 ## Rules you are measured on
 
