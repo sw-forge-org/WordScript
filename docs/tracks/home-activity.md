@@ -364,57 +364,93 @@ average is over what was measured, and the tile says so.
 
 ## The prompt for the next session
 
-You are continuing the **home activity** track. Work in the repo root on `main`.
-Do not create a branch. **Five other tracks work in the same tree** — see
-[`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run `git status` and
+You are finishing the **home activity** track's Stage A. Work in the repo root
+on `main`. Do not create a branch. **Five other tracks work in the same tree** —
+see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run `git status` and
 `git log --oneline -5` before you start, and stage your own paths. Never
 `git add -A`.
 
-**A1 and A2 are landed.** Read the record above before anything else; it names
-what exists, what it cost and two traps that are not in the tree's own comments.
+**A1 and A2 are landed** (commit `ba30abf`). Read the record above before
+anything else; it names what exists, what it cost, and two traps that are not in
+the tree's own comments.
 
 **Read first:** this page in full, then
 [ADR 0171](../decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md),
 `src/screens/Home.tsx`, `src/components/shell/DigitCounter.tsx` (the composite
 frame you are about to draw a much bigger one beside),
 `src/components/ui/matrix.tsx`, `src/lib/activity.ts` (where a reading is
-derived, and where the calendar's day buckets belong too), ADR 0161, `CLAUDE.md`
-and `docs/spec/SPEC.md`.
+derived, and where the calendar's day buckets belong too),
+`src/hooks/useNavRail.ts` and `AppConfig.workspace_nav_rail` in
+`src-tauri/src/core/config.rs` (the exact shape A5 copies), ADR 0161, ADR 0111,
+`CLAUDE.md` and `docs/spec/SPEC.md`.
 
-**Your unit is A3 and A4** — the calendar and its day tooltip. Not A5: it puts a
-field on `AppConfig`, which means writing under `src-tauri/`, a full rebuild and
-a dead dictation if one is in flight. Until A5 lands, **the block shows the tiles
-and the calendar is not reachable from the product** — so mount it in the
-gallery, on the Design System page beside the counter, and say so in your record.
-Do not invent a temporary toggle to see your own work; a control that is not the
-decided one is a control somebody will ship.
+**Your unit is A3, A4 and A5 — the whole rest of Stage A.** In that order, and
+the order is not a preference: **A5 is the only step that writes under
+`src-tauri/`**, and every write there rebuilds the app, restarts it, takes the
+hotkeys with it and kills any dictation in flight. Doing it last means it
+happens once, at the end, when you already know what you are persisting.
 
-**A3 and A4 are done when all of this is true**, and not before:
+**Until A5 lands the calendar is not reachable from the product**, so mount it
+in the gallery, on the Design System page beside the counter, and develop
+against that. **Do not invent a temporary toggle to see your own work** — a
+control that is not the decided one is a control somebody will ship. A5 is what
+makes it reachable, and it does so with the switch decision 9 specifies and no
+other.
+
+**A3, A4 and A5 are done when all of this is true**, and not before:
+
+*A3 — the calendar*
 
 - `@uiw/react-heat-map` is vendored under `src/components/ui/` with the
   provenance header `matrix.tsx` uses — source URL, commit, fetch date, local
-  changes marked WORDSCRIPT — and is not a dependency in `package.json`.
-- The cells are circles on the matrix ramp (`--fg-muted` unlit through four steps
-  to `--accent`), via `rectRender`, not a fork.
+  changes marked WORDSCRIPT — and is **not** a dependency in `package.json`.
+- The cells are circles on the matrix ramp (`--fg-muted` unlit through four
+  steps to `--accent`), via `rectRender`, not a fork.
 - 26 weeks, and **the display grows with the installation** — a fresh install
   draws as many weeks as it has existed, filling rightwards. 365 grey cells on
-  day one reads as a defect.
+  day one reads as a defect, not as a beginning.
 - A day's step comes from that day's dictation count, derived in
   `lib/activity.ts` under test, not in the screen.
 - **The rendered SVG width is measured against its box**, not assumed from the
   CSS. See the second new trap; this is the step it was written for.
+
+*A4 — the day tooltip*
+
 - The tooltip names a day's composition: dictations real, meetings and uploads
-  present as preview lines that state they have no origin yet — never a zero,
+  present as preview lines that state they have no origin yet — **never a zero**,
   because a zero claims a count.
-- The suite count moved by a number you can explain, and no case was deleted.
+- Everything day-scoped lives here rather than in a tile: sessions that day,
+  longest dictation, words, and `release until the text exists` if you wire it.
+- A day with nothing in it says so in words, not with a row of noughts.
+
+*A5 — the switch*
+
+- The preference is an additive field on `AppConfig` with `#[serde(default)]`,
+  on the shape `workspace_nav_rail` already has, so nothing is migrated
+  (ADR 0054). The UI reads and writes it through the window's config draft, the
+  way `useNavRail` does — no second config reader.
+- **Clicking the block toggles it**, with the small two-dot carousel indicator
+  for discoverability. **No settings row is added**; decision 9 is explicit.
+- The choice survives a restart, verified in the native host and not only in a
+  test.
+- `cd src-tauri && cargo test` is green and quoted.
+
+*All three*
+
+- The suite count moved by a number you can explain, and **no case was deleted**.
+
+**Before you write anything under `src-tauri/`:** check `pgrep -af "tauri dev"`,
+say out loud that a rebuild is coming, and **batch every Rust edit into one
+pass**. One session did this four times in an afternoon, once while the owner
+was mid-sentence.
 
 **The decisions on this page are made.** If one turns out to be wrong when it
 meets the code, say so in your record and stop — do not quietly substitute a
 different design.
 
-**If you run short, stop after A3 and hand over.** A vendored, correct calendar
-with no tooltip is a step; a calendar whose colours or growth rule are guessed is
-a step somebody has to undo.
+**If you run short, stop after A4 and hand over.** A vendored, correct calendar
+with a working tooltip and no switch is a clean stopping point; a half-written
+`AppConfig` field is a rebuild somebody has to finish blind.
 
 **Three rules with teeth here:**
 
@@ -422,18 +458,20 @@ a step somebody has to undo.
    `PreviewTag` and shows no figure at all — an invented 3 is worse than a
    visible gap, and this is the rule ADR 0161 exists for.
 2. **A dev host may be running.** Check `pgrep -af "tauri dev"`. Do not write
-   `vite.config.ts` while one is up, and batch anything under `src-tauri/`
-   — a rebuild kills a dictation in flight.
+   `vite.config.ts` while one is up, and batch anything under `src-tauri/`.
 3. **A capture measurement may be running** (runtime ownership step 6). Take
    `wc -l ~/.config/WordScript/logs/wordscript-runtime.log` before and after
-   your checks and report both, and do not run heavy builds during one.
+   your checks and report both, and do not run heavy builds during one — which
+   includes `cargo test`.
 
-**Validation:** `npm test` and `npm run build`. Quote the suite count as a delta
-against the baseline you measured at the start, and say what the difference is.
-No `cargo` command unless you touched Rust — A3 and A4 should not. Run
-`npm audit` if you vendor anything that pulls a dependency; the intent is that
-nothing new lands in `package.json` at all.
+**Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test`
+once A5 has touched Rust. Quote the suite counts as a delta against the
+baselines you measure at the start, and say what the difference is. Run
+`npm audit` if anything lands in `package.json`; the intent is that nothing
+does.
 
 **Before you stop**, write your record into this page above the sequence, update
-the sequence rows you closed, and write the next session's brief in place of
-this prompt.
+the sequence rows you closed, write the next ADR in the track's range (0172 is
+free unless the tree says otherwise — grep, do not trust this line), and write
+the next brief in place of this prompt. **Stage B is what follows**, and every
+row of it waits on another track.
