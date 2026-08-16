@@ -2926,6 +2926,14 @@
     height: 40px;
     --wave-fg: var(--fg-dim);
     --wave-bg: color-mix(in srgb, var(--fg-muted) 26%, transparent);
+    /* THE CANVAS CANNOT READ A CUSTOM PROPERTY. `ctx.fillStyle` takes a colour,
+       not a `var()` — handed one it silently keeps the value it had, which is
+       black, and a black trace is invisible on the dark ground and looks
+       deliberate on the light one. Inheriting the token through `color` is the
+       one channel a canvas CAN follow: the drawing reads its own computed
+       colour, so a palette change moves it without it knowing about palettes,
+       which is what the two properties above exist for. */
+    color: var(--wave-fg);
   }
   .ws-wave-live[data-tone="voice"] { --wave-fg: var(--accent); }
   .ws-wave-live[data-tone="quiet"] { --wave-fg: var(--fg-muted); }

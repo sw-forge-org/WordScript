@@ -53,7 +53,10 @@ export function Waveform({
       active={active}
       externalLevel={level}
       height={height}
-      barColor="var(--wave-fg)"
+      /* NO `barColor`, DELIBERATELY. Upstream falls back to the canvas's own
+         computed `color`, which `.ws-wave-live` sets from `--wave-fg` — an
+         actual colour rather than the `var()` string a canvas cannot read.
+         Passing the token here is what drew the trace black in both themes. */
       fadeEdges={false}
       mode="scrolling"
       role="img"
