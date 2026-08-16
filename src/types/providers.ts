@@ -207,6 +207,30 @@ export interface ProviderStatus {
    */
   role_credentials: RoleCredentialStatus[];
   local_setup: LocalProviderSetupStatus | null;
+  /** The `Your server` lane's endpoint, `null` for every other lane (D1b). */
+  self_hosted_endpoint: SelfHostedEndpointStatus | null;
+}
+
+/** Which door supplied the `Your server` lane's endpoint (D1b, ADR 0165). */
+export type SelfHostedSource = "config" | "environment" | "unset";
+
+/**
+ * The `Your server` lane's endpoint as the runtime resolved it (D1b, ADR 0165).
+ *
+ * **It exists so this side never derives the precedence for itself.** *What is
+ * typed outranks the environment* is a rule with one implementation, in
+ * `core::providers::self_hosted`; a second one here would print a URL that is
+ * not the one in force the first time the order changed. Mirrors
+ * `core::providers::SelfHostedEndpointStatus`.
+ */
+export interface SelfHostedEndpointStatus {
+  /** What would be used — **including a URL that was refused**, because a row
+   *  that blanked what somebody typed would ask them to fix what it hid. */
+  base_url: string | null;
+  base_url_source: SelfHostedSource;
+  base_url_problem: string | null;
+  model: string | null;
+  model_source: SelfHostedSource;
 }
 
 export interface ProviderStatusRequest {

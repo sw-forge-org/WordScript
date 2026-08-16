@@ -104,6 +104,31 @@ corrected Self-hosted job rows are never rendered by the harness, and
 the port cannot reach is held by tests — and it is worth stating rather than
 reporting an unmoved number as if it were coverage.
 
+**After D1b: `cargo test` 870 passed / 6 ignored (+6), frontend 627 across 45
+files (+10), `cargo check` still 15, and `port:diff` unmoved — `models`
+`26 | 248 | 20`, `models#1` `262 | 30 | 16`, re-measured rather than quoted.**
+The frontend baseline this step started from is **617**, not D1a's 613: the four
+between them are the Context objects track's privacy commit (`4c9fa5a`,
+ADR 0138) and are named here so the next step does not read them as speech
+work. The +6 Rust are all in `self_hosted` and `registry`; the +10 frontend are ten
+new cases on the wired `Your server` card and one on the workspace status strip,
+against one removed — the two `LockedLanes` cases about the row that is gone
+become one about its absence. **Every new and every rewritten case was proven by
+breaking what it guards** — the
+Rust ones in one batch of five mutations, the frontend ones in two batches of
+nine and three, each mutation caught by its own case and by no other.
+
+**It was checked by rendering the workspace rather than in the native host, and
+the reason is worth recording.** `import -window` refuses on this machine — it
+answers *missing an image filename* for a filename it was given, including for
+`-window root` — so the screenshot technique the earlier sessions used was not
+available. What replaced it is the same component tree over the running dev
+server with `__TAURI_INTERNALS__` stubbed, driven headless through CDP at the
+workspace's own 1440×1000: real CSS, real layout, real fonts, and the three
+states this step cares about (typed, from the environment, refused). **It is
+what found both false sentences above**, and a WebKitGTK-only defect would
+still escape it.
+
 **It was checked in the native host, and that is where the fifth frontend case
 came from.** `LockedLanes` renders only under a runtime, so neither the gallery
 nor `port:diff` can reach it — the three rows and the newly selectable
@@ -1197,6 +1222,92 @@ which stays in G3, and it does not amend ADR 0096.
 server answers `/v1/audio/speech` as reliably is unverified, and a `voice` role
 on that lane needs its own reading first.
 
+### D1b. Your server gets somewhere to type its endpoint (ADR 0165) — **added and done 2026-08-16**
+
+**It is D1a's last paragraph made a step.** That record left the lane expert
+configuration — `WORDSCRIPT_SELF_HOSTED_BASE_URL`, `_MODEL`, `_TOKEN` — and
+named what it left open: *where a base URL and an optional token get stored,
+since `credential_kinds` is deliberately empty today*. This step answers both
+and then reverses ADR 0067 rule 1 over exactly one lane, which is what that rule
+has always said the finishing commit does.
+
+**The two open questions, answered here rather than deferred** (ADR 0165):
+
+- **The base URL and the model id land in `AppConfig`**, machine-wide and
+  additive, beside every other setting this installation holds. They are not
+  secrets — a URL is not a credential and a model id belongs to whoever runs the
+  server — so the scrub list is untouched, and a second store would be a second
+  lifetime, a second backup path and a second thing to forget to scrub.
+- **The optional token lands in the OS secret store**, through the credential
+  door that already exists, and `SELF_HOSTED_CREDENTIAL_KINDS` stops being
+  empty. That is only possible because the registry invariant it would otherwise
+  break is itself wrong: `requires_api_key == credential_kinds.contains(ApiKey)`
+  is one claim read from two directions, and this is the first lane where *may*
+  and *must* differ. The equality becomes an implication, and what stops the two
+  drifting is that a lane accepting nothing can store nothing — held by a test
+  rather than by the old equality.
+- **What is typed outranks the environment**, which is the reverse of
+  `WORDSCRIPT_LOCAL_MODEL_DIR`'s precedence and deliberate: a field that stores
+  a value the runtime then ignores is the false affordance ADR 0067 rule 1
+  exists to prevent. The environment stays as the door for a machine where
+  nobody has typed anything, and the surface says which of the two answered.
+
+- **Requires** — D1a (the adapter), A4 (the provider axis a lane choice is
+  stored on), A3 (the credential store the token goes into). **Not gated on an
+  owner decision.**
+- **Touches** — `core/config.rs` (two additive machine-wide fields),
+  `core/providers/self_hosted.rs` (the config as first source, the token in the
+  secret store, the endpoint reported to the surface, and the lane's own
+  `response_format` — it declares `supports_segments: false` and the capture
+  asks every non-local lane for `verbose_json`, which a server that does not
+  know the spelling answers 400 to), `core/providers/mod.rs` and `registry.rs`
+  for the split invariant, **one branch in `capture.rs::load_from_disk`** —
+  the same shape the local lane already has there, and no other line of that
+  file moves, because it is under the Runtime ownership track's measurement —
+  plus `src/screens/Models.tsx`, `src/screens/data.ts`, `src/types/` and
+  `src/components/jobProvider.tsx` for the four rows and the lock.
+- **Validates** — `cargo test` and `npm test`, a case per decision, each proven
+  by breaking what it guards; `npm run build`; `npm run port:diff`, which
+  **cannot move and must not be reported as coverage** — the gallery opens on
+  lane `Cloud`, so every row this step wires is a tab-click away from where the
+  harness looks (ADR 0159, B8's cost, stated again because the number is
+  otherwise read as a clean bill). **And a read in the native host**: five
+  defects on this screen have survived a green suite and four were found by
+  looking at the rendered surface afterwards.
+- **Done when** — a user types a URL into WordScript, picks `Your server`, and a
+  dictation is transcribed by the machine at that URL with no environment
+  variable set anywhere; and `LockedLanes` no longer carries a `Your server`
+  row, because the reason it named is gone.
+
+**Not in this step:** the other two locked lanes. `Local` stays withheld behind
+ROADMAP Phase 5 and `Enterprise` has no adapter, so the row count on that card
+goes from three to two rather than to nothing. And no job row on this lane
+becomes a picker: what runs is one model id typed on the connection, which is
+what *typed on the endpoint* has said since Leg 6.
+
+**As it landed, and the invariant is the part to know about.** The two storage
+questions answered themselves once the third one was asked: `requires_api_key`
+and `credential_kinds` were held equal by a registry test, on the reading that
+they are the same claim from two directions, and this is the first lane where
+*may* and *must* differ — `whisper-server` issues no token, speaches and LocalAI
+may. **An equality that has never met a counterexample is a coincidence with a
+test around it.** It becomes an implication plus a behavioural claim, and the
+token then goes where every other credential in this build goes.
+
+**Two sentences elsewhere in the product went false the moment the lane could be
+chosen, and both were found by looking at the rendered workspace.** The screen's
+own banner said *the other three lanes … are drawn and inert*; the status strip
+along the bottom edge of every view said `Groq cloud · {model}` for any
+connection that is not `local` — which had been wrong for OpenAI since D1 made
+that connection selectable, over a model field this lane is not even sent.
+**Sixth defect on this surface found by rendering it after a green suite**
+(ADR 0160, 0161, 0162, 0164, and these two).
+
+**And `npm run port:diff` run bare measures nothing and prints `ALL EXACT`.**
+The harness walks the screens named on its command line, so a step that reports
+the bare run as evidence has reported a green light for free. The numbers here
+were taken as `node scripts/gallery-port-diff.mjs models 'models#1'`.
+
 ### D2. The streaming contract (ADR 0095)
 
 - **Requires** — D1, C1.
@@ -1634,6 +1745,7 @@ Speaking row, so it is flagged rather than assumed.
 | B11 | **done** 2026-08-15 — the owner asked why the screen has two tabs at all, and the answer was worth a record (ADR 0162). **ADR 0042's justification is half dead**: ADR 0122 retired *speech and language sit on the same disk*, leaving only the memory argument. **The argument that holds was written nowhere**: a lane is a stored value and an inventory is not, so putting the model library behind `Local` would mean editing the configuration in order to look at the disk. What was actually wrong is that **four of the `Local` lane's five rows restated the tab** — and the cost is measured, not argued: ADR 0160 and ADR 0161 each had to be applied to that branch twice, the second time found by a screenshot after the tests were green. Lane is three rows now, `Manage →` is wired (drawn with no handler since Leg 6), and `Bundled \| Yours` left the lane too — **that one survived the first pass of this very record** and was caught the same way. **+2 frontend** (602 total), both proven by restoring what they forbid. `port:diff` unmoved on both ids, as predicted before the run |
 | B12 | **done** 2026-08-16 — added 2026-08-15 out of the owner's *what next*. **The tab installs models for a lane that cannot be selected**: B5 closed ADR 0042's gate and `STATUS.md` lists `local` under implemented features, while `Models.tsx` still disables it. **Not a bug** — ADR 0067 rule 1 makes an offered-but-unfinished lane inoperable on purpose. What is wrong is that **the lock is silent about itself**: no reason, no statement of what this machine already has. **No Rust** — `local_setup` carries the readiness and `useLocalSetup` (B9) already reads it. The distinction it must not blur: *not published* is a product decision, *not ready* is a fact about this disk, and a machine with everything installed is the first case and not the second. **Releasing the lane is a gate, not this step** — that reverses ADR 0067 and needs Phase 5 whole. **As it landed (ADR 0163): two rows, not one**, because `Local` is built-and-withheld while `Your server` and `Enterprise` have no adapter, and one row would have said the same nothing about both. The product's half is a constant with one owner; the disk's half is composed from `runner_ready`, `model_ready` and `chat_ready` forwards and backwards — `Ready` / `2 of 3 ready` / `Not read`. **Wired-only, so `port:diff` is unmoved by construction** (`models` 26 \| 248 \| 20, `models#1` 262 \| 30 \| 16, measured against `git show HEAD:` back to back) and the grown state is held by tests, which is B8's known cost. `local_setup` moved up to `ModelsScreen` and both tabs share one read, because the probe spawns `whisper-cli --help` — two hooks would be the cost ADR 0124 refused at ten. **+6 frontend** (608 total), each proven by five mutations before it was trusted. **And the finding for any track**: ADR 0161's `Preview` tag on the lane row is conditioned on a lane other than `Cloud` being selected, which the lock forbids — so it renders only in the gallery. A marker whose only reachable state is one the product never enters is a marker the product does not have |
 | D1a | **done** 2026-08-16 — added 2026-08-11 (ADR 0113), landed as ADR 0164. `core/providers/openrouter.rs` and `core/providers/self_hosted.rs`, both **speech only** and both a base URL on D1's helper — the record's claim, spent and held: neither file contains a transport. **The adapters were the cheap half.** OpenRouter is the first entry to register fewer roles than its drawn row claims, and the seam derived *the lane denies the role* from a capability the registry ties to `entry.chat.is_some()` — so it would have printed *"OpenRouter does not do chat completion"* about a vendor documenting `/chat/completions`. `no_adapter` is answerable per role now, from the drawn `stt`/`llm` boolean against the block. **Two more things it broke and fixed**: `every_registered_vendor_carries_a_row_for_every_role_it_serves` looped `[Speech, Chat]` against its own name and now asks `ProviderEntry::roles()`; and B12's *"neither has an adapter yet"* went half false overnight, so `LockedLanes` is one row per reason with `Your server` reading **adapter built, nowhere to type the endpoint** — the lock is untouched and its reversal is still ADR 0067's own commit. `isSecureEndpoint` existed **nowhere in the tree** and is ported from the donor whole, dotted-quad parser included, because `starts_with("10.")` admits `10.example.com`. The self-hosted lane catalogues nothing, substitutes no default model, bounds no upload and stores no credential — four deliberate absences, each one a place a guess would have read as a measurement. **+26 Rust (864 / 6 ignored) and +5 frontend (613), every case proven by breaking what it guards**; `cargo check` 15; `port:diff` unmoved on both ids and `ALL EXACT` elsewhere — **and unmoved because unreachable**: the gallery opens on `Cloud`, so the corrected Self-hosted rows are never measured, which is B8's cost again |
+| D1b | **done** 2026-08-16 — added the same day out of D1a's own last paragraph, landed as ADR 0165. The lane D1a adapted gets somewhere to type its endpoint: `AppConfig::self_hosted_base_url` and `self_hosted_model` typed on the connection card, the optional bearer token in the OS secret store under `self_hosted.speech.api_key`, and the three environment variables demoted to the fallback for a machine nobody has typed on — **what is typed outranks them**, which is the reverse of ADR 0122's precedence and is deliberate: a field that stores a value the runtime ignores is the false affordance ADR 0067 rule 1 exists to prevent. **The registry invariant is what had to give.** `requires_api_key == credential_kinds.contains(ApiKey)` held only while every lane answered *may* and *must* the same way; `whisper-server` issues no token and speaches and LocalAI may, so the equality becomes an implication plus a behavioural claim — a lane accepting no kind must refuse to store one. **ADR 0067 rule 1 is then reversed for this lane on its own terms** and `LockedLanes` drops the row whose reason is spent rather than rewording it. Three smaller things travel: the lane downgrades a `verbose_json` request to `json`, because it claims no segments and a server that does not know the spelling answers 400 to the whole dictation; `capture.rs` gains the branch that stops a catalogued CLOUD model id being sent to somebody's own server, and it is the only line of that file this step moves; and the screen derives its lane from the stored connection instead of holding lane state, because a machine on its own server that opened `AI Models` on `Cloud` would describe a connection the runtime is not using. **+6 Rust (870 / 6 ignored) and +10 frontend (627 across 45 files), every one made to fail first**; `cargo check` 15; `port:diff` unmoved at `models` 26 \| 248 \| 20 and `models#1` 262 \| 30 \| 16 — **and unmoved because unreachable**, which is B8's cost again (ADR 0159). **Two false sentences were found by rendering the workspace after the suite was green**: the screen's banner still counted three drawn lanes, and the status strip said `Groq cloud` for every non-local connection — wrong for OpenAI since D1 and wrong for this lane now |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |

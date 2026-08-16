@@ -879,6 +879,7 @@ mod tests {
                     available_chat_models: vec!["llama3.2:latest".to_string()],
                     guidance: "Local runtime is ready.".to_string(),
                 }),
+                self_hosted_endpoint: None,
             })),
         );
 

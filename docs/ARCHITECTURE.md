@@ -375,10 +375,16 @@ The active product core lives in `src-tauri/src/core/`.
   (D1a). **Speech only** — the chat role is G3's, and the seam states that gap
   as WordScript's rather than the vendor's.
 - `providers/self_hosted.rs`: an OpenAI-compatible endpoint the user operates
-  (D1a). Configured by `WORDSCRIPT_SELF_HOSTED_BASE_URL` because the lane's
-  drawn controls store nothing yet, and it catalogues no model, substitutes no
-  default and states no upload ceiling — three absences that are the lane rather
-  than gaps in it.
+  (D1a, configured by D1b). The base URL and the model id are `AppConfig` fields
+  typed on the connection card and **outranking**
+  `WORDSCRIPT_SELF_HOSTED_BASE_URL` and `_MODEL`, which stay as the door for a
+  machine nobody has typed on; the optional bearer token is in the OS secret
+  store under `self_hosted.speech.api_key`, because this lane **accepts** a
+  credential and **requires** none (ADR 0165). It catalogues no model,
+  substitutes no default and states no upload ceiling — three absences that are
+  the lane rather than gaps in it — and it downgrades a segment-carrying
+  `response_format` to `json`, because it claims no segments and a server that
+  does not know the spelling answers 400 to the whole request.
 - `providers/groq.rs`: cloud-first production implementation (BYOK, secret
   store, Groq-specific HTTP errors).
 - `providers/local.rs`: local runtime lane with `whisper-cli` for
@@ -775,13 +781,17 @@ Rules:
 - Groq runs as BYOK; the API key lives in the OS secret store; the JSON
   config is scrubbed on save; legacy JSON Groq secrets are migrated natively
   into the secret store.
-- `ProviderStatus` carries typed modes (`fast`, `quality`, `local`, later
+- `ProviderStatus` carries typed modes (`fast`, `quality`, `local`,
   `self_hosted`), provider-axis capabilities (Transcription, Chat-Cleanup,
-  Speech-Synthesis, Prompt-Bias, Language, Segments, Local, API-Key-Required)
-  and the model-axis answer for the model the request named.
+  Speech-Synthesis, Prompt-Bias, Language, Segments, Local, API-Key-Required),
+  the model-axis answer for the model the request named, and one lane-specific
+  block per lane that has one: `local_setup` for the disk, `self_hosted_endpoint`
+  for the user-run server (ADR 0165).
 - `local` and `self_hosted` are not interchangeable labels: `local` is the
-  current on-device path, `self_hosted` is reserved for later user-run
-  remote/LAN services and is not an active lane today.
+  on-device path, `self_hosted` is a user-run remote or LAN service and has been
+  an active speech lane since 2026-08-16. The difference is not cosmetic — one
+  reads a file where it lies, the other posts an upload to a machine this build
+  did not install and cannot inspect.
 - `ProviderCommandError` carries error kind, status, Retry-After,
   `retryable` and a `user_action` so runtime events and settings use the same
   recovery semantics.

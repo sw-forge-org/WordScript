@@ -1155,6 +1155,35 @@ pub struct AppConfig {
     /// existed needs no migration.
     #[serde(default)]
     pub local_model_dirs: Vec<String>,
+    /// The OpenAI-compatible server the `Your server` lane posts to, as a base
+    /// URL (D1b, ADR 0165).
+    ///
+    /// **Machine-wide, and not a secret.** The endpoint belongs to this
+    /// installation rather than to the writing style that happens to use it —
+    /// the argument `local_model_dirs` above already carries — and a URL
+    /// authenticates nothing, so it does not go near `without_secrets`. The
+    /// optional bearer token that may accompany it is a credential and lives in
+    /// the OS secret store instead, under `self_hosted.speech.api_key`.
+    ///
+    /// **What is typed here outranks `WORDSCRIPT_SELF_HOSTED_BASE_URL`**, which
+    /// is the reverse of `WORDSCRIPT_LOCAL_MODEL_DIR`'s precedence and is
+    /// deliberate: a field that stores a value the runtime then ignores is the
+    /// false affordance ADR 0067 rule 1 exists to prevent. The environment is
+    /// where a machine starts, not where it wins.
+    ///
+    /// Additive: absent reads as empty, so a config written before this field
+    /// existed needs no migration.
+    #[serde(default)]
+    pub self_hosted_base_url: String,
+    /// The model id that server is told to use when a job names none (D1b).
+    ///
+    /// **Empty is the ordinary state of a fresh install and is not a default
+    /// waiting to be filled in.** Nothing in this build knows what somebody
+    /// else's server serves, so a job that names no model is refused with the
+    /// door named rather than sent with a guess attached —
+    /// `providers::self_hosted::resolve_model` is where that refusal lives.
+    #[serde(default)]
+    pub self_hosted_model: String,
     pub hotkey: String,
     pub pause_hotkey: String,
     pub abort_hotkey: String,
@@ -1299,6 +1328,8 @@ impl Default for AppConfig {
                 best_of: default_local_best_of,
             }],
             local_model_dirs: Vec::new(),
+            self_hosted_base_url: String::new(),
+            self_hosted_model: String::new(),
             hotkey: default_hotkey().to_string(),
             pause_hotkey: default_pause_hotkey().to_string(),
             abort_hotkey: default_abort_hotkey().to_string(),

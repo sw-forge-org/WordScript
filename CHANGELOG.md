@@ -53,6 +53,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Your server has somewhere to type its endpoint, and can be chosen (ADR 0165)
+
+- **Type the URL of your own server on the screen that offers it.**
+  `Settings → AI Models → Connection` takes the base URL of an
+  OpenAI-compatible server — whisper.cpp's `whisper-server`, speaches, LocalAI —
+  the model id it serves, and an optional bearer token. Nothing needs an
+  environment variable any more.
+- **And that lane can be picked.** It was greyed out with *adapter built,
+  nowhere to type the endpoint* for exactly one evening. A lane is offered when
+  it can be operated, so it is offered now, and the Connection card's withheld
+  rows are down to the two that are genuinely withheld: `Local` waits on its
+  release phase, `Enterprise` has no adapter at all.
+- **The token is optional and stays optional.** `whisper-server` issues none;
+  speaches and LocalAI may. WordScript stores one if you have one — in the OS
+  secret store, never in the config file — and the lane is ready without it.
+- **What you type wins over what the shell exports.**
+  `WORDSCRIPT_SELF_HOSTED_BASE_URL`, `_MODEL` and `_TOKEN` still work and are
+  now the fallback rather than the only way in; when one of them is what a
+  request would use, the row says so and shows the value.
+- **A refused address says what is wrong with it and keeps what you typed.**
+  Plain HTTP to a public host is not sent audio or a token; a LAN, loopback,
+  `.local` or tailnet address over plain HTTP is fine, because that is the
+  ordinary case for a machine you run.
+- **The reachability probe runs when you press it and not when the screen
+  opens.** A settings page that pings your private server every time you look
+  at it is making network decisions for you; until you press `Test` the row says
+  `Not tested`, which is a third answer rather than a pessimistic one.
+- **Every job on this lane sends the model id the connection holds**, and a job
+  with no id is refused with the reason rather than sent with a guess. A server
+  behind a URL publishes no list to pick from, which is why the field is typed.
+- **The status strip along the bottom edge names the connection it is on.** It
+  said `Groq cloud` for every connection that was not local — including OpenAI,
+  since that became selectable — over a model field the lane is not even sent.
+
 ### Changed — Privacy says which things a retention rule keeps, and what may read them (ADR 0138)
 
 - **The retention rules name their collection.** `Settings → Privacy & Data`

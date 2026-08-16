@@ -648,6 +648,57 @@ pub struct LocalProviderSetupStatus {
     pub guidance: String,
 }
 
+/// Which of the two doors supplied the `Your server` lane's endpoint
+/// (D1b, ADR 0165).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SelfHostedSource {
+    /// Typed on the connection card and stored in `AppConfig`. It outranks the
+    /// environment, which is what makes the field on that card honest.
+    Config,
+    /// Read from the environment — where a machine nobody has typed on starts,
+    /// and where every installation configured before D1b still is.
+    Environment,
+    /// Neither door answered.
+    Unset,
+}
+
+/// The `Your server` lane's endpoint as the runtime resolved it (D1b, ADR 0165).
+///
+/// **A lane-specific block on the shared status, exactly as `local_setup` is
+/// one**, and for the same reason: the question is real, it is one lane's, and
+/// folding it into a field that means something else is how a screen ends up
+/// with two facts under one name.
+///
+/// **It exists so no surface has to derive the precedence for itself.** A
+/// second implementation of *typed outranks environment* in TypeScript would
+/// print a URL that is not the one in force the first time the order changed —
+/// and this screen has grown four separate copies of one fact already
+/// (ADR 0160, 0161, 0162, 0164).
+///
+/// It carries no token and no preview of one: what is stored for this lane is a
+/// credential and travels where every other credential does, in
+/// `role_credentials`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SelfHostedEndpointStatus {
+    /// The base URL that would be used — **including one that was refused**,
+    /// because a row that blanked what the user typed would ask them to fix
+    /// something it declined to show them. `None` when neither door answered.
+    pub base_url: Option<String>,
+    pub base_url_source: SelfHostedSource,
+    /// Why this URL cannot be used, when it cannot.
+    ///
+    /// **The parts of the fold, not a second copy of it.** `RoleCredentialStatus::missing`
+    /// answers *why can this lane not run a job* in one sentence, which is what
+    /// the job rows read; the connection card has one row per thing that can be
+    /// wrong and has to know WHICH is. That is the same relationship
+    /// `credential` and `role_credentials` already have on this struct.
+    pub base_url_problem: Option<String>,
+    /// The model id sent when a job names none, and where it came from.
+    pub model: Option<String>,
+    pub model_source: SelfHostedSource,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderStatus {
     pub provider: String,
@@ -673,6 +724,9 @@ pub struct ProviderStatus {
     /// be that drawing.
     pub role_credentials: Vec<RoleCredentialStatus>,
     pub local_setup: Option<LocalProviderSetupStatus>,
+    /// The `Your server` lane's endpoint, and `None` for every other lane
+    /// (D1b, ADR 0165) — the shape `local_setup` has for the disk.
+    pub self_hosted_endpoint: Option<SelfHostedEndpointStatus>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

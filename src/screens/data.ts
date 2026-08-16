@@ -342,7 +342,13 @@ export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, La
     },
   },
   "Self-hosted": {
-    provider: "your server",
+    /* THE LANE'S OWN NAME, CAPITALISED, AND IT IS NOT A STYLE CHANGE (D1b).
+       It is the key the seam resolves to `self_hosted` — `LANE_LABEL` and
+       `RUNTIME_IDS` agree on this spelling — so a job on this lane asks the
+       runtime about the lane it is on rather than about a string nothing
+       registers. Nothing renders it: `conn` is drawn on the Cloud and
+       Enterprise rows only, which is why `port:diff` cannot see this. */
+    provider: "Your server",
     /* NO CATALOGUE ROWS, AND THAT IS THE LANE. "typed on the endpoint" is a
        sentence standing where a model id would, not a model id — the server is
        the user's and its model list belongs to whoever runs it, which is the

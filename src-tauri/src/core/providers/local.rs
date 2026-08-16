@@ -306,6 +306,7 @@ fn provider_status(
         model_capabilities,
         role_credentials,
         local_setup: Some(local_setup),
+        self_hosted_endpoint: None,
     })
 }
 

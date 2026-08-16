@@ -38,9 +38,9 @@ Status: 2026-08-16
   refuses during a session because the runtime does; the overlay's deep link
   resolves. **Fully wired:** About & Updates, Diagnostics, General, Delivery &
   Insert, Hotkeys, History, Privacy & Data, **Profiles**. **Wired in part, each
-  stating on itself exactly what it cannot read:** AI Models (one integrated
-  lane of four), Home (two of the decision inbox's three sources have no
-  receiver). **Not wireable at all**, and carrying a banner for that reason
+  stating on itself exactly what it cannot read:** AI Models (two operable lanes
+  of four since 2026-08-16 — Cloud and `Your server`), Home (two of the decision
+  inbox's three sources have no receiver). **Not wireable at all**, and carrying a banner for that reason
   rather than for a missing commit: Context (V2), Notes & Meetings (V2), Agents
   (Phase 8, ADR 0030), Integrations (Phase 8).
 - **The profile health flag acts, and Profiles lost its banner with it**
@@ -121,7 +121,10 @@ Status: 2026-08-16
   theme rows write it;
   before 2026-08-10 they changed the window and persisted nothing.
 - **A control the runtime cannot answer for is drawn and inert rather than
-  deleted** (ADR 0065, ADR 0067): three of four provider lanes, **four of seven
+  deleted** (ADR 0065, ADR 0067): **two of four provider lanes since 2026-08-16
+  and it was three** — `Your server` is typed into and picked like any other
+  connection now (D1b, ADR 0165), while `Local` waits on ROADMAP Phase 5 and
+  `Enterprise` has no adapter — **four of seven
   Cloud provider chips** (Groq and OpenAI can be picked since D1, 2026-08-12;
   **OpenRouter since D1a, 2026-08-16, for the listening jobs only** — its chat
   role is G3's and the writing rows say so as WordScript's gap rather than the
@@ -303,6 +306,15 @@ Status: 2026-08-16
   (ADR 0126, ADR 0127, 2026-08-12). OpenAI serves recognition and chat; the
   transport and the credential store behind both cloud lanes are one
   implementation and every vendor policy is the adapter's own
+- **`Your server` as an operable speech lane** (D1a, D1b; ADR 0164, ADR 0165,
+  2026-08-16). An OpenAI-compatible endpoint the user runs — `whisper-server`,
+  speaches, LocalAI — with the base URL and the model id typed on the connection
+  card and stored in `AppConfig`, an **optional** bearer token in the OS secret
+  store, and `WORDSCRIPT_SELF_HOSTED_BASE_URL`/`_MODEL`/`_TOKEN` kept as the
+  fallback for a machine nobody has typed on. Plain HTTP is refused to a public
+  host and accepted on a LAN, loopback or tailnet address, and the refusal
+  happens before a token is read. No catalogue, no substituted default model, no
+  borrowed upload ceiling
 - `local` as a full local runtime lane over external `whisper-cli`,
   local ggml models and local Ollama cleanup (STT plus cleanup, not STT-only)
 - **in-app model installation for that lane** (ADR 0122, built as ADR 0158,

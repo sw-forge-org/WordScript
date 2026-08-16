@@ -15,6 +15,7 @@ import {
   WindowShell,
 } from "@/components/shell";
 import { runtimeDefault } from "@/lib/modelCatalogue";
+import { drawnNameFor, SELF_HOSTED_PROVIDER_ID } from "@/lib/providerSeam";
 import { useColorScheme, type ColorScheme } from "@/hooks/useColorScheme";
 import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useNavRail } from "@/hooks/useNavRail";
@@ -333,10 +334,28 @@ export default function WorkspaceWindow() {
      finished. So the strip keeps stating it — a config that says local is what
      is running and hiding that would be the lie — and marks it. ADR 0121
      renamed the lane and left this rule exactly where it was. */
+  /* AND THE CLOUD BRANCH NAMED ONE VENDOR FOR ALL OF THEM (D1b, ADR 0165).
+     `Groq cloud · {model}` was the only other answer this strip had, so a
+     machine connected to OpenAI has read *Groq cloud* since D1 made that
+     connection selectable — and a machine connected to its own server would
+     have read it too, over `form.model`, which is the CLOUD model field and not
+     the id that server is sent.
+
+     **It reads the STORED id rather than `selectedProvider` above**, which
+     collapses every cloud vendor onto `groq` because `useProvider` and the
+     credential chip beside it still take the two-valued `ProviderId` D1 left.
+     Widening that is the credential chip's own question and not this strip's;
+     what this strip owes is the name of the connection, and it has it. */
+  const connectionProvider = resolveJobProvider(
+    resolveActiveTextProfile(providerSource ?? form),
+    "dictation",
+  ).provider;
   const lane =
-    selectedProvider === "local"
+    connectionProvider === "local"
       ? `Local runtime · ${form.local_model} · preview`
-      : `Groq cloud · ${form.model}`;
+      : connectionProvider === SELF_HOSTED_PROVIDER_ID
+        ? `Your server · ${form.self_hosted_model || "no model id"}`
+        : `${drawnNameFor(connectionProvider) ?? "Groq"} cloud · ${form.model}`;
   const work = activeProfile.work_mode;
   const target = work?.insert_behavior === "clipboard_only" ? "Clipboard only" : "Insert at cursor";
   const mode = work?.processing_mode ?? "auto";

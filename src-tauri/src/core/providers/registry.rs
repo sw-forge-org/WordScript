@@ -444,23 +444,55 @@ mod tests {
         }
     }
 
-    /// **A lane that needs no credential says so, and one that needs a key says
-    /// which kind.** `requires_api_key` and the accepted kinds are the same
-    /// claim from two directions, and a lane that disagreed with itself would
-    /// draw a key row nothing can be stored in — or hide one that is required.
+    /// **A lane that demands a key accepts one, and a lane that accepts no kind
+    /// can store nothing** (D1b, ADR 0165).
+    ///
+    /// **This was one equality and the equality was wrong.**
+    /// `requires_api_key == kinds.contains(ApiKey)` held for as long as every
+    /// registered lane answered *may* and *must* the same way, and it read as
+    /// one claim from two directions because no counterexample existed yet.
+    /// `self_hosted` is the counterexample: it **accepts** a bearer token,
+    /// because speaches and LocalAI may issue one, and **requires** none,
+    /// because `whisper-server` issues none at all. Under the equality that
+    /// lane had to pick a side, and each side is a false statement about the
+    /// commonest server behind it.
+    ///
+    /// **The implication is the half that was ever load-bearing**: a lane that
+    /// demands a credential while accepting no kind for it is a lane nobody can
+    /// configure. The other direction is not dropped but strengthened — an
+    /// empty list now has to mean the save door refuses, which is a claim about
+    /// behaviour rather than two booleans agreeing with each other. `local` is
+    /// the lane it runs against, and its refusal writes nothing anywhere.
     #[test]
-    fn the_accepted_kinds_agree_with_the_stated_credential_requirement() {
+    fn a_lane_that_demands_a_key_accepts_one_and_a_lane_that_accepts_none_stores_none() {
         for entry in REGISTRY {
             let kinds = entry.provider.credential_kinds();
 
-            assert_eq!(
-                entry.provider.capabilities().requires_api_key,
-                kinds.contains(&CredentialKind::ApiKey),
-                "{} states requires_api_key={} and accepts {:?}",
-                entry.id,
-                entry.provider.capabilities().requires_api_key,
-                kinds,
-            );
+            if entry.provider.capabilities().requires_api_key {
+                assert!(
+                    kinds.contains(&CredentialKind::ApiKey),
+                    "{} demands an API key and accepts {:?}",
+                    entry.id,
+                    kinds,
+                );
+            }
+
+            if kinds.is_empty() {
+                let role = entry
+                    .roles()
+                    .first()
+                    .copied()
+                    .expect("a registered entry serves at least one role");
+
+                assert!(
+                    entry
+                        .provider
+                        .save_api_key(role, CredentialKind::ApiKey, "a-key-nobody-asked-for")
+                        .is_err(),
+                    "{} accepts no credential kind and took one anyway",
+                    entry.id,
+                );
+            }
         }
     }
 

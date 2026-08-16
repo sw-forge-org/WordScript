@@ -820,12 +820,15 @@ speak it.**
   sentences on `dictation`, `meetings` and `upload` (`src/screens/data.ts`) now
   carry the typed model id the lane's writing jobs already had. Disagreement 10
   below is closed.
-- **What is missing after that is the configuration, and it is a different
-  sentence.** The URL, the token and the model id drawn on this lane store
-  nowhere, so the endpoint is read from `WORDSCRIPT_SELF_HOSTED_BASE_URL` (with
-  `_MODEL` and `_TOKEN` beside it) and the lane stays locked under ADR 0067
-  rule 1. `LockedLanes` on the connection card states it; nothing on this page
-  should be read as saying the lane is selectable.
+- **And the configuration landed the same day as D1b** (ADR 0165). The base URL
+  and the model id are `AppConfig` fields typed on the connection card;
+  `WORDSCRIPT_SELF_HOSTED_BASE_URL`, `_MODEL` and `_TOKEN` remain as the door
+  for a machine nobody has typed on and are **outranked** by what is typed, with
+  the status naming which of the two answered. The optional bearer token is in
+  the OS secret store under `self_hosted.speech.api_key` — this lane **accepts**
+  a credential and **requires** none, which is the pair the registry used to
+  hold equal. The lane is selectable: ADR 0067 rule 1 says an offered lane must
+  be operable, and it is.
 - **The credential shape does not change.** Base URL, typed model id, optional
   token is what the lane already carries, and it is what a transcription call on
   this path needs. This is the cheapest capability this document found. **The
@@ -1225,11 +1228,11 @@ and ADR 0109's rule points the same way.
     about the world with a true one about WordScript — *the adapter is not built
     yet* — and named the step that would spend it. **D1a is that step**: the
     lane has a `SpeechProvider`, and the three rows now carry the typed model id
-    its five writing jobs have carried since Leg 6. What is still missing moved
-    with it and is a different sentence: the lane's URL, token and model id are
-    drawn controls that store nowhere, so it is configured by
-    `WORDSCRIPT_SELF_HOSTED_BASE_URL` and stays locked under ADR 0067 rule 1 —
-    stated on the connection card rather than on eight job rows. The original
+    its five writing jobs have carried since Leg 6. What was still missing moved
+    with it and was a different sentence — the lane's URL, token and model id
+    stored nowhere — and **that half closed the same day as D1b** (ADR 0165):
+    they are typed on the connection card, the environment variables became the
+    fallback rather than the only door, and the lane is offered. The original
     entry follows.
 
     **The Self-hosted lane's drawn refusal of the listening jobs is wrong.**

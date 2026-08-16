@@ -51,6 +51,8 @@ import type {
  * lands under a different spelling fails here rather than reading as a vendor
  * with no adapter forever.
  */
+export const SELF_HOSTED_PROVIDER_ID = "self_hosted";
+
 export const RUNTIME_IDS: Record<string, string> = {
   Groq: "groq",
   OpenAI: "openai",
@@ -66,6 +68,14 @@ export const RUNTIME_IDS: Record<string, string> = {
      written to prevent. */
   "Azure OpenAI": "azure_openai",
   "GCP Vertex AI": "vertex",
+  /* NOT A CHIP, AND STILL A NAME THE SEAM HAS TO ANSWER FOR (D1b, ADR 0165).
+     `Your server` is a lane rather than a vendor on the provider row — nothing
+     in `PROVIDERS` draws it — but a job on that lane still asks *can this run*,
+     and without an id here the answer was built for the string `your server`
+     and came back *no adapter*: a false sentence about a lane whose adapter
+     landed in D1a. The label is `LANE_LABEL["Self-hosted"]` and the id is what
+     the registry answers with. */
+  "Your server": SELF_HOSTED_PROVIDER_ID,
 };
 
 /** Every drawn name, with the id this build would ask the runtime by. */
@@ -85,6 +95,42 @@ export function runtimeIdFor(drawnName: string): string | undefined {
  */
 export function drawnNameFor(providerId: string): string | undefined {
   return Object.keys(RUNTIME_IDS).find((name) => RUNTIME_IDS[name] === providerId);
+}
+
+/**
+ * The vendor a lane IS, where the lane is the vendor (D1b, ADR 0165).
+ *
+ * **Two lanes have no chip row because there is nothing to choose between**:
+ * `Local` is a runtime on this disk and `Your server` is a URL you operate, so
+ * the lane and the vendor are one thing. Every other lane draws its vendors in
+ * `PROVIDERS` and this map is empty for them.
+ *
+ * **`Local` is deliberately absent from the seam's read** — see
+ * `useProviderSeam`, which is the only caller that treats this as a list to ask
+ * the runtime about. Its status probes the disk, and `useLocalSetup` already
+ * does that once for both tabs (ADR 0124).
+ */
+export const LANE_PROVIDER_IDS: Partial<Record<LaneName, string>> = {
+  "Self-hosted": SELF_HOSTED_PROVIDER_ID,
+  Local: "local",
+};
+
+/**
+ * Which lane a stored connection puts the card on (D1b).
+ *
+ * **The lane stopped being a thing the screen remembers and became a thing the
+ * config says.** A machine dictating through its own server that opened `AI
+ * Models` on the Cloud card would be describing somebody else's connection —
+ * and every row under it would belong to a lane the runtime is not using.
+ */
+export function laneForProviderId(providerId: string): LaneName {
+  const lane = (Object.keys(LANE_PROVIDER_IDS) as LaneName[]).find(
+    (name) => LANE_PROVIDER_IDS[name] === providerId,
+  );
+  if (lane) return lane;
+
+  const drawnName = drawnNameFor(providerId);
+  return PROVIDERS.find((provider) => provider.name === drawnName)?.lane ?? "Cloud";
 }
 
 /**

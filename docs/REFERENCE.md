@@ -220,13 +220,16 @@ constants themselves were not re-derived and carry their own provenance
 - `local` means a local or on-device runtime path without a WordScript
   backend; at WordScript this is currently the `local` lane with a
   local runner, local model path and local cleanup endpoint.
-- `self_hosted` is not an active product lane yet; the term stays reserved
-  for later user-run remote or LAN services that would not be WordScript's
-  own hosted mode. **When it becomes one it carries speech as well as chat**
-  (ADR 0113): `/v1/audio/transcriptions` is a de-facto standard that
-  whisper.cpp's own `whisper-server` answers, so the lane's drawn refusal of
-  the listening jobs is a wrong sentence waiting on the gallery, not a
-  property of the lane. Synthesis on that lane is unread and unclaimed.
+- `self_hosted` is **an active speech lane since 2026-08-16** and means a
+  user-run remote or LAN service, never WordScript's own hosted mode. It carries
+  speech and not chat (ADR 0113, ADR 0164): `/v1/audio/transcriptions` is a
+  de-facto standard that whisper.cpp's own `whisper-server` answers, and a chat
+  endpoint behind a user's URL is G3's. Synthesis on that lane is unread and
+  unclaimed. **Its configuration lives in three places and each one is
+  deliberate** (ADR 0165): the base URL and the model id in `AppConfig`, typed
+  on the connection card; the optional bearer token in the OS secret store; and
+  `WORDSCRIPT_SELF_HOSTED_BASE_URL`, `_MODEL`, `_TOKEN` as the fallback for a
+  machine nobody has typed on, outranked by what is typed.
 - these terms must not be conflated in UI and docs while the second
   production lane and the guided setup path are still missing.
 - **The surface reads `Self-hosted` as *Your server*, and stores it unchanged**

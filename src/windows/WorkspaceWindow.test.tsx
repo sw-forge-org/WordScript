@@ -155,6 +155,33 @@ describe("WorkspaceWindow", () => {
     expect(strip).toHaveTextContent(`Groq cloud · ${CONFIG.model}`);
     expect(strip).toHaveTextContent("Insert at cursor");
   });
+
+  /**
+   * **AND IT NAMES THE CONNECTION IT IS ON** (D1b, ADR 0165).
+   *
+   * The strip had two answers — `Local runtime` and `Groq cloud` — because
+   * `selectedProvider` collapses every cloud vendor onto `groq`. A machine
+   * connected to its own server therefore read **Groq cloud · whisper-large-v3**
+   * along the one edge of the window that is never scrolled away: the wrong
+   * vendor over a model field that lane is not even sent. Found by rendering
+   * the workspace and looking at it, which is the fifth time on this surface.
+   */
+  it("names the self-hosted connection rather than calling it Groq", async () => {
+    const config = createAppConfig({ self_hosted_model: "faster-whisper-medium" });
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "self_hosted", overrides: {} };
+    runtimeConfig = config;
+
+    const { container } = render(<WorkspaceWindow />);
+    await waitFor(() =>
+      expect(container.querySelector(".ws-win-foot")).toHaveTextContent(
+        "Your server · faster-whisper-medium",
+      ),
+    );
+    expect(container.querySelector(".ws-win-foot")).not.toHaveTextContent("Groq cloud");
+  });
 });
 
 /**

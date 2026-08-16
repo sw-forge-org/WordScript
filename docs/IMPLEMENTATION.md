@@ -32,7 +32,7 @@ updated; a kick-off is spent when its unit closes.
 | --- | --- | --- | --- | --- |
 | **GUI port** | 2026-08-04 | **Leg 14 open**; Legs 0–13b closed. Leg 13 split 2026-08-14 and both halves closed | [`tracks/gui-port-relay.md`](tracks/gui-port-relay.md) | [`tracks/gui-port-relay-kickoff.md`](tracks/gui-port-relay-kickoff.md) |
 | **Core hardening** | 2026-08-10 | **Third pass open**; two passes closed. Two steps added 2026-08-13 with a sixth record | [`tracks/core-hardening.md`](tracks/core-hardening.md) | the same file — it is both |
-| **Speech** | 2026-08-11 | **Stage A closed, Stage B running, Stage D opened**; 16 of ~27 steps done, and two more lanes can transcribe — one of which still has nowhere to type its endpoint | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
+| **Speech** | 2026-08-11 | **Stage A closed, Stage B running, Stage D opened**; 17 of ~28 steps done, and `Your server` is a lane a user can type a URL into and pick | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of seven done 2026-08-14.** Only step 6 is open, and it waits on one natural capture event and nothing else | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
@@ -116,7 +116,7 @@ the sequence carry it and the closing-phrase artifact found beside it.
 The capability layer four drawn surfaces wait on: providers, streaming
 recognition, the spoken output path, and the windows that carry them.
 
-Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**–**0164**.
+Owns ADR 0094–0102, 0105–0110, 0113–0122, 0124, 0126–0132, **0157**–**0165**.
 
 **Its first stage was documentation only** — [`PROVIDERS.md`](PROVIDERS.md) and
 fifteen records, no code — and the plan exists because those records order the
@@ -132,8 +132,9 @@ the point of use)**, **B5 (in-app model installation)**, **B8 (that library at
 scale, and the model the catalogue does not know)**, **B9 (what that
 surface is allowed to call a server)**, **B10 (the drawn rows on it saying
 so)**, **B11 (why it has two tabs, and the lane that was restating one of
-them)**, **B12 (why the lane it installs for still cannot be chosen)**, and
-**D1a (OpenRouter and Your server, on the shape D1 extracted)**.
+them)**, **B12 (why the lane it installs for still cannot be chosen)**,
+**D1a (OpenRouter and Your server, on the shape D1 extracted)**, and **D1b (the
+somewhere to type that server's endpoint, and the lock coming off it)**.
 
 Next unblocked: **B2**, **B4**, **E1**, and
 **D3** — whose `Requires` line
@@ -214,6 +215,37 @@ satisfied by fabricating data**. And B12's *"neither has an adapter yet"* was
 true the evening it was written and half false the next morning: **a sentence
 naming two subjects because one reason covered both is a sentence that breaks
 when either subject moves.**
+
+**D1b landed the same evening and it is D1a's own last paragraph made a step**
+(ADR 0165). That record left the lane expert configuration and named what it
+left open — *where a base URL and an optional token get stored* — and this is
+the answer: the URL and the model id are `AppConfig` fields typed on the
+connection card, the optional token is in the OS secret store, and the three
+environment variables become the fallback for a machine nobody has typed on.
+**What is typed outranks them**, which is the reverse of `WORDSCRIPT_LOCAL_MODEL_DIR`'s
+precedence and is deliberate: a field that stores a value the runtime ignores is
+the false affordance ADR 0067 rule 1 exists to prevent. The lane is then offered,
+because that rule says an offered lane must be operable and it is — and
+`LockedLanes` drops the row whose reason is spent rather than rewording it.
+
+**The finding is for any registry, not just this one.** `requires_api_key` and
+`credential_kinds` were held EQUAL by a test, on the reading that they are one
+claim from two directions. They are two questions — *must* and *may* — and this
+lane is the first to answer them differently: `whisper-server` issues no token,
+speaches and LocalAI may. **An equality that has never met a counterexample is a
+coincidence with a test around it**, and the counterexample arrives as a lane
+that has to choose which of two true things to state falsely.
+
+**And two sentences elsewhere in the product went false the moment the lane
+became reachable.** The screen's banner still counted *three* drawn lanes; the
+status strip along the bottom edge of every view said `Groq cloud · {model}` for
+any connection that is not `local` — wrong for OpenAI since D1 made that
+connection selectable, and now wrong over a model field this lane is not even
+sent. **Both were found by rendering the workspace and reading it**, which is
+the sixth defect on this surface found that way after a green suite. The
+technique had to change: `import -window` refuses on this machine, so what
+replaced it is the real component tree over the dev server with
+`__TAURI_INTERNALS__` stubbed, driven headless through CDP.
 
 **The finding is for any track that marks a state.** ADR 0161 put a `Preview`
 tag on the lane row conditioned on the selected lane not being `Cloud` — and
@@ -337,7 +369,8 @@ say which of its rows are drawings, and **0162 with B11**, which answers why AI
 Models has two tabs and removes the duplication that made 0160 and 0161 each
 land twice, plus **0163 with B12** — the withheld lane stating what the
 product owes apart from what the disk already has — and **0164 with D1a**, the
-first entry to register fewer roles than its drawn row claims, so **0165 is the
+first entry to register fewer roles than its drawn row claims, plus **0165 with
+D1b**, the lane that accepts a credential and requires none, so **0166 is the
 next free number**.
 
 **A sixth record closed on 2026-08-15 without ever being a step.** The GUI port

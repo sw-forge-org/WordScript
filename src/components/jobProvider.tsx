@@ -33,6 +33,7 @@ import {
   resolveUploadAnswer,
   roleForDrawnCapability,
   runtimeIdFor,
+  SELF_HOSTED_PROVIDER_ID,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
 import { useProviderSeam } from "@/hooks/useProviderSeam";
@@ -377,6 +378,16 @@ export function Follows({
       ? answer.reason.sentence
       : undefined;
 
+  /* WHAT THE `Your server` LANE IS ACTUALLY POINTED AT (D1b, ADR 0165).
+     `null` in the gallery, which is what keeps the two rows below drawn exactly
+     as the prototype drew them; an object under a runtime, even before the
+     status has arrived — the difference between *not read yet* and *not set* is
+     one this screen already spells out elsewhere (ADR 0160). */
+  const wiredServer =
+    wired && lane === "Self-hosted"
+      ? { endpoint: answers.statuses[SELF_HOSTED_PROVIDER_ID]?.self_hosted_endpoint ?? null }
+      : null;
+
   /* The provider row only exists where there is a provider to pick. On
      Local the choice is a file and on Self-hosted it is a URL, so offering
      "which company" there would be furniture with nothing behind it. */
@@ -433,6 +444,21 @@ export function Follows({
             </span>
           }
         />
+      ) : wiredServer ? (
+        /* THE ENDPOINT THIS JOB WOULD ACTUALLY POST TO (D1b, ADR 0165). It was
+           the literal `http://10.0.0.2:8080/v1` — harmless while the lane could
+           not be selected, and a row stating somebody else's LAN address the
+           moment it could. The drawn one stays below, because that is what
+           `port:diff` measures. */
+        <Row
+          label="Endpoint"
+          hint="The server set on the connection above. Every job on this lane posts to it."
+          control={
+            <span className="ws-mono ws-muted">
+              {wiredServer.endpoint ? (wiredServer.endpoint.base_url ?? "Not set") : "Not read"}
+            </span>
+          }
+        />
       ) : (
         <Row
           label="Endpoint"
@@ -443,7 +469,23 @@ export function Follows({
 
   const modelAndKeyRows = (
     <>
-      {lane === "Self-hosted" ? (
+      {lane === "Self-hosted" && wiredServer ? (
+        /* ONE ID PER SERVER, AND THE ROW STATES IT RATHER THAN OFFERING TO TAKE
+           A SECOND (D1b, ADR 0165). The drawn field promises a per-job model id
+           and nothing stores one: the capture puts the connection's id on every
+           request this lane makes. A field that accepts a value the runtime
+           will not read is the false affordance ADR 0067 rule 1 is about, and
+           the honest row is the value with the door to where it is set. */
+        <Row
+          label="Model id"
+          hint="One per server, set on the connection above — your server publishes no list, so every job on this lane sends the same typed id."
+          control={
+            <span className="ws-mono ws-muted">
+              {wiredServer.endpoint ? (wiredServer.endpoint.model ?? "Not set") : "Not read"}
+            </span>
+          }
+        />
+      ) : lane === "Self-hosted" ? (
         <Row
           label="Model id"
           hint="Not discoverable on every server, so it is typed rather than picked."

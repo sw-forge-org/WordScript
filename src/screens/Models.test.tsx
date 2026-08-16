@@ -162,15 +162,25 @@ async function modelRowOf(job: string): Promise<HTMLElement> {
 }
 
 describe("AI Models, wired", () => {
-  it("keeps all four lanes drawn and lets only the integrated one be chosen", async () => {
+  it("keeps all four lanes drawn and lets the two operable ones be chosen", async () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const lane = screen.getByRole("group", { name: "Lane" });
     /* ADR 0065 part 1: no lane is deleted or moved. Asked by LABEL rather than
        by identifier since ADR 0160 — `Self-hosted` is stored and `Your server`
-       is read, and what this case is about is what the user can reach. */
+       is read, and what this case is about is what the user can reach.
+
+       **`Your server` JOINED CLOUD IN D1b** (ADR 0165). The rule was never
+       *only the integrated lane*, which is what this case used to be called; it
+       is ADR 0067 rule 1 — a lane that is offered must be operable. That lane
+       now stores a URL, an optional token and a model id, so it is offered.
+       The two that stay disabled stay for their own reasons, one per row on
+       `LockedLanes`. */
     expect(within(lane).getByRole("button", { name: LANE_LABEL.Cloud })).not.toBeDisabled();
-    for (const lane_ of ["Local", "Self-hosted", "Enterprise"] as const) {
+    expect(
+      within(lane).getByRole("button", { name: LANE_LABEL["Self-hosted"] }),
+    ).not.toBeDisabled();
+    for (const lane_ of ["Local", "Enterprise"] as const) {
       expect(
         within(lane).getByRole("button", { name: LANE_LABEL[lane_] }),
         lane_,
@@ -1508,7 +1518,6 @@ describe("A lane that is locked says why", () => {
      true of both; the self-hosted adapter lands here, so the two lanes stop
      being withheld for the same reason and stop sharing a row. */
   const NO_ADAPTER_ROW = /no adapter yet, so there is nothing behind it/;
-  const NO_CONFIG_ROW = /store nowhere/;
 
   it("says a ready machine is withheld by the product and not by the disk", async () => {
     withSetup(READY);
@@ -1580,69 +1589,40 @@ describe("A lane that is locked says why", () => {
   });
 
   /**
-   * **THE ROW D1a HAD TO TOUCH, AND WHY THIS STEP OWNS IT** (ADR 0164).
+   * **THE ROW THAT LASTED ONE EVENING** (ADR 0164, then ADR 0165).
    *
    * B12 wrote *"Neither has an adapter yet"* over `Your server` and
-   * `Enterprise` and it was true the evening it was written. D1a builds the
-   * self-hosted speech adapter, which makes exactly half of that sentence
-   * false — and a false sentence on this card is the defect ADR 0160 through
-   * ADR 0163 corrected four times, three of them caught by reading the rendered
-   * screen after the suite was green.
+   * `Enterprise`; D1a built the adapter and replaced that with *adapter built,
+   * nowhere to type the endpoint*; D1b is the somewhere. **A withheld row is
+   * only ever as true as the reason it names**, and when the reason is spent
+   * the row does not get a softer sentence — the lane comes back.
    *
-   * **The successor sentence is not "now selectable".** The adapter exists; the
-   * configuration does not. The URL, the token and the model id on this lane
-   * are `DrawnField`s that store nowhere, so an endpoint reaches the runtime
-   * only through an environment variable, and offering the lane would be a
-   * control that accepts a click and then asks for something the screen cannot
-   * take — ADR 0067 rule 1, the very thing the lock exists for.
+   * The absence is asserted three ways, because a row can disappear for the
+   * wrong reason: the sentence is gone, the lane is offered, and the two lanes
+   * that are still withheld still say why they are.
    */
-  it("says the self-hosted lane has an adapter and no configuration, not that it has neither", async () => {
+  it("has no row for the lane whose reason for being withheld is gone", async () => {
     withSetup(READY);
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const server = await rowSaying(NO_CONFIG_ROW);
-    /* What is built is named, so the row is not read as "nothing here yet". */
-    expect(within(server).getByText(/adapter/)).toBeInTheDocument();
-    expect(within(server).getByText("No configuration")).toBeInTheDocument();
-    expect(within(server).getByText("Preview")).toBeInTheDocument();
-
-    /* AND B12'S SENTENCE IS GONE FROM THE WHOLE SCREEN, not merely from this
-       row. It is the sentence a reader would have believed. */
+    await rowSaying(WITHHELD);
+    expect(screen.queryByText(/store nowhere/)).toBeNull();
+    expect(screen.queryByText("No configuration")).toBeNull();
     expect(screen.queryByText(/Neither has an adapter/)).toBeNull();
 
-    /* AND THE LOCK STILL HOLDS. Reversing it is ADR 0067's own question and
-       belongs to the commit that finishes the lane, not to the one that gives
-       it an adapter. */
+    /* AND THE LANE IS OFFERED, which is the other half of the same fact. The
+       row existed because ADR 0067 rule 1 forbids offering a lane that cannot
+       be operated; removing the row and leaving the lock would grey a lane out
+       for no stated reason at all, which is the silence B12 closed. */
     const lane = screen.getByRole("group", { name: "Lane" });
     expect(
       within(lane).getByRole("button", { name: LANE_LABEL["Self-hosted"] }),
-    ).toBeDisabled();
-  });
+    ).not.toBeDisabled();
 
-  /**
-   * **THE DOOR IS NAMED, AND IT IS NAMED IN THE FONT THIS SCREEN USES FOR
-   * MACHINE TOKENS.**
-   *
-   * The row says the lane is not configurable; the environment variable is the
-   * next action, so withholding it would break the same half of `CLAUDE.md`'s
-   * rule B12 was written about. And it is the one thing in that sentence a
-   * reader has to reproduce exactly — `127.0.0.1:11434`, the masked key and
-   * every model id on this screen are already `ws-mono`, and in the body font
-   * this one wrapped mid-identifier.
-   *
-   * **This case exists because the defect was invisible to the suite.** The row
-   * renders only under a runtime, so the gallery never draws it and `port:diff`
-   * cannot measure it; it was found by opening the host after the tests were
-   * green, which is how ADR 0160, 0161 and 0162 were each found too.
-   */
-  it("names the environment variable that configures the lane, as a machine token", async () => {
-    withSetup(READY);
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
-
-    const server = await rowSaying(NO_CONFIG_ROW);
-    const token = within(server).getByText("WORDSCRIPT_SELF_HOSTED_BASE_URL");
-
-    expect(token).toHaveClass("ws-mono");
+    /* The other two are untouched and still carry their own reasons. */
+    expect(within(lane).getByRole("button", { name: LANE_LABEL.Local })).toBeDisabled();
+    expect(within(lane).getByRole("button", { name: LANE_LABEL.Enterprise })).toBeDisabled();
+    await rowSaying(NO_ADAPTER_ROW);
   });
 
   it("opens the tab that holds the detail its sentence summarises", async () => {
@@ -1666,6 +1646,297 @@ describe("A lane that is locked says why", () => {
        why this whole surface is wired-only and `port:diff` does not move. */
     expect(screen.queryByText(WITHHELD)).toBeNull();
     expect(screen.queryByText(NO_ADAPTER_ROW)).toBeNull();
+    expect(invoked).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * YOUR SERVER, CONFIGURED ON THE SCREEN THAT OFFERS IT (D1b, ADR 0165).
+ *
+ * **D1a built the adapter and left four `DrawnField`s over it.** An endpoint
+ * reached the runtime through `WORDSCRIPT_SELF_HOSTED_BASE_URL` and through
+ * nothing else, so the lane stayed locked under ADR 0067 rule 1 and
+ * `LockedLanes` said so in the product. These cases are the somewhere to type
+ * it, and each one presses a control that does something: a field that writes
+ * the config, a button that reaches the secret store, a probe that calls the
+ * runtime. **A control asserted only to exist is not tested** — this screen has
+ * already had a case drive four disabled segments and measure the default four
+ * times under four names (ADR 0161).
+ *
+ * They are wired-only by construction, which means `port:diff` cannot see any
+ * of it: the gallery opens on `Cloud` and has no runtime to derive a lane from.
+ * That is B8's known cost (ADR 0159) and the reason this block is long.
+ */
+describe("Your server, configured", () => {
+  const ENDPOINT = {
+    base_url: "http://10.0.0.2:8080/v1",
+    base_url_source: "config",
+    base_url_problem: null,
+    model: "ggml-large-v3-turbo",
+    model_source: "config",
+  };
+
+  const SELF_HOSTED_STATUS = {
+    ...STATUS,
+    provider: "self_hosted",
+    capabilities: { ...CAPABILITIES, chat_completion: false, requires_api_key: false },
+    role_credentials: [
+      {
+        provider: "self_hosted",
+        role: "speech",
+        kind: null,
+        configured: true,
+        storage: "os_secret_store",
+        key_preview: null,
+        missing: null,
+      },
+    ],
+    self_hosted_endpoint: ENDPOINT,
+  };
+
+  /** The runtime answering for this lane, with whatever endpoint the case is
+   *  about. Every other provider keeps the ordinary fixture, because the point
+   *  of several of these is that one card reads one vendor. */
+  function withEndpoint(endpoint: unknown, credential?: unknown) {
+    invoked.mockImplementation(async (command, args) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") {
+        const request = (args as { request?: { provider: string } } | undefined)?.request;
+        if (request?.provider !== "self_hosted") return STATUS;
+        return {
+          ...SELF_HOSTED_STATUS,
+          self_hosted_endpoint: endpoint,
+          role_credentials: [
+            { ...SELF_HOSTED_STATUS.role_credentials[0], ...(credential ?? {}) },
+          ],
+        };
+      }
+      if (command === "resolve_provider_tiers") return TIERS;
+      if (command === "validate_provider_api_key") {
+        return { ok: true, provider: "self_hosted", checked_with: "configured_endpoint" };
+      }
+      return undefined;
+    });
+  }
+
+  /** A machine whose connection is its own server. The lane is not screen state
+   *  any more — it is this value read backwards (ADR 0165). */
+  function serverConfig(overrides: Partial<ReturnType<typeof createAppConfig>> = {}) {
+    const config = createAppConfig({
+      self_hosted_base_url: "http://10.0.0.2:8080/v1",
+      self_hosted_model: "ggml-large-v3-turbo",
+      ...overrides,
+    });
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "self_hosted", overrides: {} };
+    return config;
+  }
+
+  it("opens on the lane the config is connected to, not on Cloud", async () => {
+    withEndpoint(ENDPOINT);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: serverConfig() })} />);
+
+    /* A machine dictating through its own server that opened this card on
+       `Cloud` would describe a connection the runtime is not using — and every
+       row under it would belong to a lane nothing runs on. */
+    expect(await screen.findByLabelText("URL")).toHaveValue("http://10.0.0.2:8080/v1");
+    expect(screen.queryByRole("radiogroup", { name: "Provider" })).toBeNull();
+  });
+
+  it("writes the lane onto the provider axis when it is chosen", async () => {
+    const patch = vi.fn();
+    withEndpoint(ENDPOINT);
+    const runtime = createWorkspaceRuntime({ active: true, patch });
+    render(<ModelsScreen runtime={runtime} />);
+
+    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+
+    /* THE RUNTIME id, and onto the same axis the chip row writes: picking a
+       lane and picking a vendor are one question asked at two altitudes. */
+    expect(patch).toHaveBeenCalledTimes(1);
+    const written = patch.mock.calls[0][0] as {
+      text_profiles?: { id: string; providers?: { default?: string } }[];
+    };
+    expect(
+      written.text_profiles?.find((p) => p.id === runtime.config.active_text_profile_id)?.providers,
+    ).toEqual({ default: "self_hosted", overrides: {} });
+  });
+
+  it("stores the URL that is typed into it", async () => {
+    const patch = vi.fn();
+    withEndpoint({ ...ENDPOINT, base_url: null, base_url_source: "unset" });
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          patch,
+          config: serverConfig({ self_hosted_base_url: "" }),
+        })}
+      />,
+    );
+
+    const field = await screen.findByLabelText("URL");
+    await userEvent.type(field, "https://speech.example.com/v1");
+    await userEvent.tab();
+
+    expect(patch).toHaveBeenCalledWith({ self_hosted_base_url: "https://speech.example.com/v1" });
+  });
+
+  it("stores the model id that is typed into it", async () => {
+    const patch = vi.fn();
+    withEndpoint({ ...ENDPOINT, model: null, model_source: "unset" });
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          patch,
+          config: serverConfig({ self_hosted_model: "" }),
+        })}
+      />,
+    );
+
+    const field = await screen.findByLabelText("Model id");
+    await userEvent.type(field, "Systran/faster-whisper-medium");
+    await userEvent.tab();
+
+    expect(patch).toHaveBeenCalledWith({ self_hosted_model: "Systran/faster-whisper-medium" });
+  });
+
+  /**
+   * **WHAT IS TYPED OUTRANKS THE ENVIRONMENT, AND THE ROW SAYS SO** (ADR 0165).
+   *
+   * The variable is the second door now rather than the only one, so the row
+   * names it exactly when it is the one answering — and shows the URL it
+   * carries, because a sentence naming a variable without its value leaves the
+   * reader to go and look up what their own app is talking to.
+   */
+  it("names the environment as the door when the environment is the door, as a machine token", async () => {
+    withEndpoint({
+      ...ENDPOINT,
+      base_url: "https://from-the-shell.example.com/v1",
+      base_url_source: "environment",
+    });
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: serverConfig({ self_hosted_base_url: "" }),
+        })}
+      />,
+    );
+
+    const field = await screen.findByLabelText("URL");
+    expect(field).toHaveValue("");
+    expect(field).toHaveAttribute("placeholder", "https://from-the-shell.example.com/v1");
+
+    const named = await screen.findByText("WORDSCRIPT_SELF_HOSTED_BASE_URL");
+    expect(named).toHaveClass("ws-mono");
+  });
+
+  it("prints the runtime's refusal rather than deciding for itself what a safe URL is", async () => {
+    const refusal =
+      "The endpoint 'http://speech.example.com/v1' is plain HTTP to a public host, so WordScript will not send audio or a token to it.";
+    withEndpoint(
+      {
+        ...ENDPOINT,
+        base_url: "http://speech.example.com/v1",
+        base_url_problem: refusal,
+      },
+      { configured: false, missing: refusal },
+    );
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: serverConfig({ self_hosted_base_url: "http://speech.example.com/v1" }),
+        })}
+      />,
+    );
+
+    /* `isSecureEndpoint` lives in `openai_compatible.rs` and is not reimplemented
+       here — a second copy of a security rule is a second thing to get wrong,
+       and the one in the tree already knows `10.example.com` is not a private
+       address. The row's job is to say what the runtime said. */
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+    /* AND THE FIELD STILL HOLDS WHAT WAS TYPED. A row that blanked a refused
+       URL would ask somebody to fix what it had just hidden. */
+    expect(screen.getByLabelText("URL")).toHaveValue("http://speech.example.com/v1");
+  });
+
+  it("saves the optional token to this lane and never to the cloud vendor", async () => {
+    withEndpoint(ENDPOINT);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: serverConfig() })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+    await userEvent.type(screen.getByLabelText("Bearer token"), "a-server-token");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
+        request: { provider: "self_hosted", api_key: "a-server-token" },
+      }),
+    );
+    expect(invoked).not.toHaveBeenCalledWith(
+      "save_provider_api_key",
+      expect.objectContaining({ request: expect.objectContaining({ provider: "groq" }) }),
+    );
+  });
+
+  it("shows a stored token as a preview and offers to remove it", async () => {
+    withEndpoint(ENDPOINT, { kind: "api_key", key_preview: "a-se...oken" });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: serverConfig() })} />);
+
+    expect(await screen.findByText("a-se...oken")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("clear_provider_api_key", {
+        request: { provider: "self_hosted" },
+      }),
+    );
+  });
+
+  /**
+   * **THE PROBE RUNS WHEN IT IS ASKED TO, AND THE BADGE ONLY THEN CLAIMS ONE.**
+   *
+   * A settings screen that pings somebody's private server on every open is
+   * making network decisions for the reader; and `Answering` before anybody
+   * asked is the fake readiness `CLAUDE.md` forbids. So the resting state says
+   * `Not tested` — which is a third answer, not a pessimistic one.
+   */
+  it("tests reachability only when the button is pressed", async () => {
+    withEndpoint(ENDPOINT);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: serverConfig() })} />);
+
+    expect(await screen.findByText("Not tested")).toBeInTheDocument();
+    expect(invoked).not.toHaveBeenCalledWith(
+      "validate_provider_api_key",
+      expect.anything(),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Test" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("validate_provider_api_key", {
+        request: { provider: "self_hosted", api_key: null },
+      }),
+    );
+    expect(await screen.findByText("Answering")).toBeInTheDocument();
+  });
+
+  it("keeps the drawing in the gallery and asks the runtime nothing", async () => {
+    render(<ModelsScreen />);
+    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+
+    /* The gallery is what `port:diff` measures, so the drawn rows stay exactly
+       as Leg 6 drew them — including `Model ids are typed`, which the wired
+       card replaces with a field, and the drawn URL's own literal, which is the
+       value the harness compares against the prototype. */
+    expect(screen.getByText("Model ids are typed")).toBeInTheDocument();
+    expect(screen.getByLabelText("URL")).toHaveValue("http://10.0.0.2:8080/v1");
+    expect(screen.getByText("Answering")).toBeInTheDocument();
     expect(invoked).not.toHaveBeenCalled();
   });
 });

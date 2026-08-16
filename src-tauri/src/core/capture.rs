@@ -332,14 +332,24 @@ impl NativeCaptureConfig {
         // a field of its own — the model and the correction lane below follow
         // from which vendor *listens*, and that is `Dictation` and nothing else.
         let providers = active_profile.resolved_providers();
-        let local_provider_selected =
-            providers.resolve(JobKey::Dictation).provider == super::providers::LOCAL_PROVIDER_ID;
+        let speech_provider = providers.resolve(JobKey::Dictation).provider.clone();
+        let local_provider_selected = speech_provider == super::providers::LOCAL_PROVIDER_ID;
         let model = if local_provider_selected {
             if speech.local_model.trim().is_empty() {
                 "base".to_string()
             } else {
                 speech.local_model
             }
+        } else if speech_provider == super::providers::self_hosted::SELF_HOSTED_PROVIDER_ID {
+            /* THE THIRD LANE WITH A MODEL FIELD OF ITS OWN (D1b, ADR 0165).
+               `speech.model` is a catalogued cloud id and this lane has no
+               catalogue: sending `whisper-large-v3` to somebody's own server
+               names a model it almost certainly does not serve, and the 404
+               would arrive as *your server rejected the request* rather than as
+               *WordScript sent the wrong id*. Empty is a legitimate answer —
+               the adapter then falls back to its own two doors and refuses with
+               the next action named if neither answers. */
+            app_config.self_hosted_model.clone()
         } else {
             speech.model
         };

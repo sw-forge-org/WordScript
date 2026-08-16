@@ -90,6 +90,7 @@ function status(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
       },
     ],
     local_setup: null,
+    self_hosted_endpoint: null,
     ...overrides,
   };
 }

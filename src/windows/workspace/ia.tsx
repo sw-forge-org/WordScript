@@ -166,7 +166,11 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "models",
     label: "AI Models",
     icon: "models",
-    banner: saysSo("Wired in part — the Groq connection and On this machine are real; the other three lanes and every job override are drawn and inert (ADR 0065, ADR 0067)."),
+    /* THE COUNT MOVED WITH THE LOCK (D1b, ADR 0165). It read *the other three
+       lanes … are drawn and inert*, which stopped being true the moment `Your
+       server` could be chosen and configured — a banner is a claim about the
+       build and this one would have been contradicted by the card under it. */
+    banner: saysSo("Wired in part — the cloud connection, Your server and On this machine are real; the other two lanes and every job override are drawn and inert (ADR 0065, ADR 0067)."),
     render: (props) => <ModelsScreen {...props} />,
   },
   {

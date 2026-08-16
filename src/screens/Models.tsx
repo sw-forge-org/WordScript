@@ -78,14 +78,22 @@ import {
   connectionCapabilitySentence,
   credentialStateFor,
   drawnNameFor,
+  LANE_PROVIDER_IDS,
+  laneForProviderId,
   NO_ANSWERS,
   resolveProviderAnswer,
   runtimeIdFor,
   roleForDrawnCapability,
   selectableProviderNames,
+  SELF_HOSTED_PROVIDER_ID,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
-import type { LocalProviderSetupStatus, ProviderRole } from "@/types/providers";
+import type {
+  LocalProviderSetupStatus,
+  ProviderRole,
+  RoleCredentialStatus,
+  SelfHostedEndpointStatus,
+} from "@/types/providers";
 /* THE LADDER MOVED OUT IN B7 (ADR 0129) and this screen is now one of its two
    callers rather than its owner. What stayed here is the connection, the lane
    segment and the model library — what configures a lane, as opposed to what
@@ -156,8 +164,42 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   /* THE ONE SEGMENT IN THIS SCREEN THAT IS NOT INERT. A lane decides what a
      provider even IS, so a lane switch that leaves the card identical is not an
      inert control, it is a false one: it says the four lanes are the same thing
-     with different names. */
-  const [lane, setLane] = useState<LaneName>("Cloud");
+     with different names.
+
+     **AND UNDER A RUNTIME IT IS NOT STATE AT ALL, IT IS THE CONFIG** (D1b,
+     ADR 0165). The lane is the connection's vendor read backwards, so a machine
+     dictating through its own server that opened this screen on `Cloud` would
+     be describing a connection the runtime is not using — and every row under
+     it would belong to a lane nothing runs on. Picking a lane writes the
+     provider axis; the screen then follows what is stored, which is the same
+     direction `ProviderPick` has read since D1. The gallery has no config, so
+     there the segment keeps its own state and the drawings switch. */
+  const [drawnLane, setDrawnLane] = useState<LaneName>("Cloud");
+  const storedProvider = runtime
+    ? resolveProfileProviderSettings(resolveActiveTextProfile(runtime.config)).default
+    : undefined;
+  const lane = storedProvider ? laneForProviderId(storedProvider) : drawnLane;
+
+  const chooseLane = useCallback(
+    (next: LaneName) => {
+      if (!runtime) {
+        setDrawnLane(next);
+        return;
+      }
+
+      /* THE LANE IS WRITTEN AS THE VENDOR IT MEANS. `Cloud` has several and no
+         memory of which one you were on before you left it, so it lands on the
+         drawn default — one click on the chip row moves it, and a chip row that
+         says `Groq` over a config that says `groq` is at least not lying. The
+         two locked lanes cannot be reached from here at all. */
+      const target =
+        next === "Cloud" ? runtimeIdFor(LANES.Cloud.provider) : LANE_PROVIDER_IDS[next];
+      if (!target || target === storedProvider) return;
+
+      runtime.patch(buildProfileProvidersPatch(runtime.config, { default: target }));
+    },
+    [runtime, storedProvider],
+  );
   /* ONE `local_setup` READ FOR THE WHOLE SCREEN, AND IT MOVED UP HERE IN B12
      (ADR 0163). Both tabs state where this machine stands now — the connection
      card says whether the withheld lane is withheld by the product or by the
@@ -192,7 +234,7 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
       {tab === "Models" ? (
         <ModelsTab
           lane={lane}
-          onLane={setLane}
+          onLane={chooseLane}
           runtime={runtime}
           setup={setup}
           asked={asked}
@@ -313,41 +355,7 @@ function LaneRows({
   }
 
   if (lane === "Self-hosted") {
-    return (
-      <>
-        <Row
-          label="URL"
-          hint="An OpenAI-compatible server you operate, on another machine. Not the Local lane, which runs here."
-          control={<DrawnField defaultValue="http://10.0.0.2:8080/v1" w="230px" aria-label="URL" />}
-        />
-        <Row
-          label="Reachability"
-          control={
-            <span className="ws-rowflex">
-              <StatusBadge tone="success">Answering</StatusBadge>
-              <DrawnButton variant="ghost">Test</DrawnButton>
-            </span>
-          }
-        />
-        <Row
-          label="Credential"
-          hint="Optional. Some servers take a bearer token, most take none."
-          control={
-            <span className="ws-rowflex">
-              <StatusBadge tone="plan">None</StatusBadge>
-              <DrawnButton variant="ghost" icon={<Icon name="key" />}>
-                Add
-              </DrawnButton>
-            </span>
-          }
-        />
-        <Row
-          label="Model ids are typed"
-          hint="A server behind a URL does not have to publish a model list, so each job carries the id you give it rather than picking from one."
-          control={<StatusBadge tone="plan">Per job</StatusBadge>}
-        />
-      </>
-    );
+    return <SelfHostedRows runtime={runtime} />;
   }
 
   if (lane === "Enterprise") {
@@ -401,6 +409,412 @@ function LaneRows({
       <ProviderPick lane="Cloud" selected="Groq" />
       <CloudCredentialRows runtime={runtime} />
     </>
+  );
+}
+
+/* ── Your server ────────────────────────────────────────────────────────────
+   D1b, ADR 0165. **The lane D1a built an adapter for and left a drawing.**
+
+   Four rows, and each one is a different kind of thing, which is why the lane
+   needed a step rather than a field:
+
+     URL         a machine setting, in `AppConfig`, typed here
+     Reachability  a probe, run on demand, never on open
+     Credential    an OPTIONAL bearer token, in the OS secret store
+     Model id      a machine setting, typed here, with no list behind it
+
+   **The URL outranks `WORDSCRIPT_SELF_HOSTED_BASE_URL` and the row says when
+   the variable is the one answering.** Precedence is the runtime's — the
+   `self_hosted_endpoint` block reports the winner and this file never derives
+   it — because a second implementation of that rule here would print a URL that
+   is not the one in force the first time the order changed.
+
+   **Nothing here is a `DrawnField`.** The gallery keeps the drawing below, and
+   the product keeps the rule ADR 0067 rule 1 states: a lane that is offered
+   must be operable. Offering it is this step; that is why the lock comes off
+   for this lane and stays on for the other two. */
+function SelfHostedRows({ runtime }: { runtime?: WorkspaceRuntime }) {
+  const wired = useWired();
+  /* Two components rather than one with a conditional hook — the split
+     `CeilingBadge` already makes, and for the same reason: the gallery asserts
+     NO runtime state, so it must not reach for `provider_status` at all. */
+  return wired && runtime ? <WiredSelfHostedRows runtime={runtime} /> : <DrawnSelfHostedRows />;
+}
+
+/** The drawing, unchanged since Leg 6 — what `port:diff` measures. */
+function DrawnSelfHostedRows() {
+  return (
+    <>
+      <Row
+        label="URL"
+        hint="An OpenAI-compatible server you operate, on another machine. Not the Local lane, which runs here."
+        control={<DrawnField defaultValue="http://10.0.0.2:8080/v1" w="230px" aria-label="URL" />}
+      />
+      <Row
+        label="Reachability"
+        control={
+          <span className="ws-rowflex">
+            <StatusBadge tone="success">Answering</StatusBadge>
+            <DrawnButton variant="ghost">Test</DrawnButton>
+          </span>
+        }
+      />
+      <Row
+        label="Credential"
+        hint="Optional. Some servers take a bearer token, most take none."
+        control={
+          <span className="ws-rowflex">
+            <StatusBadge tone="plan">None</StatusBadge>
+            <DrawnButton variant="ghost" icon={<Icon name="key" />}>
+              Add
+            </DrawnButton>
+          </span>
+        }
+      />
+      <Row
+        label="Model ids are typed"
+        hint="A server behind a URL does not have to publish a model list, so each job carries the id you give it rather than picking from one."
+        control={<StatusBadge tone="plan">Per job</StatusBadge>}
+      />
+    </>
+  );
+}
+
+function WiredSelfHostedRows({ runtime }: { runtime: WorkspaceRuntime }) {
+  const { answers, refresh } = useContext(Wired);
+  const status = answers.statuses[SELF_HOSTED_PROVIDER_ID] ?? null;
+  const endpoint = status?.self_hosted_endpoint ?? null;
+  const credential =
+    status?.role_credentials?.find((row) => row.role === "speech") ?? null;
+
+  /* THE STATUS IS RE-READ ON THE CONFIG OBJECT, NOT ON THE TYPED STRING.
+     `patch` is fire-and-forget: it updates this window optimistically and the
+     disk write lands afterwards, so a refresh keyed on the value alone can read
+     the config that was there before it. `useConfigDraft` replaces the form
+     once the runtime has settled the save — a new object — so this runs twice
+     and the second run is the one that cannot be stale. */
+  useEffect(() => {
+    void refresh?.();
+  }, [runtime.config, refresh]);
+
+  return (
+    <>
+      <ServerUrlRow runtime={runtime} endpoint={endpoint} />
+      <ReachabilityRow ready={credential?.configured ?? false} />
+      <ServerTokenRow credential={credential} refresh={refresh} />
+      <ServerModelRow runtime={runtime} endpoint={endpoint} />
+    </>
+  );
+}
+
+/** What a runtime refusal actually said.
+ *
+ *  A `ProviderCommandError` crosses the seam as an object, and `String(cause)`
+ *  on one prints `[object Object]` — a sentence that tells the reader nothing
+ *  about a server they have to go and fix. */
+function sentenceFor(cause: unknown): string {
+  if (cause && typeof cause === "object" && "message" in cause) {
+    return String((cause as { message: unknown }).message);
+  }
+  return String(cause);
+}
+
+/** A committed text setting: a draft while typing, the config on blur.
+ *
+ *  **`patch` rather than `patchText`, and the draft is why.** The debounced
+ *  door exists so a keystroke is not an IPC round trip; a local draft answers
+ *  the same question and leaves the write a single discrete event, which is
+ *  what the status read below has to be able to follow. */
+function useCommittedSetting(stored: string, write: (next: string) => void) {
+  const [draft, setDraft] = useState(stored);
+
+  /* The runtime's value wins whenever it changes — a save settling, another
+     window, or a config reload. What is being typed is not clobbered, because
+     `stored` only moves when a write has landed. */
+  useEffect(() => setDraft(stored), [stored]);
+
+  const commit = useCallback(() => {
+    const next = draft.trim();
+    if (next === stored) return;
+    write(next);
+  }, [draft, stored, write]);
+
+  return { draft, setDraft, commit };
+}
+
+function ServerUrlRow({
+  runtime,
+  endpoint,
+}: {
+  runtime: WorkspaceRuntime;
+  endpoint: SelfHostedEndpointStatus | null;
+}) {
+  const stored = runtime.config.self_hosted_base_url;
+  const { draft, setDraft, commit } = useCommittedSetting(stored, (next) =>
+    runtime.patch({ self_hosted_base_url: next }),
+  );
+
+  const fromEnvironment = endpoint?.base_url_source === "environment";
+
+  return (
+    <Row
+      label="URL"
+      /* THE REFUSAL OUTRANKS EVERYTHING ELSE THIS ROW COULD SAY. A URL WordScript
+         will not send audio to is the one fact a reader needs, and it is the
+         runtime's sentence rather than a second copy of the rule here. */
+      hint={
+        endpoint?.base_url_problem ??
+        (fromEnvironment ? (
+          <>
+            This endpoint comes from{" "}
+            <span className="ws-mono">{SELF_HOSTED_BASE_URL_ENV}</span>. What you
+            type here is used instead of it.
+          </>
+        ) : (
+          "An OpenAI-compatible server you operate, on another machine. Not the Local lane, which runs here."
+        ))
+      }
+      control={
+        <Field
+          w="230px"
+          aria-label="URL"
+          /* The environment's value stands in the field's empty state rather
+             than in a sentence: it is what a request would go to right now, and
+             a row that named the variable without its value would leave the
+             reader to go and look it up. */
+          placeholder={
+            fromEnvironment ? (endpoint?.base_url ?? "") : "http://10.0.0.2:8080/v1"
+          }
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit();
+          }}
+        />
+      }
+    />
+  );
+}
+
+/**
+ * **A probe, and it runs when it is asked to.**
+ *
+ * Never on open: this is a request to somebody's machine, and a settings screen
+ * that pings a private server every time it is looked at is a settings screen
+ * making network decisions on the reader's behalf. `Answering` therefore means
+ * *it answered when you asked*, and the resting state says nothing rather than
+ * claiming a reachability nobody measured.
+ */
+function ReachabilityRow({ ready }: { ready: boolean }) {
+  const [answered, setAnswered] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const test = async () => {
+    setBusy(true);
+    setProblem(null);
+    setAnswered(false);
+    try {
+      const answer = await invoke<{ ok: boolean }>("validate_provider_api_key", {
+        request: { provider: SELF_HOSTED_PROVIDER_ID, api_key: null },
+      });
+      if (answer?.ok) setAnswered(true);
+      else setProblem("The server replied and did not accept the request.");
+    } catch (cause) {
+      setProblem(sentenceFor(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Row
+      label="Reachability"
+      hint={problem ?? undefined}
+      control={
+        <span className="ws-rowflex">
+          <StatusBadge tone={answered ? "success" : problem ? "warning" : "plan"}>
+            {answered ? "Answering" : problem ? "No answer" : "Not tested"}
+          </StatusBadge>
+          <Button variant="ghost" busy={busy} disabled={busy || !ready} onClick={() => void test()}>
+            Test
+          </Button>
+        </span>
+      }
+    />
+  );
+}
+
+/**
+ * **The optional token, and optional is the whole design of this row.**
+ *
+ * `whisper-server` issues no bearer token at all; speaches and LocalAI may. So
+ * an absent token is not a missing credential and does not make the lane
+ * unready — `requires_api_key` stays false for this lane and
+ * `credential_kinds` accepts one anyway, which is ADR 0165's split. What is
+ * stored goes to the OS secret store under `self_hosted.speech.api_key`, the
+ * same door and the same entry scheme as every other credential in this build.
+ */
+function ServerTokenRow({
+  credential,
+  refresh,
+}: {
+  credential: RoleCredentialStatus | null;
+  refresh?: () => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const preview = credential?.key_preview ?? null;
+
+  const save = async () => {
+    if (!draft.trim()) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await invoke("save_provider_api_key", {
+        request: { provider: SELF_HOSTED_PROVIDER_ID, api_key: draft.trim() },
+      });
+      setDraft("");
+      setEditing(false);
+      await refresh?.();
+    } catch (cause) {
+      setProblem(sentenceFor(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await invoke("clear_provider_api_key", {
+        request: { provider: SELF_HOSTED_PROVIDER_ID },
+      });
+      await refresh?.();
+    } catch (cause) {
+      setProblem(sentenceFor(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Row
+      label="Credential"
+      hint={
+        problem ?? "Optional. Some servers take a bearer token, most take none. Stored in the OS secret store, never in the config file."
+      }
+      control={
+        editing ? (
+          <span className="ws-rowflex">
+            <Field
+              autoFocus
+              type="password"
+              w="190px"
+              aria-label="Bearer token"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void save();
+                if (event.key === "Escape") {
+                  setDraft("");
+                  setEditing(false);
+                }
+              }}
+            />
+            <Button busy={busy} disabled={busy || !draft.trim()} onClick={() => void save()}>
+              Save
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDraft("");
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </Button>
+          </span>
+        ) : (
+          <span className="ws-rowflex">
+            <StatusBadge tone={preview ? "success" : "plan"}>{preview ?? "None"}</StatusBadge>
+            <Button variant="ghost" icon={<Icon name="key" />} onClick={() => setEditing(true)}>
+              {preview ? "Replace" : "Add"}
+            </Button>
+            {preview && (
+              <Button variant="ghost" disabled={busy} onClick={() => void clear()}>
+                Remove
+              </Button>
+            )}
+          </span>
+        )
+      }
+    />
+  );
+}
+
+/**
+ * **The id every job on this lane sends, and there is no list to pick it from.**
+ *
+ * The drawn row said `Per job`, which was the intent when nothing was stored
+ * anywhere. What the runtime does is narrower and truer: the capture puts this
+ * id on every request, the adapter substitutes nothing, and a job that names no
+ * model is refused rather than sent with a guess attached (ADR 0115).
+ */
+function ServerModelRow({
+  runtime,
+  endpoint,
+}: {
+  runtime: WorkspaceRuntime;
+  endpoint: SelfHostedEndpointStatus | null;
+}) {
+  const stored = runtime.config.self_hosted_model;
+  const { draft, setDraft, commit } = useCommittedSetting(stored, (next) =>
+    runtime.patch({ self_hosted_model: next }),
+  );
+
+  const fromEnvironment = endpoint?.model_source === "environment";
+
+  return (
+    <Row
+      label="Model id"
+      hint={
+        fromEnvironment ? (
+          <>
+            This id comes from{" "}
+            <span className="ws-mono">{SELF_HOSTED_MODEL_ENV}</span>. What you
+            type here is used instead of it.
+          </>
+        ) : (
+          "Your server publishes no list to pick from, so this is typed: whatever its operator named the model it serves."
+        )
+      }
+      control={
+        <Field
+          w="230px"
+          aria-label="Model id"
+          /* AN EXAMPLE FROM OUTSIDE THE CATALOGUE, ON PURPOSE — and the
+             catalogue's own guard is what says so: a first draft used
+             `ggml-large-v3-turbo`, which is a row in
+             `shared/model_catalogue.json`, and the test that walks `src/` for
+             ids spelled outside it failed (ADR 0115). It was right to. This
+             lane catalogues nothing, and a placeholder naming a model
+             WordScript ships would suggest the field picks from a list. */
+          placeholder={fromEnvironment ? (endpoint?.model ?? "") : "faster-whisper-medium"}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit();
+          }}
+        />
+      }
+    />
   );
 }
 
@@ -936,13 +1350,14 @@ function LaneJobRow({
    surface that withholds without reporting, which is `CLAUDE.md`'s rule broken
    in both directions at once.
 
-   **AND THERE IS A THIRD REASON SINCE D1a** (ADR 0164). B12 could put
-   `Your server` and `Enterprise` on one row because *neither has an adapter*
-   was true of both; D1a builds the self-hosted speech adapter and leaves the
-   configuration a drawing, so that lane is now withheld for a reason neither of
-   the other two has — **built, and with nowhere to type the endpoint**. Three
-   lanes, three sentences, and the row count follows the reasons rather than the
-   lanes.
+   **IT WAS THREE ROWS FOR ONE EVENING** (ADR 0164, then ADR 0165). B12 could
+   put `Your server` and `Enterprise` on one row because *neither has an
+   adapter* was true of both; D1a built the self-hosted adapter and left the
+   configuration a drawing, which made that lane withheld for a reason neither
+   of the other two had — *built, and with nowhere to type the endpoint*. D1b
+   is the somewhere, so that reason is spent and its row is gone rather than
+   reworded. **The row count follows the reasons, and a reason that is no longer
+   true does not get a softer sentence — it gets its lane back.**
 
    **WIRED ONLY, AND THAT IS WHY `port:diff` DOES NOT MOVE.** There is nothing
    to draw here: the gallery has no runtime, so it has no lock and no disk to
@@ -984,31 +1399,20 @@ function LockedLanes({
           </span>
         }
       />
-      {/* TWO ROWS, AND IT WAS ONE (D1a, ADR 0164).
-          **B12 put these lanes together because one sentence was true of both**
-          — *neither has an adapter yet* — and D1a makes exactly half of it
-          false. The self-hosted speech adapter is built; Enterprise still has
-          nothing behind it. Leaving them joined would put a sentence on this
-          card that the runtime contradicts, which is the defect ADR 0160
-          through ADR 0163 corrected four times, three of them found by reading
-          the rendered screen after the suite had gone green.
+      {/* AND `Your server` IS NOT HERE ANY MORE (D1b, ADR 0165).
+          **It had a row for one evening and the row named its own expiry.**
+          D1a said *adapter built, nowhere to type the endpoint*; this step is
+          the somewhere, so the reason is spent and the row goes with it rather
+          than being reworded into a lock that no longer has a cause. That is
+          ADR 0067 rule 1 running forwards: a lane is withheld while it cannot
+          be operated and offered when it can, and the commit that finishes it
+          is the commit that reverses the lock.
 
-          **AND THE SUCCESSOR SENTENCE IS NOT *now selectable*.** What D1a
-          bought is an adapter, not a way to configure one: the URL, the token
-          and the model id on this lane are drawings that store nowhere, so an
-          endpoint reaches the runtime through an environment variable and
-          nothing else. Offering the lane would be a control that accepts a
-          click and then asks for something this screen cannot take — ADR 0067
-          rule 1, which is the reason the lock exists rather than an obstacle to
-          it. Reversing the lock belongs to the commit that finishes the lane. */}
-      <Row
-        label={LANE_LABEL["Self-hosted"]}
-        tag={
-          <PreviewTag title="Half built. An OpenAI-compatible server can transcribe on this lane since D1a; what the rows below draw — the URL, the token, the model id — is not wired to anything that stores it." />
-        }
-        hint={SELF_HOSTED_WITHHELD}
-        control={<StatusBadge tone="plan">No configuration</StatusBadge>}
-      />
+          **Two rows, and they are withheld for different reasons**, which is
+          why they are still two: `Local` is built and held back by the product
+          (ROADMAP Phase 5), `Enterprise` has no adapter at all. Folding them
+          would be B12's one-sentence-two-subjects mistake, which went half
+          false overnight the first time. */}
       <Row
         label={LANE_LABEL.Enterprise}
         tag={<PreviewTag title="Drawn, not built. The rows show the shape this lane will have; nothing behind it runs a job yet." />}
@@ -1019,16 +1423,14 @@ function LockedLanes({
   );
 }
 
-/** WHAT THE SELF-HOSTED LANE OWES, now that it is no longer the adapter.
+/** THE SECOND DOOR INTO THE `Your server` LANE, named where it is now relevant.
  *
- *  Stated once and beside the other constant for the same reason `LOCAL_WITHHELD`
- *  is a constant: this screen has grown a second copy of one fact four times
- *  (ADR 0160, 0161, 0162), and each time the second copy is what drifted.
- *
- *  **It names the environment variable on purpose.** The lane is expert
- *  configuration exactly as the local lane was before B5, and a row that says
- *  *not configurable* without saying what the expert door is withholds the next
- *  action — which is the half of `CLAUDE.md`'s rule that B12 was written about.
+ *  **These moved from `LockedLanes` to the rows themselves** (D1b). Until this
+ *  step the variables were the ONLY way in, and the withheld row named them
+ *  because a row that says *not configurable* without saying what the expert
+ *  door is withholds the next action. Now the field is the next action and the
+ *  variable is the fallback, so the name belongs beside the field it is
+ *  outranked by — and only when it is the one actually answering.
  *
  *  **AND THE NAME IS SET IN `ws-mono`, WHICH IS NOT DECORATION.** Every machine
  *  token on this screen already is — `127.0.0.1:11434` on the Local lane, the
@@ -1039,15 +1441,7 @@ function LockedLanes({
  *  it and `port:diff` cannot reach it, and it was found by opening the app after
  *  the suite was green — the same way ADR 0160, 0161 and 0162 each were. */
 const SELF_HOSTED_BASE_URL_ENV = "WORDSCRIPT_SELF_HOSTED_BASE_URL";
-
-const SELF_HOSTED_WITHHELD = (
-  <>
-    The adapter is built and the configuration is not: the URL, the token and the
-    model id drawn on this lane store nowhere, so the endpoint is read from{" "}
-    <span className="ws-mono">{SELF_HOSTED_BASE_URL_ENV}</span> and the lane is
-    not offered.
-  </>
-);
+const SELF_HOSTED_MODEL_ENV = "WORDSCRIPT_SELF_HOSTED_MODEL";
 
 /** WHY THE LANE IS WITHHELD — the product's half, and it is stated once.
  *
@@ -1162,8 +1556,14 @@ function ModelsTab({
                  the lane said nothing on the row itself. Three of the four are
                  drawn, so the tag follows the selection rather than naming one
                  lane: what is true of `Local` here is true of the other two. */
+              /* AND `Your server` DROPPED OFF THIS TAG WITH THE LOCK (D1b).
+                 The rule is *mark what is unbuilt*, and this lane is built: it
+                 stores a URL, a token and a model id, and it transcribes. Its
+                 rows are a drawing in the GALLERY, exactly as `Cloud`'s
+                 credential rows are, and a tag on that basis would have to go
+                 on Cloud too. */
               tag={
-                lane === "Cloud" ? undefined : (
+                lane === "Cloud" || lane === "Self-hosted" ? undefined : (
                   <PreviewTag
                     title={`${LANE_LABEL[lane]} is drawn, not built. The rows below show the shape it will have; nothing on this lane runs a job yet.`}
                   />
@@ -1180,20 +1580,27 @@ function ModelsTab({
                          *server* had to mean one thing on this screen and the
                          local runner had taken it. */
                       label: LANE_LABEL[value],
-                      /* ADR 0065 and ADR 0067. Three lanes are drawn in full
-                         and none of them is integrated — including Local,
-                         which the runtime DOES carry as `local` and
-                         which the owner ruled is treated like the other two
-                         everywhere it comes up, because it is not finished.
+                      /* ADR 0065 and ADR 0067. **TWO LANES ARE LOCKED NOW AND
+                         IT WAS THREE** (D1b, ADR 0165). The rule never was
+                         *lock what is not Cloud*; it is ADR 0067 rule 1 — a
+                         lane that is OFFERED must be operable, because a
+                         control that accepts a click and then asks for
+                         something the screen cannot take is the worst false
+                         affordance there is. `Your server` can be operated as
+                         of this step: the rows above store a URL, an optional
+                         token and a model id, and the runtime transcribes with
+                         them. So it comes off the list, and the reversal is
+                         exactly what that rule said it would be — the commit
+                         that finishes a lane is the commit that offers it.
 
-                         **THE RULE KEEPS ITS BEHAVIOUR AND GAINS ITS REASON**
-                         (B12, ADR 0163). A disabled `<button>` fires no mouse
-                         events, so it can carry no tooltip and no hint — the
-                         reason has to be text somewhere else on the card, and
-                         `LockedLanes` below is where it is. Nothing here
-                         changes: removing this line is ADR 0067's reversal and
-                         belongs to the commit that finishes the lane. */
-                      disabled: Boolean(runtime) && value !== "Cloud",
+                         `Local` is finished in the runtime and withheld by the
+                         product until ROADMAP Phase 5; `Enterprise` has no
+                         adapter. `LockedLanes` below carries both reasons,
+                         because a disabled `<button>` fires no mouse events and
+                         can therefore carry neither tooltip nor hint (B12,
+                         ADR 0163). */
+                      disabled:
+                        Boolean(runtime) && value !== "Cloud" && value !== "Self-hosted",
                     }),
                   )}
                   value={lane}

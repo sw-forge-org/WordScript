@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-import { NO_ANSWERS, runtimeIdFor, type RuntimeAnswers } from "@/lib/providerSeam";
+import {
+  NO_ANSWERS,
+  runtimeIdFor,
+  SELF_HOSTED_PROVIDER_ID,
+  type RuntimeAnswers,
+} from "@/lib/providerSeam";
 import { PROVIDERS, type LaneName } from "@/screens/data";
 import type { ProviderStatus, RegisteredProvider } from "@/types/providers";
 
@@ -25,14 +30,23 @@ export function useProviderSeam(lane: LaneName, model?: string | null) {
   const [statuses, setStatuses] = useState<Record<string, ProviderStatus>>({});
 
   /* The ids this lane draws, as ids. Recomputed from the drawing rather than
-     stored, so a lane the drawing grows is covered without a second list. */
-  const drawnIds = useMemo(
-    () =>
-      PROVIDERS.filter((provider) => provider.lane === lane)
-        .map((provider) => runtimeIdFor(provider.name))
-        .filter((id): id is string => Boolean(id)),
-    [lane],
-  );
+     stored, so a lane the drawing grows is covered without a second list.
+
+     **PLUS THE LANE'S OWN, WHERE THE LANE IS THE VENDOR** (D1b, ADR 0165).
+     `Your server` draws no chip — there is nothing to choose between — so this
+     list was empty for it and the connection card had no status to render: no
+     endpoint, no source, no stored token, and job rows answering *operable*
+     from the registry's capability block while the lane was not configured at
+     all. **`Local` is not added here and its absence is the argument**: its
+     status probes the disk, `useLocalSetup` already does that once for both
+     tabs, and a second probe is the cost ADR 0124 refused at ten. */
+  const drawnIds = useMemo(() => {
+    const ids = PROVIDERS.filter((provider) => provider.lane === lane)
+      .map((provider) => runtimeIdFor(provider.name))
+      .filter((id): id is string => Boolean(id));
+
+    return lane === "Self-hosted" ? [...ids, SELF_HOSTED_PROVIDER_ID] : ids;
+  }, [lane]);
 
   const read = useCallback(async () => {
     const listed = await invoke<RegisteredProvider[]>("registered_providers");

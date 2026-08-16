@@ -1,11 +1,17 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-16 (stage D1a, which read
+Status: created 2026-07-24, last drift check 2026-08-16 (stage D1b, which read
+the lane clause and the port inventory: **`Your server` is configured on the
+screen that offers it and is no longer withheld** — a URL and a model id in
+`AppConfig`, an optional bearer token in the OS secret store, what is typed
+outranking the environment, and ADR 0067 rule 1 reversed for that lane on its
+own terms, so two lanes are withheld rather than three; the stage D1a pass
+before it read
 the capability-seam clause and the port inventory: *no adapter* and *the lane
 denies this role* are now decided per role rather than per vendor, because
 OpenRouter is the first entry to register fewer roles than its drawn row claims,
 and the three withheld lanes are withheld for three different reasons rather
-than two — `Your server` has an adapter and nowhere to type its endpoint; the
+than two — `Your server` had an adapter and nowhere to type its endpoint; the
 stage B12 pass before it read
 only the two clauses that say what an inert control on `AI Models` states —
 the surface-truth clause, which now covers a withheld LANE and not only a
@@ -170,8 +176,12 @@ disabled with its reason — an inherited drawing is an inventory of intent, and
 what is unbuilt stays visible rather than tidied away (ADR 0128).
 
 **And a lane that is withheld states two things apart** (ADR 0163, 2026-08-16).
-`Local`, `Your server` and `Enterprise` cannot be selected while a runtime is
-present, which is ADR 0067 rule 1 and is unchanged. What the Connection card
+`Local` and `Enterprise` cannot be selected while a runtime is present, which is
+ADR 0067 rule 1. **`Your server` could not either until D1b gave it somewhere to
+type its endpoint** (ADR 0165, 2026-08-16): that rule says a lane which is
+offered must be operable, so the lane is offered in the commit that makes it
+operable and `LockedLanes` drops the row whose reason is spent. What the
+Connection card
 now adds is the reason, as rows rather than as an attribute a disabled button
 could never carry: **what the product still owes** — for `Local`, ROADMAP
 Phase 5's remaining list; for the other two, that neither has an adapter — and,
@@ -354,15 +364,27 @@ UI implementation details, not Rust event names or Tauri channels.
 
 ### Provider contract
 
-- `ProviderStatus`: typed modes (`fast`, `quality`, `local`, later
-  `self_hosted`), capabilities (Transcription, Chat-Cleanup, Speech-Synthesis,
-  Local, API-Key-Required, Prompt-Bias, Language, Segments), the model-axis
-  answer for the model the request named, and `local_setup` typed status for
-  the local lane.
+- `ProviderStatus`: typed modes (`fast`, `quality`, `local`, `self_hosted`),
+  capabilities (Transcription, Chat-Cleanup, Speech-Synthesis, Local,
+  API-Key-Required, Prompt-Bias, Language, Segments), the model-axis answer for
+  the model the request named, `local_setup` typed status for the local lane,
+  and `self_hosted_endpoint` for the user-run one — the base URL in force, which
+  of the two doors supplied it (`config` / `environment` / `unset`), why it was
+  refused if it was, and the same pair for the model id (ADR 0165). Both are
+  lane-specific blocks and are `null` for every other lane.
+- **API-Key-Required answers *must*, and the accepted credential kinds answer
+  *may*** (ADR 0165). They were held equal until `self_hosted`, which accepts a
+  bearer token because speaches and LocalAI may issue one and requires none
+  because `whisper-server` issues none at all. The registry holds them as an
+  implication — a lane demanding a key accepts one — plus a behavioural claim: a
+  lane accepting no kind refuses to store one.
 - `ProviderCommandError`: `kind`, HTTP status, `retryable`, `Retry-After`,
   `user_action`. UI must relay this, never invent its own error categories.
-- `local` (on-device, the lane this build runs) and `self_hosted`
-  (user-run remote/LAN, reserved, not active) are not interchangeable labels.
+- `local` (on-device, the lane this build runs) and `self_hosted` (user-run
+  remote/LAN, **active for speech since 2026-08-16**) are not interchangeable
+  labels: one reads a file where it lies, the other posts an upload to a machine
+  that is not this one, which is why its base URL is a security boundary and its
+  capability block says `local: false`.
 - **Dispatch is a registry over three role traits** (ADR 0094), built
   2026-08-11. `core/providers/registry.rs` declares `Provider` (status and
   credential), `SpeechProvider` (recognition, plans, capture ceiling),
@@ -427,7 +449,13 @@ UI implementation details, not Rust event names or Tauri channels.
   server, which is why **the Self-hosted lane gains `dictation`, `meetings` and
   `upload`** rather than refusing them. A free base URL is gated on HTTPS **or**
   a private host. Self-hosted *synthesis* was not read and is not claimed.
-  Planned; not built.
+  **Built 2026-08-16** (ADR 0164 for the adapters, ADR 0165 for the
+  configuration): the endpoint and the model id are `AppConfig` fields typed on
+  the connection card and outranking `WORDSCRIPT_SELF_HOSTED_BASE_URL` and
+  `_MODEL`; the optional bearer token is in the OS secret store under
+  `self_hosted.speech.api_key`; and the lane never asks a server for
+  `verbose_json`, because it claims no segments and a server that does not know
+  the spelling answers 400 to the whole request.
 - **A model id resolves from one dated catalogue** (ADR 0115, scoped by
   ADR 0120), built 2026-08-12. `shared/model_catalogue.json` carries one row per
   model this build routes to, defaults to or makes a statement about —
@@ -1008,14 +1036,15 @@ an event that arrives while the snapshot is in flight always wins.
   - **wired in part** (two, each stating its own gap on itself): Home — the
     decision inbox receives a fallen-back delivery and nothing else, the desk
     (Phase 8) and a meeting's open questions (V2) have no receiver; AI Models —
-    the Groq and OpenAI connections are real, the other three lanes and every
-    job override are inoperable, each stating its own reason (ADR 0065,
-    ADR 0067, ADR 0163, ADR 0164).
-    **The three withheld lanes are withheld for three different reasons since
-    2026-08-16**: `Enterprise` has no adapter, `Your server` has one and no way
-    to configure it — its URL, token and model id store nowhere, so it is set by
-    `WORDSCRIPT_SELF_HOSTED_BASE_URL` — and `local` is a runtime lane that
-    installs its own models and is not offered until Phase 5 finishes it.
+    the cloud connections and `Your server` are real, the other two lanes and
+    every job override are inoperable, each stating its own reason (ADR 0065,
+    ADR 0067, ADR 0163, ADR 0164, ADR 0165).
+    **Two lanes are withheld and it was three until 2026-08-16**: `Enterprise`
+    has no adapter, and `local` is a runtime lane that installs its own models
+    and is not offered until Phase 5 finishes it. `Your server` was the third —
+    an adapter with nowhere to type its endpoint — and D1b gave it a URL, a
+    model id and an optional token on the card that offers it (ADR 0165), which
+    is ADR 0067 rule 1 running forwards rather than an exception to it.
   - **drawn, not wired** (four, each stating why): Context (V2 — the context
     object does not exist in the runtime), Notes & Meetings (V2), Agents
     (Phase 8, ADR 0030), Integrations (Phase 8).

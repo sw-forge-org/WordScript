@@ -450,6 +450,17 @@ export interface AppConfig {
   /// profile (ADR 0094): widening the tier is the tier's own axis and waits for
   /// a surface that draws more than one.
   provider_tier:           string;
+  /// The OpenAI-compatible server the `Your server` lane posts to (D1b,
+  /// ADR 0165). Machine-wide, and not a secret — the optional bearer token
+  /// that may go with it is in the OS secret store, never here.
+  ///
+  /// **It outranks `WORDSCRIPT_SELF_HOSTED_BASE_URL`**, and the status block
+  /// says which of the two answered, so no surface derives that for itself.
+  self_hosted_base_url:    string;
+  /// The model id that server is told to use when a job names none. Empty is
+  /// the ordinary state of a fresh install: nothing in this build knows what
+  /// somebody else's server serves, so it is typed rather than picked.
+  self_hosted_model:       string;
   local_model:             string;
   local_profile:           string;
   local_prompt_strength:   "off" | "profile" | "profile_and_terms";

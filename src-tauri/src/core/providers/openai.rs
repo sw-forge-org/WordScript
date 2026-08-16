@@ -181,6 +181,7 @@ fn provider_status(model: Option<&str>) -> Result<ProviderStatus, ProviderComman
         model_capabilities: model_capabilities(model.unwrap_or_default()),
         role_credentials,
         local_setup: None,
+        self_hosted_endpoint: None,
     })
 }
 

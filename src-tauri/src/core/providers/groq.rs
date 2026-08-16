@@ -165,6 +165,7 @@ fn provider_status(model: Option<&str>) -> Result<GroqProviderStatus, ProviderCo
         model_capabilities: model_capabilities(model.unwrap_or_default()),
         role_credentials,
         local_setup: None,
+        self_hosted_endpoint: None,
     })
 }
 

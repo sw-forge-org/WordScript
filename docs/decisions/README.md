@@ -1322,6 +1322,25 @@ Status: Proposed | Accepted | Superseded by NNNN
   `isSecureEndpoint` is ported whole — a `starts_with("10.")` shortcut admits
   `10.example.com` and hands a bearer token to whoever registered it.
 
+- [0165](0165-may-and-must-are-two-questions-and-the-lane-that-answers-them-differently-is-the-one-you-type-a-url-into.md):
+  ***may* and *must* are two questions, and the lane that answers them
+  differently is the one you type a URL into.** D1b, finishing the lane D1a
+  adapted: `AppConfig` gains `self_hosted_base_url` and `self_hosted_model`,
+  the optional bearer token goes to `self_hosted.speech.api_key` in the OS
+  secret store, and **what is typed outranks the environment** — the reverse of
+  ADR 0122's precedence, because a field that stores a value the runtime ignores
+  is the false affordance ADR 0067 rule 1 is about. **The registry invariant is
+  what had to give**: `requires_api_key == credential_kinds.contains(ApiKey)`
+  held only while every lane answered *may* and *must* the same way, and
+  `whisper-server` issues no token while speaches and LocalAI may. It becomes an
+  implication plus a behavioural claim — a lane accepting no kind must refuse to
+  store one. **ADR 0067 rule 1 is reversed for this lane on its own terms**: it
+  is operable, so it is offered, and `LockedLanes` drops the row whose reason is
+  spent rather than rewording it. Two sentences elsewhere went false the moment
+  the lane became reachable — the screen's banner and the status strip's
+  `Groq cloud` for every non-local connection — and both were found by rendering
+  the workspace and looking at it, which is the fifth time on this surface.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both
