@@ -53,6 +53,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — your account plan belongs to the provider you bought it from (ADR 0167, ADR 0168)
+
+- **The plan is stored per provider.** It was one setting for the whole machine,
+  so switching your connection from Groq to OpenAI carried Groq's paid plan
+  across to a provider that never sold it. Each provider now holds its own, and
+  switching back and forth keeps both. Your existing plan is moved for you on
+  the first start, with a backup of the config taken first.
+- **The row stops offering a choice where there is none.** OpenAI and OpenRouter
+  publish one upload size for every account, so `AI Models` states it instead of
+  drawing a menu with a single entry. The number is unchanged and is still shown
+  resolved under *Longest recording this lane accepts*.
+- **A provider with no plans no longer reads `Reading the provider plans…`
+  forever.** That message claimed an answer was still on its way when the
+  runtime had already replied. The row now says which of three things is true:
+  the connection does not transcribe, the lane is not billed by request size, or
+  this build has no adapter for that vendor.
+- **The import drop zone stopped naming a plan it could not know.** It read *up
+  to 25 MiB per file on your Free plan* for everyone, including machines on the
+  developer plan and every provider that is not Groq. The picker directly above
+  it answers the same question against the file you actually dropped.
+
 ### Fixed — the readiness chip reports the connection you are actually on (ADR 0166)
 
 - **`Needs key` no longer means the Groq key when you are not on Groq.** The

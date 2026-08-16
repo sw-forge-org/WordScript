@@ -2542,11 +2542,17 @@ struct ProviderUploadCapacity {
 /// provider choice moved to the point of use: the file's size is the fact that
 /// decides it, and it is not known until there is a file.
 ///
-/// **The plan is read here rather than passed in.** It is `provider_tier` on
-/// the config, the same value `resolve_capture_budget` spends, so a picker
-/// cannot answer against a plan the pipeline is not on. Each provider
-/// interprets the id itself and falls back to its own default for one it does
-/// not know, which is what makes one stored plan safe to ask every vendor with.
+/// **The plan is read here rather than passed in**, and it is read PER
+/// CANDIDATE (ADR 0167). It comes from `provider_plans` on the config, the same
+/// map `resolve_capture_budget` spends, so a picker cannot answer against a
+/// plan the pipeline is not on.
+///
+/// This used to be one stored string handed to every vendor, defended on the
+/// grounds that each provider falls back to its own default for an id it does
+/// not know. That is true and it was never the point: the fallback makes a
+/// wrong id *harmless*, not *right*, and the day a second vendor sells two
+/// ceilings the same string means two different sizes. The map answers per
+/// vendor, so the fallback goes back to covering only what it was written for.
 ///
 /// **It answers per candidate and never picks one.** A vendor that cannot take
 /// the file is reported as such; choosing the one that can is the user's, and
@@ -2557,7 +2563,7 @@ fn resolve_upload_capacity(
     bytes: u64,
     candidates: Vec<UploadCandidate>,
 ) -> Vec<ProviderUploadCapacity> {
-    let tier = core::config::AppConfig::load_from_disk().provider_tier;
+    let config = core::config::AppConfig::load_from_disk();
 
     candidates
         .into_iter()
@@ -2565,7 +2571,7 @@ fn resolve_upload_capacity(
             capacity: core::capture_budget::upload_capacity(
                 &candidate.provider,
                 &candidate.model,
-                &tier,
+                config.plan_for(&candidate.provider),
                 bytes,
             ),
             provider: candidate.provider,

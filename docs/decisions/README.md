@@ -1358,6 +1358,37 @@ Status: Proposed | Accepted | Superseded by NNNN
   config had said who the connection was. Also the first commit to reach
   `Onboarding.tsx`, and only where it was false — its Self-hosted step claimed
   the lane cannot transcribe, which D1a inverted.
+- [0167](0167-a-plan-belongs-to-a-credential-so-it-is-keyed-by-the-vendor-that-sold-it.md):
+  **A plan belongs to a credential, so it is keyed by the vendor that sold it.**
+  Closes the axis ADR 0094 left open by name: `provider_tier`, one string for
+  the whole machine, becomes `provider_plans`, a vendor id to a plan id, read
+  through `AppConfig::plan_for`. **The defence written into
+  `resolve_upload_capacity` was true and was never the point** — a vendor
+  falling back to its own default for an id it does not know makes a wrong plan
+  *harmless*, not *right*, and it holds only while at most one registered vendor
+  sells more than one ceiling. The lift offers the old id to every registered
+  vendor and lands it on the ones whose `tiers()` declare it, which is a lookup
+  rather than a guess; an id nobody sells lands nowhere, because that is already
+  what every reader resolved it to. A default plan is stored as absence, the
+  guard is the map's presence rather than a version counter, and the snapshot
+  path covers the lift. `capture_budget::resolve` gets a fix it did not ask for:
+  it had the recogniser's vendor eleven lines above and was asking about the
+  machine's.
+- [0168](0168-a-plan-row-with-nothing-to-choose-is-a-statement-and-the-two-reasons-it-can-be-empty-are-not-one.md):
+  **A plan row with nothing to choose is a statement, and the two reasons it can
+  be empty are not one.** The surface half, enforcing what ADR 0038 decided and
+  `Models.tsx` did not do: a `Select` with one option for OpenAI, and a disabled
+  *Reading the provider plans…* for a vendor with none — **a claim that a read
+  is in flight which already came back**, latent today and one chat-only
+  Anthropic adapter from live, because `selectableProviderNames` asks whether
+  the registry carries a vendor, not whether it hears. `provider_tiers` answers
+  `[]` for a lane with no plans and a vendor with no adapter alike, which is the
+  conflation `capture_limits_if_known` was split for one axis over, so the
+  registry answers the second. Five states, one of them a control. Two things
+  the build found rather than the plan: the badge copy collided with
+  `Enterprise`'s own `No adapter` for a different subject, and printing the
+  seam's reason here put one fact on the screen twice a few pixels apart.
+  `port:diff` measured identical with the change reverted and applied.
 
 ## Resolved: the number 0011 was used twice
 

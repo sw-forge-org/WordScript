@@ -18,7 +18,7 @@ use super::{
 };
 
 /// The registry id, and the one string a credential entry is keyed by.
-const GROQ_PROVIDER_ID: &str = "groq";
+pub const GROQ_PROVIDER_ID: &str = "groq";
 /// How this vendor is named in a sentence a user reads.
 const GROQ_VENDOR: &str = "Groq";
 /// **Already the OpenAI shape with a Groq host** — the finding ADR 0113 is

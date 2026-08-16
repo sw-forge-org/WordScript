@@ -115,7 +115,10 @@ constants themselves were not re-derived and carry their own provenance
   host it was never entered for. `JobKey::role()` is the single bridge to the
   credential axis above. `meetings` and `upload` are drawn columns with no
   runtime path; titles rides the assistant's resolution and has no override
-  (ADR 0087). `provider_tier` stays machine-wide.
+  (ADR 0087). The account plan is machine-wide but **keyed by vendor** --
+  `provider_plans` maps a vendor id to a plan id, because a plan belongs to a
+  credential and a credential is the machine's (ADR 0167). A vendor with no
+  entry is on its own default, and a default plan is stored as absence.
 - **A kind is `api_key` or `subscription`, and only the first exists in this
   build.** A subscription is inadmissible for speech and voice in the type
   (ADR 0102), Groq accepts an API key alone, and the local lane accepts no kind

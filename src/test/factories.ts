@@ -13,7 +13,7 @@ import {
 export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     model: runtimeDefault("speech"),
-    provider_tier: "",
+    provider_plans: {},
     language: "",
     active_text_profile_id: "general",
     text_profiles: [

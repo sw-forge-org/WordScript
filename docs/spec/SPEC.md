@@ -1,6 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-16 (stage D1b, which read
+Status: created 2026-07-24, last drift check 2026-08-16 (the account-plan axis,
+which read the provider clause: **a plan is keyed by the vendor that sold it**
+— `provider_plans` replaces the one machine-wide `provider_tier`, both readers
+look their own vendor up, and the settings row states a ceiling it cannot offer
+a choice between rather than drawing a control that decides nothing (ADR 0167,
+ADR 0168); the stage D1b pass before it read
 the lane clause and the port inventory: **`Your server` is configured on the
 screen that offers it and is no longer withheld** — a URL and a model id in
 `AppConfig`, an optional bearer token in the OS secret store, what is typed
@@ -414,7 +419,12 @@ UI implementation details, not Rust event names or Tauri channels.
   The machine-wide one is gone; the schema-5 profile migration lifts the
   per-profile one onto the axis behind a `core::backup` snapshot. Titles ride
   the assistant's resolution and carry no override, because ADR 0087 settled
-  that its row states rather than sets. `provider_tier` stays machine-wide.
+  that its row states rather than sets. **The account plan is machine-wide and
+  keyed by vendor**: `provider_plans` maps a vendor id to a plan id, the two
+  readers look their own vendor up through `AppConfig::plan_for`, and the lift
+  off the old single string offers it to every registered vendor and lands it on
+  the ones whose `tiers()` declare it, behind a `core::backup` snapshot
+  (ADR 0167).
 - **`VoiceProvider`'s contract is designed and its method is not written**
   (ADR 0114). The trait carried no methods because no vendor shape had been
   read; fourteen synthesis candidates across four protocol shapes have now been

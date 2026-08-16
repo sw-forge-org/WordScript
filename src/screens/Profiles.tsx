@@ -377,9 +377,15 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
 
   /* Keyed on the recogniser's vendor, because that is what the ceiling is
      bound by — a profile whose chat jobs sit elsewhere does not change what
-     one recording may cost (ADR 0094). */
+     one recording may cost (ADR 0094).
+     And on THAT VENDOR'S plan, not on the machine's (ADR 0167): the key used to
+     read one global string, so changing the plan of a vendor this profile does
+     not recognise with refreshed a ceiling that had not moved, while the axis it
+     now reads makes the opposite mistake possible instead — a plan change on the
+     vendor in the key must refresh, and nothing else may. */
+  const dictationProvider = resolveConfigJobProvider(config, "dictation").provider;
   const { budget } = useCaptureBudget(
-    `${resolveConfigJobProvider(config, "dictation").provider}:${config.provider_tier}:${config.local_model}`,
+    `${dictationProvider}:${config.provider_plans?.[dictationProvider] ?? ""}:${config.local_model}`,
   );
 
   /** WHICH FLAGS THIS PROFILE HAS ALREADY READ AND ACCEPTED (ADR 0085).

@@ -19,8 +19,11 @@ import type { ProviderUploadCapacity, UploadCapacity } from "@/types/providers";
  * to apply, and asking the runtime "does this vendor accept zero bytes" would
  * be manufacturing an answer to a question nobody put.
  *
- * **The plan is not passed.** The runtime reads `provider_tier` off the config
- * itself, so a picker cannot answer against a plan the pipeline is not on.
+ * **The plan is not passed.** The runtime reads `provider_plans` off the config
+ * itself and looks each candidate up by its own vendor (ADR 0167), so a picker
+ * cannot answer against a plan the pipeline is not on — and cannot answer for
+ * one vendor against another vendor's plan, which is what a single passed
+ * string would have made possible the moment it was worth passing.
  */
 export function useUploadCapacity(
   fileBytes: number | null,

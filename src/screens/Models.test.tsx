@@ -280,7 +280,38 @@ describe("AI Models, wired", () => {
       "Developer — 100 MiB per request",
     ]);
     await userEvent.selectOptions(plan, "dev");
-    expect(patch).toHaveBeenCalledWith({ provider_tier: "dev" });
+    /* UNDER THE VENDOR, NOT BESIDE IT (ADR 0167). The whole map is written
+       because `patch` is a shallow merge, which is what the helper is for. */
+    expect(patch).toHaveBeenCalledWith({ provider_plans: { groq: "dev" } });
+  });
+
+  /** A plan already held for another vendor is not disturbed by writing this
+   *  one — the failure mode a row that rebuilt the map from its own vendor
+   *  would have, arriving through the door that was supposed to fix it. */
+  it("writes one vendor's plan without dropping another's", async () => {
+    const patch = vi.fn();
+    const config = createAppConfig();
+    config.provider_plans = { openrouter: "standard" };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    await userEvent.selectOptions(await screen.findByLabelText("Account plan"), "dev");
+    expect(patch).toHaveBeenCalledWith({
+      provider_plans: { openrouter: "standard", groq: "dev" },
+    });
+  });
+
+  /** The default plan is stored as absence, on both sides of the seam: picking
+   *  it back removes the entry rather than writing the default's own id. */
+  it("stores the default plan as absence rather than as its id", async () => {
+    const patch = vi.fn();
+    const config = createAppConfig();
+    config.provider_plans = { groq: "dev" };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    const plan = (await screen.findByLabelText("Account plan")) as HTMLSelectElement;
+    expect(plan).toHaveValue("dev");
+    await userEvent.selectOptions(plan, "");
+    expect(patch).toHaveBeenCalledWith({ provider_plans: {} });
   });
 
   it("states the runtime's recording ceiling rather than the drawing's ~26 min", async () => {
@@ -545,11 +576,20 @@ describe("AI Models, choosing the connection", () => {
     );
   });
 
-  it("reads a plan the new vendor never had as that vendor's default", async () => {
+  /**
+   * ONE PUBLISHED CEILING IS A FACT AND NOT A CHOICE (ADR 0167, ADR 0038).
+   *
+   * This case used to assert the opposite half of the same situation: Groq's
+   * `dev` stored machine-wide while the connection was OpenAI, and a select
+   * rendering blank because the stored value matched no option. **Both halves
+   * of that are now impossible** — the plan is keyed by vendor, so Groq's
+   * cannot reach this row, and OpenAI's single ceiling is stated rather than
+   * offered.
+   */
+  it("states a single published ceiling instead of offering it", async () => {
     const config = createAppConfig();
-    /* Groq's paid plan, stored machine-wide, while the connection is OpenAI —
-       which publishes one ceiling for every account. */
-    config.provider_tier = "dev";
+    /* Groq's paid plan, held for Groq, while the connection is OpenAI. */
+    config.provider_plans = { groq: "dev" };
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
@@ -566,14 +606,97 @@ describe("AI Models, choosing the connection", () => {
     });
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    /* A select whose value matches no option renders blank, and blank reads as
-       a setting nobody made rather than one that does not apply. The runtime
-       already falls back to the default for an unrecognised plan id; the
-       surface has to say the same thing. */
-    await waitFor(() =>
-      expect(screen.getByLabelText("Account plan")).toHaveValue(""),
-    );
-    expect(screen.getByLabelText("Account plan")).not.toBeDisabled();
+    expect(await screen.findByText("Standard — 25 MiB per request")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Account plan")).not.toBeInTheDocument();
+    expect(screen.queryByText("Developer — 100 MiB per request")).not.toBeInTheDocument();
+  });
+
+  /**
+   * THE TRAP THIS ROW WAS ONE ADAPTER AWAY FROM (ADR 0167).
+   *
+   * `resolve_provider_tiers` answers `[]` for a vendor with no adapter and for
+   * a lane with nothing to sell alike, and the row read that as *still
+   * reading* — a permanently disabled control claiming a read is in flight.
+   * The registry answers the first sentence, so the two are told apart.
+   */
+  it("says a vendor has no adapter rather than reading its plans forever", async () => {
+    const config = createAppConfig();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "anthropic", overrides: {} };
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") return STATUS;
+      if (command === "resolve_provider_tiers") return [];
+      return undefined;
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    expect(await screen.findByText("No speech")).toBeInTheDocument();
+    expect(screen.queryByText("Reading the provider plans…")).not.toBeInTheDocument();
+  });
+
+  /**
+   * A registered vendor that does not listen has no plan to be on, and that is
+   * a different sentence from having no adapter — the shape Anthropic will
+   * arrive in, tested on a drawn vendor because a runtime id with no drawn name
+   * can never be the connection.
+   */
+  it("says a connection that does not transcribe has no plan", async () => {
+    const config = createAppConfig();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "openai", overrides: {} };
+    /* BOTH READS MOVE, and that is the seam's own rule rather than fixture
+       bookkeeping: `resolveProviderAnswer` prefers `provider_status`'s
+       capability block over the registered list where it holds one, so a
+       registry row alone would be overruled by a status still claiming the
+       vendor listens. */
+    const deaf = { ...CAPABILITIES, transcription: false };
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "registered_providers")
+        return REGISTERED.map((row) =>
+          row.provider === "openai" ? { ...row, roles: ["chat"], capabilities: deaf } : row,
+        );
+      if (command === "provider_status")
+        return { ...STATUS, provider: "openai", capabilities: deaf };
+      if (command === "resolve_provider_tiers") return [];
+      return undefined;
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    expect(await screen.findByText("No speech")).toBeInTheDocument();
+    /* The reason is stated ONCE, on the connection card. This row says why the
+       answer matters here and does not reprint it — one fact twice a few pixels
+       apart is what the assertion below is guarding against. */
+    expect(
+      screen.getAllByText(/no speech recognition adapter for OpenAI yet/i),
+    ).toHaveLength(1);
+    expect(
+      screen.getByText(/A plan bounds an upload, so it is a speech question/i),
+    ).toBeInTheDocument();
+  });
+
+  /** A speech lane whose ceiling is the operator's own has no plans, and says
+   *  so — the self-hosted shape, stated where a Cloud vendor could reach it. */
+  it("says a speech lane with no plans has none", async () => {
+    const config = createAppConfig();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "openrouter", overrides: {} };
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") return STATUS;
+      if (command === "resolve_provider_tiers") return [];
+      return undefined;
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    expect(await screen.findByText("No plans")).toBeInTheDocument();
+    expect(screen.queryByText("No speech")).not.toBeInTheDocument();
   });
 
   it("names the stored connection on a job row that follows it", async () => {

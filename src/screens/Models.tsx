@@ -75,6 +75,7 @@ import {
   resolveProfileProviderSettings,
 } from "@/lib/textProfiles";
 import {
+  buildProviderPlanPatch,
   connectionCapabilitySentence,
   credentialStateFor,
   drawnNameFor,
@@ -837,7 +838,13 @@ function ServerModelRow({
  */
 function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
   const { answers, refresh, connection } = useContext(Wired);
-  const [tiers, setTiers] = useState<ProviderTier[]>([]);
+  /* NULL IS *NOT READ YET* AND AN EMPTY ARRAY IS *THIS LANE HAS NO PLANS*, and
+     the two were one value until ADR 0167. `resolve_provider_tiers` answers `[]`
+     for both a lane with nothing to sell and a vendor with no adapter, which is
+     the conflation `capture_limits_if_known` was split for one axis over — so
+     the third sentence comes from `registered` and the read's own state stays
+     here rather than being inferred from a length. */
+  const [tiers, setTiers] = useState<ProviderTier[] | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -869,6 +876,15 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
        plans — the row then states the stored value rather than an empty list. */
     if (Array.isArray(tierResult)) setTiers(tierResult);
   }, [runtime, providerId]);
+
+  /* A VENDOR'S PLANS BELONG TO THAT VENDOR, so the answer is discarded when the
+     connection moves rather than lingering under the next one. Without this the
+     row would state Groq's two plans over an OpenAI connection for as long as
+     the next read takes, which is the same fault the draft reset below prevents
+     one row up — and the one this axis exists to make impossible (ADR 0167). */
+  useEffect(() => {
+    setTiers(null);
+  }, [providerId]);
 
   useEffect(() => {
     if (!runtime?.active) return;
@@ -1010,41 +1026,155 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
           )
         }
       />
+      <AccountPlanRow runtime={runtime} providerId={providerId} tiers={tiers} />
+    </>
+  );
+}
+
+/**
+ * WHAT THIS MACHINE'S PLAN IS WITH THE VENDOR THE CONNECTION NAMES — or why
+ * there is nothing here to set (ADR 0167).
+ *
+ * **A plan is one thing only: how much audio may go up in one request.** So the
+ * row is a control exactly where a vendor sells more than one ceiling, which is
+ * what ADR 0038 decided when it declared the plans and which this row did not
+ * do: it drew a select with one option for OpenAI, and a permanently disabled
+ * *Reading the provider plans…* for a vendor with none. The second is the worse
+ * of the two — a sentence claiming a read is in flight when the runtime has
+ * already answered, on a screen whose own rule is that a state it cannot
+ * establish is stated rather than drawn.
+ *
+ * **The statement is not a new element.** The Enterprise branch of this file
+ * already replaces an empty picker with a badge and the reason
+ * (`Speech · Azure only`), for the same argument in the same words.
+ *
+ * **Three vendors and two reads, kept apart.** `resolve_provider_tiers` answers
+ * `[]` both for a lane with no plans and for a vendor with no adapter, so the
+ * registry answers the second — absence from `registered` is how *no adapter*
+ * is stated (ADR 0124), and it is a different sentence from *this lane is not
+ * billed by request size*. Neither is *not read yet*, which claims nothing.
+ *
+ * **The two vendor sentences are `resolveProviderAnswer`'s, not this row's.**
+ * *Anthropic is not integrated yet* and *this vendor does not serve speech* are
+ * already written once, for the chip row and the job rows, and a second copy
+ * here is the drift ADR 0123 forbids — this row asks the seam the same question
+ * with `speech` in hand and shows what it answers.
+ */
+function AccountPlanRow({
+  runtime,
+  providerId,
+  tiers,
+}: {
+  runtime: WorkspaceRuntime;
+  providerId: string;
+  tiers: ProviderTier[] | null;
+}) {
+  const { answers } = useContext(Wired);
+  const registered = answers.registered;
+
+  const spent = "Sets the largest upload, and with it the longest recording. Stated again where it is spent.";
+
+  /* Nothing read yet claims nothing, so the row keeps the shape it had. A
+     `pending` that replaced the control would make every screen open flicker
+     through a sentence on its way to the truth. */
+  if (registered === null || tiers === null) {
+    return (
       <Row
         label="Account plan"
-        hint="Sets the largest upload, and with it the longest recording. Stated again where it is spent."
+        hint={spent}
         control={
-          <Select
-            /* A PLAN ID THIS VENDOR NEVER HAD READS AS ITS DEFAULT, which is
-               what the runtime already does: `capture_limits` falls back to the
-               default tier for an id it does not recognise, on the argument
-               that being wrong towards "you may record less" costs a retry.
-               `provider_tier` is machine-wide — A4 left it so deliberately —
-               so switching the connection can leave Groq's `dev` selected on a
-               vendor with one plan, and a select whose value matches no option
-               renders blank. Blank reads as a setting nobody has made rather
-               than one that does not apply here. */
-            value={
-              tiers.some((tier) => (tier.default ? "" : tier.id) === runtime.config.provider_tier)
-                ? runtime.config.provider_tier
-                : ""
-            }
-            onChange={(event) => runtime.patch({ provider_tier: event.target.value })}
-            aria-label="Account plan"
-            disabled={tiers.length === 0}
-          >
-            {tiers.length === 0 && (
-              <option value={runtime.config.provider_tier}>Reading the provider plans…</option>
-            )}
-            {tiers.map((tier) => (
-              <option key={tier.id} value={tier.default ? "" : tier.id}>
-                {tier.label}
-              </option>
-            ))}
+          <Select aria-label="Account plan" value="" disabled onChange={() => {}}>
+            <option value="">Reading the provider plans…</option>
           </Select>
         }
       />
-    </>
+    );
+  }
+
+  const answer = resolveProviderAnswer(drawnNameFor(providerId) ?? providerId, "speech", answers);
+
+  /* ONE BRANCH FOR THREE SENTENCES, because the row asks one question. The seam
+     separates *this vendor has no adapter at all*, *the vendor serves speech and
+     this build does not* and *the vendor does not do speech* — three different
+     facts, correctly kept apart for the chip row and the job rows, and all three
+     the same answer to `which plan am I on`: there is no speech here to bound.
+     The distinction rides on the hint, where the seam already wrote it.
+     Collapsing them in the BADGE is not the conflation ADR 0106 is about; a
+     fourth spelling of them here would be.
+     And the badge is deliberately not `Enterprise`'s `No adapter`: that one is
+     about a LANE nothing stands behind, this is about one vendor on a lane that
+     works, and both are visible on this screen at once.
+
+     THE REASON IS NOT REPEATED HERE, and that was found rather than designed:
+     the connection card two rows up already carries the seam's sentence, so
+     printing it again put one fact on the screen twice a few pixels apart —
+     the furniture rule this file states about the credential badge, arriving
+     through a row that had every right to know the answer. What this row owns
+     is why the ANSWER MATTERS HERE, which nothing else says. */
+  if (
+    !answer.operable &&
+    (answer.reason.kind === "no_adapter" || answer.reason.kind === "role_denied")
+  ) {
+    return (
+      <Row
+        label="Account plan"
+        hint="A plan bounds an upload, so it is a speech question. This connection does not transcribe — the reason is on the connection above."
+        control={<StatusBadge tone="warning">No speech</StatusBadge>}
+      />
+    );
+  }
+
+  if (tiers.length === 0) {
+    return (
+      <Row
+        label="Account plan"
+        hint="This lane is not bound by request size, so there is no plan to be on. What one recording may cost is the ceiling below."
+        control={<StatusBadge>No plans</StatusBadge>}
+      />
+    );
+  }
+
+  /* ONE CEILING IS A FACT, NOT A CHOICE. The vendor publishes it for every
+     account, so a select here would be a control that decides nothing — and the
+     number itself is not lost: `Longest recording this lane accepts` states it
+     one card down, resolved, which is where it is spent. */
+  if (tiers.length === 1) {
+    return (
+      <Row label="Account plan" hint={spent} control={<StatusBadge>{tiers[0].label}</StatusBadge>} />
+    );
+  }
+
+  const stored = runtime.config.provider_plans?.[providerId] ?? "";
+  return (
+    <Row
+      label="Account plan"
+      hint={spent}
+      control={
+        <Select
+          /* A PLAN ID THIS VENDOR NEVER SOLD READS AS ITS DEFAULT, which is what
+             the runtime already does: `capture_limits` falls back to the default
+             tier for an id it does not recognise, on the argument that being
+             wrong towards "you may record less" costs a retry. After ADR 0167 a
+             foreign id can only reach here through a hand-edited config — the
+             map is keyed by vendor and the migration drops what no vendor sold —
+             but the fallback stays, because a config file is a thing people
+             edit. */
+          value={tiers.some((tier) => (tier.default ? "" : tier.id) === stored) ? stored : ""}
+          onChange={(event) =>
+            runtime.patch(
+              buildProviderPlanPatch(runtime.config, providerId, event.target.value),
+            )
+          }
+          aria-label="Account plan"
+        >
+          {tiers.map((tier) => (
+            <option key={tier.id} value={tier.default ? "" : tier.id}>
+              {tier.label}
+            </option>
+          ))}
+        </Select>
+      }
+    />
   );
 }
 

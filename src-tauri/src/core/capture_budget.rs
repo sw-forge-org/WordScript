@@ -222,15 +222,20 @@ pub fn resolve(config: &AppConfig) -> CaptureBudget {
     // bound by decode time even while its chat jobs sit on a cloud plan.
     let provider = profile.job_provider(JobKey::Dictation).provider;
 
-    // The model matters to lanes bound by decode time; the tier to lanes bound
+    // The model matters to lanes bound by decode time; the plan to lanes bound
     // by request size. Both are passed for every lane, and each lane uses what
     // applies to it.
+    //
+    // **The plan is this vendor's** (ADR 0167). It was one machine-wide string
+    // until then, so a profile that routed dictation to OpenAI was handed
+    // Groq's plan id — harmless while OpenAI sold one ceiling and ignored the
+    // argument, and a ceiling off by a factor of four the day it does not.
     let model = if speech.local_model.trim().is_empty() {
         speech.model.clone()
     } else {
         speech.local_model.clone()
     };
-    let limits = providers::capture_limits(&provider, &model, &config.provider_tier);
+    let limits = providers::capture_limits(&provider, &model, config.plan_for(&provider));
 
     // The earliest real limit wins, and the reason follows the winner — a
     // ceiling that names a cause which is not the binding one is worse than
@@ -304,6 +309,7 @@ pub fn pipeline_deadline(audio_seconds: Option<f64>) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     fn set_profile_auto_stop(config: &mut AppConfig, seconds: u64) {
         let active_id = config.active_text_profile_id.clone();
@@ -474,7 +480,10 @@ mod tests {
         let mut config = AppConfig::default();
         let free = resolve(&config);
 
-        config.provider_tier = crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string();
+        config.provider_plans = Some(BTreeMap::from([(
+            crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
+            crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string(),
+        )]));
         let dev = resolve(&config);
 
         assert!(
@@ -491,9 +500,38 @@ mod tests {
     #[test]
     fn an_unknown_plan_falls_back_to_the_default_not_the_largest() {
         let mut config = AppConfig::default();
-        config.provider_tier = "enterprise-unlimited".to_string();
+        config.provider_plans = Some(BTreeMap::from([(
+            crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
+            "enterprise-unlimited".to_string(),
+        )]));
         let budget = resolve(&config);
         assert_eq!(budget.ceiling_seconds, 819);
+    }
+
+    /// THE EDGE THE PER-VENDOR AXIS EXISTS FOR (ADR 0167).
+    ///
+    /// One machine-wide plan string handed Groq's `dev` to whichever vendor the
+    /// active profile happened to recognise with. It is invisible today only
+    /// because OpenAI ignores the argument and publishes one ceiling; the
+    /// assertion is that the plan is looked up by vendor, not that OpenAI is
+    /// forgiving.
+    #[test]
+    fn a_plan_belongs_to_the_vendor_it_was_stored_for() {
+        let mut config = AppConfig::default();
+        config.provider_plans = Some(BTreeMap::from([(
+            crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
+            crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string(),
+        )]));
+
+        assert_eq!(
+            config.plan_for(crate::core::providers::groq::GROQ_PROVIDER_ID),
+            crate::core::providers::groq::GROQ_DEV_TIER_ID
+        );
+        assert_eq!(
+            config.plan_for("openai"),
+            "",
+            "a vendor with no entry of its own is on its own default, never on another vendor's plan"
+        );
     }
 
     #[test]

@@ -443,13 +443,19 @@ export interface AppConfig {
   local_correction_model:  string;
   filter_fillers:          boolean;
   professionalize:         boolean;
-  /// Which of the provider's account plans this machine is on. Plans come from
-  /// `resolve_provider_tiers`; empty means the provider's default.
+  /// Which account plan this machine is on, **per vendor** (ADR 0167). Plans
+  /// come from `resolve_provider_tiers`; a vendor with no entry is on its own
+  /// default, and a default plan is stored as absence rather than as its id.
   ///
-  /// Machine-wide, and it stayed that way when the provider axis went per
-  /// profile (ADR 0094): widening the tier is the tier's own axis and waits for
-  /// a surface that draws more than one.
-  provider_tier:           string;
+  /// It was one machine-wide string until this build, which ADR 0094 left open
+  /// deliberately and which was harmless only while exactly one registered
+  /// vendor sold more than one ceiling.
+  ///
+  /// **Patch it through `buildProviderPlanPatch`, never by hand**: `patch` is a
+  /// shallow merge over `AppConfig`, so writing this key means writing the
+  /// whole map, and a surface that rebuilds it from one row drops every other
+  /// vendor's plan.
+  provider_plans:          Record<string, string> | null;
   /// The OpenAI-compatible server the `Your server` lane posts to (D1b,
   /// ADR 0165). Machine-wide, and not a secret — the optional bearer token
   /// that may go with it is in the OS secret store, never here.

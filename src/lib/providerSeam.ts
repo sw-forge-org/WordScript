@@ -22,6 +22,7 @@
  * down, which ADR 0106 names explicitly.
  */
 import { PROVIDERS, type LaneName } from "@/screens/data";
+import type { AppConfig } from "@/types/ipc";
 import type {
   ProviderCapabilities,
   ProviderRole,
@@ -454,6 +455,33 @@ export function selectableProviderNames(lane: LaneName, answers: RuntimeAnswers)
       return Boolean(id && answers.registered?.some((row) => row.provider === id));
     })
     .map((provider) => provider.name);
+}
+
+/**
+ * Writes one vendor's account plan, leaving every other vendor's alone
+ * (ADR 0167).
+ *
+ * **`patch` is a shallow merge over `AppConfig`**, so writing `provider_plans`
+ * means writing the whole map. A row that built it from its own vendor would
+ * drop every other one — which is the defect the axis exists to prevent,
+ * arriving through the door that was supposed to fix it.
+ *
+ * **A default plan is stored as absence**, and that is why an empty id deletes
+ * rather than writes. The runtime resolves an empty id to the vendor's default
+ * (`groq::capture_limits`); storing the default's own id as well would be a
+ * second spelling of one answer, and the two drift the day a vendor renames its
+ * free plan. `adopt_provider_plan_axis` holds the same rule on the Rust side.
+ */
+export function buildProviderPlanPatch(
+  config: AppConfig,
+  provider: string,
+  planId: string,
+): Partial<AppConfig> {
+  const next = { ...(config.provider_plans ?? {}) };
+  const id = planId.trim();
+  if (id) next[provider] = id;
+  else delete next[provider];
+  return { provider_plans: next };
 }
 
 /**

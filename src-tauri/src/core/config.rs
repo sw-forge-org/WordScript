@@ -9,8 +9,8 @@ use super::communication_style::{
 };
 use super::paths::config_file_path;
 use super::providers::{
-    default_provider_id, normalize_provider_value, resolves_to_a_known_provider, JobKey,
-    JobProvider,
+    default_provider_id, normalize_provider_value, provider_tiers, registered_providers,
+    resolves_to_a_known_provider, JobKey, JobProvider,
 };
 use super::runtime_log;
 
@@ -1117,21 +1117,35 @@ pub struct AppConfig {
     pub local_correction_model: String,
     pub filter_fillers: bool,
     pub professionalize: bool,
-    /// Which of the provider's account plans this machine is on. Plans are
-    /// declared by the provider (`providers::provider_tiers`), never listed
-    /// here, and they bound how long a recording may be. Machine-wide rather
-    /// than per-profile: the plan belongs to the credential, and every profile
-    /// using that provider shares it. Empty means the provider's default plan.
+    /// **The migration door for the plan axis, read once and never written**
+    /// (ADR 0167).
     ///
-    /// **It stays machine-wide across the provider axis** (ADR 0094), and the
-    /// question that raises is deliberately left open: a plan belongs to a
-    /// credential, a credential is keyed by provider, and two profiles on two
-    /// providers now share one plan field. That was already true when the
-    /// provider was per profile, so this step neither introduces nor fixes it —
-    /// widening the tier is the tier's own axis and it waits for a surface that
-    /// draws more than one.
+    /// One plan id for the whole machine is what a plan was until this build.
+    /// `adopt_provider_plan_axis` lifts it onto `provider_plans` and stops
+    /// writing it, so the key leaves the file on the next save — the same door
+    /// `ProfileSpeechSettings::migrated_provider` was for the provider axis,
+    /// and it is a migration rather than a reset for the same reason: this is
+    /// the shape every installation carries right now.
+    #[serde(rename = "provider_tier", skip_serializing)]
+    pub(crate) migrated_provider_tier: Option<String>,
+    /// Which account plan this machine is on, per vendor.
+    ///
+    /// Plans are declared by the provider (`providers::provider_tiers`), never
+    /// listed here, and they bound how much audio may go up in one request —
+    /// and with it how long a recording may be.
+    ///
+    /// **Keyed by vendor, because a plan belongs to a credential** (ADR 0167).
+    /// ADR 0094 left it machine-wide and said so: two profiles on two vendors
+    /// shared one plan field. That was harmless only while exactly one
+    /// registered vendor sold more than one ceiling, and it stopped being a
+    /// question about scope the moment a second could.
+    ///
+    /// A vendor with no entry is on its own default plan, which is what every
+    /// adapter already reads an empty id as. `None` means the map has never
+    /// been written — the same shape `TextProfile::providers` uses, and the
+    /// reason the lift needs no version counter of its own.
     #[serde(default)]
-    pub provider_tier: String,
+    pub provider_plans: Option<BTreeMap<String, String>>,
     pub local_model: String,
     pub local_profile: String,
     pub local_prompt_strength: String,
@@ -1310,7 +1324,8 @@ impl Default for AppConfig {
             local_correction_model: default_local_correction_model().to_string(),
             filter_fillers: true,
             professionalize: false,
-            provider_tier: String::new(),
+            migrated_provider_tier: None,
+            provider_plans: None,
             local_model: "base".to_string(),
             local_profile: default_local_profile.clone(),
             local_prompt_strength: default_local_prompt_strength.clone(),
@@ -1408,6 +1423,27 @@ impl AppConfig {
     /// different connections belong.
     pub(crate) fn job_provider(&self, job: JobKey) -> JobProvider {
         self.active_text_profile().job_provider(job)
+    }
+
+    /// Which account plan this machine is on **with this vendor** (ADR 0167).
+    ///
+    /// **The single door onto the plan axis**, and the reason both readers take
+    /// a vendor: `capture_budget::resolve` has already resolved the recogniser's
+    /// vendor when it asks, and `resolve_upload_capacity` asks once per
+    /// candidate. Neither had to look one up to get this — the field was simply
+    /// answering a question nobody had asked it.
+    ///
+    /// An empty answer is *this vendor's default plan*, not *no answer*. Every
+    /// adapter already resolves an unrecognised id to its own default rather
+    /// than to its largest (`groq::capture_limits`), so a vendor with no entry
+    /// and a vendor holding another vendor's plan id land in the same place —
+    /// which is what makes this lookup safe to ask about any id at all.
+    pub(crate) fn plan_for(&self, provider: &str) -> &str {
+        self.provider_plans
+            .as_ref()
+            .and_then(|plans| plans.get(provider.trim()))
+            .map(String::as_str)
+            .unwrap_or("")
     }
 
     /// The chat model this machine runs one instruction-following job on — the
@@ -1557,11 +1593,68 @@ impl AppConfig {
         serde_json::from_str::<Self>(&raw).unwrap_or_default()
     }
 
+    /// Whether the machine's old single plan is still sitting unlifted on disk.
+    ///
+    /// Read by `load_from_disk_impl` so the snapshot covers this migration the
+    /// way it already covers the profile one. **A written map answers `false`
+    /// even while the old key is still in the file**: the lift has run, and the
+    /// key is only still there because some other build wrote it.
+    fn carries_an_unlifted_provider_plan(&self) -> bool {
+        self.provider_plans.is_none()
+            && self
+                .migrated_provider_tier
+                .as_deref()
+                .is_some_and(|tier| !tier.trim().is_empty())
+    }
+
+    /// Lifts the machine's one account plan onto the per-vendor axis (ADR 0167).
+    ///
+    /// **The plan id is offered to every registered vendor and lands on the
+    /// ones that declare it.** That is the whole rule, and it is a lookup
+    /// rather than a guess: a plan id names a plan OF a vendor, so the vendors
+    /// it belongs to are exactly those whose `tiers()` carry it. `dev` is
+    /// Groq's, so it lands on Groq and nowhere else. An id no vendor declares
+    /// lands nowhere, and every vendor keeps its own default — which is what
+    /// the old field already resolved to at every reader, so nothing is lost by
+    /// dropping it rather than rescuing it.
+    ///
+    /// **A default plan is stored as absence.** Writing a vendor's default id
+    /// would be a second spelling of what an empty entry already says, and the
+    /// two drift the day a vendor renames its free plan.
+    ///
+    /// Guarded on `provider_plans` being absent rather than on a version
+    /// counter: a written map is one this build wrote, and re-deriving it from
+    /// a key that is no longer written would replace a user's choice with a
+    /// migration. That is D6's defect, one axis over.
+    fn adopt_provider_plan_axis(&mut self) {
+        if self.provider_plans.is_some() {
+            return;
+        }
+
+        let stored = self.migrated_provider_tier.take().unwrap_or_default();
+        let stored = stored.trim();
+
+        let mut plans = BTreeMap::new();
+        if !stored.is_empty() {
+            for registered in registered_providers() {
+                let declares_it = provider_tiers(&registered.provider)
+                    .iter()
+                    .any(|tier| tier.id == stored && !tier.default);
+                if declares_it {
+                    plans.insert(registered.provider, stored.to_string());
+                }
+            }
+        }
+
+        self.provider_plans = Some(plans);
+    }
+
     /// Returns whether normalization rewrote a profile's `work_mode`, so
     /// `load_from_disk_impl` can persist the canonical form instead of
     /// recomputing it on every load. See `normalize_text_profiles`.
     pub(crate) fn normalize_for_runtime(&mut self) -> bool {
         let work_mode_rewritten = self.normalize_text_profiles();
+        self.adopt_provider_plan_axis();
         self.local_model = normalize_local_model_value(&self.local_model);
         self.local_profile = normalize_local_profile_id(&self.local_profile, &self.local_model);
         self.local_model = local_model_from_profile_id(&self.local_profile)
@@ -1767,16 +1860,28 @@ impl AppConfig {
         // the rewrite. A failed snapshot does not block the load — the config
         // this build cannot migrate is one it also cannot run on — but it is
         // recorded, and on this path the file has not been touched yet.
-        let migrating = config.carries_a_profile_below_current_schema();
+        // **The plan lift counts as migrating too** (ADR 0167). It rewrites the
+        // config as surely as the profile one does, and a migration that ran
+        // without a copy behind it is the one thing this path exists to prevent
+        // — the tag names whichever is actually pending so the file on disk can
+        // be told apart later.
+        let lifting_profiles = config.carries_a_profile_below_current_schema();
+        let lifting_plans = config.carries_an_unlifted_provider_plan();
+        let migrating = lifting_profiles || lifting_plans;
         if migrating {
+            let tag = if lifting_profiles {
+                "provider-axis"
+            } else {
+                "provider-plan-axis"
+            };
             // Only the failure is logged here. `snapshot_config` records its own
             // path on success, and a second line saying the same thing is the
             // kind of noise that makes a runtime log unreadable — but it is
             // silent when it fails, and a migration that rewrote the config
             // without a copy behind it is the one fact this path must state.
-            if let Err(error) = super::backup::snapshot_config("provider-axis") {
+            if let Err(error) = super::backup::snapshot_config(tag) {
                 runtime_log::record(format!(
-                    "[WordScript] Config snapshot before schema {TEXT_PROFILE_SCHEMA_VERSION} migration FAILED error={error}"
+                    "[WordScript] Config snapshot before {tag} migration FAILED error={error}"
                 ));
             }
         }
@@ -3832,6 +3937,116 @@ mod tests {
             axis.overrides.get(&JobKey::Cleanup).map(String::as_str),
             Some(DEFAULT_PROVIDER_ID),
             "the override the user set is not replaced by the lift",
+        );
+    }
+
+    // ── The plan axis (ADR 0167) ────────────────────────────────────────────
+
+    /// **The lift asks the registry, and Groq's plan lands on Groq alone.**
+    /// This is the one case every machine carrying a paid plan is in.
+    #[test]
+    fn the_stored_plan_lands_on_the_vendors_that_declare_it() {
+        let mut config = AppConfig {
+            migrated_provider_tier: Some(crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string()),
+            provider_plans: None,
+            ..AppConfig::default()
+        };
+        assert!(config.carries_an_unlifted_provider_plan());
+
+        config.adopt_provider_plan_axis();
+
+        let plans = config.provider_plans.clone().expect("the lift writes a map");
+        assert_eq!(
+            plans.get(crate::core::providers::groq::GROQ_PROVIDER_ID).map(String::as_str),
+            Some(crate::core::providers::groq::GROQ_DEV_TIER_ID),
+            "the vendor whose tiers declare the id keeps it",
+        );
+        assert_eq!(
+            plans.len(),
+            1,
+            "and no other vendor is handed a plan it never sold: {plans:?}",
+        );
+        assert!(
+            config.migrated_provider_tier.is_none(),
+            "the door is read once and closed",
+        );
+
+        // And the key it was read from leaves the file rather than lingering as
+        // a second answer beside the map.
+        let written = serde_json::to_value(&config).expect("config serializes");
+        assert!(
+            written.get("provider_tier").is_none(),
+            "this build stops writing the field the migration consumed",
+        );
+    }
+
+    /// A plan id no registered vendor declares lands nowhere, and every vendor
+    /// keeps its own default. Not a rescue path: that is exactly what the old
+    /// machine-wide field already resolved to at every reader.
+    #[test]
+    fn a_plan_no_vendor_declares_lands_nowhere() {
+        let mut config = AppConfig {
+            migrated_provider_tier: Some("enterprise-unlimited".to_string()),
+            provider_plans: None,
+            ..AppConfig::default()
+        };
+
+        config.adopt_provider_plan_axis();
+
+        assert!(
+            config.provider_plans.expect("the lift writes a map").is_empty(),
+            "an id nothing sells is dropped rather than guessed onto a vendor",
+        );
+    }
+
+    /// **The default plan is stored as absence.** `free` is Groq's default, so
+    /// a machine on it holds no entry at all — one spelling of the answer
+    /// instead of two that can drift.
+    #[test]
+    fn a_default_plan_is_not_written_as_an_entry() {
+        let mut config = AppConfig {
+            migrated_provider_tier: Some(
+                crate::core::providers::groq::GROQ_FREE_TIER_ID.to_string(),
+            ),
+            provider_plans: None,
+            ..AppConfig::default()
+        };
+
+        config.adopt_provider_plan_axis();
+
+        assert!(config
+            .provider_plans
+            .as_ref()
+            .expect("the lift writes a map")
+            .is_empty());
+        assert_eq!(
+            config.plan_for(crate::core::providers::groq::GROQ_PROVIDER_ID),
+            "",
+            "and an empty answer is what every adapter reads as its own default",
+        );
+    }
+
+    /// The guard is the map's presence, not a version counter. A machine that
+    /// has already chosen lands on its choice, so a stale `provider_tier`
+    /// written by an older build beside it cannot overwrite one. D6's defect,
+    /// one axis over.
+    #[test]
+    fn the_plan_lift_never_runs_over_a_map_that_exists() {
+        let mut config = AppConfig {
+            migrated_provider_tier: Some(crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string()),
+            provider_plans: Some(BTreeMap::new()),
+            ..AppConfig::default()
+        };
+        assert!(
+            !config.carries_an_unlifted_provider_plan(),
+            "a written map is not an unlifted plan, however old the key beside it",
+        );
+
+        config.adopt_provider_plan_axis();
+
+        assert!(
+            config.provider_plans.expect("the map is untouched").is_empty(),
+            "the user's own answer — on the free plan — survives the older key",
         );
     }
 

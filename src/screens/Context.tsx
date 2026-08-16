@@ -959,7 +959,16 @@ function ImportWay({ runtime }: { runtime?: WorkspaceRuntime }) {
         <DropZone
           band
           title="Drop audio or video, or click to browse"
-          hint="MP3, WAV, M4A, WebM, OGG, FLAC · up to 25 MiB per file on your Free plan"
+          /* THE SIZE CLAUSE IS GONE, AND ITS ABSENCE IS THE POINT (ADR 0167).
+             The prototype writes `up to 25 MiB per file on your Free plan` here
+             and this row copied it — a plan and a ceiling both named as
+             constants, wrong on a dev-tier machine and wrong on every vendor
+             that is not Groq. The runtime answers it directly above with the
+             file in hand (`JobProviderPicker`, `fileBytes`), so a second copy
+             is the drift ADR 0123 forbids rather than a helpful repeat. The
+             formats stay: those are the intake's own fact and nothing else
+             states them. */
+          hint="MP3, WAV, M4A, WebM, OGG, FLAC"
           accept="audio/*,video/*"
           onFile={setFile}
         />
