@@ -35,6 +35,7 @@ updated; a kick-off is spent when its unit closes.
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running, Stage D opened**; 18 of ~29 steps done, and the workspace's own strip now names whichever connection it is on | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of the original seven done 2026-08-14; an eighth step added 2026-08-16.** Steps 6 and 8 are open and both wait on an event nobody can schedule — a natural `Short` capture, and a learned word — each with its instrument already in place | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
+| **Home activity** | 2026-08-16 | **Open, nothing built**; decisions made, Stage A unblocked in full | [`tracks/home-activity.md`](tracks/home-activity.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
 
 ### GUI port
@@ -498,6 +499,36 @@ produced*. Speech-track C1, C4 and B7 are requirements here, not duplicates.
 
 Stage E is blocked on roadmap gate 3 (system audio without a per-session
 prompt). A through D are not blocked by anything.
+
+### Home activity
+
+Opened 2026-08-16 out of the owner reading Home and asking why it still says
+*Preview*. It does, over a screen that is wired — the banner's chip is a fixed
+word while its sentence says *wired in part* — and the answer turned into a
+larger one: **the most prominent surface in the product is spent on an
+instruction, and an instruction is read exactly once.**
+
+Owns ADR 0171–0180. None written yet; the decisions live on the track page until
+a session builds against them, because an ADR is append-only and writing one
+before anything exists invites editing it later.
+
+Home's opening block becomes **either an activity calendar or four counter
+tiles**, the reader's choice. They are alternatives because they answer
+different questions — the calendar is a rhythm, the tiles are a character — and
+because the calendar carrying all the movement is what lets the tiles be slow.
+The calendar renders as circles on the matrix palette, which makes it the same
+display as the dot-matrix readout rather than a borrowed GitHub graphic.
+
+**Its seam with the GUI port is why it is its own track.** That relay is scored
+by `port:diff` against `demo.js`, and the prototype has neither surface; filing
+this as a leg would either corrupt that measure or hide behind it.
+
+**Stage A is unblocked in full** and stands on readings history already carries.
+Stage B is four things other tracks owe — recognized language (speech /
+core-hardening), the target application plus the privacy rule that would name
+that collection, lifetime counters that survive the 200/90 pruning, and meetings
+and uploads as calendar origins (context objects). Everything in Stage B is
+drawn and declares itself, per ADR 0161.
 
 ### Activation gestures
 

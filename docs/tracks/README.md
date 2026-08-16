@@ -45,6 +45,13 @@ contents of the directory.
   retention, and the meeting behind roadmap gate 3. **Named for the object and
   not for meetings** — the meeting is one origin of five and the only gated one.
   Both the orientation page and the sequence.
+- [`home-activity.md`](home-activity.md) — opened 2026-08-16, nothing built.
+  Home opens on a drawing of a keyboard, and an instruction is read exactly
+  once. Its opening block becomes either an activity calendar or four counter
+  tiles, on the same dot-matrix palette as the readout, with the reader
+  choosing. The decisions are made and are on the page; Stage A is unblocked in
+  full, Stage B is four things other tracks owe. Both the orientation page and
+  the sequence.
 - [`activation-gestures.md`](activation-gestures.md) — open, nothing built. Why
   one set of shortcut defaults cannot serve three activation modes, and the
   decisions still owed.
