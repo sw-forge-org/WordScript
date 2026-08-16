@@ -53,6 +53,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — OpenRouter transcribes, and so does a server you run yourself (ADR 0164)
+
+- **OpenRouter can be picked for the listening jobs.** One key reaching several
+  vendors' recognisers, including models nobody here wrote a row for — a model
+  id you type on that lane is sent as you typed it. Its writing jobs are not
+  wired yet, and they say that plainly: WordScript has no chat adapter for it
+  yet, which is not the same as OpenRouter being unable to do it.
+- **Your server transcribes too.** An OpenAI-compatible endpoint you operate —
+  whisper.cpp's `whisper-server`, speaches or LocalAI — now answers the
+  dictation, meeting and upload jobs. The three rows that said *not on this
+  lane* offer a typed model id instead, the same as the writing jobs there
+  already did.
+- **That lane still cannot be chosen from the screen, and the card says why.**
+  Its URL, token and model id are still drawings that save nowhere, so it is
+  set through `WORDSCRIPT_SELF_HOSTED_BASE_URL` for now and stays greyed. The
+  Connection card had *"neither has an adapter yet"* over `Your server` and
+  `Enterprise` together; they are separate rows now, because only one of them
+  is still true.
+- **A plain-HTTP address on the open internet is refused before your token
+  reaches it.** A server on your own network — LAN, loopback, `.local` or a
+  tailnet — works over plain HTTP, because that is the ordinary case for a
+  machine you run. Anything public needs HTTPS.
+- **A vendor that serves something WordScript has not built now says so that
+  way round.** Rows used to read *"X does not do Y"* whenever this build had no
+  adapter for that half of a vendor, which was a claim about the vendor rather
+  than about WordScript. No vendor was affected until now; OpenRouter is the
+  first, and the wording is corrected for every one that follows. **The same
+  correction reaches the warning you see when a cleanup cannot run**, which is
+  not a log line — your transcript comes back uncorrected with the reason
+  attached, and the reason now names what WordScript is missing.
+
 ### Changed — a lane you cannot pick now says why, and what your machine already has (ADR 0163)
 
 - **The greyed lanes stopped being silent.** `Local`, `Your server` and

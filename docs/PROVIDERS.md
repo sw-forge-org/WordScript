@@ -363,9 +363,18 @@ endpoints reach dedicated speech models. **They are two different product
 surfaces behind one key, and a reader who knows only the first concludes this
 lane cannot do the listening jobs.**
 
-- **The consequence for the drawing: `OpenRouter` is drawn `stt: false`**
-  (`src/screens/data.ts`), and that is now provably wrong on both paths. It is
-  recorded as open disagreement 10 rather than edited here.
+- **The consequence for the drawing: `OpenRouter` was drawn `stt: false`**
+  (`src/screens/data.ts`), and that was provably wrong on both paths. Recorded
+  as open disagreement **11** rather than edited here — this line said *10*
+  until 2026-08-16, which is the neighbouring entry about the Self-hosted lane;
+  corrected by D1a while closing that one. The boolean itself was corrected
+  2026-08-12 by ADR 0128.
+- **Built 2026-08-16 as D1a** (ADR 0164): `core::providers::openrouter`
+  registers the **speech role only**, on the shared shape with this base URL.
+  The chat role stays in G3, and that gap is stated as WordScript's rather than
+  as the vendor's — the seam had to be corrected for it, because a capability
+  block cannot tell *this build has not written it* from *the vendor does not
+  serve it*, and OpenRouter is the first lane where those differ.
 - Single bearer token. **Format support varies by the model behind it**, which
   means a capability answer on this lane is per-model and not per-provider.
   *This section originally called that "the one lane where `ProviderCapabilities`
@@ -805,18 +814,32 @@ speak it.**
 | faster-whisper-server / speaches | OpenAI-compatible transcription and translation, word-level timestamps, SSE | project docs |
 | LocalAI | OpenAI-compatible `/v1/audio/transcriptions` | project docs |
 
-- **So the listening jobs get this lane, and the refusal has to go.** The drawn
-  `none:` sentences on `dictation`, `meetings` and `upload`
-  (`src/screens/data.ts`) are the correction's other half; a drawing changes in
-  the gallery first (ADR 0057), so this file records the disagreement --
-  number 10 below -- rather than pretending the screen already says it.
+- **So the listening jobs get this lane, and the refusal is gone.** Landed
+  2026-08-16 as D1a (ADR 0164): `core::providers::self_hosted` registers a
+  `SpeechProvider` on the shared OpenAI-compatible shape, and the drawn `none:`
+  sentences on `dictation`, `meetings` and `upload` (`src/screens/data.ts`) now
+  carry the typed model id the lane's writing jobs already had. Disagreement 10
+  below is closed.
+- **What is missing after that is the configuration, and it is a different
+  sentence.** The URL, the token and the model id drawn on this lane store
+  nowhere, so the endpoint is read from `WORDSCRIPT_SELF_HOSTED_BASE_URL` (with
+  `_MODEL` and `_TOKEN` beside it) and the lane stays locked under ADR 0067
+  rule 1. `LockedLanes` on the connection card states it; nothing on this page
+  should be read as saying the lane is selectable.
 - **The credential shape does not change.** Base URL, typed model id, optional
   token is what the lane already carries, and it is what a transcription call on
-  this path needs. This is the cheapest capability this document found.
+  this path needs. This is the cheapest capability this document found. **The
+  adapter stores no credential at all**, because *optional* does not fit
+  `requires_api_key`, and a lane demanding a token `whisper-server` never issues
+  would refuse the case it exists for.
 - **A free base URL is a security question, and the donor already answered it.**
-  `src/utils/urlUtils.ts`'s `isSecureEndpoint` accepts HTTPS **or** a private
-  host, so a LAN server on plain HTTP works without licensing a bearer token
-  over the open internet.
+  `isSecureEndpoint` accepts HTTPS **or** a private host, so a LAN server on
+  plain HTTP works without licensing a bearer token over the open internet. It
+  lived only in the donor
+  (`donors/app/desktop-shells/openwhispr/src/utils/urlUtils.ts`) until D1a; the
+  port is `core::providers::openai_compatible::is_secure_endpoint`, **including
+  the dotted-quad parser**, because matching `10.` as a string prefix admits
+  `10.example.com` and hands the token to whoever registered that name.
 
 **What is not verified, and is therefore not claimed.** Only the transcription
 path was read. Whether a user-run server answers `/v1/audio/speech` for the
@@ -941,11 +964,11 @@ talking.
 | Gemini | via the chat surface | Live API, separate | not documented here | not documented here |
 | Mistral | yes, to 3 hours | yes, sub-200 ms configurable | not documented | batch only |
 | xAI | yes | yes, partials ~500 ms | **yes** | yes, **including on the stream** |
-| OpenRouter | via the chat surface | **no** | per-model | per-model |
+| OpenRouter | **yes, on `/audio/transcriptions`** — and also via the chat surface | **no** | per-model | per-model |
 | Azure OpenAI | yes | yes | yes (OpenAI stack) | `gpt-4o-transcribe-diarize` |
 | AWS Bedrock | no | no | n/a | n/a |
 | GCP Vertex AI | no | no | n/a | n/a |
-| Self-hosted | no | no | n/a | n/a |
+| Self-hosted | **yes** — `whisper-server`, speaches, LocalAI on `/v1/audio/transcriptions` | whoever runs it | whoever runs it | whoever runs it |
 | Local (whisper.cpp) | yes, today | possible, not on today's path | per-result | no |
 | **Deepgram** | yes | yes, interim results | not documented on the page read | not documented on the page read |
 | **ElevenLabs** | yes, `scribe_v2` | yes, `scribe_v2_realtime` | **yes, on the realtime model** | to 32 speakers, batch |
@@ -985,7 +1008,7 @@ Read this before pricing any vendor request. Added 2026-08-11.
 
 | Shape | What it is | Who is behind it | Roles | Cost |
 | --- | --- | --- | --- | --- |
-| **S1** | OpenAI-compatible batch speech -- `POST {base}/audio/transcriptions`, multipart or base64, JSON back | Groq (**built**), OpenAI, OpenRouter, Self-hosted (`whisper-server`, speaches, LocalAI) | `dictation`, `meetings`, `upload` | **the shape is already written.** `groq.rs:407` posts to `{GROQ_API_BASE}/audio/transcriptions`. Parameterize the base URL and each further vendor is a registry line |
+| **S1** | OpenAI-compatible batch speech -- `POST {base}/audio/transcriptions`, multipart or base64, JSON back | Groq (**built**), OpenAI (**built**), OpenRouter (**built**), Self-hosted (**built**; `whisper-server`, speaches, LocalAI) | `dictation`, `meetings`, `upload` | **the claim is spent and it held.** D1 extracted `openai_compatible.rs` from `groq.rs`; D1a added two more callers on 2026-08-16 and each is a base URL, a ceiling, a timeout, a model list and a credential, with no transport of its own. A fifth vendor on this shape costs the same |
 | **S2** | OpenAI-compatible synthesis -- `POST {base}/audio/speech`, JSON in, audio bytes out | OpenAI, OpenRouter | `voice` | one module, and it is S1's twin. Through OpenRouter it reaches **five TTS vendors on one key** |
 | **S3** | Vendor-proprietary REST speech, bearer token, own JSON | Deepgram, ElevenLabs, AssemblyAI, Speechmatics, xAI, Mistral | `dictation`, `meetings`, `upload` | one module per vendor, reusing S1's HTTP client. No new credential shape |
 | **S4** | Duplex websocket, own framing | xAI, Deepgram, ElevenLabs, AssemblyAI, Mistral Voxtral Realtime, Cartesia, MiniMax, Bland, OpenAI Realtime | streaming `dictation`, streaming `voice` | **one transport, built once** -- `reqwest` carries no websocket, so it is a dependency decision (plan step D2) -- then one module per vendor for handshake and framing |
@@ -1197,10 +1220,17 @@ and ADR 0109's rule points the same way.
    can currently carry -- and it fixes the scope confusion underneath, since
    this is a machine-wide setting drawn on a window that may stand three times.*
 10. ~~**The Self-hosted lane's drawn refusal of the listening jobs is wrong.**~~
-    **Closed 2026-08-12 by ADR 0128**, in code, which is the bar this
-    preamble sets. The three rows now name what is actually missing — the
-    adapter, not the endpoint shape — and stay inert until D1a lands. The
-    original entry follows.
+    **Narrowed 2026-08-12 by ADR 0128 and closed 2026-08-16 by ADR 0164**, in
+    code, which is the bar this preamble sets. ADR 0128 replaced a false claim
+    about the world with a true one about WordScript — *the adapter is not built
+    yet* — and named the step that would spend it. **D1a is that step**: the
+    lane has a `SpeechProvider`, and the three rows now carry the typed model id
+    its five writing jobs have carried since Leg 6. What is still missing moved
+    with it and is a different sentence: the lane's URL, token and model id are
+    drawn controls that store nowhere, so it is configured by
+    `WORDSCRIPT_SELF_HOSTED_BASE_URL` and stays locked under ADR 0067 rule 1 —
+    stated on the connection card rather than on eight job rows. The original
+    entry follows.
 
     **The Self-hosted lane's drawn refusal of the listening jobs is wrong.**
     `src/screens/data.ts` carries *"Speech has no OpenAI-compatible shape to
@@ -1307,7 +1337,7 @@ What to read, and for what:
 | `src/helpers/translationChain.js` | an empty translation **preserves the input**, cleanup soft-fails, and a source already equal to the target skips the step. ADR 0101 |
 | `src/helpers/chatRouting.js` | a role resolves from its own settings only -- *"must never consult Dictation Cleanup's mode or endpoint"* -- and an explicit URL outranks a stale provider id. ADR 0105 |
 | `src/config/secretKeys.js` | one key per provider, one entry to add one -- and `preload.js` mirrors the tuples inline **with a test guarding the copy**, which is the pattern for any mirrored contract. ADR 0106 |
-| `src/utils/urlUtils.ts` | `isSecureEndpoint`: HTTPS **or** a private host, so a LAN server on plain HTTP works without licensing a token over the open internet |
+| `src/utils/urlUtils.ts` | `isSecureEndpoint`: HTTPS **or** a private host, so a LAN server on plain HTTP works without licensing a token over the open internet. **Ported 2026-08-16 by D1a** as `core::providers::openai_compatible::is_secure_endpoint` — with the dotted-quad parser, which is the half worth copying: a `starts_with("10.")` shortcut admits `10.example.com`, a public DNS name that then skips the HTTPS requirement entirely. The donor's own comment names that trap; reading the file rather than the idea is what carried it across |
 | `CLAUDE.md`, *Streaming Commit* | where the runtime owns the decoder they commit the stream's flush and skip the second decode; the flush is truncation-aware and falls back to batch when it is not clean. ADR 0095 |
 
 The findings that changed records in this repo are recorded where they apply:

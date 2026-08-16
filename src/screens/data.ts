@@ -192,9 +192,15 @@ export const HISTORY: Transcript[] = [
    matters.
 
    A JOB CAN BE UNAVAILABLE IN A LANE. No enterprise provider we would ship
-   transcribes except Azure, and no self-hosted OpenAI-compatible endpoint does
-   at all. Those jobs say so and name the lane that can run them, rather than
-   offering a picker with nothing in it. */
+   transcribes except Azure. Those jobs say so and name the lane that can run
+   them, rather than offering a picker with nothing in it.
+
+   THIS PARAGRAPH ALSO SAID IT OF THE SELF-HOSTED LANE AND THAT HALF IS GONE
+   (D1a, ADR 0164). *"No self-hosted OpenAI-compatible endpoint transcribes at
+   all"* was the same false sentence the lane's own `dictation` row carried,
+   spelled a second time at the top of the file — `docs/PROVIDERS.md` had
+   already corrected itself and this comment had not. One lane is left that
+   genuinely refuses the listening jobs, and it is Enterprise. */
 
 export type LaneName = "Cloud" | "Local" | "Self-hosted" | "Enterprise";
 
@@ -342,16 +348,27 @@ export const LANES: Record<LaneName, { provider: string; jobs: Record<JobKey, La
        the user's and its model list belongs to whoever runs it, which is the
        free-typed field ADR 0115 keeps beside every catalogue list. */
     jobs: {
-      /* THE REFUSAL WAS WRONG AND IS CORRECTED (ADR 0128, open disagreement
-         10). It read "Speech has no OpenAI-compatible shape to talk to", and
-         `/v1/audio/transcriptions` is a de-facto standard a user-run
-         `whisper-server` answers on — `docs/PROVIDERS.md` corrected its own
-         half of the same sentence and the surface kept saying a lane that can
-         hear cannot. What is true is narrower and it is about WordScript, not
-         about the lane: the adapter is not built yet (D1a). */
-      dictation: { none: "Not built yet — WordScript has no self-hosted speech adapter. The endpoint shape exists; the lane will hear once D1a lands." },
-      meetings: { none: "Same — the adapter is what is missing, not the endpoint." },
-      upload: { none: "Same — the adapter is what is missing, not the endpoint." },
+      /* THE REFUSAL WAS WRONG, WAS NARROWED, AND IS NOW GONE (ADR 0128, then
+         D1a and ADR 0164; `docs/PROVIDERS.md` open disagreement 10).
+
+         It read "Speech has no OpenAI-compatible shape to talk to", which is a
+         claim about the world and was false: `/v1/audio/transcriptions` is a
+         de-facto standard a user-run `whisper-server` answers on. ADR 0128
+         narrowed it to a true claim about WORDSCRIPT — *the adapter is not
+         built yet* — and named the step that would spend it. **D1a is that
+         step**, so these three rows stop being refusals and become what the
+         five writing jobs on this lane already were: a typed model id.
+
+         **What is still missing is not the adapter and does not belong here.**
+         The URL, the token and the model id on this lane are drawings that
+         store nowhere, so the lane is configured by environment variable and is
+         not offered (ADR 0067 rule 1). That is a fact about the connection and
+         the connection card states it — `LockedLanes` in `Models.tsx`. A job
+         row saying it would be this file answering a question that is not its,
+         and the second copy of a fact this screen has grown four times. */
+      dictation: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
+      meetings: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
+      upload: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
       cleanup: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
       rewrite: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },
       translate: { model: TYPED_ON_THE_ENDPOINT, models: [TYPED_ON_THE_ENDPOINT], mark: null },

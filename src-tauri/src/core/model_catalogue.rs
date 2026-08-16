@@ -297,7 +297,7 @@ pub fn default_local_agent_model() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::providers::{model_capabilities, resolves_to_a_known_provider};
+    use crate::core::providers::{self, model_capabilities, resolves_to_a_known_provider};
 
     #[test]
     fn the_file_parses_at_the_version_this_build_expects() {
@@ -402,16 +402,35 @@ mod tests {
     /// registry direction that does hold: an adapter without a catalogued model
     /// is a lane whose picker has nothing in it and whose default resolves to a
     /// literal somewhere else, which is the state before this file existed.
+    ///
+    /// **IT ASKED FOR BOTH ROLES REGARDLESS AND D1a IS WHERE THAT BROKE**
+    /// (ADR 0164). The loop was written over a fixed `[Speech, Chat]` while its
+    /// own name says *every role it serves*, and the two were the same list for
+    /// as long as every registered vendor served both. OpenRouter registers
+    /// speech alone — ADR 0113 leaves its chat role to G3 — so the fixed pair
+    /// demanded a chat row for a role nothing can dispatch, and satisfying it
+    /// would have meant cataloguing models to please a test.
+    ///
+    /// **The entry is the one answer to which roles exist** (`ProviderEntry::roles`,
+    /// derived rather than declared), so the test asks it instead of restating
+    /// the list. That is the same correction ADR 0159 made one file over: a
+    /// second copy of a fact is the copy that drifts.
     #[test]
     fn every_registered_vendor_carries_a_row_for_every_role_it_serves() {
         let catalogue = catalogue();
 
         for provider in &catalogue.providers {
-            if !resolves_to_a_known_provider(&provider.id) {
+            let Ok(entry) = providers::registry::resolve_entry(&provider.id) else {
                 continue;
-            }
+            };
 
-            for role in [ProviderRole::Speech, ProviderRole::Chat] {
+            for role in entry.roles() {
+                /* Voice is registered by nobody and has no catalogued shape to
+                   require; F1 is the step that gives it one. */
+                if role == ProviderRole::Voice {
+                    continue;
+                }
+
                 assert!(
                     catalogue
                         .models
@@ -423,6 +442,29 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// **The other direction, and D1a is why it is worth writing down.** A lane
+    /// whose model list belongs to somebody else is catalogued by nobody, and
+    /// that is not a gap: `self_hosted` is registered, operable, and carries no
+    /// row on purpose, because a server behind a user's URL serves ids its
+    /// operator chose. The test above must therefore not be read as *every
+    /// registered provider appears in this file*.
+    #[test]
+    fn a_registered_lane_may_carry_no_rows_at_all_when_the_list_is_not_ours() {
+        let catalogue = catalogue();
+
+        assert!(
+            providers::registry::resolve_entry("self_hosted").is_ok(),
+            "the self-hosted lane is registered",
+        );
+        assert!(
+            !catalogue
+                .providers
+                .iter()
+                .any(|provider| provider.id == "self_hosted"),
+            "and it is deliberately absent from the catalogue (ADR 0115)",
+        );
     }
 
     /// **The trap ADR 0115 names, tested rather than trusted.** A row whose

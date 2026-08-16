@@ -1,6 +1,12 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-16 (stage B12, and it read
+Status: created 2026-07-24, last drift check 2026-08-16 (stage D1a, which read
+the capability-seam clause and the port inventory: *no adapter* and *the lane
+denies this role* are now decided per role rather than per vendor, because
+OpenRouter is the first entry to register fewer roles than its drawn row claims,
+and the three withheld lanes are withheld for three different reasons rather
+than two — `Your server` has an adapter and nowhere to type its endpoint; the
+stage B12 pass before it read
 only the two clauses that say what an inert control on `AI Models` states —
 the surface-truth clause, which now covers a withheld LANE and not only a
 vendor without an adapter, and the screen's entry in the port inventory, which
@@ -475,7 +481,13 @@ UI implementation details, not Rust event names or Tauri channels.
   registry in one call**, reads no credential, and **a vendor's absence from it
   is how *no adapter* is stated** — which is what lets that sentence be told
   apart from *the lane denies this role* (the roles the entry registered) and
-  from *the role has no credential* (`role_credentials`, ADR 0105). Two further
+  from *the role has no credential* (`role_credentials`, ADR 0105). **The first
+  two are decided per role since 2026-08-16** (D1a, ADR 0164): a registered
+  vendor missing a role reads as *no adapter for that role* where the drawn
+  `stt`/`llm` says the vendor serves it, and as *the lane denies it* only where
+  the drawing agrees. Registering fewer roles than a drawn row claims is a fact
+  about this build, and OpenRouter is the first entry where the two differ.
+  Two further
   states are about the read rather than the vendor: a read that has not come
   back claims nothing and leaves the surface's own reason standing, and **an
   incomplete capability block is reported, never read as nine `false`s**. The
@@ -996,11 +1008,14 @@ an event that arrives while the snapshot is in flight always wins.
   - **wired in part** (two, each stating its own gap on itself): Home — the
     decision inbox receives a fallen-back delivery and nothing else, the desk
     (Phase 8) and a meeting's open questions (V2) have no receiver; AI Models —
-    the Groq connection is real, the other three lanes and every job override
-    are inoperable, each stating its own reason (ADR 0065, ADR 0067, ADR 0163).
-    **Two of those lanes are drawn and one is withheld**: `Your server` and
-    `Enterprise` have no adapter, while `local` is a runtime lane that installs
-    its own models and is not offered until Phase 5 finishes it.
+    the Groq and OpenAI connections are real, the other three lanes and every
+    job override are inoperable, each stating its own reason (ADR 0065,
+    ADR 0067, ADR 0163, ADR 0164).
+    **The three withheld lanes are withheld for three different reasons since
+    2026-08-16**: `Enterprise` has no adapter, `Your server` has one and no way
+    to configure it — its URL, token and model id store nowhere, so it is set by
+    `WORDSCRIPT_SELF_HOSTED_BASE_URL` — and `local` is a runtime lane that
+    installs its own models and is not offered until Phase 5 finishes it.
   - **drawn, not wired** (four, each stating why): Context (V2 — the context
     object does not exist in the runtime), Notes & Meetings (V2), Agents
     (Phase 8, ADR 0030), Integrations (Phase 8).

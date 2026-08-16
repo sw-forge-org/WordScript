@@ -1284,6 +1284,26 @@ Status: Proposed | Accepted | Superseded by NNNN
   does not have**: ADR 0161's `Preview` tag on the lane row is conditioned on a
   lane other than `Cloud` being selected, which this very lock forbids.
 
+- [0164](0164-a-vendor-can-be-half-adapted-and-the-registry-is-not-the-place-that-says-whether-the-vendor-can.md):
+  **a vendor can be half-adapted, and the registry is not the place that says
+  whether the vendor can.** D1a, implementing ADR 0113: OpenRouter and the
+  Self-hosted lane get speech on D1's shared helper, for a base URL each. **The
+  step's cost was not the adapters.** OpenRouter is the first entry to register
+  fewer roles than its drawn row claims — the chat role stays in G3 — and the
+  seam derived *the lane denies the role* from a capability the registry ties to
+  `entry.chat.is_some()`, so it would have printed *"OpenRouter does not do chat
+  completion"* about a vendor that documents `/chat/completions`. Both halves
+  were already in the tree: the drawn `stt`/`llm` booleans are what the VENDOR
+  does, the capability block is what THIS BUILD operates, and `no_adapter` is
+  the name for the gap — it was simply only answerable for a whole vendor.
+  Also: a catalogue test looped `[Speech, Chat]` while its name said *every role
+  it serves*; ADR 0163's *"neither has an adapter yet"* went half false
+  overnight and `LockedLanes` splits into one row per reason, with `Your server`
+  reading **adapter built, nowhere to type the endpoint**; and the lane's own
+  base URL is the first in this build that is not a constant, so the donor's
+  `isSecureEndpoint` is ported whole — a `starts_with("10.")` shortcut admits
+  `10.example.com` and hands a bearer token to whoever registered it.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

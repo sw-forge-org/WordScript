@@ -365,6 +365,20 @@ The active product core lives in `src-tauri/src/core/`.
   stays the drawing and is what `port:diff` measures. **The model axis is still
   consumed by no surface**: *will this row stream* is a model question no drawn
   row asks yet, and it arrives with the lane that streams (ADR 0110, stage D2).
+- `providers/openai_compatible.rs`: the OpenAI-compatible transport, once
+  (ADR 0113). Three paths, a bearer token, a retry policy and nothing
+  vendor-specific — four adapters call it with a base URL. It also holds
+  `is_secure_endpoint`, which is the one place a base URL that a user typed
+  becomes usable: HTTPS or a private host, ported whole from the donor with its
+  dotted-quad parser (ADR 0164).
+- `providers/openrouter.rs`: recognition on one key across several upstreams
+  (D1a). **Speech only** — the chat role is G3's, and the seam states that gap
+  as WordScript's rather than the vendor's.
+- `providers/self_hosted.rs`: an OpenAI-compatible endpoint the user operates
+  (D1a). Configured by `WORDSCRIPT_SELF_HOSTED_BASE_URL` because the lane's
+  drawn controls store nothing yet, and it catalogues no model, substitutes no
+  default and states no upload ceiling — three absences that are the lane rather
+  than gaps in it.
 - `providers/groq.rs`: cloud-first production implementation (BYOK, secret
   store, Groq-specific HTTP errors).
 - `providers/local.rs`: local runtime lane with `whisper-cli` for

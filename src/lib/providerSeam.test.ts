@@ -211,13 +211,21 @@ describe("the four answers", () => {
    * **The state this step exists to create** (ADR 0106): a row that is drawn,
    * named, and not operable because the lane behind it says so. Distinct from
    * the one above, and the difference is the next action the reader takes.
+   *
+   * **The example is Anthropic and it used to be Groq** (D1a, ADR 0164). It has
+   * to be a vendor the DRAWING agrees does not serve the role — `stt: false` on
+   * that row is the vendor's own refusal — because a vendor the drawing says
+   * does serve it and the registry does not is the other answer below.
    */
-  it("says the lane denies the role when the runtime denies it", () => {
-    const answer = resolveProviderAnswer("Groq", "speech", {
-      registered: [registered()],
-      statuses: {
-        groq: status({ capabilities: capabilities({ transcription: false }) }),
-      },
+  it("says the lane denies the role when the drawing and the runtime agree it does not", () => {
+    const anthropic = registered({
+      provider: "anthropic",
+      roles: ["chat"],
+      capabilities: capabilities({ transcription: false }),
+    });
+    const answer = resolveProviderAnswer("Anthropic", "speech", {
+      registered: [anthropic],
+      statuses: {},
     });
 
     expect(answer.operable).toBe(false);
@@ -225,13 +233,76 @@ describe("the four answers", () => {
     expect(answer.operable === false && answer.reason.sentence).toContain("speech recognition");
     /* And the same vendor, same read, still serves the role it does serve. */
     expect(
-      resolveProviderAnswer("Groq", "chat", {
-        registered: [registered()],
-        statuses: {
-          groq: status({ capabilities: capabilities({ transcription: false }) }),
-        },
+      resolveProviderAnswer("Anthropic", "chat", {
+        registered: [anthropic],
+        statuses: {},
       }).operable,
     ).toBe(true);
+  });
+
+  /**
+   * **THE ANSWER D1a MADE REACHABLE, AND THE SENTENCE IT KEPT FROM BEING FALSE**
+   * (ADR 0164).
+   *
+   * Until this step every registered provider served every role its drawn row
+   * claimed, so *the runtime does not serve this role* and *the vendor does not
+   * serve this role* were the same fact and one sentence could say both.
+   * OpenRouter separates them: `data.ts` draws it `llm: true` and
+   * `docs/PROVIDERS.md` documents `/chat/completions`, while D1a registers the
+   * speech role alone because ADR 0113 leaves the chat role to G3. The old
+   * derivation would have printed *"OpenRouter does not do chat completion"* —
+   * a sentence about the vendor, on a screen, that the vendor's own
+   * documentation contradicts.
+   *
+   * **The two halves were both already in the tree.** The drawn `stt`/`llm`
+   * booleans are what the vendor does — ADR 0128 corrected OpenRouter's `stt`
+   * on exactly that basis — and the capability block is what this build can
+   * operate. `no_adapter` is what the gap between them is called, and it was
+   * only ever answerable for a whole vendor before.
+   */
+  it("says no adapter, not role denied, when the vendor serves a role this build has not built", () => {
+    const answer = resolveProviderAnswer("OpenRouter", "chat", {
+      registered: [
+        registered({
+          provider: "openrouter",
+          roles: ["speech"],
+          capabilities: capabilities({ chat_completion: false }),
+        }),
+      ],
+      statuses: {},
+    });
+
+    expect(answer.operable).toBe(false);
+    expect(answer.operable === false && answer.reason.kind).toBe("no_adapter");
+    expect(answer.operable === false && answer.reason.kind).not.toBe("role_denied");
+    /* It names the role, because the vendor IS reachable — for the other one. */
+    expect(answer.operable === false && answer.reason.sentence).toContain("chat completion");
+    expect(answer.operable === false && answer.reason.sentence).toContain("OpenRouter");
+    /* And it must not say the vendor does not do it. That is the false half. */
+    expect(answer.operable === false && answer.reason.sentence).not.toContain(
+      "OpenRouter does not do",
+    );
+  });
+
+  /**
+   * The connection card reads the same pair, and it is the surface where the
+   * false sentence would have been read first (B12's finding: four defects
+   * survived a green suite and were caught on the rendered card).
+   */
+  it("tells the connection card which half of a half-built vendor is missing", () => {
+    const sentence = connectionCapabilitySentence("OpenRouter", {
+      registered: [
+        registered({
+          provider: "openrouter",
+          roles: ["speech"],
+          capabilities: capabilities({ chat_completion: false }),
+        }),
+      ],
+      statuses: {},
+    });
+
+    expect(sentence).toContain("chat completion");
+    expect(sentence).not.toContain("OpenRouter does not do");
   });
 
   it("names the missing credential rather than calling the vendor unintegrated", () => {
@@ -347,11 +418,22 @@ describe("what the surface asks", () => {
     };
     expect(connectionCapabilitySentence("Groq", both)).toBe("Speech and language.");
 
+    /* **Anthropic rather than a Groq that denies its own drawn row** (D1a,
+       ADR 0164). *Language only* is the sentence for a vendor that genuinely
+       serves one role — Anthropic is drawn `stt: false` and says so on its own
+       row — and it stopped being the sentence for a vendor whose listening half
+       this build has not written, which is now named as the gap it is. */
     const chatOnly = {
-      registered: [registered()],
-      statuses: { groq: status({ capabilities: capabilities({ transcription: false }) }) },
+      registered: [
+        registered({
+          provider: "anthropic",
+          roles: ["chat"],
+          capabilities: capabilities({ transcription: false }),
+        }),
+      ],
+      statuses: {},
     };
-    expect(connectionCapabilitySentence("Groq", chatOnly)).toContain("Language only");
+    expect(connectionCapabilitySentence("Anthropic", chatOnly)).toContain("Language only");
 
     /* xAI is drawn `stt: true, llm: false` and is one of the open disagreements
        in `docs/PROVIDERS.md`. The seam does not correct the drawing — ADR 0106

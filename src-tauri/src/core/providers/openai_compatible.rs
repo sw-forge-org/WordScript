@@ -17,12 +17,97 @@
 
 use std::{path::Path, time::Duration, time::Instant};
 
-use reqwest::{header, multipart, StatusCode};
+use reqwest::{header, multipart, StatusCode, Url};
 use serde::Deserialize;
 
 use crate::core::runtime_log;
 
 use super::{ChatCompletionRequest, ProviderCommandError, ProviderErrorKind, TranscriptionResponse};
+
+/// Whether a base URL may carry a bearer token — **HTTPS, or a private host**
+/// (ADR 0113, D1a).
+///
+/// **Every base URL above this line is a constant and this is the one that is
+/// not.** Groq's, OpenAI's and OpenRouter's are compiled in and are `https:` by
+/// construction; the Self-hosted lane's is typed by whoever runs the server, so
+/// it is the first place in this file where a credential could be handed to an
+/// address nobody vetted. Plain `http:` to a public host would license the
+/// user's token to anyone on the path between here and there.
+///
+/// **The rule is the donor's and it is taken whole rather than approximated**
+/// (`donors/app/desktop-shells/openwhispr/src/utils/urlUtils.ts`). A LAN server
+/// on plain HTTP is the ordinary case for this lane — `whisper-server` on the
+/// machine under the desk — so refusing everything but HTTPS would refuse the
+/// lane's own reason for existing.
+///
+/// **The dotted-quad check is the part worth copying carefully.** Matching
+/// `10.` or `127.` as a string prefix admits `10.example.com` and
+/// `127.example.com`, which are public DNS names that would then skip the HTTPS
+/// requirement entirely. The donor's comment says so and its parser is what
+/// closes it: four decimal octets, no leading zeros, nothing above 255.
+pub fn is_secure_endpoint(url: &str) -> bool {
+    let Ok(parsed) = Url::parse(url.trim()) else {
+        return false;
+    };
+
+    if parsed.scheme() == "https" {
+        return true;
+    }
+
+    parsed.host_str().is_some_and(is_private_host)
+}
+
+/// Whether a hostname names something that cannot leave this network.
+fn is_private_host(hostname: &str) -> bool {
+    let host = hostname.trim_matches(|c| c == '[' || c == ']').to_ascii_lowercase();
+
+    if host == "localhost" || host == "0.0.0.0" || host == "::1" {
+        return true;
+    }
+
+    if let Some(octets) = parse_ipv4_literal(&host) {
+        let (a, b) = (octets[0], octets[1]);
+        return a == 127
+            || a == 10
+            || (a == 192 && b == 168)
+            || (a == 172 && (16..=31).contains(&b))
+            // RFC 6598 carrier-grade NAT, which is the range Tailscale hands
+            // out. A machine reached over a tailnet is on a private network in
+            // every sense this check is about.
+            || (a == 100 && (64..=127).contains(&b))
+            || (a == 169 && b == 254);
+    }
+
+    if host.contains(':') && (host.starts_with("fe80") || host.starts_with("fc") || host.starts_with("fd")) {
+        return true;
+    }
+
+    host.ends_with(".local")
+}
+
+/// Four decimal octets, or nothing.
+///
+/// **Deliberately stricter than a parser that merely succeeds.** Leading zeros
+/// are rejected because `010.0.0.1` is octal to some resolvers and decimal to
+/// others, and a check that disagrees with the resolver about which host it is
+/// looking at is not a check.
+fn parse_ipv4_literal(hostname: &str) -> Option<[u8; 4]> {
+    let mut octets = [0u8; 4];
+    let mut parts = hostname.split('.');
+
+    for slot in octets.iter_mut() {
+        let part = parts.next()?;
+        if part.is_empty() || (part.len() > 1 && part.starts_with('0')) {
+            return None;
+        }
+        if !part.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        *slot = part.parse::<u8>().ok()?;
+    }
+
+    parts.next().is_none().then_some(octets)
+}
 
 /// What went wrong on an OpenAI-compatible call.
 ///
@@ -537,5 +622,62 @@ mod tests {
         assert_eq!(retry_delay(1, Some(3)), Duration::from_secs(3));
         assert_eq!(retry_delay(1, Some(600)), Duration::from_secs(10));
         assert_eq!(retry_delay(2, None), Duration::from_millis(500));
+    }
+
+    /// The lane's own reason for existing: `whisper-server` on the machine
+    /// under the desk, over plain HTTP, on a network a token cannot leave.
+    #[test]
+    fn a_lan_server_on_plain_http_is_accepted_and_so_is_anything_over_tls() {
+        for url in [
+            "http://127.0.0.1:8080/v1",
+            "http://localhost:8080/v1",
+            "http://10.0.0.2:8080/v1",
+            "http://192.168.1.40:8080/v1",
+            "http://172.16.4.9/v1",
+            "http://172.31.255.1/v1",
+            "http://100.101.102.103/v1",
+            "http://[::1]:8080/v1",
+            "http://whisper.local:8080/v1",
+            "https://speech.example.com/v1",
+            "https://openrouter.ai/api/v1",
+        ] {
+            assert!(is_secure_endpoint(url), "{url} should be accepted");
+        }
+    }
+
+    /// **The case the donor wrote its parser for, and the reason this is not a
+    /// string prefix.** `10.example.com` and `127.example.com` are public DNS
+    /// names that a `starts_with("10.")` check reads as private — and a bearer
+    /// token then goes over plain HTTP to whoever registered them.
+    #[test]
+    fn a_public_name_wearing_a_private_prefix_is_refused() {
+        assert!(!is_secure_endpoint("http://10.example.com/v1"));
+        assert!(!is_secure_endpoint("http://127.example.com/v1"));
+        assert!(!is_secure_endpoint("http://192.168.example.com/v1"));
+        assert!(!is_secure_endpoint("http://localhost.example.com/v1"));
+    }
+
+    #[test]
+    fn a_public_host_on_plain_http_is_refused_and_so_is_a_string_that_is_not_a_url() {
+        assert!(!is_secure_endpoint("http://api.example.com/v1"));
+        assert!(!is_secure_endpoint("http://172.32.0.1/v1"));
+        assert!(!is_secure_endpoint("http://100.128.0.1/v1"));
+        assert!(!is_secure_endpoint("not a url at all"));
+        assert!(!is_secure_endpoint(""));
+        assert!(!is_secure_endpoint("/v1/audio/transcriptions"));
+    }
+
+    /// A leading zero is octal to some resolvers and decimal to others, so an
+    /// octet that admits one is a check that can disagree with the resolver
+    /// about which machine it just approved.
+    #[test]
+    fn an_octet_that_two_resolvers_would_read_differently_is_not_an_octet() {
+        assert_eq!(parse_ipv4_literal("10.0.0.1"), Some([10, 0, 0, 1]));
+        assert_eq!(parse_ipv4_literal("010.0.0.1"), None);
+        assert_eq!(parse_ipv4_literal("10.0.0"), None);
+        assert_eq!(parse_ipv4_literal("10.0.0.1.5"), None);
+        assert_eq!(parse_ipv4_literal("10.0.0.256"), None);
+        assert_eq!(parse_ipv4_literal("10.0.0.0x1"), None);
+        assert_eq!(parse_ipv4_literal(""), None);
     }
 }

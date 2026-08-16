@@ -186,7 +186,15 @@ constants themselves were not re-derived and carry their own provenance
   capability.
 - **A row that cannot be operated says which of four things stopped it**: no
   adapter exists, the lane denies that role, the role has no credential, or the
-  runtime's answer was incomplete. A fifth state -- the read has not come back
+  runtime's answer was incomplete. **The first two are decided together and it
+  takes both sides of the seam** (D1a, ADR 0164, 2026-08-16): a registered
+  vendor missing a role is *no adapter for that role* when the drawn row's
+  `stt`/`llm` says the vendor serves it, and *the lane denies the role* only
+  when the drawing agrees it does not. Before OpenRouter no entry registered
+  fewer roles than its drawn row claimed, so one derivation covered both and was
+  right by accident. `voice` keeps the denial unconditionally, because the drawn
+  matrix has two columns and neither claims a vendor synthesises. A fifth state
+  -- the read has not come back
   -- claims nothing and leaves the surface's existing reason standing. **A sixth
   arrived with B7** (ADR 0129, ADR 0157, 2026-08-15): the file is past what this
   vendor accepts in one request. It is the only one that depends on what is

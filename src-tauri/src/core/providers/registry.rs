@@ -29,11 +29,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::{
-    groq, local, openai, ChatCompletionRequest, CredentialKind, ModelCapabilities,
-    ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError, ProviderCredentialStatus,
-    ProviderRole, ProviderStatus, ProviderStatusRequest, ProviderTier, RoleCredentialStatus,
-    TranscribeAudioFileRequest, TranscriptionResponse, ValidateProviderApiKeyResponse,
-    DEFAULT_PROVIDER_ID, LOCAL_PROVIDER_ID,
+    groq, local, openai, openrouter, self_hosted, ChatCompletionRequest, CredentialKind,
+    ModelCapabilities, ProviderCapabilities, ProviderCaptureLimits, ProviderCommandError,
+    ProviderCredentialStatus, ProviderRole, ProviderStatus, ProviderStatusRequest, ProviderTier,
+    RoleCredentialStatus, TranscribeAudioFileRequest, TranscriptionResponse,
+    ValidateProviderApiKeyResponse, DEFAULT_PROVIDER_ID, LOCAL_PROVIDER_ID,
 };
 
 /// What an asynchronous provider call returns.
@@ -210,15 +210,25 @@ impl ProviderEntry {
 
     /// The speech role, or the reason there is none.
     ///
-    /// Unreachable for the two providers registered today, and that is the
-    /// point: it becomes reachable the moment a lane that transforms but does
-    /// not listen is registered, and it answers with the provider's name rather
-    /// than a generic failure.
+    /// Still unreachable: every entry registered today listens. It becomes
+    /// reachable the moment a lane that transforms but does not listen is
+    /// registered — Anthropic is the drawn candidate — and it answers with the
+    /// provider's name rather than a generic failure.
     pub fn require_speech(&self) -> Result<&'static dyn SpeechProvider, ProviderCommandError> {
         self.speech
             .ok_or_else(|| role_unavailable(self.id, "speech recognition"))
     }
 
+    /// The chat role, or the reason there is none — **and D1a made this one
+    /// reachable** (ADR 0164).
+    ///
+    /// `openrouter` and `self_hosted` register speech and not chat, so a job
+    /// routed to either for a writing role lands here. **It is not only a log
+    /// line**: `transform.rs` turns a failed correction into a warning carrying
+    /// this message and returns the uncorrected text, so the sentence is read
+    /// by a user. `role_unavailable` below is worded for that, and it says what
+    /// this build lacks rather than what the vendor cannot do — both of these
+    /// vendors serve chat, and ADR 0113 leaves that role to G3.
     pub fn require_chat(&self) -> Result<&'static dyn ChatProvider, ProviderCommandError> {
         self.chat
             .ok_or_else(|| role_unavailable(self.id, "chat completion"))
@@ -245,6 +255,42 @@ static REGISTRY: &[ProviderEntry] = &[
         provider: &openai::OPENAI,
         speech: Some(&openai::OPENAI),
         chat: Some(&openai::OPENAI),
+        voice: None,
+    },
+    /* **THE FIRST TWO ENTRIES THAT REGISTER FEWER ROLES THAN THEIR LANE DRAWS**
+       (D1a, ADR 0113, ADR 0164).
+
+       Everything above serves every role its drawn row claims, which is why
+       `require_speech` below could describe its own error as unreachable. These
+       two make it reachable, and they make something else reachable with it:
+       until now, *this entry does not register the role* and *the vendor does
+       not offer the role* were the same fact. OpenRouter serves
+       `/chat/completions` and this build has no adapter for it; the registry
+       states the second half and `src/lib/providerSeam.ts` was corrected in the
+       same step so a surface does not report it as the first.
+
+       **Both are the shared shape with a different base URL**, which is the
+       whole of ADR 0113: `openai_compatible::CompatibleClient` with
+       `https://openrouter.ai/api/v1` and with whatever the user typed. A third
+       OpenAI-compatible vendor after these costs a base URL and one of these
+       blocks. */
+    ProviderEntry {
+        id: openrouter::OPENROUTER_PROVIDER_ID,
+        aliases: &[],
+        provider: &openrouter::OPENROUTER,
+        speech: Some(&openrouter::OPENROUTER),
+        chat: None,
+        voice: None,
+    },
+    /* Not a vendor and not a chip on the drawn provider row — a lane, like
+       `local`, which is why it has no entry in `RUNTIME_IDS` and why
+       `providerSeam.test.ts`'s third direction expects none. */
+    ProviderEntry {
+        id: self_hosted::SELF_HOSTED_PROVIDER_ID,
+        aliases: &[],
+        provider: &self_hosted::SELF_HOSTED,
+        speech: Some(&self_hosted::SELF_HOSTED),
+        chat: None,
         voice: None,
     },
     ProviderEntry {
@@ -293,9 +339,24 @@ pub fn resolve_entry(provider: &str) -> Result<&'static ProviderEntry, ProviderC
         })
 }
 
+/// **The runtime's half of ADR 0164's sentence, and it had the same defect the
+/// surface did.**
+///
+/// It read *"Provider 'x' does not perform y"* — a claim about the vendor,
+/// built from the absence of an implementation here. Unreachable while every
+/// entry served every role, and reachable the moment D1a registered two that do
+/// not: `transform.rs` degrades a failed correction into a warning carrying
+/// this text, so it is read by a user and not only by a log.
+///
+/// **It cannot consult the drawing the way `providerSeam.ts` does** — the drawn
+/// `stt`/`llm` booleans are the frontend's and the runtime does not read them
+/// (ADR 0106 keeps the drawing on one side of the seam). So it says the one
+/// thing it can say truthfully from here: *WordScript has no adapter for this*,
+/// which is a fact about this build and is true whichever the vendor's answer
+/// would have been.
 fn role_unavailable(provider: &str, role: &str) -> ProviderCommandError {
     ProviderCommandError::invalid_request(format!(
-        "Provider '{provider}' does not perform {role}. Route this job to one that does.",
+        "WordScript has no {role} adapter for '{provider}'. Route this job to a provider it can run, or leave it on the connection's default.",
     ))
 }
 
@@ -545,6 +606,33 @@ mod tests {
             batch.reports_detected_language,
             ModelSupport::Unsupported
         );
+    }
+
+    /// **A role nothing implements is reported as this build's gap, not as the
+    /// vendor's** (D1a, ADR 0164).
+    ///
+    /// Unreachable until two entries registered fewer roles than their drawn
+    /// row claims. It matters because it is not a log line: `transform.rs`
+    /// degrades a failed correction into a warning carrying this text and
+    /// returns the uncorrected transcript, so a user picking OpenRouter as
+    /// their Cloud connection reads this sentence — about a vendor whose own
+    /// documentation says it does serve chat.
+    #[test]
+    fn a_role_no_entry_implements_names_this_builds_gap_rather_than_the_vendors() {
+        let openrouter = resolve_entry("openrouter").expect("openrouter is registered");
+        let refused = openrouter
+            .require_chat()
+            .err()
+            .expect("the chat role is G3's");
+
+        assert!(refused.message.contains("WordScript has no"));
+        assert!(refused.message.contains("chat completion"));
+        assert!(refused.message.contains("openrouter"));
+        // The half that would have been false. OpenRouter serves this role.
+        assert!(!refused.message.contains("does not perform"));
+
+        // And the role it DOES register resolves rather than erroring.
+        assert!(openrouter.require_speech().is_ok());
     }
 
     /// The OpenRouter case, which ADR 0110 stops treating as an exception: the

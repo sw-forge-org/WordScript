@@ -5,7 +5,9 @@ pub mod groq;
 pub mod local;
 pub mod openai;
 pub mod openai_compatible;
+pub mod openrouter;
 pub mod registry;
+pub mod self_hosted;
 
 pub use registry::{
     ChatProvider, Provider, ProviderEntry, ProviderFuture, SpeechProvider, VoiceProvider,

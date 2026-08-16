@@ -121,9 +121,12 @@ Status: 2026-08-16
   theme rows write it;
   before 2026-08-10 they changed the window and persisted nothing.
 - **A control the runtime cannot answer for is drawn and inert rather than
-  deleted** (ADR 0065, ADR 0067): three of four provider lanes, **five of seven
-  Cloud provider chips** (Groq and OpenAI can be picked since D1, 2026-08-12),
-  the profile-list editors, and every per-job model override.
+  deleted** (ADR 0065, ADR 0067): three of four provider lanes, **four of seven
+  Cloud provider chips** (Groq and OpenAI can be picked since D1, 2026-08-12;
+  **OpenRouter since D1a, 2026-08-16, for the listening jobs only** — its chat
+  role is G3's and the writing rows say so as WordScript's gap rather than the
+  vendor's, ADR 0164), the profile-list editors, and every per-job model
+  override.
   Every one carries its reason. **The per-job PROVIDER override left this list
   on 2026-08-12** (B6, ADR 0128) and the model override did not — the provider
   a job runs on is stored and writable, what model it runs there is still
@@ -209,7 +212,14 @@ Status: 2026-08-16
   **a row that cannot says which of five things stopped it** — no adapter
   exists, the lane denies that role, the role has no credential, the answer came
   back incomplete, or (since 2026-08-15, B7) **the file is past what that vendor
-  accepts in one request**. The last is the only one that depends on what is
+  accepts in one request**. **The first two stopped being one question on
+  2026-08-16** (D1a, ADR 0164): *no adapter* is answered per role now, because
+  OpenRouter is the first registered vendor that serves a role this build has
+  not written, and the previous derivation would have printed *"OpenRouter does
+  not do chat completion"* about a vendor whose documentation says otherwise.
+  The drawn `stt`/`llm` booleans are the vendor's claim and the capability block
+  is this build's; the gap between them is what *no adapter* names. The last is
+  the only one that depends on what is
   being sent rather than on the vendor, so it is answered at the point of use by
   `resolve_upload_capacity` and never by a settings table; it outranks a missing
   credential, because a key can be added and a file will not get smaller

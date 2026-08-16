@@ -93,10 +93,28 @@ const REGISTERED = [
     roles: ["speech", "chat"],
     capabilities: { ...CAPABILITIES, local: true, requires_api_key: false },
   },
+  /* **THE FIRST HALF-ADAPTED VENDOR, AND THE FIXTURE MIRRORS IT** (D1a,
+     ADR 0164). OpenRouter registers `speech` and not `chat`: ADR 0113 buys the
+     speech role for a base URL and leaves the chat role to G3. Every entry
+     before this one served every role its drawn row claimed, which is why the
+     seam could answer *the vendor does not do this* and be right every time. */
+  {
+    provider: "openrouter",
+    roles: ["speech"],
+    capabilities: { ...CAPABILITIES, chat_completion: false },
+  },
+  /* Registered and not a chip: the self-hosted lane is a place, not a vendor on
+     the Cloud provider row, so it has no drawn name — the same shape `local`
+     has had since it was registered. */
+  {
+    provider: "self_hosted",
+    roles: ["speech"],
+    capabilities: { ...CAPABILITIES, chat_completion: false, requires_api_key: false },
+  },
 ];
 
 /** The vendors this fixture leaves without an adapter, by drawn name. */
-const NO_ADAPTER = /Anthropic|Gemini|Mistral|xAI|OpenRouter/;
+const NO_ADAPTER = /Anthropic|Gemini|Mistral|xAI/;
 
 const TIERS = [
   { id: "free", label: "Free — 25 MiB per request", max_audio_bytes: 26_214_400, default: true },
@@ -1485,7 +1503,12 @@ describe("A lane that is locked says why", () => {
   }
 
   const WITHHELD = /Not offered yet: Phase 5 still owes/;
-  const NO_ADAPTER_ROW = /Neither has an adapter/;
+  /* **IT SAID `Neither has an adapter` AND D1a MADE THAT FALSE** (ADR 0164).
+     B12 put `Your server` and `Enterprise` on one row because one sentence was
+     true of both; the self-hosted adapter lands here, so the two lanes stop
+     being withheld for the same reason and stop sharing a row. */
+  const NO_ADAPTER_ROW = /no adapter yet, so there is nothing behind it/;
+  const NO_CONFIG_ROW = /store nowhere/;
 
   it("says a ready machine is withheld by the product and not by the disk", async () => {
     withSetup(READY);
@@ -1542,18 +1565,84 @@ describe("A lane that is locked says why", () => {
     expect(within(row).queryByText(/none of the three/)).toBeNull();
   });
 
-  it("separates the lane that is withheld from the two that were never built", async () => {
+  it("separates the lane that is withheld from the one that was never built", async () => {
     withSetup(READY);
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const drawn = await rowSaying(NO_ADAPTER_ROW);
     expect(within(drawn).getByText("No adapter")).toBeInTheDocument();
     /* Both rows are marked `Preview`, and they are not the same sentence: one
-       lane is finished enough to run and withheld, two have nothing behind
-       them at all. */
+       lane is finished enough to run and withheld, one has nothing behind it
+       at all. */
     expect(within(drawn).getByText("Preview")).toBeInTheDocument();
     expect(within(await rowSaying(WITHHELD)).getByText("Preview")).toBeInTheDocument();
     expect(within(drawn).queryByText("Ready")).toBeNull();
+  });
+
+  /**
+   * **THE ROW D1a HAD TO TOUCH, AND WHY THIS STEP OWNS IT** (ADR 0164).
+   *
+   * B12 wrote *"Neither has an adapter yet"* over `Your server` and
+   * `Enterprise` and it was true the evening it was written. D1a builds the
+   * self-hosted speech adapter, which makes exactly half of that sentence
+   * false — and a false sentence on this card is the defect ADR 0160 through
+   * ADR 0163 corrected four times, three of them caught by reading the rendered
+   * screen after the suite was green.
+   *
+   * **The successor sentence is not "now selectable".** The adapter exists; the
+   * configuration does not. The URL, the token and the model id on this lane
+   * are `DrawnField`s that store nowhere, so an endpoint reaches the runtime
+   * only through an environment variable, and offering the lane would be a
+   * control that accepts a click and then asks for something the screen cannot
+   * take — ADR 0067 rule 1, the very thing the lock exists for.
+   */
+  it("says the self-hosted lane has an adapter and no configuration, not that it has neither", async () => {
+    withSetup(READY);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const server = await rowSaying(NO_CONFIG_ROW);
+    /* What is built is named, so the row is not read as "nothing here yet". */
+    expect(within(server).getByText(/adapter/)).toBeInTheDocument();
+    expect(within(server).getByText("No configuration")).toBeInTheDocument();
+    expect(within(server).getByText("Preview")).toBeInTheDocument();
+
+    /* AND B12'S SENTENCE IS GONE FROM THE WHOLE SCREEN, not merely from this
+       row. It is the sentence a reader would have believed. */
+    expect(screen.queryByText(/Neither has an adapter/)).toBeNull();
+
+    /* AND THE LOCK STILL HOLDS. Reversing it is ADR 0067's own question and
+       belongs to the commit that finishes the lane, not to the one that gives
+       it an adapter. */
+    const lane = screen.getByRole("group", { name: "Lane" });
+    expect(
+      within(lane).getByRole("button", { name: LANE_LABEL["Self-hosted"] }),
+    ).toBeDisabled();
+  });
+
+  /**
+   * **THE DOOR IS NAMED, AND IT IS NAMED IN THE FONT THIS SCREEN USES FOR
+   * MACHINE TOKENS.**
+   *
+   * The row says the lane is not configurable; the environment variable is the
+   * next action, so withholding it would break the same half of `CLAUDE.md`'s
+   * rule B12 was written about. And it is the one thing in that sentence a
+   * reader has to reproduce exactly — `127.0.0.1:11434`, the masked key and
+   * every model id on this screen are already `ws-mono`, and in the body font
+   * this one wrapped mid-identifier.
+   *
+   * **This case exists because the defect was invisible to the suite.** The row
+   * renders only under a runtime, so the gallery never draws it and `port:diff`
+   * cannot measure it; it was found by opening the host after the tests were
+   * green, which is how ADR 0160, 0161 and 0162 were each found too.
+   */
+  it("names the environment variable that configures the lane, as a machine token", async () => {
+    withSetup(READY);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const server = await rowSaying(NO_CONFIG_ROW);
+    const token = within(server).getByText("WORDSCRIPT_SELF_HOSTED_BASE_URL");
+
+    expect(token).toHaveClass("ws-mono");
   });
 
   it("opens the tab that holds the detail its sentence summarises", async () => {

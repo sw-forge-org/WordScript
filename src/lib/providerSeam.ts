@@ -260,13 +260,7 @@ export function resolveProviderAnswer(
   }
 
   if (!servesRole(capabilities, role)) {
-    return {
-      operable: false,
-      reason: {
-        kind: "role_denied",
-        sentence: `${drawnName} does not do ${roleLabel(role)} — this job stays on a provider that can.`,
-      },
-    };
+    return roleUnavailable(drawnName, role);
   }
 
   /* The credential is the last question, and only where a status was read. A
@@ -448,6 +442,55 @@ function servesRole(capabilities: ProviderCapabilities, role: ProviderRole): boo
     case "voice":
       return capabilities.speech_synthesis;
   }
+}
+
+/**
+ * WHY A REGISTERED VENDOR CANNOT SERVE ONE OF ITS ROLES — and there are two
+ * reasons, not one (D1a, ADR 0164).
+ *
+ * **Until D1a the two could not come apart.** Every registered provider served
+ * every role its drawn row claimed, so *this build has no adapter for the role*
+ * and *the vendor does not offer the role* were one fact, and `role_denied`
+ * could speak for both. OpenRouter separates them: the drawing says `llm: true`
+ * and `docs/PROVIDERS.md` documents `/chat/completions`, while ADR 0113 leaves
+ * that role to G3 and D1a registers the speech half alone. The old sentence
+ * would have said *"OpenRouter does not do chat completion"* on a screen, about
+ * a vendor whose own documentation says it does.
+ *
+ * **Both halves were already here.** The drawn `stt` / `llm` booleans are what
+ * the VENDOR does — ADR 0128 corrected OpenRouter's `stt` on exactly that
+ * evidence — and the capability block is what THIS BUILD can operate.
+ * `no_adapter` is the name the gap between them already had; it was simply
+ * only answerable for a whole vendor, because absence from the registry is the
+ * only way the runtime had to state it.
+ *
+ * **`voice` keeps the denial**, because the drawing has no third column: the
+ * matrix draws `stt` and `llm` and nothing claims a vendor synthesises, so
+ * there is no drawn assertion to contradict. F1 is the step that gives that
+ * role a row, and ADR 0109 keeps the adapter behind it.
+ */
+function roleUnavailable(drawnName: string, role: ProviderRole): ProviderAnswer {
+  const drawn = PROVIDERS.find((provider) => provider.name === drawnName);
+  const vendorClaimsRole =
+    role === "speech" ? drawn?.stt : role === "chat" ? drawn?.llm : undefined;
+
+  if (vendorClaimsRole) {
+    return {
+      operable: false,
+      reason: {
+        kind: "no_adapter",
+        sentence: `WordScript has no ${roleLabel(role)} adapter for ${drawnName} yet — the vendor serves it, this build does not.`,
+      },
+    };
+  }
+
+  return {
+    operable: false,
+    reason: {
+      kind: "role_denied",
+      sentence: `${drawnName} does not do ${roleLabel(role)} — this job stays on a provider that can.`,
+    },
+  };
 }
 
 /* "Not read" is the drawing's own word for a runtime that did not answer —

@@ -196,9 +196,19 @@ describe("the drawing", () => {
   it("keeps the sentence that stands where a model id would", () => {
     /* Self-hosted is not a lane missing a catalogue entry — its model list
        belongs to whoever runs the server, which is the free-typed field
-       ADR 0115 keeps beside every curated list. */
+       ADR 0115 keeps beside every curated list.
+
+       **AND IT IS NOW EVERY JOB ON THE LANE** (D1a, ADR 0164). The three
+       listening jobs carried a `none:` sentence while the adapter was unbuilt;
+       D1a builds it, so they take the same typed field. The lane is the one
+       place in this file where a model id is not a catalogue row at all, and
+       after this step it is uniformly so. */
     expect(LANES["Self-hosted"].jobs.cleanup.model).toBe("typed on the endpoint");
-    expect(LANES["Self-hosted"].jobs.dictation.none).toBeTruthy();
+    expect(LANES["Self-hosted"].jobs.dictation.model).toBe("typed on the endpoint");
+    expect(LANES["Self-hosted"].jobs.dictation.none).toBeUndefined();
+    /* Enterprise is the lane that still refuses, and on a fact about its three
+       vendors rather than about this build. */
+    expect(LANES.Enterprise.jobs.dictation.none).toBeTruthy();
   });
 
   /**

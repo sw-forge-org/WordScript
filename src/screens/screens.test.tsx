@@ -218,11 +218,34 @@ describe("AI Models", () => {
     expect(badge()).toBe(LANES.Local.jobs.dictation.model);
   });
 
+  /* **THE LANE IN THIS CASE IS ENTERPRISE AND IT USED TO BE SELF-HOSTED**
+     (D1a, ADR 0164). Both lanes refused the three listening jobs; only one of
+     them was refusing for a reason about the lane. Self-hosted's refusal was
+     about WordScript — no adapter — and D1a spends it, so the lane's listening
+     jobs now type a model id like its writing jobs. Enterprise's is a fact
+     about the three vendors on it: only Azure OpenAI transcribes. */
   it("says a job is not on this lane rather than offering an empty picker", () => {
     render(<ModelsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+    fireEvent.click(screen.getByRole("button", { name: LANE_LABEL.Enterprise }));
     expect(screen.getAllByText("Not on this lane")).toHaveLength(3);
-    expect(screen.getByText(LANES["Self-hosted"].jobs.dictation.none!)).toBeInTheDocument();
+    expect(screen.getByText(LANES.Enterprise.jobs.dictation.none!)).toBeInTheDocument();
+  });
+
+  /* And the lane that stopped refusing offers the typed field instead — the
+     shape its five writing jobs already had. A lane whose adapter exists and
+     whose configuration does not says THAT on the connection card, not on
+     eight job rows. */
+  it("gives the self-hosted listening jobs the typed model id its writing jobs have", () => {
+    render(<ModelsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+
+    expect(screen.queryByText("Not on this lane")).toBeNull();
+    for (const job of ["dictation", "meetings", "upload"] as const) {
+      expect(LANES["Self-hosted"].jobs[job].none).toBeUndefined();
+      expect(LANES["Self-hosted"].jobs[job].model).toBe(
+        LANES["Self-hosted"].jobs.cleanup.model,
+      );
+    }
   });
 
   it("installs a local model in the app rather than naming a command", () => {

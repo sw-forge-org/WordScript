@@ -929,13 +929,20 @@ function LaneJobRow({
 
    **TWO REASONS, NOT ONE, AND THE STEP EXISTS TO KEEP THEM APART.** *Not
    published* is a decision about the product; *not ready* is a fact about this
-   disk. `Your server` and `Enterprise` have no adapter, so both sentences say
-   the same thing and one row carries them. `Local` is the row where they come
-   apart: the runtime runs it, B5 installs for it, and a machine with
+   disk. `Local` is the row where they come apart: the runtime runs it, B5
+   installs for it, and a machine with
    `whisper-cli`, a ggml model and Ollama answering is READY and still not
    offered. Saying that plainly is the deliverable — the alternative is a
    surface that withholds without reporting, which is `CLAUDE.md`'s rule broken
    in both directions at once.
+
+   **AND THERE IS A THIRD REASON SINCE D1a** (ADR 0164). B12 could put
+   `Your server` and `Enterprise` on one row because *neither has an adapter*
+   was true of both; D1a builds the self-hosted speech adapter and leaves the
+   configuration a drawing, so that lane is now withheld for a reason neither of
+   the other two has — **built, and with nowhere to type the endpoint**. Three
+   lanes, three sentences, and the row count follows the reasons rather than the
+   lanes.
 
    **WIRED ONLY, AND THAT IS WHY `port:diff` DOES NOT MOVE.** There is nothing
    to draw here: the gallery has no runtime, so it has no lock and no disk to
@@ -977,15 +984,70 @@ function LockedLanes({
           </span>
         }
       />
+      {/* TWO ROWS, AND IT WAS ONE (D1a, ADR 0164).
+          **B12 put these lanes together because one sentence was true of both**
+          — *neither has an adapter yet* — and D1a makes exactly half of it
+          false. The self-hosted speech adapter is built; Enterprise still has
+          nothing behind it. Leaving them joined would put a sentence on this
+          card that the runtime contradicts, which is the defect ADR 0160
+          through ADR 0163 corrected four times, three of them found by reading
+          the rendered screen after the suite had gone green.
+
+          **AND THE SUCCESSOR SENTENCE IS NOT *now selectable*.** What D1a
+          bought is an adapter, not a way to configure one: the URL, the token
+          and the model id on this lane are drawings that store nowhere, so an
+          endpoint reaches the runtime through an environment variable and
+          nothing else. Offering the lane would be a control that accepts a
+          click and then asks for something this screen cannot take — ADR 0067
+          rule 1, which is the reason the lock exists rather than an obstacle to
+          it. Reversing the lock belongs to the commit that finishes the lane. */}
       <Row
-        label={`${LANE_LABEL["Self-hosted"]} and ${LANE_LABEL.Enterprise}`}
-        tag={<PreviewTag title="Drawn, not built. Their rows show the shape each lane will have; nothing behind either runs a job yet." />}
-        hint="Neither has an adapter yet, so there is nothing behind either one to run a job. Their rows show what each lane will ask for once there is."
+        label={LANE_LABEL["Self-hosted"]}
+        tag={
+          <PreviewTag title="Half built. An OpenAI-compatible server can transcribe on this lane since D1a; what the rows below draw — the URL, the token, the model id — is not wired to anything that stores it." />
+        }
+        hint={SELF_HOSTED_WITHHELD}
+        control={<StatusBadge tone="plan">No configuration</StatusBadge>}
+      />
+      <Row
+        label={LANE_LABEL.Enterprise}
+        tag={<PreviewTag title="Drawn, not built. The rows show the shape this lane will have; nothing behind it runs a job yet." />}
+        hint="This lane has no adapter yet, so there is nothing behind it to run a job. Its rows show what it will ask for once there is."
         control={<StatusBadge tone="plan">No adapter</StatusBadge>}
       />
     </>
   );
 }
+
+/** WHAT THE SELF-HOSTED LANE OWES, now that it is no longer the adapter.
+ *
+ *  Stated once and beside the other constant for the same reason `LOCAL_WITHHELD`
+ *  is a constant: this screen has grown a second copy of one fact four times
+ *  (ADR 0160, 0161, 0162), and each time the second copy is what drifted.
+ *
+ *  **It names the environment variable on purpose.** The lane is expert
+ *  configuration exactly as the local lane was before B5, and a row that says
+ *  *not configurable* without saying what the expert door is withholds the next
+ *  action — which is the half of `CLAUDE.md`'s rule that B12 was written about.
+ *
+ *  **AND THE NAME IS SET IN `ws-mono`, WHICH IS NOT DECORATION.** Every machine
+ *  token on this screen already is — `127.0.0.1:11434` on the Local lane, the
+ *  masked key on the credential row, every model id in the job list — and this
+ *  one is the single thing in the sentence a reader has to reproduce exactly.
+ *  In the body font it read as prose and wrapped mid-identifier. **That is only
+ *  visible in the host**: it renders under a runtime, so the gallery never draws
+ *  it and `port:diff` cannot reach it, and it was found by opening the app after
+ *  the suite was green — the same way ADR 0160, 0161 and 0162 each were. */
+const SELF_HOSTED_BASE_URL_ENV = "WORDSCRIPT_SELF_HOSTED_BASE_URL";
+
+const SELF_HOSTED_WITHHELD = (
+  <>
+    The adapter is built and the configuration is not: the URL, the token and the
+    model id drawn on this lane store nowhere, so the endpoint is read from{" "}
+    <span className="ws-mono">{SELF_HOSTED_BASE_URL_ENV}</span> and the lane is
+    not offered.
+  </>
+);
 
 /** WHY THE LANE IS WITHHELD — the product's half, and it is stated once.
  *

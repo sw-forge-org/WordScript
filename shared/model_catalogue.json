@@ -18,6 +18,11 @@
       "lane": "Cloud"
     },
     {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "lane": "Cloud"
+    },
+    {
       "id": "cartesia",
       "label": "Cartesia",
       "lane": "Cloud"
@@ -197,6 +202,61 @@
       "source": "the claude-api reference set, model table cached 2026-06-24, via docs/PROVIDERS.md § Anthropic",
       "read_date": "2026-06-24",
       "note": "1M context. Also the model the desk reports for itself on the Agents screen, which is a reading and not a setting (ADR 0087)."
+    },
+    {
+      "id": "openrouter-speech-whisper-large-v3",
+      "provider": "openrouter",
+      "role": "speech",
+      "model_id": "openai/whisper-large-v3",
+      "streaming": "unknown",
+      "languages": "multilingual; the language hint is passed through to whichever upstream serves the id",
+      "source": "openrouter.ai/docs/guides/overview/stt and the /api/v1/audio/transcriptions announcement, via docs/PROVIDERS.md § OpenRouter",
+      "read_date": "2026-08-11",
+      "note": "The id this lane substitutes onto, because it is the one on the vendor's transcription page whose upstream every provider behind OpenRouter serves. Streaming is `unknown` rather than `unsupported`: the vendor documents no streaming transcription, and what the model behind the id does is its upstream's answer, not this build's — the third value ADR 0110 exists for, on the lane it was written about."
+    },
+    {
+      "id": "openrouter-speech-gpt-4o-transcribe",
+      "provider": "openrouter",
+      "role": "speech",
+      "model_id": "openai/gpt-4o-transcribe",
+      "streaming": "unknown",
+      "languages": "Whisper's 99+, per the upstream model",
+      "source": "openrouter.ai/docs/guides/overview/stt, via docs/PROVIDERS.md § OpenRouter",
+      "read_date": "2026-08-11",
+      "note": "The same weights `openai-speech-gpt-4o-transcribe` names, and a SEPARATE row rather than an alias. The id differs, the credential differs, and the ceiling differs — OpenRouter documents 25 MB on the multipart path and a 60-second upstream timeout where OpenAI documents 25 MiB and no such cut. ADR 0110 keeps the answer per (provider, model) for exactly this case."
+    },
+    {
+      "id": "openrouter-speech-gpt-4o-mini-transcribe",
+      "provider": "openrouter",
+      "role": "speech",
+      "model_id": "openai/gpt-4o-mini-transcribe",
+      "streaming": "unknown",
+      "languages": "Whisper's 99+, per the upstream model",
+      "source": "openrouter.ai/docs/guides/overview/stt, via docs/PROVIDERS.md § OpenRouter",
+      "read_date": "2026-08-11",
+      "note": "The cheaper half of the pair above."
+    },
+    {
+      "id": "openrouter-speech-voxtral-mini-transcribe",
+      "provider": "openrouter",
+      "role": "speech",
+      "model_id": "mistralai/voxtral-mini-transcribe",
+      "streaming": "unknown",
+      "languages": "not enumerated on the page read",
+      "source": "openrouter.ai/docs/guides/overview/stt, via docs/PROVIDERS.md § OpenRouter",
+      "read_date": "2026-08-11",
+      "note": "Named on the vendor's transcription page. No Mistral documentation was read for it here, so the language column says what was read rather than what the family is likely to support — ADR 0116's rule, applied to a row this build now routes to."
+    },
+    {
+      "id": "openrouter-speech-chirp-3",
+      "provider": "openrouter",
+      "role": "speech",
+      "model_id": "google/chirp-3",
+      "streaming": "unknown",
+      "languages": "not enumerated on the page read",
+      "source": "openrouter.ai/docs/guides/overview/stt, via docs/PROVIDERS.md § OpenRouter",
+      "read_date": "2026-08-11",
+      "note": "Named on the vendor's transcription page; no Google documentation was read for it here. This is the row that pays for the lane: reaching Chirp costs a base URL rather than a Vertex service account."
     },
     {
       "id": "cartesia-voice-sonic-3",
