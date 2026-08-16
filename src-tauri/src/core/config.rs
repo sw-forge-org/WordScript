@@ -1279,6 +1279,23 @@ pub struct AppConfig {
     /// touched. Only the toggle writes (ADR 0111).
     #[serde(default)]
     pub workspace_nav_rail: bool,
+    /// Which of its two lives Home's opening block is showing: the activity
+    /// calendar when true, the four counter tiles when false.
+    ///
+    /// Stored for the same reason `workspace_nav_rail` is, and on the same shape
+    /// — machine-wide, additive, `#[serde(default)]`, so a config written before
+    /// this field existed reads back as the tiles and nothing is migrated
+    /// (ADR 0054). THE DEFAULT IS THE TILES ON PURPOSE. The calendar can only
+    /// draw the window the history file still reaches over, and a machine whose
+    /// history is pruned to a few days opens on a calendar one column wide,
+    /// which is exactly the "reads as broken rather than as a beginning" state
+    /// decision 7 of the home activity track forbids. The tiles degrade to a
+    /// rate and a window, both of which read correctly from one day of records.
+    ///
+    /// It is the user's choice and only the block's own toggle writes it. There
+    /// is deliberately no settings row (decision 9).
+    #[serde(default)]
+    pub home_activity_calendar: bool,
     #[serde(default)]
     pub auto_detect_mode: bool,
     #[serde(default)]
@@ -1381,6 +1398,7 @@ impl Default for AppConfig {
             enhance_target: PromptTarget::default(),
             color_scheme: default_color_scheme(),
             workspace_nav_rail: false,
+            home_activity_calendar: false,
             translate_same_language: TranslateSameLanguage::default(),
             translate_address_form: TranslateAddressForm::default(),
             auto_detect_mode: true,

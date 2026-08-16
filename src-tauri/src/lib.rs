@@ -1978,9 +1978,17 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     ));
                 }
 
+                /* WHEN THE TEXT EXISTS, which is the one latency this product
+                   can honestly report. `pipeline_started_at` begins when the
+                   capture hands over its audio — the moment you stop speaking —
+                   and this is the moment there is text to deliver. Everything
+                   after it depends on where the text is going, and the clipboard
+                   path has no observable end at all (decision 6). */
+                let turnaround_ms = pipeline_started_at.elapsed().as_millis() as u64;
+
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transform done elapsed_ms={} corrected={} output_len={} rules={}",
-                    pipeline_started_at.elapsed().as_millis(),
+                    turnaround_ms,
                     transformed.corrected,
                     transformed.text.len(),
                     transformed.applied_rules.join(","),
@@ -2127,6 +2135,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transcript_title.clone(),
                                 capture_integrity,
                                 input_level,
+                                Some(turnaround_ms),
                             )
                             .ok();
 
@@ -2243,6 +2252,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transcript_title.clone(),
                                 capture_integrity,
                                 input_level,
+                                Some(turnaround_ms),
                             );
                             let error = result
                                 .error
@@ -3036,6 +3046,7 @@ pub fn run() {
             core::insertion::restore_last_transcript,
             core::insertion::clear_native_scratchpad,
             core::history::transcription_history_entries,
+            core::activity_ledger::read_activity_ledger,
             core::history::transcription_history_storage_status,
             core::transcript_store::transcript_store_status,
             core::backup::export_full_backup,

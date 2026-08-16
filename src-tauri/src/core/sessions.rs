@@ -683,6 +683,12 @@ pub async fn commit_pending_preview<R: Runtime>(
                 title.clone(),
                 preview.capture_integrity,
                 preview.input_level,
+                /* THE PARKED PATH HAS NO TURNAROUND TO REPORT. Its text was
+                   produced in a session that ended some time ago and is being
+                   delivered now; the interval between the two is how long the
+                   overlay sat parked, which is not a latency the runtime should
+                   claim as its own. */
+                None,
             )
             .ok();
 
@@ -797,6 +803,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                 title.clone(),
                 preview.capture_integrity,
                 preview.input_level,
+                None,
             );
             let error = result
                 .error

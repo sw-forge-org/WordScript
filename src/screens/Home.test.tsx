@@ -42,6 +42,7 @@ beforeEach(() => {
       return { mode: "cleanup", auto_detected: false, detected_from: null };
     }
     if (command === "transcription_history_entries") return [];
+    if (command === "read_activity_ledger") return { started_on: null, days: {} };
     if (command === "transcription_history_storage_status") return { path: "/tmp/history.json" };
     return undefined;
   });
@@ -110,6 +111,56 @@ function timedEntry(
   });
 }
 
+/** The ledger the runtime would hold for a given set of records.
+ *
+ *  Home's figures come from `core::activity_ledger` and no longer from history,
+ *  so a test that only mocks the record list mocks the wrong half. This folds
+ *  the same records into the same shape the command returns, which keeps every
+ *  assertion below meaning what it says. */
+function ledgerFor(entries: TranscriptionHistoryEntry[]) {
+  const days: Record<string, unknown> = {};
+  for (const entry of entries) {
+    if (entry.retry_of) continue;
+    const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    if (words === 0) continue;
+
+    const at = new Date(entry.created_at_ms);
+    const key = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(
+      at.getDate(),
+    ).padStart(2, "0")}`;
+    const seconds = entry.capture_integrity?.recorded_seconds ?? 0;
+    const day = (days[key] ??= {
+      dictations: 0,
+      words: 0,
+      recorded_seconds: 0,
+      timed: 0,
+      longest_seconds: 0,
+    }) as Record<string, number>;
+
+    day.dictations += 1;
+    day.words += words;
+    if (seconds > 0) {
+      day.recorded_seconds += seconds;
+      day.timed += 1;
+      day.longest_seconds = Math.max(day.longest_seconds, seconds);
+    }
+  }
+  /* The rate histogram the runtime keeps: one bucket per word a minute. The
+     median is read off this and not off the day rows, so a mock without it
+     mocks the wrong half. */
+  const rate_buckets = new Array<number>(400).fill(0);
+  for (const entry of entries) {
+    if (entry.retry_of) continue;
+    const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    const seconds = entry.capture_integrity?.recorded_seconds ?? 0;
+    if (words === 0 || seconds <= 0) continue;
+    rate_buckets[Math.min(Math.floor((words / seconds) * 60), 399)] += 1;
+  }
+  return { started_on: Object.keys(days).sort()[0] ?? null, days, rate_buckets };
+}
+
 /** The base mock with a chosen set of records behind it. */
 function mockRuntimeHistory(entries: TranscriptionHistoryEntry[]) {
   invoked.mockImplementation(async (command: string) => {
@@ -118,6 +169,7 @@ function mockRuntimeHistory(entries: TranscriptionHistoryEntry[]) {
       return { mode: "cleanup", auto_detected: false, detected_from: null };
     }
     if (command === "transcription_history_entries") return entries;
+    if (command === "read_activity_ledger") return ledgerFor(entries);
     if (command === "transcription_history_storage_status") return { path: "/tmp/history.json" };
     if (command === "transcript_store_status") {
       return { root: "/tmp/WordScript/transcripts", exists: true };
@@ -273,14 +325,19 @@ describe("Home · the display", () => {
   /* `capture_integrity` is null on a retry and on every record older than the
      measurement. A rate over a denominator that silently skipped them is a
      plausible wrong number, so the tile states both counts on itself. */
-  it("says how many records the average was measured over, and how many it could have been", async () => {
+  it("names the SCOPE of each figure and nothing more", async () => {
+    /* The foot used to print `1 of 2 runs timed` beside it. That count is a fact
+       about the measurement rather than about the reader, and on a home screen
+       it is noise — the scope is the part that changes how the number is read. */
     mockRuntimeHistory([
       timedEntry(400, 120, { id: "timed" }),
       historyEntry({ id: "untimed", transformed_transcript: "a retry with no capture" }),
     ]);
     render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    expect(await screen.findByText("1 of 2 runs measured")).toBeInTheDocument();
+    expect(await screen.findByText("median · all time")).toBeInTheDocument();
+    expect(screen.queryByText(/runs timed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/of 2/)).not.toBeInTheDocument();
   });
 
   it("marks time saved as an approximation, because its baseline is an assumption", async () => {
@@ -290,21 +347,22 @@ describe("Home · the display", () => {
     /* 400 words at the 40 wpm baseline is 10 minutes of typing; they were said
        in two. The `≈` is on the tile because the baseline was never measured. */
     expect(
-      await screen.findByLabelText("About 8 minutes saved in the last 7 days"),
+      await screen.findByLabelText("About 8 minutes saved in the last four weeks"),
     ).toBeInTheDocument();
-    expect(screen.getByText("≈ minutes, last 7 days")).toBeInTheDocument();
+    expect(screen.getByText("≈ minutes · last 4 weeks")).toBeInTheDocument();
   });
 
-  it("states an empty window rather than reporting nothing saved", async () => {
-    const longAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  it("STATES AN EMPTY WINDOW WHILE THE ALL-TIME RATE SURVIVES IT", async () => {
+    const longAgo = Date.now() - 200 * 24 * 60 * 60 * 1000;
     mockRuntimeHistory([timedEntry(400, 120, { created_at_ms: longAgo })]);
     render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* The rate survives — it is not windowed — and the seven-day figure does
-       not exist, which is a dark display rather than a zero. */
+    /* The two scopes on one row, and the case exists to hold them apart: the
+       rate is all-time and reads two hundred months later; time saved is four
+       weeks and has nothing in it, which is a dark display rather than a zero. */
     expect(await screen.findByLabelText("200 words per minute")).toBeInTheDocument();
-    expect(screen.getByLabelText("No reading for the last 7 days")).toBeInTheDocument();
-    expect(screen.getByText("nothing measured in 7 days")).toBeInTheDocument();
+    expect(screen.getByLabelText("No reading for the last four weeks")).toBeInTheDocument();
+    expect(screen.getByText("nothing yet · last 4 weeks")).toBeInTheDocument();
   });
 
   /**
@@ -312,13 +370,19 @@ describe("Home · the display", () => {
    * invented 3 is worse than a visible gap. The two drawn tiles carry the tag at
    * their own label and light no pixel at all.
    */
-  it("draws apps and languages with a tag and no figure whatsoever", async () => {
+  it("draws the one remaining sketch with a tag and no figure whatsoever", async () => {
     mockRuntimeHistory([timedEntry(400, 120)]);
     const { container } = render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await screen.findByLabelText("200 words per minute");
 
-    for (const label of ["Apps", "Languages"]) {
+    /* `Apps` used to stand beside this one and could never work: the target
+       application is only resolved where the text is pasted directly, and a
+       clipboard delivery has no target to name. It was replaced by Turnaround,
+       which is measured at both ends inside the runtime. */
+    expect(screen.queryByText("Apps")).not.toBeInTheDocument();
+
+    for (const label of ["Languages"]) {
       const tile = screen.getByText(label).closest(".ws-tile") as HTMLElement;
       expect(tile.querySelector(".ws-ptag"), label).not.toBeNull();
       /* No lit pixel, and the counter says so on itself so the surface can dim
@@ -329,7 +393,7 @@ describe("Home · the display", () => {
 
     /* And the two measured tiles carry no tag: the marker is what separates a
        drawing from a reading, so it may not sit on a reading. */
-    for (const label of ["Words per minute", "Time saved"]) {
+    for (const label of ["Words per minute", "Time saved", "Turnaround"]) {
       const tile = screen.getByText(label).closest(".ws-tile") as HTMLElement;
       expect(tile.querySelector(".ws-ptag"), label).toBeNull();
     }
@@ -341,11 +405,12 @@ describe("Home · the display", () => {
 
     await screen.findByLabelText("200 words per minute");
     const tags = [...container.querySelectorAll(".ws-ptag")].map((tag) => tag.getAttribute("title"));
-    expect(tags).toHaveLength(2);
-    expect(tags[0]).toContain("No history field stores the target application");
+    /* One left. `Apps` was not wired up, it was retired: the target application
+       is unobservable on a clipboard delivery, which is most of them. */
+    expect(tags).toHaveLength(1);
     /* The language on a record is the SETTING. A tile counting it today would
        count how often the setting was changed. */
-    expect(tags[1]).toContain("not the recognised one");
+    expect(tags[0]).toContain("not the recognised one");
   });
 });
 
@@ -435,5 +500,83 @@ describe("Home · what a row is called", () => {
 
     await screen.findByRole("heading", { name: /Recent/ });
     expect(screen.queryByRole("button", { name: "Heard" })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * THE OPENING BLOCK'S SECOND VIEW — A5, decision 9.
+ *
+ * The load-bearing pair here is *the control is the block* and *the choice is
+ * written where a restart can find it*. A toggle that only moved local state
+ * would pass any test that clicked it and lose the choice on the next launch,
+ * which is the failure the sidebar's rail had for a whole leg — so the case
+ * asserts the CONFIG WRITE, not the swapped DOM alone.
+ */
+describe("Home · the two views of the opening block", () => {
+  it("shows the counters by default and offers the calendar", async () => {
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findByText("Words per minute")).toBeInTheDocument();
+    expect(document.querySelector(".ws-cal")).toBeNull();
+    expect(screen.getByRole("button", { name: "Show the activity calendar" })).toBeInTheDocument();
+  });
+
+  it("draws the calendar instead of the counters when the config says so", async () => {
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(
+      <HomeScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: createAppConfig({ home_activity_calendar: true }),
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(document.querySelector(".ws-cal")).not.toBeNull());
+    /* ALTERNATIVES, NOT COMPANIONS (decision 1). Both at once would be the one
+       block doing both jobs, which is the arrangement this track undid. */
+    expect(screen.queryByText("Words per minute")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show the counters" })).toBeInTheDocument();
+  });
+
+  it("WRITES THE CHOICE TO THE CONFIG WHEN THE BLOCK IS CLICKED", async () => {
+    const patch = vi.fn();
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Show the activity calendar" }),
+    );
+    /* Persisted, not merely swapped: this is the assertion that separates a
+       preference from a piece of local state. */
+    expect(patch).toHaveBeenCalledWith({ home_activity_calendar: true });
+  });
+
+  it("adds no settings row for it — the control is the display", async () => {
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Words per minute");
+    expect(screen.queryByRole("switch", { name: /calendar/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps the instruction rather than either view when nothing was measured", async () => {
+    /* Decision 7 outranks the preference: a profile with no reading sees the
+       instruction, and a calendar of nothing but grey is the same defect as
+       four zeroes wearing a different face. */
+    mockRuntimeHistory([]);
+    render(
+      <HomeScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: createAppConfig({ home_activity_calendar: true }),
+        })}
+      />,
+    );
+
+    expect(await screen.findByText(/in any app to dictate/)).toBeInTheDocument();
+    expect(document.querySelector(".ws-cal")).toBeNull();
+    expect(screen.queryByText("Words per minute")).not.toBeInTheDocument();
   });
 });

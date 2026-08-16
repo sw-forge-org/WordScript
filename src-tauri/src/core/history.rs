@@ -121,6 +121,14 @@ pub struct TranscriptionHistoryEntry {
     /// the 10 affected captures had outlived their transcripts.
     #[serde(default)]
     pub capture_integrity: Option<CaptureIntegrity>,
+    /// Milliseconds from the audio arriving to the text existing — the one
+    /// latency this product can honestly report, because both ends are inside
+    /// the runtime and neither depends on where the text is delivered.
+    ///
+    /// `None` on every path that produced no text, on a retry, and on the parked
+    /// delivery, whose delay is the park's rather than the runtime's.
+    #[serde(default)]
+    pub turnaround_ms: Option<u64>,
     /// What the microphone delivered into this transcription: peak, mean and
     /// the speech threshold they are read against.
     ///
@@ -178,6 +186,9 @@ pub struct RecordHistoryEntryRequest {
     /// What the capture measured about itself (ADR 0079). `None` on the paths
     /// that have no capture of their own to report — a retry above all.
     pub capture_integrity: Option<CaptureIntegrity>,
+    /// Milliseconds from the audio arriving to the text existing. `None`
+    /// wherever the caller ran no such clock.
+    pub turnaround_ms: Option<u64>,
     /// What the microphone delivered, from the same capture and on the same
     /// terms.
     pub input_level: Option<InputLevelSummary>,
@@ -413,6 +424,7 @@ fn record_entry_with_work_mode(
         audio_path: request.audio_path,
         fallback_acknowledged: false,
         capture_integrity: request.capture_integrity,
+        turnaround_ms: request.turnaround_ms,
         input_level: request.input_level,
     };
 
@@ -420,6 +432,40 @@ fn record_entry_with_work_mode(
     prune_entries_for_runtime(&mut store.entries);
 
     save_history_entries(&store.entries)?;
+
+    /* THE ALL-TIME LEDGER, FOLDED HERE BECAUSE THIS IS THE ONE FUNNEL EVERY PATH
+       ARRIVES AT — the same argument ADR 0074 used to put the transcript file on
+       this function rather than on five callers.
+
+       A RETRY IS NOT A DICTATION. It re-runs a transform over words that were
+       already spoken and already counted, so counting it again would inflate
+       every all-time figure by however often somebody pressed Retry.
+
+       THE ERROR IS SWALLOWED INTO THE RUNTIME LOG AND NEVER FAILS THE RECORD. A
+       dictation that reached the cursor has succeeded; failing it because an
+       aggregate could not be written would be the tail wagging the dog. */
+    if entry.retry_of.is_none() {
+        let words = entry
+            .transformed_transcript
+            .as_deref()
+            .or(entry.raw_transcript.as_deref())
+            .map(|text| text.split_whitespace().count() as u64)
+            .unwrap_or(0);
+        if let Err(error) = super::activity_ledger::record(super::activity_ledger::LedgerContribution {
+            created_at_ms: entry.created_at_ms,
+            words,
+            recorded_seconds: entry
+                .capture_integrity
+                .as_ref()
+                .map(|integrity| integrity.recorded_seconds),
+            turnaround_ms: entry.turnaround_ms,
+        }) {
+            super::runtime_log::record(format!(
+                "[WordScript] Activity ledger write failed error={error}"
+            ));
+        }
+    }
+
     Ok(entry)
 }
 
@@ -754,6 +800,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 // it has no capture of its own to report. The original record
                 // keeps the verdict that belongs to it.
                 capture_integrity: None,
+                turnaround_ms: None,
                 input_level: None,
             },
             Some(app_config.resolved_active_text_profile_work_mode()),
@@ -791,7 +838,9 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             title,
             // A retry re-transcribes audio an earlier session captured. The
             // capture measurement belongs to that session's record and is not
-            // copied forward onto a run that never made a capture.
+            // copied forward onto a run that never made a capture — and neither
+            // is a turnaround, which would time a re-run rather than a dictation.
+            None,
             None,
             None,
         )?;
@@ -854,6 +903,11 @@ pub fn history_entry_from_insert_result(
     // What the microphone delivered during that same capture, and `None` in the
     // same places for the same reason.
     input_level: Option<InputLevelSummary>,
+    // Milliseconds from the capture handing over its audio to the text
+    // existing (decision 6). `None` wherever the caller did not run that clock —
+    // a retry, and the parked path, whose delay is the park's rather than the
+    // runtime's.
+    turnaround_ms: Option<u64>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let local_history = local_history_context(app_config);
 
@@ -898,6 +952,7 @@ pub fn history_entry_from_insert_result(
             audio_path: None,
             capture_integrity,
             input_level,
+            turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -951,6 +1006,7 @@ pub fn record_insert_failure(
             audio_path: None,
             capture_integrity,
             input_level,
+            turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -1011,6 +1067,7 @@ pub fn record_transcription_failure(
             audio_path,
             capture_integrity,
             input_level,
+            turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -1066,6 +1123,7 @@ pub fn record_empty_result(
             // only this number tells them apart.
             capture_integrity,
             input_level,
+            turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
     )
@@ -1479,6 +1537,7 @@ mod tests {
                 error: None,
                 audio_path: None,
                 capture_integrity: None,
+                turnaround_ms: None,
                 input_level: None,
             })
             .expect("record history entry");
@@ -1534,6 +1593,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            turnaround_ms: None,
             input_level: None,
         })
         .expect("first history entry");
@@ -1568,6 +1628,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            turnaround_ms: None,
             input_level: None,
         })
         .expect("second history entry");
@@ -1620,6 +1681,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            turnaround_ms: None,
             input_level: None,
         })
         .expect("groq history entry");
@@ -1655,6 +1717,7 @@ mod tests {
             error: Some("Model missing".to_string()),
             audio_path: None,
             capture_integrity: None,
+            turnaround_ms: None,
             input_level: None,
         })
         .expect("local runtime history entry");
@@ -1718,6 +1781,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            turnaround_ms: None,
             input_level: None,
         })
         .expect("first export history entry");
@@ -1752,6 +1816,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            turnaround_ms: None,
             input_level: None,
         })
         .expect("second export history entry");
@@ -1817,6 +1882,7 @@ mod tests {
                 fallback_acknowledged: false,
                 capture_integrity: None,
                 input_level: None,
+                turnaround_ms: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-a".to_string(),
@@ -1855,6 +1921,7 @@ mod tests {
                 fallback_acknowledged: false,
                 capture_integrity: None,
                 input_level: None,
+                turnaround_ms: None,
             },
             TranscriptionHistoryEntry {
                 id: "fresh-b".to_string(),
@@ -1893,6 +1960,7 @@ mod tests {
                 fallback_acknowledged: false,
                 capture_integrity: None,
                 input_level: None,
+                turnaround_ms: None,
             },
         ]);
 
@@ -1953,6 +2021,7 @@ mod tests {
                 recovery_message: "Transcript is on the clipboard. Paste manually.".to_string(),
                 clipboard_restore: NativeClipboardRestoreStatus::NotAttempted,
             },
+            None,
             None,
             None,
             None,
@@ -2033,6 +2102,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
+            turnaround_ms: None,
             input_level: None,
         }
     }
@@ -2342,6 +2412,7 @@ mod tests {
             fallback_acknowledged: false,
             capture_integrity: None,
             input_level: None,
+            turnaround_ms: None,
         }
     }
 }

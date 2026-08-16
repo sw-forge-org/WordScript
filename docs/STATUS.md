@@ -118,12 +118,35 @@ Status: 2026-08-16
   2026-08-16). Words per minute and time saved over the last seven days are read
   from history and each states how many records it was computed over —
   `capture_integrity` is absent on a retry and on every record older than the
-  measurement, so the figure is over what was timed and says so. Time saved
-  carries `≈`, because its typing baseline is an assumption. Apps and Languages
+  measurement. **Words per minute is throughput rather than speaking rate** — the
+  capture clock runs from start to stop, so thinking pauses are in the
+  denominator; the tile says so on hover. Time saved carries `≈`, because its
+  typing baseline is an assumption. Apps and Languages
   are drawn: no record stores the target application, and `entry.language` is
   the setting rather than what was recognised. Before the first measured
   dictation the block carries the instruction instead, and the 42 px keycaps are
   gone — the shortcut is in the hero's fact line.
+- **Home's counters are all-time, and a ledger keeps them** (ADR 0174, ADR 0175,
+  2026-08-16). `core::activity_ledger` holds one row per day — counts and
+  durations, never text — because history is pruned by age and by count and
+  nothing summed from it can be lifetime-scoped. Words per minute is the MEDIAN
+  run's rate (an aggregate is dragged down by long dictations, a mean up by short
+  hallucinated ones); Turnaround is the median wait from speaking to text and is
+  the one figure that answers to a model or lane change; Time saved stays on four
+  weeks. `Apps` was retired rather than deferred — the target application is only
+  resolved on a direct paste, and a clipboard delivery has none. `Languages` is
+  still drawn, waiting on B1.
+- **Home's opening block carries a calendar or the counters, and the choice
+  survives a restart** (ADR 0172, ADR 0173, 2026-08-16). Twenty-six weeks of dictation as
+  circles on the matrix ramp, one per day, with the day's composition on hover;
+  clicking the block swaps the two views (`AppConfig.home_activity_calendar`,
+  additive, no settings row). **The display only spans days the history file can
+  vouch for** — pruning by age and by count both narrow it, a saturated file
+  cannot speak for any day before its own oldest record, and the line under the
+  grid names which bound bit. Days outside it are blank rather than unlit,
+  because unlit asserts that nothing was dictated. On a heavily pruned history
+  this is a single real column; the durable fix is a per-day aggregate that
+  survives pruning, which is open (track row B3).
 - **The colour scheme survives a restart** (`AppConfig.color_scheme`, light /
   dark / system). It is machine-wide rather than per profile, and `system` is a
   deferral resolved at render time, so `<html data-theme>` always carries

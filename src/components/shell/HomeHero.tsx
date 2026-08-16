@@ -69,6 +69,57 @@ export function HomeDisplay({ children }: { children: ReactNode }) {
   return <div className="ws-home-display">{children}</div>;
 }
 
+/**
+ * THE SWITCH BETWEEN THE TWO VIEWS — decision 9, and it is on the thing rather
+ * than in settings.
+ *
+ * The calendar and the tiles are ALTERNATIVES rather than companions, because
+ * they answer two different questions: the calendar is your rhythm, what you did
+ * day by day, and the tiles are your character, who you are averaged. Since the
+ * calendar carries all the movement, the tiles are allowed to be slow — which
+ * was their problem when one block had to do both jobs.
+ *
+ * SO THE BLOCK ITSELF IS THE CONTROL. Clicking it swaps the view, and a
+ * two-dot carousel indicator says there is a second one to find; a settings row
+ * for this would put a display preference three screens away from the display.
+ *
+ * IT IS A `<button>` AND NOT A CLICKABLE `<div>`. The block is the hit area, so
+ * the block has to be the thing a keyboard reaches and a screen reader
+ * announces. `aria-pressed` is deliberately not used: this is not a control that
+ * is on or off, it is one that moves between two named views, so it says which
+ * view it will go to.
+ */
+export function HomeSwitch({
+  calendar,
+  onToggle,
+  children,
+}: {
+  calendar: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="ws-home-switch">
+      <button
+        type="button"
+        className="ws-home-switch-face"
+        onClick={onToggle}
+        title={calendar ? "Show the counters" : "Show the activity calendar"}
+        aria-label={calendar ? "Show the counters" : "Show the activity calendar"}
+      >
+        {children}
+      </button>
+      {/* The indicator is decoration for a control that is already labelled, so
+          it is hidden from the accessibility tree rather than announced as two
+          more things to press. */}
+      <span className="ws-home-dots" aria-hidden="true">
+        <i data-on={calendar ? undefined : ""} />
+        <i data-on={calendar ? "" : undefined} />
+      </span>
+    </div>
+  );
+}
+
 interface StatTileProps {
   label: string;
   /** `PreviewTag` where the reading is drawn (ADR 0161). It sits AT THE LABEL,

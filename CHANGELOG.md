@@ -53,6 +53,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Home's counters are all-time now, and there is a record that does not forget (ADR 0174, ADR 0175)
+
+- **Words per minute and the calendar read a ledger, not your history.** History
+  is pruned by age and by count, so anything summed from it grows, sticks, and
+  then runs backwards. WordScript now keeps one small row per day — counts and
+  durations, never text, never which app, never a language — so the figures can
+  say *all time* and mean it. It seeds once from whatever history still holds, so
+  an existing install does not start at zero.
+- **Words per minute is the middle dictation's rate, not an average.** An average
+  over total time is dragged down by long dictations, which are mostly thinking
+  pauses; an average of rates is dragged up by short ones, where the recogniser
+  can invent ten words for two seconds of audio. The median is what a typical
+  dictation actually ran at.
+- **Time saved stays on the last four weeks**, deliberately. A lifetime figure
+  stops being something you can hold.
+- **Apps is gone and Turnaround takes its place.** The target application is only
+  known when the text is pasted straight in — on a clipboard delivery there is
+  nothing to name, so the tile could never have worked. Turnaround is the median
+  wait from you stopping to the text being ready, measured at both ends inside
+  the runtime, and it is the one figure that moves when you change the model or
+  the lane.
+- **The tiles say less.** Each foot names the scope and stops: `median · all
+  time`, `≈ minutes · last 4 weeks`. The tooltips are one sentence each.
+
+### Added — Home's opening block gets an activity calendar, and it only claims what the record can prove (ADR 0172)
+
+- **A half-year of dictation, as circles on the matrix ramp.** The opening block
+  now carries either the four counters or an activity calendar; clicking the
+  block swaps them and the choice survives a restart. Twenty-six weeks at 470 px,
+  one point per day, stepping through four levels of the accent — the same circle
+  the dot-matrix readout draws, at calendar scale, so the two are one display in
+  two states rather than two widgets.
+- **An unlit day says you did not dictate that day, so the display only spans
+  days it can prove.** History is pruned by age and by count on every read, and a
+  full history file cannot vouch for any day before its own oldest record — even
+  one well inside the retention horizon, because the records that would have
+  proved it are the ones that were dropped. The calendar draws the narrowest of
+  those bounds, names underneath which one bit, and grows rightwards as the
+  record deepens.
+- **Days outside that window are drawn as nothing at all**, not as unlit circles.
+  Unlit claims nothing was dictated; blank claims nothing. The grid keeps a
+  four-week floor so it still reads as a calendar rather than as a single column.
+- **Hovering a day names its composition** — the weekday and date in full, the
+  dictations, the words, the longest one and how much was recorded. A day with
+  nothing on it says so in words rather than showing a row of noughts. Meetings
+  and uploads hold their line with the preview tag and no figure, because neither
+  origin exists yet and `0 meetings` would be an invented count.
+- **A day's colour is an absolute claim, not a relative one.** The steps are fixed
+  at one, three, six and eleven dictations rather than scaled to your busiest day,
+  so a colour does not change meaning when an unrelated day gets busier.
+- **Words per minute says what its clock actually is.** The capture clock runs
+  from starting the capture to ending it, so the pause while you think is in the
+  denominator: the figure is throughput rather than speaking rate and reads below
+  how fast you speak. The tile states this on hover.
+
 ### Changed — Home stops explaining itself and starts reporting (ADR 0171)
 
 - **Home's opening block has two lives.** An instruction is read exactly once,

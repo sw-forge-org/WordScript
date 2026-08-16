@@ -93,6 +93,14 @@ export {
   counterDigits,
   counterFrame,
 } from "./DigitCounter";
+export {
+  ActivityCalendar,
+  CELL_SIZE,
+  CELL_SPACE,
+  clockOf,
+  readableDay,
+  WINDOW_NOTE,
+} from "./ActivityCalendar";
 
 /* ── The icon set, the orchestrator's body, the provider marks — Leg 2b ── */
 export { Icon } from "./Icon";
@@ -102,7 +110,7 @@ export type { OrbState } from "./Orb";
 export { ProviderMark, ProviderSprite, ProviderChips, brandSymbolId } from "./ProviderMark";
 
 /* ── The workspace grammar — Leg 2b ── */
-export { HomeOpen, HeroInvoke, HeroFacts, HomeDisplay, StatTile } from "./HomeHero";
+export { HomeOpen, HeroInvoke, HeroFacts, HomeDisplay, HomeSwitch, StatTile } from "./HomeHero";
 export { ListRows, ListItem, RawPanel, AnswerPanel, Reorder } from "./ListItem";
 export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
 export { EditorPanel, ConfirmPanel, FlagPanel } from "./EditorPanel";

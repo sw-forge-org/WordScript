@@ -2892,6 +2892,20 @@
     background: var(--bg-inset);
     border: 1px solid var(--border);
   }
+  /* The calendar does not fit the readouts' stage and is not meant to: that box
+     is 104 px tall for a component 24 px tall, and this one is 143 px before its
+     note. Same ground and same border, sized to what it holds. */
+  /* `minmax(0, max-content)` AND NOT THE DEFAULT `auto`, which is what made the
+     display overflow this box at a 398 px stage. A `place-items: center` grid
+     sizes its column to the item's max-content, so the calendar's own 470 px
+     became the column's width and `max-width: 100%` resolved to 470 — a cap
+     against itself caps nothing. Letting the column shrink to zero is what makes
+     the percentage mean the space available. Measured at 720 px viewport. */
+  .ws-mx-stage[data-tall] {
+    height: auto;
+    padding: var(--s5);
+    grid-template-columns: minmax(0, max-content);
+  }
   .ws-mx-cell figcaption { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .ws-mx-cell figcaption b {
     font-stretch: var(--w-note);
@@ -3543,6 +3557,51 @@
 
   .ws-hero-invoke { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
 
+  /* ═══ THE SWITCH BETWEEN THE TWO VIEWS ════════════════════════════════════
+     Decision 9: the control is the block, not a settings row. So the face is a
+     full-width button that looks like nothing — no border, no ground, no
+     padding of its own — because the thing being pressed is the display and a
+     button frame around a display would read as a second object.
+     ═══════════════════════════════════════════════════════════════════════ */
+  .ws-home-switch { display: flex; flex-direction: column; gap: var(--s3); }
+  .ws-home-switch-face {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    border-radius: var(--r-small);
+  }
+  /* IT IS INVISIBLE UNTIL IT IS REACHED. The hit area is the whole block, so a
+     hover ground would light a third of the screen; the affordance is carried by
+     the dots instead. The focus ring is not optional — a control a keyboard can
+     reach has to be a control a keyboard can SEE. */
+  .ws-home-switch-face:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 4px;
+  }
+  /* The face is a flex row so its one child can be centred; the child still
+     takes the whole width, or the four-column counter grid would collapse to
+     its content and stop being four equal tracks. */
+  .ws-home-switch-face > * { flex: 1; min-width: 0; }
+
+  /* The carousel indicator. Two dots, the lit one being the view you are on —
+     the one piece of discoverability a control with no frame has. */
+  .ws-home-dots { display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .ws-home-dots i {
+    width: 5px; height: 5px;
+    border-radius: var(--r-round);
+    background: var(--fg-muted);
+    opacity: 0.35;
+    transition: opacity var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  .ws-home-dots i[data-on] { background: var(--accent); opacity: 1; }
+
   /* THE COUNTERS. Four tiles reading left to right as one sentence: this is how
      fast you speak, this is what it gives you back, everywhere, in these
      languages. Equal tracks rather than `auto-fit`, because four items in a
@@ -3553,9 +3612,15 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--s5) var(--s4);
   }
-  .ws-tile { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+  /* THE COUNTERS ARE CENTRED FOR THE SAME REASON THE CALENDAR IS. The two are
+     one block in two states, and a reader who swaps between them should see the
+     content stay put rather than jump from a left rail to a centred drawing. */
+  .ws-tile {
+    display: flex; flex-direction: column; align-items: center;
+    gap: var(--s2); min-width: 0; text-align: center;
+  }
   .ws-tile-label {
-    display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+    display: flex; align-items: center; justify-content: center; gap: var(--s2); flex-wrap: wrap;
     font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
     color: var(--fg-dim);
   }
@@ -3583,6 +3648,100 @@
   /* No reading is a dark display, and it is deliberately not a lit zero: a zero
      states that the runtime counted none, and nothing here counted. */
   .ws-counter[data-unlit] { opacity: 0.5; }
+
+  /* ═══ THE ACTIVITY CALENDAR ═══════════════════════════════════════════════
+     THE HEAT MAP'S OWN `width`/`height` ATTRIBUTES DO NOT SURVIVE `.ws-win svg`,
+     AND THAT IS THE OPPOSITE OF WHAT THE COUNTER'S NOTE PREDICTED. That note
+     says an SVG presentation attribute beats every rule in this file because it
+     is unlayered; measured here, `.ws-win svg { width: 16px; height: 16px }` —
+     the unscoped prototype rule sixty lines up — wins, and a 470 px calendar
+     rendered at 16 x 4.86 px, its aspect ratio intact and its size gone.
+     Presentation attributes sit in their own layer BELOW all author layers, so a
+     rule beats them; what beat the counter's rule was the attribute setting
+     `width` where the rule only set `max-width`, which is a different fight.
+     `.ws-matrix-wrap svg` escapes the same rule the same way, and this follows
+     it: state the width, then let `max-width` shrink it.
+
+     Measured in a browser against the box, per A3's brief. Reading this file and
+     believing it is exactly how the 16 px version would have shipped.
+     ═══════════════════════════════════════════════════════════════════════ */
+  /* IT ASKS FOR ITS OWN WIDTH AND ACCEPTS LESS, which is the opposite way round
+     from the counter and the correction that measurement forced. `.ws-counter`
+     is `width: 100%` capped at its natural size because it FILLS a grid track
+     that is already sized; the calendar is the thing that SIZES its container.
+     Spelled the counter's way it collapsed to 16 px inside a `place-items:
+     center` grid — the track had no reason to be 470 px wide, so it was not, and
+     `width: 100%` of nothing is nothing. `width` states the intrinsic size, and
+     `max-width: 100%` is what still lets a narrow window shrink it. */
+  /* `min-width: 0` IS THE WHOLE RULE. A grid or flex item's automatic minimum
+     size is its min-content, and this block's min-content is the 470 px display
+     inside it — so without this the calendar refuses every box narrower than
+     itself and overflows rather than scaling, no matter what the host declares. */
+  .ws-cal-block { min-width: 0; max-width: 100%; }
+  /* THE MONTH LABELS ARE COLOURED THROUGH UPSTREAM'S OWN HOOK, and they have to
+     be: the vendored heat map sets `color: var(--rhm-text-color, #24292e)` as an
+     INLINE style on the `<svg>`, and an inline style beats every rule in this
+     file. Unset, that fallback is a near-black that vanishes on the dark scheme —
+     the labels were painting #24292e on a dark ground. Defining the variable is
+     the one way to reach them, and it makes them follow the scheme like every
+     other piece of text. */
+  /* Centred in the block, because the display is narrower than the column it
+     lives in and a 493 px drawing pinned to the left edge of a 696 px column
+     reads as unfinished rather than as deliberate. */
+  .ws-cal { position: relative; display: block; width: var(--cal-w); max-width: 100%; margin-inline: auto; }
+  .ws-cal { --rhm-text-color: var(--fg-dim); }
+  .ws-cal svg { width: 100%; max-width: 100%; height: auto; }
+
+  /* The cell is the matrix's pixel at calendar scale, and it carries its own
+     colour and intensity as attributes — the ramp is data, not decoration, so
+     it is set where the count is known rather than guessed at in CSS. */
+  .ws-cal-cell { transition: opacity 120ms ease-out; }
+
+  /* THE DAY, ON HOVER. Above the cell and centred on it, and it never takes the
+     pointer: a tooltip that can be hovered is a tooltip that flickers when the
+     cursor crosses its own edge. */
+  .ws-cal-tip {
+    /* FIXED AND PORTALLED TO `body`. Inside the content column it was trapped in
+       whatever stacking context its ancestors happened to build and the sidebar
+       painted over it; no `z-index` here could win that, because the contest was
+       between two ancestors rather than between the two boxes. Out of the tree
+       there is nothing left to lose to — and nothing between here and the window
+       can clip it either. */
+    position: fixed;
+    z-index: 60;
+    transform: translate(-50%, calc(-100% - 8px));
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: max-content;
+    max-width: 280px;
+    padding: var(--s3) var(--s4);
+    /* The popover vocabulary this shell already has — `.ws-menu`'s surface,
+       border and elevation, not a fourth spelling of a floating box. */
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    background: var(--bg-surface);
+    box-shadow: var(--elev-pop);
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-micro);
+    color: var(--fg-dim);
+    line-height: 1.45;
+  }
+  .ws-cal-tip b {
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .ws-cal-tip-owed { display: flex; align-items: center; gap: var(--s2); color: var(--fg-muted); }
+
+  /* WHAT THE DISPLAY IS ALLOWED TO CLAIM. Not a caption: an unlit cell asserts
+     that nothing was dictated that day, and that assertion only holds inside the
+     window the history file still reaches back over. */
+  .ws-cal-note {
+    margin-top: var(--s3);
+    text-align: center;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
 
   .ws-hero-invoke .ws-what {
     display: flex; flex-direction: column; gap: 2px;

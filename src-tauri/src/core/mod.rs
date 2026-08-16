@@ -1,3 +1,4 @@
+pub mod activity_ledger;
 pub mod agent;
 pub mod backup;
 pub mod capture;

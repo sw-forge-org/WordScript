@@ -1,15 +1,23 @@
 # The home activity track
 
-Opened 2026-08-16. **Stage A steps A1 and A2 are landed; A3, A4 and A5 are
-open.** Both the orientation page and the sequence — start a session here.
+Opened 2026-08-16. **Stage A is closed — A1 to A5 are all landed — and Stage B
+row B3 went with it, because the owner asked for all-time counters and B3 is what
+they need. B1, B2 and B4 remain, and each waits on another track.** Both the
+orientation page and the sequence — start a session here.
 
 Owns **ADR 0171–0180**.
 [ADR 0171](../decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md)
-is written and covers what A1 and A2 built. The remaining decisions on this page
-are recorded here rather than as records, because an ADR is append-only and
-nothing has been built against them yet; the session that lands them writes the
-next one. Grep the tree before claiming a number — six tracks share `main` and a
-number gets cited in source before its file lands.
+covers what A1 and A2 built;
+[ADR 0172](../decisions/0172-an-unlit-cell-is-an-assertion-so-the-calendar-spans-what-the-record-can-vouch-for-and-nothing-more.md)
+covers A3, A4 and A5 and closes Stage A;
+[ADR 0173](../decisions/0173-the-calendar-draws-every-day-because-a-grid-that-hides-what-it-cannot-prove-reads-as-broken.md)
+reverses one decision inside 0172 after the owner saw the result;
+[ADR 0174](../decisions/0174-all-time-figures-need-a-record-that-does-not-forget-so-the-ledger-is-counts-per-day-and-never-text.md)
+builds the activity ledger and **closes Stage B row B3**;
+[ADR 0175](../decisions/0175-a-tile-may-only-report-what-the-runtime-can-see-so-apps-goes-turnaround-arrives-and-the-rate-is-a-median.md)
+retires `Apps`, brings in Turnaround and makes the rate a median. **0176 is the
+next free number** — but grep the tree before claiming it, because six tracks
+share `main` and a number gets cited in source before its file lands.
 
 ## Why this track exists
 
@@ -93,11 +101,21 @@ rich, because only a reader who went looking sees it.
 
 ### 4. The four tiles
 
-**Words per minute** (average) · **Time saved** (rolling 7 days) ·
-**Apps** (total) · **Languages** (total).
+**Words per minute** · **Time saved** · **Apps** · **Languages**.
 
 Read left to right they make a sentence: *this is how fast you speak, this is
 what it gives you back, everywhere, in these languages.*
+
+**Superseded in two places by
+[ADR 0175](../decisions/0175-a-tile-may-only-report-what-the-runtime-can-see-so-apps-goes-turnaround-arrives-and-the-rate-is-a-median.md).**
+`Apps` is unwireable — the target application is only resolved on a direct paste,
+and 49 of 50 real dictations were clipboard deliveries — so it is replaced by
+**Turnaround**, the median wait from speaking to text. And the rate is a
+**median** rather than an average, because an aggregate is dragged down by long
+dictations and a mean is dragged up by short hallucinated ones. The sentence
+becomes: *this is how fast you speak, this is what it gives you back, this is how
+quickly it answers, in these languages.* Time saved is windowed to four weeks;
+everything else is all time.
 
 ### 5. Digits, and how they are allowed to grow
 
@@ -275,6 +293,311 @@ in the fact row, where it used to be two 42 px objects. That is what A2 asked
 for and it was built as asked. It is worth a look with the owner before A5,
 because A5 is the step that could give the reader a way back to it.
 
+## The record — A3, A4 and A5, 2026-08-16
+
+Session two, same day. Unit was the whole rest of Stage A, and all three steps
+landed. Durable form is in
+[ADR 0172](../decisions/0172-an-unlit-cell-is-an-assertion-so-the-calendar-spans-what-the-record-can-vouch-for-and-nothing-more.md);
+what is here is what the next session needs.
+
+**What landed.** `@uiw/react-heat-map` @ `86a3d0b` vendored into
+`src/components/ui/heat-map.tsx` — MIT, flattened to one file, provenance header,
+local changes marked WORDSCRIPT, **not** in `package.json`.
+`ActivityCalendar` (`components/shell/`) draws it as circles on the matrix ramp
+with the day tooltip. Four new derivations in `lib/activity.ts` — `dayKey`,
+`activityDays`, `activityStep`, `activityWindow`. `HomeSwitch` in `HomeHero.tsx`,
+`AppConfig.home_activity_calendar` in Rust, and a gallery section on the Design
+System's Motion page beside the counter.
+
+**Suite: 697 → 731 over 48 → 49 files, then 731 → 730 when the owner reversed
+one decision.** Thirty-four cases added and none deleted on the first pass;
+the reversal then deleted the two that pinned the narrowing grid and added two
+asserting the opposite, plus one for the clipping bug, and merged two assertions
+into one case. **Deleting a case for a design that no longer exists is the one
+legitimate reason to lose one** — it is not the same act as deleting a case to
+make a step green. `npm run build` clean, `npx tsc --noEmit` clean,
+`cd src-tauri && cargo test` **879 passed, 0 failed, 6 ignored**.
+
+**One Rust pass, announced before it happened.** A dev host was running the whole
+session (`pgrep -af "tauri dev"` → PID 392439). `config.rs` was written once, the
+app rebuilt and restarted once, and nothing under `src-tauri/` was touched again.
+Runtime log 6343 → 6469 lines, which is that host's own output; no capture
+measurement was in flight at either end (checked, and `cargo test` was held until
+it was clear).
+
+### The finding that changed A3, and it is the reason to read this section
+
+**A 26-week calendar cannot be built honestly from `history.json`, and the
+prototype's growth rule was measuring the wrong clock.**
+
+Decision 7 says the calendar grows with the *installation*. It cannot: nothing in
+the frontend knows when the install happened. What it can know is **how far back
+the record still reaches**, and that is the honest clock — history is pruned on
+every read by two arms, and the second one is easy to miss:
+
+- `history_retention_days` drops anything older than the horizon.
+- `history_limit` drops the oldest records once the file is full, **whatever
+  their age**. So a saturated history cannot vouch for any day before its own
+  oldest record, even one well inside the retention horizon.
+
+**On the owner's machine, measured:** `history_limit: 50`,
+`history_retention_days: 7`, fifty records held, every one of them from a single
+day. A naive 26-week display would have painted **181 confident grey circles**,
+each one asserting *you did not dictate that day* about a day whose records were
+simply thrown away, around one lit one.
+
+`activityWindow` takes the narrowest of the three bounds and names which one bit.
+
+**The first build then went one step too far with that, and the owner reversed it
+on sight — see [ADR 0173](../decisions/0173-the-calendar-draws-every-day-because-a-grid-that-hides-what-it-cannot-prove-reads-as-broken.md).**
+It narrowed the GRID to the window and drew the rest as blank space, which on a
+seven-day history produced a four-column box with one column of circles in it.
+That does not read as *the record cannot vouch for more*; it reads as *this
+software is broken*. And the premise was weaker than it sounded: a run of unlit
+days is not an accusation, it is a half-year filling up, and watching it fill is
+most of the reason to look. **The grid is constant now**, every day gets a circle,
+and the reach is one plain line underneath — a fact about the history file rather
+than a caveat about the drawing. The lesson worth carrying: when a display would
+have to hide something to stay strictly honest, the honest thing is usually a
+caption, not a gap.
+
+**What this means in practice:** on a history pruned to seven days the calendar
+draws its full half-year and says underneath that the records only go back a
+week. Raising `history_limit` and `history_retention_days` fills it from that day
+forward and recovers nothing already dropped. The durable answer is **Stage B row
+B3**, and this is the evidence for why it is worth its cost. Stage A was told to
+take the window labels and it took them; B3 is still open and this session did not
+pre-empt it.
+
+### Three defects the owner caught by looking, after the suite was green
+
+All three shipped past a full green suite and two rounds of browser measurement,
+which is the useful part of recording them.
+
+1. **The grid narrowed itself into looking broken** — reversed, above and in
+   ADR 0173.
+2. **The month labels were painting `#24292e` in both schemes.** The vendored heat
+   map sets `color: var(--rhm-text-color, #24292e)` as an INLINE style on the
+   `<svg>` and `textStyle` fills from `currentColor`, so an inline style was
+   beating every rule in `shell.css`. Fixed by defining `--rhm-text-color` on
+   `.ws-cal`, which is upstream's own hook — reaching a vendored component through
+   the variable it publishes rather than patching over it from outside.
+3. **Every circle was clipped, and it was reported as "why is that only a
+   three-quarter circle".** `Day` already wraps each cell in
+   `translate(5, 20)`, so `cellProps.x`/`y` are relative to the padded origin;
+   adding the pads again in the render override pushed the last column and bottom
+   row past the viewBox edge. **A clipping bug names the wrong object in its own
+   symptom.** A case now asserts that no cell's bounding circle crosses the
+   viewBox on any side.
+
+### Two corrections to what was written before
+
+**ADR 0171's trap note has the cascade backwards, and the calendar proved it.**
+The note says an SVG presentation attribute beats every rule in `shell.css`
+because it is unlayered. Measured: `.ws-win svg { width: 16px; height: 16px }` —
+the unscoped prototype rule — rendered the 470 px calendar at **16 × 4.86 px**,
+aspect ratio intact and size gone. Presentation attributes sit in their own layer
+*below* all author layers, so any rule beats them. What actually beat the
+counter's rule was narrower: the attribute sets `width` where that rule only set
+`max-width`. The Traps section now carries the corrected version.
+
+**The tiles' `Words per minute` measures throughput, not speech.** Investigated
+on the owner's suspicion that 74 wpm was too low, and the suspicion was right in
+substance though not in the way expected — the arithmetic is correct and the
+claim is not. Full derivation below, under *What the readings actually measure*.
+
+### One number the next session inherits
+
+**470 px is 26 columns and the arithmetic is `5 + 26 × (15 + 3) − 3`.** The cap is
+a **column count**, not a day count: 182 days ending mid-week touch twenty-seven
+calendar weeks, and twenty-seven columns is 488 px. The height is 143 px.
+Measured in a browser at 1000 px and at 720 px viewport, against the box, per
+A3's own brief — and the measurement found two real defects that reading the CSS
+would not have.
+
+## What the readings actually measure
+
+Investigated 2026-08-16 on the owner's challenge: *I don't believe I have a
+words-per-minute count of 74 — prove me wrong.* **The challenge was right and the
+tile was not lying; the tile was measuring something other than what its name
+suggests.** Computed against the fifty real records in `history.json`.
+
+**The arithmetic checks out.** 2,898 words over 2,217.5 recorded seconds is
+**78.4 wpm** aggregate, over 49 of 49 countable runs. The 74 the owner saw is the
+same figure on a slightly different set — history rotates. Nothing is invented
+and no denominator was skipped.
+
+**The denominator is the open microphone, not the speech.**
+`capture_integrity.recorded_seconds` is `samples / (rate × channels)` — the whole
+capture window, from starting the capture to ending it. It therefore contains the
+pause before you begin, every pause while you think, and the tail before you
+stop. The signature is unmistakable in the data:
+
+| Dictation length | Runs | Aggregate wpm |
+|---|---|---|
+| under 5 s | 12 | 110.3 |
+| 5–15 s | 10 | 98.2 |
+| 15–60 s | 11 | 89.7 |
+| 60–120 s | 9 | 86.9 |
+| over 120 s | 7 | **67.7** |
+
+A rate that falls monotonically with duration is silence entering the
+denominator, and runs of 60 s and over carry **81 % of all recorded seconds**.
+So the tile is dominated by long dictations and reads about 78 where the owner's
+articulation rate is nearer 110–130. **It is a throughput figure — words
+delivered per minute of open microphone — and the tile's tooltip now says so.**
+
+**Two smaller contaminations, both real, neither large:**
+
+- **The numerator is words *kept*, not words said.** It reads
+  `transformed_transcript ?? raw_transcript`, and cleanup removes filler: 2,948
+  raw words became 2,898 transformed, −1.7 %. Small, systematic, and in the
+  honest direction.
+- **A short capture can inject words that were never spoken.** One record holds
+  *"Alright, come with me and go to the next one"* — ten words — against
+  `recorded_seconds: 1.97`. That is 273 wpm and physically impossible; it is a
+  recogniser hallucination on a two-second clip, and it lands in the numerator at
+  full weight. **This belongs to [`core-hardening.md`](core-hardening.md)**, whose
+  whole subject is fluent-and-wrong output, and it is noted here only because
+  this is where it was found.
+
+**What was changed, and what deliberately was not.** The tile's tooltip now
+states that the clock runs from capture start to capture end, that the thinking
+pause is in the denominator, and that the figure reads lower the longer the
+dictation. **The label and the tile set were not touched** — decision 4 is made,
+and renaming a tile is re-opening it rather than building it. If the owner wants
+a true articulation rate it needs speech-seconds rather than stream-seconds, the
+runtime already has a `voice_threshold_dbfs` concept in `input_level`, and that
+is a new Stage B row rather than a tooltip edit.
+
+**Time saved inherits the same denominator** and is otherwise sound: it is
+explicitly an assumption against a 40 wpm typing baseline, rendered with `≈`, and
+windowed to seven days. Understating the seconds spoken would overstate the
+saving; here the seconds are overstated, so **time saved is conservative** —
+which is the right direction for a figure derived from a guess.
+
+## The record — the owner's four corrections, 2026-08-16
+
+Same day, same session, after the first Stage A close. **Everything here came
+from the owner looking at the running app**, and every one of the four was right.
+Recorded separately because the pattern matters more than the fixes: a full green
+suite and two rounds of browser measurement did not catch any of them.
+
+**1. The grid hid what it could not prove, and that read as broken.** Reversed —
+[ADR 0173](../decisions/0173-the-calendar-draws-every-day-because-a-grid-that-hides-what-it-cannot-prove-reads-as-broken.md).
+The grid is always twenty-six weeks and every day gets a circle. *When a display
+would have to hide something to stay strictly honest, the honest thing is usually
+a caption, not a gap.*
+
+**2. The month labels were `#24292e` in both schemes.** The vendored heat map
+sets `color: var(--rhm-text-color, #24292e)` as an INLINE style on the `<svg>`,
+which beats every rule in `shell.css`. Fixed through upstream's own hook —
+`--rhm-text-color: var(--fg-dim)` on `.ws-cal` — rather than by patching over the
+inline style from outside. Verified computed: `rgb(194, 191, 184)` on dark,
+`rgb(85, 80, 74)` on light.
+
+**3. "Why is that only a three-quarter circle?"** Every cell was clipped. `Day`
+already wraps each cell in `translate(5, 20)`, so the pads were applied twice and
+the last column and bottom row fell outside the viewBox. **A clipping bug names
+the wrong object in its own symptom** — nobody reports "the grid is offset", they
+report the shape. A case now asserts no cell's bounding circle crosses the
+viewBox on any side.
+
+**4. Both views centred; weekday labels; the tooltip over the sidebar; all-time
+counters.** The first three are layout. The fourth was not: see below.
+
+### The ledger, and why it stopped being a Stage B row
+
+All-time counters cannot come from history — that is ADR 0172's whole finding —
+so the owner asking for them **is** B3. It was built rather than deferred:
+`core::activity_ledger`, one row per day, counts and durations, never text.
+[ADR 0174](../decisions/0174-all-time-figures-need-a-record-that-does-not-forget-so-the-ledger-is-counts-per-day-and-never-text.md)
+carries the derivation.
+
+- Written at `history::record_entry_with_work_mode`, the funnel every path
+  already reaches. **A retry is not counted** — it re-runs a transform over words
+  already counted.
+- **Seeded once** from whatever history still holds. On this machine it recovered
+  52 dictations and 3,106 words, and reported **81.9 wpm all time**.
+- A failed write is logged and swallowed; a corrupt file is replaced. Derived
+  bookkeeping must never fail a dictation.
+- `started_on` is the first row it ever wrote — the closest thing to an install
+  date this product has, which makes decision 7's *grows with the installation*
+  literally implementable.
+
+**Time saved stays windowed at four weeks**, at the owner's direction: a lifetime
+time-saved is a trophy, four weeks is a fact about your month. Four weeks rather
+than a calendar month so it never jumps because February is short.
+
+**`lib/activity.ts` lost seven history-reading functions and their cases.** They
+were superseded, not inconvenient — leaving them would have shipped two ways to
+compute one figure. Word counting moved into Rust, where it happens once per
+record instead of on every render.
+
+**Suite at the close: 728 frontend cases over 49 files, 886 Rust cases.**
+`npm run build` clean, `npx tsc --noEmit` clean. Two Rust passes this session,
+both announced: the config field, then the ledger.
+
+## The record — the metrics session, 2026-08-16
+
+Third and last session of the day, driven entirely by the owner reading the
+running app. It produced one governing rule, and the rule is the part worth
+carrying forward:
+
+> **A tile may only report what the runtime can observe. Anything downstream of
+> the insert is invisible.**
+
+It has now decided four things — decision 6's *time until the text is with you*,
+`Apps`, a proposed *first time right*, and Turnaround's own definition — and it
+will decide the next one the same way.
+
+**`Apps` is retired, not deferred.** The target application is only resolved on a
+direct paste, and **49 of this machine's last 50 dictations were
+`clipboard_only`**. A `PreviewTag` promises a reading once a field exists; this
+one had no such future, so leaving it tagged would have been a promise the
+product cannot keep. Its case now asserts the tile's absence.
+
+**The first replacement proposed was wrong, and the owner caught it in one
+sentence.** *First time right* — the share of dictations needing no correction —
+can see retries and edit-overlay opens and cannot see the reader fixing three
+words in their own editor. It would have read 94 % while the truth was worse: a
+plausible wrong number produced by the very rule meant to prevent them.
+
+**Turnaround took the slot on merit.** Median milliseconds from the audio
+arriving to the text existing — both ends inside the runtime, identical on the
+clipboard path and the direct one. It is the only tile that answers to a setting:
+change the model, the lane or the profile and it moves, which is what makes it
+possible to tell whether a change helped rather than remembering how last week
+felt. The runtime had always measured it and thrown it away; what was missing was
+a field on the record.
+
+**The rate is a median now**, and the three candidates were not close: aggregate
+82.7, mean of per-run rates 95.3, median 87.6. An aggregate is dragged down by
+long dictations, which carry 81 % of all recorded seconds and are mostly thinking
+pauses; a mean is dragged up by the two-second capture the recogniser invented
+ten words for. Both medians are backed by fixed four-hundred-bucket histograms in
+the ledger.
+
+**One bug shipped and was caught on the running app: a histogram read off the
+wrong axis.** A file written at five wpm per bucket, read at one, reported a
+median of **17** where the truth was **88** — bucket 17 stopped meaning *85 to 90*
+and started meaning *17*. The bucket width is now stored beside the counts and a
+mismatch discards them. **A histogram without its axis is a plausible wrong
+number waiting to happen**, and it is the third time this session that a derived
+value was misread rather than missing.
+
+**The copy was cut hard, at the owner's direction.** The tooltips had grown into
+paragraphs and the feet printed `1 of 2 runs timed` beside every figure. That
+count is a fact about the measurement rather than about the reader; the scope is
+the part that changes how a number is read, so the feet are now `median · all
+time`, `≈ minutes · last 4 weeks`, `ms · median · all time` and nothing else. The
+calendar's line lost its second half for the same reason — how far the record
+reaches is a fact about a settings value, and a calendar is not where anybody
+asks for one.
+
+**Suite at the close: 729 frontend cases over 49 files, 888 Rust cases.**
+`npm run build` and `npx tsc --noEmit` clean.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -283,9 +606,9 @@ because A5 is the step that could give the reader a way back to it.
 |---|---|---|
 | **A1 · done** | The digit counter component: composite frame from `digits`, four reserved positions, right-aligned. Gallery entry. | It renders 7 and 1,240 without the box changing width |
 | **A2 · done** | The four tiles on Home, **and the empty state in the same step**. Keycaps out — `KeyCap`, `keyCaps()` and the cap style block are Home-only and went entirely. The shortcut moved into the hero's fact line as the small `Keycaps` (the one `Context.tsx` uses). | Words per minute and time saved read from history; apps and languages carry `PreviewTag`; **a profile with no dictations sees the instruction, not four zeroes** |
-| **A3** | The calendar, vendored and converted to circles on the matrix palette, 26 weeks, growing with the install. | A day's colour steps with that day's dictation count |
-| **A4** | The day tooltip. Dictations real; meetings and uploads present as preview lines. | Hovering a day names its composition |
-| **A5** | The switch, its indicator, and persistence. **Touches Rust** — the preference is a field on `AppConfig`, on the shape `useNavRail` already uses. | The choice survives a restart |
+| **A3 · done** | The calendar, vendored and converted to circles on the matrix palette, 26 weeks, growing with the install. **The growth clock turned out to be the history file, not the install** — see the record. | A day's colour steps with that day's dictation count |
+| **A4 · done** | The day tooltip. Dictations real; meetings and uploads present as preview lines. | Hovering a day names its composition |
+| **A5 · done** | The switch, its indicator, and persistence. `AppConfig.home_activity_calendar`, additive, on `workspace_nav_rail`'s shape. | The choice survives a restart |
 
 **A2 carries the empty state and A5 does not.** The first draft of this sequence
 put it in A5, which would have left every build between A2 and A5 showing a
@@ -300,7 +623,7 @@ the data half is the named track's.
 |---|---|---|
 | **B1** | Recognized language on the record — pass `response.language` through, config as fallback | speech / core-hardening |
 | **B2** | Target application on the record, plus the retention rule that names the new collection | privacy decision, runtime ownership |
-| **B3** | Lifetime counters that survive pruning, or a final decision that every figure stays window-labelled | this track |
+| **B3 · done** | Lifetime counters that survive pruning — `core::activity_ledger`, one row per day, counts only ([ADR 0174](../decisions/0174-all-time-figures-need-a-record-that-does-not-forget-so-the-ledger-is-counts-per-day-and-never-text.md)) | this track |
 | **B4** | Meetings and uploads as calendar origins | [`context-objects.md`](context-objects.md) |
 
 ## Traps
@@ -319,18 +642,31 @@ the same wall**, and the general form is worth carrying: a case that stands in
 for a structural fact must assert the structure, or the first honest change is
 the failing one.
 
-**AN SVG PRESENTATION ATTRIBUTE BEATS EVERY RULE IN `shell.css`, AND THE UNIT
-SUITE CANNOT SEE IT.** `DigitCounter` is capped at its natural width so a narrow
-column can shrink it, and `.ws-counter svg { width: 100% }` — the obvious
-spelling — changed nothing at all. An SVG `width`/`height` attribute is a
-*presentational hint*, which is unlayered, and **unlayered author styles beat
-layered ones regardless of specificity**; every rule in `shell.css` lives inside
-`@layer components`. The result was a 118 px tile holding a 136 px display
-hanging out of its card. `max-width` is a property the attribute does not set, so
-that is what the rule uses. jsdom applies no stylesheet, so this was found by
-rendering the workspace in a browser with a `__TAURI_INTERNALS__` stub and
-measuring `getBoundingClientRect()` against the box. **A3 draws a far bigger SVG
-in the same wrapper**: measure it, do not read the CSS and believe it.
+**AN SVG'S SIZE IS DECIDED BY A FIGHT BETWEEN THREE THINGS, AND THE UNIT SUITE
+CANNOT SEE ANY OF IT — CORRECTED, A3.** The original form of this trap said an
+SVG presentation attribute *beats every rule in `shell.css` because it is
+unlayered*. **That is backwards, and A3 proved it by shipping a 470 px calendar
+that rendered at 16 × 4.86 px** — aspect ratio intact, size gone. Presentation
+attributes sit in their own layer BELOW all author layers, so any author rule
+beats them; the 16 px came from `.ws-win svg { width: 16px; height: 16px }`, the
+unscoped prototype rule at the top of the file. What actually beat `.ws-counter`'s
+rule in A1 was narrower than the note claimed: the attribute sets `width`, and
+that rule only set `max-width`. The working form is `.ws-matrix-wrap svg`'s —
+**state the width, then let `max-width` shrink it.**
+
+Two more, both found by measuring and neither visible in jsdom:
+
+- **A `place-items: center` grid sizes its column to the item's max-content**, so
+  `max-width: 100%` on the item resolves to the item's own width and caps
+  nothing. The calendar overflowed a 398 px stage at full 470.
+- **A grid or flex item's automatic minimum size is its min-content.** Without
+  `min-width: 0` the block refuses every box narrower than the display inside it,
+  whatever the host declares. It is the COMPONENT's job to carry that, or every
+  future host has to know it.
+
+jsdom applies no stylesheet, so all three were found by rendering in a browser and
+measuring `getBoundingClientRect()` against the box. **Measure it; do not read the
+CSS and believe it.**
 
 **`Home.test.tsx:150` asserted the keycaps by name — SPENT, A2.** It read
 `.ws-keycap` and expected `["Ctrl", "Super"]`; A2 deleted that class and the case
@@ -362,116 +698,100 @@ by a summed `recorded_seconds` that silently skipped half the records is a
 plausible, wrong number — the failure class `core-hardening.md` exists for. The
 average is over what was measured, and the tile says so.
 
+**`recorded_seconds` IS THE OPEN MICROPHONE, NOT THE SPEECH — and every reading
+built on it inherits that.** It is `samples / (rate × channels)`: the whole
+capture window, thinking pauses included. So `wordsPerMinute` is throughput and
+not articulation, it falls monotonically with dictation length (110 wpm under 5 s,
+68 wpm over 120 s on real records), and long dictations dominate it because they
+carry 81 % of all recorded seconds. **Anything day-scoped or rate-shaped that a
+later step adds will inherit the same denominator**, so name it accordingly or
+derive speech-seconds first. Full derivation in *What the readings actually
+measure* above.
+
+**A HISTORY FILE IS NOT AN APPEND-ONLY LOG, AND THE CALENDAR IS THE SURFACE THAT
+FORGETS IT.** Pruning has two arms and the count arm is the one that catches
+people: a saturated history cannot vouch for any day before its own oldest
+record, even one inside the retention horizon. Any future surface that draws
+absence — a streak, a gap, a "you haven't dictated since" — has to pass through
+`activityWindow` or it will state a fact the file cannot support. **`0` and
+`unknown` are different, and so are `unlit` and `not drawn`.**
+
 ## The prompt for the next session
 
-You are finishing the **home activity** track's Stage A. Work in the repo root
-on `main`. Do not create a branch. **Five other tracks work in the same tree** —
-see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run `git status` and
-`git log --oneline -5` before you start, and stage your own paths. Never
-`git add -A`.
+**Stage A is closed.** A1 to A5 are landed and
+[ADR 0172](../decisions/0172-an-unlit-cell-is-an-assertion-so-the-calendar-spans-what-the-record-can-vouch-for-and-nothing-more.md)
+is the record. Read the two record sections above before anything else — the A3/A4/A5
+one and *What the readings actually measure* — because both carry findings that
+are not in the tree's own comments.
 
-**A1 and A2 are landed** (commit `ba30abf`). Read the record above before
-anything else; it names what exists, what it cost, and two traps that are not in
-the tree's own comments.
+Work in the repo root on `main`. Do not create a branch. **Five other tracks work
+in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run
+`git status` and `git log --oneline -5` before you start, and stage your own
+paths. Never `git add -A`. **0176 is the next free ADR number unless the tree says
+otherwise — grep, do not trust this line.**
 
-**Read first:** this page in full, then
-[ADR 0171](../decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md),
-`src/screens/Home.tsx`, `src/components/shell/DigitCounter.tsx` (the composite
-frame you are about to draw a much bigger one beside),
-`src/components/ui/matrix.tsx`, `src/lib/activity.ts` (where a reading is
-derived, and where the calendar's day buckets belong too),
-`src/hooks/useNavRail.ts` and `AppConfig.workspace_nav_rail` in
-`src-tauri/src/core/config.rs` (the exact shape A5 copies), ADR 0161, ADR 0111,
-`CLAUDE.md` and `docs/spec/SPEC.md`.
+### Stage B is what is left, and four of its five rows are not yours to start
 
-**Your unit is A3, A4 and A5 — the whole rest of Stage A.** In that order, and
-the order is not a preference: **A5 is the only step that writes under
-`src-tauri/`**, and every write there rebuilds the app, restarts it, takes the
-hotkeys with it and kills any dictation in flight. Doing it last means it
-happens once, at the end, when you already know what you are persisting.
+Every row below waits on another track's data. **Do not build the surface for a
+row whose data has not landed**; a drawn tile with no field behind it is the thing
+this track spent Stage A making impossible. The table under *What can be wired
+today* is still the authority on which is which.
 
-**Until A5 lands the calendar is not reachable from the product**, so mount it
-in the gallery, on the Design System page beside the counter, and develop
-against that. **Do not invent a temporary toggle to see your own work** — a
-control that is not the decided one is a control somebody will ship. A5 is what
-makes it reachable, and it does so with the switch decision 9 specifies and no
-other.
+**The one row this track owns outright is B3**, and Stage A produced the evidence
+for it:
 
-**A3, A4 and A5 are done when all of this is true**, and not before:
+> **B3 — a per-day aggregate that survives pruning.** The calendar can only draw
+> what `history.json` still holds, and on the machine this was built against that
+> is a single column. A ledger of counts per day — no text, no app names, one row
+> per day, bounded at a year or so — makes the 26-week display honest and makes
+> decision 7's *grows with the installation* literally true, because the ledger's
+> own first day IS the install date. It is Rust, it is a new persistent
+> collection, and it needs a privacy line even though it stores only counts.
+>
+> **Sequence it as its own unit with its own Rust pass.** Stage A's A5 pass is
+> spent; do not bolt this onto an unrelated one.
 
-*A3 — the calendar*
+Before starting B3, put one question to the owner: **their `history_limit: 50`
+and `history_retention_days: 7` may simply be leftovers from testing.** The
+defaults are 200 and 90. If they raise them, the calendar is worth looking at
+again from that day forward, and B3's urgency changes — not its correctness.
 
-- `@uiw/react-heat-map` is vendored under `src/components/ui/` with the
-  provenance header `matrix.tsx` uses — source URL, commit, fetch date, local
-  changes marked WORDSCRIPT — and is **not** a dependency in `package.json`.
-- The cells are circles on the matrix ramp (`--fg-muted` unlit through four
-  steps to `--accent`), via `rectRender`, not a fork.
-- 26 weeks, and **the display grows with the installation** — a fresh install
-  draws as many weeks as it has existed, filling rightwards. 365 grey cells on
-  day one reads as a defect, not as a beginning.
-- A day's step comes from that day's dictation count, derived in
-  `lib/activity.ts` under test, not in the screen.
-- **The rendered SVG width is measured against its box**, not assumed from the
-  CSS. See the second new trap; this is the step it was written for.
+### A second thing worth raising, and it is not a Stage B row yet
 
-*A4 — the day tooltip*
+**`Words per minute` is throughput, not articulation.** Stage A widened the
+tooltip to say so and deliberately left the label and the tile set alone, because
+decision 4 is made. If the owner wants a true speaking rate it needs
+**speech-seconds rather than stream-seconds** — the runtime already computes a
+`voice_threshold_dbfs` in `input_level`, so the concept exists but nothing sums
+voiced time per capture. That is a runtime change and a new row; **propose it, do
+not quietly build it.**
 
-- The tooltip names a day's composition: dictations real, meetings and uploads
-  present as preview lines that state they have no origin yet — **never a zero**,
-  because a zero claims a count.
-- Everything day-scoped lives here rather than in a tile: sessions that day,
-  longest dictation, words, and `release until the text exists` if you wire it.
-- A day with nothing in it says so in words, not with a row of noughts.
+Related and not this track's: a two-second capture produced ten words
+(*"Alright, come with me and go to the next one"*), which is a recogniser
+hallucination landing in a real reading at full weight.
+[`core-hardening.md`](core-hardening.md) owns it.
 
-*A5 — the switch*
-
-- The preference is an additive field on `AppConfig` with `#[serde(default)]`,
-  on the shape `workspace_nav_rail` already has, so nothing is migrated
-  (ADR 0054). The UI reads and writes it through the window's config draft, the
-  way `useNavRail` does — no second config reader.
-- **Clicking the block toggles it**, with the small two-dot carousel indicator
-  for discoverability. **No settings row is added**; decision 9 is explicit.
-- The choice survives a restart, verified in the native host and not only in a
-  test.
-- `cd src-tauri && cargo test` is green and quoted.
-
-*All three*
-
-- The suite count moved by a number you can explain, and **no case was deleted**.
-
-**Before you write anything under `src-tauri/`:** check `pgrep -af "tauri dev"`,
-say out loud that a rebuild is coming, and **batch every Rust edit into one
-pass**. One session did this four times in an afternoon, once while the owner
-was mid-sentence.
-
-**The decisions on this page are made.** If one turns out to be wrong when it
-meets the code, say so in your record and stop — do not quietly substitute a
-different design.
-
-**If you run short, stop after A4 and hand over.** A vendored, correct calendar
-with a working tooltip and no switch is a clean stopping point; a half-written
-`AppConfig` field is a rebuild somebody has to finish blind.
-
-**Three rules with teeth here:**
+### Rules that still have teeth here
 
 1. **Never render a number the runtime did not produce.** A drawn reading carries
-   `PreviewTag` and shows no figure at all — an invented 3 is worse than a
-   visible gap, and this is the rule ADR 0161 exists for.
-2. **A dev host may be running.** Check `pgrep -af "tauri dev"`. Do not write
-   `vite.config.ts` while one is up, and batch anything under `src-tauri/`.
-3. **A capture measurement may be running** (runtime ownership step 6). Take
-   `wc -l ~/.config/WordScript/logs/wordscript-runtime.log` before and after
-   your checks and report both, and do not run heavy builds during one — which
-   includes `cargo test`.
+   `PreviewTag` and shows no figure at all (ADR 0161).
+2. **`unlit` and `not drawn` are different claims**, and so are `0` and `unknown`.
+   Anything that draws absence goes through `activityWindow`.
+3. **A dev host may be running.** Check `pgrep -af "tauri dev"`. Do not write
+   `vite.config.ts` while one is up, and batch anything under `src-tauri/` into
+   one pass — say out loud that a rebuild is coming before you do it.
+4. **A capture measurement may be running.** Take
+   `wc -l ~/.config/WordScript/logs/wordscript-runtime.log` before and after and
+   report both; no heavy builds, `cargo test` included, during one.
+5. **Measure geometry in a browser, do not read `shell.css` and believe it.**
+   Stage A's corrected trap is three separate ways that goes wrong.
 
-**Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test`
-once A5 has touched Rust. Quote the suite counts as a delta against the
-baselines you measure at the start, and say what the difference is. Run
-`npm audit` if anything lands in `package.json`; the intent is that nothing
-does.
+**Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
+Rust moved. Quote the counts as a delta against the baselines you measure at the
+start. Baselines at the close of this session: **729 frontend cases over 49
+files, 888 Rust cases.** Run `npm audit` if anything lands in `package.json`; the intent is
+that nothing does.
 
 **Before you stop**, write your record into this page above the sequence, update
-the sequence rows you closed, write the next ADR in the track's range (0172 is
-free unless the tree says otherwise — grep, do not trust this line), and write
-the next brief in place of this prompt. **Stage B is what follows**, and every
-row of it waits on another track.
+the rows you closed, write the next ADR in the track's range, and write the next
+brief in place of this prompt.

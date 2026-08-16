@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  ActivityCalendar,
   Card,
   CardRows,
   DigitCounter,
@@ -9,6 +10,7 @@ import {
   Row,
   SectionHeader,
 } from "@/components/shell";
+import { ACTIVITY_STEPS, dayKey, type ActivityDay } from "@/lib/activity";
 
 /**
  * MOTION — the *matrix* section of `SCREENS.ds`, ported out of `demo.js`.
@@ -177,9 +179,88 @@ const COUNTERS: Array<{ name: string; reads: string; description: string; render
   },
 ];
 
+/**
+ * THE CALENDAR'S SAMPLE HALF-YEAR.
+ *
+ * The gallery has no runtime and therefore no records, and this is the one
+ * surface where that matters: a calendar drawn over an empty history is 182
+ * unlit circles, which shows the grid and none of the ramp. So the days are
+ * synthetic AND SAID TO BE — the section's own note carries it — for the same
+ * reason the matrix's level meter is fed a synthetic envelope one section down.
+ *
+ * The counts walk the four thresholds on purpose, so every step of the ramp is
+ * on screen and the gallery is judging the ramp rather than one colour.
+ */
+const SAMPLE_WEEKS = 26;
+
+function sampleDays(now: Date): Map<string, ActivityDay> {
+  const days = new Map<string, ActivityDay>();
+  const counts = [0, 1, 0, ACTIVITY_STEPS[1], 0, ACTIVITY_STEPS[2], ACTIVITY_STEPS[3], 2, 0, 0];
+  for (let back = 0; back < SAMPLE_WEEKS * 7; back += 1) {
+    const dictations = counts[back % counts.length];
+    if (dictations === 0) continue;
+    const date = new Date(now.getTime());
+    date.setDate(date.getDate() - back);
+    const key = dayKey(date);
+    days.set(key, {
+      date: key,
+      dictations,
+      words: dictations * 210,
+      seconds: dictations * 96,
+      timed: dictations,
+      longestSeconds: 60 + dictations * 13,
+    });
+  }
+  return days;
+}
+
 export function Motion() {
+  const now = new Date();
+
   return (
     <div className="flex flex-col gap-[var(--gap-block)]">
+      <SectionHeader
+        title="The activity calendar"
+        description="Home's other opening block. The same circles the matrix draws, on the same accent ramp, one day per point — which is what makes the calendar and the counter two states of one display rather than two widgets."
+      >
+        <Card>
+          <div className="ws-mx-lab">
+            <figure className="ws-mx-cell">
+              <div className="ws-mx-stage" data-tall>
+                <ActivityCalendar buckets={sampleDays(now)} now={now} />
+              </div>
+              <figcaption>
+                <b>Twenty-six weeks</b>
+                <span className="ws-mx-mode ws-mono">470 px</span>
+                <span>
+                  Hover a day for its composition. The counts here are sample data — the gallery has
+                  no runtime and no records, and an empty history would show the grid with none of
+                  the ramp.
+                </span>
+              </figcaption>
+            </figure>
+          </div>
+          <CardRows>
+            <Row
+              label="How wide it opens"
+              hint="Twenty-six weeks is the cap, not the opening width. What is drawn is the window the history file can still be believed for — pruning by age and by count both narrow it — and the line under the grid names which bound bit."
+              control={<span className="ws-mono ws-muted">grows rightwards</span>}
+            />
+            <Row
+              label="What an unlit cell claims"
+              hint="That nothing was dictated that day. It is only true inside the window above, which is the whole reason the display refuses to draw a half-year it cannot vouch for."
+              control={<span className="ws-mono ws-muted">no dictation</span>}
+            />
+            <Row
+              label="The steps"
+              hint="Fixed thresholds rather than quartiles of the busiest day. A ramp scaled to the maximum makes the same two dictations step 4 one week and step 1 the next, and the reader learns nothing they can carry."
+              control={
+                <span className="ws-mono ws-muted">{ACTIVITY_STEPS.join(" · ")} dictations</span>
+              }
+            />
+          </CardRows>
+        </Card>
+      </SectionHeader>
       <SectionHeader
         title="The counter"
         description="A number built out of the matrix's ten digit frames — N glyphs with one blank column between them, right-aligned in four reserved positions. There is no alphabet and no separator, so a label beside a counter stays ordinary text."

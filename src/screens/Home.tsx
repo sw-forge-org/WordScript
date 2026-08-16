@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ActivityCalendar,
   Button,
   Card,
   HeroFacts,
   HeroInvoke,
   HomeDisplay,
   HomeOpen,
+  HomeSwitch,
   Icon,
   IconButton,
   Keycaps,
@@ -20,7 +22,15 @@ import {
 } from "@/components/shell";
 import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
-import { TYPING_BASELINE_WPM, timeSavedMinutes, wordsPerMinute } from "@/lib/activity";
+import {
+  SAVED_WINDOW_DAYS,
+  TYPING_BASELINE_WPM,
+  ledgerBuckets,
+  ledgerTimeSaved,
+  ledgerMedianTurnaround,
+  ledgerMedianWpm,
+} from "@/lib/activity";
+import { useActivityLedger } from "@/hooks/useActivityLedger";
 import { relativeTime } from "@/lib/format";
 import { readTriggerStatus } from "@/lib/shortcuts";
 import {
@@ -133,6 +143,12 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   const { entries, remove, retry, reveal, acknowledgeFallback } = useTranscriptionHistory(
     Boolean(runtime?.active),
   );
+  /* THE ALL-TIME FIGURES COME FROM THE LEDGER AND NEVER FROM `entries`. History
+     is pruned by age and by count on every read, so a lifetime total summed from
+     it grows, sticks at the limit and then runs backwards. The ledger keeps one
+     row per day and does not forget. Re-read when a record lands, which is the
+     only moment any of these numbers move. */
+  const ledger = useActivityLedger(Boolean(runtime?.active), entries.length);
 
   useEffect(() => {
     if (!runtime?.active) return;
@@ -172,9 +188,23 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      wrong, so it is computed in one tested place and this file only renders it.
      Both are `null` when nothing was measured, which is what the display gates
      on and what the counter draws as a dark box rather than as a zero. */
-  const wpm = runtime ? wordsPerMinute(entries) : null;
-  const saved = runtime ? timeSavedMinutes(entries) : null;
+  const wpm = ledgerMedianWpm(ledger);
+  const turnaround = ledgerMedianTurnaround(ledger);
+  const saved = ledgerTimeSaved(ledger);
   const display = wpm !== null;
+
+  /* THE OTHER LIFE OF THE SAME BLOCK (decision 1). The calendar and the tiles
+     are alternatives rather than companions — one is your rhythm, the other is
+     your character — and which one stands is the reader's choice, kept in the
+     config on the shape the sidebar's rail already uses. `runtime.config` IS the
+     window's draft, so this is the same reader and the same writer `useNavRail`
+     goes through and not a second opinion of one field.
+
+     THE WINDOW IS DERIVED, NOT ASSUMED. An unlit cell asserts that nothing was
+     dictated that day, and history is pruned by age AND by count on every read,
+     so the display may only span what the file still reaches over. */
+  const calendar = Boolean(runtime?.config.home_activity_calendar);
+  const buckets = useMemo(() => ledgerBuckets(ledger), [ledger]);
 
   /* THE ONE SOURCE OF ADR 0044'S THREE THAT HAS A RECEIVER (ADR 0076). A
      delivery that fell back to the clipboard or to the scratchpad is a
@@ -266,59 +296,84 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
       {banner}
       <HomeOpen>
         {display ? (
-          <HomeDisplay>
-            {/* WORDS PER MINUTE. Words from the record, seconds from the
-                capture's own clock — and the foot names the two counts, because
-                `capture_integrity` is null on a retry and on every record older
-                than the measurement. A rate over a denominator that silently
-                skipped half the records is a plausible wrong number, which is a
-                worse failure than a missing one. */}
-            <StatTile
-              label="Words per minute"
-              value={wpm!.value}
-              ariaLabel={`${Math.round(wpm!.value)} words per minute`}
-              foot={`${wpm!.timed} of ${wpm!.total} runs measured`}
-              title="Words from the record, seconds from the capture's own clock. A retry has no capture of its own and records written before that measurement carry no clock, so neither is in this average."
-            />
-            {/* TIME SAVED. The one figure on this row derived from an
-                assumption rather than from a measurement, and the foot carries
-                the `≈` that says so. A rolling window rather than a total: a
-                lifetime figure built from a pruned history grows, sticks at the
-                limit and then runs backwards. */}
-            <StatTile
-              label="Time saved"
-              value={saved ? saved.value : null}
-              ariaLabel={
-                saved
-                  ? `About ${Math.round(saved.value)} minutes saved in the last 7 days`
-                  : "No reading for the last 7 days"
-              }
-              foot={saved ? "≈ minutes, last 7 days" : "nothing measured in 7 days"}
-              title={`The same words and seconds, against a ${TYPING_BASELINE_WPM} words-per-minute typing baseline. The baseline is an assumption and not a measurement — nothing here has watched you type — which is what the ≈ is for.`}
-            />
-            {/* DRAWN, AND SHOWING NO FIGURE AT ALL (ADR 0161). The tag sits at
-                the label, where it is read before the value rather than after
-                it, and the counter draws a dark display: inventing a 3 here
-                would be worse than a visible gap. */}
-            <StatTile
-              label="Apps"
-              tag={
-                <PreviewTag title="No history field stores the target application. `core::workspace_context` resolves it for the transform context and never writes it down; recording where a person dictates is a new collection, and the retention rule has to name it before the tile can count anything." />
-              }
-              value={null}
-              ariaLabel="No reading yet"
-              foot="no field on the record"
-            />
-            <StatTile
-              label="Languages"
-              tag={
-                <PreviewTag title="The record stores the configured language, not the recognised one. The provider returns one and it is spent on recogniser repair rather than written to the record, so a count today would count how often the setting was changed." />
-              }
-              value={null}
-              ariaLabel="No reading yet"
-              foot="the setting, not the reading"
-            />
-          </HomeDisplay>
+          /* CLICKING THE BLOCK SWAPS IT (decision 9). No settings row is added
+             for this and none is wanted: a preference about a display belongs on
+             the display, and the two-dot indicator is what says there is a
+             second view to find. The write goes through the same `patch` every
+             other discrete control uses, so the choice is on disk the moment it
+             is made and survives a restart. */
+          <HomeSwitch
+            calendar={calendar}
+            onToggle={() => runtime?.patch({ home_activity_calendar: !calendar })}
+          >
+            {calendar ? (
+              <ActivityCalendar buckets={buckets} />
+            ) : (
+              <HomeDisplay>
+                {/* WORDS PER MINUTE. Words from the record, seconds from the
+                    capture's own clock — and the foot names the two counts, because
+                    `capture_integrity` is null on a retry and on every record older
+                    than the measurement. A rate over a denominator that silently
+                    skipped half the records is a plausible wrong number, which is a
+                    worse failure than a missing one. */}
+                <StatTile
+                  label="Words per minute"
+                  value={wpm!.value}
+                  ariaLabel={`${Math.round(wpm!.value)} words per minute`}
+                  foot="median · all time"
+                  title="Your middle dictation's rate. The clock counts thinking pauses too, so it reads below your speaking rate."
+                />
+                {/* TIME SAVED. The one figure on this row derived from an
+                    assumption rather than from a measurement, and the foot carries
+                    the `≈` that says so. A rolling window rather than a total: a
+                    lifetime figure built from a pruned history grows, sticks at the
+                    limit and then runs backwards. */}
+                <StatTile
+                  label="Time saved"
+                  value={saved ? saved.value : null}
+                  ariaLabel={
+                    saved
+                      ? `About ${Math.round(saved.value)} minutes saved in the last four weeks`
+                      : "No reading for the last four weeks"
+                  }
+                  foot={saved ? "≈ minutes · last 4 weeks" : "nothing yet · last 4 weeks"}
+                  title={`Against a ${TYPING_BASELINE_WPM} words-per-minute typing baseline — an assumption, not a measurement. That is what the ≈ is for.`}
+                />
+                {/* DRAWN, AND SHOWING NO FIGURE AT ALL (ADR 0161). The tag sits at
+                    the label, where it is read before the value rather than after
+                    it, and the counter draws a dark display: inventing a 3 here
+                    would be worse than a visible gap. */}
+                {/* THE ONE TILE THAT ANSWERS TO A SETTING. `Apps` stood here
+                    and could not work: the target application is only resolved
+                    where the text is pasted directly, and 49 of this machine's
+                    last 50 dictations were clipboard deliveries, which have no
+                    target to name. Anything downstream of the insert is outside
+                    what this product can see — the same boundary that rules out
+                    "time until the text is with you" and "how much you edited
+                    afterwards". Turnaround is inside it at both ends. */}
+                <StatTile
+                  label="Turnaround"
+                  value={turnaround}
+                  ariaLabel={
+                    turnaround === null
+                      ? "No reading yet"
+                      : `${Math.round(turnaround)} milliseconds from speaking to text`
+                  }
+                  foot={turnaround === null ? "nothing timed yet" : "ms · median · all time"}
+                  title="How long from you stopping to the text being ready. Moves when you change the model or the lane."
+                />
+                <StatTile
+                  label="Languages"
+                  tag={
+                    <PreviewTag title="The record stores the configured language, not the recognised one. The provider returns one and it is spent on recogniser repair rather than written to the record, so a count today would count how often the setting was changed." />
+                  }
+                  value={null}
+                  ariaLabel="No reading yet"
+                      foot="the setting, not the reading"
+                    />
+              </HomeDisplay>
+            )}
+          </HomeSwitch>
         ) : (
           <HeroInvoke
             title={runtime ? copy.title : "Hold in any app to dictate"}

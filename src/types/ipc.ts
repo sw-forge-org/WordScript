@@ -520,6 +520,12 @@ export interface AppConfig {
   /// stops being affordable, and that is state rather than preference
   /// (ADR 0111).
   workspace_nav_rail?:      boolean;
+  /// Which of its two lives Home's opening block is showing — the activity
+  /// calendar when true, the four counter tiles when false. Machine-wide, and
+  /// additive: a config written before the field existed reads back as the
+  /// tiles. Only the block's own toggle writes it; there is no settings row
+  /// (decision 9 of the home activity track).
+  home_activity_calendar?:  boolean;
   /// Global fallback for profiles that predate the per-profile modes block. The
   /// real control is `ProfileModesSettings.collect_workspace_context`.
   auto_detect_mode?:        boolean;
