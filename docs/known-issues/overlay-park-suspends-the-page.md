@@ -77,7 +77,11 @@ for as long as the gap lasts.
 
 ## What would fix it
 
-Unresolved, and it is runtime work rather than surface work:
+Unresolved, and it is runtime work rather than surface work. **It is step 8 of
+the Runtime ownership track** ([`../tracks/runtime-ownership.md`](../tracks/runtime-ownership.md)),
+added 2026-08-16 — the track that owns ADR 0155, of which this is the second
+consequence. The three candidates below are that step's, and none has been
+costed:
 
 1. **Do not let the park suspend the page** — keep the window in a state
    WebKitGTK still classifies as visible while parked. Needs a way to be

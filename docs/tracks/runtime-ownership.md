@@ -46,17 +46,25 @@ own, then make the next event decidable.
 | [`capture-loses-half-the-recording.md`](../known-issues/capture-loses-half-the-recording.md) | open, 3 detailed events, cause not located | Steps 3, 5, 6 |
 | [`overlay-recording-freeze.md`](../known-issues/overlay-recording-freeze.md) | **reopened 2026-08-13**; one of its reported shapes — a blank pill during a live capture after a reload — is answered by step 4 (ADR 0151), the freeze itself is not | Steps 1, 2, 4 |
 | [`sound-output-underruns-and-reopens.md`](../known-issues/sound-output-underruns-and-reopens.md) | **half fixed 2026-08-14**; the underrun class is gone, the routing half is the Speech track's F2 | Step 7 |
+| [`overlay-park-suspends-the-page.md`](../known-issues/overlay-park-suspends-the-page.md) | **opened 2026-08-16**, one symptom fixed (ADR 0169), cause measured but not observed | Step 8 |
+| [`learned-nudge-is-hidden-before-it-is-seen.md`](../known-issues/learned-nudge-is-hidden-before-it-is-seen.md) | **fixed 2026-08-16 (ADR 0169)** — the park landed 268–303 ms after the runtime emitted the nudge; a running nudge now holds the overlay | the sighting that opened Step 8 |
 
 Adjacent, do not re-derive:
 [`overlay-stranded-off-screen.md`](../known-issues/overlay-stranded-off-screen.md)
 owns the second cause of "invisible mid-recording" and carries the log
 discriminator table. Reopened, not this track's to fix — **but ADR 0155 made its
 park move effective for the first time on 2026-08-15**, which is a risk this
-track now carries and not a fix it owns. See the seventh record below.
+track now carries and not a fix it owns. See the seventh record below — and the
+eighth, which is ADR 0155's *other* consequence and now has a step behind it.
 
 Owns **ADR 0133, 0134, 0150–0152** for these records, **0154** for the insert
-channel the GUI port handed over and **0155** for the overlay's map frame, and
-0157 onward as they come — **0153 and 0156 are the GUI port's**, filed on
+channel the GUI port handed over, **0155** for the overlay's map frame and
+**0169** for what a park does to the page's clocks, and 0170 onward as they
+come. **0157–0168 went to the Speech track** between 2026-08-15 and 2026-08-16,
+while this page still read *"0157 onward as they come"* — the third time that
+claim has been overtaken, and the third time the rule below caught it by
+grepping rather than by trusting the sentence. **0153 and 0156 are the GUI
+port's**, filed on
 2026-08-14 and 2026-08-15 because that track filed first. ADRs 0079–0081, 0083,
 0084 and 0100 belong to **Core hardening**; 0133 continues that line and says so
 in its own References. 0132 is the Speech track's — it landed in `2d5bead` while
@@ -78,9 +86,14 @@ This table is the state of the track. Update it as steps land.
 | 5 | `native-18` into the regression corpus | **done 2026-08-14** | — |
 | 6 | read the next capture event, then fix | **open, and now the only thing between this record and a located cause.** The reading is a command now: `scripts/read-capture-event.sh` | one natural `Short` capture (step 3 done) |
 | 7 | the cue output stream (ADR 0150) | **done 2026-08-14 — and the record's own explanation of the symptom turned out to be wrong; the underrun half is fixed, the routing half is the speech track's** | — |
+| 8 | does a parked overlay stop being a running page (ADR 0155's second consequence) | **open, added 2026-08-16.** One surface is defended against it (ADR 0169); the mechanism is measured but not observed, and every other animation and timer in the overlay is still exposed | one `[ov-nudge] measure` with no `end` beside it — the instrument shipped with ADR 0169 |
 
-Opened with all seven open and nothing started, 2026-08-13. **Six of seven are
-closed; step 6 is the track, and it cannot be hurried.**
+Opened with all seven open and nothing started, 2026-08-13. **Six of the
+original seven are closed. Two are open and both wait on an event nobody can
+schedule:** step 6 on a natural `Short` capture, step 8 on a learned word — one
+every day or two of the owner's use, each with an instrument already in place to
+read it when it comes. Neither can be hurried, and step 8 additionally should
+not be: its fix touches what ADR 0155 built to remove the black map frame.
 
 ### What landed on 2026-08-14
 
@@ -626,6 +639,60 @@ the cue stream keeps its shape, the voice path inherits the same symptom.
 **Done when:** the log distinguishes output from capture at a glance.
 
 **Validates with:** `cd src-tauri && cargo test`.
+
+### Step 8 — does a parked overlay stop being a running page (added 2026-08-16)
+
+**The second consequence of ADR 0155, and the first one that has been seen.**
+The seventh record below closes on the park *move* becoming effective. This is
+the other thing that changed when the unmap went away: the page is never torn
+down, so nothing resets it — and WebKitGTK suspends a page it classifies as
+not-visible. `OverlayWindow.tsx` has worked around exactly that for rAF in two
+places for months, each with a comment saying why. What ADR 0155 changed is
+*when* the classification happens: between every pair of sessions, for as long
+as the gap lasts.
+
+**What was measured** (2026-08-16, from the owner's screenshot and `[ov-dom]`):
+a learned-word tab frozen at 19 px of the 58 px it had asked for, motionless
+beside the *following* session's recording, cleared only when that session was
+restarted. The geometry was correct and had room to spare — 94.5 px of strip —
+and 19 px is not a width the variant logic can produce. It was a stopped frame
+of a CSS animation, and the `setTimeout` that would have unmounted it had not
+fired either. Both resumed a session later.
+Full numbers:
+[`../known-issues/overlay-park-suspends-the-page.md`](../known-issues/overlay-park-suspends-the-page.md).
+
+**What is not established, and is the whole of this step.** The freeze is
+*consistent with* suspension; it was not observed in the engine. A stopped frame
+plus a late timer is two symptoms, not a mechanism. Nor is it known what else is
+exposed: the pill's own leave animation, the limit tab's countdown transition
+and the mode-picker's auto-close timer are all on the same two clocks and none
+has been checked.
+
+**Gated on an instrument that already shipped.** ADR 0169 added a dev-only
+`[ov-nudge]` pair to `/tmp/kilo/overlay-diag.log`: a `measure` line when the tab
+is sized, an `end` line on `animationend`. **A `measure` with no `end` beside it
+is the freeze, directly** — the distinction no screenshot can make, and the one
+that cost the investigation that opened this step its first two hypotheses. It
+needs one learned word to fire, which is roughly one dictation in one or two
+days of the owner's use — the same shape of wait as step 6, and for the same
+reason.
+
+**Do not read ADR 0169 as this step's fix.** It bounds *one* surface against the
+symptom, by wall-clock and by the session boundary, and says so in its own
+Consequences. The question here is whether the runtime should let the page be
+suspended at all, and that is a park-path question — `park_overlay_surface` in
+`src-tauri/src/lib.rs`, this track's side of the seam.
+
+**Done when:** the record names whether the page is suspended, and either the
+park stops doing it, the reveal wakes it explicitly, or the track states that
+per-surface bounding is the accepted answer and every exposed surface has one.
+Three candidates are written out in the record; none has been costed.
+
+**The constraint that outranks all three:** every candidate touches the
+mechanism ADR 0155 built to remove the black map frame. That defect was visible
+on **every** recording start; this one needs a learned word to appear at all. A
+fix here that brings the flash back is a worse trade than leaving the step open,
+and the step is not urgent enough to earn that risk.
 
 ## Rules you are measured on
 
