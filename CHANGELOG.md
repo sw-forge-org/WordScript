@@ -53,6 +53,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the learned-word badge is on screen long enough to read (ADR 0169)
+
+- **The badge stays for 4 seconds instead of 0.28.** It was built for about two
+  seconds and never got them: the overlay window parked 280 ms after the runtime
+  said it had learned something, so the badge went with it. It now holds the
+  overlay up for as long as it runs. The cost is visible and deliberate — after
+  a dictation that learned a word, the last pill stays on screen those four
+  seconds as a still frame with its buttons inactive. Dictations that learned
+  nothing are unchanged.
+- **The badge cannot outlive the session that learned the word.** It appeared
+  cut off — a sliver of a tab with the end of the word showing through it —
+  beside a recording it had nothing to do with, and stayed there until the
+  recording was started again. A new session now clears it, and it is bounded by
+  wall-clock rather than by a timer, because the timer it used to rely on stops
+  when the overlay is parked.
+- **The slide is not slower for being longer.** The badge's animation moved its
+  hold from 14–88 % to 7–93 %, so sliding out and back still take ~280 ms each
+  and the added time is spent standing still, which is the part that gets read.
+- **The badge's geometry was measured and cleared of suspicion.** The window had
+  94.5 px of room beside the pill for a 58 px badge, so nothing was clipped by
+  the window and nothing was mis-sized. What was on screen was a frozen frame of
+  the badge's own animation.
+- **The cause underneath is recorded, not fixed.** Since the recording-start
+  flash was removed the overlay window is no longer unmapped between sessions,
+  and WebKitGTK suspends a page it treats as not-visible: any animation running
+  at that moment freezes and any pending timer stops. Every other animation and
+  timer in the overlay is still exposed to it —
+  `docs/known-issues/overlay-park-suspends-the-page.md` carries the measurement
+  and the three candidate fixes.
+
 ### Changed — your account plan belongs to the provider you bought it from (ADR 0167, ADR 0168)
 
 - **The plan is stored per provider.** It was one setting for the whole machine,

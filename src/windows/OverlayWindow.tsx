@@ -127,7 +127,17 @@ function setOverlayDocumentState(idle: boolean) {
 // never becomes something to dismiss. The CSS keyframe reads this through
 // `--ov-learned-duration`, so the timing lives in one place; the unmount waits
 // a beat longer so the retraction is never cut off mid-frame.
-const LEARNED_NUDGE_DURATION_MS = 1_900;
+//
+// 4 s, raised from 1.9 s on 2026-08-16. The old value was never the reason the
+// tab could not be read — the window parked 280 ms in, so any duration above
+// that was theoretical. Now that a running nudge holds the window open
+// (`isActive`), the number is spent for real and 1.9 s of it was not enough:
+// *"Ich glaube nicht, dass 280 Millisekunden genug sind … maybe 4 seconds."*
+//
+// The sweep's ramps stay where they were. `overlay-learned-sweep` moved its
+// hold from 14–88 % to 7–93 % in the same change, so out and back still take
+// ~280 ms each and the extra time is spent standing still, where it is read.
+const LEARNED_NUDGE_DURATION_MS = 4_000;
 const LEARNED_NUDGE_VISIBLE_MS = LEARNED_NUDGE_DURATION_MS + 120;
 
 // Clearance between the tab and the pill, matching the CSS `right` offset.
@@ -863,12 +873,63 @@ export default function OverlayWindow() {
     }
   }, [pendingPreviewResult, status]);
 
-  const isActive =
+  // Words the runtime just learned, or null. Presentation only — it never
+  // enters the session reducer.
+  const [learnedNudge, setLearnedNudge] = useState<string[] | null>(null);
+
+  // When the current nudge is due to be gone, as wall-clock rather than as a
+  // pending timer. The timer is the ordinary path and stays; this is what
+  // survives a park, because a `setTimeout` does not (ADR 0169).
+  const learnedNudgeDeadlineRef = useRef(0);
+
+  // A running nudge keeps the overlay up, and that is the whole reason it is
+  // ever readable.
+  //
+  // The runtime emits it 268–303 ms before the park, seven of seven times, so
+  // on the window's own schedule the tab gets 14 % of the 4 s it asks for —
+  // measured, and reported by the owner as "man sieht das gar nicht"
+  // (docs/known-issues/learned-nudge-is-hidden-before-it-is-seen.md). No
+  // animation timing can fix that: the window is gone.
+  //
+  // This is the coupling ADR 0035 avoided, and it is narrower than the one it
+  // avoided. **The session reducer is untouched.** `status`, `pendingResult`,
+  // `previewStaged` and `resultSurfaceOpen` are exactly what they were; the
+  // session has already ended in its one commit (ADR 0018/0019) before this can
+  // ever be true. What is extended is how long the window stays up afterwards,
+  // and that is presentation deciding how long presentation lasts.
+  //
+  // The pill that stays up with it is the leave hold, which `holdPreviewDuringClose`
+  // already paints for any `overlayMotion !== "idle"` — a frozen frame of the
+  // surface the session ended on, with its actions inert. That is the honest
+  // rendering of a finished session and it is what the hold was built to be;
+  // it is simply visible for 4 s now instead of 240 ms.
+  //
+  // Costs nothing on a dictation that learned nothing: `learnedNudge` is null,
+  // and this reads exactly as it did before. Seven events in ten days.
+  //
+  // **A nudge only counts while something is painted for it to sit beside.**
+  // The tab is anchored to `.ov-pill-shell`, and that element exists only
+  // inside `{pillState && …}` — so with no pill there is no tab either, and
+  // holding the window open would leave an empty transparent window on screen
+  // for four seconds with nothing in it. The three hold predicates above are
+  // exactly the question "will a pill be painted for a session that has already
+  // ended", so they are what the nudge asks. When the answer is no it changes
+  // nothing and the window parks on its own schedule, as before.
+  const nudgeHasSurface =
+    learnedNudge !== null
+    && (renderProcessingPreview || renderResultPreview || renderEditHold);
+  // What the SESSION itself puts on screen, which is what `isActive` meant
+  // before the nudge could hold the window. The two have to stay
+  // distinguishable: "the window is up" and "a session is on screen" are now
+  // different questions, and at least one reader downstream is asking the
+  // second one (`lastVisibleSurfaceRef`, which the hold reads back).
+  const sessionHasSurface =
     status === "recording"
     || status === "processing"
     || showError
     || showAnyPreview
     || renderModePicker;
+  const isActive = sessionHasSurface || nudgeHasSurface;
 
   // Dismiss the mode-select surface when the overlay leaves the active state (user
   // dismissed it or lost focus). Prevents a stale picker from reappearing on
@@ -905,11 +966,18 @@ export default function OverlayWindow() {
   // Remember the LIVE surface, not the rendered one: during the leave hold the
   // rendered surface is a replay of this value, so feeding it back would pin
   // the hold to itself instead of to the last surface the session really had.
+  //
+  // Gated on `sessionHasSurface`, NOT on `isActive`. A nudge holding the window
+  // open after the session ended is a period in which `liveSurface` has already
+  // fallen to "compact" — writing that here would overwrite the surface the
+  // hold replays, and `holdPreviewDuringClose` refuses to hold a "compact".
+  // The hold would then end the moment it was needed, taking the pill, the tab
+  // anchored to it and the very reason the window was being held with it.
   useEffect(() => {
-    if (isActive) {
+    if (sessionHasSurface) {
       lastVisibleSurfaceRef.current = liveSurface;
     }
-  }, [isActive, liveSurface]);
+  }, [sessionHasSurface, liveSurface]);
 
   useEffect(() => {
     if (isActive) {
@@ -1060,10 +1128,6 @@ export default function OverlayWindow() {
     };
   }, []);
 
-  // Words the runtime just learned, or null. Presentation only — it never
-  // enters the session reducer.
-  const [learnedNudge, setLearnedNudge] = useState<string[] | null>(null);
-
   const { budget: captureBudget } = useCaptureBudget();
 
   // Reactive waveform level driven by native capture sample buckets. OverlayPill
@@ -1154,6 +1218,7 @@ export default function OverlayWindow() {
         if (!terms.length) return;
 
         setLearnedNudge(terms);
+        learnedNudgeDeadlineRef.current = Date.now() + LEARNED_NUDGE_VISIBLE_MS;
         if (timer) clearTimeout(timer);
         // Disappears on its own. Nothing to dismiss, nothing to answer — the
         // list in Settings is where the detail lives.
@@ -1165,6 +1230,7 @@ export default function OverlayWindow() {
       unlisten.then((fn) => fn());
     };
   }, []);
+
 
 
   // Listen for processing-mode events from the Rust runtime so the pill stays
@@ -1935,6 +2001,52 @@ export default function OverlayWindow() {
     width: 0,
   });
 
+  // The nudge belongs to the session that learned the word, and it has to be
+  // gone by the time the window is parked — because a parked overlay stops
+  // being a running page.
+  //
+  // The runtime emits the nudge 268–303 ms before the park, every time
+  // (docs/known-issues/learned-nudge-is-hidden-before-it-is-seen.md), so the
+  // tab is always mid-sweep when the window goes. Since ADR 0155 the park no
+  // longer unmaps the window on Linux — it moves it offscreen at opacity 0 —
+  // and WebKitGTK suspends a page it classifies as not-visible, which this file
+  // already works around for rAF in two other places. The sweep freezes at
+  // whatever width it had reached and the `setTimeout` that would clear the
+  // nudge does not fire either, so a half-open shutter with its label cut off
+  // rides into the following session and stays there. Measured 2026-08-16:
+  // 19 px of a 58 px tab, reading "nit" of "Commit".
+  //
+  // Two exits, because the one that was here depends on the clock the park
+  // stops:
+  //
+  //   * A new session clears it. A word learned in the previous session names
+  //     nothing that is happening in this one, so carrying it over would be
+  //     wrong even if it painted correctly.
+  //   * A deadline in wall-clock, re-checked on every reveal and repaint.
+  //     `Date.now()` keeps running across a suspension; a pending timer does
+  //     not. This is what bounds the tab's life when no new session arrives —
+  //     and since the nudge now holds the window open (`isActive`), it is also
+  //     what ends that hold.
+  //
+  // The session boundary is read from `status`, NOT from `isActive`. `isActive`
+  // is true *because* a nudge is running, so asking it whether a new session
+  // began would answer "no" for exactly as long as the nudge lasts — the tab
+  // would then survive into the session it was supposed to be cleared by.
+  //
+  // Deliberately not a fix for the freeze itself. Whether the overlay's page
+  // may be suspended between sessions is a runtime question and belongs to the
+  // park path, not to the one surface that noticed.
+  const sessionRunning = status === "recording" || status === "processing";
+  const sessionWasRunningRef = useRef(sessionRunning);
+  useEffect(() => {
+    const enteringSession = sessionRunning && !sessionWasRunningRef.current;
+    sessionWasRunningRef.current = sessionRunning;
+    if (!learnedNudge) return;
+    if (enteringSession || Date.now() >= learnedNudgeDeadlineRef.current) {
+      setLearnedNudge(null);
+    }
+  }, [sessionRunning, learnedNudge, pillVisualEpoch]);
+
   // The side tab carries the learned-word nudge and nothing else.
   //
   // The auto-stop was tried here and did not fit: the strip beside the pill is
@@ -1982,16 +2094,26 @@ export default function OverlayWindow() {
     // that has not happened yet measures 0, a zero-width tab trivially "fits",
     // and the result is a `role="status"` announcing a tab that paints nothing
     // — the audible version of a fake state.
-    if (fullPainted > 0 && sideStrip >= fullPainted + LEARNED_NUDGE_GAP_PX) {
-      setLearnedNudgeVariant({ kind: "full", width: fullLayout });
-    } else if (
-      markerPainted > 0 &&
-      sideStrip >= Math.max(LEARNED_NUDGE_MIN_PX, markerPainted + LEARNED_NUDGE_GAP_PX)
-    ) {
-      setLearnedNudgeVariant({ kind: "marker", width: markerLayout });
-    } else {
-      setLearnedNudgeVariant({ kind: "hidden", width: 0 });
+    const variant: LearnedNudgeVariant =
+      fullPainted > 0 && sideStrip >= fullPainted + LEARNED_NUDGE_GAP_PX
+        ? { kind: "full", width: fullLayout }
+        : markerPainted > 0 &&
+            sideStrip >= Math.max(LEARNED_NUDGE_MIN_PX, markerPainted + LEARNED_NUDGE_GAP_PX)
+          ? { kind: "marker", width: markerLayout }
+          : { kind: "hidden", width: 0 };
+
+    // The three numbers that decide the variant, plus the window they are
+    // measured against. A tab that turns out clipped on screen is either a
+    // wrong measurement or a sweep that never finished, and those two are
+    // indistinguishable from a screenshot — the `[ov-nudge] end` line below is
+    // what tells them apart.
+    if (import.meta.env.DEV) {
+      diagLog(
+        `[ov-nudge] measure kind=${variant.kind} width=${variant.width} fullLayout=${fullLayout} fullPainted=${fullPainted.toFixed(1)} labelW=${label.offsetWidth} sideStrip=${sideStrip.toFixed(1)} innerW=${window.innerWidth}`,
+      );
     }
+
+    setLearnedNudgeVariant(variant);
   }, [activeNudge, pillVisualEpoch]);
 
 
@@ -2120,6 +2242,15 @@ export default function OverlayWindow() {
               aria-hidden={learnedNudgeVariant.kind === "hidden" ? true : undefined}
               title={learnedNudgeVariant.kind === "hidden" ? undefined : activeNudge.label}
               aria-label={learnedNudgeVariant.kind === "hidden" ? undefined : activeNudge.label}
+              // The sweep is one shot: out, hold, back in. This fires once, at
+              // the end of it. Its absence in the log beside an `[ov-nudge]
+              // measure` line is the freeze — the animation was started and
+              // never finished, which no measurement can show.
+              onAnimationEnd={
+                import.meta.env.DEV
+                  ? () => diagLog(`[ov-nudge] end kind=${learnedNudgeVariant.kind}`)
+                  : undefined
+              }
               style={{
                 "--ov-learned-width": `${learnedNudgeVariant.width}px`,
                 "--ov-learned-duration": `${LEARNED_NUDGE_DURATION_MS}ms`,

@@ -63,14 +63,17 @@ status change. Resolved bugs remain as references for the same failure class.
   the 11 short captures had outlived their transcripts. That is a retention
   artifact rather than a result, and ADR 0079 removes the need for the join.
 - [learned-nudge-is-hidden-before-it-is-seen.md](learned-nudge-is-hidden-before-it-is-seen.md):
-  **open, cause located 2026-08-12** — the runtime learns a word, emits the
-  nudge, and the overlay window is hidden 268–303 ms later against the 2020 ms
-  the tab asks for. Seven of seven learned events across both logs, so a fixed
-  ordering rather than a race: the learning pass runs after the insert and
-  parking follows it. The channel is deliberately isolated from session state
-  (ADR 0035, ADR 0018/0019), which is also why it cannot ask the window to stay.
-  Reported as "no badges at all"; the other two side tabs are checked in the
-  record — the limit tab is a correct absence, the gap tab is untested.
+  **fixed 2026-08-16 (ADR 0169), cause located 2026-08-12** — the runtime learns
+  a word, emits the nudge, and the overlay window was hidden 268–303 ms later
+  against the 2020 ms the tab asks for. Seven of seven learned events across both
+  logs, so a fixed ordering rather than a race: the learning pass runs after the
+  insert and parking follows it. The channel is deliberately isolated from
+  session state (ADR 0035, ADR 0018/0019), which is also why it could not ask the
+  window to stay. A running nudge now holds the overlay active and the duration
+  is 4 s; the cost is that the last surface stays up those four seconds as a
+  frozen frame. Reported as "no badges at all"; the other two side tabs are
+  checked in the record — the limit tab is a correct absence, the gap tab is
+  untested.
 - [transcript-stops-before-the-audio-does.md](transcript-stops-before-the-audio-does.md):
   **open, instrumented 2026-08-12** — a dictation comes back shorter than it was
   spoken, on audio the capture read as `Intact`. The far side of the capture
@@ -170,6 +173,16 @@ status change. Resolved bugs remain as references for the same failure class.
   dev-server full reload destroys the heartbeat rather than delaying it, so it
   reads as silence. The decision table has a fourth row for it. The main-thread
   hypotheses stay dead for the mechanisms they named.
+- [overlay-park-suspends-the-page.md](overlay-park-suspends-the-page.md):
+  **open, one symptom fixed 2026-08-16** — since ADR 0155 the Linux park no
+  longer unmaps the overlay, so WebKitGTK suspends the page instead: a CSS
+  animation running at that moment freezes on its current frame and a pending
+  `setTimeout` does not fire, both resuming at the next reveal. Seen as a
+  learned-word tab caught at 19 px of 58, motionless beside the *following*
+  session's recording. The geometry was measured and correct — a 94.5 px strip
+  for a 58 px tab — so this is a stopped clock, not a mis-measurement. ADR 0169
+  bounds that one tab by wall-clock and by the session boundary; every other
+  animation and timer in the overlay is still on the clocks the park stops.
 - [overlay-stranded-off-screen.md](overlay-stranded-off-screen.md): **reopened
   2026-08-03, narrowed 2026-08-13** — the overlay is placed where no monitor is.
   A second, unrelated mechanism produces this record's founding sentence ("the

@@ -55,6 +55,14 @@ constants themselves were not re-derived and carry their own provenance
   ghosting in `docs/known-issues/overlay-ghosting.md`, and all three are sized
   by the same measure-then-open shutter: a tab that does not fit the side strip
   stays at width 0, paints nothing and is not announced
+- The learned tab runs for **4 s** and is the one thing in the overlay that
+  holds the window open: a running nudge keeps `isActive` true, because the park
+  otherwise lands 268–303 ms after the runtime emits it and the tab goes with it
+  (ADR 0169). The hold is conditional on a leave hold painting a pill — the tab
+  is anchored to `.ov-pill-shell` and cannot be seen without one. Its lifetime is
+  bounded by wall-clock and by the session boundary rather than by a pending
+  timer, because a parked overlay's timers do not run
+  (`docs/known-issues/overlay-park-suspends-the-page.md`)
 - The limit tab is **absent** for most of a recording, then shows a stop mark
   and a bare `m:ss` countdown until the end: `data-tone` warning, turning danger
   with a pulsing mark near zero. There is no quiet state — a tab with nothing

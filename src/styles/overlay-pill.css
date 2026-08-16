@@ -257,11 +257,18 @@
 
 /* Out and back in one declaration, so React only has to mount and unmount.
    The hold is the long middle; both edges are short enough to read as a slide
-   rather than as a resize. */
+   rather than as a resize.
+
+   The percentages moved from 14/88 to 7/93 when the duration went from 1.9 s to
+   4 s (2026-08-16). Percentages scale with the duration, so leaving them alone
+   would have spent the extra two seconds slowing the slide down to half speed —
+   the one part of this that was never too fast. At 7/93 of 4 s both edges are
+   ~280 ms, within a frame of what they were, and every millisecond added lands
+   in the hold, which is the part that is read. */
 @keyframes overlay-learned-sweep {
   0% { width: 0; }
-  14% { width: var(--ov-learned-width, 0px); }
-  88% { width: var(--ov-learned-width, 0px); }
+  7% { width: var(--ov-learned-width, 0px); }
+  93% { width: var(--ov-learned-width, 0px); }
   100% { width: 0; }
 }
 

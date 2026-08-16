@@ -995,6 +995,11 @@ describe("OverlayWindow", () => {
     });
   }
 
+  // Mirrors `OVERLAY_LEAVE_MS` in OverlayWindow.tsx, which is not exported. It
+  // is the delay after which the leave timer parks the window, so a test that
+  // claims the window did NOT park has to outlast it.
+  const OVERLAY_LEAVE_MS = 240;
+
   // ── Learned a word ────────────────────────────────────────────────────────
   // A quiet push after a delivery, on its own channel. The two constraints it
   // has to satisfy are that it appears at all, and that it changes nothing
@@ -1147,6 +1152,190 @@ describe("OverlayWindow", () => {
       expect(tab?.getAttribute("aria-hidden")).toBe("true");
       expect(tab?.getAttribute("role")).toBeNull();
     } finally {
+      restore();
+    }
+  });
+
+  // The tab is only readable if the window is still there to hold it. On the
+  // window's own schedule it gets 268–303 ms of its 4 s, every time — so the
+  // nudge keeps the overlay active for as long as it runs. The session reducer
+  // is untouched by that: `status` stays idle, and the pill that stays up with
+  // it is the leave hold, a frozen frame of the surface the session ended on.
+  it("holds the overlay open while a nudge is running", async () => {
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 286, tabInner: 80, tabLabel: 50 });
+
+    try {
+      useRuntimeMock.mockImplementation(() => buildIdleResultState());
+      const { container, rerender } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+        );
+      });
+
+      // The session's surface closes. Nothing is live any more — without the
+      // nudge this is the state that parks the window; the leave hold is what
+      // keeps a pill painted through it.
+      invokeMock.mockClear();
+      useRuntimeMock.mockImplementation(() => buildIdleResultState({ resultSurfaceOpen: false }));
+      act(() => {
+        rerender(<OverlayWindow />);
+      });
+
+      // Past the point where the leave timer would have parked it. Asserted by
+      // waiting rather than by polling: the claim is that something does NOT
+      // happen, and a `waitFor` on an absence passes on its first tick.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, OVERLAY_LEAVE_MS + 120));
+      });
+
+      const parked = invokeMock.mock.calls.some(
+        ([command, args]) =>
+          command === "sync_overlay_window_visibility"
+          && (args as { visible?: boolean } | undefined)?.visible === false,
+      );
+      expect(parked).toBe(false);
+      expect(container.querySelector(".ov-learned-tab")).not.toBeNull();
+
+      // And it does not hold on past its deadline — the window goes when the
+      // tab does.
+      const realNow = Date.now;
+      Date.now = () => realNow() + 5_000;
+      try {
+        act(() => {
+          useRuntimeMock.mockImplementation(() =>
+            buildIdleResultState({ resultSurfaceOpen: false, muted: true }),
+          );
+          rerender(<OverlayWindow />);
+        });
+        expect(container.querySelector(".ov-learned-tab")).toBeNull();
+
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, OVERLAY_LEAVE_MS + 120));
+        });
+        expect(
+          invokeMock.mock.calls.some(
+            ([command, args]) =>
+              command === "sync_overlay_window_visibility"
+              && (args as { visible?: boolean } | undefined)?.visible === false,
+          ),
+        ).toBe(true);
+      } finally {
+        Date.now = realNow;
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  // The other half of that rule, and the reason it is a rule: the tab hangs off
+  // `.ov-pill-shell`, which exists only while a pill is painted. A nudge with
+  // no pill to sit beside must not hold the window open — that would be four
+  // seconds of empty transparent window with nothing in it.
+  it("does not hold the overlay open for a nudge with no pill to sit beside", async () => {
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 286, tabInner: 80, tabLabel: 50 });
+
+    try {
+      useRuntimeMock.mockImplementation(() => buildIdleResultState());
+      const { container, rerender } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+        );
+      });
+
+      // No surface and nothing left to replay: the hold has no material.
+      useRuntimeMock.mockImplementation(() =>
+        buildIdleResultState({ resultSurfaceOpen: false, lastResult: null }),
+      );
+      act(() => {
+        rerender(<OverlayWindow />);
+      });
+
+      expect(container.querySelector(".ov-pill-shell")).toBeNull();
+      expect(container.querySelector(".ov-learned-tab")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  // The park stops the clock the nudge used to depend on. Since ADR 0155 the
+  // Linux park does not unmap the overlay — it moves it offscreen at opacity 0
+  // — and WebKitGTK suspends a page it classifies as not-visible: the sweep
+  // freezes mid-width and the pending `setTimeout` does not fire. Both resume
+  // at the next reveal, which is how a half-open tab from the previous session
+  // ends up sitting beside a running recording.
+  it("drops a nudge from the previous session when the next one opens", async () => {
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 286, tabInner: 80, tabLabel: 50 });
+
+    try {
+      useRuntimeMock.mockImplementation(() => buildIdleResultState());
+      const { container, rerender } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+        );
+      });
+      expect(container.querySelector(".ov-learned-tab")).not.toBeNull();
+
+      // The window parks: nothing is active, and on Linux nothing is unmapped
+      // either. The timer that would clear the tab is pending, not fired.
+      useRuntimeMock.mockImplementation(() =>
+        buildIdleResultState({ resultSurfaceOpen: false, lastResult: null }),
+      );
+      rerender(<OverlayWindow />);
+
+      // A new recording starts. The term belongs to the session that learned
+      // it, so it does not get to name anything in this one.
+      useRuntimeMock.mockImplementation(() => buildRecordingState());
+      rerender(<OverlayWindow />);
+
+      expect(container.querySelector(".ov-learned-tab")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  // The other exit, for when no new session arrives to clear it: wall-clock
+  // rather than a pending timer, because `Date.now()` keeps running across a
+  // suspension and a `setTimeout` does not.
+  it("drops a nudge whose time has passed even when its timer never fired", async () => {
+    const restore = stubOverlayMetrics({ windowWidth: 480, pill: 286, tabInner: 80, tabLabel: 50 });
+    const realNow = Date.now;
+
+    try {
+      useRuntimeMock.mockImplementation(() => buildIdleResultState());
+      const { container, rerender } = render(<OverlayWindow />);
+
+      await waitFor(() => expect(learningEventHandlers.length).toBeGreaterThan(0));
+
+      act(() => {
+        learningEventHandlers.forEach((handler) =>
+          handler({ payload: { event: "vocabulary_learned", terms: ["Kubernetes"] } }),
+        );
+      });
+      expect(container.querySelector(".ov-learned-tab")).not.toBeNull();
+
+      // The page was suspended for longer than the tab's whole life. The timer
+      // is still pending — only the wall clock moved.
+      Date.now = () => realNow() + 5_000;
+      act(() => {
+        useRuntimeMock.mockImplementation(() => buildIdleResultState({ muted: true }));
+        rerender(<OverlayWindow />);
+      });
+
+      expect(container.querySelector(".ov-learned-tab")).toBeNull();
+    } finally {
+      Date.now = realNow;
       restore();
     }
   });

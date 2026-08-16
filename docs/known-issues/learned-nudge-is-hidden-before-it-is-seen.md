@@ -1,8 +1,15 @@
 # Bug: the learned-word nudge is hidden 1.7 seconds before it is done being shown
 
-Status: **Open — cause located, 2026-08-12, and it is not a race.** The runtime
-emits the nudge and the overlay window is hidden 268–303 ms later, every time.
-The tab asks for 2020 ms. Seven of seven learned events across both runtime
+Status: **Fixed 2026-08-16 by [ADR 0169](../decisions/0169-a-transient-that-outlives-a-park-is-bounded-by-a-clock-the-park-cannot-stop.md)**,
+which took the first of the three options below — delay the park — after the
+owner reported the tab was unreadable in practice. A running nudge now holds the
+overlay active, and the duration went from 1.9 s to 4 s. The 2026-08-16 addendum
+carries what the sighting measured; the analysis below is unchanged and is why
+the fix has the shape it does.
+
+Previous status (2026-08-12): **Open — cause located, and it is not a race.** The
+runtime emits the nudge and the overlay window is hidden 268–303 ms later, every
+time. The tab asks for 2020 ms. Seven of seven learned events across both runtime
 logs, spanning 2026-08-02 to 2026-08-12, lost by the same margin.
 
 First reported: 2026-08-12 by the owner — *"dieses Learned Badge habe ich gar
@@ -105,6 +112,55 @@ against a rule the overlay already keeps:
 3. **Say it somewhere that persists** — the result surface or the history row —
    and drop the transient tab. Loses the "quietly, then gone" quality the tab
    was designed for (ADR 0035).
+
+## Addendum 2026-08-16: the shutter geometry is not a second cause, and the tab was seen
+
+*Not the cause* above leaves one item open: the measure-then-open shutter is
+"a plausible second cause and is **untested**", to be re-examined once the
+timing is fixed. It has now been measured directly, and it is clean.
+
+The owner saw the tab for the first time on 2026-08-16 — reading `nit`, beside a
+running recording, and not moving. From the screenshot and `[ov-dom]`:
+
+| Quantity | Value |
+| --- | --- |
+| Webview viewport | 384 CSS px (the window is 480 logical; host scale 1.25) |
+| Pill, painted | 195 px |
+| Strip beside the pill | 94.5 px |
+| Tab, wanted | ~58 px |
+
+**The strip had room for the tab and then some**, and `sideStrip` resolved to
+`full`. The shutter arithmetic is therefore not implicated, and this section's
+open item is closed: **the geometry is not a second cause.**
+
+What the sighting did find is a different mechanism, filed separately in
+[overlay-park-suspends-the-page.md](overlay-park-suspends-the-page.md): since
+ADR 0155 the park no longer unmaps the window, so the sweep freezes mid-frame
+and the unmount timer does not fire. That is why the tab was visible at all —
+a frozen frame outlives the 280 ms this record measures — and why it was
+visible *wrongly*, cut off at a third of its width.
+
+### And this record's own finding was then fixed, the same day
+
+The owner's verdict on seeing it: *"Ich glaube nicht, dass 280 Millisekunden
+genug sind, Bro. Man sieht das gar nicht."* That is the measurement above
+restated from the other side, and it settled the choice between the three
+options.
+
+**Option 1 was taken: delay the park.** ADR 0169 carries the derivation and the
+two things that make the coupling narrower than the one ADR 0035 avoided — the
+session reducer is untouched, and the hold is conditional on a pill existing to
+anchor the tab to. The duration went to 4 s in the same change, since it is now
+a number that is actually spent.
+
+**What it costs**, recorded here because this is where anyone will look: after a
+dictation that learned a word, the last surface stays up four seconds longer as
+a frozen frame with its actions inert. Seven events in ten days, so most
+dictations are unaffected. In `clipboard_only` those four seconds show the
+transcript with a dead `Copy` button — the same rendering
+[overlay-leave-hold-dead-actions.md](overlay-leave-hold-dead-actions.md) is
+about, sixteen times longer. If that reads badly in use, the fix is an idle
+presentation for the hold, not a shorter nudge.
 
 ## Environment
 
