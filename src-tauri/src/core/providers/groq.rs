@@ -165,6 +165,9 @@ fn provider_status(
 
     Ok(GroqProviderStatus {
         provider: "groq".to_string(),
+        /* Stamped by `provider_status`, which holds the account this was
+           asked about (ADR 0209). */
+        connection: String::new(),
         default_profile: "cloud-fast".to_string(),
         credential: aggregate_credential("groq", &role_credentials),
         profiles: provider_profiles(),

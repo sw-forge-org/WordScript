@@ -356,6 +356,9 @@ fn provider_status(
 
     Ok(ProviderStatus {
         provider: SELF_HOSTED_PROVIDER_ID.to_string(),
+        /* Stamped by `provider_status`, which holds the account this was
+           asked about (ADR 0209). */
+        connection: String::new(),
         default_profile: "self-hosted".to_string(),
         credential: aggregate_credential(SELF_HOSTED_PROVIDER_ID, &role_credentials),
         profiles: provider_profiles(),

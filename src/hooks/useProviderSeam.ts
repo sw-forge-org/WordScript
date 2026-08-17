@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import {
-  connectionForVendor,
   NO_ANSWERS,
   runtimeIdFor,
   SELF_HOSTED_PROVIDER_ID,
+  statusConnectionFor,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
 import { PROVIDERS, type LaneName } from "@/screens/data";
@@ -33,7 +33,13 @@ export function useProviderSeam(
   /** The config, for the account each drawn vendor is reached with (ADR 0208).
    *  A vendor this machine holds no account on is asked about with none, and
    *  answers `configured: false` — which is the truth: there is no key,
-   *  because there is nothing to hold one. */
+   *  because there is nothing to hold one.
+   *
+   *  **Which account that is, is `statusConnectionFor`'s answer and not the
+   *  first row's** (ADR 0209). This hook asked `connectionForVendor` — the first
+   *  account on each vendor — so a profile holding a second one was answered
+   *  about the first, and every credential this screen renders came from an
+   *  account the reader had not selected. */
   config?: AppConfig,
 ) {
   const [registered, setRegistered] = useState<RegisteredProvider[] | null>(null);
@@ -69,7 +75,7 @@ export function useProviderSeam(
           request: {
             provider: row.provider,
             connection: config
-              ? (connectionForVendor(config, row.provider)?.id ?? "")
+              ? (statusConnectionFor(config, row.provider)?.id ?? "")
               : "",
             model: model?.trim() ? model.trim() : null,
             correction_model: null,

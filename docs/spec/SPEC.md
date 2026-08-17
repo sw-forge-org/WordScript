@@ -1,6 +1,9 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-17 (the connection axis,
+Status: created 2026-07-24, last drift check 2026-08-17 (the account row's four
+corrections, which read the provider and credential clauses: **a status names the
+account it answered about** and a deletion repoints only the profile that ordered
+it (ADR 0209); the connection axis before it,
 which read the provider and credential clauses: **a connection is an object a
 profile points at** — the vendor, the endpoint, the plan and the credential are
 one stored object, a profile names one per job, and the secret-store scope that
@@ -425,7 +428,17 @@ UI implementation details, not Rust event names or Tauri channels.
   there and nowhere else, the endpoint sits beside the credential it may be sent
   with, and the OS-store scope is the connection's id. A profile whose
   connection was deleted keeps naming it and its jobs go inert with that name —
-  repointing it would be the build deciding who pays. The lift makes one
+  repointing it would be the build deciding who pays. **The profile that ORDERS
+  the removal is repointed, and it alone** (ADR 0209): its reader is standing in
+  front of the row, the button only appears with a second account on the vendor,
+  and applying the never-repoint rule to it left the row with no vendor, no
+  account list and a live *Add* that did nothing. Only the default moves; a
+  per-job override is a decision made on a job row and keeps the rule. **A
+  dangling default is not repaired on load and a dangling override is no longer
+  dropped there** (ADR 0209) — dropping an override IS repointing it at the
+  default, because an absent override is the stored form of *follow the
+  connection*. The Account row states a pointer that resolves to nothing, names
+  the profile holding it, and offers every account as the way out. The lift makes one
   connection per vendor any profile names, moves `provider_plans`,
   `self_hosted_base_url` and `self_hosted_model` onto it, and **moves** the
   stored keys from `{vendor}.{role}.{kind}` to `{connection}.{role}.{kind}`
@@ -544,6 +557,18 @@ UI implementation details, not Rust event names or Tauri channels.
 - **The four fields ADR 0094 named land on those two axes** rather than all on
   the provider struct. Both structs are mirrored into `src/types/providers.ts`
   and travel on `provider_status`.
+- **A status names the account it answered about** (ADR 0209), 2026-08-17.
+  `ProviderStatus::connection` is the request's own value, stamped once in
+  `provider_status` rather than by each adapter, and a registry-walking test holds
+  every registered vendor to it. The status is keyed by VENDOR (ADR 0124) while
+  the rows that render a credential are scoped to an ACCOUNT (ADR 0208), so
+  without the echo one vendor with two accounts had one answer and two rows: the
+  badge described whichever account was read and the field wrote whichever was
+  selected. A surface renders a credential only from an answer naming the account
+  it is rendering, and reads **Not read** otherwise — a third answer, not a
+  missing key. `useProviderSeam` asks about the ACTIVE account for the vendor the
+  profile is on and about the first for every other, which is the account each of
+  those would be reached with.
 - **The capability seam is built** (ADR 0106, ADR 0124), 2026-08-12, and the
   mirror may be called a guard for the first time — the two tests that record
   required both exist and both were made to fail before they were trusted.

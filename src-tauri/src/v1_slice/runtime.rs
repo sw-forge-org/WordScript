@@ -842,6 +842,9 @@ mod tests {
             }),
             Some(Ok(ProviderStatus {
                 provider: LOCAL_PROVIDER_ID.to_string(),
+                /* The Local lane names no account — it stores no credential
+                   (ADR 0209). */
+                connection: String::new(),
                 default_profile: "local-base-fast".to_string(),
                 credential: crate::core::providers::ProviderCredentialStatus {
                     provider: LOCAL_PROVIDER_ID.to_string(),

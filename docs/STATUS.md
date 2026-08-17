@@ -174,10 +174,15 @@ Status: 2026-08-17
   points at one per job. Two accounts on one vendor are two keys, so switching
   a profile moves who is paying and not only which vendor; two profiles may
   share one account and therefore one key to rotate. The `Account` row on the
-  connection card picks, renames, adds and removes them; a profile whose
-  account was removed keeps naming it and goes inert rather than being pointed
-  at somebody else's. The stored keys were **moved** onto the accounts by the
-  first load after the change, not copied.
+  connection card picks, renames, adds and removes them, and it names the profile
+  it is setting; a profile whose account was removed keeps naming it and goes
+  inert rather than being pointed at somebody else's — **except the profile that
+  ordered the removal, which is repointed** (ADR 0209, 2026-08-17), because
+  applying the rule to it left the row with no vendor and no way back. The stored
+  keys were **moved** onto the accounts by the first load after the change, not
+  copied. **A status names the account it answered about** (ADR 0209): the answer
+  is keyed by vendor and the credential rows are scoped to an account, so without
+  the echo a second account on one vendor was shown the first one's key.
 - **A control the runtime cannot answer for is drawn and inert rather than
   deleted** (ADR 0065, ADR 0067): **two of four provider lanes since 2026-08-16
   and it was three** — `Your server` is typed into and picked like any other

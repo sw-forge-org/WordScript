@@ -181,6 +181,9 @@ fn provider_status(
 
     Ok(ProviderStatus {
         provider: OPENAI_PROVIDER_ID.to_string(),
+        /* Stamped by `provider_status`, which holds the account this was
+           asked about (ADR 0209). */
+        connection: String::new(),
         default_profile: "openai-quality".to_string(),
         credential: aggregate_credential(OPENAI_PROVIDER_ID, &role_credentials),
         profiles: provider_profiles(),

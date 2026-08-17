@@ -75,6 +75,10 @@ const CLOUD_ACCOUNT = {
 
 const STATUS = {
   provider: "groq",
+  /* Overwritten per call by the mock below, which echoes the account it was
+     asked about exactly as `provider_status` does (ADR 0209). A fixed value here
+     would make every credential row read *not read* and hide the check. */
+  connection: "",
   default_profile: "fast",
   credential: { provider: "groq", configured: true, storage: "the OS secret store", key_preview: "gsk_…4f2a" },
   profiles: [],
@@ -127,6 +131,25 @@ const REGISTERED = [
 /** The vendors this fixture leaves without an adapter, by drawn name. */
 const NO_ADAPTER = /Anthropic|Gemini|Mistral|xAI/;
 
+/** Which account a `provider_status` call asked about. */
+function askedAbout(args: unknown): string {
+  return (args as { request?: { connection?: string } } | undefined)?.request?.connection ?? "";
+}
+
+/**
+ * A status that names the account it was asked about (ADR 0209).
+ *
+ * **Every fixture answering `provider_status` has to echo, because the product
+ * refuses to render a credential from an answer about another account.** A mock
+ * that answered about nothing would put every credential row into *not read* —
+ * so a case asserting a badge would fail for a reason that has nothing to do
+ * with what it is testing, and a case NOT asserting one would quietly stop
+ * covering the badge at all.
+ */
+function statusFor(args: unknown, base: Record<string, unknown> = STATUS) {
+  return { ...base, connection: askedAbout(args) };
+}
+
 const TIERS = [
   { id: "free", label: "Free — 25 MiB per request", max_audio_bytes: 26_214_400, default: true },
   { id: "dev", label: "Developer — 100 MiB per request", max_audio_bytes: 104_857_600, default: false },
@@ -134,9 +157,9 @@ const TIERS = [
 
 beforeEach(() => {
   invoked.mockReset();
-  invoked.mockImplementation(async (command: string) => {
+  invoked.mockImplementation(async (command: string, args?: unknown) => {
     if (command === "registered_providers") return REGISTERED;
-    if (command === "provider_status") return STATUS;
+    if (command === "provider_status") return statusFor(args);
     if (command === "resolve_provider_tiers") return TIERS;
     if (command === "resolve_capture_budget") {
       return {
@@ -243,10 +266,13 @@ describe("AI Models, wired", () => {
   });
 
   it("says Not set rather than Set when the runtime has no key", async () => {
-    invoked.mockImplementation(async (command: string) => {
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") {
-        return { ...STATUS, credential: { ...STATUS.credential, configured: false, key_preview: null } };
+        return statusFor(args, {
+          ...STATUS,
+          credential: { ...STATUS.credential, configured: false, key_preview: null },
+        });
       }
       if (command === "resolve_provider_tiers") return TIERS;
       return undefined;
@@ -634,11 +660,63 @@ describe("AI Models, choosing the connection", () => {
     );
   });
 
-  /** Removing an account never repoints the profiles that named it — choosing
-   *  who pays for somebody is not a deletion's decision — so the count is on
-   *  the control that does it and the write touches the list alone. */
-  it("removes an account and leaves every profile naming what it named", async () => {
+  /**
+   * **REMOVING THE ACCOUNT YOU ARE ON REPOINTS YOU, AND NOBODY ELSE**
+   * (ADR 0209).
+   *
+   * ADR 0208's rule — a deleted account is named, never replaced — is about
+   * another profile: choosing who pays for a writing style you are not looking at
+   * is not a deletion's decision. Applied to the profile whose reader pressed the
+   * button it produced a surface with nothing on it, because this row is scoped
+   * to the account and the pointer no longer resolved to one: no vendor, no
+   * list, no rename, and an *Add* that returned early. The way back was a vendor
+   * chip, which nobody would think to look for.
+   */
+  it("repoints the profile that removes its own account, and only that one", async () => {
     const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
+    config.connections = [CLOUD_ACCOUNT, employer];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: employer.id, overrides: {} };
+    /* A SECOND PROFILE ON THE SAME ACCOUNT, which is the half of ADR 0208 that
+       still holds: it keeps naming what it named and its jobs go inert. */
+    config.text_profiles.push({
+      ...active,
+      id: "profile-other",
+      label: "Other",
+      providers: { default: employer.id, overrides: {} },
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    const remove = await screen.findByRole("button", { name: "Remove" });
+    expect(remove).toHaveAttribute(
+      "title",
+      "General writing moves to another account with this vendor. 1 other profile keeps naming this one and its jobs stop until you point it somewhere else.",
+    );
+    await user.click(remove);
+
+    const written = patch.mock.calls[0][0] as {
+      connections?: unknown;
+      text_profiles?: { id: string; providers?: unknown }[];
+    };
+    expect(written.connections).toEqual([CLOUD_ACCOUNT]);
+    expect(axisOf(written, config.active_text_profile_id)).toEqual({
+      default: CLOUD_ACCOUNT.id,
+      overrides: {},
+    });
+    expect(axisOf(written, "profile-other")).toEqual({
+      default: employer.id,
+      overrides: {},
+    });
+  });
+
+  /** With nobody else on it the sentence is one clause, because a count of zero
+   *  other profiles is not a warning. */
+  it("states only the move when no other profile names the account", async () => {
     const patch = vi.fn();
     const config = createAppConfig();
     const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
@@ -649,15 +727,137 @@ describe("AI Models, choosing the connection", () => {
     active.providers = { default: employer.id, overrides: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    const remove = await screen.findByRole("button", { name: "Remove" });
-    expect(remove).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "Remove" })).toHaveAttribute(
       "title",
-      "Removing it leaves this profile without an account until you pick another.",
+      "General writing moves to another account with this vendor.",
     );
-    await user.click(remove);
+  });
 
-    expect(patch).toHaveBeenCalledWith({ connections: [CLOUD_ACCOUNT] });
-    expect(patch.mock.calls[0][0]).not.toHaveProperty("text_profiles");
+  /**
+   * **THE STATE EVERY BUILD BEFORE THIS ONE COULD WRITE TO DISK** (ADR 0209).
+   *
+   * A profile naming an account this machine no longer holds is not repaired on
+   * load — ADR 0208 keeps the name on purpose — so the row has to be able to
+   * state it and get out of it. It stated nothing: an empty select over an empty
+   * list, and an *Add* button that was live and did nothing.
+   */
+  it("states a pointer that resolves to nothing and offers every account as the way out", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    const server = {
+      id: "connection-self_hosted",
+      label: "The office box",
+      provider: "self_hosted",
+      base_url: "http://10.0.0.2:8080/v1",
+      model: "",
+      plan: "",
+    };
+    config.connections = [CLOUD_ACCOUNT, server];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "connection-deleted", overrides: {} };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    const row = (await screen.findByLabelText("Account")).closest(".ws-row");
+    expect(row).not.toBeNull();
+    expect(row).toHaveTextContent(
+      "General writing points at an account this machine no longer holds",
+    );
+    /* EVERY ACCOUNT, NOT ONE VENDOR'S. With no active account there is no vendor
+       to scope the list to, and a list scoped to nothing is the empty select this
+       case exists to replace. */
+    const options = within(row as HTMLElement).getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "— pick an account —",
+      "Groq",
+      "The office box",
+    ]);
+    /* NO BUTTON THAT DOES NOTHING. `New` needs a vendor and there is none. */
+    expect(within(row as HTMLElement).queryByRole("button", { name: "New" })).toBeNull();
+
+    await user.selectOptions(await screen.findByLabelText("Account"), CLOUD_ACCOUNT.id);
+    expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
+      default: CLOUD_ACCOUNT.id,
+      overrides: {},
+    });
+  });
+
+  /** The row writes the ACTIVE profile's pointer, and a row that writes a
+   *  profile has to name it — otherwise *how do I give a profile an account* has
+   *  no answer on the screen that answers it (ADR 0209). */
+  it("names the profile whose account it is setting", async () => {
+    const config = createAppConfig();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    const row = (await screen.findByLabelText("Account")).closest(".ws-row");
+    expect(within(row as HTMLElement).getByRole("button", { name: /General writing/ })).toBeTruthy();
+  });
+
+  /**
+   * **THE DEFECT THE ECHO EXISTS FOR** (ADR 0209).
+   *
+   * The status is keyed by vendor and the credential rows are scoped to an
+   * account, so a vendor with two accounts had one answer and two rows: the badge
+   * read the first account's key while the field wrote the selected one's. A new
+   * account arrived carrying the old one's `gsk_…4f2a` and a green *Set*.
+   */
+  it("refuses to report a key from an answer about another account", async () => {
+    const config = createAppConfig();
+    const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
+    config.connections = [CLOUD_ACCOUNT, employer];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: employer.id, overrides: {} };
+
+    /* The runtime answering about the OTHER account — which is what a stale read
+       is, and what one render after every account switch holds. */
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") return { ...STATUS, connection: CLOUD_ACCOUNT.id };
+      if (command === "resolve_provider_tiers") return TIERS;
+      return undefined;
+    });
+
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    const row = (await screen.findByText("API key")).closest(".ws-row");
+    expect(row).not.toBeNull();
+    await waitFor(() => expect(row).toHaveTextContent("Not read"));
+    expect(row).not.toHaveTextContent("gsk_…4f2a");
+  });
+
+  /** And the account the profile is actually on is the one asked about — it was
+   *  the FIRST account on the vendor, so the answer above was never even about
+   *  the right one (ADR 0209). */
+  it("asks the runtime about the account the profile is on, not the first one", async () => {
+    const config = createAppConfig();
+    const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
+    config.connections = [CLOUD_ACCOUNT, employer];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: employer.id, overrides: {} };
+
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("provider_status", {
+        request: expect.objectContaining({ provider: "groq", connection: employer.id }),
+      }),
+    );
+    /* AND NEVER ABOUT THE FIRST ACCOUNT, which is the value this hook sent for
+       every vendor before ADR 0209. The negative is the assertion: passing the
+       positive alone would still pass if both calls went out. */
+    expect(invoked).not.toHaveBeenCalledWith("provider_status", {
+      request: expect.objectContaining({ provider: "groq", connection: CLOUD_ACCOUNT.id }),
+    });
+    /* And the badge reports it, because the answer is now about the row it is
+       rendered on. */
+    const row = (await screen.findByText("API key")).closest(".ws-row");
+    await waitFor(() => expect(row).toHaveTextContent("gsk_…4f2a"));
   });
 
   it("writes the chosen connection onto the active profile", async () => {
@@ -1574,7 +1774,9 @@ describe("On this machine, and what a server is", () => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") {
         const request = (args as { request?: { provider: string } } | undefined)?.request;
-        return request?.provider === "local" ? { ...STATUS, local_setup: setup } : STATUS;
+        return request?.provider === "local"
+          ? statusFor(args, { ...STATUS, local_setup: setup })
+          : statusFor(args);
       }
       if (command === "resolve_provider_tiers") return TIERS;
       if (command === "model_library") return library;
@@ -2092,14 +2294,14 @@ describe("Your server, configured", () => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") {
         const request = (args as { request?: { provider: string } } | undefined)?.request;
-        if (request?.provider !== "self_hosted") return STATUS;
-        return {
+        if (request?.provider !== "self_hosted") return statusFor(args);
+        return statusFor(args, {
           ...SELF_HOSTED_STATUS,
           self_hosted_endpoint: endpoint,
           role_credentials: [
             { ...SELF_HOSTED_STATUS.role_credentials[0], ...(credential ?? {}) },
           ],
-        };
+        });
       }
       if (command === "resolve_provider_tiers") return TIERS;
       if (command === "validate_provider_api_key") {

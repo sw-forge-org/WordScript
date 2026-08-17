@@ -84,8 +84,10 @@ import {
   profilesUsingConnection,
   resolveConnections,
   connectionCapabilitySentence,
+  credentialForConnection,
   credentialStateFor,
   drawnNameFor,
+  roleCredentialForConnection,
   LANE_PROVIDER_IDS,
   laneForProviderId,
   NO_ANSWERS,
@@ -506,11 +508,15 @@ function DrawnSelfHostedRows() {
 }
 
 function WiredSelfHostedRows({ runtime }: { runtime: WorkspaceRuntime }) {
-  const { answers, refresh } = useContext(Wired);
+  const { answers, refresh, connectionId } = useContext(Wired);
   const status = answers.statuses[SELF_HOSTED_PROVIDER_ID] ?? null;
   const endpoint = status?.self_hosted_endpoint ?? null;
-  const credential =
-    status?.role_credentials?.find((row) => row.role === "speech") ?? null;
+  /* TWO SERVERS ARE TWO ACCOUNTS, and the token belongs to the one that names
+     the server (ADR 0208). So the same rule the cloud key row follows applies
+     here and matters more: a bearer token reported from the other account's
+     entry would put a *Set* badge over the URL it was never issued for, which is
+     the pair ADR 0094 exists to keep apart (ADR 0209). */
+  const credential = roleCredentialForConnection(status, connectionId, "speech");
 
   /* THE STATUS IS RE-READ ON THE CONFIG OBJECT, NOT ON THE TYPED STRING.
      `patch` is fire-and-forget: it updates this window optimistically and the
@@ -590,25 +596,59 @@ function useCommittedSetting(stored: string, write: (next: string) => void) {
  * row already uses two rows down: the resting state is what the drawing shows,
  * and the state the drawing has no picture of is borrowed from the surface that
  * does.
+ *
+ * **It names the profile it is writing** (ADR 0209). The select writes
+ * `providers.default` on the ACTIVE profile and nothing said so, which left the
+ * question *how do I give a profile an account* unanswerable on the one screen
+ * that answers it — the answer being *make that profile active and pick here*,
+ * which no reader can guess from an unlabelled row. The `ScopeTag` is the
+ * sentence and the door.
+ *
+ * **It has a state for a pointer that resolves to nothing, because it produced
+ * one** (ADR 0209). Removing the account the profile was on left this row with
+ * no vendor: an empty select over an empty list, no rename, no remove, and an
+ * *Add* that returned early on the vendor it could not name. `Remove` repoints
+ * the active profile now, so the state is no longer reachable from here — but a
+ * config that took the old path can still be carrying it (nothing repairs a
+ * dangling default on load, and that is ADR 0208's rule rather than an
+ * oversight), so the row states it and offers every account as the way out.
  */
 function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
   const [renaming, setRenaming] = useState(false);
+  const openProfiles = useOpenProfiles();
   const active = activeConnectionOf(runtime.config);
   const vendor = active?.provider ?? "";
-  const accounts = resolveConnections(runtime.config).filter(
-    (entry) => entry.provider === vendor,
-  );
+  const everyAccount = resolveConnections(runtime.config);
+  /* WHICH PROFILE THIS ROW IS WRITING, BY NAME (ADR 0209). The select writes
+     `providers.default` on the ACTIVE profile and said so nowhere, so *how do I
+     give a profile an account* had no answer on the screen that answers it: you
+     make the profile active and pick here. A `ScopeTag` is how every other
+     per-profile row on this screen states that, and it carries the door. */
+  const profile = resolveActiveTextProfile(runtime.config);
+
+  /* THE STATE A DANGLING POINTER LEAVES, AND THE WAY OUT OF IT (ADR 0209).
+     A profile can name an account this machine no longer holds — removing the
+     account it was on produced exactly that until this step, and nothing repairs
+     it on load, which is ADR 0208's rule rather than an oversight. With no active
+     account there is no vendor, so this row cannot scope itself to one: it offers
+     every account instead, which is the only list that can contain the answer. */
+  const accounts = active
+    ? everyAccount.filter((entry) => entry.provider === vendor)
+    : everyAccount;
 
   const { draft, setDraft, commit } = useCommittedSetting(active?.label ?? "", (next) => {
     if (!active || !next) return;
     runtime.patch(buildConnectionsPatch(runtime.config, { ...active, label: next }));
   });
 
-  /* WHAT A DELETION COSTS, COUNTED BEFORE IT HAPPENS. A profile whose account
-     is removed keeps naming it and goes inert — the runtime never repoints it,
-     because choosing who pays for somebody is not a migration's decision
-     (ADR 0208). So the number belongs on the control that does it. */
+  /* WHAT A DELETION COSTS, COUNTED BEFORE IT HAPPENS. Another profile whose
+     account is removed keeps naming it and goes inert — nothing repoints it,
+     because choosing who pays for somebody else is not this row's decision
+     (ADR 0208). So the number belongs on the control that does it. THIS profile
+     is repointed, because its reader is the one pressing the button (ADR 0209),
+     and the count says so by naming the others. */
   const used = active ? profilesUsingConnection(runtime.config, active.id) : 0;
+  const others = Math.max(0, used - 1);
 
   const select = (
     <Select
@@ -620,6 +660,14 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
       }
       aria-label="Account"
     >
+      {/* THE PLACEHOLDER EXISTS ONLY WHERE THE STORED POINTER RESOLVES TO
+          NOTHING, and it is not selectable: a blank option a reader could pick
+          would be a control offering to unset what it cannot unset. */}
+      {!active && (
+        <option value="" disabled>
+          — pick an account —
+        </option>
+      )}
       {accounts.map((entry) => (
         <option key={entry.id} value={entry.id}>
           {entry.label}
@@ -632,12 +680,15 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
     <Row
       label="Account"
       hint={
-        accounts.length > 1
-          ? "Which of your accounts with this vendor pays for the jobs below. A profile carries its own, so switching profiles switches the account."
-          : "The account these jobs are billed to. Add a second one to keep an employer's and a private one apart — a profile carries whichever it is set to."
+        !active
+          ? `${profile.label} points at an account this machine no longer holds, so its jobs have nothing to pay with. Pick one here.`
+          : accounts.length > 1
+            ? "Which of your accounts with this vendor pays for the jobs below. A profile carries its own, so switching profiles switches the account."
+            : "The account these jobs are billed to. Add a second one to keep an employer's and a private one apart — a profile carries whichever it is set to."
       }
       control={
         <span className="ws-rowflex">
+          <ScopeTag profile={profile.label} onOpen={openProfiles} />
           {renaming ? (
             <Field
               w="150px"
@@ -664,28 +715,34 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
               Rename
             </Button>
           )}
-          <Button
-            variant="ghost"
-            icon={<Icon name="plus" />}
-            onClick={() => {
-              if (!vendor) return;
-              const { patch, connectionId } = buildNewConnectionPatch(runtime.config, vendor);
-              runtime.patch({
-                ...patch,
-                ...buildProfileProvidersPatch(runtime.config, { default: connectionId }),
-              });
-            }}
-          >
-            New
-          </Button>
+          {/* A NEW ACCOUNT IS AN ACCOUNT *WITH SOMEBODY*, so this needs a vendor
+              and there is none while the pointer dangles. It guarded that with an
+              early return, which is a button that looks live and does nothing —
+              the false affordance this card spent two records removing. The
+              select above is the repair; this appears again once it worked. */}
+          {vendor && (
+            <Button
+              variant="ghost"
+              icon={<Icon name="plus" />}
+              onClick={() => {
+                const { patch, connectionId } = buildNewConnectionPatch(runtime.config, vendor);
+                runtime.patch({
+                  ...patch,
+                  ...buildProfileProvidersPatch(runtime.config, { default: connectionId }),
+                });
+              }}
+            >
+              New
+            </Button>
+          )}
           {active && accounts.length > 1 && (
             <Button
               variant="ghost"
               icon={<Icon name="trash" />}
               title={
-                used > 1
-                  ? `${used} profiles use this account. They keep naming it and their jobs stop running until you point them somewhere else.`
-                  : "Removing it leaves this profile without an account until you pick another."
+                others > 0
+                  ? `${profile.label} moves to another account with this vendor. ${others} other ${others === 1 ? "profile keeps naming this one and its jobs stop" : "profiles keep naming this one and their jobs stop"} until you point ${others === 1 ? "it" : "them"} somewhere else.`
+                  : `${profile.label} moves to another account with this vendor.`
               }
               onClick={() => runtime.patch(buildConnectionRemovalPatch(runtime.config, active.id))}
             >
@@ -919,7 +976,14 @@ function ServerTokenRow({
           </span>
         ) : (
           <span className="ws-rowflex">
-            <StatusBadge tone={preview ? "success" : "plan"}>{preview ?? "None"}</StatusBadge>
+            {/* THREE ANSWERS, BECAUSE *NONE* IS A STATEMENT ABOUT THIS ACCOUNT
+                AND THIS ROW MAY NOT HOLD ONE FOR ANOTHER (ADR 0209). A token is
+                optional, so `None` is a resting state a reader is meant to
+                believe — which is exactly why it must not be printed for an
+                account nothing has been read about. */}
+            <StatusBadge tone={preview ? "success" : "plan"}>
+              {preview ?? (credential ? "None" : "Not read")}
+            </StatusBadge>
             <Button variant="ghost" icon={<Icon name="key" />} onClick={() => setEditing(true)}>
               {preview ? "Replace" : "Add"}
             </Button>
@@ -1080,9 +1144,18 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
     setProblem(null);
   }, [providerId]);
 
-  const configured = status?.credential.configured ?? false;
-  const preview = status?.credential.key_preview;
-  const storage = status?.credential.storage;
+  /* THE ANSWER HAS TO BE ABOUT THE ACCOUNT THIS ROW IS RENDERING (ADR 0209).
+     The status is keyed by VENDOR and the field below writes to `connectionId`,
+     so a vendor with two accounts had one status and two rows: the badge read
+     one account and the field wrote the other. `credentialForConnection`
+     returns `null` where they disagree, and `null` is *not read for this
+     account* rather than *no key* — the word this screen already uses for a
+     runtime that did not answer. */
+  const credential = credentialForConnection(status, connectionId);
+  const answeredForThisAccount = credential !== null;
+  const configured = credential?.configured ?? false;
+  const preview = credential?.key_preview;
+  const storage = credential?.storage;
 
   const save = async () => {
     if (!draft.trim()) return;
@@ -1197,12 +1270,20 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
             </span>
           ) : (
             <span className="ws-rowflex">
-              <StatusBadge tone={configured ? "success" : "warning"}>
-                {configured ? (preview ?? "Set") : "Not set"}
-              </StatusBadge>
+              {answeredForThisAccount ? (
+                <StatusBadge tone={configured ? "success" : "warning"}>
+                  {configured ? (preview ?? "Set") : "Not set"}
+                </StatusBadge>
+              ) : (
+                <StatusBadge tone="plan">Not read</StatusBadge>
+              )}
               <Button variant="ghost" icon={<Icon name="key" />} onClick={() => setEditing(true)}>
-                {configured ? "Replace" : "Add"}
+                {answeredForThisAccount && !configured ? "Add" : "Replace"}
               </Button>
+              {/* NOT OFFERED FOR AN ACCOUNT NOBODY HAS ANSWERED ABOUT. Clearing
+                  reaches the right entry either way, but a button that removes
+                  something the row declines to claim exists is asking the reader
+                  to guess what it will do. */}
               {configured && (
                 <Button variant="ghost" disabled={busy} onClick={() => void clear()}>
                   Remove

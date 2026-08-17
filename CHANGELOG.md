@@ -80,9 +80,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the vendor id onto the account that owns it and deletes what it moved: a
   key left behind under an old name is a secret the product can no longer show
   you or clear.
-- **Removing an account never repoints a profile.** The profiles that named it
-  keep naming it and say so; choosing who pays for you is not a deletion's
-  decision.
+- **Removing an account repoints you and nobody else.** The profile you are on
+  moves to another account with the same vendor, because you are the one who
+  pressed the button; every other profile that named it keeps naming it and says
+  so, since choosing who pays for a writing style you are not looking at is not a
+  deletion's decision.
+
+### Fixed — the account row said one account and wrote another (ADR 0209)
+
+Four faults in the row that shipped an hour earlier, all found by using it.
+
+- **A new account no longer arrives carrying the previous one's API key.** The
+  runtime was asked about the FIRST account on a vendor and answered for it, while
+  the field below wrote the account you had selected — so a second Groq account
+  opened with the first one's `gsk_…` preview and a green `Set` over a key it had
+  never held. The screen now asks about the account you are on, and a status says
+  which account it answered about: where the two disagree the row reads
+  `Not read` rather than showing somebody else's credential. The same guard covers
+  the `Your server` bearer token, where `None` was being printed for an account
+  nothing had been read about.
+- **Deleting the account you are on no longer empties the row.** It left the
+  profile pointing at an account that was gone, which took the vendor with it: an
+  empty picker, no rename, no remove, and a `New` button that looked live and did
+  nothing. The only way back was clicking a provider chip. The deletion moves your
+  profile to another account with that vendor now, and a config already in the
+  broken state gets a row that says so by name and offers every account as the way
+  out.
+- **The Account row says which profile it is setting.** It writes the active
+  profile's account and nothing said so, which left *how do I give a profile an
+  account* unanswerable on the screen that answers it. It carries the profile's
+  name and the door to Profiles, like every other per-profile row there.
+- **A job pointed at a deleted account stops instead of quietly billing another
+  one.** Loading the config dropped such an override, which reads as *follow the
+  connection* — your choice replaced by the default, silently. The name stays and
+  the job goes inert under it, which is what the profile's own account already did.
 
 ### Fixed — the two instruments that reported something the runtime did not do (ADR 0203, ADR 0204)
 

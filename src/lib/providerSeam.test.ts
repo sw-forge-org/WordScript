@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   connectionCapabilitySentence,
   credentialStateFor,
+  DEFAULT_CONNECTION_ID,
   isCompleteCapabilityBlock,
   NO_ANSWERS,
   operableProviderNames,
@@ -54,6 +55,10 @@ function registered(overrides: Partial<RegisteredProvider> = {}): RegisteredProv
 function status(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
   return {
     provider: "groq",
+    /* Which account the answer is about (ADR 0209) — the seeded one, since these
+       cases are about capabilities and roles rather than about a machine holding
+       two accounts on one vendor. */
+    connection: DEFAULT_CONNECTION_ID,
     default_profile: "cloud-fast",
     credential: {
       provider: "groq",

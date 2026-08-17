@@ -25,9 +25,12 @@ import { PROVIDERS, type LaneName } from "@/screens/data";
 import type { AppConfig, Connection } from "@/types/ipc";
 import {
   activeConnection,
+  buildProfileProvidersPatch,
   connectionById,
   DEFAULT_CONNECTION_ID,
+  resolveActiveTextProfile,
   resolveConnections,
+  resolveProfileProviderSettings,
 } from "@/lib/textProfiles";
 
 export {
@@ -38,9 +41,11 @@ export {
 };
 import type {
   ProviderCapabilities,
+  ProviderCredentialStatus,
   ProviderRole,
   ProviderStatus,
   RegisteredProvider,
+  RoleCredentialStatus,
   UploadCapacity,
 } from "@/types/providers";
 
@@ -493,21 +498,50 @@ export function buildConnectionsPatch(
 }
 
 /**
- * Removes one account, and never repoints the profiles that named it.
+ * Removes one account, repointing the profile that is doing the removing and no
+ * other (ADR 0209).
  *
- * **A profile keeps naming what it named** (ADR 0208): its jobs go inert with
- * that name in the sentence, because choosing a different account for somebody
- * is choosing who pays. The surface states how many profiles are about to lose
- * their connection BEFORE this is called; that count is
+ * **ADR 0208's rule stands, and it was about somebody else's profile.** A
+ * profile keeps naming what it named and goes inert with that name in the
+ * sentence, because choosing a different account for another writing style is
+ * choosing who pays for it. The surface states how many profiles are about to
+ * lose their connection BEFORE this is called; that count is
  * `profilesUsingConnection`.
+ *
+ * **The active profile is not somebody else.** Applying the rule to it produced
+ * a surface with nothing on it: the row that removes the account is scoped to
+ * the account, so with the pointer dangling there was no vendor, no account
+ * list, no rename, no remove, and an *Add* button that returned early on a vendor
+ * it could not name. Nobody chose that; it fell out of a rule aimed one profile
+ * over. The reader who clicked *Remove* is standing in front of the row, and
+ * moving THEIR pointer is not deciding for anybody.
+ *
+ * **The successor is on the same vendor where there is one.** The button only
+ * exists with a second account on this vendor, so that is the ordinary case; a
+ * removal reached any other way falls back to whatever account remains, and to
+ * none where the reader has deleted them all — an empty list is an answer
+ * (`resolveConnections`) and not a state to be repaired by inventing an account.
+ *
+ * **Only the default moves.** A per-job override is a decision made on a job
+ * row, not on this one, and it keeps ADR 0208's treatment: it stays named and
+ * goes inert.
  */
 export function buildConnectionRemovalPatch(
   config: AppConfig,
   connectionId: string,
 ): Partial<AppConfig> {
-  return {
-    connections: resolveConnections(config).filter((entry) => entry.id !== connectionId),
-  };
+  const removed = connectionById(config, connectionId);
+  const remaining = resolveConnections(config).filter((entry) => entry.id !== connectionId);
+  const patch: Partial<AppConfig> = { connections: remaining };
+
+  const axis = resolveProfileProviderSettings(resolveActiveTextProfile(config));
+  if (axis.default !== connectionId) return patch;
+
+  const successor =
+    remaining.find((entry) => entry.provider === removed?.provider) ?? remaining[0];
+  if (!successor) return patch;
+
+  return { ...patch, ...buildProfileProvidersPatch(config, { default: successor.id }) };
 }
 
 /** How many profiles name this account, for the sentence a deletion owes. */
@@ -528,6 +562,63 @@ export function connectionForVendor(
   vendorId: string,
 ): Connection | undefined {
   return resolveConnections(config).find((entry) => entry.provider === vendorId);
+}
+
+/**
+ * WHICH ACCOUNT A VENDOR'S STATUS IS ASKED ABOUT (ADR 0209).
+ *
+ * **`connectionForVendor` was the whole answer and it is the wrong one for one
+ * vendor: the one the profile is actually on.** That function returns the FIRST
+ * account on a vendor, which is correct for a vendor nothing is pointed at yet —
+ * a chip click and a job override both land there (`buildVendorConnectionPatch`)
+ * — and wrong for the vendor the active profile holds a second account on. The
+ * seam then read the employer's key and the connection card wrote the private
+ * one's, so the badge above the field described a different account from the
+ * field below it.
+ *
+ * So the active account wins for its own vendor and the first answers for every
+ * other, which is the account each of those vendors WOULD be reached with.
+ */
+export function statusConnectionFor(
+  config: AppConfig,
+  vendorId: string,
+): Connection | undefined {
+  const active = activeConnection(config);
+  if (active?.provider === vendorId) return active;
+  return connectionForVendor(config, vendorId);
+}
+
+/**
+ * The credential half of a status, but only where it is about the account being
+ * rendered (ADR 0209).
+ *
+ * **The echo is what makes this checkable, and the check is not redundant with
+ * `statusConnectionFor`.** That function decides what to ASK; this decides
+ * whether the answer in hand may be believed. The two come apart on every
+ * account switch: `patch` is optimistic and the re-read is a round trip, so for
+ * one render the surface holds the previous account's answer over the new
+ * account's rows — which is the exact frame that showed a stored key under an
+ * account that had never held one.
+ *
+ * `null` means *not read for this account*, which is a third answer and not a
+ * missing key. Callers say so; they do not fold it into `configured: false`.
+ */
+export function credentialForConnection(
+  status: ProviderStatus | null | undefined,
+  connectionId: string | undefined,
+): ProviderCredentialStatus | null {
+  if (!status) return null;
+  return status.connection === (connectionId ?? "") ? status.credential : null;
+}
+
+/** One role's credential, under the same rule as `credentialForConnection`. */
+export function roleCredentialForConnection(
+  status: ProviderStatus | null | undefined,
+  connectionId: string | undefined,
+  role: ProviderRole,
+): RoleCredentialStatus | null {
+  if (!status || status.connection !== (connectionId ?? "")) return null;
+  return status.role_credentials?.find((row) => row.role === role) ?? null;
 }
 
 /** An id no account on this machine is using yet.

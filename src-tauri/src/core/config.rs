@@ -1121,24 +1121,34 @@ impl ProfileProviderSettings {
         }
     }
 
-    /// Drops every override naming a connection this machine no longer holds.
+    /// Trims what a profile names, and keeps every name it holds (ADR 0209).
     ///
-    /// An override that resolves to nothing is dropped rather than repointed at
-    /// the default: silently rewriting it would make the row read *follow the
-    /// connection* while the reader's own choice disappeared, and an absent
-    /// override says exactly that in a form the surface can restate.
+    /// **An override naming a deleted account used to be dropped here, and
+    /// dropping it IS repointing it.** The argument for the drop was that
+    /// silently rewriting an override would make the row read *follow the
+    /// connection* while the reader's own choice disappeared — which is exactly
+    /// what removing the entry does, because an absent override is the stored
+    /// form of *follow the connection* (ADR 0094: the absence is the value). So
+    /// the rule ADR 0208 states for the default now covers the override too: the
+    /// name stays, `resolve` leaves the provider empty, and the job goes inert
+    /// with that name in the sentence. Choosing who pays for a job is not a
+    /// normalization's decision, and it is not less of a decision for being made
+    /// by deletion.
     ///
-    /// **The default is not dropped, and that asymmetry is the point.** An
-    /// absent override has a meaning; an absent default does not, so a profile
-    /// whose connection was deleted keeps naming it and every job goes inert
-    /// with that name in the sentence. Repointing it at another account would
-    /// be this build choosing who pays.
-    fn normalize(&mut self, connection_ids: &[String]) {
+    /// It also stops the two sides from disagreeing: `resolveJobProvider` in
+    /// `src/lib/textProfiles.ts` never pruned, so a config the surface read as
+    /// *overridden, provider unresolved* was read by the runtime as *following
+    /// the connection*.
+    ///
+    /// **An empty name is not a choice and is still dropped.** A whitespace
+    /// override names nothing a reader ever picked, so there is no decision in it
+    /// to preserve.
+    fn normalize(&mut self) {
         self.default = self.default.trim().to_string();
-        self.overrides.retain(|_, connection| {
-            let connection = connection.trim();
-            connection_ids.iter().any(|id| id == connection)
-        });
+        for connection in self.overrides.values_mut() {
+            *connection = connection.trim().to_string();
+        }
+        self.overrides.retain(|_, connection| !connection.is_empty());
     }
 }
 
@@ -2081,16 +2091,18 @@ impl AppConfig {
     /// Runs after the lift so the ids it just wrote are the ones checked, and
     /// on every load afterwards so a deleted connection cannot leave an
     /// override pointing into nothing.
+    /// Trims every connection name a profile holds, and drops none of them
+    /// (ADR 0209).
+    ///
+    /// It compared each name against the connections this machine holds until
+    /// this step and dropped the ones that matched nothing. That is why it no
+    /// longer reads `connections()`: whether a name resolves is a question for
+    /// `ProfileProviderSettings::resolve` at the moment a job runs, and its
+    /// answer is a sentence rather than a silent edit to what the reader chose.
     fn normalize_connection_references(&mut self) {
-        let ids: Vec<String> = self
-            .connections()
-            .iter()
-            .map(|connection| connection.id.clone())
-            .collect();
-
         for profile in &mut self.text_profiles {
             if let Some(providers) = profile.providers.as_mut() {
-                providers.normalize(&ids);
+                providers.normalize();
             }
         }
     }
@@ -3423,7 +3435,7 @@ mod tests {
     }
 
     #[test]
-    fn an_override_naming_an_unknown_provider_is_dropped_rather_than_normalized() {
+    fn an_override_naming_an_unknown_account_stays_named_and_goes_inert() {
         let mut config = AppConfig::default();
         let active_id = config.active_text_profile_id.clone();
         let profile = config
@@ -3444,17 +3456,29 @@ mod tests {
         config.normalize_for_runtime();
 
         let assistant = config.job_provider(JobKey::Assistant);
+        /* THE DROP WAS THE REPOINT (ADR 0209). Removing the entry makes the row
+           read *follow the connection*, which is the reader's choice replaced by
+           this build's — so the name stays and the job goes inert under it. */
         assert!(
-            !assistant.overridden,
-            "an unresolvable override reads as following the connection"
+            assistant.overridden,
+            "an unresolvable override keeps naming what the reader chose"
         );
         assert_eq!(
-            assistant.provider, LOCAL_PROVIDER_ID,
-            "and it falls to the connection, not to the registry default"
+            assistant.connection, UNREGISTERABLE_PROVIDER_ID,
+            "and it keeps naming it verbatim, so a surface can state which account is gone"
+        );
+        assert!(
+            assistant.provider.is_empty(),
+            "with no vendor behind it, which is what makes the job inert rather than misrouted"
         );
         assert!(
             config.job_provider(JobKey::Translate).overridden,
             "a resolvable override beside it survives untouched"
+        );
+        assert_eq!(
+            config.job_provider(JobKey::Translate).provider,
+            LOCAL_PROVIDER_ID,
+            "and still resolves to its vendor"
         );
     }
 

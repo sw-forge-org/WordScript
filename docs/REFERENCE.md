@@ -192,6 +192,10 @@ constants themselves were not re-derived and carry their own provenance
   off `provider_status` to decide whether a drawn row can be operated, and asks
   `registered_providers` -- one call, no credential read -- whether an adapter
   exists at all, because **a vendor's absence from that list is that answer**.
+  **The status also names the account it answered about** (`connection`,
+  ADR 0209, 2026-08-17), because it is keyed by VENDOR while the rows that render
+  a credential are scoped to an ACCOUNT: a credential is shown only from an
+  answer naming the account the row is on, and reads `Not read` otherwise.
   The seam is `src/lib/providerSeam.ts`; it also holds the drawn-name-to-runtime-id
   correspondence, which cannot live in `data.ts` (that file is the drawing) nor
   in the catalogue (a declared vendor there must carry model rows). No field of

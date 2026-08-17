@@ -1496,6 +1496,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A model belongs to the profile for the same reason its vendor does, and the controls do not move.
 - [0208](0208-a-connection-is-an-object-a-profile-points-at-so-the-account-moves-with-the-profile.md):
   A connection is an object a profile points at, so the account moves with the profile.
+- [0209](0209-a-status-names-the-account-it-answered-about-and-a-deletion-repoints-only-the-profile-that-ordered-it.md):
+  A status names the account it answered about, and a deletion repoints only the profile that ordered it.
 
 ## Resolved: the number 0011 was used twice
 

@@ -209,6 +209,22 @@ export interface LocalProviderSetupStatus {
 
 export interface ProviderStatus {
   provider: string;
+  /**
+   * WHICH ACCOUNT THIS ANSWER IS ABOUT — the request's own value, echoed back
+   * (ADR 0209).
+   *
+   * **A vendor answers what it can do; an account answers whether there is a
+   * key.** The request has carried the account since ADR 0208 and the answer did
+   * not, so a surface holding a status could not tell whose credential it was
+   * looking at — and a screen that renders one account while holding an answer
+   * about another prints a green badge over a key that is not there. That is the
+   * fake-readiness rule with a secret behind it.
+   *
+   * Empty is a legitimate value and means *no account was named*: it is what the
+   * Local lane sends, because that lane stores no credential and has nothing to
+   * name.
+   */
+  connection: string;
   default_profile: string;
   credential: ProviderCredentialStatus;
   profiles: ProviderProfile[];
@@ -252,6 +268,10 @@ export interface SelfHostedEndpointStatus {
 
 export interface ProviderStatusRequest {
   provider: string;
+  /** Which account to answer the credential half about (ADR 0208). Empty is
+   *  *no account named* and answers `configured: false` rather than inventing
+   *  one — it is what the Local lane's probe sends. */
+  connection: string;
   model: string | null;
   correction_model?: string | null;
 }

@@ -721,6 +721,25 @@ pub struct SelfHostedEndpointStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderStatus {
     pub provider: String,
+    /// Which account this answer is about — the request's value, echoed back
+    /// (ADR 0209).
+    ///
+    /// **The request has carried the account since ADR 0208 and the answer did
+    /// not**, so a surface holding a status could not tell whose credential it
+    /// was describing. It has to: the status is keyed by VENDOR on the way in to
+    /// keep one screen open to one keyring read (ADR 0124), while the rows that
+    /// render a credential are scoped to an ACCOUNT. Without the echo, a vendor
+    /// with two accounts had one answer and two rows, and the badge described a
+    /// different account from the field beneath it.
+    ///
+    /// **The adapters do not fill this in and cannot get it wrong.** They emit an
+    /// empty string and `provider_status` stamps the account it was asked about,
+    /// because an adapter restating an argument it was handed adds nothing except
+    /// a fifth place for the two to drift apart.
+    ///
+    /// Empty means *no account was named*, which is what the Local lane's probe
+    /// sends: that lane stores no credential and has nothing to name.
+    pub connection: String,
     pub default_profile: String,
     pub credential: ProviderCredentialStatus,
     pub profiles: Vec<ProviderProfile>,
@@ -1170,9 +1189,16 @@ pub fn registered_providers() -> Vec<RegisteredProvider> {
 pub fn provider_status(
     request: ProviderStatusRequest,
 ) -> Result<ProviderStatus, ProviderCommandError> {
-    registry::resolve_entry(&request.provider)?
+    let mut status = registry::resolve_entry(&request.provider)?
         .provider
-        .status(&request)
+        .status(&request)?;
+    /* THE ONE PLACE THE ACCOUNT IS STAMPED (ADR 0209). Here rather than in each
+       adapter, because the fact being reported is *which account was asked
+       about* — which this function holds and an adapter can only copy. Five
+       copies of one argument is five chances for a status to name an account it
+       did not read. */
+    status.connection = request.connection.trim().to_string();
+    Ok(status)
 }
 
 #[tauri::command]
@@ -1313,6 +1339,38 @@ mod tests {
     /// first. A registry with ten entries would have retired the stand-in ten
     /// times. This one is retired never, and it says what it means.
     const UNREGISTERABLE_ID: &str = "not-a-vendor-this-build-carries";
+
+    /// **A STATUS SAYS WHICH ACCOUNT IT IS ABOUT, FOR EVERY REGISTERED VENDOR**
+    /// (ADR 0209).
+    ///
+    /// The echo exists so a surface holding a status can tell whether it is the
+    /// account it is rendering — the check is worth nothing if one adapter
+    /// forgets to answer, and the adapters are exactly where it must not be
+    /// possible to forget. So this walks the registry rather than naming a
+    /// vendor: `provider_status` stamps the value after the adapter answers, and
+    /// an adapter added tomorrow is covered without a line here.
+    ///
+    /// The keyring is read on the way through, which is why the assertion is
+    /// only about the echo: whether a key is stored on THIS machine is not
+    /// something a test may assume either way.
+    #[test]
+    fn every_status_names_the_account_it_was_asked_about() {
+        for entry in registry::entries() {
+            let status = provider_status(ProviderStatusRequest {
+                provider: entry.id.to_string(),
+                connection: "  connection-work  ".to_string(),
+                model: None,
+                correction_model: None,
+            });
+
+            let Ok(status) = status else { continue };
+            assert_eq!(
+                status.connection, "connection-work",
+                "{} answered about a different account than the one it was asked about",
+                entry.id,
+            );
+        }
+    }
 
     /// **The migration moves the key, and the registry decides what there is
     /// to move** (ADR 0208). Groq registers speech and chat and accepts one
