@@ -929,7 +929,18 @@ acceleration probe, the bundling decision, guided remediation, and F3's
 streaming shape. **Whoever closes that gate writes the ADR that reverses 0067**,
 in the commit that finishes the lane, exactly as 0067 asks.
 
-### B13. The `Use` button reaches one of the two local chat models (ADR 0206's neighbour)
+### B13. The `Use` button reaches one of the two local chat models (ADR 0206's neighbour) — **done 2026-08-17, ADR 0207**
+
+**Closed the day it was filed**, because the one thing it waited on was a
+decision and the owner gave it: *storage per profile, controls where they are.*
+What landed: `chat_model_for_job` reads the profile's `agent_model` with the
+connection-wide field as the fallback; the capture snapshot carries both chat
+models and `mode_router` and the Auto classifier read it instead of the live
+config; and `Use` on a language row writes `local_agent_model` beside
+`local_correction_model`. No control moved and none was added. The remaining
+per-profile scope the same answer implies is **B14** below.
+
+The brief as it was written:
 
 **Added 2026-08-17 by the core-hardening track, which found it and does not own
 it.** The evidence is in
@@ -961,6 +972,50 @@ produce, which is why nobody has reported it.
 - **Validates** — `npm test`, `npm run build`, `port:diff` on `models`, and the
   local lane by hand: pull a model that is not `llama3.2`, press `Use`, and check
   that a record still gets a title.
+
+### B14. A profile carries its whole connection, not only which vendor it is (ADR 0094, ADR 0207)
+
+**Added 2026-08-17**, from the owner's own widening of B13's answer:
+
+> Es geht ja nicht nur um die Enterprise Lane, sondern auch um alles andere.
+> Cloud, Local, Your Server und Enterprise. Aber auch alles was damit
+> zusammenhängt.
+
+**What is already per profile after ADR 0094, 0203, 0206 and 0207**: which
+vendor each job runs on, and every model — recogniser, correction, chat — plus
+the local decode block. Switching a profile switches all of it.
+
+**What is still machine-wide, and each one breaks the same sentence** — *an
+employer's profile and a private one*:
+
+- **Your server / Enterprise.** `self_hosted_base_url` and `self_hosted_model`
+  are `AppConfig` fields. Two profiles cannot name two servers, so a company
+  endpoint and a private one are one setting the reader has to keep re-typing.
+  This is also why `AppConfig::speech_model` reads the machine-wide value on
+  that lane while reading the profile's on every other — an inconsistency that
+  is honest today and disappears with this step.
+- **Credentials.** The OS store is keyed `{provider}.{role}.{kind}`
+  (`credential_store.rs`), so one vendor holds one account. An employer's Groq
+  key and a private Groq key cannot both exist, and switching profiles does not
+  switch who is paying.
+- **The plan follows the credential** (ADR 0167), so `provider_plans` moves with
+  whatever the credential does and is not a separate decision.
+
+- **Requires** — B5 and B8 for the surface, and a decision before either:
+  **what is a profile's connection?** Either the profile carries an endpoint and
+  a credential *reference* and the store grows a profile component in its key,
+  or connections become objects of their own that profiles point at. The second
+  is the shape that survives two profiles sharing one work account; the first is
+  smaller. **Not a code question** — it decides what a reader is asked to fill in
+  twice.
+- **Touches** — `AppConfig`'s self-hosted fields (a config migration, and this
+  machine's is disposable), `credential_store`'s entry user, every readiness
+  surface that asks *is there a key for this vendor*, and the Connection card.
+- **The rule it is measured against** — a lane that is offered must be operable
+  (ADR 0067). A per-profile endpoint with a machine-wide credential is a lane
+  that looks switchable and is not.
+- **Validates** — `cargo test`, `npm test`, `npm run build`, and by hand with
+  two profiles pointing at two different servers.
 
 ## Stage C — capture
 

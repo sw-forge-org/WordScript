@@ -424,7 +424,11 @@ status change. Resolved bugs remain as references for the same failure class.
   gets no titles, because that fallback looks exactly like a model declining to
   name one. **Not the ADR 0206 divergence it was first written up as** — one
   reader, no second path — so the fix is a control or a deletion, not a
-  resolver. Queued as the speech track's B13.
+  resolver. **Fixed the same day (ADR 0207)**: the owner's answer was *per
+  profile, controls where they are*, so the fields were wired rather than
+  removed and `Use` writes both chat jobs. What it did not reach is one level
+  up — the self-hosted endpoint and the credentials are still machine-wide, so
+  two profiles cannot name two servers or two accounts. Speech track **B14**.
 
 ## Boundaries
 

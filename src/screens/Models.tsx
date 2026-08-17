@@ -2467,15 +2467,26 @@ function WiredLibrary({ library: source }: { library: ReturnType<typeof useModel
   const language = rows.filter((row) => row.mechanism === "server_pull");
 
   /* The active profile decides what `In use` means, and writing it is what the
-     drawn `Use` button was always for. A gallery render never reaches here. */
+     drawn `Use` button was always for. A gallery render never reaches here.
+
+     A LANGUAGE MODEL IS BOTH CHAT JOBS, and writing only one of them was a
+     silent hole (ADR 0207): the correction moved to the model you picked and
+     the agent — the transcript title, the Auto classifier, Agent mode — stayed
+     on the catalogue's `llama3.2:latest`. On a machine that pulled something
+     else the title call then asked for a model that is not there, and its
+     fallback is the same first-words filename a model that simply declined
+     would produce, so nothing on the screen ever said so. One button, one
+     lane's chat work; the two fields stay separate for the day a surface
+     offers them separately. */
   const useModel = (row: ManagedModelRow) => {
     if (!runtime) return;
+    const tag = pullTagOf(row) ?? row.model_id;
     runtime.patch(
       buildProfileSpeechPatch(
         runtime.config,
         row.role === "speech"
           ? { local_model: localStemOf(row) }
-          : { local_correction_model: pullTagOf(row) ?? row.model_id },
+          : { local_correction_model: tag, local_agent_model: tag },
       ),
     );
   };

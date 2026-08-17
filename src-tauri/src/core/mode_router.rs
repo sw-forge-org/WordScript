@@ -357,13 +357,10 @@ pub async fn apply_mode_transform(
     // and a lookup beside the match is a place for the two to disagree. The
     // model follows the job's vendor rather than one connection, because the
     // local lane names its models differently from every cloud one.
-    let chat_model = |job: JobKey| {
-        if config.providers.resolve(job).provider == super::providers::LOCAL_PROVIDER_ID {
-            app_config.local_agent_model.clone()
-        } else {
-            app_config.agent_model.clone()
-        }
-    };
+    // And off the SNAPSHOT rather than the live config (ADR 0207): the lane was
+    // already resolved here, the model was read from `app_config`, and a
+    // profile switched during a recording moved one of the two.
+    let chat_model = |job: JobKey| config.chat_model_for(&config.providers.resolve(job));
 
     match mode {
         ProcessingMode::Agent => {

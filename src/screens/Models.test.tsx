@@ -1047,6 +1047,47 @@ describe("On this machine, wired", () => {
     expect(download).toHaveAttribute("title", expect.stringContaining("Start Ollama"));
   });
 
+  /* ADR 0207. `Use` on a language model used to write the correction model and
+     nothing else, so the agent — the transcript title, the Auto classifier,
+     Agent mode — stayed on the catalogue's `llama3.2:latest`. On a machine that
+     pulled something else the title call then asked for a model that is not
+     installed, and its fallback is the same first-words filename a model that
+     declined to name one produces, so the screen never said so. */
+  it("points both of a lane's chat jobs at the language model you chose", async () => {
+    const patch = vi.fn();
+    const installedChat = {
+      ...LIBRARY,
+      rows: LIBRARY.rows.map((row) =>
+        row.row === "local-chat-qwen-7b"
+          ? { ...row, state: { kind: "installed", bytes: 4_683_086_845 } }
+          : row,
+      ),
+    };
+    withLibrary(installedChat);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+    await openMachineTab();
+
+    const row = await waitFor(() => {
+      const node = screen.getByText("qwen2.5-7b-instruct").closest(".ws-mdl");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await userEvent.click(within(row).getByRole("button", { name: "Use" }));
+
+    const written = patch.mock.calls[0][0] as {
+      text_profiles: { id: string; speech: Record<string, string> }[];
+    };
+    const speech = written.text_profiles.find(
+      (profile) => profile.id === written.text_profiles[0].id,
+    )?.speech;
+
+    /* The PULL TAG, which is what the runner is asked for, and the same string
+       in both fields. Per profile, which is what makes an employer's connection
+       and a private one two separate sets rather than one machine-wide choice. */
+    expect(speech?.local_correction_model).toBe("qwen2.5:7b-instruct-q4_K_M");
+    expect(speech?.local_agent_model).toBe("qwen2.5:7b-instruct-q4_K_M");
+  });
+
   /* Every folder the runtime looks in, in rank order, and only the one the
      user added may be removed from here (ADR 0159). */
   it("lists the folders the runtime resolved rather than ones it assembled", async () => {

@@ -5,7 +5,8 @@ use regex::{Captures, NoExpand, Regex, RegexBuilder};
 use super::communication_style::CommunicationStyle;
 use super::config::{
     DictionaryEntry, ProcessingMode, ProfileProviderSettings, SnippetEntry, TransformPreset,
-    TranslateSettings, default_correction_model, default_local_correction_model,
+    TranslateSettings, default_agent_model, default_correction_model,
+    default_local_agent_model, default_local_correction_model,
 };
 use super::profile_context::{profile_context_line, truncate_line};
 use super::providers::{
@@ -47,6 +48,12 @@ pub struct NativeTransformConfig {
     /// a cloud model id to the local runtime.
     pub correction_model: String,
     pub local_correction_model: String,
+    /// The instructing jobs' models — Agent, the Auto classifier, Translate and
+    /// Prompt Enhance — carried as a pair for the same reason (ADR 0207). The
+    /// mode branches used to read them off the live config while resolving the
+    /// lane off this snapshot, which is two objects answering one question.
+    pub agent_model: String,
+    pub local_agent_model: String,
     pub filter_fillers: bool,
     pub professionalize: bool,
     pub language: String,
@@ -115,6 +122,8 @@ impl NativeTransformConfig {
             // is known (ADR 0206), and it is also what fills an empty field.
             correction_model: config.correction_model.clone(),
             local_correction_model: config.local_correction_model.clone(),
+            agent_model: config.agent_model.clone(),
+            local_agent_model: config.local_agent_model.clone(),
             filter_fillers: preset.filter_fillers,
             professionalize: preset.professionalize,
             language: config.language.clone(),
@@ -174,6 +183,30 @@ impl NativeTransformConfig {
 
         if named.is_empty() {
             self.lane_default_correction_model(job)
+        } else {
+            named.to_string()
+        }
+    }
+
+    /// **What an instructing job runs on, on the lane it runs on** (ADR 0207).
+    ///
+    /// The same shape as `correction_model_for` and next to it deliberately:
+    /// Agent, the Auto classifier, Translate and Prompt Enhance each resolve
+    /// their own job off this snapshot's axis, and the model has to come from
+    /// the same object or the two can disagree about the session.
+    pub fn chat_model_for(&self, job: &JobProvider) -> String {
+        let named = if is_local_lane(job) {
+            self.local_agent_model.trim()
+        } else {
+            self.agent_model.trim()
+        };
+
+        if named.is_empty() {
+            if is_local_lane(job) {
+                default_local_agent_model().to_string()
+            } else {
+                default_agent_model().to_string()
+            }
         } else {
             named.to_string()
         }

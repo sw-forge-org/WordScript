@@ -1492,6 +1492,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A retry names the recogniser that produced its text, and only the retry that listened again names this machine's.
 - [0206](0206-the-corrections-model-belongs-to-the-corrections-lane-and-the-choice-is-made-where-the-job-is-resolved.md):
   The correction's model belongs to the correction's lane, and the choice is made where the job is resolved.
+- [0207](0207-a-model-belongs-to-the-profile-for-the-same-reason-its-vendor-does-and-the-controls-do-not-move.md):
+  A model belongs to the profile for the same reason its vendor does, and the controls do not move.
 
 ## Resolved: the number 0011 was used twice
 

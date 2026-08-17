@@ -1461,6 +1461,19 @@ impl Default for AppConfig {
     }
 }
 
+/// The first field that names something, or the catalogue's answer.
+///
+/// The order is the decision, not a convenience: profile, then connection, then
+/// default (ADR 0207). Written once because three model questions ask it.
+fn first_named<'a>(candidates: impl IntoIterator<Item = &'a String>, fallback: &str) -> String {
+    candidates
+        .into_iter()
+        .map(|value| value.trim())
+        .find(|value| !value.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
 impl AppConfig {
     pub fn active_text_profile(&self) -> TextProfile {
         self.text_profiles
@@ -1519,11 +1532,28 @@ impl AppConfig {
     /// question *which model* cannot be answered before *which vendor*, and
     /// that is per job since ADR 0094's config half. A job routed to Local
     /// takes the local model even while the connection is on Groq.
+    /// **The profile's, then the connection's, then the catalogue's**
+    /// (ADR 0207). A profile is where two working lives are kept apart — an
+    /// employer's connection and a private one — so the model a job runs on
+    /// belongs to the profile for the same reason its vendor does.
+    ///
+    /// The connection-wide field stays as the fallback rather than being
+    /// removed: it is what a profile written before this carries nothing for,
+    /// and it is one save away from being replaced by the profile's own value.
     pub(crate) fn chat_model_for_job(&self, job: JobKey) -> String {
-        if self.job_provider(job).provider == super::providers::LOCAL_PROVIDER_ID {
-            self.local_agent_model.clone()
+        let profile = self.active_text_profile();
+        let speech = profile.resolved_speech();
+
+        if profile.job_provider(job).provider == super::providers::LOCAL_PROVIDER_ID {
+            first_named(
+                [&speech.local_agent_model, &self.local_agent_model],
+                default_local_agent_model(),
+            )
         } else {
-            self.agent_model.clone()
+            first_named(
+                [&speech.agent_model, &self.agent_model],
+                default_agent_model(),
+            )
         }
     }
 

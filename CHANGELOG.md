@@ -78,6 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record's provider, model and decode settings instead of describing a request
   that never happened. The two retry branches had also been writing different
   vendors into the same field depending on whether the retry produced text.
+- **A profile carries its own models, and no control moved to say so**
+  (ADR 0207). The chat model behind every transcript title, the Auto classifier,
+  Agent, Translate and Prompt Enhance was the catalogue default that no surface
+  could change, and the per-profile field beside it was written when a profile
+  was created and read by nothing. It is read now — profile first, connection
+  second — and `Use` on a language model points both of that lane's chat jobs at
+  what you picked. The visible defect it removes is a local one: a machine that
+  pulled anything other than `llama3.2:latest` had its cleanup moved and its
+  titles silently left behind on a model that was not installed.
 - **A correction runs on a model its own vendor serves** (ADR 0206). The capture
   chose the correction model by whether the *recogniser* was local — a different
   job — so a profile that listens on Groq and corrects on the local runtime sent

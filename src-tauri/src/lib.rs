@@ -1902,13 +1902,9 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 let classifier_config = core::agent::AgentConfig {
                                     provider: assistant.provider.clone(),
                                     agent_name: agent_name.clone(),
-                                    agent_model: if assistant.provider
-                                        == core::providers::LOCAL_PROVIDER_ID
-                                    {
-                                        app_config.local_agent_model.clone()
-                                    } else {
-                                        app_config.agent_model.clone()
-                                    },
+                                    // The same snapshot the lane came from
+                                    // (ADR 0207).
+                                    agent_model: transform_config.chat_model_for(&assistant),
                                     ..Default::default()
                                 };
                                 let is_instruction = core::agent::detect_agent_intent(

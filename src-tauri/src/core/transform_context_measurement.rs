@@ -202,6 +202,16 @@ async fn measure_profile_context_width() {
             "local_correction_model",
             default_local_correction_model(),
         ),
+        // Not spent by this harness — it measures the cleanup — but resolved
+        // the same way, because a field left at its type default here would be
+        // a second answer waiting for the next thing that reads it.
+        agent_model: profile_or_connection(profile, &app_config, "agent_model", default_agent_model()),
+        local_agent_model: profile_or_connection(
+            profile,
+            &app_config,
+            "local_agent_model",
+            default_local_agent_model(),
+        ),
         filter_fillers: preset.filter_fillers,
         professionalize: preset.professionalize,
         language: String::new(),

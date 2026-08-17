@@ -19,8 +19,8 @@ use super::{
     communication_style::CommunicationStyle,
     config::{
         AppConfig, DictionaryEntry, ProfileProviderSettings, SnippetEntry, TextProfileWorkMode,
-        TranslateSettings, default_correction_model, default_local_correction_model,
-        default_speech_model,
+        TranslateSettings, default_agent_model, default_correction_model,
+        default_local_agent_model, default_local_correction_model, default_speech_model,
     },
     paths::user_data_dir,
     providers::{JobKey, JobProvider},
@@ -284,6 +284,14 @@ pub struct NativeCaptureConfig {
     pub correction_model: String,
     #[serde(default)]
     pub local_correction_model: String,
+    /// The chat models the same way, for the jobs that instruct rather than
+    /// correct — Agent, the Auto classifier, Translate and Prompt Enhance
+    /// (ADR 0207). Snapshotted with everything else, so a profile switched
+    /// mid-recording does not move the session's model.
+    #[serde(default)]
+    pub agent_model: String,
+    #[serde(default)]
+    pub local_agent_model: String,
     // Snapshotted with everything else the session runs on, so "only the
     // processing mode can still change mid-recording" is literally true. These
     // used to be re-read from disk at pipeline time, which meant editing the
@@ -333,6 +341,8 @@ impl Default for NativeCaptureConfig {
             snippet_entries: Vec::new(),
             correction_model: default_correction_model().to_string(),
             local_correction_model: default_local_correction_model().to_string(),
+            agent_model: default_agent_model().to_string(),
+            local_agent_model: default_local_agent_model().to_string(),
             audio_device: String::new(),
             max_recording_seconds: DEFAULT_MAX_RECORDING_SECONDS,
             silence_timeout_seconds: DEFAULT_SILENCE_TIMEOUT_SECONDS,
@@ -404,6 +414,8 @@ impl NativeCaptureConfig {
             snippet_entries: active_profile.snippet_entries,
             correction_model: speech.correction_model,
             local_correction_model: speech.local_correction_model,
+            agent_model: speech.agent_model,
+            local_agent_model: speech.local_agent_model,
             profile_label: profile_label.clone(),
             agent_name,
             communication_style,

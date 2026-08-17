@@ -1,7 +1,11 @@
 # The chat model that titles, classifies and answers is a default no control can change
 
-Status: **Open, found 2026-08-17.** Nothing is fixed. Not an attribution defect
-and deliberately not filed as one — see *Why this is not the ADR 0206 shape*.
+Status: **Fixed 2026-08-17 by
+[ADR 0207](../decisions/0207-a-model-belongs-to-the-profile-for-the-same-reason-its-vendor-does-and-the-controls-do-not-move.md)**,
+the day it was filed, because the only thing it waited on was a decision the
+owner made: **storage per profile, controls where they are.** The report below
+is kept as written. Not an attribution defect and deliberately not filed as one
+— see *Why this is not the ADR 0206 shape*.
 
 Found while checking whether `chat_model_for_job` had the same split-brain the
 correction model did (ADR 0206). It does not. What it has instead is a field
@@ -83,6 +87,30 @@ is the same object waiting for the third.
   model did, if the fields are wired rather than removed.
 
 No fix is written here.
+
+## What was written, 2026-08-17
+
+The owner answered the first question — **the chat model follows the axis** —
+and set the boundary for the second: *GUI-technisch bleiben die Einstellungen,
+wo sie jetzt sind.* So the fields were wired rather than removed, and no control
+moved or was added:
+
+- `chat_model_for_job` reads the profile's `agent_model` / `local_agent_model`,
+  falling back to the connection-wide field and then to the catalogue.
+- The capture snapshot carries both chat models, and `mode_router` and the Auto
+  classifier read **it** rather than the live config — they had been resolving
+  the lane off the snapshot and the model off `AppConfig`.
+- `Use` on a language row writes `local_agent_model` beside
+  `local_correction_model`: one lane's chat work, one button, and the fields
+  stay separate for a surface that ever offers them apart.
+
+**The reason it is per profile is not tidiness.** An employer's profile and a
+private one have to be able to sit on different lanes, and a vendor without its
+model is half of that answer.
+
+**What this did not reach**, and it is the same sentence one level up: the
+self-hosted endpoint and the credentials are still machine-wide, so two profiles
+cannot name two servers or two accounts. Queued as the speech track's **B14**.
 
 ## Related
 
