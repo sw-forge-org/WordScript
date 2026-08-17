@@ -997,6 +997,13 @@ first. `port:diff`: `models` `26 | 248 | 20` → `28 | 248 | 20`, the two
 structural differences being the `Account` row the prototype does not draw;
 `models#1` unmoved at `262 | 30 | 16`.
 
+**And the migration ran on this machine on its own**, because a dev host picked
+up the rebuild: the pre-lift snapshot carries the old shape, the live config
+carries one `connection-default`, and the two Groq entries moved out of the
+vendor scope into the account's with nothing left behind (checked by exit code,
+no value read). The case still unrun is two accounts on one vendor switched
+mid-session — it needs a second real key and is the owner's.
+
 The brief as it was written:
 
 **Added 2026-08-17**, from the owner's own widening of B13's answer:

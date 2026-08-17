@@ -156,4 +156,18 @@ one profile. A job overrides to a connection like any other reference, so the
 shape allows it; no surface offers it, because the drawn per-job row asks about
 vendors and nobody has asked for two accounts of one vendor in one profile.
 
+**The migration ran on this machine while the step was being written**, which
+is the one measurement a synthetic test cannot make. A dev host picked up the
+rebuild and lifted the real config: `config.backup-connection-axis-*.json` was
+taken **before** the rewrite and still carries the old shape
+(`providers.default: "groq"`, `provider_plans: {}`, `self_hosted_base_url: ""`,
+no `connections` key); the live file carries one connection, `connection-default`
+on Groq, with every profile pointing at it and the three consumed keys gone. The
+secret store agrees: `groq.speech.api_key` and `groq.chat.api_key` are **absent**
+and `connection-default.speech.api_key` and `connection-default.chat.api_key`
+are **present** — checked by exit code, with no value read or printed — and the
+runtime log carries no re-key failure. **What is still unverified is the two-key
+case**: two accounts on one vendor, switched between mid-session, needs a second
+real credential and is the owner's to run.
+
 **+9 Rust (936) and +4 frontend (840).**
