@@ -1506,6 +1506,8 @@ that is what a record is for (ADR 0123: one list per fact).
   AI Models is organised by task, and the lane is how accounts are grouped rather than a mode the screen is in.
 - [0213](0213-a-status-is-read-per-account-and-a-credential-may-never-cross-into-another-vendors-account.md):
   A status is read per account, and a credential may never cross into another vendor's account.
+- [0214](0214-a-reasoning-model-is-told-how-much-to-think-and-the-catalogue-is-where-that-is-written.md):
+  A reasoning model is told how much to think, and the catalogue is where that is written.
 
 ## Resolved: the number 0011 was used twice
 

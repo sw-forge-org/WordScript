@@ -43,7 +43,14 @@ use super::providers::{ModelSupport, ProviderRole};
 ///
 /// 2 added the optional `install` block (ADR 0122). Additive, and there is no
 /// migration because there is no on-disk state: the file is compiled in below.
-const CATALOGUE_VERSION: u32 = 2;
+///
+/// **3 added `reasoning_effort` (ADR 0214), and that one is not additive in the
+/// sense 2 was.** A reader that ignores the field posts no effort to a reasoning
+/// model, and a reasoning model with no effort set spends its whole completion
+/// budget thinking and returns an empty string — on this product, a dictation
+/// that silently loses its cleanup. The field is absorbed or the row does not
+/// work, which is what a version bump is for.
+const CATALOGUE_VERSION: u32 = 3;
 
 /// Compiled in, like the regression corpus. There is no on-disk override door:
 /// the catalogue is part of the build, and a machine-local one would be a
@@ -91,6 +98,19 @@ pub struct ModelRow {
     /// the one this module's test finally enforces.
     pub source: String,
     pub read_date: String,
+    /// How much this model may think before it answers (ADR 0214).
+    ///
+    /// **`None` means the parameter is not sent**, which is the right answer for
+    /// every model that does not reason — posting it to one that does not is a
+    /// request a vendor may refuse.
+    ///
+    /// It is a fact about a model, so it belongs here rather than in an adapter
+    /// (ADR 0115). And it is load-bearing rather than a tuning knob: Groq
+    /// retired its Llama chat models on 2026-08-17 and every replacement it
+    /// serves is a reasoning model, so a request without this field comes back
+    /// with an empty `content` and the whole budget spent on `reasoning_tokens`.
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub note: Option<String>,
     /// How this model gets onto this machine, where that is a question about
@@ -258,6 +278,30 @@ pub fn provider_for_model_id(model_id: &str, role: ProviderRole) -> Option<&'sta
         .iter()
         .find(|row| row.role == role && row.model_id == model_id)
         .map(|row| row.provider.as_str())
+}
+
+/// How much a model may think before it answers, or `None` where the parameter
+/// is not sent (ADR 0214).
+///
+/// **Keyed by the id on the wire and not by a slug**, because the caller is an
+/// adapter about to post a request and a request carries the model id. A model
+/// this catalogue does not know answers `None`: a typed enterprise deployment
+/// name, a self-hosted server's own id, or a vendor release newer than this
+/// build. That is the same rule the file's own header states — a catalogue is a
+/// snapshot and not a whitelist — and it is the safe direction, because a
+/// parameter posted to a model that does not reason is a request the vendor may
+/// refuse outright.
+///
+/// The role is part of the question for the reason `provider_for_model_id`'s is:
+/// one vendor's speech id and another's chat id have no reason to be
+/// distinguishable as strings.
+pub fn reasoning_effort_for(model_id: &str, role: ProviderRole) -> Option<&'static str> {
+    let model_id = model_id.trim();
+    catalogue()
+        .models
+        .iter()
+        .find(|row| row.role == role && row.model_id == model_id)
+        .and_then(|row| row.reasoning_effort.as_deref())
 }
 
 /// Every row this build can put on a machine, in catalogue order.

@@ -109,8 +109,10 @@ export type RuntimeDefaultSlot =
    test and by `core::model_catalogue`'s, which reads the same bytes. */
 export const CATALOGUE = raw as unknown as Catalogue;
 
-/** The version this build was written against. 2 added the install block. */
-export const CATALOGUE_VERSION = 2;
+/** The version this build was written against. 2 added the install block; 3
+ *  added `reasoning_effort` (ADR 0214), which only the runtime posts — this side
+ *  never builds a request — but the version is one number for one file. */
+export const CATALOGUE_VERSION = 3;
 
 /**
  * The row an id names.

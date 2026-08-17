@@ -3776,7 +3776,13 @@ mod tests {
             vec![openai.clone()],
             &openai.id,
             BTreeMap::new(),
-            BTreeMap::from([(JobKey::Cleanup, "llama-3.3-70b-versatile".to_string())]),
+            /* A CURRENT GROQ ROW, and it has to stay one (ADR 0214). This read
+               `llama-3.3-70b-versatile` until Groq retired that model; a
+               retired id is one the catalogue no longer carries, which makes it
+               a TYPED override that legitimately passes — so the case stopped
+               testing its own subject and failed. That it failed rather than
+               going quietly green is the guard working. */
+            BTreeMap::from([(JobKey::Cleanup, "qwen/qwen3.6-27b".to_string())]),
         );
 
         assert_eq!(

@@ -732,8 +732,15 @@ mod tests {
     fn another_lanes_model_id_is_substituted_and_a_typed_one_is_not() {
         // The case a connection change creates: the profile still holds the
         // Groq id it recognised on yesterday.
+        //
+        // **The chat id is a CURRENT Groq row and it has to stay one** (ADR 0214).
+        // This line read `llama-3.3-70b-versatile` until Groq retired that model
+        // on 2026-08-17; the moment it left the catalogue the assertion stopped
+        // testing substitution and started testing the pass-through two
+        // assertions below already cover, and it failed loudly rather than
+        // quietly, which is the whole reason the guard reads the catalogue.
         assert_eq!(resolve_speech_model("whisper-large-v3-turbo"), "whisper-1");
-        assert_eq!(resolve_chat_model("llama-3.3-70b-versatile"), "gpt-5.6-terra");
+        assert_eq!(resolve_chat_model("qwen/qwen3.6-27b"), "gpt-5.6-terra");
 
         // And the case ADR 0115 protects: an id nobody catalogued is the user's
         // own and survives.

@@ -20,9 +20,13 @@ use std::{path::Path, time::Duration, time::Instant};
 use reqwest::{header, multipart, StatusCode, Url};
 use serde::Deserialize;
 
+use crate::core::model_catalogue;
 use crate::core::runtime_log;
 
-use super::{ChatCompletionRequest, ProviderCommandError, ProviderErrorKind, TranscriptionResponse};
+use super::{
+    ChatCompletionRequest, ProviderCommandError, ProviderErrorKind, ProviderRole,
+    TranscriptionResponse,
+};
 
 /// Whether a base URL may carry a bearer token — **HTTPS, or a private host**
 /// (ADR 0113, D1a).
@@ -358,12 +362,31 @@ impl CompatibleClient {
             request.max_tokens,
         ));
 
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": request.model,
             "messages": request.messages,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
         });
+
+        /* HOW MUCH THIS MODEL MAY THINK BEFORE IT ANSWERS (ADR 0214).
+           **Sent only where the catalogue names an effort for this id**, which is
+           the rule that keeps this one line correct for four adapters: a model
+           that does not reason gets no parameter, and a self-hosted server —
+           whose ids are its operator's and are in no catalogue by construction —
+           gets none either.
+
+           It is not a tuning knob. Groq retired its Llama chat models on
+           2026-08-17 and every replacement it serves reasons; an unconstrained
+           reasoning model spends the whole `max_tokens` budget thinking and
+           returns an empty `content`, which reaches this product as a dictation
+           whose cleanup silently did nothing. Measured at 46 reasoning tokens
+           against the 48-token budget `transcript_store::describe` sends. */
+        if let Some(effort) =
+            model_catalogue::reasoning_effort_for(&request.model, ProviderRole::Chat)
+        {
+            body["reasoning_effort"] = serde_json::Value::String(effort.to_string());
+        }
 
         let response = self
             .send_with_retries("chat.completions", || {
