@@ -2,100 +2,105 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import {
+  accountsToRead,
   NO_ANSWERS,
-  runtimeIdFor,
-  SELF_HOSTED_PROVIDER_ID,
-  statusConnectionFor,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
-import { PROVIDERS, type LaneName } from "@/screens/data";
 import type { ProviderStatus, RegisteredProvider } from "@/types/providers";
 import type { AppConfig } from "@/types/ipc";
 
 /**
- * What the runtime says about the vendors a lane draws (ADR 0124, ADR 0106).
+ * What the runtime says about the vendors this build carries and the accounts
+ * this machine holds (ADR 0124, ADR 0106).
  *
  * **Two commands, and they answer different questions.**
  * `registered_providers` answers *which vendors have an adapter at all* for the
  * whole table in one call, reading no credential; `provider_status` answers
- * *what this one vendor can do and what it is missing*, and reads the OS secret
- * store to do it. So the second is asked only for vendors the first admitted
- * to — which is at most as many as the registry carries, never as many as the
- * drawing names.
+ * *what this one account can do and what it is missing*, and reads the OS secret
+ * store to do it. So the second is asked only for accounts that exist — which is
+ * a number the reader chose, never the length of the drawing.
  *
- * **Ten `provider_status` calls was the alternative and it was rejected**
- * (ADR 0124): it is ten keyring reads and a local-runtime probe for a screen
- * that merely opened, with eight of the ten answering `Err`.
+ * **IT ASKED ONCE PER VENDOR AND NOW ASKS ONCE PER ACCOUNT, AND THAT IS NOT
+ * ADR 0124 REVERSED.** That record refused ten `provider_status` calls for a
+ * screen that merely opened, on the argument that eight of them would answer
+ * `Err` for vendors nobody had configured — ten reads for nothing. This asks
+ * about accounts, and an account exists because somebody made it: a fresh
+ * install reads one, the case this whole axis exists for reads two. The cost
+ * scales with what the reader owns rather than with what the drawing names.
+ *
+ * **And it is no longer scoped to a lane.** A job may run on any account on the
+ * machine (ADR 0211), so a surface that only read the shown lane's vendors left
+ * every cross-lane job row answering *not read* about an account it was pointing
+ * at. The lane groups; it does not decide what is known.
  */
 export function useProviderSeam(
-  lane: LaneName,
-  model?: string | null,
-  /** The config, for the account each drawn vendor is reached with (ADR 0208).
-   *  A vendor this machine holds no account on is asked about with none, and
-   *  answers `configured: false` — which is the truth: there is no key,
-   *  because there is nothing to hold one.
-   *
-   *  **Which account that is, is `statusConnectionFor`'s answer and not the
-   *  first row's** (ADR 0209). This hook asked `connectionForVendor` — the first
-   *  account on each vendor — so a profile holding a second one was answered
-   *  about the first, and every credential this screen renders came from an
-   *  account the reader had not selected. */
+  /** The accounts to ask about, and the model to ask with. */
   config?: AppConfig,
+  model?: string | null,
 ) {
   const [registered, setRegistered] = useState<RegisteredProvider[] | null>(null);
   const [statuses, setStatuses] = useState<Record<string, ProviderStatus>>({});
 
-  /* The ids this lane draws, as ids. Recomputed from the drawing rather than
-     stored, so a lane the drawing grows is covered without a second list.
-
-     **PLUS THE LANE'S OWN, WHERE THE LANE IS THE VENDOR** (D1b, ADR 0165).
-     `Your server` draws no chip — there is nothing to choose between — so this
-     list was empty for it and the connection card had no status to render: no
-     endpoint, no source, no stored token, and job rows answering *operable*
-     from the registry's capability block while the lane was not configured at
-     all. **`Local` is not added here and its absence is the argument**: its
-     status probes the disk, `useLocalSetup` already does that once for both
-     tabs, and a second probe is the cost ADR 0124 refused at ten. */
-  const drawnIds = useMemo(() => {
-    const ids = PROVIDERS.filter((provider) => provider.lane === lane)
-      .map((provider) => runtimeIdFor(provider.name))
-      .filter((id): id is string => Boolean(id));
-
-    return lane === "Self-hosted" ? [...ids, SELF_HOSTED_PROVIDER_ID] : ids;
-  }, [lane]);
+  /* The accounts, as a stable string — `config` is a fresh object on every
+     optimistic patch, and a dependency on it alone would re-read the keyring on
+     every keystroke that touches an unrelated setting. What this read depends on
+     is which accounts exist and whose vendor each one is. */
+  const accountKey = useMemo(
+    () =>
+      config
+        ? accountsToRead(config)
+            .map((entry) => `${entry.id}:${entry.provider}`)
+            .join("|")
+        : "",
+    [config],
+  );
 
   const read = useCallback(async () => {
     const listed = await invoke<RegisteredProvider[]>("registered_providers");
     setRegistered(listed);
 
-    const wanted = listed.filter((row) => drawnIds.includes(row.provider));
+    /* An account whose vendor has no adapter is not asked about: the command
+       answers `Err` for it, which is the same nothing the registry already
+       stated by leaving the vendor out (ADR 0124). */
+    const wanted = accountKey
+      .split("|")
+      .filter(Boolean)
+      .map((entry) => {
+        const [id, provider] = entry.split(":");
+        return { id, provider };
+      })
+      .filter((account) => listed.some((row) => row.provider === account.provider));
+
     const answered = await Promise.allSettled(
-      wanted.map(async (row) => {
-        const status = await invoke<ProviderStatus>("provider_status", {
+      wanted.map((account) =>
+        invoke<ProviderStatus>("provider_status", {
           request: {
-            provider: row.provider,
-            connection: config
-              ? (statusConnectionFor(config, row.provider)?.id ?? "")
-              : "",
+            provider: account.provider,
+            connection: account.id,
             model: model?.trim() ? model.trim() : null,
             correction_model: null,
           },
-        });
-        return [row.provider, status] as const;
-      }),
+        }),
+      ),
     );
 
+    /* KEYED BY THE RUNTIME'S ECHO AND NOT BY THE ID WE ASKED WITH (ADR 0209).
+       `provider_status` stamps the account it answered about; filing under that
+       value is what makes it impossible for one account's answer to be found
+       under another's name. An answer that echoes nothing lands under `""` and
+       `accountStatus` never looks there. */
     setStatuses(
       Object.fromEntries(
         answered
           .filter(
-            (result): result is PromiseFulfilledResult<readonly [string, ProviderStatus]> =>
-              result.status === "fulfilled" && Boolean(result.value[1]),
+            (result): result is PromiseFulfilledResult<ProviderStatus> =>
+              result.status === "fulfilled" && Boolean(result.value),
           )
-          .map((result) => result.value),
+          .map((result) => [result.value.connection, result.value] as const)
+          .filter(([connection]) => Boolean(connection)),
       ),
     );
-  }, [config, drawnIds, model]);
+  }, [accountKey, model]);
 
   useEffect(() => {
     /* A failed read leaves `registered` at `null`, which the seam reads as

@@ -1504,6 +1504,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A model is stored on the same key as the account, because a model id is only meaningful for a vendor.
 - [0212](0212-ai-models-is-organised-by-task-and-the-lane-is-how-accounts-are-grouped-rather-than-a-mode-the-screen-is-in.md):
   AI Models is organised by task, and the lane is how accounts are grouped rather than a mode the screen is in.
+- [0213](0213-a-status-is-read-per-account-and-a-credential-may-never-cross-into-another-vendors-account.md):
+  A status is read per account, and a credential may never cross into another vendor's account.
 
 ## Resolved: the number 0011 was used twice
 

@@ -79,6 +79,7 @@ import {
 } from "@/lib/textProfiles";
 import {
   accountForLane,
+  accountStatus,
   activeConnectionOf,
   laneWithheld,
   LOCAL_PROVIDER_ID,
@@ -92,10 +93,10 @@ import {
   profilesUsingConnection,
   resolveConnections,
   connectionCapabilitySentence,
-  credentialForConnection,
+  credentialForAccount,
   credentialStateFor,
   drawnNameFor,
-  roleCredentialForConnection,
+  roleCredentialForAccount,
   LANE_PROVIDER_IDS,
   laneForProviderId,
   NO_ANSWERS,
@@ -510,7 +511,7 @@ function LaneRows({
           Only under a runtime: the gallery has no config and therefore no
           accounts, and a picker over nothing is the false affordance this card
           spent two records removing. */}
-      {runtime && <AccountRow runtime={runtime} />}
+      {runtime && <AccountRow lane="Cloud" runtime={runtime} />}
       <CloudCredentialRows runtime={runtime} />
     </>
   );
@@ -585,15 +586,21 @@ function DrawnSelfHostedRows() {
 }
 
 function WiredSelfHostedRows({ runtime }: { runtime: WorkspaceRuntime }) {
-  const { answers, refresh, connectionId } = useContext(Wired);
-  const status = answers.statuses[SELF_HOSTED_PROVIDER_ID] ?? null;
+  const { answers, refresh } = useContext(Wired);
+  /* THE ACCOUNT THIS CARD IS ABOUT IS THIS LANE'S, AND IT USED TO BE THE
+     PROFILE'S. The lane groups rather than following the profile (ADR 0212), so
+     a machine dictating on Groq that opened `Your server` filled these rows from
+     the Groq account: the token field wrote into Groq's slot, and the reachability
+     row asked about a server that account has never named. */
+  const account = accountForLane(runtime.config, "Self-hosted");
+  const status = accountStatus(answers, account?.id);
   const endpoint = status?.self_hosted_endpoint ?? null;
   /* TWO SERVERS ARE TWO ACCOUNTS, and the token belongs to the one that names
      the server (ADR 0208). So the same rule the cloud key row follows applies
      here and matters more: a bearer token reported from the other account's
      entry would put a *Set* badge over the URL it was never issued for, which is
      the pair ADR 0094 exists to keep apart (ADR 0209). */
-  const credential = roleCredentialForConnection(status, connectionId, "speech");
+  const credential = roleCredentialForAccount(answers, account?.id, "speech");
 
   /* THE STATUS IS RE-READ ON THE CONFIG OBJECT, NOT ON THE TYPED STRING.
      `patch` is fire-and-forget: it updates this window optimistically and the
@@ -611,10 +618,10 @@ function WiredSelfHostedRows({ runtime }: { runtime: WorkspaceRuntime }) {
           account's own fields rather than the machine's (ADR 0208): two servers
           are two accounts, and reading the rows without knowing which one they
           belong to is the question this row answers. */}
-      <AccountRow runtime={runtime} />
+      <AccountRow lane="Self-hosted" runtime={runtime} />
       <ServerUrlRow runtime={runtime} endpoint={endpoint} />
-      <ReachabilityRow ready={credential?.configured ?? false} />
-      <ServerTokenRow credential={credential} refresh={refresh} />
+      <ReachabilityRow connectionId={account?.id} ready={credential?.configured ?? false} />
+      <ServerTokenRow connectionId={account?.id} credential={credential} refresh={refresh} />
       <ServerModelRow runtime={runtime} endpoint={endpoint} />
     </>
   );
@@ -690,7 +697,7 @@ function useCommittedSetting(stored: string, write: (next: string) => void) {
  * dangling default on load, and that is ADR 0208's rule rather than an
  * oversight), so the row states it and offers every account as the way out.
  */
-function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
+function AccountRow({ lane, runtime }: { lane: LaneName; runtime: WorkspaceRuntime }) {
   const [renaming, setRenaming] = useState(false);
   /* THE QUESTION THIS ROW OWES BEFORE IT DESTROYS A SECRET (ADR 0210, ADR 0082).
      `Remove` acted on one press, and what it acted on grew: the credential goes
@@ -707,8 +714,15 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
      was the same thing while the lane WAS the profile's account read backwards;
      the lane groups now, so a card showing `Cloud` while the profile dictates
      through its own server must fill its rows from a Cloud account rather than
-     reporting a dangling pointer. */
-  const active = accountForLane(runtime.config, "Cloud");
+     reporting a dangling pointer.
+
+     **AND THE LANE IS THE PROP, WHICH IT WAS NOT.** This read the literal
+     `"Cloud"` while `WiredSelfHostedRows` rendered it too, so the `Your server`
+     card carried the Cloud account's name: Rename renamed Groq, New created a
+     Groq account, and Remove deleted one — on the server card, with the server's
+     URL in the row underneath. No test saw it, because every self-hosted fixture
+     puts the profile on the server and the two reads then agree by accident. */
+  const active = accountForLane(runtime.config, lane);
   const vendor = active?.provider ?? "";
   const everyAccount = resolveConnections(runtime.config);
   /* WHICH PROFILE THIS ROW IS WRITING, BY NAME (ADR 0209). The select writes
@@ -740,7 +754,15 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
      is repointed, because its reader is the one pressing the button (ADR 0209),
      and the count says so by naming the others. */
   const used = active ? profilesUsingConnection(runtime.config, active.id) : 0;
-  const others = Math.max(0, used - 1);
+  /* THE ACTIVE PROFILE COUNTS AS ONE OF THE OTHERS UNLESS IT IS ON THIS ACCOUNT.
+     This subtracted 1 unconditionally, which was right while the row could only
+     show the account the profile was on. The lane groups now, so the card is
+     regularly showing an account THIS profile does not use — and the sentence
+     then promised one fewer profile would break than actually would. */
+  const usesThis =
+    active !== undefined &&
+    resolveProfileProviderSettings(profile).default === active.id;
+  const others = Math.max(0, used - (usesThis ? 1 : 0));
   const usedBy = active ? profileLabelsUsing(runtime.config, active.id) : [];
 
   /* THE CREDENTIAL GOES FIRST AND THE CONFIG SECOND (ADR 0210). ADR 0208's
@@ -981,11 +1003,19 @@ function ServerUrlRow({
  * *it answered when you asked*, and the resting state says nothing rather than
  * claiming a reachability nobody measured.
  */
-function ReachabilityRow({ ready }: { ready: boolean }) {
+function ReachabilityRow({
+  connectionId,
+  ready,
+}: {
   /* The probe asks about THIS account's server (ADR 0208) — two accounts on
      this lane are two machines, and a reachability answer that did not say
-     which one it reached would be the fake readiness ADR 0067 forbids. */
-  const { connectionId } = useContext(Wired);
+     which one it reached would be the fake readiness ADR 0067 forbids. It came
+     off the context and therefore off the PROFILE's account, which on a machine
+     whose profile is on another lane meant probing a server that account has
+     never named. The card passes its own now. */
+  connectionId?: string;
+  ready: boolean;
+}) {
   const [answered, setAnswered] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -1040,15 +1070,18 @@ function ReachabilityRow({ ready }: { ready: boolean }) {
  * same door and the same entry scheme as every other credential in this build.
  */
 function ServerTokenRow({
+  connectionId,
   credential,
   refresh,
 }: {
+  /* The token belongs to the account that names the server, and this is the
+     line that keeps the pair together (ADR 0208). It came off the context, which
+     names the PROFILE's account — so on a machine dictating through the cloud
+     this row saved a bearer token into the cloud account's slot. */
+  connectionId?: string;
   credential: RoleCredentialStatus | null;
   refresh?: () => void | Promise<void>;
 }) {
-  /* The token belongs to the account that names the server, and this is the
-     line that keeps the pair together (ADR 0208). */
-  const { connectionId } = useContext(Wired);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1244,7 +1277,19 @@ function ServerModelRow({
  * looks editable invites somebody to append to a secret they cannot see.
  */
 function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
-  const { answers, refresh, connection, connectionId } = useContext(Wired);
+  const { answers, refresh, connection } = useContext(Wired);
+  /* THE ACCOUNT THIS CARD CONFIGURES, WHICH IS THE LANE'S AND NOT THE PROFILE'S.
+     It read `connectionId` off the context — the account the profile dictates on
+     — while the card has been grouped by lane since ADR 0212. On a machine whose
+     profile is on its own server the pair went apart in the worst possible way:
+     this row's vendor resolved to `self_hosted` and its account to the server's,
+     so a key typed under a heading that says `gsk_…` was written into the slot
+     the self-hosted adapter reads its bearer token from — sent to the reader's
+     own server on the next request, and the token that had been there was gone.
+     Measured, not theorised. The runtime refuses the crossing now as well
+     (`refuse_foreign_account`); this is the half that stops asking for it. */
+  const laneAccount = runtime ? accountForLane(runtime.config, "Cloud") : undefined;
+  const connectionId = laneAccount?.id;
   /* NULL IS *NOT READ YET* AND AN EMPTY ARRAY IS *THIS LANE HAS NO PLANS*, and
      the two were one value until ADR 0167. `resolve_provider_tiers` answers `[]`
      for both a lane with nothing to sell and a vendor with no adapter, which is
@@ -1264,7 +1309,13 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
      another, and it would have written an OpenAI key into Groq's secret-store
      entry. The fallback is the registry default rather than nothing: a screen
      opening before the config has been read still has a credential to state. */
-  const providerId = (connection ? runtimeIdFor(connection) : undefined) ?? "groq";
+  /* THE VENDOR IS THE ACCOUNT'S OWN. It was read back off the context's drawn
+     name, which is the PROFILE's vendor — the other half of the crossing above,
+     and the half that decided which adapter the key was handed to. The registry
+     default is still the fallback for a screen that opened before the config was
+     read. */
+  const providerId =
+    laneAccount?.provider ?? (connection ? runtimeIdFor(connection) : undefined) ?? "groq";
 
   /* THE STATUS IS THE SEAM'S, NOT THIS ROW'S (ADR 0124). It used to run its own
      `provider_status`, and once the seam started asking for the same provider
@@ -1272,7 +1323,7 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
      components with two opinions of one credential, which is the drift this
      step exists to remove one layer up. The plans stay here: they are a speech
      question this row is the only reader of. */
-  const status = answers.statuses[providerId] ?? null;
+  const status = accountStatus(answers, connectionId);
 
   const read = useCallback(async () => {
     if (!runtime) return;
@@ -1314,7 +1365,7 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
      returns `null` where they disagree, and `null` is *not read for this
      account* rather than *no key* — the word this screen already uses for a
      runtime that did not answer. */
-  const credential = credentialForConnection(status, connectionId);
+  const credential = credentialForAccount(answers, connectionId);
   const answeredForThisAccount = credential !== null;
   const configured = credential?.configured ?? false;
   const preview = credential?.key_preview;

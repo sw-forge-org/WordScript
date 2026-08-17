@@ -1239,6 +1239,67 @@ pub fn registered_providers() -> Vec<RegisteredProvider> {
         .collect()
 }
 
+/// **A KEY MAY NOT BE WRITTEN INTO ANOTHER VENDOR'S ACCOUNT** (ADR 0094's one
+/// security rule, made structural).
+///
+/// **The secret-store entry is keyed by `connection.role.kind` and carries no
+/// vendor** (`credential_store::entry_user`), which is correct — an account is
+/// the thing a credential belongs to — and it means the pair arriving here is
+/// the only thing standing between a Groq key and the slot the self-hosted
+/// adapter reads its bearer token from. Until this check the surface could send
+/// the pair `(groq, connection-self_hosted)` and the store took it: the key went
+/// to the reader's own server on the next request, and the token that had been
+/// there was gone. It was not a hypothetical — the surface did send it.
+///
+/// **A rule the surface has to remember is a rule that gets broken**, so this is
+/// the runtime's own answer rather than a comment on a screen. Both writing
+/// doors ask it; reading does not, because a read of the wrong slot answers
+/// *nothing stored* and destroys nothing.
+///
+/// **An id no connection carries is allowed through, and that is not a hole.**
+/// `patch` is optimistic: the surface writes a new account into its own copy of
+/// the config and lets the disk catch up, so a key typed into a freshly created
+/// account legitimately names an id this file has not seen yet. What is refused
+/// is the case that can destroy something — an id this machine holds AND holds
+/// for somebody else.
+fn refuse_foreign_account(provider: &str, connection: &str) -> Result<(), ProviderCommandError> {
+    let connection = connection.trim();
+    if connection.is_empty() {
+        return Ok(());
+    }
+
+    let config = crate::core::config::AppConfig::load_from_disk();
+    refuse_foreign_account_in(config.connections(), provider, connection)
+}
+
+/// The rule itself, against a list rather than against the disk.
+fn refuse_foreign_account_in(
+    connections: &[crate::core::config::Connection],
+    provider: &str,
+    connection: &str,
+) -> Result<(), ProviderCommandError> {
+    let Some(entry) = connections.iter().find(|entry| entry.id == connection) else {
+        return Ok(());
+    };
+
+    if entry.provider == provider {
+        return Ok(());
+    }
+
+    /* The account's own name, because that is what the reader picked it by. An
+       id is the fallback for a connection whose label was cleared by hand. */
+    let named = if entry.label.trim().is_empty() {
+        entry.id.as_str()
+    } else {
+        entry.label.as_str()
+    };
+
+    Err(ProviderCommandError::invalid_request(format!(
+        "The account '{named}' belongs to {}, not to {provider}. A credential is stored under the account, so writing this one there would overwrite {}'s and be sent to it.",
+        entry.provider, entry.provider,
+    )))
+}
+
 #[tauri::command]
 pub fn provider_status(
     request: ProviderStatusRequest,
@@ -1260,6 +1321,10 @@ pub fn save_provider_api_key(
     request: SaveProviderApiKeyRequest,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     let entry = registry::resolve_entry(&request.provider)?;
+    /* BEFORE ANYTHING IS WRITTEN. The store overwrites what is under a slot, so
+       a refusal that came after the first role had been saved would already have
+       destroyed the token it exists to protect. */
+    refuse_foreign_account(&request.provider, &request.connection)?;
     let kind = request.kind.unwrap_or(CredentialKind::DEFAULT);
 
     for role in credential_target_roles(entry, request.role, kind)? {
@@ -1279,6 +1344,10 @@ pub fn clear_provider_api_key(
     request: ClearProviderApiKeyRequest,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     let entry = registry::resolve_entry(&request.provider)?;
+    /* A DELETION IS A WRITE. Clearing `(groq, connection-self_hosted)` reaches
+       the slot the server's token lives in and empties it — the same crossing as
+       a save, with nothing typed to make it look deliberate. */
+    refuse_foreign_account(&request.provider, &request.connection)?;
     let kind = request.kind.unwrap_or(CredentialKind::DEFAULT);
 
     for role in credential_target_roles(entry, request.role, kind)? {
@@ -1380,6 +1449,11 @@ pub fn clear_connection_credentials_in(
 pub fn clear_connection_credentials(
     request: ClearConnectionCredentialsRequest,
 ) -> Result<usize, ProviderCommandError> {
+    /* The third writing door, under the same rule as the other two. This one
+       walks every role the named VENDOR registers and empties that many slots
+       under the named ACCOUNT, so a crossed pair forgets somebody else's
+       credentials wholesale rather than one of them. */
+    refuse_foreign_account(&request.provider, &request.connection)?;
     clear_connection_credentials_in(
         &credential_store::OsSecretStore,
         &request.provider,
@@ -1495,6 +1569,65 @@ mod tests {
                 entry.id,
             );
         }
+    }
+
+    /// Two accounts on two vendors, which is the pair the rule is about.
+    fn two_vendors() -> Vec<crate::core::config::Connection> {
+        vec![
+            crate::core::config::Connection {
+                id: "connection-default".to_string(),
+                label: "Groq".to_string(),
+                provider: "groq".to_string(),
+                ..Default::default()
+            },
+            crate::core::config::Connection {
+                id: "connection-self_hosted".to_string(),
+                label: "Home box".to_string(),
+                provider: "self_hosted".to_string(),
+                ..Default::default()
+            },
+        ]
+    }
+
+    /// **A KEY TYPED FOR ONE VENDOR MAY NOT REACH ANOTHER VENDOR'S ACCOUNT.**
+    ///
+    /// The store keys a secret by `connection.role.kind` and carries no vendor,
+    /// so this pair is the whole of the protection: `(groq, connection-self_hosted)`
+    /// writes into the slot `self_hosted` reads its bearer token from, and the
+    /// next transcription sends a Groq key to the reader's own machine.
+    #[test]
+    fn a_key_may_not_be_written_into_another_vendors_account() {
+        let refused = refuse_foreign_account_in(&two_vendors(), "groq", "connection-self_hosted");
+
+        let error = refused.expect_err("a crossed pair was accepted");
+        assert!(
+            error.message.contains("Home box"),
+            "the refusal names the vendor rather than the account the reader picked: {}",
+            error.message,
+        );
+    }
+
+    /// The ordinary case, and the one that must not be caught by the rule.
+    #[test]
+    fn a_key_reaches_its_own_vendors_account() {
+        assert!(refuse_foreign_account_in(&two_vendors(), "groq", "connection-default").is_ok());
+    }
+
+    /// **AN ID THIS MACHINE DOES NOT HOLD IS NOT A CROSSING, AND REFUSING IT
+    /// WOULD BREAK THE ORDINARY PATH.** `patch` is optimistic: the surface
+    /// creates an account in its own copy of the config and lets the disk catch
+    /// up, so the first key typed into a new account legitimately names an id
+    /// this file has never seen.
+    #[test]
+    fn an_account_this_machine_does_not_hold_yet_is_let_through() {
+        assert!(refuse_foreign_account_in(&two_vendors(), "groq", "connection-groq-2").is_ok());
+    }
+
+    /// An empty connection is *no account named* and is a legitimate request
+    /// (`ProviderStatusRequest::connection`), so it is not a crossing either.
+    #[test]
+    fn naming_no_account_is_not_a_crossing() {
+        assert!(refuse_foreign_account_in(&two_vendors(), "groq", "   ").is_ok());
     }
 
     /// **The migration moves the key, and the registry decides what there is

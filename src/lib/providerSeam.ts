@@ -283,15 +283,60 @@ export type ProviderAnswer =
  * What the surface has read from the runtime so far.
  *
  * `registered` is `null` before the command answers — which is *not* an empty
- * registry, and the difference is the fourth answer. `statuses` carries the
- * per-provider status for the ones the screen asked, keyed by runtime id.
+ * registry, and the difference is the fourth answer.
+ *
+ * **`statuses` IS KEYED BY ACCOUNT AND WAS KEYED BY VENDOR, AND THE OLD KEY
+ * COULD NOT REPRESENT WHAT THE CONFIG STORES.** A vendor holds any number of
+ * accounts (ADR 0208) and a credential belongs to one of them, so a map with one
+ * slot per vendor has exactly one answer for a question that has as many answers
+ * as the reader has accounts. What that cost was measurable: a job row running on
+ * an employer's keyless Groq account badged `Key set` off the private account's
+ * status, and every account on a lane the screen was not showing answered
+ * *not read* because nothing had asked about it.
+ *
+ * **The key is the runtime's echo, not the id the surface asked with**
+ * (ADR 0209). `provider_status` stamps `status.connection` with the account it
+ * answered about, and building the map from that value is what makes a stale
+ * answer impossible to file under a fresh account: an answer that does not name
+ * the account it was asked about lands under its own name and is simply not found.
  */
 export type RuntimeAnswers = {
   registered: RegisteredProvider[] | null;
+  /** `provider_status`, one entry per ACCOUNT, keyed by the connection id it
+   *  answered about. */
   statuses: Record<string, ProviderStatus>;
 };
 
 export const NO_ANSWERS: RuntimeAnswers = { registered: null, statuses: {} };
+
+/**
+ * The status read about ONE account, or `null` where none was.
+ *
+ * `null` is *not read for this account* — a third answer, and never *no key*.
+ * Callers say so; they do not fold it into `configured: false`.
+ */
+export function accountStatus(
+  answers: RuntimeAnswers,
+  connectionId: string | undefined,
+): ProviderStatus | null {
+  if (!connectionId) return null;
+  return answers.statuses[connectionId] ?? null;
+}
+
+/**
+ * Any status this surface holds about one VENDOR, for the questions that are the
+ * vendor's rather than an account's.
+ *
+ * **Capabilities are the vendor's**: whether Groq transcribes does not depend on
+ * whose account is asking, and `registered_providers` answers it for every vendor
+ * in one call. This exists because `provider_status` carries a fuller capability
+ * block than the registry list does for some adapters, so a status the surface
+ * happens to hold is preferred — and which of a vendor's accounts it came from is
+ * immaterial to that one question. It is never used for a credential.
+ */
+function vendorStatus(answers: RuntimeAnswers, providerId: string): ProviderStatus | undefined {
+  return Object.values(answers.statuses).find((status) => status.provider === providerId);
+}
 
 /**
  * Whether a drawn vendor can be operated for one role, and if not, why.
@@ -306,6 +351,16 @@ export function resolveProviderAnswer(
   drawnName: string,
   role: ProviderRole,
   answers: RuntimeAnswers,
+  /** WHICH ACCOUNT THE CREDENTIAL QUESTION IS ABOUT, WHERE THERE IS ONE.
+   *
+   *  **Absent means the credential is not asked**, and that is the honest
+   *  answer rather than a weaker one: a credential belongs to an account
+   *  (ADR 0208), so a caller with no account in hand — the vendor chip row, which
+   *  asks whether a vendor has an adapter at all — has not got a question this
+   *  function could answer. It used to answer anyway, off whichever account the
+   *  vendor's one status slot happened to hold, which is the read that reported
+   *  one account's key under another. */
+  connectionId?: string,
 ): ProviderAnswer {
   const providerId = runtimeIdFor(drawnName);
 
@@ -338,8 +393,11 @@ export function resolveProviderAnswer(
     };
   }
 
-  const status = answers.statuses[providerId];
-  const capabilities = status ? status.capabilities : entry.capabilities;
+  /* THE CAPABILITY BLOCK IS THE VENDOR'S AND THE CREDENTIAL IS THE ACCOUNT'S,
+     and the two now come from two reads. Mixing them was free while a vendor had
+     one status; with one per account it would mean *whose account decides what
+     Groq can do*, which is not a question. */
+  const capabilities = vendorStatus(answers, providerId)?.capabilities ?? entry.capabilities;
 
   if (!isCompleteCapabilityBlock(capabilities)) {
     return notAnswered(drawnName);
@@ -349,11 +407,13 @@ export function resolveProviderAnswer(
     return roleUnavailable(drawnName, role);
   }
 
-  /* The credential is the last question, and only where a status was read. A
-     provider whose key is missing is drawn, named and correct about what it
-     does — it is one action away from working, and saying "not integrated" to
-     that is the conflation ADR 0106 is about. */
-  const credential = status?.role_credentials?.find((row) => row.role === role);
+  /* The credential is the last question, and only where a status was read ABOUT
+     THE ACCOUNT IN HAND. A provider whose key is missing is drawn, named and
+     correct about what it does — it is one action away from working, and saying
+     "not integrated" to that is the conflation ADR 0106 is about. */
+  const credential = accountStatus(answers, connectionId)?.role_credentials?.find(
+    (row) => row.role === role,
+  );
   if (credential && !credential.configured) {
     return {
       operable: false,
@@ -368,7 +428,7 @@ export function resolveProviderAnswer(
 }
 
 /**
- * Whether one role of one drawn vendor has a credential — three-valued.
+ * Whether one role of ONE ACCOUNT has a credential — three-valued.
  *
  * **`unknown` is not `missing`, and that distinction is the whole reason this
  * exists** (ADR 0128). The drawn override rows carried a literal
@@ -378,6 +438,13 @@ export function resolveProviderAnswer(
  * no secret-store entry at all. A drawing may show what a row WILL hold; it may
  * not claim what is stored.
  *
+ * **IT TAKES AN ACCOUNT AND IT TOOK A VENDOR.** A key is stored under an account
+ * and nowhere else, so a vendor was never enough to answer this: two Groq
+ * accounts, one keyless, and this function reported the other one's key on the
+ * job row running without one. The green badge it produced is exactly what the
+ * paragraph above forbids, arriving through the argument list rather than
+ * through a literal.
+ *
  * `resolveProviderAnswer` cannot answer this on its own: it reports `operable`
  * when no status was read, because a missing status is not a missing key. Here
  * the absence of a status is exactly what has to be said out loud.
@@ -385,15 +452,13 @@ export function resolveProviderAnswer(
 export type CredentialState = "set" | "missing" | "unknown";
 
 export function credentialStateFor(
-  drawnName: string,
+  connectionId: string | undefined,
   role: ProviderRole,
   answers: RuntimeAnswers,
 ): CredentialState {
-  const providerId = runtimeIdFor(drawnName);
-  if (!providerId) return "unknown";
-
-  const status = answers.statuses[providerId];
-  const credential = status?.role_credentials?.find((row) => row.role === role);
+  const credential = accountStatus(answers, connectionId)?.role_credentials?.find(
+    (row) => row.role === role,
+  );
   if (!credential) return "unknown";
 
   return credential.configured ? "set" : "missing";
@@ -436,8 +501,11 @@ export function resolveUploadAnswer(
   answers: RuntimeAnswers,
   fileBytes: number | null,
   capacity: UploadCapacity | undefined,
+  /** The account, where the caller is picking one — passed straight through, so
+   *  the credential half of the answer is about the account being offered. */
+  connectionId?: string,
 ): ProviderAnswer {
-  const base = resolveProviderAnswer(drawnName, role, answers);
+  const base = resolveProviderAnswer(drawnName, role, answers, connectionId);
 
   /* Everything except a missing credential is a harder answer than the size,
      so it wins. `not_answered` and `pending` included: a runtime that has not
@@ -552,8 +620,13 @@ export function accountChoices(
           answers,
           constraint.fileBytes,
           constraint.capacities[account.provider],
+          account.id,
         )
-      : resolveProviderAnswer(drawnName, role, answers);
+      : /* THE ACCOUNT ASKS ABOUT ITSELF. Every option in this list is one
+           account, so *no key yet* is a fact about the row being drawn — and it
+           was the vendor's before, which put one account's key on every sibling
+           option the vendor held. */
+        resolveProviderAnswer(drawnName, role, answers, account.id);
     const choice: AccountChoice = {
       id: account.id,
       label: account.label || drawnName,
@@ -768,60 +841,56 @@ export function connectionForVendor(
 }
 
 /**
- * WHICH ACCOUNT A VENDOR'S STATUS IS ASKED ABOUT (ADR 0209).
+ * WHICH ACCOUNTS THE SURFACE READS A STATUS FOR — every one this machine holds.
  *
- * **`connectionForVendor` was the whole answer and it is the wrong one for one
- * vendor: the one the profile is actually on.** That function returns the FIRST
- * account on a vendor, which is correct for a vendor nothing is pointed at yet —
- * a chip click and a job override both land there (`buildVendorConnectionPatch`)
- * — and wrong for the vendor the active profile holds a second account on. The
- * seam then read the employer's key and the connection card wrote the private
- * one's, so the badge above the field described a different account from the
- * field below it.
+ * **This replaces `statusConnectionFor`, which picked ONE account per vendor.**
+ * That function was the right answer to the wrong question: with one status slot
+ * per vendor something had to choose whose account the vendor's one answer would
+ * be about, and it chose as well as anything could — the active account for its
+ * own vendor, the first for the rest. The question is gone. A status is per
+ * account now, so the surface asks about all of them and nothing has to be
+ * elected on the reader's behalf.
  *
- * So the active account wins for its own vendor and the first answers for every
- * other, which is the account each of those vendors WOULD be reached with.
+ * **`local` is left out and its absence is the argument** (ADR 0124). Its status
+ * probes the disk rather than the secret store, `useLocalSetup` already does that
+ * once for the whole screen, and a second probe is the cost that record refused
+ * at ten. It authenticates against nothing, so there is no credential here to be
+ * per-account about.
  */
-export function statusConnectionFor(
-  config: AppConfig,
-  vendorId: string,
-): Connection | undefined {
-  const active = activeConnection(config);
-  if (active?.provider === vendorId) return active;
-  return connectionForVendor(config, vendorId);
+export function accountsToRead(config: AppConfig): Connection[] {
+  return resolveConnections(config).filter((entry) => entry.provider !== LOCAL_PROVIDER_ID);
 }
 
 /**
- * The credential half of a status, but only where it is about the account being
- * rendered (ADR 0209).
+ * The credential half of the status read about one account (ADR 0209).
  *
- * **The echo is what makes this checkable, and the check is not redundant with
- * `statusConnectionFor`.** That function decides what to ASK; this decides
- * whether the answer in hand may be believed. The two come apart on every
- * account switch: `patch` is optimistic and the re-read is a round trip, so for
- * one render the surface holds the previous account's answer over the new
- * account's rows — which is the exact frame that showed a stored key under an
- * account that had never held one.
+ * **It used to take a status and check the echo, and the map does that now.**
+ * The check existed because the surface held ONE status per vendor and had to ask
+ * whether the one in hand was about the account being rendered — a question that
+ * disappears when the answer is filed under the account it named. What the check
+ * was protecting against has not disappeared, and neither has the protection:
+ * `patch` is optimistic and the re-read is a round trip, so for one render there
+ * is no entry under the new account's id, and this returns `null`.
  *
  * `null` means *not read for this account*, which is a third answer and not a
  * missing key. Callers say so; they do not fold it into `configured: false`.
  */
-export function credentialForConnection(
-  status: ProviderStatus | null | undefined,
+export function credentialForAccount(
+  answers: RuntimeAnswers,
   connectionId: string | undefined,
 ): ProviderCredentialStatus | null {
-  if (!status) return null;
-  return status.connection === (connectionId ?? "") ? status.credential : null;
+  return accountStatus(answers, connectionId)?.credential ?? null;
 }
 
-/** One role's credential, under the same rule as `credentialForConnection`. */
-export function roleCredentialForConnection(
-  status: ProviderStatus | null | undefined,
+/** One role's credential, under the same rule as `credentialForAccount`. */
+export function roleCredentialForAccount(
+  answers: RuntimeAnswers,
   connectionId: string | undefined,
   role: ProviderRole,
 ): RoleCredentialStatus | null {
-  if (!status || status.connection !== (connectionId ?? "")) return null;
-  return status.role_credentials?.find((row) => row.role === role) ?? null;
+  return (
+    accountStatus(answers, connectionId)?.role_credentials?.find((row) => row.role === role) ?? null
+  );
 }
 
 /** An id no account on this machine is using yet.

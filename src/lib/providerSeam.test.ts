@@ -107,12 +107,15 @@ function status(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
  */
 describe("whether a role's credential is stored", () => {
   it("says `unknown` where no status was read, and never guesses", () => {
-    expect(credentialStateFor("Groq", "speech", NO_ANSWERS)).toBe("unknown");
+    expect(credentialStateFor(DEFAULT_CONNECTION_ID, "speech", NO_ANSWERS)).toBe("unknown");
 
     /* Registered, and still unknown: `registered_providers` reads no keyring
        at all (ADR 0124), so an entry in that list says nothing about a key. */
     expect(
-      credentialStateFor("Groq", "speech", { registered: [registered()], statuses: {} }),
+      credentialStateFor(DEFAULT_CONNECTION_ID, "speech", {
+        registered: [registered()],
+        statuses: {},
+      }),
     ).toBe("unknown");
   });
 
@@ -120,7 +123,7 @@ describe("whether a role's credential is stored", () => {
     const answers = {
       registered: [registered()],
       statuses: {
-        groq: status({
+        [DEFAULT_CONNECTION_ID]: status({
           role_credentials: [
             { provider: "groq", role: "speech", kind: "api_key", configured: true, storage: "os_secret_store", key_preview: "gsk_…4f2a", missing: null },
             { provider: "groq", role: "chat", kind: "api_key", configured: false, storage: "os_secret_store", key_preview: null, missing: "an API key" },
@@ -131,12 +134,52 @@ describe("whether a role's credential is stored", () => {
 
     /* One vendor, two roles, two answers — which is A3's whole point and what
        a folded `credential.configured` boolean cannot say (ADR 0105). */
-    expect(credentialStateFor("Groq", "speech", answers)).toBe("set");
-    expect(credentialStateFor("Groq", "chat", answers)).toBe("missing");
+    expect(credentialStateFor(DEFAULT_CONNECTION_ID, "speech", answers)).toBe("set");
+    expect(credentialStateFor(DEFAULT_CONNECTION_ID, "chat", answers)).toBe("missing");
   });
 
-  it("says `unknown` for a vendor this repo has no id for", () => {
-    expect(credentialStateFor("Nothing drawn by this name", "chat", NO_ANSWERS)).toBe("unknown");
+  /**
+   * **ONE VENDOR, TWO ACCOUNTS, TWO ANSWERS — AND THIS ASKED THE VENDOR.**
+   *
+   * The defect this signature change exists for, in the shape it was found in:
+   * a private Groq account with a key and an employer's without one. The map was
+   * keyed by vendor, so both had the same entry and the job row running on the
+   * keyless account badged a green `Key set` off the other one's status. It is
+   * ADR 0128's own rule broken through the argument list rather than through a
+   * literal — a green badge asserting a credential nobody asked about.
+   */
+  it("answers per account and never per vendor", () => {
+    const answers = {
+      registered: [registered()],
+      statuses: {
+        [DEFAULT_CONNECTION_ID]: status(),
+        "connection-groq-2": status({
+          connection: "connection-groq-2",
+          role_credentials: [
+            {
+              provider: "groq",
+              role: "speech" as const,
+              kind: "api_key" as const,
+              configured: false,
+              storage: "os_secret_store",
+              key_preview: null,
+              missing: "an API key",
+            },
+          ],
+        }),
+      },
+    };
+
+    expect(credentialStateFor(DEFAULT_CONNECTION_ID, "speech", answers)).toBe("set");
+    expect(credentialStateFor("connection-groq-2", "speech", answers)).toBe("missing");
+  });
+
+  /** An account nothing has been read about is `unknown`, which is the third
+   *  answer and never *no key* — the account may hold one. */
+  it("says `unknown` for an account nothing was asked about", () => {
+    const answers = { registered: [registered()], statuses: { [DEFAULT_CONNECTION_ID]: status() } };
+    expect(credentialStateFor("connection-nobody-asked-about", "chat", answers)).toBe("unknown");
+    expect(credentialStateFor(undefined, "chat", answers)).toBe("unknown");
   });
 });
 
@@ -312,15 +355,15 @@ describe("the four answers", () => {
   });
 
   it("names the missing credential rather than calling the vendor unintegrated", () => {
-    const answer = resolveProviderAnswer("Groq", "speech", {
+    const answers = {
       registered: [registered()],
       statuses: {
-        groq: status({
+        [DEFAULT_CONNECTION_ID]: status({
           role_credentials: [
             {
               provider: "groq",
-              role: "speech",
-              kind: "api_key",
+              role: "speech" as const,
+              kind: "api_key" as const,
               configured: false,
               storage: "os_secret_store",
               key_preview: null,
@@ -329,13 +372,47 @@ describe("the four answers", () => {
           ],
         }),
       },
-    });
+    };
+
+    const answer = resolveProviderAnswer("Groq", "speech", answers, DEFAULT_CONNECTION_ID);
 
     expect(answer.operable).toBe(false);
     expect(answer.operable === false && answer.reason.kind).toBe("no_credential");
     expect(answer.operable === false && answer.reason.sentence).toContain(
       "an API key for speech recognition",
     );
+  });
+
+  /**
+   * **A CALLER WITH NO ACCOUNT IN HAND HAS NOT ASKED THE CREDENTIAL QUESTION.**
+   *
+   * The vendor chip row asks whether a vendor has an adapter at all; a key
+   * belongs to an account (ADR 0208), so there is nothing here this function
+   * could truthfully answer about one. It answered anyway until this step, off
+   * whichever of the vendor's accounts the one status slot held — which is how a
+   * missing key on one account became a sentence about all of them.
+   */
+  it("says nothing about a credential when no account was named", () => {
+    const answers = {
+      registered: [registered()],
+      statuses: {
+        [DEFAULT_CONNECTION_ID]: status({
+          role_credentials: [
+            {
+              provider: "groq",
+              role: "speech" as const,
+              kind: "api_key" as const,
+              configured: false,
+              storage: "os_secret_store",
+              key_preview: null,
+              missing: "an API key for speech recognition",
+            },
+          ],
+        }),
+      },
+    };
+
+    expect(resolveProviderAnswer("Groq", "speech", answers).operable).toBe(true);
   });
 
   /**
@@ -349,7 +426,7 @@ describe("the four answers", () => {
     const answer = resolveProviderAnswer("Groq", "speech", {
       registered: [registered()],
       statuses: {
-        groq: status({ capabilities: {} as unknown as ProviderCapabilities }),
+        [DEFAULT_CONNECTION_ID]: status({ capabilities: {} as unknown as ProviderCapabilities }),
       },
     });
 
@@ -405,7 +482,7 @@ describe("what the surface asks", () => {
   it("offers a chip for a registered vendor even where one role is denied", () => {
     const answers = {
       registered: [registered()],
-      statuses: { groq: status({ capabilities: capabilities({ chat_completion: false }) }) },
+      statuses: { [DEFAULT_CONNECTION_ID]: status({ capabilities: capabilities({ chat_completion: false }) }) },
     };
 
     expect(selectableProviderNames("Cloud", answers)).toEqual(["Groq"]);
@@ -420,7 +497,7 @@ describe("what the surface asks", () => {
   it("states what the connection does from the runtime, not from the drawn booleans", () => {
     const both = {
       registered: [registered()],
-      statuses: { groq: status() },
+      statuses: { [DEFAULT_CONNECTION_ID]: status() },
     };
     expect(connectionCapabilitySentence("Groq", both)).toBe("Speech and language.");
 
@@ -459,7 +536,7 @@ describe("what the surface asks", () => {
 describe("the upload size constraint", () => {
   const answers = {
     registered: [registered()],
-    statuses: { groq: status() },
+    statuses: { [DEFAULT_CONNECTION_ID]: status() },
   };
 
   const tooLarge = {
@@ -508,7 +585,7 @@ describe("the upload size constraint", () => {
     const missingKey = {
       registered: [registered()],
       statuses: {
-        groq: status({
+        [DEFAULT_CONNECTION_ID]: status({
           role_credentials: [
             {
               provider: "groq",
@@ -524,8 +601,16 @@ describe("the upload size constraint", () => {
       },
     };
 
-    /* Without the file it is the credential that is worth saying. */
-    const withoutFile = resolveUploadAnswer("Groq", "speech", missingKey, null, undefined);
+    /* Without the file it is the credential that is worth saying. The account is
+       named, because a credential is one account's (ADR 0208). */
+    const withoutFile = resolveUploadAnswer(
+      "Groq",
+      "speech",
+      missingKey,
+      null,
+      undefined,
+      DEFAULT_CONNECTION_ID,
+    );
     expect(withoutFile.operable).toBe(false);
     if (withoutFile.operable) throw new Error("unreachable");
     expect(withoutFile.reason.kind).toBe("no_credential");
@@ -537,6 +622,7 @@ describe("the upload size constraint", () => {
       missingKey,
       40 * 1024 * 1024,
       tooLarge,
+      DEFAULT_CONNECTION_ID,
     );
     expect(withFile.operable).toBe(false);
     if (withFile.operable) throw new Error("unreachable");

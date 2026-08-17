@@ -53,6 +53,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a card configures the account it shows, and a key cannot reach another vendor's account (ADR 0213)
+
+- **A key typed on one lane could be written into another lane's account, and
+  sent to it.** The connection card is grouped by lane since ADR 0212 while its
+  credential rows still followed the active profile, so on a machine dictating
+  through its own server the Cloud card's `API key` field saved as
+  `{provider: self_hosted, connection: <the server's account>}`. The OS secret
+  store keys an entry by account and carries no vendor, so a Groq key landed in
+  the slot the self-hosted adapter reads its bearer token from — sent to the
+  reader's own machine on the next transcription, with the token that had been
+  there overwritten. Every card row reads its own lane's account now, and the
+  runtime refuses a `(vendor, account)` pair this machine holds for a different
+  vendor before anything is written.
+- **The `Account` row on *Your server* named the Cloud account.** It read the
+  literal `"Cloud"` while the self-hosted card rendered it, so *Rename*, *New*
+  and *Remove* all acted on Groq from a card showing the server's URL. The lane
+  is a parameter now.
+- **A job row states its own account's key.** `Key set` was answered per vendor,
+  so a job running on an employer's keyless account reported the private
+  account's key beside it — the green badge ADR 0128 exists to forbid. The
+  status is read once per account and filed under the account the runtime says
+  it answered about.
+- **A job pointed at another lane's account stops reading *Not read*.** The seam
+  was scoped to the lane on screen while ADR 0211 lets a job run on any account
+  the machine holds, so a cross-lane row had no status of its own.
+- **The reachability probe asks about the server the card is showing**, rather
+  than about whichever account the profile happened to be on.
+
 ### Added — a profile carries its whole connection, server and account included (ADR 0208)
 
 - **Your accounts are objects now, and a profile points at one.** A connection

@@ -391,14 +391,17 @@ describe("AI Models, wired", () => {
    * this particular job, which is the conflation that record is about.
    */
   it("states the denied role, from the runtime, on the rows that would run it", async () => {
-    invoked.mockImplementation(async (command: string) => {
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") {
         /* Groq, integrated and holding a key, that this build cannot ask to
            listen. Not a real state today and that is the point: the two
            registered lanes agree with their drawing by accident, and ten will
            not. */
-        return { ...STATUS, capabilities: { ...CAPABILITIES, transcription: false } };
+        return statusFor(args, {
+          ...STATUS,
+          capabilities: { ...CAPABILITIES, transcription: false },
+        });
       }
       if (command === "resolve_provider_tiers") return TIERS;
       return undefined;
@@ -433,9 +436,9 @@ describe("AI Models, wired", () => {
    * ADR 0106 calls the same defect one layer down.
    */
   it("reports an unanswered capability block instead of reading it as a denial", async () => {
-    invoked.mockImplementation(async (command: string) => {
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
       if (command === "registered_providers") return REGISTERED;
-      if (command === "provider_status") return { ...STATUS, capabilities: {} };
+      if (command === "provider_status") return statusFor(args, { ...STATUS, capabilities: {} });
       if (command === "resolve_provider_tiers") return TIERS;
       return undefined;
     });
@@ -913,10 +916,21 @@ describe("AI Models, choosing the connection", () => {
     expect(row).not.toHaveTextContent("gsk_…4f2a");
   });
 
-  /** And the account the profile is actually on is the one asked about — it was
-   *  the FIRST account on the vendor, so the answer above was never even about
-   *  the right one (ADR 0209). */
-  it("asks the runtime about the account the profile is on, not the first one", async () => {
+  /**
+   * **EVERY ACCOUNT IS ASKED ABOUT, AND IT USED TO BE ONE PER VENDOR.**
+   *
+   * This case asserted the opposite until the seam went per-account: the hook
+   * elected one account per vendor and the negative assertion here was that no
+   * call went out about the other one. Electing was the best a vendor-keyed map
+   * could do — it holds one answer, so something had to choose whose — and it is
+   * exactly what made a second account unanswerable: the job row running on it
+   * had no status of its own and reported the elected account's key as its own.
+   *
+   * A machine reads as many statuses as it holds accounts. That is not ADR 0124
+   * reversed: that record refused ten reads for ten vendors nobody had
+   * configured, and an account exists because somebody made it.
+   */
+  it("asks the runtime about every account this machine holds", async () => {
     const config = createAppConfig();
     const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
     config.connections = [CLOUD_ACCOUNT, employer];
@@ -927,19 +941,17 @@ describe("AI Models, choosing the connection", () => {
 
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    await waitFor(() =>
-      expect(invoked).toHaveBeenCalledWith("provider_status", {
-        request: expect.objectContaining({ provider: "groq", connection: employer.id }),
-      }),
-    );
-    /* AND NEVER ABOUT THE FIRST ACCOUNT, which is the value this hook sent for
-       every vendor before ADR 0209. The negative is the assertion: passing the
-       positive alone would still pass if both calls went out. */
-    expect(invoked).not.toHaveBeenCalledWith("provider_status", {
-      request: expect.objectContaining({ provider: "groq", connection: CLOUD_ACCOUNT.id }),
-    });
-    /* And the badge reports it, because the answer is now about the row it is
-       rendered on. */
+    for (const account of [CLOUD_ACCOUNT.id, employer.id]) {
+      await waitFor(() =>
+        expect(invoked).toHaveBeenCalledWith("provider_status", {
+          request: expect.objectContaining({ provider: "groq", connection: account }),
+        }),
+      );
+    }
+
+    /* And the card reports the account it is rendering. The profile is on the
+       employer's, which is on this lane, so that is the one the rows configure
+       (`accountForLane`) and the one the badge answers about. */
     const row = (await screen.findByText("API key")).closest(".ws-row");
     await waitFor(() => expect(row).toHaveTextContent("gsk_…4f2a"));
   });
@@ -1536,16 +1548,16 @@ describe("AI Models, the per-job override", () => {
       if (command === "provider_status") {
         const provider = (args as { request: { provider: string } }).request.provider;
         if (provider === "openai") {
-          return {
+          return statusFor(args, {
             ...STATUS,
             provider: "openai",
             role_credentials: [
               { provider: "openai", role: "speech", kind: "api_key", configured: false, storage: "os_secret_store", key_preview: null, missing: "an API key" },
               { provider: "openai", role: "chat", kind: "api_key", configured: false, storage: "os_secret_store", key_preview: null, missing: "an API key" },
             ],
-          };
+          });
         }
-        return STATUS;
+        return statusFor(args);
       }
       if (command === "resolve_provider_tiers") return TIERS;
       return undefined;
@@ -2827,5 +2839,213 @@ describe("Your server, configured", () => {
     expect(screen.getByLabelText("URL")).toHaveValue("http://10.0.0.2:8080/v1");
     expect(screen.getByText("Answering")).toBeInTheDocument();
     expect(invoked).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * WHEN THE LANE AND THE PROFILE ARE ON DIFFERENT ACCOUNTS.
+ *
+ * **The state every case in this file happened to avoid, and the one the product
+ * is in most of the time.** The lane stopped being a mode with ADR 0212 — it
+ * groups the accounts the card configures — while three things still followed
+ * the PROFILE: the account row's own read, the credential rows' scope, and the
+ * vendor the key was handed to. Every fixture on the self-hosted lane puts the
+ * profile on the server, so the two agreed by accident and nothing failed.
+ *
+ * They disagree the moment a reader who dictates on Groq opens `Your server`,
+ * which is the ordinary way to configure a second lane. What that produced was
+ * not cosmetic: the Cloud card's key field wrote a Groq key into the slot the
+ * self-hosted adapter reads its bearer token from — the store keys a secret by
+ * account and carries no vendor — so the key went to the reader's own machine on
+ * the next request and the token that had been there was gone. ADR 0094's one
+ * security rule, reached through a lane switch.
+ */
+describe("A card shows the lane's account and not the profile's", () => {
+  const SERVER_ACCOUNT = {
+    id: "connection-self_hosted",
+    label: "Home box",
+    provider: "self_hosted",
+    base_url: "http://10.0.0.2:8080/v1",
+    model: "faster-whisper-medium",
+    plan: "",
+  };
+
+  /** A machine holding both, whose profile dictates through the cloud. */
+  function cloudProfileWithAServer() {
+    const config = createAppConfig({ connections: [CLOUD_ACCOUNT, SERVER_ACCOUNT] });
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: CLOUD_ACCOUNT.id, overrides: {}, models: {} };
+    return config;
+  }
+
+  beforeEach(() => {
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") {
+        const provider = (args as { request?: { provider?: string } } | undefined)?.request
+          ?.provider;
+        if (provider !== "self_hosted") return statusFor(args);
+        return statusFor(args, {
+          ...STATUS,
+          provider: "self_hosted",
+          capabilities: { ...CAPABILITIES, chat_completion: false, requires_api_key: false },
+          role_credentials: [
+            {
+              provider: "self_hosted",
+              role: "speech",
+              kind: null,
+              configured: true,
+              storage: "os_secret_store",
+              key_preview: null,
+              missing: null,
+            },
+          ],
+          self_hosted_endpoint: {
+            base_url: SERVER_ACCOUNT.base_url,
+            base_url_source: "config",
+            base_url_problem: null,
+            model: SERVER_ACCOUNT.model,
+            model_source: "config",
+          },
+        });
+      }
+      if (command === "resolve_provider_tiers") return TIERS;
+      if (command === "validate_provider_api_key") return { ok: true, provider: "groq", checked_with: "models" };
+      return undefined;
+    });
+  });
+
+  /** The account row read the literal `"Cloud"` while the self-hosted card
+   *  rendered it, so `Your server` named the Groq account — and Rename, New and
+   *  Remove all acted on Groq, from a card showing the server's URL. */
+  it("names this lane's account on the row that renames and removes it", async () => {
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({ active: true, config: cloudProfileWithAServer() })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+
+    const account = (await screen.findByLabelText("Account")) as HTMLSelectElement;
+    expect(account.value).toBe(SERVER_ACCOUNT.id);
+    expect([...account.options].map((option) => option.text)).toContain(SERVER_ACCOUNT.label);
+    expect([...account.options].map((option) => option.text)).not.toContain(CLOUD_ACCOUNT.label);
+  });
+
+  /**
+   * **THE KEY GOES WHERE THE CARD SAYS IT GOES.**
+   *
+   * The assertion is the pair, and the vendor half is the dangerous one: a save
+   * carrying `self_hosted` hands a Groq key to the adapter that posts to the
+   * reader's own machine.
+   */
+  it("saves a cloud key to the cloud account, never to the account the profile is on", async () => {
+    const config = cloudProfileWithAServer();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    /* The profile on the SERVER, which is the direction that crossed: the Cloud
+       card then scoped its key row to a self-hosted account. */
+    active.providers = { default: SERVER_ACCOUNT.id, overrides: {}, models: {} };
+
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL.Cloud }));
+    await userEvent.click((await screen.findAllByRole("button", { name: /Replace|Add/ }))[0]);
+    await userEvent.type(await screen.findByLabelText("API key"), "gsk_typed_for_groq");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
+        request: {
+          provider: "groq",
+          connection: CLOUD_ACCOUNT.id,
+          api_key: "gsk_typed_for_groq",
+        },
+      }),
+    );
+  });
+
+  /** And the reachability probe asks about the server the card is showing, not
+   *  about whatever account the profile happens to be on. */
+  it("probes this lane's server", async () => {
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({ active: true, config: cloudProfileWithAServer() })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+    await userEvent.click(await screen.findByRole("button", { name: "Test" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("validate_provider_api_key", {
+        request: {
+          provider: "self_hosted",
+          connection: SERVER_ACCOUNT.id,
+          api_key: null,
+        },
+      }),
+    );
+  });
+});
+
+/**
+ * WHAT A JOB ROW MAY CLAIM ABOUT THE ACCOUNT IT RUNS ON.
+ *
+ * ADR 0209 removed a vendor-keyed credential read from the connection card and
+ * left the identical one on every job row: `credentialStateFor` took a vendor's
+ * drawn name, so two accounts on one vendor shared one answer. A profile whose
+ * cleanup ran on an employer's keyless account read a green `Key set` off the
+ * private account beside it — the badge ADR 0128 exists to forbid, arriving
+ * through the argument list rather than through a literal.
+ */
+describe("A job row reports its own account's key", () => {
+  const EMPLOYER = { ...CLOUD_ACCOUNT, id: "connection-groq-2", label: "Employer" };
+
+  it("says No key for the account without one, beside a sibling that has one", async () => {
+    const config = createAppConfig({ connections: [CLOUD_ACCOUNT, EMPLOYER] });
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = {
+      default: CLOUD_ACCOUNT.id,
+      overrides: { cleanup: EMPLOYER.id },
+      models: {},
+    };
+
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "registered_providers") return REGISTERED;
+      if (command === "provider_status") {
+        /* One vendor, two accounts, and only the first holds a key. */
+        return askedAbout(args) === CLOUD_ACCOUNT.id
+          ? statusFor(args)
+          : statusFor(args, {
+              ...STATUS,
+              role_credentials: ROLE_CREDENTIALS.map((row) => ({
+                ...row,
+                configured: false,
+                key_preview: null,
+                missing: "an API key",
+              })),
+            });
+      }
+      if (command === "resolve_provider_tiers") return TIERS;
+      return undefined;
+    });
+
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    const cleanup = (await screen.findByText("Cleanup")).closest(".ws-job") as HTMLElement;
+    await waitFor(() => expect(within(cleanup).getByText("No key")).toBeInTheDocument());
+    expect(within(cleanup).queryByText("Key set")).toBeNull();
+
+    /* And the row that IS on the account with a key still says so — the point is
+       two answers, not a badge that has learned to say No. */
+    const rewrite = (await screen.findByText("Rewrite")).closest(".ws-job") as HTMLElement;
+    await waitFor(() => expect(within(rewrite).getByText("Key set")).toBeInTheDocument());
   });
 });

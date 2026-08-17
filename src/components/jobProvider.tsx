@@ -30,6 +30,8 @@ import {
 } from "@/lib/textProfiles";
 import {
   accountChoices,
+  accountForLane,
+  accountStatus,
   buildVendorConnectionPatch,
   connectionById,
   credentialStateFor,
@@ -41,7 +43,6 @@ import {
   roleForDrawnCapability,
   runtimeIdFor,
   LOCAL_PROVIDER_ID,
-  SELF_HOSTED_PROVIDER_ID,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
 import { useProviderSeam } from "@/hooks/useProviderSeam";
@@ -113,17 +114,25 @@ export const Wired = createContext<{
   connection?: string;
   setConnection?: (drawnName: string) => void;
   /**
-   * WHICH ACCOUNT THAT VENDOR IS REACHED WITH (ADR 0208).
+   * WHICH ACCOUNT THE ACTIVE PROFILE DICTATES ON (ADR 0208).
    *
    * The vendor above answers *where does this run*; this answers *whose
    * credential pays for it*, and the two are different questions the moment a
-   * reader holds an employer's account and a private one on one vendor. Every
-   * credential call on this screen carries it, so a key typed while the work
-   * account is selected cannot land under the private one.
+   * reader holds an employer's account and a private one on one vendor.
+   *
+   * **IT IS THE PROFILE'S AND IT IS NOT THE CARD'S**, which is the distinction
+   * that had gone missing. The connection card is grouped by lane since ADR 0212
+   * and this value follows the profile, so on a machine whose profile dictates
+   * through its own server the Cloud card's credential rows were scoped to the
+   * server's account: the key field wrote a Groq key into the slot the
+   * self-hosted adapter reads its bearer token from, and the reader's own server
+   * received it on the next request. Every card row reads its own account now
+   * (`accountForLane`); what is left here is what the name says — the account the
+   * profile follows, for the job rows that state *Follow the profile · X*.
    *
    * `undefined` in the gallery, where there is no config and no account.
    */
-  connectionId?: string;
+  profileAccountId?: string;
   /**
    * WHICH VENDOR ONE JOB OVERRIDES TO, written per job (ADR 0128).
    *
@@ -261,7 +270,12 @@ export function JobProviderRuntime({
   runtime: WorkspaceRuntime;
   children: ReactNode;
 }) {
-  const { answers, refresh } = useProviderSeam(lane, runtime.config.model, runtime.config);
+  /* NOT SCOPED TO THE LANE, AND THE LANE IS STILL THE PROP ABOVE (ADR 0211).
+     A job runs on any account this machine holds, so what the surface KNOWS may
+     not depend on which group the reader happens to be looking at — a cross-lane
+     job row read *not read* about the very account it was pointed at. The lane
+     decides what is drawn; the seam answers about everything. */
+  const { answers, refresh } = useProviderSeam(runtime.config, runtime.config.model);
 
   /* THE CONNECTION IS THE STORED ONE, not the drawn one. `LANES.Cloud.provider`
      is `"Groq"` because that is what the prototype drew; what the pipeline
@@ -269,7 +283,7 @@ export function JobProviderRuntime({
      per-profile and per-job. A stored id with no drawn name falls back to the
      drawing rather than rendering a storage key into a chip. */
   const resolvedDictation = resolveConfigJobProvider(runtime.config, "dictation");
-  const connectionId = resolvedDictation.connection;
+  const profileAccountId = resolvedDictation.connection;
   const connection = drawnNameFor(resolvedDictation.provider) ?? LANES[lane].provider;
 
   const setConnection = useCallback(
@@ -398,7 +412,7 @@ export function JobProviderRuntime({
         answers,
         refresh,
         connection,
-        connectionId,
+        profileAccountId,
         setConnection,
         setJobOverride,
         setJobAccount,
@@ -508,7 +522,17 @@ export function Follows({
      one this screen already spells out elsewhere (ADR 0160). */
   const wiredServer =
     wired && lane === "Self-hosted"
-      ? { endpoint: answers.statuses[SELF_HOSTED_PROVIDER_ID]?.self_hosted_endpoint ?? null }
+      ? {
+          /* THE ENDPOINT BELONGS TO AN ACCOUNT, so it is read off the one this
+             lane holds rather than off a slot keyed by the vendor — two servers
+             are two accounts (ADR 0208), and a vendor-keyed read printed
+             whichever of them the surface had happened to ask about. */
+          endpoint:
+            accountStatus(
+              answers,
+              wiredRuntime ? accountForLane(wiredRuntime.config, "Self-hosted")?.id : undefined,
+            )?.self_hosted_endpoint ?? null,
+        }
       : null;
 
   /* WHERE THIS JOB RUNS, ON EVERY LANE AND OVER EVERY ACCOUNT (ADR 0211).
@@ -642,7 +666,14 @@ export function Follows({
           label="API key"
           hint="Its own, because this job is not on the connection above. Held in the OS secret store like every other."
           control={
-            <OverrideKeyBadge drawnName={override} role={roleForDrawnCapability(cap)} />
+            <OverrideKeyBadge
+              connectionId={
+                wiredRuntime && jobKey
+                  ? resolveConfigJobProvider(wiredRuntime.config, jobKey).connection
+                  : undefined
+              }
+              role={roleForDrawnCapability(cap)}
+            />
           }
         />
       )}
@@ -751,7 +782,11 @@ function JobAccountRows({
      adapter is a row whose fix IS this select, and disabling the way out with the
      sentence explaining the problem is the trap that record exists for. The model
      below is a choice ON the vendor and stays inert. */
-  const answer = resolveProviderAnswer(drawn, role, answers);
+  /* ABOUT THE ACCOUNT THIS JOB RUNS ON, and it was about its vendor. Two accounts
+     on one vendor gave both rows one answer, so the row on the keyless one read
+     the other's key — the defect ADR 0209 removed from the connection card, still
+     standing on every job row. */
+  const answer = resolveProviderAnswer(drawn, role, answers, resolved.connection);
   const reason =
     !answer.operable && answer.reason.kind !== "pending" ? answer.reason.sentence : undefined;
   /* WHETHER THE ACCOUNT THIS JOB RUNS ON CAN PAY FOR IT — stated, not editable
@@ -759,7 +794,7 @@ function JobAccountRows({
      scoped to a job, which is how *Account* came to look like the thing a job
      runs on; the credential belongs to the account, so the row says what is true
      and points at the inventory that owns it. */
-  const credential = local ? "set" : credentialStateFor(drawn, role, answers);
+  const credential = local ? "set" : credentialStateFor(resolved.connection, role, answers);
   const offered = vendorModels(resolved.provider, role === "speech" ? "speech" : "chat");
   const roleDefault = roleDefaultModel(profile, jobKey, local);
   /* WHAT THIS JOB WOULD RUN ON RIGHT NOW, and the two halves are not the same
@@ -1045,10 +1080,23 @@ function ProviderChoice({
  * `unknown` is its own answer and reads *Not read*, the word this screen
  * already uses where a runtime did not answer (`WiredCeilingBadge`).
  */
-function OverrideKeyBadge({ drawnName, role }: { drawnName: string; role: ProviderRole }) {
+function OverrideKeyBadge({
+  connectionId,
+  role,
+}: {
+  /** The account whose key this is. **Absent under a runtime is `Not read`, and
+   *  that is the only honest answer**: a key belongs to an account, and this row
+   *  only renders where the OVERRIDE came from the drawing rather than from the
+   *  config (`Follows` returns the account rows before reaching it whenever there
+   *  is a stored one), so there is no account to be about. It used to take the
+   *  vendor's drawn name and answer off whichever account that vendor's one
+   *  status slot held. */
+  connectionId?: string;
+  role: ProviderRole;
+}) {
   const wired = useWired();
   const answers = useAnswers();
-  const state = wired ? credentialStateFor(drawnName, role, answers) : "set";
+  const state = wired ? credentialStateFor(connectionId, role, answers) : "set";
 
   return (
     <span className="ws-rowflex">
@@ -1134,6 +1182,9 @@ function JobProviderBody({
         answers,
         fileBytes,
         capacities[runtimeIdFor(runsOn) ?? ""],
+        /* The account this upload would actually be billed to, so *no key yet*
+           is about it rather than about a sibling account on its vendor. */
+        runtime ? resolveConfigJobProvider(runtime.config, jobKey).connection : undefined,
       )
     : null;
   const refusal = answer && !answer.operable && answer.reason.kind !== "pending"
