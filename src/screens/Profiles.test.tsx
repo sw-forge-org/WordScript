@@ -1022,3 +1022,57 @@ describe("Profiles · Style", () => {
     expect(screen.getByText("Rewrite and the assistant")).toBeInTheDocument();
   });
 });
+
+/**
+ * WHAT THE RUNTIME IS ASKED, AND HOW OFTEN — ADR 0200.
+ *
+ * Two commands on this screen are analyses, and both used to watch arrays off
+ * the config. A settled save answers over the IPC, so the config that comes
+ * back is a fresh parse in which every array is equal to the old one and is not
+ * it — and every discrete write on the window therefore re-asked both commands
+ * with a byte-identical request. The sidebar's rail toggle is such a write,
+ * which is why this screen was the only one that juddered while the column
+ * slid: two Rust analyses and their re-renders landed inside the 180 ms.
+ *
+ * The re-render is simulated the way the seam produces it — a deep clone of the
+ * same config — because that is the only shape in which the defect exists. A
+ * rerender with the SAME object would have passed before the fix.
+ */
+describe("Profiles · what it asks the runtime, and when", () => {
+  const analyses = () =>
+    invoked.mock.calls.filter(
+      ([command]) => command === "get_profile_health" || command === "analyze_text_rules",
+    ).length;
+
+  it("does not re-ask when a config write changed nothing it analyses", async () => {
+    const first = config();
+    const { rerender } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: first })} />,
+    );
+    await waitFor(() => expect(analyses()).toBeGreaterThan(0));
+    const asked = analyses();
+
+    /* The settled save: same values, whole graph replaced. */
+    rerender(
+      <ProfilesScreen
+        runtime={createWorkspaceRuntime({ active: true, config: JSON.parse(JSON.stringify(first)) })}
+      />,
+    );
+    await waitFor(() => expect(analyses()).toBe(asked));
+  });
+
+  it("does re-ask when the profile's own text changed", async () => {
+    const first = config();
+    const { rerender } = render(
+      <ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: first })} />,
+    );
+    await waitFor(() => expect(analyses()).toBeGreaterThan(0));
+    const asked = analyses();
+
+    const edited = JSON.parse(JSON.stringify(first)) as AppConfig;
+    edited.text_profiles[0].prompt = "Tauri desktop runtime, and always address the reader as Sie";
+    rerender(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: edited })} />);
+
+    await waitFor(() => expect(analyses()).toBeGreaterThan(asked));
+  });
+});

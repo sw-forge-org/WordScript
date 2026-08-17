@@ -158,6 +158,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `npm run port:diff` reports the difference on `general`, `models`, `profiles`
   and `notesettings` deliberately.
 
+### Fixed — the sidebar opens on one press, and the column beside it stops being re-laid-out mid-slide (ADR 0198)
+
+- **Expanding the sidebar took two presses and collapsing took one.** The toggle
+  writes its choice into the window's config draft, and the draft handed the
+  field straight back — so `useNavRail` re-derived the state from its own echo
+  and put the narrow window's rail back in front of a choice just made.
+  Expanding wrote "not railed", the derivation answered "railed", and the column
+  shut again inside the press; collapsing agreed with the derivation by
+  coincidence. The hook now knows the value it wrote last and only adopts a
+  preference that came from somewhere else — another window, a config edited on
+  disk, or a save the runtime refused.
+- **On a high-scale display the rail is the state the workspace opens in.** The
+  shipped 1000 lands as device pixels, so the layout gets `1000 / scale` CSS px:
+  800 at the 1.25 the breakpoint was measured against, 625 at the 1.6 a 4K panel
+  asks for — under the 760 px floor at every width the window can be dragged to.
+  The narrow half of the rail is therefore a main path, and it now has tests;
+  every case in the suite ran wide, because jsdom answers `matches: false` to
+  every media query.
+- **The rail transition no longer re-lays-out the view beside it on every
+  frame.** The sidebar animates its width, and the content column was a flexible
+  sibling of it *and* a size container — so all 180 ms of the slide were spent
+  re-evaluating container queries and rebuilding the subtree, crossing the
+  460 px tier on the way past and flipping rows between a stack and a line
+  mid-animation. Profiles paid it twice, since its pane list is a track measured
+  in `cqi` against that same moving container and its detail column is a second
+  container inside the first. The sidebar is anchored out of flow now and the
+  column takes its final inset on the first frame: one layout pass per press
+  instead of one per frame.
+- **Profiles asked the runtime for two analyses on every config write, including
+  ones that changed nothing it analyses** (ADR 0200). `get_profile_health` and
+  `analyze_text_rules` watched arrays off the config, and a settled save replaces
+  the whole config graph — `save_config` answers over the IPC, so what comes back
+  is a fresh parse in which every array is equal to the old one and is not it.
+  A rail toggle therefore cost two Rust analyses and the two re-renders of their
+  answers, landing inside the 180 ms the sidebar was sliding; that is why
+  Profiles was the only view that still juddered after the fix above. Both are
+  keyed on the serialized request now, which is the shape the style analysis on
+  the same screen already had. An edit that changes what is graded still
+  re-grades on the keystroke.
+- **And the press that moves the sidebar no longer writes the config in the same
+  frame** (ADR 0202). This was the reported defect, and the three fixes above
+  were not it. Measured in the shipped engine on the Profiles view, one press:
+  the state change alone runs 31 frames in half a second, the state change *with
+  the width slide* runs 31 frames, the config write alone runs 31 frames — and a
+  press that did both dropped to 14 frames with two consecutive stalls of about
+  145 ms. Each half is free and the pair is not: the save's settle and its
+  `ready` each re-render the window, and landing those on a frame where the
+  sidebar's style and layout are already dirty costs two full passes over the
+  pane. Nothing in the app forces that layout — every geometry-reading API was
+  patched and counted across a press, and the count was zero. The toggle now
+  shows the new state at once and writes the preference on a 240 ms timer,
+  flushing if the window closes first, which is the bargain `useConfigDraft`
+  already strikes for a keystroke. After the change: 29–31 frames with a worst
+  gap of 26–28 ms, the same figure the empty view gets.
+- **The sidebar's width animation stays**, and an earlier revision of this entry
+  claiming it had been removed was wrong. It was deleted for one revision on the
+  theory that it was unaffordable; the measurement above says the press runs
+  every frame with it. It was never the cost.
+
 ### Changed — the mode lane runs seven digits and stops explaining itself
 
 - **Translate ships bound, on `Alt+5`.** The lane now runs `Alt+1` through

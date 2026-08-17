@@ -659,7 +659,60 @@
     font-size: var(--t-body);
   }
 
-  .ws-win-body { flex: 1; min-height: 0; display: flex; }
+  /* THE SIDEBAR IS OUT OF FLOW SO THE COLUMN BESIDE IT IS LAID OUT ONCE PER
+     PRESS — ADR 0198.
+
+     `.ws-nav` animates its width, and while it was a flex item the column next
+     to it was `flex: 1` of whatever was left: its inline size changed on EVERY
+     FRAME of the 180 ms transition. That column is `container: ws-column /
+     inline-size`, so each of those frames re-evaluated every container query
+     under it and re-laid-out the subtree — and at the widths this window
+     actually lives at the slide CROSSES the 460 px tier at the foot of this
+     file, so rows flipped between a stack and a line mid-animation. Profiles
+     pays it twice: `--pane-list-w` is `32cqi`, a grid track resolved against
+     that same moving container, and `.ws-pane-detail` inside it is another
+     container whose queries then re-ran per frame as well.
+
+     ANCHORED INSTEAD, THE COLUMN TAKES ITS FINAL INSET ON THE FIRST FRAME and
+     the sidebar slides over it or off it. That is the same clip ADR 0125 chose
+     for the sidebar's own children, applied to the one box it was never
+     extended to — one layout pass per press instead of one per frame, and the
+     container queries answer once. Collapsing reveals a column that is already
+     where it is going; expanding slides the sidebar in over the window's own
+     ground.
+
+     `~` RATHER THAN A SECOND FLAG. The rail is stated once, by the sidebar, on
+     itself; a `data-` attribute repeated on the body would be a second copy of
+     one fact (ADR 0123). Every surface that mounts a sidebar draws it as the
+     body's first child with the content columns after it, so the sibling
+     combinator reaches them all — and a `.ws-content` mounted WITHOUT a
+     sidebar, which is what the workspace draws before the runtime answers,
+     correctly keeps the whole width. */
+  .ws-win-body { flex: 1; min-height: 0; display: flex; position: relative; }
+  /* NO COMPOSITING HINT SITS HERE, AND THAT IS A DECISION — ADR 0202. A
+     `will-change` stood on this rule for one revision, to make the strip the
+     column uncovers a composite rather than a repaint. It was removed with the
+     transition it existed for: there is no animation left to promote a layer
+     for, and a permanent layer bought for a state change that happens in one
+     frame is memory spent on nothing.
+
+     IF THE MOTION EVER COMES BACK, the promoter is `will-change: opacity` and
+     it may NOT be `transform`. Both promote; only one is free of a side effect
+     this column cannot afford. `transform` — and `filter`, and
+     `contain: paint` — makes the element a containing block for
+     fixed-position descendants, and `HelpMenu` sits in this footer and opens a
+     `Menu` with an anchor, which is `position: fixed` at viewport coordinates
+     (`.ws-menu[data-fixed]`). Promoted that way the help panel would resolve
+     against a 232 px column and land nowhere near where its caller measured
+     it. That was verified with a probe, not assumed, and it is written down
+     here so the next attempt does not have to find it again. */
+  .ws-win-body > .ws-nav {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    z-index: 1;
+  }
+  .ws-nav ~ .ws-content { margin-left: var(--nav-w); }
+  .ws-nav[data-collapsed] ~ .ws-content { margin-left: var(--nav-w-rail); }
 
   /* ── The status strip ───────────────────────────────────────────────────────
      The shipped surface saved every change immediately and said so twice: an
@@ -913,9 +966,22 @@
        `auto` on both axes — a second scrollbar, flashing on the way past. */
     overflow-x: hidden;
     /* The rail is a width change and nothing else moves, so it is the one
-       transition in the shell that animates a box dimension. It is cheap
-       because the column is `flex: none` — the content beside it reflows once,
-       at the end, rather than on every frame of a layout animation. */
+       transition in the shell that animates a box dimension. What makes it
+       cheap is that NOTHING ELSE IS MEASURED AGAINST IT: the column is out of
+       flow (see `.ws-win-body` above) and its own children are pinned (see the
+       rule below), so the animated box has no layout dependants on either side
+       of it. `flex: none` was once credited with the first half of that and
+       never bought it — it fixes this column's basis and says nothing about
+       the one beside it, which went on re-laying-out per frame until ADR 0198.
+
+       AND IT IS MEASURED, NOT ASSUMED — ADR 0202. This line was deleted once,
+       on the theory that the slide was what juddered on the Profiles view. It
+       was not: in the shipped engine the state change WITH this transition runs
+       31 frames in 500 ms with a worst gap of 17 ms, which is every frame. The
+       judder was the preference being written on the same frame, and it is
+       fixed where the write is scheduled (`useNavRail`). Do not delete this
+       line to make a rendering complaint go away; measure the press first, the
+       way that ADR did. */
     transition: width var(--dur-base) var(--ease);
   }
 

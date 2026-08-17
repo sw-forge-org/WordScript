@@ -409,19 +409,35 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
      the write — a flag acknowledged and still amber until something unrelated
      re-ran the effect. The set is also PASSED rather than left to the disk read
      inside the command: the config write is in flight when this fires, and the
-     copy in hand is the newer of the two. */
-  useEffect(() => {
-    if (!runtime.active || !profile) return;
-    let cancelled = false;
-    void invoke<ProfileHealthStatus>("get_profile_health", {
-      request: {
+     copy in hand is the newer of the two.
+
+     THE REQUEST IS THE DEPENDENCY, BY VALUE — ADR 0200. Half of what this
+     effect watched was an object or an array off the config, and a settled save
+     replaces the whole config graph: `save_config` answers over the IPC, so
+     what comes back is a fresh parse in which every array is a new array,
+     equal to the old one and not it. Every discrete write on this window
+     therefore re-fired this command with an identical request — the sidebar's
+     rail toggle included, which is a write that touches nothing any detector
+     reads. Keyed on the serialized request instead, an edit that changes what
+     is graded re-grades and nothing else does. It is the shape
+     `useCaptureBudget` is already given one block up, and the same argument:
+     the thing in the key must refresh, and nothing else may. */
+  const healthRequest = profile
+    ? JSON.stringify({
         prompt: profile.prompt,
         dictionary_entries: profile.dictionary_entries,
         acknowledged_flags: acknowledged,
         bias_mode: profile.work_mode?.bias_mode ?? null,
         processing_mode: profile.work_mode?.processing_mode ?? null,
         profile_id: profile.id,
-      },
+      })
+    : null;
+
+  useEffect(() => {
+    if (!runtime.active || !healthRequest) return;
+    let cancelled = false;
+    void invoke<ProfileHealthStatus>("get_profile_health", {
+      request: JSON.parse(healthRequest),
     })
       .then((next) => {
         if (!cancelled) setHealth(next);
@@ -432,14 +448,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [
-    runtime.active,
-    profile?.id,
-    profile?.prompt,
-    profile?.dictionary_entries,
-    profile?.work_mode,
-    acknowledged,
-  ]);
+  }, [runtime.active, healthRequest]);
 
   /** Every write on this screen targets the SELECTED profile, which is not
    *  necessarily the active one — `buildProfile*Patch` in `lib/textProfiles`
@@ -773,14 +782,13 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
   const [analysis, setAnalysis] = useState<TextRulesAnalysis | null>(null);
   const [sample, setSample] = useState("");
 
-  useEffect(() => {
-    if (!runtime.active || !profile) {
-      setAnalysis(null);
-      return;
-    }
-    let cancelled = false;
-    void invoke<TextRulesAnalysis>("analyze_text_rules", {
-      request: {
+  /* Keyed on the serialized request for the reason `get_profile_health` is —
+     ADR 0200. Five of this one's dependencies were arrays off the config, and
+     a settled save hands back a fresh parse of the whole graph, so the most
+     expensive command on this screen re-ran on writes that changed nothing it
+     reads. */
+  const rulesRequest = profile
+    ? JSON.stringify({
         prompt: profile.prompt,
         stt_hints: profile.stt_hints,
         vocabulary_hints: profile.vocabulary_hints,
@@ -791,7 +799,17 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
         local_prompt_strength: config.local_prompt_strength ?? null,
         local_prompt_carry: config.local_prompt_carry ?? null,
         manual_bias: profile.work_mode?.manual_bias ?? null,
-      },
+      })
+    : null;
+
+  useEffect(() => {
+    if (!runtime.active || !rulesRequest) {
+      setAnalysis(null);
+      return;
+    }
+    let cancelled = false;
+    void invoke<TextRulesAnalysis>("analyze_text_rules", {
+      request: JSON.parse(rulesRequest),
     })
       .then((next) => {
         if (!cancelled) setAnalysis(next);
@@ -802,19 +820,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [
-    runtime.active,
-    profile?.id,
-    profile?.prompt,
-    profile?.stt_hints,
-    profile?.vocabulary_hints,
-    profile?.dictionary_entries,
-    profile?.snippet_entries,
-    profile?.work_mode,
-    config.local_prompt_strength,
-    config.local_prompt_carry,
-    sample,
-  ]);
+  }, [runtime.active, rulesRequest]);
 
   const bias = analysis?.transcription_bias ?? null;
   const repair = analysis?.vocabulary_repair ?? null;
