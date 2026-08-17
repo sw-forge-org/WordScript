@@ -1004,6 +1004,28 @@ vendor scope into the account's with nothing left behind (checked by exit code,
 no value read). The case still unrun is two accounts on one vendor switched
 mid-session — it needs a second real key and is the owner's.
 
+**B14a — the owner ran the row and it had four faults (ADR 0209, done
+2026-08-17).** The case above was unrun by this track and the owner ran it within
+the hour, which is why all four are surface faults with the runtime correct
+underneath. Each is a rule that was right about what it was written for and wrong
+one step over. (1) The seam asked `provider_status` about the FIRST account on
+each vendor and the status was keyed by vendor alone, so a second account showed
+the first one's key while the field wrote the selected one's: the seam asks about
+the ACTIVE account now and `ProviderStatus` echoes the account it answered about,
+one stamp in `provider_status` with a registry-walking test on it. (2) `Remove`
+deleted the account the active profile was on and ADR 0208's never-repoint rule
+left the row with no vendor — empty picker, no rename, and an `Add` that returned
+early — so the removal repoints the ordering profile and no other, and the row
+gained a state for the dangling pointer already on disk. (3) `normalize` dropped
+an override naming a deleted account, which IS repointing it at the default, and
+disagreed with the TypeScript resolver that never pruned; the name stays and the
+job goes inert. (4) The row writes the active profile's pointer and said so
+nowhere, which is why *how do I assign an account to a profile* had no answer —
+it carries a `ScopeTag` with the profile's name now. The owner's premise that
+accounts should be named after profiles was declined with the reason: an account
+is an object several profiles may point at, so the name would be false the moment
+a second one does. `port:diff`: `models` unmoved at `28 | 248 | 20`.
+
 The brief as it was written:
 
 **Added 2026-08-17**, from the owner's own widening of B13's answer:
@@ -1091,6 +1113,165 @@ whether the field could technically be moved.
   switched between mid-session. **A test that a profile switch moves the
   credential**, because that is the sentence the whole step exists for and the
   one nothing checks today.
+
+### B14b. A removed account takes its credential with it (ADR 0208's own rule, turned on the surface that breaks it)
+
+**Added 2026-08-17**, found while reading the deletion path for B14a and not
+fixed there because it is a different defect with a different argument.
+
+`buildConnectionRemovalPatch` writes `connections` and nothing else. The
+credential stored under `{connection}.{role}.{kind}` **stays in the OS secret
+store**, under a scope no surface can show and no reader can clear — which is
+word for word the state ADR 0208 refused to allow the migration to create: *a
+key left behind is a secret no surface can show and no reader can clear.* The
+migration was made to MOVE rather than copy for exactly this reason; the delete
+button then created the same state from the other end.
+
+- **Requires** — nothing. `clear_provider_api_key` already takes a connection and
+  a role, and `credential_target_roles` already answers which roles a vendor
+  stores.
+- **Touches** — the removal path only. The surface calls the clear for every role
+  the account's vendor registers, then writes the config. **Order matters**: clear
+  first, because a config write that lands while the keyring call fails would
+  leave the orphan with nothing naming it.
+- **The one real question** is undo. B14a's deletion is undoable by ADR 0195's
+  notice, and a cleared key cannot be put back — so either the clear waits until
+  the undo window closes, or the notice stops claiming a full undo. **The first
+  is the honest one** and it is what the step should build: the key is cleared
+  when the notice expires, not when the button is pressed.
+- **Validates** — `cargo test`, `npm test`, and one Rust case against
+  `MemorySecretStore`: an account removed leaves no entry under its scope. By
+  hand: two accounts on one vendor, remove one, and confirm with
+  `secret-tool search` by exit code — **never by printing the value**.
+- **Done when** — no entry survives a removal that was not undone, and a test
+  says so rather than a session having checked once.
+
+### B15. AI Models is organised by task, not by lane — and the word *Account* stops doing two jobs (ADR 0094, ADR 0208, ADR 0209)
+
+**Added 2026-08-17**, out of the owner operating the row B14 shipped and B14a
+corrected, and reaching a conclusion neither of those steps had: the surface is
+not badly laid out, it is organised around the wrong object. Six layout
+directions were drawn at the real 569 px column and the owner rejected all six in
+one sentence — *welche dieser Skizzen macht das Problem nicht nur schöner,
+sondern löst es* — which was the right question and the answer was none of them.
+They all kept the lane as the screen's spine.
+
+**THE FINDING: `Account` NAMES A CREDENTIAL AND THE READER HEARS A BUNDLE.**
+In the config a `Connection` is exactly one thing — a vendor plus a credential,
+plus an endpoint and a plan (ADR 0208). The surface calls that *Account*. What
+the owner means by the word is a different object:
+
+> du willst ja einen Account haben mit einem Profil-Set, um es mal so zu sagen
+> […] wir wollen unterschiedliche Provider für unterschiedliche Tasks auf einem
+> Account. Und ich gehe sogar weiter, wir wollen unterschiedliche **Lanes** für
+> unterschiedliche Tasks auf dem Account.
+
+That object — per task a lane, a provider and a model, switchable as a whole —
+**already exists and is called a text profile.** A profile holds
+`providers: { default, overrides: Map<JobKey, connection_id> }` plus its model
+fields, which is the bundle exactly. And because a connection carries its vendor
+and `laneForProviderId` reads the lane off the vendor, *a profile can already put
+dictation on Cloud, cleanup on Local and the assistant on somebody's own server.*
+**The capability the owner asked for is in the data model today and the surface
+forbids it.** Nothing in the requirement needs a credential to span vendors.
+
+**Three locks, all of them in the UI:**
+
+1. **The lane is one global segmented control.** The config stores a connection
+   per job; the screen renders one lane for the whole card and calls it *the*
+   lane. Worse, it is not a filter — `chooseLane` (`Models.tsx`) writes
+   `buildVendorConnectionPatch` **plus** `buildProfileProvidersPatch`, so
+   clicking a lane chip repoints the active profile's default account. The
+   screen's topmost control silently edits a profile the reader was never shown.
+2. **The per-job picker only offers the displayed lane's vendors.**
+   `providerNames(cap, lane)` filters `p.lane === lane` (`src/screens/data.ts`)
+   and `ProviderChoice` feeds off it (`src/components/jobProvider.tsx`). A
+   cross-lane override is storable and unselectable.
+3. **Two of four lanes are locked** (ADR 0067, B12). Whatever this step builds,
+   the reachable variety stays Cloud plus Your server until Phase 5 or until B12
+   changes what the lock says.
+
+**WHAT MUST NOT MOVE, AND IT IS THE ONE THING THE OWNER PROPOSED THAT IS
+REFUSED.** A credential may not span vendors. That is ADR 0094's single security
+rule held by structure rather than by discipline: the endpoint sits beside the
+token so *this server with that key* is unrepresentable (ADR 0208 restates it as
+the argument for the object). Keep it. **But nothing about that rule makes the
+credential the organising unit of a screen** — it is an inventory item you pick
+from, and today it is the main character.
+
+**THE SECOND HALF, MEASURED: the model axis is coarser than the account axis.**
+The account axis is per `JobKey`, eight of them. The model axis is three slots —
+`speech.model`, `speech.correction_model`, `speech.agent_model` — each with a
+`local_*` mirror, and `chat_model_for_job` (`core/config.rs`) branches on
+local-vs-cloud and **not on the job**: cleanup, rewrite, translate, enhance and
+the assistant all read `agent_model`. So a task table with a model column would
+draw eight selects over three stored values, and changing translate's model would
+silently move four other jobs. **Any per-task model control is a lie until this
+is settled**, which is why it is inside this step and not after it.
+
+**And one lane already contradicts the rule the owner stated.** `Connection.model`
+exists and `speech_model()` branches to read it on the self-hosted lane, so there
+the model lives on the *credential* while everywhere else it lives on the
+profile. ADR 0165 argued it (a server publishes no model list) and the
+consequence was never written down: *a model belongs to the task* is not true
+today.
+
+**The shape to build.** Task-first, and the lane demoted from mode to grouping:
+
+- **The profile is selected at the top of the screen, explicitly**, and no
+  control anywhere on it changes which profile is active as a side effect. This
+  is the answer to *in welchem Profil wähle ich gerade was aus* and it retires
+  the hidden write in `chooseLane`.
+- **One row per job.** Two dependent cells: **Runs on** — a picker over *every*
+  account on the machine, grouped **lane → provider → account**, which is the
+  hierarchy the owner asked for and the thing that makes a per-task lane ordinary
+  rather than forbidden — and **Model**, from the catalogue filtered to the
+  chosen account's vendor.
+- **Credentials move to an inventory of their own**: provider, key, plan,
+  endpoint, and a used-by read-out. **No model row there**, and used-by is a
+  read-out rather than a stored field, because the pointer lives on the profile
+  (ADR 0123).
+- **The vocabulary is part of the deliverable.** If *Account* keeps colliding
+  with the bundle, the credential gets the narrower word and the bundle keeps
+  *profile*. Decide it once, in the ADR, and spell it the same way on every
+  surface.
+
+- **Requires** — B14, B14a. **An owner decision on the model axis before any
+  layout**: widen the stored slots to one per `JobKey` behind a `core::backup`
+  snapshot, or draw the coarse truth honestly (a model per role, with the rows
+  that share one saying so). The account half needs no schema change at all.
+  A second decision rides on the first: whether `Connection.model` stays on the
+  self-hosted credential with the surface stating why, or joins the task axis.
+- **Touches** — both sides. Frontend: `Models.tsx` loses the lane segment as a
+  mode and gains a profile selector and a job table; `jobProvider.tsx` loses the
+  lane filter on `ProviderChoice`; `data.ts`'s `providerNames` grows a callable
+  shape that is not lane-scoped. Rust: only if the model axis widens — the
+  profile's speech block, its migration, and the two resolvers
+  (`speech_model`, `chat_model_for_job`). `shared/model_catalogue.json` is read,
+  never edited (ADR 0115).
+- **The rule it is measured against** is the one B12 is also measured against:
+  no fake states. A picker that offers an account on a locked lane is a false
+  affordance; a model select over a shared slot is worse, because it appears to
+  work and moves four other jobs.
+- **Validates** — `cargo test`, `npm test`, `npm run build`, `port:diff` on
+  `models` **and** `models#1`, and by hand in the native host at the real
+  625 px workspace width: one profile with three jobs on three different lanes,
+  switched, then a second profile that shares one of the accounts. The figure
+  this step will move is `port:diff` — it restructures a ported screen, so the
+  record states what moved and why rather than treating a moved count as damage.
+  **And by looking**: four defects in one earlier session on this exact card
+  survived green tests.
+- **Done when** — one profile runs three jobs on three lanes, set from one screen
+  without the active profile ever changing by side effect; the credential
+  inventory offers no model control; and the model axis either is per task or
+  says out loud where it is not.
+
+**Not this step.** The lane lock itself (B12 owns it), Onboarding's copy of
+`LANES` beyond whatever this step must reach or deliberately not, the 760 px
+column the settings sheet is designed at against the 569 px this machine renders
+(a `gui-port` finding, recorded there), and the orphaned credential a removed
+account leaves in the OS store — that is **B14b** above, and it should land
+before this step touches the same file.
 
 ## Stage C — capture
 
@@ -1975,7 +2156,10 @@ Speaking row, so it is flagged rather than assumed.
 | D1b | **done** 2026-08-16 — added the same day out of D1a's own last paragraph, landed as ADR 0165. The lane D1a adapted gets somewhere to type its endpoint: `AppConfig::self_hosted_base_url` and `self_hosted_model` typed on the connection card, the optional bearer token in the OS secret store under `self_hosted.speech.api_key`, and the three environment variables demoted to the fallback for a machine nobody has typed on — **what is typed outranks them**, which is the reverse of ADR 0122's precedence and is deliberate: a field that stores a value the runtime ignores is the false affordance ADR 0067 rule 1 exists to prevent. **The registry invariant is what had to give.** `requires_api_key == credential_kinds.contains(ApiKey)` held only while every lane answered *may* and *must* the same way; `whisper-server` issues no token and speaches and LocalAI may, so the equality becomes an implication plus a behavioural claim — a lane accepting no kind must refuse to store one. **ADR 0067 rule 1 is then reversed for this lane on its own terms** and `LockedLanes` drops the row whose reason is spent rather than rewording it. Three smaller things travel: the lane downgrades a `verbose_json` request to `json`, because it claims no segments and a server that does not know the spelling answers 400 to the whole dictation; `capture.rs` gains the branch that stops a catalogued CLOUD model id being sent to somebody's own server, and it is the only line of that file this step moves; and the screen derives its lane from the stored connection instead of holding lane state, because a machine on its own server that opened `AI Models` on `Cloud` would describe a connection the runtime is not using. **+6 Rust (870 / 6 ignored) and +10 frontend (627 across 45 files), every one made to fail first**; `cargo check` 15; `port:diff` unmoved at `models` 26 \| 248 \| 20 and `models#1` 262 \| 30 \| 16 — **and unmoved because unreachable**, which is B8's cost again (ADR 0159). **Two false sentences were found by rendering the workspace after the suite was green**: the screen's banner still counted three drawn lanes, and the status strip said `Groq cloud` for every non-local connection — wrong for OpenAI since D1 and wrong for this lane now |
 | D1c | **done** 2026-08-16 — added the same day out of D1b's own last paragraph, landed as ADR 0166. **The other half of the line D1b half-fixed**: that step made the status strip name the connection and left the credential chip beside it asking `groq` about every cloud vendor, because `ProviderId = "groq" | "local"` is the frontend remnant of the dispatch ADR 0094 replaced and **a caller cannot narrow to a union with no arm for the value it holds**. The union is deleted rather than widened — every other id on this side is a `string` already — the window derives the connection once for both, and the readiness sentence reads **the speech role rather than the folded credential block** (ADR 0105), with what is missing taken from the runtime's own sentence, which is what makes `Your server` come out right with no special case. **Two more defects were found by rendering the window after the suite was green** (the seventh and eighth on this surface): an outstanding read printed `Needs key` out of the window's own latency, and every launch spent a keyring read on the default before the config had said who the connection was — `null` now means *do not ask yet*. **The mock was the reason the suite could not see either**: `useProvider` was mocked as a constant, so *who was asked* was not a question any case could put. Also the first commit to reach `Onboarding.tsx`, and only where it was false: its Self-hosted step claimed the lane cannot transcribe, which D1a inverted, and the two rows ADR 0163 named now declare themselves. +10 frontend cases (637 across 45 files) — seven on the workspace window, three on the onboarding flow — each made to fail first across twelve mutations; no Rust moved. `port:diff` `onboarding` `0 | 0 | 0`, `onboarding#2` `0 | 0 | 0`, `models` `26 | 248 | 20`, `models#1` `262 | 30 | 16` — **all four unmoved, and the two onboarding numbers unmoved because the harness measures that step on lane `Cloud` while every row this step touches sits behind a lane segment it never clicks** |
 | B13 | **done** 2026-08-17 — filed and closed the same day (ADR 0207), because the one thing it waited on was a decision and the owner gave it: *storage per profile, controls where they are*. `chat_model_for_job` reads the profile's `agent_model` with the connection-wide field as the fallback, the capture snapshot carries both chat models so `mode_router` and the Auto classifier stop reading the live config mid-session, and `Use` on a language row writes `local_agent_model` beside `local_correction_model`. No control moved and none was added. **Its own last paragraph opened B14** |
-| B14 | **done** 2026-08-17 — added the same day out of B13's answer, landed as **ADR 0208**, and the shape is **B**: a connection is a stored object — vendor, endpoint, model id, plan, and the credential's scope — that a profile points at per job. **The first recommendation was A with a machine-wide fallback and the owner corrected the two facts it stood on**: the seeded profile set is being reworked, so *a fresh install has six profiles* could not carry a fallback, and a profile is meant to carry connections rather than only a writing style. What decided it was the owner's own counter-proposal — *several keys, labelled, visible under each profile* — which is B stated from the surface. The credential's OS-store scope moves from the vendor id to the account's and the migration **moves** the secrets rather than copying them, because a key left behind is one no surface can show and no reader can clear. `AppConfig::plan_for` takes a connection (ADR 0167's own argument, followed to the object it was reaching for), and the `Your server` endpoint and model id leave `AppConfig` for the account that names the server — which is what makes *this server with that token* unrepresentable rather than merely discouraged. One new row, `Account`, between the vendor and its key. **+9 Rust (936) and +4 frontend (840)**, the four proven by five mutations — **one of which ran green against the wrong save door first**, which is this repo's own recurring failure and was caught by repeating the mutation against the right one. `port:diff`: `models` `26 \| 248 \| 20` → `28 \| 248 \| 20`, the two structural differences being the row the prototype does not draw; `models#1` unmoved |
+| B14 | **done** 2026-08-17 — added the same day out of B13's answer, landed as **ADR 0208**, and the shape is **B**: a connection is a stored object — vendor, endpoint, model id, plan, and the credential's scope — that a profile points at per job. **The first recommendation was A with a machine-wide fallback and the owner corrected the two facts it stood on**: the seeded profile set is being reworked, so *a fresh install has six profiles* could not carry a fallback, and a profile is meant to carry connections rather than only a writing style. What decided it was the owner's own counter-proposal — *several keys, labelled, visible under each profile* — which is B stated from the surface. The credential's OS-store scope moves from the vendor id to the account's and the migration **moves** the secrets rather than copying them, because a key left behind is one no surface can show and no reader can clear. `AppConfig::plan_for` takes a connection (ADR 0167's own argument, followed to the object it was reaching for), and the `Your server` endpoint and model id leave `AppConfig` for the account that names the server — which is what makes *this server with that token* unrepresentable rather than merely discouraged. One new row, `Account`, between the vendor and its key. **+9 Rust (936) and +4 frontend (840)**, the four proven by five mutations — **one of which ran green against the wrong save door first**, which is this repo's own recurring failure and was caught by repeating the mutation against the right one. `port:diff`: `models` `26 \| 248 \| 20` → `28 \| 248 \| 20`, the two structural differences being the row the prototype does not draw; `models#1` unmoved. **The owner ran the row within the hour and found four surface faults; B14a closed them the same day as ADR 0209**: the status now names the account it answered about (it was keyed by vendor alone and asked about the FIRST account, so a second one showed the first's key), a deletion repoints the profile that ordered it and no other (ADR 0208's rule left the row with no vendor and no way back), an override naming a deleted account stays named instead of being dropped onto the default, and the row names the profile it writes |
+| B14a | **done** 2026-08-17 — the owner ran B14's row within the hour and found four surface faults; ADR 0209 closed all four the same day. A status now names the account it answered about (it was keyed by vendor alone AND asked about the first account, so a second account showed the first's key); a deletion repoints the profile that ordered it and no other; an override naming a deleted account stays named instead of being dropped onto the default, which was a repoint by deletion and disagreed with the TypeScript resolver that never pruned; and the row names the profile it writes. Eight mutations, eight proven. `port:diff` `models` unmoved at `28 \| 248 \| 20` |
+| B14b | **not started** — added 2026-08-17 while reading B14a's deletion path. A removed account leaves its credential in the OS store under a scope no surface can show and no reader can clear, which is the exact state ADR 0208 refused to let the migration create. The clear waits for ADR 0195's undo window to close, because a cleared key cannot be put back |
+| B15 | **not started, and blocked on one owner decision** — added 2026-08-17 out of the owner rejecting six layout directions with the right question: which of these solves it rather than prettifying it. None did; all six kept the lane as the screen's spine. **The finding is that `Account` names a credential and the reader hears a bundle** — the bundle exists already and is called a text profile, and `providers.overrides` means the config ALREADY supports a different lane per task while three UI locks forbid it. The step turns AI Models task-first, demotes the lane from mode to grouping, retires the hidden profile write in `chooseLane`, and moves credentials into an inventory with no model control. **Blocked on the model axis**: eight tasks point at three stored model slots and five chat jobs share `agent_model`, so a per-task model select is a lie until the slots widen or the surface says out loud where they do not. Kick-off: [`speech-track-b15-kickoff.md`](speech-track-b15-kickoff.md) |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |
