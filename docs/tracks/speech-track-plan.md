@@ -929,6 +929,39 @@ acceleration probe, the bundling decision, guided remediation, and F3's
 streaming shape. **Whoever closes that gate writes the ADR that reverses 0067**,
 in the commit that finishes the lane, exactly as 0067 asks.
 
+### B13. The `Use` button reaches one of the two local chat models (ADR 0206's neighbour)
+
+**Added 2026-08-17 by the core-hardening track, which found it and does not own
+it.** The evidence is in
+[`known-issues/the-agent-model-is-a-default-no-control-can-change.md`](../known-issues/the-agent-model-is-a-default-no-control-can-change.md);
+the short version is that `Use` writes `local_model` for a speech row and
+`local_correction_model` for a language row, and **the agent's model is neither**.
+It stays at the catalogue default `llama3.2:latest` for the transcript title,
+the Auto classifier and Agent mode, because no surface writes `agent_model` or
+`local_agent_model` and no runtime path reads the per-profile copy of them.
+
+**The cloud lane loses nothing but the choice.** The local lane is where it
+fails: a user who pulled a model and pressed `Use` has set their correction and
+not their agent, so a machine without `llama3.2:latest` gets no titles — and the
+fallback is the same first-words filename a model that simply declined would
+produce, which is why nobody has reported it.
+
+- **Requires** — B5 and B8 (the row model and the `Use` destination), nothing
+  else. Small.
+- **Decides one thing first, and it is not code**: does the chat model follow
+  ADR 0094's per-job, per-profile axis like the recogniser (ADR 0203) and the
+  correction (ADR 0206) now do, or does it stay machine-wide? **If it stays, the
+  per-profile `agent_model` fields go** — a stored value nothing reads is the
+  `use_as_prompt_hint` hazard, and this directory has two recorded wrong turns
+  from that field alone.
+- **Touches** — `Models.tsx`'s `useModel` mapping, which today is a two-arm
+  `role === "speech" ? … : …`; a language model can serve correction, the agent,
+  or both, so the destination is a surface question with an answer in the
+  drawing.
+- **Validates** — `npm test`, `npm run build`, `port:diff` on `models`, and the
+  local lane by hand: pull a model that is not `llama3.2`, press `Use`, and check
+  that a record still gets a title.
+
 ## Stage C — capture
 
 **Independent of A, B and D.** It can run concurrently with the whole provider

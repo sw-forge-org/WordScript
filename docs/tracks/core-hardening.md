@@ -334,14 +334,10 @@ rather than compacted, because the items are cited by number elsewhere.
     agree with each other and no path can disagree with another. It is not the
     ADR 0206 shape.
 
-    What it is instead is smaller and worth one line: `textProfiles.ts` writes
-    `agent_model` into every new profile's speech block, the runtime reads it
-    nowhere, and no surface writes the connection-wide field either — so *which
-    model answers as the agent* is the catalogue default and is not settable in
-    the product. **A field that looks like an override and is read by nothing is
-    this directory's documented trap** (`use_as_prompt_hint`, two wrong turns).
-    A gap in the product, not a wrong attribution, and it belongs to whoever
-    owns the Models surface.
+    What it is instead is a product gap and a dead field, recorded in
+    [`known-issues/the-agent-model-is-a-default-no-control-can-change.md`](../known-issues/the-agent-model-is-a-default-no-control-can-change.md)
+    and queued as **B13** on the speech track, which owns the Models surface.
+    Not this track's to build.
 
     Added 2026-08-16, both found on the single record above:
     [`known-issues/heard-and-written-do-not-say-which-stage-changed-what.md`](../known-issues/heard-and-written-do-not-say-which-stage-changed-what.md)

@@ -412,6 +412,20 @@ status change. Resolved bugs remain as references for the same failure class.
   proven with a control, and confirmed in the product. That half is the speech
   track's F2.
 
+- [the-agent-model-is-a-default-no-control-can-change.md](the-agent-model-is-a-default-no-control-can-change.md):
+  **open, found 2026-08-17 while ruling something else out.** The chat model
+  behind every transcript title, the Auto classifier and Agent mode is the
+  catalogue default and **no surface writes it** — `Models.tsx`'s `Use` button
+  reaches the speech model and the correction model, and the agent's is neither.
+  The per-profile `agent_model` beside them is written when a profile is created
+  and **read by nothing**, which is the `use_as_prompt_hint` hazard this
+  directory has two recorded wrong turns from. On the cloud lane it costs only
+  the choice; on the local lane a machine without `llama3.2:latest` silently
+  gets no titles, because that fallback looks exactly like a model declining to
+  name one. **Not the ADR 0206 divergence it was first written up as** — one
+  reader, no second path — so the fix is a control or a deletion, not a
+  resolver. Queued as the speech track's B13.
+
 ## Boundaries
 
 - Architecture decisions: [decisions/](../decisions/) (append-only ADRs)
