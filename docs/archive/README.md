@@ -40,6 +40,16 @@ here, in three files that split by *kind of document* rather than by leg:
   the two candidate connection shapes and hands the choice to the owner, and the
   recommendation the session brought back was the one the owner corrected.
 
+- [`speech-track-b15-kickoff.md`](speech-track-b15-kickoff.md) — the spent
+  **kick-off page** for B15, which closed the same day it was written
+  (ADR 0211, ADR 0212). Kept for two things nothing else carries: the finding it
+  told the next session not to re-derive — *`Account` names a credential and the
+  reader hears a bundle* — and **a premise of its own that was false**. It says
+  the account deletion is undoable by ADR 0195's notice; that hook belongs to the
+  transcript rows, so there was no window to wait for and B14b became an ask
+  instead (ADR 0210). A brief can be wrong about the tree it describes, and this
+  is the example.
+
 ## Closed tracks and spent plans
 
 - [`plans/settings-rework.md`](plans/settings-rework.md) — the settings surface

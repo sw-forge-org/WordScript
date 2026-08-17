@@ -26,12 +26,6 @@ contents of the directory.
   carrying what it requires, what it touches, what validates it and what *done*
   observably means. Its `## Status` table is the state of the track. **This is
   the page a speech session starts on.**
-- [`speech-track-b15-kickoff.md`](speech-track-b15-kickoff.md) — the page you
-  paste into a fresh session to start **B15**, which is the one step on this track
-  with a brief of its own because it is a restructure of a ported screen rather
-  than a step in the sequence. Orientation plus the finding it must not
-  re-derive; the brief is the plan's § B15. **Spent when B15 closes** — archive
-  it then, the way `speech-track-b14-kickoff.md` was.
 - [`speech-track.md`](speech-track.md) — stage one's account: the six findings
   the later stages are built on, and what a review of its own first pass found
   false in it. Not updated by later work. **Its H1 still reads *Kick-off*,

@@ -1,7 +1,14 @@
 # Kick-off — AI Models is organised by task, not by lane (speech track, B15)
 
+**Spent 2026-08-17.** B15 landed the same day it was written: ADR 0211 for the
+model axis and ADR 0212 for the task-first screen. Kept as the record of what the
+step was handed, including the one thing in it that turned out to be false — the
+account deletion never carried ADR 0195's undo notice, which is what turned B14b
+into an ask rather than a wait (ADR 0210). Not retconned; the corrections live in
+the records it names.
+
 Paste this into a fresh session. It is orientation only: **the brief is
-[`speech-track-plan.md`](speech-track-plan.md) § B15** and this page does not
+[`speech-track-plan.md`](../tracks/speech-track-plan.md) § B15** and this page does not
 restate it (ADR 0123).
 
 Work in
@@ -51,7 +58,7 @@ screen.
 
 ## Read before you touch anything
 
-1. **[`speech-track-plan.md`](speech-track-plan.md) § B15** — the brief: the
+1. **[`speech-track-plan.md`](../tracks/speech-track-plan.md) § B15** — the brief: the
    three locks, what must not move, the two config decisions, the shape, and what
    *done* observably means. § B14b above it is a small step that should land
    first because it touches the same removal path.
