@@ -28,14 +28,17 @@ contents of the directory.
   the page a speech session starts on.**
 - [`speech-track.md`](speech-track.md) — stage one's account: the six findings
   the later stages are built on, and what a review of its own first pass found
-  false in it. Not updated by later work.
+  false in it. Not updated by later work. **Its H1 still reads *Kick-off*,
+  because it was one when it was written and a record is not retconned** — the
+  classification is this line and the dated addendum at its head, not the title.
 - [`runtime-ownership.md`](runtime-ownership.md) — opened 2026-08-13 as
   *measurement integrity*, renamed and re-scoped the same day. `CLAUDE.md` gives
   the runtime trigger, capture, transform, **insert** and recovery; it does not
-  own the insert, and the instruments cannot see where it does not. Step 1 is
-  silent data loss — a finished dictation is discarded when its window does not
-  come back, because the session's completion is an `invoke` from the overlay.
-  Seven steps; 1, 2, 3, 5 and 7 are unblocked. Both the orientation page and the
+  own the insert, and the instruments cannot see where it does not. It opened on
+  silent data loss — a finished dictation discarded when its window did not come
+  back, because the session's completion was an `invoke` from the overlay — and
+  that is step 1 (ADR 0134). Its step state is the track's own `## Status` table
+  and the board; this line does not restate it (ADR 0123). Both the orientation page and the
   sequence. **Shares `capture-loses-half-the-recording.md` with core hardening** —
   that track holds the loss, this one holds the instrument.
 - [`context-objects.md`](context-objects.md) — opened 2026-08-14, nothing built.

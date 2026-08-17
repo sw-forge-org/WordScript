@@ -1,5 +1,14 @@
 # Kick-off — the speech track
 
+**Addendum 2026-08-17 — what this page is now.** It was the speech track's
+kick-off on 2026-08-12, and it has been stage one's record since the sequence
+got a file of its own. **A session starts on
+[`speech-track-plan.md`](speech-track-plan.md)**, which carries the steps, the
+status table and the baseline; this page is background and is not updated by
+later work, so every state claim below is 2026-08-12's. The title stays as it is
+because a record is not edited to match what happened after it — the correction
+is filed here rather than written over the page.
+
 Opened 2026-08-11. **A third track**, beside the GUI port relay
 (`gui-port-relay.md`) and core hardening (`core-hardening.md`),
 in the same tree. Stage your own paths when you commit; never `git add -A`.
