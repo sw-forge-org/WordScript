@@ -154,7 +154,10 @@ export function useOpenProfiles(): (() => void) | undefined {
   return useCallback(() => open?.({ view: "profiles" }), [open]);
 }
 
-export const NOT_INTEGRATED = "Not integrated yet — Groq is the lane WordScript runs (ADR 0065)";
+/** The tooltip a vendor without an adapter carries. It cited ADR 0065 to the
+ *  reader, which is a document only this repository can open — the decision is
+ *  still the reason, and the reason is the sentence, not the number. */
+export const NOT_INTEGRATED = "Not integrated yet — Groq is the lane WordScript runs";
 
 /**
  * THE FILE THE PICKER IS ABOUT TO SEND, WHERE THERE IS ONE (B7, ADR 0129).

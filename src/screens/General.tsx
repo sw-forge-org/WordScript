@@ -111,7 +111,7 @@ const OVERLAY_ANCHORS: { value: OverlayAnchor; label: string }[] = [
 const DEFAULT_DEVICE_LABEL = "System default microphone";
 
 export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
-  const { config, patch, active } = runtime;
+  const { config, patch, active, open } = runtime;
 
   const [devices, setDevices] = useState<NativeInputDevice[]>([]);
   const [captureStatus, setCaptureStatus] = useState<NativeCaptureStatus | null>(null);
@@ -284,40 +284,39 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
                 instant against the threshold. `active` is still never passed —
                 that is the prop that would have this webview open a second
                 microphone. */}
+            {/* THE SENTENCE IS THE ROW'S, NOT A NOTE'S. It answered "where is
+                the gain slider" and it answered it through a `Why not here`
+                link that went nowhere — a settings fact delivered as a
+                footnote to a document the reader cannot open. A row's `hint` is
+                where this product states what a control does and does not do,
+                so it is stated there. */}
             <Row
               layout="stack"
               label="Input level"
-              hint="A capture that never crosses the mark is discarded as empty."
+              hint="The level itself is set in your system sound settings — it is shared with every app using this microphone. A capture that never crosses the mark is discarded as empty."
             >
               <Waveform
                 ariaLabel="Live input, last few seconds"
                 level={monitor.monitoring || level.active ? level.levelRef : null}
               />
               <InputLevelMeter stream={level} />
-              <Note tail={<DocLink>Why not here</DocLink>}>
-                Set the level itself in your system sound settings — it is shared with every app
-                using this microphone.
-              </Note>
             </Row>
           </CardRows>
         </Card>
-        {/* THE TWO STATES THE CARD'S STANDING LINE CANNOT CARRY, on the one
-            surface in this section with room for a sentence: a Note spans the
-            card at about seventy characters a line, where the row they came off
-            holds twelve. Each names a DEVICE, which is the part neither the
-            card nor the `<option>` label says, and a device name is the very
-            thing that made the row unfittable.
+        {/* ONE STATE LEFT, AND IT IS THE ONE THAT IS A PROBLEM. Two Notes stood
+            here. The first named the device a running capture was still using
+            and said a new selection applies to the next recording — which is
+            word for word what the card above already says in its standing
+            description, so the card and the Note were two copies of one fact
+            and the Note's only addition was a device name nobody had asked
+            about mid-dictation.
 
-            A running capture wins over a missing device because it is about to
-            end and the other is not. This is also what still reads
-            `native_capture_status`: the row stopped needing it, and dropping
-            the call with the sentence would have left the command without a
-            caller — the drift ADR 0089 sweeps for, manufactured by a copy fix. */}
-        {!deviceError && captureStatus?.is_recording && captureStatus.device_name && (
-          <Note icon="about">
-            {`Current capture is still using ${captureStatus.device_name}. A new selection applies to the next recording.`}
-          </Note>
-        )}
+            What survives is the exceptional state: the saved microphone is
+            gone. That is not a fact about the product, it is a fact about this
+            machine right now, and it names the device WordScript will fall back
+            to — the part neither the card nor the `<option>` label carries.
+            `native_capture_status` is still read, because this condition needs
+            to know whether a capture is running. */}
         {!deviceError && !captureStatus?.is_recording && !selectedDeviceAvailable && (
           <Note icon="about">
             {`Saved microphone is not available right now. WordScript falls back to ${
@@ -487,7 +486,15 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
         </Card>
       </SectionHeader>
 
-      <Note icon="profiles" tail={<DocLink>Open Profiles → Defaults</DocLink>}>
+      {/* THE DOOR IS A DOOR NOW. It read `Open Profiles → Defaults` and opened
+          nothing, which is the fake affordance rule 7 forbids — stated in
+          `props.ts` about buttons and never applied to this link. It is drawn
+          only where there is somewhere to go, the same condition every other
+          door on these screens carries. */}
+      <Note
+        icon="profiles"
+        tail={open && <DocLink onClick={() => open({ view: "profiles" })}>Open Profiles</DocLink>}
+      >
         Auto-stop, stop after silence and workspace context belong to the profile, not to this
         machine. The processing limit is stated there too — it follows the provider and account
         plan.

@@ -19,7 +19,7 @@ import {
   ViewTop,
 } from "@/components/shell";
 import { modelId } from "@/lib/modelCatalogue";
-import type { ScreenProps } from "./props";
+import type { PartlyWiredScreenProps } from "./props";
 
 /**
  * NOTES & MEETINGS — `SCREENS.notesettings`.
@@ -36,7 +36,15 @@ import type { ScreenProps } from "./props";
  * and what stays here is what a meeting RECORDS, which is a capture question
  * and belongs to the surface that captures.
  */
-export function NoteSettingsScreen({ banner }: ScreenProps = {}) {
+/* THE SCREEN IS STILL DRAWN, AND ITS TWO DOORS ARE NOT. Nothing here is wired
+   to the runtime and the banner says so — but `AI Models` is a section that
+   exists in this build, so the two places this screen points at it may open it
+   instead of merely naming it. That is the only reason it takes a runtime:
+   `PartlyWiredScreenProps` keeps it renderable in the gallery, where `open` is
+   absent and neither door is drawn. */
+export function NoteSettingsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
+  const open = runtime?.open;
+  const openModels = open && (() => open({ section: "models" }));
   return (
     <>
       <ViewTop
@@ -202,7 +210,21 @@ export function NoteSettingsScreen({ banner }: ScreenProps = {}) {
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">{modelId("groq-speech-large-v3")}</StatusBadge>
-                  <Button variant="ghost" icon={<Icon name="arrow" />}>
+                  {/* THE ROW KEEPS ITS CONTROL AND LOSES ITS PRETENCE. A door
+                      in a row is not removed when it has nowhere to go — the
+                      row would lose the only thing on its right and stop
+                      matching its own drawing. It is disabled with the reason
+                      on it, which is what `DrawnButton` does one screen over.
+                      The prose link in the note below IS removed, because a
+                      struck-through sentence fragment is not a state a reader
+                      learns anything from. */}
+                  <Button
+                    variant="ghost"
+                    icon={<Icon name="arrow" />}
+                    onClick={openModels}
+                    disabled={!openModels}
+                    title={openModels ? undefined : "Reachable from the settings sheet."}
+                  >
                     AI Models
                   </Button>
                 </span>
@@ -215,7 +237,10 @@ export function NoteSettingsScreen({ banner }: ScreenProps = {}) {
       {/* Corrected 2026-08-03 by ADR 0040. This pointed at a Notes tab that held
           a model of its own. There is no such tab and no such model: the
           summary, the action and the answer are the assistant that Draft is. */}
-      <Note icon="models" tail={<DocLink>Open AI Models → The assistant</DocLink>}>
+      <Note
+        icon="models"
+        tail={openModels && <DocLink onClick={openModels}>Open AI Models</DocLink>}
+      >
         The model that writes a summary, runs an action or answers in Ask is the assistant — the
         same one Draft uses in a dictation. One setting, one place.
       </Note>

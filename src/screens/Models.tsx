@@ -1662,6 +1662,12 @@ function ModelsTab({
    *  ladder renders four controls deep, and this is one row on one card. */
   onManage?: () => void;
 }) {
+  /* THE TWO DOORS THIS TAB DRAWS, and neither of them opened before. `Open the
+     profile` and `Open Agents` were link text with no handler under it — the
+     fake affordance rule 7 forbids, worn as prose instead of as a button. In
+     the gallery there is no runtime and therefore nowhere to go, so both are
+     drawn only when a workspace handed one over. */
+  const open = runtime?.open;
   return (
     <>
       {/* ONE CONNECTION. This is the card that makes the rest of the screen
@@ -1894,7 +1900,16 @@ function ModelsTab({
                   name="Rewrite"
                   what="Cleanup plus rephrasing for clearer, more professional language. Manual only — never auto-selected."
                   extra={
-                    <Note icon="profiles" tail={<DocLink>Open the profile</DocLink>}>
+                    <Note
+                      icon="profiles"
+                      tail={
+                        open && (
+                          <DocLink onClick={() => open({ view: "profiles" })}>
+                            Open Profiles
+                          </DocLink>
+                        )
+                      }
+                    >
                       How this writes — register, length, style rules, writing sample — is the
                       profile's communication style, shared with the assistant.
                     </Note>
@@ -1962,7 +1977,14 @@ function ModelsTab({
                   what="Draft in a dictation, the Ask window, and the actions on a note and in the meeting HUD. One model for all four."
                   hint="Overridden: it is the one job that both writes from scratch and reads your material, and it is not latency-bound the way a cleanup is."
                   extra={
-                    <Note icon="agents" tail={<DocLink>Open Agents</DocLink>}>
+                    <Note
+                      icon="agents"
+                      tail={
+                        open && (
+                          <DocLink onClick={() => open({ section: "agents" })}>Open Agents</DocLink>
+                        )
+                      }
+                    >
                       Not the coding agents. Those are started by {DESK}, they write code, and they
                       speak to you through the agent overlay — a different thing that only shares a
                       word.

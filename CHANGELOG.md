@@ -53,6 +53,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — fifteen links that opened nothing, and every ADR number a reader was shown (ADR 0199)
+
+- **Fifteen of the sixteen `DocLink`s in the settings UI had no handler.**
+  `DocLink` renders `<a href="#">` with `preventDefault()`, so without an
+  `onClick` it swallows the click and does nothing. Eight of them had an ADR
+  number as their link text — a reference to a file in this repository, offered
+  to somebody running a compiled desktop application. `props.ts` had already
+  written the rule down about buttons ("a button that opens nothing is the fake
+  affordance rule 7 forbids") and nobody had applied it to a link, because a
+  link reads as prose and prose is not audited as a control.
+- **Five of them became doors.** General and AI Models open Profiles, AI Models
+  opens Agents, and Notes & Meetings opens AI Models — through `runtime.open`,
+  the same door History and `ScopeTag` already used, drawn only where a runtime
+  handed one over. `NoteSettingsScreen` takes `PartlyWiredScreenProps` for this
+  and nothing else; its engine row keeps its button and disables it with the
+  reason on it rather than losing the only control on its right.
+- **The rest lost the link and kept the sentence.** `Why`, `Why not here` and
+  `How context reaches the model` were questions whose answers are one clause
+  long, so the clause is in the sentence now.
+- **"Set the level itself in your system sound settings" moved into the row it
+  is about.** It is the answer to "where is the gain slider" and it stood in a
+  footnote under the meter with a dead link after it.
+- **The note naming the device a running capture was using is gone.** The card
+  above it already carries "A change applies to the next capture, not the one
+  running" as its standing description; the note repeated that fact and added a
+  device name, offered mid-dictation. The exceptional state — the saved
+  microphone is unplugged, and here is what the runtime will use instead —
+  stays. `native_capture_status` is still read and did not become an orphan.
+- **No ADR number, plan section or track stage is shown to a reader any more.**
+  A provider tooltip, two section banners, a privacy preview tag, four status
+  badges and eleven sentences carried one. The statement stayed and was stated
+  in full; the citation went. Roadmap vocabulary — `Preview`, `Wired in part`,
+  `Planned for Phase 8`, `ROADMAP Phase 5`, `V2` — is untouched: it says what is
+  built, and it is the material a developer mode will later display.
+- **A sweep holds both rules** (`src/screens/surfaceCopy.test.ts`). It reads the
+  tree rather than rendering it, fails on a `DocLink` without a handler and on a
+  citation inside `Note`, `PreviewBanner`, `StatusBadge`, `DocLink`, `ScopeTag`
+  or a copy prop, and it has been observed reporting both. The gallery's own
+  Foundations, Components and Motion pages are exempt and the screens shown
+  inside the gallery are not — a screen says the same thing on both surfaces.
+- **The prototype still carries these notes and these dead links**
+  (`demo.js` lines 2697, 3746, 3812, 4649). It is read-only and stays as it is;
+  `npm run port:diff` reports the difference on `general`, `models`, `profiles`
+  and `notesettings` deliberately.
+
 ### Changed — the mode lane runs seven digits and stops explaining itself
 
 - **Translate ships bound, on `Alt+5`.** The lane now runs `Alt+1` through

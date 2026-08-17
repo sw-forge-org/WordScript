@@ -9,7 +9,6 @@ import {
   Card,
   CardRows,
   ConfirmPanel,
-  DocLink,
   EditorPanel,
   Field,
   FieldWrap,
@@ -1790,8 +1789,13 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       />
                     </Row>
                   </CardRows>
-                  <Note icon="arrow" tail={<DocLink>How context reaches the model</DocLink>}>
-                    For individual terms, use Words &amp; names.
+                  {/* The tail read `How context reaches the model` and led
+                      nowhere. What it promised is the sentence itself, so the
+                      sentence says it: the link was the explanation deferred to
+                      a document nobody can open from here. */}
+                  <Note icon="arrow">
+                    This is handed to the model alongside your dictation. For individual terms, use
+                    Words &amp; names instead.
                   </Note>
                 </Card>
               )}
@@ -1997,8 +2001,11 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       )}
                     </ListRows>
                   </Card>
-                  <Note icon="arrow" tail={<DocLink>Why</DocLink>}>
-                    Misheard names belong in Words &amp; names instead.
+                  {/* A one-word `Why` that answered nothing. The answer is one
+                      clause long, so it is in the sentence. */}
+                  <Note icon="arrow">
+                    Misheard names belong in Words &amp; names instead — that list is given to the
+                    transcriber, so the name is heard correctly rather than repaired afterwards.
                   </Note>
                 </>
               )}

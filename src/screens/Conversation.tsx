@@ -14,7 +14,6 @@ import {
   DocTemplate,
   DocTemplateBody,
   DocTemplateHead,
-  DocLink,
   Icon,
   Note,
   PreviewBanner,
@@ -90,7 +89,7 @@ export function ConversationScreen() {
 
       <SectionHeader
         title="It is the meeting window"
-        description="The question was whether to build a second one. The answer is no, and ADR 0045 is the reason."
+        description="The question was whether to build a second one. The answer is no, and the reasoning is below."
       >
         <Card
           body={
@@ -107,8 +106,8 @@ export function ConversationScreen() {
                   to learn twice.
                 </CrossItem>
                 <CrossItem title="The copilot lane">
-                  One line above the bar, writes and never speaks, never hints without a citation
-                  (ADR 0047).
+                  One line above the bar, writes and never speaks, never hints without a
+                  citation.
                 </CrossItem>
                 <CrossItem title="Everything downstream">
                   One object type, so history, search, export and retention already cover it.
@@ -135,9 +134,9 @@ export function ConversationScreen() {
             </Cross>
           }
         />
-        <Note icon="about" tail={<DocLink>ADR 0045</DocLink>}>
+        <Note icon="about">
           A second window would need its own transcript view, its own speaker handling, its own
-          export and its own bugs — and it would rebuild the shape ADR 0045 removed, one release
+          export and its own bugs — and it would rebuild the shape that was removed, one release
           after removing it.
         </Note>
       </SectionHeader>
@@ -170,7 +169,7 @@ export function ConversationScreen() {
             />
             <Row
               label="It is not a CRM and does not grow into one"
-              hint="A name, the conversations, and what was agreed. Pipelines, deals and reminders belong to the tool that already owns them, and the desk reaches that tool through its own connectors (ADR 0046)."
+              hint="A name, the conversations, and what was agreed. Pipelines, deals and reminders belong to the tool that already owns them, and the desk reaches that tool through its own connectors."
               control={<StatusBadge tone="plan">Stays small</StatusBadge>}
             />
           </CardRows>
@@ -276,8 +275,8 @@ export function ConversationScreen() {
             />
             <Row
               label="Every line can be traced back"
-              hint="A sentence in the record points at the moment in the transcript it came from. The copilot's rule from ADR 0047 — never a hint without a citation — is the same rule, applied to a document instead of to a line."
-              control={<StatusBadge tone="plan">ADR 0047</StatusBadge>}
+              hint="A sentence in the record points at the moment in the transcript it came from. The copilot's rule — never a hint without a citation — is the same rule, applied to a document instead of to a line."
+              control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
           </CardRows>
         </Card>

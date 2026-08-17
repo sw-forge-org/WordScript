@@ -4,7 +4,6 @@ import {
   Card,
   CardRows,
   ChatWinDeco,
-  DocLink,
   HandoffPair,
   HandoffSide,
   Icon,
@@ -107,7 +106,7 @@ export function TranslateScreen() {
 
       <SectionHeader
         title="It is not the Translate mode, and it is not a second one"
-        description="ADR 0041's mode serves one person writing. This serves two people talking, and the dictation contract breaks in three places the moment there are two."
+        description="The Translate mode serves one person writing. This serves two people talking, and the dictation contract breaks in three places the moment there are two."
       >
         <HandoffPair>
           <HandoffSide
@@ -128,7 +127,7 @@ export function TranslateScreen() {
             Two of you talk. Nothing is inserted anywhere.
           </HandoffSide>
         </HandoffPair>
-        <Note icon="about" tail={<DocLink>ADR 0041</DocLink>}>
+        <Note icon="about">
           Same name on purpose. It is one capability with two surfaces, the way the assistant is
           one thing with three doors — and the mode keeps its rule: Auto never selects a language.
         </Note>

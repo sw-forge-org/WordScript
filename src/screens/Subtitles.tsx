@@ -113,8 +113,8 @@ export function SubtitlesScreen() {
             />
             <Row
               label="Never frosted"
-              hint="Frost is for a surface that floats over this application. This one floats over somebody else's video, which is exactly the case ADR 0051 excludes — and blurring a moving picture costs a filter pass per frame of theirs."
-              control={<StatusBadge tone="plan">ADR 0051</StatusBadge>}
+              hint="Frost is for a surface that floats over this application. This one floats over somebody else's video, which is exactly the excluded case — and blurring a moving picture costs a filter pass per frame of theirs."
+              control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
             <Row
               label="It is excluded from screen shares"

@@ -19,7 +19,6 @@ import {
   Card,
   CardRows,
   ChatWinDeco,
-  DocLink,
   HotkeyButton,
   Matrix,
   ModeCycle,
@@ -80,7 +79,7 @@ export function AgentOverlayScreen() {
         title="Agent overlay"
         lead="What is on screen while coding agents are working and one of them needs you."
         banner={
-          <PreviewBanner>Planned for Phase 8 — ADR 0030. This surface exists in no build.</PreviewBanner>
+          <PreviewBanner>Planned for Phase 8. This surface exists in no build.</PreviewBanner>
         }
       />
 
@@ -188,7 +187,7 @@ export function AgentOverlayScreen() {
           Fourth member of the window family, after Ask, the meeting HUD and Actions. Same chrome,
           same resize grip, OS-drawn decoration.
         </Note>
-        <Note icon="agents" tail={<DocLink>ADR 0043</DocLink>}>
+        <Note icon="agents">
           The orb at the head of the rail and the strip at the foot are the same object: one
           process, one voice. The targets are what it is working on, not three agents that can each
           speak to you.
@@ -217,10 +216,11 @@ export function AgentOverlayScreen() {
           is exactly when a coding agent is likely to be running. Content-protected, like the
           meeting HUD — a question about a private repository does not belong in a shared screen.
         </Note>
-        <Note icon="volume" tail={<DocLink>ADR 0010</DocLink>}>
+        <Note icon="volume">
           The sound is a motif on the one persistent output stream, not a fresh stream per cue and
-          not the system notification sound. That is ADR 0010's shape, re-used rather than
-          re-decided; it also means one application volume in the OS mixer governs it.
+          not the system notification sound. That is the shape every other WordScript cue already
+          has, re-used rather than re-decided; it also means one application volume in the OS mixer
+          governs it.
         </Note>
       </SectionHeader>
 
@@ -287,7 +287,7 @@ export function AgentOverlayScreen() {
         </Card>
       </SectionHeader>
 
-      <Note icon="about" tail={<DocLink>Open Agents settings</DocLink>}>
+      <Note icon="about">
         Bridge sessions do not enter the transcript history. They end in the thread above and in the
         Agents settings area, because an answer without its question is unreadable in a list of
         dictations.

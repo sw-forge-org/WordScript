@@ -739,7 +739,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             <Row
               label="The copilot's index"
               tag={
-                <PreviewTag title="Decided in ADR 0138 and not built. The copilot itself is the context-object track's Stage E5, behind roadmap gate 3; this row states the rule that step is bound by." />
+                <PreviewTag title="Decided and not built. The copilot itself is behind roadmap gate 3; this row states the rule it will be bound by when it arrives." />
               }
               hint="Its hints come from meetings, uploads and notes, never from dictations."
               control={<StatusBadge tone="success">Context objects only</StatusBadge>}

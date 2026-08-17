@@ -332,7 +332,7 @@ export function MeetingScreen() {
             />
             <Row
               label="It never hints without a source"
-              hint="The citation is part of the hint and clicking it opens the line it came from. ADR 0040 made this a contract for the assistant; a hint arriving mid-meeting is the highest-cost place in the product to be confidently wrong."
+              hint="The citation is part of the hint and clicking it opens the line it came from. It is a contract for the assistant everywhere, and a hint arriving mid-meeting is the highest-cost place in the product to be confidently wrong."
               control={<StatusBadge tone="success">Always cited</StatusBadge>}
             />
             <Row

@@ -59,7 +59,7 @@ export function AgentsScreen({ banner }: ScreenProps = {}) {
       <ViewTop
         title="Agents"
         lead="Coding agents that ask you out loud, and the one process that speaks for them."
-        banner={banner ?? <PreviewBanner>Planned for Phase 8 — ADR 0030.</PreviewBanner>}
+        banner={banner ?? <PreviewBanner>Planned for Phase 8.</PreviewBanner>}
         tabs={
           <SubTabs
             items={[

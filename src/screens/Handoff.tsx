@@ -7,7 +7,6 @@ import {
   CrossFlowStep,
   CrossItem,
   CrossSide,
-  DocLink,
   Handoff,
   HandoffCell,
   HandoffFoot,
@@ -49,7 +48,7 @@ export function HandoffScreen() {
       <ViewTop
         title="Handoff"
         lead="What happens when a dictation asks for something to be done rather than written."
-        banner={<PreviewBanner>Planned for Phase 8 — ADR 0044.</PreviewBanner>}
+        banner={<PreviewBanner>Planned for Phase 8.</PreviewBanner>}
       />
 
       <SectionHeader
@@ -124,12 +123,12 @@ export function HandoffScreen() {
             />
           </Handoff>
         </HandoffStage>
-        <Note icon="privacy" tail={<DocLink>ADR 0029</DocLink>}>
-          Nothing has happened when this appears. ADR 0029's prohibition on side-effecting tools
+        <Note icon="privacy">
+          Nothing has happened when this appears. The prohibition on side-effecting tools
           in the dictation path is intact — what is offered is a handover, and the offer is
           refused by doing nothing to it.
         </Note>
-        <Note icon="keyboard" tail={<DocLink>ADR 0006</DocLink>}>
+        <Note icon="keyboard">
           It does not take focus. The dictation overlay must keep focus: false or the insert
           target moves out of the app you were writing in, and this card stands in exactly that
           moment — so it grabs Enter and Escape while it is visible instead of becoming a focused
@@ -191,8 +190,8 @@ export function HandoffScreen() {
           <CardRows>
             <Row
               label="Why they cannot simply be one thing"
-              hint="A session ends in exactly one reducer commit (ADR 0018). A process that runs for days has no single end point, and one that has an end point cannot run for days. The rest follows from that."
-              control={<StatusBadge tone="plan">ADR 0018</StatusBadge>}
+              hint="A session ends in exactly one reducer commit. A process that runs for days has no single end point, and one that has an end point cannot run for days. The rest follows from that."
+              control={<StatusBadge tone="plan">Decided</StatusBadge>}
             />
             <Row
               label="And why the surface can be"
@@ -216,7 +215,7 @@ export function HandoffScreen() {
             />
             <Row
               label="What Auto may not decide"
-              hint="The language it is in (ADR 0041), and whether anything happens at all. Both are unrecoverable the moment they are wrong: text in the wrong language is already in somebody else's document, and a mail that has been sent cannot be recalled."
+              hint="The language it is in, and whether anything happens at all. Both are unrecoverable the moment they are wrong: text in the wrong language is already in somebody else's document, and a mail that has been sent cannot be recalled."
               control={<StatusBadge tone="plan">Never</StatusBadge>}
             />
             <Row
@@ -300,7 +299,7 @@ export function HandoffScreen() {
                 places.
               </CrossFlowStep>
               <CrossFlowStep title="A new thing starts, with its own lifetime">
-                The session that offered the handoff ends in its own single commit (ADR 0018). It
+                The session that offered the handoff ends in its own single commit. It
                 does not stay open waiting for the run; the run is not part of it.
               </CrossFlowStep>
               <CrossFlowStep title="The thread opens in the agent window">
@@ -339,7 +338,7 @@ export function HandoffScreen() {
             <Row
               label="It asked out loud"
               hint="Only when you configured it to. One spoken field, length-limited, and the answer is returned verbatim — the desk may compose the question, never the answer."
-              control={<StatusBadge tone="plan">ADR 0030</StatusBadge>}
+              control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
             <Row
               label="The offer was wrong"
@@ -364,7 +363,7 @@ export function HandoffScreen() {
         </Note>
       </SectionHeader>
 
-      <Note icon="about" tail={<DocLink>ADR 0030</DocLink>}>
+      <Note icon="about">
         A handed-over dictation does not enter the transcript history. What you said becomes the
         first entry of the thread, where the answer to it will also be — the same reason bridge
         sessions stay out of it.
