@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Card,
   CardRows,
-  HotkeyButton,
   Row,
   SectionHeader,
   SegmentControl,
@@ -10,8 +9,13 @@ import {
   Stepper,
   ViewTop,
 } from "@/components/shell";
-import { HotkeyRecorder } from "@/components/settings/HotkeyRecorder";
-import { loadShortcutCapabilities, readTriggerStatus, validateShortcut } from "@/lib/shortcuts";
+import { ShortcutField } from "@/components/settings/ShortcutField";
+import {
+  comboFromBinding,
+  loadShortcutCapabilities,
+  readTriggerStatus,
+  validateShortcut,
+} from "@/lib/shortcuts";
 import type {
   AppConfig,
   NativeTriggerStatus,
@@ -127,13 +131,6 @@ function readField(config: AppConfig, field: CaptureField | ModeField): string {
   return (config[field] as string | undefined) ?? "";
 }
 
-/** `HotkeyButton` splits on `+`; the runtime joins on ` + `. Nothing else in
- *  either representation is touched — the raw token string is never shown (T9). */
-function comboFromDisplay(display: string | undefined, stored: string): string | null {
-  const human = display?.trim();
-  if (human) return human.split(" + ").join("+");
-  return stored.trim() ? stored.trim() : null;
-}
 
 /**
  * The mechanics of an activation mode, from the runtime's own timing constants,
@@ -172,10 +169,15 @@ function activationHint(
 }
 
 /** Four answers and no fifth. `undefined` is the runtime not having answered
- *  yet, which is not the same as "not registered" and does not claim to be. */
+ *  yet, which is not the same as "not registered" and does not claim to be —
+ *  and neither is an answer about the value this slot held a moment ago, which
+ *  is why the binding has to be FOR the stored value to count as one. */
 function badgeFor(binding: ShortcutBindingInfo | undefined, stored: string) {
-  if (!stored.trim()) return { tone: "neutral" as const, text: "Disabled" };
-  if (!binding) return { tone: "neutral" as const, text: "Not checked" };
+  const value = stored.trim();
+  if (!value) return { tone: "neutral" as const, text: "Disabled" };
+  if (!binding || binding.configured.trim() !== value) {
+    return { tone: "neutral" as const, text: "Not checked" };
+  }
   if (binding.registered) return { tone: "success" as const, text: "Registered" };
   return { tone: "danger" as const, text: "Not registered" };
 }
@@ -207,11 +209,15 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
   }, [active, refresh]);
 
   /* A saved shortcut is re-registered by the runtime, so the row's badge has to
-     be re-read when the value changes — not when the section is opened. */
+     be re-read when the value changes — not when the section is opened. EVERY
+     value: the three capture slots were listed here and the eight mode slots
+     were not, so a mode row kept the runtime's answer about whatever it used to
+     be bound to until something else on the screen happened to refresh. */
+  const storedShortcuts = ALL_FIELDS.map((field) => readField(config, field)).join(" ");
   useEffect(() => {
     if (!active) return;
     refresh();
-  }, [active, refresh, config.hotkey, config.pause_hotkey, config.abort_hotkey]);
+  }, [active, refresh, storedShortcuts]);
 
   /* Whether the trigger is modifier-only is the runtime's answer, never a rule
      re-derived here — the UI owns no key knowledge (ADR 0006). */
@@ -247,44 +253,38 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
   };
 
   const captureBinding = bindingFor("capture");
-  const triggerLabel = comboFromDisplay(captureBinding?.display, config.hotkey) ?? "The trigger";
+  const triggerLabel = comboFromBinding(captureBinding, config.hotkey) ?? "The trigger";
   const activationCapability = capabilities?.activation_modes.find(
     (entry) => entry.id === config.activation_mode,
   );
 
-  /** The row's control, at rest or recording. Recording is a state the drawing
-   *  does not have, so it is the port's own recorder rather than a second
-   *  drawing of one — `HotkeyRecorder` already owns the grab suspension, the
-   *  chord accumulation and the ten-second timeout. */
+  /** The row's control. Every rule about how a shortcut slot behaves lives in
+   *  `ShortcutField` and is shared with every other surface that offers one
+   *  (ADR 0201); what belongs here is only which slot this row is and which
+   *  values the other ten already hold.
+   *
+   *  RECORDING IS CONTROLLED FROM THE SCREEN because eleven of these sit
+   *  together and only one may listen at a time. The recorder's blur-cancel
+   *  cannot guarantee that on its own — a pill that never took focus never
+   *  blurs — so the screen holds the single open slot. */
   const control = (
     field: CaptureField | ModeField,
     binding: ShortcutBindingInfo | undefined,
+    label: string,
     allowModifierOnly = true,
-  ) => {
-    const stored = readField(config, field);
-    if (recording === field) {
-      return (
-        <HotkeyRecorder
-          value={stored}
-          display={binding?.display}
-          allowModifierOnly={allowModifierOnly}
-          takenValues={takenBy(field)}
-          onChange={(next) => commit(field, next)}
-          onStopRecording={() => {
-            setRecording(null);
-            refresh();
-          }}
-          ariaLabel={`Record ${field}`}
-        />
-      );
-    }
-    return (
-      <HotkeyButton
-        combo={comboFromDisplay(binding?.display, stored)}
-        onClick={() => setRecording(field)}
-      />
-    );
-  };
+  ) => (
+    <ShortcutField
+      value={readField(config, field)}
+      binding={binding}
+      label={label}
+      allowModifierOnly={allowModifierOnly}
+      takenValues={takenBy(field)}
+      onChange={(next) => commit(field, next)}
+      recording={recording === field}
+      onRecordingChange={(on) => setRecording(on ? field : null)}
+      onRecordingEnd={refresh}
+    />
+  );
 
   return (
     <>
@@ -305,7 +305,7 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
                   control={
                     <span className="ws-rowflex">
                       <StatusBadge tone={badge.tone}>{badge.text}</StatusBadge>
-                      {control(slot.field, binding)}
+                      {control(slot.field, binding, slot.label)}
                     </span>
                   }
                 />
@@ -349,7 +349,7 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
             <Row
               label="Mode select"
               hint={bindingFor("mode_picker")?.error ?? "Opens the picker; press again to cycle."}
-              control={control("mode_picker_hotkey", bindingFor("mode_picker"))}
+              control={control("mode_picker_hotkey", bindingFor("mode_picker"), "Mode select")}
             />
             {MODE_SLOTS.map((slot) => {
               const binding = bindingFor(slot.binding);
@@ -358,7 +358,7 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
                   key={slot.label}
                   label={slot.label}
                   hint={binding?.error ?? undefined}
-                  control={control(slot.field, binding)}
+                  control={control(slot.field, binding, slot.label)}
                 />
               );
             })}

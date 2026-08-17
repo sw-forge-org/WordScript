@@ -53,6 +53,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — setting a hotkey takes one press, and removing one takes no replacement (ADR 0201)
+
+- **The click that opens the recorder now starts it.** The Hotkeys row swapped
+  its button for the recorder and the recorder mounted idle, waiting for a
+  second click of its own. The two states are key caps in a bordered box either
+  way, so nothing said which one was in front of you: the first click bought a
+  widget that looks like it is listening, and the keys pressed into it went
+  nowhere. Reported as "I have to press twice and it does not always register".
+- **And it is recording on its first frame.** Starting it from an effect painted
+  the idle pill first and replaced it once the runtime's vocabulary round trip
+  came back — long enough to see, and seen.
+- **A chord with a key is written when the keys come up.** No confirmation step.
+  `Ctrl+Shift+D` is finished by construction the moment you let go; there is
+  nothing it could still become. The confirmation stays exactly where it earns
+  its keystroke: a modifier-only chord (which is a prefix of everything you
+  might still be reaching for — the D1 hazard, unchanged and still tested), a
+  shortcut the runtime warned about, and a combination another slot owns.
+- **Backspace clears the slot, and every bound row has a clear button.**
+  Empty-means-disabled was implemented end to end in the runtime and no control
+  anywhere produced an empty value, so the only way out of a shortcut was
+  another shortcut. The button appears for a value rather than as a permanent
+  column, and an emptied slot reads `Disabled` in the badge the row already has.
+- **A second attempt no longer inherits the first one's key.** "The largest
+  chord wins" is a rule about one grip; a press with nothing else held now
+  starts a fresh chord.
+- **The ten-second timeout is re-armed on every key event** instead of running
+  from the click, which made it a budget for deciding rather than for pressing
+  keys.
+- **A duplicated key release commits once.** X11 delivered two and four release
+  edges for a single hold in the S0 measurement, so this is a measured case.
+- **A row draws the value that was just saved, not the one the runtime last
+  registered.** `patch` updates the config immediately and
+  `native_trigger_status` lags it by a save and a re-registration, and the row
+  preferred the runtime's spelling over the stored value. Saving `Alt+F8` over
+  `Ctrl+Super` therefore drew `Ctrl+Super` back — indistinguishable from a save
+  that did not happen, so it gets done again — and clearing a slot removed the
+  clear button while leaving its key caps, so the slot read as bound and
+  unclearable at once. The binding's `configured` is the value it was built for,
+  which is the whole test for whether its answer is about this one; the badge
+  says `Not checked` rather than reporting a registration of something else. The
+  refresh now watches all eleven shortcut fields instead of the three capture
+  ones, so a mode row stops holding an answer about what it used to be bound to.
+- **The recorder lost its check mark and its cross.** Two controls for gestures
+  the widget performs by itself: let go to set, Escape to cancel, Backspace to
+  clear, Enter for the one chord the release edge cannot finish. The hint under
+  the pill is one short line instead of two sentences of instructions.
+- **Setting a shortcut is one control now, `ShortcutField`** — the caps, the
+  clear button, the stored-value resolution and the recorder behind them. The
+  recorder was always shared; the three things around it were not, and each was
+  a defect the first time it was written. Recording is controlled by the caller
+  where several slots sit together (Hotkeys holds the single open one across
+  eleven rows) and owned by the control where one does.
+- **Onboarding's hotkey step performs that interaction instead of drawing it.**
+  It was three dead buttons with `Ctrl+Super` hardcoded into each; the step now
+  sets a real value, and the two later steps that recite it — "press it" and the
+  summary — read what was set, including when it was deliberately emptied. The
+  value stays local like every other answer in that flow. The registration badge
+  beside it gained a `PreviewTag`: `Accepted` was tolerable while the whole step
+  was a drawing and a fresh false claim once the control above it became real.
+
 ### Removed — fifteen links that opened nothing, and every ADR number a reader was shown (ADR 0199)
 
 - **Fifteen of the sixteen `DocLink`s in the settings UI had no handler.**

@@ -276,6 +276,42 @@ describe("Onboarding", () => {
     expect(container.querySelectorAll("button.ws-obrail-step")).toHaveLength(2);
   });
 
+  /**
+   * ADR 0201. Setting a shortcut is one interaction and it is the same one
+   * everywhere — this step used to draw a dead `HotkeyButton` with the default
+   * hardcoded into it, which teaches a workflow the product does not have and
+   * goes stale the next time the real one is corrected.
+   */
+  it("sets the hotkey with the control Settings uses, not a drawing of one", () => {
+    render(<OnboardingScreen />);
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    /* Two things a drawing does not have: a button that says what pressing it
+       does, and a way out of the value without choosing another one. */
+    expect(screen.getByRole("button", { name: /Ctrl.*Super.*Change/s })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Clear the Dictate shortcut" }),
+    ).toBeInTheDocument();
+  });
+
+  it("carries the shortcut you chose into the two steps that recite it", () => {
+    render(<OnboardingScreen />);
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    /* Emptying the slot is the cheapest way to prove the value travels: it goes
+       through the same `onChange` a recorded chord does, without a Tauri host. */
+    fireEvent.click(screen.getByRole("button", { name: "Clear the Dictate shortcut" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    /* Step 6 asks you to press it, so it cannot go on naming a key you unset. */
+    expect(screen.getByText("No hotkey set")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "It worked" }));
+    /* And the summary recites what was set, including "nothing". */
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+  });
+
   it("renders the settings screen's own provider picker, not a simplified twin", () => {
     const { container } = render(<OnboardingScreen />);
     for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));

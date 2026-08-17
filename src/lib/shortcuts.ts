@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   NativeTriggerStatus,
+  ShortcutBindingInfo,
   ShortcutCapabilities,
   ShortcutPlatform,
   ShortcutValidation,
@@ -125,6 +126,32 @@ export function chordToKeyLabels(
     .find((token) => token.token === chord.key);
 
   return [...modifiers, key?.display ?? chord.key];
+}
+
+/**
+ * Resolves what a slot is bound to, for a surface that draws it.
+ *
+ * THE CONFIG SAYS WHETHER SOMETHING IS BOUND; THE BINDING ONLY SAYS HOW IT IS
+ * SPELLED. A config patch takes effect the moment it is made and
+ * `native_trigger_status` lags it by a save and a re-registration, so a binding
+ * read while drawing routinely describes the PREVIOUS value. Preferring its
+ * display over the stored value drew the OLD shortcut back over a newly saved
+ * one — indistinguishable from a save that did not happen — and drew a cleared
+ * slot as still bound (ADR 0201). `configured` is the canonical value the
+ * runtime built this binding FOR, so comparing it against the stored value is
+ * the whole test for whether the answer is about this one.
+ *
+ * Returns the `+`-joined form `Keycaps` splits on, or null when nothing is
+ * bound. The raw token string is never shown (T9).
+ */
+export function comboFromBinding(
+  binding: ShortcutBindingInfo | undefined,
+  stored: string,
+): string | null {
+  const value = stored.trim();
+  if (!value) return null;
+  const human = binding?.configured.trim() === value ? binding.display.trim() : "";
+  return human ? human.split(" + ").join("+") : value;
 }
 
 /// Splits a stored value into the labels rendered as individual key caps.

@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { HotkeysScreen } from "./Hotkeys";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
+import { __setShortcutRuntimeForTests } from "@/lib/shortcuts";
+import { createShortcutPlatform, createShortcutVocabulary } from "@/test/shortcutRuntime";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
@@ -116,6 +118,10 @@ const CAPABILITIES = {
 };
 
 beforeEach(() => {
+  /* The recorder refuses to record without the runtime vocabulary, and the
+     module caches it per window — installing it through the seam keeps that
+     cache from carrying one test's answer into the next. */
+  __setShortcutRuntimeForTests(createShortcutVocabulary(), createShortcutPlatform());
   invoked.mockReset();
   invoked.mockImplementation(async (command: string) => {
     if (command === "native_trigger_status") return TRIGGER_STATUS;
@@ -250,5 +256,72 @@ describe("Hotkeys", () => {
        renders it as; the caps are that, split. */
     const dictate = await screen.findByRole("button", { name: /Ctrl.*Super.*Change/s });
     expect(dictate).toBeInTheDocument();
+  });
+
+  it("records on the click that opens the recorder, not on a second one", async () => {
+    /* The row swaps its button for the recorder, so the click is already spent
+       by the time the recorder exists. Without `autoStart` it arrives idle, and
+       the keys pressed into it go nowhere — reported as "I have to press twice
+       and it does not always register" (ADR 0201). */
+    render(<HotkeysScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Ctrl.*Super.*Change/s }));
+
+    expect(
+      await screen.findByLabelText(/recording dictate shortcut, press your keys/i),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("pause_native_trigger"));
+  });
+
+  it("draws the value that was just saved, not the one the runtime last registered", async () => {
+    /* `patch` updates the config immediately and `native_trigger_status` lags
+       it by a save and a re-registration, so the binding here still describes
+       `Ctrl+Super`. Preferring its display drew the OLD shortcut back over the
+       new one, which reads as "it did not save — I have to do it twice"
+       (ADR 0201). */
+    const runtime = createWorkspaceRuntime({
+      active: true,
+      config: createAppConfig({ hotkey: "Alt+F8" }),
+    });
+    render(<HotkeysScreen runtime={runtime} />);
+
+    expect(await screen.findByRole("button", { name: /Alt.*F8.*Change/s })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ctrl.*Super.*Change/s })).not.toBeInTheDocument();
+    /* And the badge does not answer for it either: a registration of a
+       different value is not a reading of this one. */
+    expect(screen.getAllByText("Not checked")).toHaveLength(1);
+  });
+
+  it("draws a cleared slot as unset even while the runtime still holds the old grab", async () => {
+    /* The other half of the same staleness: clearing removed the clear button —
+       the config was empty — while the caps it was next to stayed, so the slot
+       looked bound and un-clearable at once. */
+    const runtime = createWorkspaceRuntime({
+      active: true,
+      config: createAppConfig({ hotkey: "" }),
+    });
+    render(<HotkeysScreen runtime={runtime} />);
+
+    expect(await screen.findAllByRole("button", { name: /not set/i })).not.toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /Ctrl.*Super.*Change/s })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Clear the Dictate shortcut" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("Disabled")).toHaveLength(1);
+  });
+
+  it("empties a slot without asking for a replacement, and offers that only where there is one", async () => {
+    const patch = vi.fn();
+    render(<HotkeysScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    /* The three capture slots are bound in the factory and the mode slots are
+       not, so the clear affordance appears exactly three times — it is offered
+       for a value, never as a permanent column. */
+    const clears = await screen.findAllByRole("button", { name: /^Clear the .* shortcut$/ });
+    expect(clears).toHaveLength(3);
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear the Dictate shortcut" }));
+    /* Empty is the runtime's own "disabled" (T7), not a revert to a default. */
+    expect(patch).toHaveBeenCalledWith({ hotkey: "" });
   });
 });

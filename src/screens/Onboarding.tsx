@@ -6,7 +6,7 @@ import {
   CheckList,
   Field,
   Icon,
-  HotkeyButton,
+  Keycaps,
   LevelMeter,
   ModelList,
   ModelRow,
@@ -26,6 +26,7 @@ import {
   ViewTop,
   type OnboardingStep,
 } from "@/components/shell";
+import { ShortcutField } from "@/components/settings/ShortcutField";
 import { InertSegment, ProviderPick } from "./Models";
 import { TypingBaseline } from "./Privacy";
 import { LANES, libraryModel, type LaneName } from "./data";
@@ -59,6 +60,13 @@ export function OnboardingScreen() {
      so for the whole screen, which is why this control is not marked
      separately. The default is the runtime's own. */
   const [baseline, setBaseline] = useState(40);
+  /* THE HOTKEY IS AN ANSWER, SO IT LIVES WHERE THE OTHER ANSWERS DO. The step
+     that sets it, the step that asks you to press it and the summary that
+     recites it are three different components, and a shortcut chosen in the
+     first one that the other two do not know about is the kind of lie this
+     screen argues against everywhere else. The default is the drawing's, which
+     is the platform default it stands in for. */
+  const [hotkey, setHotkey] = useState("Ctrl+Super");
   const step = OB_STEPS[index];
   const last = index === OB_STEPS.length - 1;
 
@@ -81,10 +89,12 @@ export function OnboardingScreen() {
       {step.id === "welcome" && <Welcome />}
       {step.id === "mic" && <Microphone />}
       {step.id === "models" && <Models lane={lane} onLane={setLane} />}
-      {step.id === "hotkey" && <Hotkey />}
+      {step.id === "hotkey" && <Hotkey value={hotkey} onValue={setHotkey} />}
       {step.id === "insert" && <Insert />}
-      {step.id === "try" && <TryIt />}
-      {step.id === "done" && <Done baseline={baseline} onBaseline={setBaseline} />}
+      {step.id === "try" && <TryIt hotkey={hotkey} />}
+      {step.id === "done" && (
+        <Done hotkey={hotkey} baseline={baseline} onBaseline={setBaseline} />
+      )}
 
       <OnboardingFoot
         onBack={index > 0 ? () => setIndex(index - 1) : undefined}
@@ -437,7 +447,20 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
   );
 }
 
-function Hotkey() {
+/**
+ * SETTING A SHORTCUT IS ONE INTERACTION AND IT IS THE SAME ONE EVERYWHERE.
+ * `ShortcutField` is the control Settings → Hotkeys uses, unchanged: one click
+ * starts the recording, releasing the keys sets it, `Backspace` empties the
+ * slot and `Escape` cancels (ADR 0201). A drawing of that control here would
+ * teach a workflow the product does not have, and would go stale the next time
+ * the real one is corrected — which it did, twice, in one afternoon.
+ *
+ * The value it writes is local, like every other answer in this flow, and there
+ * is no `binding` to hand it because nothing has registered anything: the
+ * shortcut is the user's choice and its registration is the step that has not
+ * been built.
+ */
+function Hotkey({ value, onValue }: { value: string; onValue: (next: string) => void }) {
   return (
     <Card
       title="Which key starts a dictation"
@@ -447,10 +470,13 @@ function Hotkey() {
         <Row
           label="Dictate"
           hint="Works in any application, including ones WordScript knows nothing about."
-          control={<HotkeyButton combo="Ctrl+Super" />}
+          control={<ShortcutField value={value} onChange={onValue} label="Dictate" />}
         />
         <Row
           label="Registration"
+          tag={
+            <PreviewTag title="Not built. The flow registers nothing with the OS, so this badge is a drawing of the answer rather than the answer — the shortcut above is your choice, and whether the desktop accepts it is not known here." />
+          }
           hint="The OS accepted it. A combination another application already holds is reported here, not swallowed."
           control={<StatusBadge tone="success">Accepted</StatusBadge>}
         />
@@ -509,12 +535,18 @@ function Insert() {
   );
 }
 
-function TryIt() {
+function TryIt({ hotkey }: { hotkey: string }) {
   return (
     <>
       <Card title="Try it once" description="The only step that demonstrates the product rather than configuring it.">
         <CardRows>
-          <Row label="Press" hint="Anywhere — including in this field." control={<HotkeyButton combo="Ctrl+Super" />} />
+          {/* An instruction, not a control: this row says which key to press,
+              and the key it names is the one chosen two steps ago. */}
+          <Row
+            label="Press"
+            hint="Anywhere — including in this field."
+            control={hotkey ? <Keycaps combo={hotkey} /> : <StatusBadge tone="warning">No hotkey set</StatusBadge>}
+          />
         </CardRows>
         <CardRows>
           <Row
@@ -546,7 +578,15 @@ function TryIt() {
   );
 }
 
-function Done({ baseline, onBaseline }: { baseline: number; onBaseline: (wpm: number) => void }) {
+function Done({
+  hotkey,
+  baseline,
+  onBaseline,
+}: {
+  hotkey: string;
+  baseline: number;
+  onBaseline: (wpm: number) => void;
+}) {
   return (
     <>
       <Card title="Ready" description="What is set, and where to change it.">
@@ -560,7 +600,14 @@ function Done({ baseline, onBaseline }: { baseline: number; onBaseline: (wpm: nu
               </span>
             }
           />
-          <Row label="Hotkey" control={<HotkeyButton combo="Ctrl+Super" />} />
+          {/* A recital of what was set, so it recites what was actually set —
+              including the case where the slot was deliberately emptied. */}
+          <Row
+            label="Hotkey"
+            control={
+              hotkey ? <Keycaps combo={hotkey} /> : <StatusBadge tone="neutral">Disabled</StatusBadge>
+            }
+          />
           <Row label="Delivery" control={<StatusBadge tone="success">Insert at cursor</StatusBadge>} />
           <Row
             label="Mode"

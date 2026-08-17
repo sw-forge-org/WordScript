@@ -202,6 +202,41 @@ here and the fix is not finished.
 tail -f ~/.config/WordScript/logs/wordscript-runtime.log | grep trigger
 ```
 
+### T1 narrowed after use (2026-08-17): the confirmation was charged on every chord
+
+Reported from ordinary use, a year of product later: assigning a hotkey takes
+two presses, does not always register, and a shortcut cannot be removed without
+choosing a replacement. All three are in the surface rather than in the lane,
+and none of them contradicts what was measured above.
+
+- **The double press is not the recorder's.** The Hotkeys row swapped its button
+  for the recorder and the recorder mounted idle, so the click that opened it
+  was not the click that started it. Keys pressed into that first state went
+  nowhere.
+- **T1 as written cost a keystroke on every assignment.** The rule is sound for
+  the chord D1 was about — a modifier-only chord is a prefix of everything the
+  user might still reach for, so a release edge cannot tell finished from
+  unfinished. It is not sound for `Ctrl+Shift+D`, which is finished the moment
+  the keys come up. T1 now reads "never on a key release the user could still be
+  building on"; the D1 case is unchanged and still tested.
+- **T7 had no affordance.** Empty-means-disabled was implemented end to end —
+  `parse`, `normalize_for_storage`, `validate_hotkey_collisions` — and no
+  control anywhere produced an empty value.
+- **And the row drew the runtime's last registration rather than the stored
+  value**, which is a second, independent way to produce "I have to do it
+  twice". `patch` updates the config immediately; `native_trigger_status` lags
+  it by a save and a re-registration. Preferring the binding's display drew the
+  OLD shortcut back over the newly saved one, and drew a cleared slot as still
+  bound. `ShortcutBindingInfo::configured` is what distinguishes an answer about
+  this value from an answer about the previous one — worth knowing for any
+  surface that reads the trigger status while a config write is in flight.
+
+The reasoning and the rejected alternatives are ADR
+[0201](../decisions/0201-a-chord-with-a-key-is-finished-when-the-keys-come-up-and-an-empty-slot-is-a-value-you-can-choose.md).
+The duplicated-release finding from S0 run 1 is what put a commit guard in the
+recorder rather than a comment: a second release edge now arrives at a code path
+that can act on it.
+
 ### Smaller open points from the same lane
 
 Recorded here because the hand-off that used to carry them is archived once the
