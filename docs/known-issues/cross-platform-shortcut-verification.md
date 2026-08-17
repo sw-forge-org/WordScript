@@ -256,7 +256,7 @@ runtime log for `[trigger]` lines. The log lives under
 | 0 | Press any registered shortcut once | `state=pressed` appears at all — if not, this input path is injected and unusable for the rest of the sheet | |
 | 1 | All ten default bindings after first launch | `event=register … outcome=ok` for each; note every failure verbatim | |
 | 2 | `Ctrl+Super` (default capture, modifier-only) | Registers, and a tap starts/stops a capture | |
-| 3 | `Alt+S` and `Alt+1`–`Alt+6` | Register; confirm they are taken from other applications as documented, which is the accepted consequence of the chosen defaults — `Alt+1`–`Alt+9` is Firefox tab switching | |
+| 3 | `Alt+S` and `Alt+1`–`Alt+7` | Register; confirm they are taken from other applications as documented, which is the accepted consequence of the chosen defaults — `Alt+1`–`Alt+9` is Firefox tab switching | |
 | 4 | Hold table: hold the mode-select shortcut 1 s / 3 s / 6 s | One `state=pressed` and one `state=released` per run, every run | |
 | 5 | Two overlapping holds | Confirms the single-`ACTIVE_ID` finding: the first hold loses its release and the watchdog ends it with `event=hold_watchdog` | |
 | 6 | Recorder: assign a new capture shortcut | Grabs are released while recording (`suspended=true`), the chord is captured, grabs return on close | |
@@ -281,7 +281,7 @@ alternatives).
 | --- | --- | --- | --- |
 | 1 | Registration outcome of the default rotation | The modifier-only finding above predicts `FailedToRegister("Unknown scancode …")` for `Ctrl+Super` and `Ctrl+Alt`. Confirm or refute | |
 | 2 | Whether a permission prompt appears at all, and when | Carbon needs none; the tap fallback does. Note which shortcut triggers it | |
-| 3 | `Ctrl+Space` and the `Alt+S` / `Alt+1`–`Alt+6` rotation | Register — these carry a real key. Note that `Ctrl+Space` is the system input-source switcher on many configurations, and that `Option+letter` / `Option+digit` types a special character when it is not grabbed | |
+| 3 | `Ctrl+Space` and the `Alt+S` / `Alt+1`–`Alt+7` rotation | Register — these carry a real key. Note that `Ctrl+Space` is the system input-source switcher on many configurations, and that `Option+letter` / `Option+digit` types a special character when it is not grabbed | |
 | 4 | Display strings | `Super` renders as `Cmd`; the summary tile and pills show human form, never raw tokens | |
 | 5 | Hold table: 1 s / 3 s / 6 s on a shortcut that registered | One `state=pressed` and one `state=released` per run, every run. **Needs physical keys** | |
 | 6 | Without Accessibility / Input Monitoring granted | Which shortcuts still fire (Carbon path) and which go silent (tap path). This is the concrete content behind the matrix's macOS caveat | |

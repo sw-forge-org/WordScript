@@ -592,11 +592,12 @@ stays `Alt` on Windows and Linux.
 | Verbatim | `Alt+2` |
 | Cleanup | `Alt+3` |
 | Rewrite | `Alt+4` |
-| Agent | `Alt+5` |
-| Prompt Enhance | `Alt+6` |
+| Translate | `Alt+5` |
+| Agent | `Alt+6` |
+| Prompt Enhance | `Alt+7` |
 
 The whole mode lane sits on `Alt`, which macOS shows as `Option` — mode select
-reads `Option+S` there, the per-mode keys `Option+1`-`Option+6`.
+reads `Option+S` there, the per-mode keys `Option+1`-`Option+7`.
 
 Two properties of this set are asserted in `cargo test`
 (`every_default_shortcut_satisfies_the_contract`,

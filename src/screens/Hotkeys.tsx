@@ -2,9 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Card,
   CardRows,
-  DocLink,
   HotkeyButton,
-  Note,
   Row,
   SectionHeader,
   SegmentControl,
@@ -13,19 +11,13 @@ import {
   ViewTop,
 } from "@/components/shell";
 import { HotkeyRecorder } from "@/components/settings/HotkeyRecorder";
-import {
-  loadShortcutCapabilities,
-  loadShortcutPlatform,
-  readTriggerStatus,
-  validateShortcut,
-} from "@/lib/shortcuts";
+import { loadShortcutCapabilities, readTriggerStatus, validateShortcut } from "@/lib/shortcuts";
 import type {
   AppConfig,
   NativeTriggerStatus,
   ShortcutBindingInfo,
   ShortcutCapabilities,
   ShortcutCapability,
-  ShortcutPlatform,
 } from "@/types/ipc";
 import type { WiredScreenProps } from "./props";
 
@@ -38,16 +30,15 @@ import type { WiredScreenProps } from "./props";
  * `native_trigger_status`'s answer for that slot, not a drawing of one.
  *
  * Translate took the seventh slot rather than displacing one (ADR 0041), and it
- * ships with no binding. The shipped defaults run Alt+1..6, so a seventh mode
- * either takes Alt+7 or takes none; it takes none, and this row is where that
- * is stated. The number of digits a modifier row can carry is a real limit and
- * the eighth mode will hit it harder than the seventh, so whoever adds it
- * inherits the question rather than a precedent for extending the row silently.
+ * now sits inside the digit order rather than after it: the lane runs Alt+1
+ * through Alt+7, Translate takes Alt+5, and Draft and Prompt Enhance each moved
+ * one place down. Seven digits is where a modifier row stops being comfortable,
+ * so the eighth mode inherits that question rather than a precedent for
+ * extending the row silently.
  *
- * The row is settable like the other six: `mode_translate_hotkey` exists and
- * `ModeHotkeys` registers it. An empty slot here means "nothing is bound", the
- * same as any other mode the user cleared, which is why it needs no note of its
- * own.
+ * Every row is settable and every row may be emptied. An empty slot means
+ * "nothing is bound", the same as any mode the user cleared, which is why no
+ * row needs a note of its own.
  *
  * WHY THE MODE ROWS CARRY NO BADGE AND THE CAPTURE ROWS DO. That is the
  * drawing's own split and it is the badge rule (§11.20): a badge is for a
@@ -193,7 +184,6 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
   const { config, patch, active } = runtime;
 
   const [status, setStatus] = useState<NativeTriggerStatus | null>(null);
-  const [platform, setPlatform] = useState<ShortcutPlatform | null>(null);
   const [capabilities, setCapabilities] = useState<ShortcutCapabilities | null>(null);
   const [modifierOnly, setModifierOnly] = useState(false);
   const [recording, setRecording] = useState<CaptureField | ModeField | null>(null);
@@ -214,9 +204,6 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
   useEffect(() => {
     if (!active) return;
     refresh();
-    void loadShortcutPlatform()
-      .then(setPlatform)
-      .catch(() => setPlatform(null));
   }, [active, refresh]);
 
   /* A saved shortcut is re-registered by the runtime, so the row's badge has to
@@ -298,19 +285,6 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
       />
     );
   };
-
-  /* The closing note is a fact about THIS session, and the runtime is the only
-     thing that knows which one it is. The drawing's second clause is a fact
-     about this screen and stays as written. */
-  const platformLine = platform
-    ? `${platform.summary} — ${
-        platform.global_shortcuts_available
-          ? "the desktop registers global shortcuts"
-          : "this session offers no global-shortcut API"
-      }; a combination another app already holds is reported here, never silently dropped.${
-        platform.notes.length > 0 ? ` ${platform.notes.join(" ")}` : ""
-      }`
-    : "Reading what this session does with global shortcuts…";
 
   return (
     <>
@@ -413,12 +387,6 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
         </Card>
       </SectionHeader>
 
-      {/* One closing note, not two. The other one explained why the mode keys
-          are on Alt rather than Ctrl, which is history: it belongs in the ADR
-          that decided it, not under a list of keys that already work. */}
-      <Note icon="keyboard" tail={<DocLink>Why the mode keys are on Alt</DocLink>}>
-        {platformLine}
-      </Note>
     </>
   );
 }

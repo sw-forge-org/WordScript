@@ -542,9 +542,9 @@ Status: 2026-08-16
 - a dedicated Modes tab in settings exposing the active mode, sub-mode,
   prompt target, the workspace-context switch and eight mode shortcuts
   (one picker/cycler plus seven direct modes) with platform-specific defaults.
-  Translate's slot ships empty and is the only one that does: `Alt+1` through
-  `Alt+6` are taken, so the seventh mode takes none rather than `Alt+7`
-  (ADR 0041)
+  Every mode ships bound: the lane runs `Alt+1` through `Alt+7` in the order the
+  screen lists, with Translate on `Alt+5`. It shipped unbound once (ADR 0041)
+  and no longer does; Agent and Prompt Enhance each moved one digit down for it
 - the agent name, shown in every mode rather than only while Agent is selected,
   because it is also the first criterion Auto routes on (ADR 0023)
 - a per-profile communication style read by Agent and Rewrite: register, length,

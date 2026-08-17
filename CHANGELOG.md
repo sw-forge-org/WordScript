@@ -53,6 +53,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the mode lane runs seven digits and stops explaining itself
+
+- **Translate ships bound, on `Alt+5`.** The lane now runs `Alt+1` through
+  `Alt+7` in the order the Hotkeys screen lists, so Agent (`Draft`) moved to
+  `Alt+6` and Prompt Enhance to `Alt+7`. Translate shipped unbound on the
+  reasoning that six digits were already taken (ADR 0041); the seventh digit is
+  taken instead. One stored value still carries the platform spelling on its
+  own — macOS renders the lane as `Option+1`–`Option+7`. Seven is where the row
+  stops being comfortable, so the eighth mode inherits that question rather
+  than a precedent for extending the row.
+- **These are defaults, and defaults only reach a fresh config.** No migration
+  runs: a config written before this keeps the keys it holds.
+- **The closing note on Hotkeys is gone.** It named the desktop session and
+  said that a combination another app holds is reported rather than dropped —
+  true, and already visible as the per-row badge and hint that report it. The
+  session summary it carried is now shown nowhere.
+
 ### Added — the calendar names two days, and a delete can be taken back (ADR 0189–0195)
 
 - **Two days on the activity calendar carry a name rather than a count.**

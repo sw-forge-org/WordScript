@@ -243,14 +243,6 @@ describe("Hotkeys", () => {
     expect(patch).toHaveBeenCalledWith({ activation_mode: "double_tap" });
   });
 
-  it("names this session in the closing note rather than a plausible one", async () => {
-    render(<HotkeysScreen runtime={createWorkspaceRuntime({ active: true })} />);
-
-    /* The drawing said "Linux · X11". This machine is whatever it is. */
-    expect(await screen.findByText(/KDE Plasma 6 · wayland session/)).toBeInTheDocument();
-    expect(screen.getByText(/KWin consumes Meta \/ Super/)).toBeInTheDocument();
-  });
-
   it("shows the shortcut the runtime resolved, never the raw token", async () => {
     render(<HotkeysScreen runtime={createWorkspaceRuntime({ active: true })} />);
 

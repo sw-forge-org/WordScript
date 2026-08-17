@@ -1354,11 +1354,12 @@ pub struct AppConfig {
     pub mode_cleanup_hotkey: String,
     #[serde(default = "default_mode_rewrite_hotkey")]
     pub mode_rewrite_hotkey: String,
-    /// The seventh mode slot, and the first one that ships empty (ADR 0041).
-    /// `Alt+1` through `Alt+6` are taken, so Translate either takes `Alt+7` or
-    /// takes none. It takes none, and the Hotkeys screen states that rather
-    /// than hiding it: the number of digits a modifier row can carry is a real
-    /// limit and the eighth mode will hit it harder than the seventh.
+    /// The seventh mode to arrive (ADR 0041) and the fifth in the lane's order.
+    /// It shipped unbound at first, on the reasoning that `Alt+1`-`Alt+6` were
+    /// taken; the lane now runs `Alt+1`-`Alt+7` and Translate takes `Alt+5`,
+    /// with Agent and Prompt Enhance each one place further down. Seven digits
+    /// is the row's comfortable limit, so the eighth mode inherits that
+    /// question rather than a precedent for extending the row silently.
     #[serde(default = "default_mode_translate_hotkey")]
     pub mode_translate_hotkey: String,
     #[serde(default = "default_mode_agent_hotkey")]
@@ -2269,7 +2270,6 @@ fn default_mode_rewrite_hotkey() -> String {
     "Alt+4".to_string()
 }
 
-/// Empty, and it is the only mode default that is. See the field's own note.
 /// Dark, which is what every window rendered before this field existed. A
 /// config that predates it therefore looks exactly as it did.
 fn default_color_scheme() -> String {
@@ -2286,16 +2286,23 @@ pub fn normalize_color_scheme(value: &str) -> String {
     }
 }
 
+/// Translate sits inside the digit order rather than after it, which is why the
+/// two slots below it carry the keys they do: the lane runs `Alt+1` through
+/// `Alt+7` in the order the Modes screen lists, and Translate is fifth in that
+/// order. It ships bound like every other mode.
 fn default_mode_translate_hotkey() -> String {
-    String::new()
-}
-
-fn default_mode_agent_hotkey() -> String {
     "Alt+5".to_string()
 }
 
-fn default_mode_prompt_enhance_hotkey() -> String {
+fn default_mode_agent_hotkey() -> String {
     "Alt+6".to_string()
+}
+
+/// The seventh digit, and the last one this row can carry comfortably. An
+/// eighth mode inherits the question of what a modifier row holds, not a
+/// precedent for extending it silently.
+fn default_mode_prompt_enhance_hotkey() -> String {
+    "Alt+7".to_string()
 }
 
 fn normalize_overlay_monitor_value(value: &str) -> String {
@@ -4538,22 +4545,25 @@ mod tests {
         assert!(!preset.professionalize);
     }
 
-    /// `Alt+1` through `Alt+6` are taken, so the seventh mode ships unbound.
-    /// It is the only mode slot whose default is empty.
+    /// The mode lane is `Alt+1` through `Alt+7` in the order the Modes screen
+    /// lists, Translate included. Translate shipped unbound once and no longer
+    /// does; the two slots below it each moved one digit down to make room, so
+    /// this asserts the whole order rather than only the slot that changed
+    /// name.
     #[test]
-    fn the_seventh_mode_ships_with_no_hotkey() {
+    fn every_mode_ships_bound_in_the_lane_order() {
         let config = AppConfig::default();
 
-        assert_eq!(config.mode_translate_hotkey, "");
-        for bound in [
-            &config.mode_auto_hotkey,
-            &config.mode_verbatim_hotkey,
-            &config.mode_cleanup_hotkey,
-            &config.mode_rewrite_hotkey,
-            &config.mode_agent_hotkey,
-            &config.mode_prompt_enhance_hotkey,
+        for (slot, expected) in [
+            (&config.mode_auto_hotkey, "Alt+1"),
+            (&config.mode_verbatim_hotkey, "Alt+2"),
+            (&config.mode_cleanup_hotkey, "Alt+3"),
+            (&config.mode_rewrite_hotkey, "Alt+4"),
+            (&config.mode_translate_hotkey, "Alt+5"),
+            (&config.mode_agent_hotkey, "Alt+6"),
+            (&config.mode_prompt_enhance_hotkey, "Alt+7"),
         ] {
-            assert!(!bound.is_empty());
+            assert_eq!(slot, expected);
         }
     }
 

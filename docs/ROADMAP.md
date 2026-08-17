@@ -268,8 +268,8 @@ stronger local model rather than by a new provider.
   instruction-following job than tidying one, and the same argument that
   motivates a stronger chat lane motivates this mode being able to reach it. It
   is a mode in the full sense -- cycle, picker, profile default, overlay chip --
-  and it is the first with no default hotkey, because the shipped defaults
-  occupy `Alt+1` through `Alt+6`. Auto never selects it: **Auto may choose how
+  and it takes `Alt+5` in a lane that runs `Alt+1` through `Alt+7`. It shipped
+  unbound at first and no longer does. Auto never selects it: **Auto may choose how
   text reads, never what language it is in.** The *live-translation window* is a
   different surface of the same capability, is **not** part of this phase, and
   is a candidate below.

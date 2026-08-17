@@ -3012,8 +3012,9 @@ mod tests {
             mode_verbatim_hotkey: "Alt+2".to_string(),
             mode_cleanup_hotkey: "Alt+3".to_string(),
             mode_rewrite_hotkey: "Alt+4".to_string(),
-            mode_agent_hotkey: "Alt+5".to_string(),
-            mode_prompt_enhance_hotkey: "Alt+6".to_string(),
+            mode_translate_hotkey: "Alt+5".to_string(),
+            mode_agent_hotkey: "Alt+6".to_string(),
+            mode_prompt_enhance_hotkey: "Alt+7".to_string(),
             ..AppConfig::default()
         };
 
@@ -3024,9 +3025,10 @@ mod tests {
         assert_eq!(hotkeys.verbatim, "Alt+2");
         assert_eq!(hotkeys.cleanup, "Alt+3");
         assert_eq!(hotkeys.rewrite, "Alt+4");
-        assert_eq!(hotkeys.agent, "Alt+5");
-        assert_eq!(hotkeys.prompt_enhance, "Alt+6");
-        assert_eq!(hotkeys.entries().len(), 7);
+        assert_eq!(hotkeys.translate, "Alt+5");
+        assert_eq!(hotkeys.agent, "Alt+6");
+        assert_eq!(hotkeys.prompt_enhance, "Alt+7");
+        assert_eq!(hotkeys.entries().len(), 8);
     }
 
     #[test]
