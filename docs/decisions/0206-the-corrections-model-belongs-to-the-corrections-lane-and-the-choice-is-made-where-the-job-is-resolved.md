@@ -88,3 +88,34 @@ block carries `agent_model` and `local_agent_model` of its own. It is the same
 shape as this defect and it is left alone here rather than folded in: Agent,
 Translate, Prompt Enhance and the transcript title all resolve through it, so it
 is a change with four surfaces and it earns its own record.
+
+## Correction, 2026-08-17, same day
+
+**The paragraph above is wrong about the chat model and the sentence is left
+standing rather than edited, because that is what this directory does with a
+claim it has to withdraw.** Asked whether it was really a defect, the code was
+read instead of the note:
+
+- **Nothing reads the profile's `agent_model`.** All three readers —
+  `chat_model_for_job`, `mode_router`'s `chat_model` closure and the Auto
+  classifier in `lib.rs` — resolve the job's lane and then take the
+  connection-wide field. They agree with each other, so unlike the correction
+  model there is no second path to diverge from. `model_install` reads
+  `speech.local_agent_model` only to answer *is this file in use*.
+- **Nothing writes it either, beyond the copy `textProfiles.ts` puts in every
+  new profile**, and no surface writes the connection-wide field at all. Which
+  model answers as the agent is therefore the catalogue default, everywhere,
+  and is not settable in the product.
+
+So it is **not** the shape this ADR fixes. It is a per-profile field that looks
+like an override and is read by nothing — the `use_as_prompt_hint` hazard, which
+has produced two documented wrong turns in `known-issues/` — plus a missing
+control. A product gap on the Models surface, not a wrong attribution, and the
+distinction matters because the fix is a different one: the correction model
+needed a resolver, this needs either a control or the field's removal.
+
+**What the check did confirm** is that this ADR's own fix is more than
+structural. `Models.tsx`'s `Use` button writes `local_correction_model` **into
+the active profile's speech block**, and the retry path was reading the
+connection-wide one — so pressing *Use* on a language model changed what a live
+cleanup ran on and not what a retry of it ran on.

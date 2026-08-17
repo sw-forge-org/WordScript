@@ -325,10 +325,23 @@ rather than compacted, because the items are cited by number elsewhere.
       carry the profile's two models now and the lane picks where the job is
       resolved. The long-text escalation is per lane too.
 
-    Still open and stated so it is not re-derived: `chat_model_for_job` has the
-    same shape for Agent, Translate, Prompt Enhance and the transcript title —
-    connection-wide, while the profile's speech block carries `agent_model` of
-    its own. Four surfaces, so it earns its own record rather than a fold-in.
+    **And one thing that looked like a third instance and is not.** The chat
+    model — Agent, the Auto classifier, Translate, Prompt Enhance and the
+    transcript title — is read connection-wide by `chat_model_for_job` while
+    `ProfileSpeechSettings` carries an `agent_model` of its own. Checked before
+    it was written down: **nothing reads the profile's copy.** All three readers
+    resolve the job's lane and then take the connection-wide field, so they
+    agree with each other and no path can disagree with another. It is not the
+    ADR 0206 shape.
+
+    What it is instead is smaller and worth one line: `textProfiles.ts` writes
+    `agent_model` into every new profile's speech block, the runtime reads it
+    nowhere, and no surface writes the connection-wide field either — so *which
+    model answers as the agent* is the catalogue default and is not settable in
+    the product. **A field that looks like an override and is read by nothing is
+    this directory's documented trap** (`use_as_prompt_hint`, two wrong turns).
+    A gap in the product, not a wrong attribution, and it belongs to whoever
+    owns the Models surface.
 
     Added 2026-08-16, both found on the single record above:
     [`known-issues/heard-and-written-do-not-say-which-stage-changed-what.md`](../known-issues/heard-and-written-do-not-say-which-stage-changed-what.md)
