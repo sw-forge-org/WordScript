@@ -162,6 +162,35 @@ pub fn clear_in(
     store.delete(KEY_SERVICE, &entry_user(scope, role, kind))
 }
 
+/// Clears one role's credential and answers whether there was one to clear.
+///
+/// **The answer is the whole difference from [`clear_in`], and it is what makes
+/// a removal countable.** A reader pressing *Remove* on a credential row wants
+/// the entry gone and does not care whether it existed a moment earlier;
+/// removing the ACCOUNT that owns it asks the other question — *how many
+/// secrets did that take with it* — because that is a claim a test can hold the
+/// path to without knowing what this machine happens to be carrying.
+///
+/// **The cache goes with the entry**, which [`clear_in`] leaves to its callers
+/// and both of them then remember to do (`self_hosted::clear_api_key` and the
+/// openai-compatible one). A key read earlier in this session would otherwise
+/// keep answering for an entry that no longer exists — the same hazard [`rekey`]
+/// clears the old name for.
+pub fn clear_stored(
+    store: &impl SecretStore,
+    scope: &str,
+    role: ProviderRole,
+    kind: CredentialKind,
+) -> Result<bool, KeyringError> {
+    let user = entry_user(scope, role, kind);
+    let stored = store.read(KEY_SERVICE, &user)?.is_some();
+
+    store.delete(KEY_SERVICE, &user)?;
+    cache_key(&user, None);
+
+    Ok(stored)
+}
+
 fn cache() -> &'static Mutex<HashMap<String, String>> {
     API_KEY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }

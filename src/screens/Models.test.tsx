@@ -698,6 +698,9 @@ describe("AI Models, choosing the connection", () => {
       "General writing moves to another account with this vendor. 1 other profile keeps naming this one and its jobs stop until you point it somewhere else.",
     );
     await user.click(remove);
+    /* THE PRESS OPENS THE QUESTION AND DESTROYS NOTHING (ADR 0210). */
+    expect(patch).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Remove account" }));
 
     const written = patch.mock.calls[0][0] as {
       connections?: unknown;
@@ -712,6 +715,82 @@ describe("AI Models, choosing the connection", () => {
       default: employer.id,
       overrides: {},
     });
+  });
+
+  /**
+   * **A REMOVED ACCOUNT TAKES ITS CREDENTIAL WITH IT** (ADR 0210).
+   *
+   * `buildConnectionRemovalPatch` wrote `connections` and nothing else, so the
+   * key stayed in the OS store under a scope no surface can show and no reader
+   * can clear — word for word the state ADR 0208 refused to let the migration
+   * create, reached from the other end. The clear runs first: it is the only
+   * call that still knows the account's id.
+   */
+  it("clears the account's credential and says so before it is confirmed", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
+    config.connections = [CLOUD_ACCOUNT, employer];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: employer.id, overrides: {} };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    /* THE QUESTION NAMES WHAT GOES, and the key is the half that cannot be put
+       back by anything this product can do. */
+    expect(screen.getByText("Remove the account “Employer”?")).toBeInTheDocument();
+    expect(
+      screen.getByText(/stored key is deleted from the OS secret store and cannot be put back/),
+    ).toBeInTheDocument();
+    expect(invoked).not.toHaveBeenCalledWith("clear_connection_credentials", expect.anything());
+
+    await user.click(screen.getByRole("button", { name: "Remove account" }));
+
+    expect(invoked).toHaveBeenCalledWith("clear_connection_credentials", {
+      request: { provider: "groq", connection: employer.id },
+    });
+    expect((patch.mock.calls[0][0] as { connections?: unknown }).connections).toEqual([
+      CLOUD_ACCOUNT,
+    ]);
+  });
+
+  /**
+   * **A SECRET STORE THAT DOES NOT ANSWER KEEPS THE ACCOUNT** (ADR 0210).
+   *
+   * The order is what makes the failure safe rather than the try/catch: a config
+   * write that landed while the keyring call failed would leave the key with
+   * nothing naming it, since the account id is the only handle onto it.
+   */
+  it("keeps the account when the credential could not be cleared", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
+    config.connections = [CLOUD_ACCOUNT, employer];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: employer.id, overrides: {} };
+    const answering = invoked.getMockImplementation()!;
+    invoked.mockImplementation(async (command: string, args?: Parameters<typeof invoke>[1]) => {
+      if (command === "clear_connection_credentials") {
+        throw {
+          message:
+            "The OS secret store did not answer, so this account still holds its credential: locked",
+        };
+      }
+      return answering(command, args);
+    });
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    await user.click(screen.getByRole("button", { name: "Remove account" }));
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(await screen.findByText(/this account still holds its credential/)).toBeInTheDocument();
   });
 
   /** With nobody else on it the sentence is one clause, because a count of zero

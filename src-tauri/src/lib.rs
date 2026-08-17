@@ -3039,6 +3039,7 @@ pub fn run() {
             core::model_install::pull_model_tag,
             core::providers::save_provider_api_key,
             core::providers::clear_provider_api_key,
+            core::providers::clear_connection_credentials,
             core::providers::validate_provider_api_key,
             core::providers::transcribe_audio_file,
             core::communication_style::analyze_communication_style,

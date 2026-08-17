@@ -86,6 +86,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so, since choosing who pays for a writing style you are not looking at is not a
   deletion's decision.
 
+### Fixed — a removed account left its key behind (ADR 0210)
+
+- **Removing an account deletes its credential from the OS secret store**, and
+  the removal asks before it does. The config write dropped the account and left
+  the key under a name nothing pointed at any more — a secret the product could
+  no longer show you or clear, which is the exact state the migration above was
+  written to avoid, produced from the other end by the delete button. The clear
+  walks every role the vendor registers and runs **before** the config is
+  written, because the account's id is the only handle onto its entries: a secret
+  store that does not answer keeps the account and says so.
+- **And it asks first**, with the account, its vendor and its key preview still
+  on screen behind the question, because a key deleted from the OS store cannot
+  be brought back by anything this product can do. Removing a *key* still does
+  not ask — you can type that one again.
+
 ### Fixed — the account row said one account and wrote another (ADR 0209)
 
 Four faults in the row that shipped an hour earlier, all found by using it.

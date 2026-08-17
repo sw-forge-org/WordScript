@@ -180,7 +180,10 @@ Status: 2026-08-17
   ordered the removal, which is repointed** (ADR 0209, 2026-08-17), because
   applying the rule to it left the row with no vendor and no way back. The stored
   keys were **moved** onto the accounts by the first load after the change, not
-  copied. **A status names the account it answered about** (ADR 0209): the answer
+  copied, and **a removed account takes its credential with it** (ADR 0210,
+  2026-08-17): the clear walks every role the vendor registers and runs before the
+  config write, so a secret store that does not answer keeps the account. The
+  removal asks first, because a key deleted from the OS store cannot be put back. **A status names the account it answered about** (ADR 0209): the answer
   is keyed by vendor and the credential rows are scoped to an account, so without
   the echo a second account on one vendor was shown the first one's key.
 - **A control the runtime cannot answer for is drawn and inert rather than

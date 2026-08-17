@@ -230,6 +230,10 @@
      line against the group's bottom edge draws a second border a pixel inside
      the first one. */
   .ws-rows > .ws-row:last-child { border-bottom: none; }
+  /* A row that unfolds a question keeps it as one block, the same way a
+     transcript row does with its raw panel: the rule between them would read as
+     two rows, and the panel is this row's own second half (ADR 0082). */
+  .ws-row:has(+ .ws-list-edit) { border-bottom: none; }
 
   .ws-row-text {
     flex: 1; min-width: 0;

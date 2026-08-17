@@ -1498,6 +1498,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A connection is an object a profile points at, so the account moves with the profile.
 - [0209](0209-a-status-names-the-account-it-answered-about-and-a-deletion-repoints-only-the-profile-that-ordered-it.md):
   A status names the account it answered about, and a deletion repoints only the profile that ordered it.
+- [0210](0210-a-removed-account-takes-its-credential-with-it-and-the-ask-replaces-an-undo-window-that-was-never-there.md):
+  A removed account takes its credential with it, and the ask replaces an undo window that was never there.
 
 ## Resolved: the number 0011 was used twice
 

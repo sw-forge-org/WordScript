@@ -828,6 +828,18 @@ pub struct ClearProviderApiKeyRequest {
     pub kind: Option<CredentialKind>,
 }
 
+/// Forget everything one account holds, because the account is going
+/// (ADR 0210).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ClearConnectionCredentialsRequest {
+    pub provider: String,
+    /// The account being removed, and the scope every entry this reaches is
+    /// stored under. **Empty clears nothing**, rather than clearing an entry
+    /// named `.speech.api_key` that belongs to no account.
+    #[serde(default)]
+    pub connection: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ValidateProviderApiKeyRequest {
     pub provider: String,
@@ -1272,6 +1284,77 @@ pub fn rekey_connection_credentials(
     Ok(moved)
 }
 
+/// Forgets every credential one account holds, because the account is going
+/// (ADR 0210).
+///
+/// **The other end of [`rekey_connection_credentials`], and it exists because
+/// the delete button built the state the migration was written to avoid.** That
+/// function MOVES rather than copies, on the argument ADR 0208 states: a key
+/// left behind under a name nothing points at is a secret no surface can show
+/// and no reader can clear. Removing the account it was moved onto then left the
+/// key under the account's own name, which is the same orphan reached from the
+/// other side.
+///
+/// **The registry decides what there is to forget**, exactly as it decides what
+/// there is to move — the same table, walked the same way, so a vendor that
+/// registers a second role tomorrow is covered here without a line.
+///
+/// Returns how many entries were carrying something, which is what makes this
+/// testable against an in-memory store without the test knowing what this
+/// machine happened to hold. An id no adapter claims forgets nothing: nothing
+/// could have been stored under it.
+pub fn clear_connection_credentials_in(
+    store: &impl credential_store::SecretStore,
+    provider: &str,
+    connection: &str,
+) -> Result<usize, keyring::Error> {
+    let connection = connection.trim();
+    if connection.is_empty() {
+        return Ok(0);
+    }
+
+    let Ok(entry) = registry::resolve_entry(provider) else {
+        return Ok(0);
+    };
+
+    let mut cleared = 0;
+    for role in entry.roles() {
+        for kind in entry.provider.credential_kinds() {
+            if credential_store::clear_stored(store, connection, role, *kind)? {
+                cleared += 1;
+            }
+        }
+    }
+
+    Ok(cleared)
+}
+
+/// **The credential half of removing an account, and it runs first** (ADR 0210).
+///
+/// The surface clears before it writes the config: a config write that landed
+/// while the keyring call failed would leave the orphan with nothing naming it,
+/// and this call is the only one that still knows the account's id.
+#[tauri::command]
+pub fn clear_connection_credentials(
+    request: ClearConnectionCredentialsRequest,
+) -> Result<usize, ProviderCommandError> {
+    clear_connection_credentials_in(
+        &credential_store::OsSecretStore,
+        &request.provider,
+        &request.connection,
+    )
+    .map_err(|error| {
+        ProviderCommandError::new(
+            ProviderErrorKind::SecretStoreUnavailable,
+            format!(
+                "The OS secret store did not answer, so this account still holds its credential: {error}"
+            ),
+            None,
+            None,
+        )
+    })
+}
+
 /// What answers for one job's role on one provider (ADR 0105).
 ///
 /// **"Follow the connection" follows the provider and never the credential**,
@@ -1421,6 +1504,95 @@ mod tests {
             rekey_connection_credentials(&store, LOCAL_PROVIDER_ID, "connection-local").unwrap(),
             0,
             "the local lane authenticates against nothing, so it carries nothing",
+        );
+    }
+
+    /// **AN ACCOUNT REMOVED LEAVES NO ENTRY UNDER ITS SCOPE** (ADR 0210).
+    ///
+    /// The sentence the step exists for, and the one nothing checked: the
+    /// migration was made to MOVE rather than copy because a key under a name
+    /// nothing points at is unreachable from inside the product, and the delete
+    /// button then created that state from the other end.
+    #[test]
+    fn removing_an_account_forgets_every_credential_it_held() {
+        use credential_store::{MemorySecretStore, SecretStore, KEY_SERVICE};
+
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, "connection-work.speech.api_key", "gsk_speech")
+            .unwrap();
+        store
+            .write(KEY_SERVICE, "connection-work.chat.api_key", "gsk_chat")
+            .unwrap();
+
+        let cleared =
+            clear_connection_credentials_in(&store, "groq", "  connection-work  ").unwrap();
+
+        assert_eq!(cleared, 2, "one per registered role, for the kind Groq accepts");
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-work.speech.api_key").unwrap(),
+            None,
+        );
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-work.chat.api_key").unwrap(),
+            None,
+        );
+    }
+
+    /// **Clearing one account never clears another's** (ADR 0208's rule, which a
+    /// removal is the loudest possible way to break). Two accounts on one vendor
+    /// is the case the connection axis exists for, so the second key is the one
+    /// worth asserting rather than a second vendor's.
+    #[test]
+    fn removing_an_account_leaves_the_other_account_on_that_vendor_alone() {
+        use credential_store::{MemorySecretStore, SecretStore, KEY_SERVICE};
+
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, "connection-work.speech.api_key", "gsk_work")
+            .unwrap();
+        store
+            .write(KEY_SERVICE, "connection-private.speech.api_key", "gsk_private")
+            .unwrap();
+
+        clear_connection_credentials_in(&store, "groq", "connection-work").unwrap();
+
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-private.speech.api_key").unwrap(),
+            Some("gsk_private".to_string()),
+        );
+    }
+
+    /// A vendor no adapter claims forgets nothing, a lane that stores no
+    /// credential forgets nothing, and an unnamed account forgets nothing — the
+    /// last one because `{scope}` is the leading component of every entry name,
+    /// so an empty scope is a prefix and not an account.
+    #[test]
+    fn a_removal_with_nothing_to_forget_is_not_a_failure() {
+        use credential_store::{MemorySecretStore, SecretStore, KEY_SERVICE};
+
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, ".speech.api_key", "belongs-to-no-account")
+            .unwrap();
+
+        assert_eq!(
+            clear_connection_credentials_in(&store, UNREGISTERABLE_ID, "connection-work").unwrap(),
+            0,
+        );
+        assert_eq!(
+            clear_connection_credentials_in(&store, LOCAL_PROVIDER_ID, "connection-local").unwrap(),
+            0,
+            "the local lane authenticates against nothing, so it holds nothing",
+        );
+        assert_eq!(
+            clear_connection_credentials_in(&store, "groq", "   ").unwrap(),
+            0,
+        );
+        assert_eq!(
+            store.read(KEY_SERVICE, ".speech.api_key").unwrap(),
+            Some("belongs-to-no-account".to_string()),
+            "an empty scope names no account, so nothing under it is this call's to delete",
         );
     }
 

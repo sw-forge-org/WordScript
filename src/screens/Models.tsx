@@ -12,6 +12,7 @@ import {
   Button,
   Card,
   CardRows,
+  ConfirmPanel,
   DocLink,
   Field,
   Icon,
@@ -615,6 +616,16 @@ function useCommittedSetting(stored: string, write: (next: string) => void) {
  */
 function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
   const [renaming, setRenaming] = useState(false);
+  /* THE QUESTION THIS ROW OWES BEFORE IT DESTROYS A SECRET (ADR 0210, ADR 0082).
+     `Remove` acted on one press, and what it acted on grew: the credential goes
+     with the account now, and a key deleted from the OS store cannot be brought
+     back by anything this product can do. ADR 0195 left *deleting always asks*
+     for transcript rows because they are deleted in runs and a confirm on the
+     third one stops being read — an account is the opposite object, deleted
+     rarely, where the ask is read precisely because it is unusual. */
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const openProfiles = useOpenProfiles();
   const active = activeConnectionOf(runtime.config);
   const vendor = active?.provider ?? "";
@@ -650,6 +661,35 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
   const used = active ? profilesUsingConnection(runtime.config, active.id) : 0;
   const others = Math.max(0, used - 1);
 
+  /* THE CREDENTIAL GOES FIRST AND THE CONFIG SECOND (ADR 0210). ADR 0208's
+     migration MOVES a key rather than copying it, on the argument that a key
+     under a name nothing points at is a secret no surface can show and no
+     reader can clear; removing the account left exactly that state from the
+     other end, because `buildConnectionRemovalPatch` writes `connections` and
+     nothing else.
+
+     **The order is what makes a failure safe.** A config write that landed
+     while the keyring call failed would orphan the key with nothing left naming
+     it — the account id is the only handle onto it. So a store that does not
+     answer keeps the account, the row says so, and nothing was destroyed. */
+  const removeAccount = async () => {
+    if (!active || busy) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await invoke("clear_connection_credentials", {
+        request: { provider: active.provider, connection: active.id },
+      });
+    } catch (cause) {
+      setProblem(sentenceFor(cause));
+      setBusy(false);
+      return;
+    }
+    runtime.patch(buildConnectionRemovalPatch(runtime.config, active.id));
+    setBusy(false);
+    setAsking(false);
+  };
+
   const select = (
     <Select
       value={active?.id ?? ""}
@@ -677,14 +717,16 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
   );
 
   return (
+    <>
     <Row
       label="Account"
       hint={
-        !active
+        problem ??
+        (!active
           ? `${profile.label} points at an account this machine no longer holds, so its jobs have nothing to pay with. Pick one here.`
           : accounts.length > 1
             ? "Which of your accounts with this vendor pays for the jobs below. A profile carries its own, so switching profiles switches the account."
-            : "The account these jobs are billed to. Add a second one to keep an employer's and a private one apart — a profile carries whichever it is set to."
+            : "The account these jobs are billed to. Add a second one to keep an employer's and a private one apart — a profile carries whichever it is set to.")
       }
       control={
         <span className="ws-rowflex">
@@ -739,12 +781,16 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
             <Button
               variant="ghost"
               icon={<Icon name="trash" />}
+              disabled={busy}
               title={
                 others > 0
                   ? `${profile.label} moves to another account with this vendor. ${others} other ${others === 1 ? "profile keeps naming this one and its jobs stop" : "profiles keep naming this one and their jobs stop"} until you point ${others === 1 ? "it" : "them"} somewhere else.`
                   : `${profile.label} moves to another account with this vendor.`
               }
-              onClick={() => runtime.patch(buildConnectionRemovalPatch(runtime.config, active.id))}
+              onClick={() => {
+                setProblem(null);
+                setAsking(true);
+              }}
             >
               Remove
             </Button>
@@ -752,6 +798,29 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
         </span>
       }
     />
+      {/* The question opens under the row, with the account's name, its vendor
+          and its credential still on screen behind it — which is the evidence a
+          centred confirm covers up (ADR 0082). */}
+      {asking && active && (
+        <ConfirmPanel
+          /* THE OBJECT IS NAMED, because the label collides with the vendor's
+             name by default — a first account on Groq is called `Groq`, and
+             `Remove Groq?` reads as removing the vendor. */
+          question={`Remove the account “${active.label}”?`}
+          detail={
+            others > 0
+              ? `Its stored key is deleted from the OS secret store and cannot be put back. ${others} other ${others === 1 ? "profile keeps naming this account and its jobs stop" : "profiles keep naming this account and their jobs stop"}. ${profile.label} moves to another account with this vendor.`
+              : `Its stored key is deleted from the OS secret store and cannot be put back. ${profile.label} moves to another account with this vendor.`
+          }
+          confirmLabel="Remove account"
+          onConfirm={() => void removeAccount()}
+          onCancel={() => {
+            setAsking(false);
+            setProblem(null);
+          }}
+        />
+      )}
+    </>
   );
 }
 
