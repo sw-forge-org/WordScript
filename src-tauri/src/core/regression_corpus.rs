@@ -564,6 +564,7 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
         // context outside the check — including the one that decides whether
         // the block is a reading aid or an offer of material (ADR 0023).
         "agent" => build_agent_system_prompt(&AgentConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             agent_name: "WordScript".to_string(),
             agent_model: String::new(),
@@ -576,6 +577,7 @@ fn mode_prompt_for(mode: &str, entry: &CorpusEntry) -> String {
             style: CommunicationStyle::default(),
         }),
         "prompt_enhance" => build_enhance_system_prompt(&PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: String::new(),
             sub_mode: "enhance".to_string(),

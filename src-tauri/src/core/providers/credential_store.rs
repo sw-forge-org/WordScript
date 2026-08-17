@@ -7,11 +7,12 @@
 //! second chance to drift. What is per vendor is which prefix a key carries and
 //! what the sentence says when one is missing; both are arguments here.
 //!
-//! **The entry names did not move.** `credential_entry_user` produced
-//! `groq.{role}.{kind}` and this produces `{provider}.{role}.{kind}` with
-//! `provider = "groq"` — byte-identical, which is the property that matters
-//! because changing one of these strings orphans every credential already
-//! stored under it (ADR 0105).
+//! **The entry name is `{scope}.{role}.{kind}`, and the scope is the
+//! connection** (ADR 0208). It was the vendor id through A3 and the extraction
+//! that followed — one vendor, one account — and the format is unchanged, which
+//! is what let the axis move with a re-key rather than with a second place to
+//! look. Changing one of these strings still orphans every credential stored
+//! under it (ADR 0105), so `rekey` moves them and deletes what it moved.
 
 use std::{
     collections::HashMap,
@@ -71,53 +72,94 @@ impl SecretStore for OsSecretStore {
     }
 }
 
-/// The entry one credential lives under: the provider, the role and the kind.
+/// The entry one credential lives under: the scope, the role and the kind.
 ///
 /// **Changing one of these strings orphans every credential already stored**,
 /// which is why the parts come from `ProviderRole::as_str` and
-/// `CredentialKind::as_str` rather than from literals written twice — and why
-/// the provider arrives as the registry's canonical id rather than as a label.
-pub fn entry_user(provider: &str, role: ProviderRole, kind: CredentialKind) -> String {
-    format!("{}.{}.{}", provider, role.as_str(), kind.as_str())
+/// `CredentialKind::as_str` rather than from literals written twice.
+///
+/// **The scope was the vendor and is the connection** (ADR 0208). One vendor
+/// held one account, so the vendor id answered *whose credential is this*; two
+/// accounts on one vendor is exactly what a profile switch has to move, and the
+/// id that tells them apart is the connection's. The shape did not change and
+/// the property above did not either — which is why the axis change ships with
+/// a re-key ([`rekey`]) rather than with a second place to look.
+pub fn entry_user(scope: &str, role: ProviderRole, kind: CredentialKind) -> String {
+    format!("{}.{}.{}", scope, role.as_str(), kind.as_str())
 }
 
-/// Reads the key stored for one `(provider, role, kind)`.
+/// Moves one `(role, kind)` credential from one scope to another.
+///
+/// **The migration door for the connection axis, and it moves rather than
+/// copies.** A key left behind under its old name is a secret in the OS store
+/// that no surface can show and no reader can clear — the orphan the doc
+/// comment at the top of this file has warned about since the entry name was
+/// first extracted.
+///
+/// `Ok(false)` means there was nothing stored under the old name, which is the
+/// ordinary case for most `(role, kind)` pairs and not a failure. The write
+/// happens before the delete, so an interrupted move leaves the secret readable
+/// under the old name rather than under neither.
+pub fn rekey(
+    store: &impl SecretStore,
+    from_scope: &str,
+    to_scope: &str,
+    role: ProviderRole,
+    kind: CredentialKind,
+) -> Result<bool, KeyringError> {
+    if from_scope == to_scope {
+        return Ok(false);
+    }
+
+    let from = entry_user(from_scope, role, kind);
+    let Some(secret) = store.read(KEY_SERVICE, &from)? else {
+        return Ok(false);
+    };
+
+    store.write(KEY_SERVICE, &entry_user(to_scope, role, kind), &secret)?;
+    store.delete(KEY_SERVICE, &from)?;
+    cache_key(&from, None);
+    Ok(true)
+}
+
+/// Reads the key stored for one `(scope, role, kind)`.
 ///
 /// `Ok(None)` means no entry this build knows holds a key for that role —
 /// which is a legitimate state, not a store failure, and it is the state that
 /// makes a job inert with a name rather than with a stack trace.
 pub fn read_from(
     store: &impl SecretStore,
-    provider: &str,
+    scope: &str,
     role: ProviderRole,
     kind: CredentialKind,
 ) -> Result<Option<String>, KeyringError> {
-    store.read(KEY_SERVICE, &entry_user(provider, role, kind))
+    store.read(KEY_SERVICE, &entry_user(scope, role, kind))
 }
 
 /// Writes one role's credential and touches no other entry.
 pub fn write_to(
     store: &impl SecretStore,
-    provider: &str,
+    scope: &str,
     role: ProviderRole,
     kind: CredentialKind,
     api_key: &str,
 ) -> Result<(), KeyringError> {
-    store.write(KEY_SERVICE, &entry_user(provider, role, kind), api_key)
+    store.write(KEY_SERVICE, &entry_user(scope, role, kind), api_key)
 }
 
 /// Clears one role's credential and nothing else.
 ///
-/// **Clearing one role never clears another's** (ADR 0105) — the rule A3
-/// established, which holds across vendors here for the same reason it held
-/// within one: the entry names are one per `(provider, role, kind)`.
+/// **Clearing one role never clears another's** (ADR 0105), and clearing one
+/// account never clears another's (ADR 0208) — the rule A3 established, which
+/// holds across scopes for the reason it held within one: the entry names are
+/// one per `(scope, role, kind)`.
 pub fn clear_in(
     store: &impl SecretStore,
-    provider: &str,
+    scope: &str,
     role: ProviderRole,
     kind: CredentialKind,
 ) -> Result<(), KeyringError> {
-    store.delete(KEY_SERVICE, &entry_user(provider, role, kind))
+    store.delete(KEY_SERVICE, &entry_user(scope, role, kind))
 }
 
 fn cache() -> &'static Mutex<HashMap<String, String>> {
@@ -188,33 +230,124 @@ pub enum KeyShape {
     WrongPrefix,
 }
 
+/// The in-memory secret store every test in this crate writes into, so none of
+/// them touches the developer's real keyring.
+///
+/// **Crate-visible rather than private to this file's tests**, because the
+/// question *which key does this profile spend* is answered by `core::config`
+/// and asserted there (ADR 0208) — and a second copy of a fake store is a
+/// second thing that can stop behaving like the first.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct MemorySecretStore {
+    entries: Mutex<HashMap<String, String>>,
+}
+
+#[cfg(test)]
+impl SecretStore for MemorySecretStore {
+    fn read(&self, service: &str, user: &str) -> Result<Option<String>, KeyringError> {
+        Ok(self
+            .entries
+            .lock()
+            .unwrap()
+            .get(&format!("{service}/{user}"))
+            .cloned())
+    }
+
+    fn write(&self, service: &str, user: &str, secret: &str) -> Result<(), KeyringError> {
+        self.entries
+            .lock()
+            .unwrap()
+            .insert(format!("{service}/{user}"), secret.to_string());
+        Ok(())
+    }
+
+    fn delete(&self, service: &str, user: &str) -> Result<(), KeyringError> {
+        self.entries
+            .lock()
+            .unwrap()
+            .remove(&format!("{service}/{user}"));
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn the_entry_name_is_the_one_a3_stored_under() {
-        // THE ONE ASSERTION THAT MAY NOT MOVE. A3 stored Groq's credentials
-        // under `groq.{role}.{kind}` and this extraction has to produce that
-        // string exactly, or every key already in the developer's keyring is
-        // orphaned by a refactor that claimed to change nothing.
+    fn the_entry_name_is_the_scope_then_the_role_then_the_kind() {
+        // THE SHAPE THAT MAY NOT MOVE, AND THE SCOPE THAT DID. A3 stored
+        // Groq's credentials under `groq.{role}.{kind}`; ADR 0208 makes the
+        // first component the connection, because one vendor no longer means
+        // one account. The format is byte-identical either way, which is what
+        // lets `rekey` move a key from one scope to the other instead of this
+        // build growing a second place to look.
         assert_eq!(
             entry_user("groq", ProviderRole::Speech, CredentialKind::ApiKey),
             "groq.speech.api_key",
         );
         assert_eq!(
-            entry_user("groq", ProviderRole::Chat, CredentialKind::ApiKey),
-            "groq.chat.api_key",
+            entry_user("connection-default", ProviderRole::Chat, CredentialKind::ApiKey),
+            "connection-default.chat.api_key",
         );
     }
 
     #[test]
-    fn two_vendors_cannot_collide_in_one_entry_name() {
+    fn two_scopes_cannot_collide_in_one_entry_name() {
+        // Two accounts on ONE vendor is the case the connection axis exists
+        // for, so this asserts the pair that used to be impossible to tell
+        // apart rather than two different vendors.
         assert_ne!(
-            entry_user("groq", ProviderRole::Speech, CredentialKind::ApiKey),
-            entry_user("openai", ProviderRole::Speech, CredentialKind::ApiKey),
+            entry_user("connection-work", ProviderRole::Speech, CredentialKind::ApiKey),
+            entry_user("connection-private", ProviderRole::Speech, CredentialKind::ApiKey),
         );
     }
+
+    #[test]
+    fn a_rekey_moves_the_secret_and_leaves_nothing_behind() {
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, "groq.speech.api_key", "gsk_abcdefghijklmnop")
+            .unwrap();
+
+        assert!(rekey(
+            &store,
+            "groq",
+            "connection-default",
+            ProviderRole::Speech,
+            CredentialKind::ApiKey,
+        )
+        .unwrap());
+
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-default.speech.api_key").unwrap(),
+            Some("gsk_abcdefghijklmnop".to_string()),
+        );
+        // THE HALF THAT IS EASY TO FORGET. A copy rather than a move leaves a
+        // secret in the OS store that no surface can show and no reader can
+        // clear from inside the product.
+        assert_eq!(store.read(KEY_SERVICE, "groq.speech.api_key").unwrap(), None);
+    }
+
+    #[test]
+    fn a_rekey_with_nothing_stored_is_not_a_failure() {
+        let store = MemorySecretStore::default();
+
+        assert!(!rekey(
+            &store,
+            "groq",
+            "connection-default",
+            ProviderRole::Chat,
+            CredentialKind::ApiKey,
+        )
+        .unwrap());
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-default.chat.api_key").unwrap(),
+            None,
+        );
+    }
+
 
     #[test]
     fn a_key_shorter_than_a_mask_is_named_rather_than_shown() {

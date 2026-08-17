@@ -91,33 +91,50 @@ pub trait Provider: Send + Sync {
     ///
     /// Asked per role and never folded here: the fold is
     /// `providers::aggregate_credential`, and it is conservative on purpose.
+    /// **Every credential method takes the connection first** (ADR 0208), and
+    /// it is the scope the secret is stored under. A vendor held one account
+    /// while the entry name began with the vendor id; two accounts on one
+    /// vendor is the case a profile switch has to move, so the account's own id
+    /// leads instead. A lane that stores no credential ignores the argument,
+    /// which is what `local` does.
     fn credential_status(
         &self,
+        connection: &str,
         role: ProviderRole,
     ) -> Result<RoleCredentialStatus, ProviderCommandError>;
 
-    /// Stores a credential for exactly one `(role, kind)`.
+    /// Stores a credential for exactly one `(connection, role, kind)`.
     ///
     /// Fanning one save across several roles is the resolver's job
     /// (`providers::credential_target_roles`), because which roles exist is the
     /// registry's answer and not an adapter's.
     fn save_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
         api_key: &str,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError>;
 
-    /// Clears exactly one `(role, kind)`. **Clearing one role must not clear
-    /// another's**, which is the single bug this signature exists to prevent.
+    /// Clears exactly one `(connection, role, kind)`. **Clearing one role must
+    /// not clear another's, and clearing one connection must not clear another
+    /// account's** — the same bug this signature exists to prevent, one axis
+    /// wider since the scope stopped being the vendor.
     fn clear_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError>;
 
+    /// Checks a key against the vendor.
+    ///
+    /// **The connection is which account's stored key is checked when the
+    /// caller provides none** (ADR 0208). A typed key is checked as typed —
+    /// that is the *before you save it* case and it belongs to no account yet.
     fn validate_api_key(
         &self,
+        connection: &str,
         api_key: Option<String>,
     ) -> ProviderFuture<ValidateProviderApiKeyResponse>;
 }
@@ -362,6 +379,12 @@ fn role_unavailable(provider: &str, role: &str) -> ProviderCommandError {
 
 #[cfg(test)]
 mod tests {
+    /// The account every credential assertion here is scoped to (ADR 0208).
+    /// A registry test asks *what does this entry answer*, and the answer is
+    /// per connection now — this one holds no key, which is what makes
+    /// `configured == missing.is_none()` the assertion it always was.
+    const TEST_CONNECTION: &str = "connection-under-test";
+
     use super::*;
     use crate::core::providers::ModelSupport;
 
@@ -427,7 +450,7 @@ mod tests {
             for role in &roles {
                 let credential = entry
                     .provider
-                    .credential_status(*role)
+                    .credential_status(TEST_CONNECTION, *role)
                     .expect("a registered role answers for its credential");
                 assert_eq!(credential.role, *role);
                 assert_eq!(credential.provider, entry.id);
@@ -487,7 +510,12 @@ mod tests {
                 assert!(
                     entry
                         .provider
-                        .save_api_key(role, CredentialKind::ApiKey, "a-key-nobody-asked-for")
+                        .save_api_key(
+                            TEST_CONNECTION,
+                            role,
+                            CredentialKind::ApiKey,
+                            "a-key-nobody-asked-for",
+                        )
                         .is_err(),
                     "{} accepts no credential kind and took one anyway",
                     entry.id,
@@ -579,6 +607,7 @@ mod tests {
 
         fn credential_status(
             &self,
+            _connection: &str,
             _role: ProviderRole,
         ) -> Result<RoleCredentialStatus, ProviderCommandError> {
             Err(ProviderCommandError::invalid_request("fixture"))
@@ -586,6 +615,7 @@ mod tests {
 
         fn save_api_key(
             &self,
+            _connection: &str,
             _role: ProviderRole,
             _kind: CredentialKind,
             _api_key: &str,
@@ -595,6 +625,7 @@ mod tests {
 
         fn clear_api_key(
             &self,
+            _connection: &str,
             _role: ProviderRole,
             _kind: CredentialKind,
         ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
@@ -603,6 +634,7 @@ mod tests {
 
         fn validate_api_key(
             &self,
+            _connection: &str,
             _api_key: Option<String>,
         ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
             Box::pin(async { Err(ProviderCommandError::invalid_request("fixture")) })

@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-16
+Status: 2026-08-17
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -168,6 +168,16 @@ Status: 2026-08-16
   native window chrome follows the choice (§15.3). The command palette's three
   theme rows write it;
   before 2026-08-10 they changed the window and persisted nothing.
+- **A profile carries its whole connection** (ADR 0208, 2026-08-17). A
+  connection is a stored account object — vendor, server URL, model id, plan,
+  and the scope its credential lives under in the OS store — and a profile
+  points at one per job. Two accounts on one vendor are two keys, so switching
+  a profile moves who is paying and not only which vendor; two profiles may
+  share one account and therefore one key to rotate. The `Account` row on the
+  connection card picks, renames, adds and removes them; a profile whose
+  account was removed keeps naming it and goes inert rather than being pointed
+  at somebody else's. The stored keys were **moved** onto the accounts by the
+  first load after the change, not copied.
 - **A control the runtime cannot answer for is drawn and inert rather than
   deleted** (ADR 0065, ADR 0067): **two of four provider lanes since 2026-08-16
   and it was three** — `Your server` is typed into and picked like any other
@@ -283,9 +293,11 @@ Status: 2026-08-16
   guard that stops a surface over-claiming and ADR 0106 corrected it; **the
   guard exists now and is two tests**, both made to fail before they were
   trusted
-- a credential resolved per `(provider, role)` (ADR 0105 and ADR 0102's storage
-  half, 2026-08-11): the secret-store entry is keyed `(provider, role, kind)`,
-  so **clearing the chat credential leaves the speech one standing**, and a role
+- a credential resolved per `(connection, role)` (ADR 0105 and ADR 0102's
+  storage half, 2026-08-11; rescoped from the vendor to the account by ADR 0208
+  on 2026-08-17): the secret-store entry is keyed `(scope, role, kind)`, so
+  **clearing the chat credential leaves the speech one standing** and an
+  employer's account and a private one on the same vendor are two keys, and a role
   with no credential says which one it is missing instead of spending another
   role's. A save that names no role reaches every role the kind can pay for —
   the one drawn key row sits on the connection, and a key is a way into an
@@ -350,7 +362,7 @@ Status: 2026-08-16
   single transcription retry (retryable only), and a persistent runtime log
   file so abort errors no longer fall out of the ring buffer
 - Groq and OpenAI BYOK with OS secret-store storage, one entry per
-  `(provider, role, kind)`, and a connection the user picks on `AI Models`
+  `(connection, role, kind)`, and a connection the user picks on `AI Models`
   (ADR 0126, ADR 0127, 2026-08-12). OpenAI serves recognition and chat; the
   transport and the credential store behind both cloud lanes are one
   implementation and every vendor policy is the adapter's own

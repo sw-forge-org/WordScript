@@ -9,8 +9,8 @@ use super::communication_style::{
 };
 use super::paths::config_file_path;
 use super::providers::{
-    default_provider_id, normalize_provider_value, provider_tiers, registered_providers,
-    resolves_to_a_known_provider, JobKey, JobProvider,
+    default_provider_id, normalize_provider_value, provider_tiers, registered_providers, JobKey,
+    JobProvider,
 };
 use super::runtime_log;
 
@@ -826,8 +826,8 @@ impl TextProfile {
     }
 
     /// What one of this profile's jobs runs on, and what pays for it.
-    pub(crate) fn job_provider(&self, job: JobKey) -> JobProvider {
-        self.resolved_providers().resolve(job)
+    pub(crate) fn job_provider(&self, job: JobKey, connections: &[Connection]) -> JobProvider {
+        self.resolved_providers().resolve(job, connections)
     }
 
     // No `resolved_modes()` counterpart: both remaining fields need to know
@@ -897,6 +897,155 @@ pub struct LocalProfilePromptSettings {
     pub prompt_carry: bool,
 }
 
+// ── The connection axis (ADR 0208) ───────────────────────────────────────────
+
+/// The id the migration gives the machine's first connection, and the one a
+/// profile with no written axis falls back to.
+///
+/// **Stable rather than generated**, because two things have to agree on it
+/// without having met: `ProfileProviderSettings::default` names it for a
+/// profile block that was never written, and `adopt_connection_axis` writes it
+/// for a machine that never had a connection. A generated id would make those
+/// two disagree on the first load of a fresh install, and every job would
+/// resolve to a connection that is not there.
+pub const DEFAULT_CONNECTION_ID: &str = "connection-default";
+
+/// Where a job runs, and which account pays for it (ADR 0208).
+///
+/// **An object profiles point at, rather than a shape each profile carries.**
+/// The alternative — every profile holding its own endpoint and its own
+/// credential — stores one account once per profile, so the same company key is
+/// typed again for every writing style that uses it and rotated once per copy;
+/// the copy that is forgotten fails at dictation time rather than at setup
+/// time. The unit a reader names is the account (*my employer's*, *mine*), and
+/// this is that unit.
+///
+/// **The vendor lives here and nowhere else.** A profile names a connection and
+/// the connection names the vendor, so the pair cannot disagree. Storing the
+/// vendor on the profile as well would be one fact in two places (ADR 0123),
+/// with no rule for which one is right on the day they differ.
+///
+/// **The endpoint and the credential are one object on purpose.** A key typed
+/// for one host must never be sent to another (ADR 0094's one security rule);
+/// keeping the URL beside the credential makes that structural rather than a
+/// rule somebody has to remember — a profile cannot take this server with that
+/// token, because there is no way to name the pair separately.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(default)]
+pub struct Connection {
+    /// What a profile points at, and what the credential is stored under.
+    ///
+    /// **Changing one of these orphans the credential stored beneath it**, the
+    /// same property `credential_store::entry_user` has always had for the
+    /// vendor half — which is why the migration writes deterministic ids and
+    /// the surface generates one per connection rather than deriving it from
+    /// the label a reader can rename.
+    pub id: String,
+    /// What the reader calls this account. Free text, and the only field on
+    /// this object that exists purely for a person.
+    pub label: String,
+    /// The registered vendor id this connection talks to.
+    pub provider: String,
+    /// The base URL for the lane that is typed rather than known (ADR 0165).
+    ///
+    /// Empty on every lane whose host is the vendor's own, which is what makes
+    /// this field a property of *this* connection rather than of the machine:
+    /// ADR 0165 put it on `AppConfig` because there was nowhere else for it to
+    /// live, and said so.
+    pub base_url: String,
+    /// The model id sent when a job names none.
+    ///
+    /// It belongs to whoever runs the server, so it belongs to the connection
+    /// that names the server. Empty is the ordinary state and not a default
+    /// waiting to be filled in — `providers::self_hosted::resolve_model`
+    /// refuses rather than guessing.
+    pub model: String,
+    /// The account plan, with empty meaning this vendor's own default.
+    ///
+    /// **It sits here because a plan belongs to a credential** (ADR 0167).
+    /// That record keyed it by vendor and said what it was really reaching for:
+    /// the thing that identifies the account. This object is that thing, so the
+    /// plan lands on it rather than beside it.
+    pub plan: String,
+}
+
+/// A connection naming one vendor, for a test that is about something else.
+///
+/// **The migration's own id shape**, so a fixture reads the way a lifted config
+/// does rather than inventing a third spelling of the same thing.
+#[cfg(test)]
+pub(crate) fn test_connection(provider: &str) -> Connection {
+    Connection {
+        id: connection_id_for_lifted_vendor(provider),
+        label: default_connection_label(provider),
+        provider: provider.to_string(),
+        ..Connection::default()
+    }
+}
+
+/// The connection every fresh install starts with.
+///
+/// One, not one per lane: a lane with no credential and no endpoint is a row
+/// nobody asked for, and the surface creates the second connection at the
+/// moment somebody picks a second lane.
+fn default_connection() -> Connection {
+    let provider = default_provider_id().to_string();
+    Connection {
+        id: DEFAULT_CONNECTION_ID.to_string(),
+        label: default_connection_label(&provider),
+        provider,
+        base_url: String::new(),
+        model: String::new(),
+        plan: String::new(),
+    }
+}
+
+/// A starting name for a connection the migration created.
+///
+/// **A starting name, not a display rule.** The label is the reader's from the
+/// moment the connection exists, and every surface prints what is stored rather
+/// than deriving a name from the vendor id — this exists so a lifted connection
+/// arrives with something readable on it instead of `self_hosted`.
+/// The id the lift gives one vendor's connection.
+///
+/// **Derived rather than generated**, because two passes have to arrive at the
+/// same string without sharing state: the pass that rewrites the profiles and
+/// the pass that re-keys the credentials both compute it from the vendor alone.
+/// A connection created afterwards by the surface carries a generated id — this
+/// shape is the migration's, not the product's.
+fn connection_id_for_lifted_vendor(vendor: &str) -> String {
+    if vendor == default_provider_id() {
+        DEFAULT_CONNECTION_ID.to_string()
+    } else {
+        format!("connection-{vendor}")
+    }
+}
+
+fn default_connection_label(provider: &str) -> String {
+    match provider {
+        "groq" => "Groq",
+        "openai" => "OpenAI",
+        "openrouter" => "OpenRouter",
+        "self_hosted" => "Your server",
+        "local" => "On this machine",
+        other => other,
+    }
+    .to_string()
+}
+
+/// The connections a job may resolve against.
+///
+/// **An absent block is one this build has never written and reads as the
+/// seeded connection; a block written empty is a reader who deleted every
+/// connection and reads as none.** The two are different answers and the
+/// `Option` is what keeps them apart — the same shape `provider_plans` used for
+/// the same reason (ADR 0167), and the reason the lift needs no version
+/// counter.
+fn seeded_connections() -> &'static [Connection] {
+    static SEEDED: OnceLock<Vec<Connection>> = OnceLock::new();
+    SEEDED.get_or_init(|| vec![default_connection()])
+}
+
 // ── The provider axis (ADR 0094) ─────────────────────────────────────────────
 
 /// Which vendor each of this profile's jobs runs on.
@@ -916,6 +1065,11 @@ pub struct LocalProfilePromptSettings {
 #[serde(default)]
 pub struct ProfileProviderSettings {
     /// The connection every job follows unless it says otherwise.
+    ///
+    /// **A connection id since ADR 0208, and a vendor id before it.** The
+    /// vendor is read off the connection rather than stored here, so *which
+    /// server* and *whose account* move with the profile the way *which vendor*
+    /// already did.
     pub default: String,
     /// Sparse, and deliberately so: **a job absent here is not a job without an
     /// answer**, it is a job whose answer is *follow the connection*. The drawn
@@ -929,7 +1083,7 @@ pub struct ProfileProviderSettings {
 impl Default for ProfileProviderSettings {
     fn default() -> Self {
         Self {
-            default: default_provider_id().to_string(),
+            default: DEFAULT_CONNECTION_ID.to_string(),
             overrides: BTreeMap::new(),
         }
     }
@@ -941,32 +1095,50 @@ impl ProfileProviderSettings {
     /// The one resolution. Every call site that used to read a `provider` field
     /// asks this for its own job instead, so *recognise with Groq, transform
     /// with something stronger* is a question the config can answer.
-    pub(crate) fn resolve(&self, job: JobKey) -> JobProvider {
-        match self.overrides.get(&job) {
-            Some(provider) => JobProvider {
-                job,
-                provider: provider.clone(),
-                overridden: true,
-            },
-            None => JobProvider {
-                job,
-                provider: self.default.clone(),
-                overridden: false,
-            },
+    ///
+    /// **The vendor is looked up rather than stored** (ADR 0208): the profile
+    /// names a connection, the connection names the vendor. A name that
+    /// resolves to nothing leaves the vendor empty, which is the state a
+    /// deleted connection produces and the one `JobProvider::credential`
+    /// refuses with a sentence rather than repairing.
+    pub(crate) fn resolve(&self, job: JobKey, connections: &[Connection]) -> JobProvider {
+        let (connection, overridden) = match self.overrides.get(&job) {
+            Some(connection) => (connection.clone(), true),
+            None => (self.default.clone(), false),
+        };
+
+        let provider = connections
+            .iter()
+            .find(|entry| entry.id == connection)
+            .map(|entry| entry.provider.clone())
+            .unwrap_or_default();
+
+        JobProvider {
+            job,
+            connection,
+            provider,
+            overridden,
         }
     }
 
-    /// Lands every id in the block on one this build knows.
+    /// Drops every override naming a connection this machine no longer holds.
     ///
-    /// An override naming a vendor this build cannot resolve is dropped rather
-    /// than normalised onto the default: silently rewriting it to Groq would
-    /// make the row read *follow the connection* while the user's own choice
-    /// disappeared, and an absent override says exactly that in a form the
-    /// surface can restate.
-    fn normalize(&mut self) {
-        self.default = normalize_provider_value(&self.default);
-        self.overrides
-            .retain(|_, provider| resolves_to_a_known_provider(provider));
+    /// An override that resolves to nothing is dropped rather than repointed at
+    /// the default: silently rewriting it would make the row read *follow the
+    /// connection* while the reader's own choice disappeared, and an absent
+    /// override says exactly that in a form the surface can restate.
+    ///
+    /// **The default is not dropped, and that asymmetry is the point.** An
+    /// absent override has a meaning; an absent default does not, so a profile
+    /// whose connection was deleted keeps naming it and every job goes inert
+    /// with that name in the sentence. Repointing it at another account would
+    /// be this build choosing who pays.
+    fn normalize(&mut self, connection_ids: &[String]) {
+        self.default = self.default.trim().to_string();
+        self.overrides.retain(|_, connection| {
+            let connection = connection.trim();
+            connection_ids.iter().any(|id| id == connection)
+        });
     }
 }
 
@@ -1155,24 +1327,31 @@ pub struct AppConfig {
     /// the shape every installation carries right now.
     #[serde(rename = "provider_tier", skip_serializing)]
     pub(crate) migrated_provider_tier: Option<String>,
-    /// Which account plan this machine is on, per vendor.
+    /// Every account this machine holds, and where each one is reached
+    /// (ADR 0208).
     ///
-    /// Plans are declared by the provider (`providers::provider_tiers`), never
-    /// listed here, and they bound how much audio may go up in one request —
-    /// and with it how long a recording may be.
+    /// **The object the profile axis points at.** A profile names a connection
+    /// per job; the connection carries the vendor, the endpoint, the plan, and
+    /// owns the credential in the OS store. That is what makes *switch the
+    /// profile* move the server and the account rather than only the vendor.
     ///
-    /// **Keyed by vendor, because a plan belongs to a credential** (ADR 0167).
-    /// ADR 0094 left it machine-wide and said so: two profiles on two vendors
-    /// shared one plan field. That was harmless only while exactly one
-    /// registered vendor sold more than one ceiling, and it stopped being a
-    /// question about scope the moment a second could.
-    ///
-    /// A vendor with no entry is on its own default plan, which is what every
-    /// adapter already reads an empty id as. `None` means the map has never
-    /// been written — the same shape `TextProfile::providers` uses, and the
-    /// reason the lift needs no version counter of its own.
+    /// `None` is a config this build has never written and lifts on load;
+    /// `Some(vec![])` is a reader who deleted every connection, and is left
+    /// alone. Nothing re-derives the list from the profiles once it has been
+    /// written — that would replace a deletion with a migration, which is D6's
+    /// defect and the reason ADR 0167 chose this shape over a version counter.
     #[serde(default)]
-    pub provider_plans: Option<BTreeMap<String, String>>,
+    pub connections: Option<Vec<Connection>>,
+    /// **The migration door for the connection axis, read once and never
+    /// written** (ADR 0208).
+    ///
+    /// ADR 0167 keyed the plan by vendor, on the argument that a plan belongs
+    /// to a credential and a credential is keyed by vendor. The credential is
+    /// keyed by connection now, so the plan rides on the connection and this
+    /// key leaves the file on the next save — the same door
+    /// `migrated_provider_tier` above is for the axis before it.
+    #[serde(rename = "provider_plans", skip_serializing)]
+    pub(crate) migrated_provider_plans: Option<BTreeMap<String, String>>,
     pub local_model: String,
     pub local_profile: String,
     pub local_prompt_strength: String,
@@ -1196,35 +1375,23 @@ pub struct AppConfig {
     /// existed needs no migration.
     #[serde(default)]
     pub local_model_dirs: Vec<String>,
-    /// The OpenAI-compatible server the `Your server` lane posts to, as a base
-    /// URL (D1b, ADR 0165).
+    /// **The migration door for the `Your server` endpoint, read once and never
+    /// written** (ADR 0208).
     ///
-    /// **Machine-wide, and not a secret.** The endpoint belongs to this
-    /// installation rather than to the writing style that happens to use it —
-    /// the argument `local_model_dirs` above already carries — and a URL
-    /// authenticates nothing, so it does not go near `without_secrets`. The
-    /// optional bearer token that may accompany it is a credential and lives in
-    /// the OS secret store instead, under `self_hosted.speech.api_key`.
+    /// ADR 0165 put the URL and the model id here and gave the reason: the
+    /// endpoint belongs to this installation, and there was nowhere else for it
+    /// to live. There is now — the connection that names the server owns them,
+    /// beside the token that may only ever be sent to it. The keys leave the
+    /// file on the next save.
     ///
-    /// **What is typed here outranks `WORDSCRIPT_SELF_HOSTED_BASE_URL`**, which
-    /// is the reverse of `WORDSCRIPT_LOCAL_MODEL_DIR`'s precedence and is
-    /// deliberate: a field that stores a value the runtime then ignores is the
-    /// false affordance ADR 0067 rule 1 exists to prevent. The environment is
-    /// where a machine starts, not where it wins.
-    ///
-    /// Additive: absent reads as empty, so a config written before this field
-    /// existed needs no migration.
-    #[serde(default)]
-    pub self_hosted_base_url: String,
-    /// The model id that server is told to use when a job names none (D1b).
-    ///
-    /// **Empty is the ordinary state of a fresh install and is not a default
-    /// waiting to be filled in.** Nothing in this build knows what somebody
-    /// else's server serves, so a job that names no model is refused with the
-    /// door named rather than sent with a guess attached —
-    /// `providers::self_hosted::resolve_model` is where that refusal lives.
-    #[serde(default)]
-    pub self_hosted_model: String,
+    /// **`WORDSCRIPT_SELF_HOSTED_BASE_URL` and `_MODEL` are untouched.** They
+    /// are the door for a machine nobody has typed on, they stay machine-wide
+    /// because an environment is, and what is typed still outranks them
+    /// (ADR 0165 rule 2).
+    #[serde(rename = "self_hosted_base_url", skip_serializing)]
+    pub(crate) migrated_self_hosted_base_url: Option<String>,
+    #[serde(rename = "self_hosted_model", skip_serializing)]
+    pub(crate) migrated_self_hosted_model: Option<String>,
     pub hotkey: String,
     pub pause_hotkey: String,
     pub abort_hotkey: String,
@@ -1387,7 +1554,8 @@ impl Default for AppConfig {
             filter_fillers: true,
             professionalize: false,
             migrated_provider_tier: None,
-            provider_plans: None,
+            connections: None,
+            migrated_provider_plans: None,
             local_model: "base".to_string(),
             local_profile: default_local_profile.clone(),
             local_prompt_strength: default_local_prompt_strength.clone(),
@@ -1405,8 +1573,8 @@ impl Default for AppConfig {
                 best_of: default_local_best_of,
             }],
             local_model_dirs: Vec::new(),
-            self_hosted_base_url: String::new(),
-            self_hosted_model: String::new(),
+            migrated_self_hosted_base_url: None,
+            migrated_self_hosted_model: None,
             hotkey: default_hotkey().to_string(),
             pause_hotkey: default_pause_hotkey().to_string(),
             abort_hotkey: default_abort_hotkey().to_string(),
@@ -1499,27 +1667,43 @@ impl AppConfig {
     /// because the axis is per profile: two profiles are exactly the place two
     /// different connections belong.
     pub(crate) fn job_provider(&self, job: JobKey) -> JobProvider {
-        self.active_text_profile().job_provider(job)
+        self.active_text_profile()
+            .job_provider(job, self.connections())
     }
 
-    /// Which account plan this machine is on **with this vendor** (ADR 0167).
+    /// Every connection this machine holds (ADR 0208).
     ///
-    /// **The single door onto the plan axis**, and the reason both readers take
-    /// a vendor: `capture_budget::resolve` has already resolved the recogniser's
-    /// vendor when it asks, and `resolve_upload_capacity` asks once per
-    /// candidate. Neither had to look one up to get this — the field was simply
-    /// answering a question nobody had asked it.
+    /// The single door onto the list, so *never written* and *written empty*
+    /// are told apart in one place rather than at each reader.
+    pub(crate) fn connections(&self) -> &[Connection] {
+        self.connections
+            .as_deref()
+            .unwrap_or_else(|| seeded_connections())
+    }
+
+    /// One connection by id, or `None` when it no longer exists.
+    pub(crate) fn connection(&self, id: &str) -> Option<&Connection> {
+        let id = id.trim();
+        self.connections().iter().find(|entry| entry.id == id)
+    }
+
+    /// Which account plan this machine is on **with this connection**
+    /// (ADR 0167, rescoped by ADR 0208).
+    ///
+    /// **The single door onto the plan**, and the reason it takes a connection
+    /// rather than a vendor: a plan belongs to a credential, and a credential
+    /// is a connection's since two accounts on one vendor are two plans. That
+    /// is the question ADR 0167's own key could not answer, stated in the
+    /// object it was reaching for.
     ///
     /// An empty answer is *this vendor's default plan*, not *no answer*. Every
     /// adapter already resolves an unrecognised id to its own default rather
-    /// than to its largest (`groq::capture_limits`), so a vendor with no entry
-    /// and a vendor holding another vendor's plan id land in the same place —
-    /// which is what makes this lookup safe to ask about any id at all.
-    pub(crate) fn plan_for(&self, provider: &str) -> &str {
-        self.provider_plans
-            .as_ref()
-            .and_then(|plans| plans.get(provider.trim()))
-            .map(String::as_str)
+    /// than to its largest (`groq::capture_limits`), so a connection with no
+    /// plan and a connection holding another vendor's plan id land in the same
+    /// place — which is what makes this lookup safe to ask about any id at all.
+    pub(crate) fn plan_for(&self, connection: &str) -> &str {
+        self.connection(connection)
+            .map(|entry| entry.plan.trim())
             .unwrap_or("")
     }
 
@@ -1544,7 +1728,9 @@ impl AppConfig {
         let profile = self.active_text_profile();
         let speech = profile.resolved_speech();
 
-        if profile.job_provider(job).provider == super::providers::LOCAL_PROVIDER_ID {
+        if profile.job_provider(job, self.connections()).provider
+            == super::providers::LOCAL_PROVIDER_ID
+        {
             first_named(
                 [&speech.local_agent_model, &self.local_agent_model],
                 default_local_agent_model(),
@@ -1577,9 +1763,9 @@ impl AppConfig {
     pub(crate) fn speech_model(&self) -> Option<String> {
         let profile = self.active_text_profile();
         let speech = profile.resolved_speech();
-        let provider = profile.job_provider(JobKey::Dictation).provider;
+        let job = profile.job_provider(JobKey::Dictation, self.connections());
 
-        if provider == super::providers::LOCAL_PROVIDER_ID {
+        if job.provider == super::providers::LOCAL_PROVIDER_ID {
             let named = speech.local_model.trim();
             return Some(if named.is_empty() {
                 "base".to_string()
@@ -1588,10 +1774,18 @@ impl AppConfig {
             });
         }
 
-        // The third lane keeps its own field (ADR 0165): `speech.model` is a
-        // catalogued cloud id and somebody's own server serves none of them.
-        let named = if provider == super::providers::self_hosted::SELF_HOSTED_PROVIDER_ID {
-            self.self_hosted_model.trim()
+        // The third lane reads the id off the connection (ADR 0165, rescoped by
+        // ADR 0208): `speech.model` is a catalogued cloud id and somebody's own
+        // server serves none of them, and *which* server is now the profile's
+        // answer rather than the machine's — which is what closes the
+        // inconsistency ADR 0207 recorded and could not fix.
+        let connection_model = self
+            .connection(&job.connection)
+            .map(|entry| entry.model.trim().to_string())
+            .unwrap_or_default();
+
+        let named = if job.provider == super::providers::self_hosted::SELF_HOSTED_PROVIDER_ID {
+            connection_model.as_str()
         } else {
             speech.model.trim()
         };
@@ -1736,11 +1930,21 @@ impl AppConfig {
     /// even while the old key is still in the file**: the lift has run, and the
     /// key is only still there because some other build wrote it.
     fn carries_an_unlifted_provider_plan(&self) -> bool {
-        self.provider_plans.is_none()
+        self.migrated_provider_plans.is_none()
             && self
                 .migrated_provider_tier
                 .as_deref()
                 .is_some_and(|tier| !tier.trim().is_empty())
+    }
+
+    /// Whether the connection axis has never been written for this machine.
+    ///
+    /// Read on the raw config, before anything is normalized, because it
+    /// decides three things at once: whether the load takes a snapshot, whether
+    /// the lifted file is written back, and whether the stored credentials are
+    /// re-keyed onto the connections the lift just created.
+    fn carries_an_unlifted_connection_axis(&self) -> bool {
+        self.connections.is_none()
     }
 
     /// Lifts the machine's one account plan onto the per-vendor axis (ADR 0167).
@@ -1763,7 +1967,7 @@ impl AppConfig {
     /// a key that is no longer written would replace a user's choice with a
     /// migration. That is D6's defect, one axis over.
     fn adopt_provider_plan_axis(&mut self) {
-        if self.provider_plans.is_some() {
+        if self.migrated_provider_plans.is_some() {
             return;
         }
 
@@ -1782,7 +1986,113 @@ impl AppConfig {
             }
         }
 
-        self.provider_plans = Some(plans);
+        self.migrated_provider_plans = Some(plans);
+    }
+
+    /// Lifts the machine's vendors onto the connection axis (ADR 0208).
+    ///
+    /// **One connection per vendor any profile actually names**, because that
+    /// is the number of accounts this machine has evidence for. Inventing one
+    /// per registered vendor would fill the list with accounts nobody holds,
+    /// and inventing one per profile would be shape A written by a migration.
+    ///
+    /// **What it carries across**: the vendor, the plan ADR 0167 keyed by that
+    /// vendor, and — for the lane that types its own — the endpoint and model
+    /// id ADR 0165 had to keep machine-wide. What it cannot carry is a name,
+    /// so it writes the vendor's own and leaves renaming to the reader.
+    ///
+    /// **The credential is not moved here.** This function is pure and runs in
+    /// every test that normalizes a config; the OS secret store is touched on
+    /// the load path only, by `rekey_connection_credentials`, which reads the
+    /// pairs back off the list this wrote.
+    ///
+    /// Guarded on the block being absent rather than on a version counter, for
+    /// ADR 0167's reason: a written list is one this build wrote, and
+    /// re-deriving it would replace a deletion with a migration.
+    fn adopt_connection_axis(&mut self) {
+        if self.connections.is_some() {
+            return;
+        }
+
+        // The plan lift feeds this one rather than standing beside it: its
+        // output is this function's input, and running it anywhere else would
+        // leave a map on the struct that nothing reads afterwards.
+        self.adopt_provider_plan_axis();
+        let plans = self.migrated_provider_plans.take().unwrap_or_default();
+        let base_url = self.migrated_self_hosted_base_url.take().unwrap_or_default();
+        let model = self.migrated_self_hosted_model.take().unwrap_or_default();
+
+        // The default vendor leads, so the seeded id belongs to the connection
+        // a profile with no written axis already points at.
+        let mut vendors = vec![default_provider_id().to_string()];
+        for profile in &self.text_profiles {
+            // The WRITTEN block and never `resolved_providers`: an absent block
+            // means *follow the default connection*, and reading the resolved
+            // one here would read a connection id back as if it were a vendor.
+            let Some(providers) = profile.providers.as_ref() else {
+                continue;
+            };
+            for named in std::iter::once(&providers.default).chain(providers.overrides.values()) {
+                let vendor = normalize_provider_value(named);
+                if !vendors.contains(&vendor) {
+                    vendors.push(vendor);
+                }
+            }
+        }
+
+        let self_hosted = super::providers::self_hosted::SELF_HOSTED_PROVIDER_ID;
+        let connections: Vec<Connection> = vendors
+            .iter()
+            .map(|vendor| Connection {
+                id: connection_id_for_lifted_vendor(vendor),
+                label: default_connection_label(vendor),
+                provider: vendor.clone(),
+                base_url: if vendor == self_hosted {
+                    base_url.trim().to_string()
+                } else {
+                    String::new()
+                },
+                model: if vendor == self_hosted {
+                    model.trim().to_string()
+                } else {
+                    String::new()
+                },
+                plan: plans.get(vendor).cloned().unwrap_or_default(),
+            })
+            .collect();
+
+        for profile in &mut self.text_profiles {
+            let Some(providers) = profile.providers.as_mut() else {
+                continue;
+            };
+            providers.default = connection_id_for_lifted_vendor(&normalize_provider_value(
+                &providers.default,
+            ));
+            for named in providers.overrides.values_mut() {
+                *named = connection_id_for_lifted_vendor(&normalize_provider_value(named));
+            }
+        }
+
+        self.connections = Some(connections);
+    }
+
+    /// Drops every reference to a connection this machine no longer holds.
+    ///
+    /// Runs after the lift so the ids it just wrote are the ones checked, and
+    /// on every load afterwards so a deleted connection cannot leave an
+    /// override pointing into nothing.
+    fn normalize_connection_references(&mut self) {
+        let ids: Vec<String> = self
+            .connections()
+            .iter()
+            .map(|connection| connection.id.clone())
+            .collect();
+
+        for profile in &mut self.text_profiles {
+            if let Some(providers) = profile.providers.as_mut() {
+                providers.normalize(&ids);
+            }
+        }
     }
 
     /// Returns whether normalization rewrote a profile's `work_mode`, so
@@ -1797,7 +2107,12 @@ impl AppConfig {
         self.typing_baseline_wpm = self
             .typing_baseline_wpm
             .clamp(TYPING_BASELINE_RANGE.0, TYPING_BASELINE_RANGE.1);
-        self.adopt_provider_plan_axis();
+        // After the profiles, because the lift reads the vendor ids the
+        // schema-5 migration writes into their provider blocks — and before
+        // every reader below, because from here on a job resolves through a
+        // connection.
+        self.adopt_connection_axis();
+        self.normalize_connection_references();
         self.local_model = normalize_local_model_value(&self.local_model);
         self.local_profile = normalize_local_profile_id(&self.local_profile, &self.local_model);
         self.local_model = local_model_from_profile_id(&self.local_profile)
@@ -1916,11 +2231,10 @@ impl AppConfig {
             // matches on it.
             profile.migrate_to_current_schema();
 
-            // Runs after the migration, so the block the lift just wrote is
-            // normalized on the same pass rather than on the next load.
-            if let Some(providers) = profile.providers.as_mut() {
-                providers.normalize();
-            }
+            // The provider block is normalized by `normalize_connection_references`
+            // rather than here: what a reference has to be checked against is
+            // the connection list, and that list is only lifted once every
+            // profile has reached schema 5 (ADR 0208).
 
             if profile.label.trim().is_empty() {
                 profile.label = if index == 0 {
@@ -2015,12 +2329,19 @@ impl AppConfig {
         // be told apart later.
         let lifting_profiles = config.carries_a_profile_below_current_schema();
         let lifting_plans = config.carries_an_unlifted_provider_plan();
-        let migrating = lifting_profiles || lifting_plans;
-        if migrating {
+        let lifting_connections = config.carries_an_unlifted_connection_axis();
+        let migrating = lifting_profiles || lifting_plans || lifting_connections;
+        // A machine with no config file yet is not migrating anything: the
+        // connection lift still runs, because a fresh install needs its first
+        // connection, but there is no file to copy and a snapshot that failed
+        // for that reason would log a failure nobody can act on.
+        if migrating && config_file_path().exists() {
             let tag = if lifting_profiles {
                 "provider-axis"
-            } else {
+            } else if lifting_plans {
                 "provider-plan-axis"
+            } else {
+                "connection-axis"
             };
             // Only the failure is logged here. `snapshot_config` records its own
             // path on success, and a second line saying the same thing is the
@@ -2056,6 +2377,29 @@ impl AppConfig {
                 config.pause_hotkey.clone(),
                 config.abort_hotkey.clone(),
             );
+
+        // **The credential follows its connection, and this is the one place
+        // the migration touches the OS secret store** (ADR 0208). The lift is
+        // pure and runs in every test that normalizes a config; this runs on
+        // the load path, once in a machine's life, reading its pairs back off
+        // the list the lift just wrote — the vendor a key was stored under, and
+        // the connection that now owns it. A failure is logged and never blocks
+        // the load: a key that did not move is one the reader re-types, which
+        // is the licence ADR 0112 gives.
+        if lifting_connections {
+            for connection in config.connections() {
+                if let Err(error) = super::providers::rekey_connection_credentials(
+                    &super::providers::credential_store::OsSecretStore,
+                    &connection.provider,
+                    &connection.id,
+                ) {
+                    runtime_log::record(format!(
+                        "[WordScript] Connection credential re-key FAILED provider={} connection={} error={error}",
+                        connection.provider, connection.id,
+                    ));
+                }
+            }
+        }
 
         if should_save {
             let _ = config.save_to_disk();
@@ -3013,8 +3357,16 @@ mod tests {
         assert!(validate_hotkey_collisions(&config).is_ok());
     }
 
-    /// Puts the whole axis of the active profile on one provider.
+    /// Puts the whole axis of the active profile on one vendor's connection,
+    /// creating the connection (ADR 0208).
     fn set_profile_connection(config: &mut AppConfig, provider: &str) {
+        let connection = test_connection(provider);
+        set_profile_connection_id(config, &connection.id);
+        config.connections = Some(vec![connection]);
+    }
+
+    /// Points the active profile at a connection id, whether or not it exists.
+    fn set_profile_connection_id(config: &mut AppConfig, connection: &str) {
         let active_id = config.active_text_profile_id.clone();
         let profile = config
             .text_profiles
@@ -3022,7 +3374,7 @@ mod tests {
             .find(|profile| profile.id == active_id)
             .expect("active profile");
         profile.providers = Some(ProfileProviderSettings {
-            default: provider.to_string(),
+            default: connection.to_string(),
             ..Default::default()
         });
     }
@@ -3031,21 +3383,42 @@ mod tests {
     /// constant for why both files stopped naming a real vendor here.
     const UNREGISTERABLE_PROVIDER_ID: &str = "not-a-vendor-this-build-carries";
 
+    /// **A deleted connection is named, not replaced** (ADR 0208).
+    ///
+    /// Until the connection axis this asserted the opposite: an unresolvable
+    /// value fell back to Groq, which was right while the value was a VENDOR id
+    /// — an id nothing registers is a typo, and the default vendor is the only
+    /// answer. A connection id is not a typo. It is an account somebody
+    /// deleted, and repointing the profile at a different one would be this
+    /// build deciding who pays. So the job goes inert and the refusal says
+    /// which connection is gone.
     #[test]
-    fn normalizes_unknown_provider_to_default_runtime_provider() {
+    fn a_profile_naming_a_deleted_connection_goes_inert_rather_than_repointed() {
         let mut config = AppConfig::default();
-        // NOT A REAL VENDOR'S NAME, and that is the point. This stood as
-        // `openai` and therefore stopped testing the fallback the moment D1
-        // registered that vendor. What it means is *a connection this build
-        // cannot resolve*, which only an id nothing will register can say.
-        set_profile_connection(&mut config, UNREGISTERABLE_PROVIDER_ID);
+        set_profile_connection_id(&mut config, "connection-that-was-deleted");
+        // A WRITTEN list, because that is the only state this can happen in:
+        // an absent list means the axis has never been lifted, and the lift
+        // reads every stored value as the vendor id it was.
+        config.connections = Some(vec![test_connection(DEFAULT_PROVIDER_ID)]);
 
         config.normalize_for_runtime();
 
+        let job = config.job_provider(JobKey::Cleanup);
         assert_eq!(
-            config.job_provider(JobKey::Cleanup).provider,
-            "groq",
-            "a connection this build cannot resolve falls back to the default"
+            job.connection, "connection-that-was-deleted",
+            "the profile keeps naming what it named",
+        );
+        assert!(
+            job.provider.is_empty(),
+            "and no vendor is invented for it: {}",
+            job.provider,
+        );
+
+        let refusal = job.credential().expect_err("an absent account pays for nothing");
+        assert!(
+            refusal.message.contains("no longer exists"),
+            "the refusal names the state rather than a stack trace: {}",
+            refusal.message,
         );
     }
 
@@ -3058,13 +3431,15 @@ mod tests {
             .iter_mut()
             .find(|profile| profile.id == active_id)
             .expect("active profile");
+        let local = test_connection(LOCAL_PROVIDER_ID);
         profile.providers = Some(ProfileProviderSettings {
-            default: LOCAL_PROVIDER_ID.to_string(),
+            default: local.id.clone(),
             overrides: BTreeMap::from([
                 (JobKey::Assistant, UNREGISTERABLE_PROVIDER_ID.to_string()),
-                (JobKey::Translate, LOCAL_PROVIDER_ID.to_string()),
+                (JobKey::Translate, local.id.clone()),
             ]),
         });
+        config.connections = Some(vec![local]);
 
         config.normalize_for_runtime();
 
@@ -3092,13 +3467,13 @@ mod tests {
             .iter_mut()
             .find(|profile| profile.id == active_id)
             .expect("active profile");
+        let cloud = test_connection(DEFAULT_PROVIDER_ID);
+        let local = test_connection(LOCAL_PROVIDER_ID);
         profile.providers = Some(ProfileProviderSettings {
-            default: DEFAULT_PROVIDER_ID.to_string(),
-            overrides: BTreeMap::from([(
-                JobKey::Assistant,
-                LOCAL_PROVIDER_ID.to_string(),
-            )]),
+            default: cloud.id.clone(),
+            overrides: BTreeMap::from([(JobKey::Assistant, local.id.clone())]),
         });
+        config.connections = Some(vec![cloud, local]);
 
         let assistant = config.job_provider(JobKey::Assistant);
         let cleanup = config.job_provider(JobKey::Cleanup);
@@ -3121,6 +3496,125 @@ mod tests {
             credential.kind.is_none(),
             "the overriding job took the lane that needs no credential, not the connection's"
         );
+    }
+
+    /// **THE SENTENCE THE WHOLE STEP EXISTS FOR** (ADR 0208): switching the
+    /// profile switches the account that pays.
+    ///
+    /// Nothing checked it before this step, because there was nothing to check
+    /// — one vendor held one key, so an employer's Groq account and a private
+    /// one were the same entry in the OS store and a profile switch moved the
+    /// vendor and nothing else. Here the two profiles sit on ONE vendor and on
+    /// two accounts, which is the case the old key could not express at all.
+    ///
+    /// The assertion runs through the real resolution — active profile, its
+    /// axis, the connection, the entry name — and only the store is a fake, so
+    /// what it proves is the chain rather than a formatting rule.
+    #[test]
+    fn switching_the_profile_moves_the_credential() {
+        use super::super::providers::credential_store::{self, MemorySecretStore};
+        use super::super::providers::CredentialKind;
+
+        let work = Connection {
+            id: "connection-work".to_string(),
+            label: "Employer".to_string(),
+            provider: DEFAULT_PROVIDER_ID.to_string(),
+            ..Connection::default()
+        };
+        let private = Connection {
+            id: "connection-private".to_string(),
+            label: "Mine".to_string(),
+            provider: DEFAULT_PROVIDER_ID.to_string(),
+            ..Connection::default()
+        };
+
+        let mut config = AppConfig {
+            connections: Some(vec![work.clone(), private.clone()]),
+            text_profiles: vec![
+                TextProfile {
+                    id: "profile-work".to_string(),
+                    label: "Work".to_string(),
+                    schema_version: TEXT_PROFILE_SCHEMA_VERSION,
+                    providers: Some(ProfileProviderSettings {
+                        default: work.id.clone(),
+                        overrides: BTreeMap::new(),
+                    }),
+                    ..TextProfile::default()
+                },
+                TextProfile {
+                    id: "profile-private".to_string(),
+                    label: "Private".to_string(),
+                    schema_version: TEXT_PROFILE_SCHEMA_VERSION,
+                    providers: Some(ProfileProviderSettings {
+                        default: private.id.clone(),
+                        overrides: BTreeMap::new(),
+                    }),
+                    ..TextProfile::default()
+                },
+            ],
+            active_text_profile_id: "profile-work".to_string(),
+            ..AppConfig::default()
+        };
+
+        let store = MemorySecretStore::default();
+        let (role, kind) = (ProviderRole::Speech, CredentialKind::ApiKey);
+        credential_store::write_to(&store, &work.id, role, kind, "gsk_the_employers_key")
+            .expect("the fake store accepts a write");
+        credential_store::write_to(&store, &private.id, role, kind, "gsk_my_own_key")
+            .expect("the fake store accepts a write");
+
+        let key_in_force = |config: &AppConfig| {
+            let job = config.job_provider(JobKey::Dictation);
+            assert_eq!(job.provider, DEFAULT_PROVIDER_ID, "one vendor, two accounts");
+            credential_store::read_from(&store, &job.connection, role, kind)
+                .expect("read must succeed")
+        };
+
+        assert_eq!(key_in_force(&config).as_deref(), Some("gsk_the_employers_key"));
+
+        config.active_text_profile_id = "profile-private".to_string();
+
+        assert_eq!(
+            key_in_force(&config).as_deref(),
+            Some("gsk_my_own_key"),
+            "the switch moved the account, not just the vendor",
+        );
+    }
+
+    /// The other half of the same sentence: a profile that shares an account
+    /// shares its key, and does not need a second copy of it typed in.
+    ///
+    /// **This is the case shape A could not express** and the reason the
+    /// connection is an object: two writing styles on one employer account are
+    /// one key, rotated once.
+    #[test]
+    fn two_profiles_on_one_connection_spend_one_key() {
+        let mut config = AppConfig {
+            connections: Some(vec![test_connection(DEFAULT_PROVIDER_ID)]),
+            text_profiles: vec![
+                TextProfile {
+                    id: "profile-email".to_string(),
+                    schema_version: TEXT_PROFILE_SCHEMA_VERSION,
+                    providers: Some(ProfileProviderSettings::default()),
+                    ..TextProfile::default()
+                },
+                TextProfile {
+                    id: "profile-code".to_string(),
+                    schema_version: TEXT_PROFILE_SCHEMA_VERSION,
+                    providers: Some(ProfileProviderSettings::default()),
+                    ..TextProfile::default()
+                },
+            ],
+            active_text_profile_id: "profile-email".to_string(),
+            ..AppConfig::default()
+        };
+
+        let email = config.job_provider(JobKey::Dictation).connection;
+        config.active_text_profile_id = "profile-code".to_string();
+        let code = config.job_provider(JobKey::Dictation).connection;
+
+        assert_eq!(email, code, "one account, and therefore one entry to rotate");
+        assert_eq!(email, DEFAULT_CONNECTION_ID);
     }
 
     #[test]
@@ -3149,10 +3643,13 @@ mod tests {
             .find(|profile| profile.id == active_id)
             .expect("active profile");
         // The sentence the config could not say before this step.
+        let cloud = test_connection(DEFAULT_PROVIDER_ID);
+        let local = test_connection(LOCAL_PROVIDER_ID);
         profile.providers = Some(ProfileProviderSettings {
-            default: DEFAULT_PROVIDER_ID.to_string(),
-            overrides: BTreeMap::from([(JobKey::Rewrite, LOCAL_PROVIDER_ID.to_string())]),
+            default: cloud.id.clone(),
+            overrides: BTreeMap::from([(JobKey::Rewrite, local.id.clone())]),
         });
+        config.connections = Some(vec![cloud, local]);
 
         assert_eq!(
             config.job_provider(JobKey::Dictation).provider,
@@ -4052,8 +4549,13 @@ mod tests {
             "nothing on disk expressed an override, so the migration invents none",
         );
         for job in JobKey::ALL {
-            let resolved = profile.job_provider(job);
-            assert_eq!(resolved.provider, LOCAL_PROVIDER_ID);
+            // The lift writes VENDOR ids; the connection lift one layer up
+            // rewrites them into connection ids (ADR 0208). So what this
+            // asserts is the sentence it always meant — every job follows the
+            // profile's one answer — and the vendor behind that answer is the
+            // connection axis's to resolve.
+            let resolved = profile.job_provider(job, &[]);
+            assert_eq!(resolved.connection, LOCAL_PROVIDER_ID);
             assert!(!resolved.overridden, "{} follows the connection", job.as_str());
         }
 
@@ -4114,6 +4616,102 @@ mod tests {
         );
     }
 
+    // ── The connection axis (ADR 0208) ──────────────────────────────────────
+
+    /// **What the lift carries, and from where.** One connection per vendor a
+    /// profile actually names, the plan ADR 0167 keyed by that vendor, and the
+    /// endpoint ADR 0165 had to keep machine-wide — all landing on the object
+    /// that owns the credential.
+    #[test]
+    fn the_lift_makes_one_connection_per_vendor_a_profile_names() {
+        let mut config = AppConfig {
+            migrated_provider_plans: Some(BTreeMap::from([(
+                DEFAULT_PROVIDER_ID.to_string(),
+                crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string(),
+            )])),
+            migrated_self_hosted_base_url: Some("https://speech.example.internal/v1".to_string()),
+            migrated_self_hosted_model: Some("ggml-large-v3-turbo".to_string()),
+            ..AppConfig::default()
+        };
+        let self_hosted = crate::core::providers::self_hosted::SELF_HOSTED_PROVIDER_ID;
+        set_profile_connection_id(&mut config, self_hosted);
+        assert!(config.carries_an_unlifted_connection_axis());
+
+        config.normalize_for_runtime();
+
+        let connections = config.connections.clone().expect("the lift writes a list");
+        assert_eq!(
+            connections.iter().map(|c| c.provider.as_str()).collect::<Vec<_>>(),
+            vec![DEFAULT_PROVIDER_ID, self_hosted],
+            "the default vendor leads so the seeded id belongs to it, and the named vendor follows",
+        );
+
+        let seeded = &connections[0];
+        assert_eq!(seeded.id, DEFAULT_CONNECTION_ID);
+        assert_eq!(
+            seeded.plan,
+            crate::core::providers::groq::GROQ_DEV_TIER_ID,
+            "the plan rides to the account that bought it (ADR 0167)",
+        );
+
+        let server = &connections[1];
+        assert_eq!(server.base_url, "https://speech.example.internal/v1");
+        assert_eq!(server.model, "ggml-large-v3-turbo");
+        assert_eq!(server.label, "Your server", "a lifted account arrives named");
+
+        // And the profile points at the object rather than at the vendor.
+        let job = config.job_provider(JobKey::Dictation);
+        assert_eq!(job.connection, server.id);
+        assert_eq!(job.provider, self_hosted);
+
+        // The three keys the lift consumed leave the file rather than lingering
+        // as a second answer beside the list.
+        let written = serde_json::to_value(&config).expect("config serializes");
+        for key in ["provider_plans", "self_hosted_base_url", "self_hosted_model"] {
+            assert!(
+                written.get(key).is_none(),
+                "this build stops writing {key}, which the connection now owns",
+            );
+        }
+    }
+
+    /// The guard is the list's presence. A reader who deleted every connection
+    /// is left with none, rather than having them re-derived from the profiles
+    /// that still point at them — D6's defect, two axes over.
+    #[test]
+    fn the_connection_lift_never_runs_over_a_list_that_exists() {
+        let mut config = AppConfig {
+            connections: Some(Vec::new()),
+            ..AppConfig::default()
+        };
+        assert!(!config.carries_an_unlifted_connection_axis());
+
+        config.normalize_for_runtime();
+
+        assert!(
+            config.connections.expect("the list is untouched").is_empty(),
+            "an emptied list is a decision, not an unlifted config",
+        );
+    }
+
+    /// **A fresh install gets exactly one account, not one per lane.** A lane
+    /// with no credential and no endpoint is a row nobody asked for; the
+    /// surface creates the second connection when somebody picks a second lane.
+    #[test]
+    fn a_fresh_install_is_seeded_with_one_connection() {
+        let mut config = AppConfig::default();
+        config.normalize_for_runtime();
+
+        let connections = config.connections.expect("the lift writes a list");
+        assert_eq!(connections.len(), 1);
+        assert_eq!(connections[0].id, DEFAULT_CONNECTION_ID);
+        assert_eq!(connections[0].provider, DEFAULT_PROVIDER_ID);
+        assert!(
+            connections[0].plan.is_empty(),
+            "and it is on the vendor's own default plan, stored as absence (ADR 0167)",
+        );
+    }
+
     // ── The plan axis (ADR 0167) ────────────────────────────────────────────
 
     /// **The lift asks the registry, and Groq's plan lands on Groq alone.**
@@ -4122,14 +4720,17 @@ mod tests {
     fn the_stored_plan_lands_on_the_vendors_that_declare_it() {
         let mut config = AppConfig {
             migrated_provider_tier: Some(crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string()),
-            provider_plans: None,
+            migrated_provider_plans: None,
             ..AppConfig::default()
         };
         assert!(config.carries_an_unlifted_provider_plan());
 
         config.adopt_provider_plan_axis();
 
-        let plans = config.provider_plans.clone().expect("the lift writes a map");
+        let plans = config
+            .migrated_provider_plans
+            .clone()
+            .expect("the lift writes a map");
         assert_eq!(
             plans.get(crate::core::providers::groq::GROQ_PROVIDER_ID).map(String::as_str),
             Some(crate::core::providers::groq::GROQ_DEV_TIER_ID),
@@ -4161,14 +4762,17 @@ mod tests {
     fn a_plan_no_vendor_declares_lands_nowhere() {
         let mut config = AppConfig {
             migrated_provider_tier: Some("enterprise-unlimited".to_string()),
-            provider_plans: None,
+            migrated_provider_plans: None,
             ..AppConfig::default()
         };
 
         config.adopt_provider_plan_axis();
 
         assert!(
-            config.provider_plans.expect("the lift writes a map").is_empty(),
+            config
+                .migrated_provider_plans
+                .expect("the lift writes a map")
+                .is_empty(),
             "an id nothing sells is dropped rather than guessed onto a vendor",
         );
     }
@@ -4182,19 +4786,19 @@ mod tests {
             migrated_provider_tier: Some(
                 crate::core::providers::groq::GROQ_FREE_TIER_ID.to_string(),
             ),
-            provider_plans: None,
+            migrated_provider_plans: None,
             ..AppConfig::default()
         };
 
         config.adopt_provider_plan_axis();
 
         assert!(config
-            .provider_plans
+            .migrated_provider_plans
             .as_ref()
             .expect("the lift writes a map")
             .is_empty());
         assert_eq!(
-            config.plan_for(crate::core::providers::groq::GROQ_PROVIDER_ID),
+            config.plan_for(DEFAULT_CONNECTION_ID),
             "",
             "and an empty answer is what every adapter reads as its own default",
         );
@@ -4208,7 +4812,7 @@ mod tests {
     fn the_plan_lift_never_runs_over_a_map_that_exists() {
         let mut config = AppConfig {
             migrated_provider_tier: Some(crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string()),
-            provider_plans: Some(BTreeMap::new()),
+            migrated_provider_plans: Some(BTreeMap::new()),
             ..AppConfig::default()
         };
         assert!(
@@ -4219,7 +4823,10 @@ mod tests {
         config.adopt_provider_plan_axis();
 
         assert!(
-            config.provider_plans.expect("the map is untouched").is_empty(),
+            config
+                .migrated_provider_plans
+                .expect("the map is untouched")
+                .is_empty(),
             "the user's own answer — on the free plan — survives the older key",
         );
     }
@@ -4228,13 +4835,14 @@ mod tests {
     /// map is a stored shape, not an in-memory convenience.
     #[test]
     fn an_override_round_trips_through_the_stored_shape() {
+        let connections = two_test_connections();
         let profile = TextProfile {
             schema_version: TEXT_PROFILE_SCHEMA_VERSION,
             providers: Some(ProfileProviderSettings {
-                default: DEFAULT_PROVIDER_ID.to_string(),
+                default: DEFAULT_CONNECTION_ID.to_string(),
                 overrides: BTreeMap::from([(
                     JobKey::Assistant,
-                    LOCAL_PROVIDER_ID.to_string(),
+                    "connection-local".to_string(),
                 )]),
             }),
             ..TextProfile::default()
@@ -4244,11 +4852,29 @@ mod tests {
         let back: TextProfile = serde_json::from_str(&raw).expect("parses");
 
         assert_eq!(
-            back.job_provider(JobKey::Assistant).provider,
+            back.job_provider(JobKey::Assistant, &connections).provider,
             LOCAL_PROVIDER_ID,
         );
-        assert!(back.job_provider(JobKey::Assistant).overridden);
-        assert!(!back.job_provider(JobKey::Cleanup).overridden);
+        assert!(back.job_provider(JobKey::Assistant, &connections).overridden);
+        assert!(!back.job_provider(JobKey::Cleanup, &connections).overridden);
+    }
+
+    /// Two accounts to resolve against: the seeded cloud one and a local lane.
+    fn two_test_connections() -> Vec<Connection> {
+        vec![
+            Connection {
+                id: DEFAULT_CONNECTION_ID.to_string(),
+                label: "Groq".to_string(),
+                provider: DEFAULT_PROVIDER_ID.to_string(),
+                ..Connection::default()
+            },
+            Connection {
+                id: "connection-local".to_string(),
+                label: "On this machine".to_string(),
+                provider: LOCAL_PROVIDER_ID.to_string(),
+                ..Connection::default()
+            },
+        ]
     }
 
     #[test]

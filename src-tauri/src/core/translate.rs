@@ -32,6 +32,10 @@ use super::runtime_log;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslateConfig {
+    /// The account that pays for this job (ADR 0208). Resolved from the same
+    /// `JobProvider` as the vendor beside it, so a job cannot be sent to one
+    /// account's server with another account's key.
+    pub connection: String,
     pub provider: String,
     pub model: String,
     pub settings: TranslateSettings,
@@ -160,6 +164,7 @@ pub async fn apply_translate(text: &str, config: &TranslateConfig) -> TranslateR
     ));
 
     let request = ChatCompletionRequest {
+        connection: config.connection.clone(),
         provider: config.provider.clone(),
         model: config.model.clone(),
         messages: vec![
@@ -230,6 +235,7 @@ mod tests {
 
     fn config_with(settings: TranslateSettings) -> TranslateConfig {
         TranslateConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             settings,

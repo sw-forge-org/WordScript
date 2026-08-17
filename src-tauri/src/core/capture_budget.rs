@@ -219,7 +219,8 @@ pub fn resolve(config: &AppConfig) -> CaptureBudget {
     // The budget is the recogniser's ceiling, so it is `Dictation`'s vendor and
     // never the connection's — a profile that routes listening to Local is
     // bound by decode time even while its chat jobs sit on a cloud plan.
-    let provider = profile.job_provider(JobKey::Dictation).provider;
+    let job = profile.job_provider(JobKey::Dictation, config.connections());
+    let provider = job.provider;
 
     // The model matters to lanes bound by decode time; the plan to lanes bound
     // by request size. Both are passed for every lane, and each lane uses what
@@ -237,7 +238,7 @@ pub fn resolve(config: &AppConfig) -> CaptureBudget {
     // `local_model` is blank, where the decode factor was computed from a cloud
     // id the local runtime has never heard of.
     let model = config.speech_model().unwrap_or_default();
-    let limits = providers::capture_limits(&provider, &model, config.plan_for(&provider));
+    let limits = providers::capture_limits(&provider, &model, config.plan_for(&job.connection));
 
     // The earliest real limit wins, and the reason follows the winner — a
     // ceiling that names a cause which is not the binding one is worse than
@@ -311,7 +312,7 @@ pub fn pipeline_deadline(audio_seconds: Option<f64>) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use crate::core::config::Connection;
 
     fn set_profile_auto_stop(config: &mut AppConfig, seconds: u64) {
         let active_id = config.active_text_profile_id.clone();
@@ -326,7 +327,25 @@ mod tests {
         });
     }
 
+    /// Points the active profile at a connection of this vendor, creating it.
+    ///
+    /// **A profile names a connection and the connection names the vendor**
+    /// (ADR 0208), so a test that wants *this profile recognises on OpenAI* has
+    /// to give the machine an OpenAI account to point at — which is the same
+    /// thing a reader does on the connection card.
     fn set_profile_provider(config: &mut AppConfig, provider: &str) {
+        let id = format!("connection-{provider}");
+        let mut connections = config.connections().to_vec();
+        if !connections.iter().any(|entry| entry.id == id) {
+            connections.push(Connection {
+                id: id.clone(),
+                label: provider.to_string(),
+                provider: provider.to_string(),
+                ..Connection::default()
+            });
+        }
+        config.connections = Some(connections);
+
         let active_id = config.active_text_profile_id.clone();
         let profile = config
             .text_profiles
@@ -334,8 +353,19 @@ mod tests {
             .find(|profile| profile.id == active_id)
             .expect("active profile");
         let mut providers = profile.resolved_providers();
-        providers.default = provider.to_string();
+        providers.default = id;
         profile.providers = Some(providers);
+    }
+
+    /// The seeded Groq connection, on a named plan.
+    fn groq_connection(plan: &str) -> Connection {
+        Connection {
+            id: crate::core::config::DEFAULT_CONNECTION_ID.to_string(),
+            label: "Groq".to_string(),
+            provider: crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
+            plan: plan.to_string(),
+            ..Connection::default()
+        }
     }
 
     #[test]
@@ -482,10 +512,9 @@ mod tests {
         let mut config = AppConfig::default();
         let free = resolve(&config);
 
-        config.provider_plans = Some(BTreeMap::from([(
-            crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
-            crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string(),
-        )]));
+        config.connections = Some(vec![groq_connection(
+            crate::core::providers::groq::GROQ_DEV_TIER_ID,
+        )]);
         let dev = resolve(&config);
 
         assert!(
@@ -502,37 +531,45 @@ mod tests {
     #[test]
     fn an_unknown_plan_falls_back_to_the_default_not_the_largest() {
         let mut config = AppConfig::default();
-        config.provider_plans = Some(BTreeMap::from([(
-            crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
-            "enterprise-unlimited".to_string(),
-        )]));
+        config.connections = Some(vec![groq_connection("enterprise-unlimited")]);
         let budget = resolve(&config);
         assert_eq!(budget.ceiling_seconds, 819);
     }
 
-    /// THE EDGE THE PER-VENDOR AXIS EXISTS FOR (ADR 0167).
+    /// THE EDGE THE AXIS EXISTS FOR (ADR 0167, rescoped by ADR 0208).
     ///
     /// One machine-wide plan string handed Groq's `dev` to whichever vendor the
-    /// active profile happened to recognise with. It is invisible today only
-    /// because OpenAI ignores the argument and publishes one ceiling; the
-    /// assertion is that the plan is looked up by vendor, not that OpenAI is
-    /// forgiving.
+    /// active profile happened to recognise with; ADR 0167 keyed it by vendor
+    /// and named what it was reaching for — the credential. **Two accounts on
+    /// ONE vendor is the case that key still could not answer**, and it is the
+    /// case this asserts: the paid work account and the free private one are
+    /// both Groq, and they do not share a ceiling.
     #[test]
-    fn a_plan_belongs_to_the_vendor_it_was_stored_for() {
+    fn a_plan_belongs_to_the_connection_it_was_stored_for() {
         let mut config = AppConfig::default();
-        config.provider_plans = Some(BTreeMap::from([(
-            crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
-            crate::core::providers::groq::GROQ_DEV_TIER_ID.to_string(),
-        )]));
+        config.connections = Some(vec![
+            groq_connection(crate::core::providers::groq::GROQ_DEV_TIER_ID),
+            Connection {
+                id: "connection-private".to_string(),
+                label: "Private".to_string(),
+                provider: crate::core::providers::groq::GROQ_PROVIDER_ID.to_string(),
+                ..Connection::default()
+            },
+        ]);
 
         assert_eq!(
-            config.plan_for(crate::core::providers::groq::GROQ_PROVIDER_ID),
+            config.plan_for(crate::core::config::DEFAULT_CONNECTION_ID),
             crate::core::providers::groq::GROQ_DEV_TIER_ID
         );
         assert_eq!(
-            config.plan_for("openai"),
+            config.plan_for("connection-private"),
             "",
-            "a vendor with no entry of its own is on its own default, never on another vendor's plan"
+            "a second account on the same vendor is on its own default, never on the first one's plan"
+        );
+        assert_eq!(
+            config.plan_for("connection-that-was-deleted"),
+            "",
+            "a connection this machine no longer holds names no plan"
         );
     }
 

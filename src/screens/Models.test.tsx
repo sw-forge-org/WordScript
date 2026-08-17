@@ -62,6 +62,17 @@ const ROLE_CREDENTIALS = [
   },
 ];
 
+/** The account a fresh config holds, mirroring `default_connection` — the one
+ *  every credential row on the Cloud lane is scoped to (ADR 0208). */
+const CLOUD_ACCOUNT = {
+  id: "connection-default",
+  label: "Groq",
+  provider: "groq",
+  base_url: "",
+  model: "",
+  plan: "",
+};
+
 const STATUS = {
   provider: "groq",
   default_profile: "fast",
@@ -264,7 +275,11 @@ describe("AI Models, wired", () => {
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
-        request: { provider: "groq", api_key: "gsk_newkey" },
+        request: {
+          provider: "groq",
+          connection: CLOUD_ACCOUNT.id,
+          api_key: "gsk_newkey",
+        },
       }),
     );
     expect(invoked).toHaveBeenCalledWith("validate_provider_api_key", expect.anything());
@@ -282,21 +297,32 @@ describe("AI Models, wired", () => {
     await userEvent.selectOptions(plan, "dev");
     /* UNDER THE VENDOR, NOT BESIDE IT (ADR 0167). The whole map is written
        because `patch` is a shallow merge, which is what the helper is for. */
-    expect(patch).toHaveBeenCalledWith({ provider_plans: { groq: "dev" } });
+    expect(patch).toHaveBeenCalledWith({
+      connections: [{ ...CLOUD_ACCOUNT, plan: "dev" }],
+    });
   });
 
-  /** A plan already held for another vendor is not disturbed by writing this
-   *  one — the failure mode a row that rebuilt the map from its own vendor
-   *  would have, arriving through the door that was supposed to fix it. */
-  it("writes one vendor's plan without dropping another's", async () => {
+  /** A plan already held on another account is not disturbed by writing this
+   *  one — the failure mode a row that rebuilt the list from its own account
+   *  would have, arriving through the door that was supposed to fix it
+   *  (ADR 0167's rule on ADR 0208's object). */
+  it("writes one account's plan without dropping another's", async () => {
     const patch = vi.fn();
     const config = createAppConfig();
-    config.provider_plans = { openrouter: "standard" };
+    const other = {
+      id: "connection-openrouter",
+      label: "OpenRouter",
+      provider: "openrouter",
+      base_url: "",
+      model: "",
+      plan: "standard",
+    };
+    config.connections = [CLOUD_ACCOUNT, other];
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
     await userEvent.selectOptions(await screen.findByLabelText("Account plan"), "dev");
     expect(patch).toHaveBeenCalledWith({
-      provider_plans: { openrouter: "standard", groq: "dev" },
+      connections: [{ ...CLOUD_ACCOUNT, plan: "dev" }, other],
     });
   });
 
@@ -305,13 +331,13 @@ describe("AI Models, wired", () => {
   it("stores the default plan as absence rather than as its id", async () => {
     const patch = vi.fn();
     const config = createAppConfig();
-    config.provider_plans = { groq: "dev" };
+    config.connections = [{ ...CLOUD_ACCOUNT, plan: "dev" }];
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
     const plan = (await screen.findByLabelText("Account plan")) as HTMLSelectElement;
     expect(plan).toHaveValue("dev");
     await userEvent.selectOptions(plan, "");
-    expect(patch).toHaveBeenCalledWith({ provider_plans: {} });
+    expect(patch).toHaveBeenCalledWith({ connections: [CLOUD_ACCOUNT] });
   });
 
   it("states the runtime's recording ceiling rather than the drawing's ~26 min", async () => {
@@ -523,6 +549,117 @@ describe("AI Models, choosing the connection", () => {
     return patch.text_profiles?.find((profile) => profile.id === id)?.providers;
   }
 
+  /** A second account on one vendor, which is the case the whole axis exists
+   *  for: an employer's Groq key and a private one cannot both exist while the
+   *  credential is keyed by vendor (ADR 0208). */
+  it("creates a second account on one vendor and points the profile at it", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    await user.click(await screen.findByRole("button", { name: "New" }));
+
+    const written = patch.mock.calls[0][0] as {
+      connections?: { id: string; label: string; provider: string }[];
+    };
+    expect(written.connections).toEqual([
+      CLOUD_ACCOUNT,
+      expect.objectContaining({ id: "connection-groq", provider: "groq", label: "Groq 2" }),
+    ]);
+    /* AND THE PROFILE MOVES WITH IT. An account nothing points at is an account
+       the reader cannot type a key into — the false affordance ADR 0067 forbids,
+       arriving as a row that stores somewhere nothing reads. */
+    expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
+      default: "connection-groq",
+      overrides: {},
+    });
+  });
+
+  /** Switching the account is the profile's write, not a screen mode: the row
+   *  states which account pays and changing it changes what the profile
+   *  carries. */
+  it("points the profile at the account picked in the row", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" },
+    ];
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    await user.selectOptions(await screen.findByLabelText("Account"), "connection-groq");
+
+    expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
+      default: "connection-groq",
+      overrides: {},
+    });
+  });
+
+  /**
+   * **THE SENTENCE THE STEP EXISTS FOR, ON THE SURFACE** (ADR 0208).
+   *
+   * The Rust side asserts that a profile switch moves which entry answers; this
+   * asserts the other half — that a key typed while one account is selected is
+   * stored under THAT account and cannot land on the other one. Both accounts
+   * are Groq, which is the pair the vendor-keyed entry could not tell apart.
+   */
+  it("saves a key under the account that is selected, not under the vendor", async () => {
+    const user = userEvent.setup();
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" },
+    ];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: "connection-groq", overrides: {} };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    const keyButtons = await screen.findAllByRole("button", { name: /Replace|Add/ });
+    await user.click(keyButtons.find((button) => !button.hasAttribute("disabled"))!);
+    await user.type(await screen.findByLabelText("API key"), "gsk_the_employers_key");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
+        request: {
+          provider: "groq",
+          connection: "connection-groq",
+          api_key: "gsk_the_employers_key",
+        },
+      }),
+    );
+  });
+
+  /** Removing an account never repoints the profiles that named it — choosing
+   *  who pays for somebody is not a deletion's decision — so the count is on
+   *  the control that does it and the write touches the list alone. */
+  it("removes an account and leaves every profile naming what it named", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    const employer = { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" };
+    config.connections = [CLOUD_ACCOUNT, employer];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: employer.id, overrides: {} };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    const remove = await screen.findByRole("button", { name: "Remove" });
+    expect(remove).toHaveAttribute(
+      "title",
+      "Removing it leaves this profile without an account until you pick another.",
+    );
+    await user.click(remove);
+
+    expect(patch).toHaveBeenCalledWith({ connections: [CLOUD_ACCOUNT] });
+    expect(patch.mock.calls[0][0]).not.toHaveProperty("text_profiles");
+  });
+
   it("writes the chosen connection onto the active profile", async () => {
     const user = userEvent.setup();
     const patch = vi.fn();
@@ -536,10 +673,17 @@ describe("AI Models, choosing the connection", () => {
     await user.click(within(chips).getByRole("radio", { name: /OpenAI/ }));
 
     expect(patch).toHaveBeenCalledTimes(1);
-    /* The RUNTIME id, never the drawn name: `providers.default` is read by
-       `resolve_entry`, which knows `openai` and has never heard of `OpenAI`. */
+    /* THE ACCOUNT'S id, and the account itself, in one patch (ADR 0208). The
+       axis named a vendor until this step; it names an account now, and picking
+       a vendor this machine holds none on creates one rather than pointing the
+       profile at nothing. */
+    const written = patch.mock.calls[0][0] as { connections?: { id: string; provider: string }[] };
+    expect(written.connections).toEqual([
+      CLOUD_ACCOUNT,
+      expect.objectContaining({ id: "connection-openai", provider: "openai" }),
+    ]);
     expect(axisOf(patch.mock.calls[0][0], runtime.config.active_text_profile_id)).toEqual({
-      default: "openai",
+      default: "connection-openai",
       overrides: {},
     });
   });
@@ -550,7 +694,18 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "openai", overrides: {} };
+    config.connections = [
+      CLOUD_ACCOUNT,
+      {
+        id: "connection-openai",
+        label: "OpenAI",
+        provider: "openai",
+        base_url: "",
+        model: "",
+        plan: "",
+      },
+    ];
+    active.providers = { default: "connection-openai", overrides: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
     /* Several rows draw a Replace button — every overriding job row has one —
@@ -567,7 +722,11 @@ describe("AI Models, choosing the connection", () => {
        secret-store entry, which is one literal away and silent. */
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
-        request: { provider: "openai", api_key: "sk-proj-abcdefghijklmnop" },
+        request: {
+          provider: "openai",
+          connection: "connection-openai",
+          api_key: "sk-proj-abcdefghijklmnop",
+        },
       }),
     );
     expect(invoked).not.toHaveBeenCalledWith(
@@ -588,12 +747,23 @@ describe("AI Models, choosing the connection", () => {
    */
   it("states a single published ceiling instead of offering it", async () => {
     const config = createAppConfig();
-    /* Groq's paid plan, held for Groq, while the connection is OpenAI. */
-    config.provider_plans = { groq: "dev" };
+    /* Groq's paid plan, held on the Groq account, while the profile is on an
+       OpenAI one. */
+    config.connections = [
+      { ...CLOUD_ACCOUNT, plan: "dev" },
+      {
+        id: "connection-openai",
+        label: "OpenAI",
+        provider: "openai",
+        base_url: "",
+        model: "",
+        plan: "",
+      },
+    ];
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "openai", overrides: {} };
+    active.providers = { default: "connection-openai", overrides: {} };
     invoked.mockImplementation(async (command: string) => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") return STATUS;
@@ -624,7 +794,20 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "anthropic", overrides: {} };
+    /* An account on a vendor with no adapter — which is the state this asserts
+       about, and it is reachable: the account is a stored object and the
+       registry is what refuses it (ADR 0208). */
+    config.connections = [
+      {
+        id: "connection-anthropic",
+        label: "Anthropic",
+        provider: "anthropic",
+        base_url: "",
+        model: "",
+        plan: "",
+      },
+    ];
+    active.providers = { default: "connection-anthropic", overrides: {} };
     invoked.mockImplementation(async (command: string) => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") return STATUS;
@@ -648,7 +831,18 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "openai", overrides: {} };
+    config.connections = [
+      CLOUD_ACCOUNT,
+      {
+        id: "connection-openai",
+        label: "OpenAI",
+        provider: "openai",
+        base_url: "",
+        model: "",
+        plan: "",
+      },
+    ];
+    active.providers = { default: "connection-openai", overrides: {} };
     /* BOTH READS MOVE, and that is the seam's own rule rather than fixture
        bookkeeping: `resolveProviderAnswer` prefers `provider_status`'s
        capability block over the registered list where it holds one, so a
@@ -704,7 +898,18 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "openai", overrides: {} };
+    config.connections = [
+      CLOUD_ACCOUNT,
+      {
+        id: "connection-openai",
+        label: "OpenAI",
+        provider: "openai",
+        base_url: "",
+        model: "",
+        plan: "",
+      },
+    ];
+    active.providers = { default: "connection-openai", overrides: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
     /* `Follow the connection · Groq` on a profile connected to OpenAI is the
@@ -732,12 +937,33 @@ describe("AI Models, the per-job override", () => {
     return patch.text_profiles?.find((profile) => profile.id === id)?.providers;
   }
 
+  /** Overrides are ACCOUNT ids too (ADR 0208), so a fixture naming a vendor
+   *  gives the machine an account on it to point at. */
   function configWith(overrides: Record<string, string>) {
     const config = createAppConfig();
+    const vendors = [...new Set(Object.values(overrides))];
+    config.connections = [
+      CLOUD_ACCOUNT,
+      ...vendors
+        .filter((vendor) => vendor !== "groq")
+        .map((vendor) => ({
+          id: `connection-${vendor}`,
+          label: vendor,
+          provider: vendor,
+          base_url: "",
+          model: "",
+          plan: "",
+        })),
+    ];
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "groq", overrides };
+    active.providers = {
+      default: CLOUD_ACCOUNT.id,
+      overrides: Object.fromEntries(
+        Object.entries(overrides).map(([job, vendor]) => [job, `connection-${vendor}`]),
+      ),
+    };
     return config;
   }
 
@@ -789,8 +1015,8 @@ describe("AI Models, the per-job override", () => {
     await user.selectOptions(select, "OpenAI");
 
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
-      default: "groq",
-      overrides: { upload: "openai" },
+      default: CLOUD_ACCOUNT.id,
+      overrides: { upload: "connection-openai" },
     });
 
     /* *Use the default* DELETES the key. Writing the connection's id would
@@ -807,7 +1033,7 @@ describe("AI Models, the per-job override", () => {
     await user.click(useDefault);
 
     expect(axisOf(patch.mock.calls[0][0], stored.active_text_profile_id)).toEqual({
-      default: "groq",
+      default: CLOUD_ACCOUNT.id,
       overrides: {},
     });
   });
@@ -1885,16 +2111,21 @@ describe("Your server, configured", () => {
 
   /** A machine whose connection is its own server. The lane is not screen state
    *  any more — it is this value read backwards (ADR 0165). */
-  function serverConfig(overrides: Partial<ReturnType<typeof createAppConfig>> = {}) {
-    const config = createAppConfig({
-      self_hosted_base_url: "http://10.0.0.2:8080/v1",
-      self_hosted_model: "ggml-large-v3-turbo",
-      ...overrides,
-    });
+  function serverConfig(server: Partial<{ base_url: string; model: string }> = {}) {
+    const account = {
+      id: "connection-self_hosted",
+      label: "Your server",
+      provider: "self_hosted",
+      base_url: "http://10.0.0.2:8080/v1",
+      model: "ggml-large-v3-turbo",
+      plan: "",
+      ...server,
+    };
+    const config = createAppConfig({ connections: [CLOUD_ACCOUNT, account] });
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "self_hosted", overrides: {} };
+    active.providers = { default: account.id, overrides: {} };
     return config;
   }
 
@@ -1925,7 +2156,7 @@ describe("Your server, configured", () => {
     };
     expect(
       written.text_profiles?.find((p) => p.id === runtime.config.active_text_profile_id)?.providers,
-    ).toEqual({ default: "self_hosted", overrides: {} });
+    ).toEqual({ default: "connection-self_hosted", overrides: {} });
   });
 
   it("stores the URL that is typed into it", async () => {
@@ -1936,7 +2167,7 @@ describe("Your server, configured", () => {
         runtime={createWorkspaceRuntime({
           active: true,
           patch,
-          config: serverConfig({ self_hosted_base_url: "" }),
+          config: serverConfig({ base_url: "" }),
         })}
       />,
     );
@@ -1945,7 +2176,15 @@ describe("Your server, configured", () => {
     await userEvent.type(field, "https://speech.example.com/v1");
     await userEvent.tab();
 
-    expect(patch).toHaveBeenCalledWith({ self_hosted_base_url: "https://speech.example.com/v1" });
+    expect(patch).toHaveBeenCalledWith({
+      connections: [
+        CLOUD_ACCOUNT,
+        expect.objectContaining({
+          id: "connection-self_hosted",
+          base_url: "https://speech.example.com/v1",
+        }),
+      ],
+    });
   });
 
   it("stores the model id that is typed into it", async () => {
@@ -1956,7 +2195,7 @@ describe("Your server, configured", () => {
         runtime={createWorkspaceRuntime({
           active: true,
           patch,
-          config: serverConfig({ self_hosted_model: "" }),
+          config: serverConfig({ model: "" }),
         })}
       />,
     );
@@ -1965,7 +2204,15 @@ describe("Your server, configured", () => {
     await userEvent.type(field, "Systran/faster-whisper-medium");
     await userEvent.tab();
 
-    expect(patch).toHaveBeenCalledWith({ self_hosted_model: "Systran/faster-whisper-medium" });
+    expect(patch).toHaveBeenCalledWith({
+      connections: [
+        CLOUD_ACCOUNT,
+        expect.objectContaining({
+          id: "connection-self_hosted",
+          model: "Systran/faster-whisper-medium",
+        }),
+      ],
+    });
   });
 
   /**
@@ -1986,7 +2233,7 @@ describe("Your server, configured", () => {
       <ModelsScreen
         runtime={createWorkspaceRuntime({
           active: true,
-          config: serverConfig({ self_hosted_base_url: "" }),
+          config: serverConfig({ base_url: "" }),
         })}
       />,
     );
@@ -2014,7 +2261,7 @@ describe("Your server, configured", () => {
       <ModelsScreen
         runtime={createWorkspaceRuntime({
           active: true,
-          config: serverConfig({ self_hosted_base_url: "http://speech.example.com/v1" }),
+          config: serverConfig({ base_url: "http://speech.example.com/v1" }),
         })}
       />,
     );
@@ -2039,7 +2286,11 @@ describe("Your server, configured", () => {
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
-        request: { provider: "self_hosted", api_key: "a-server-token" },
+        request: {
+          provider: "self_hosted",
+          connection: "connection-self_hosted",
+          api_key: "a-server-token",
+        },
       }),
     );
     expect(invoked).not.toHaveBeenCalledWith(
@@ -2057,7 +2308,7 @@ describe("Your server, configured", () => {
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("clear_provider_api_key", {
-        request: { provider: "self_hosted" },
+        request: { provider: "self_hosted", connection: "connection-self_hosted" },
       }),
     );
   });
@@ -2084,7 +2335,11 @@ describe("Your server, configured", () => {
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("validate_provider_api_key", {
-        request: { provider: "self_hosted", api_key: null },
+        request: {
+          provider: "self_hosted",
+          connection: "connection-self_hosted",
+          api_key: null,
+        },
       }),
     );
     expect(await screen.findByText("Answering")).toBeInTheDocument();

@@ -30,7 +30,9 @@ export function useLocalSetup(enabled = true) {
   const read = useCallback(async () => {
     try {
       const status = await invoke<ProviderStatus>("provider_status", {
-        request: { provider: "local", model: null, correction_model: null },
+        /* NO ACCOUNT, and that is this lane (ADR 0208): a local runtime
+           authenticates against nothing, so there is nothing to name. */
+        request: { provider: "local", connection: "", model: null, correction_model: null },
       });
       if (disposed.current) return;
       setSetup(status?.local_setup ?? null);

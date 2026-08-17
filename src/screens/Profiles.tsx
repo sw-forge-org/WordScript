@@ -57,6 +57,7 @@ import {
   moveEntry,
   PROFILE_LOCKED_HINT,
   profileSwitchLocked,
+  activeConnection as activeConnectionOf,
   resolveConfigJobProvider,
   resolveProfileCaptureSettings,
   resolveProfileModesSettings,
@@ -386,7 +387,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
      vendor in the key must refresh, and nothing else may. */
   const dictationProvider = resolveConfigJobProvider(config, "dictation").provider;
   const { budget } = useCaptureBudget(
-    `${dictationProvider}:${config.provider_plans?.[dictationProvider] ?? ""}:${config.local_model}`,
+    `${dictationProvider}:${activeConnectionOf(config)?.plan ?? ""}:${config.local_model}`,
   );
 
   /** WHICH FLAGS THIS PROFILE HAS ALREADY READ AND ACCEPTED (ADR 0085).

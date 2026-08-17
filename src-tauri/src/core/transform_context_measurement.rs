@@ -150,6 +150,7 @@ fn correction_request(
     let timeout_ms = if word_count > 300 { 30_000 } else { 8_000 };
 
     ChatCompletionRequest {
+        connection: job.connection,
         provider: job.provider,
         model,
         messages: vec![
@@ -182,6 +183,7 @@ async fn measure_profile_context_width() {
 
     let transform_config = NativeTransformConfig {
         providers: super::super::config::ProfileProviderSettings::default(),
+        connections: Vec::new(),
         profile_prompt: profile_prompt.clone(),
         dictionary_entries: dictionary_entries(profile),
         snippet_entries: Vec::new(),

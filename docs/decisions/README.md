@@ -1494,6 +1494,8 @@ that is what a record is for (ADR 0123: one list per fact).
   The correction's model belongs to the correction's lane, and the choice is made where the job is resolved.
 - [0207](0207-a-model-belongs-to-the-profile-for-the-same-reason-its-vendor-does-and-the-controls-do-not-move.md):
   A model belongs to the profile for the same reason its vendor does, and the controls do not move.
+- [0208](0208-a-connection-is-an-object-a-profile-points-at-so-the-account-moves-with-the-profile.md):
+  A connection is an object a profile points at, so the account moves with the profile.
 
 ## Resolved: the number 0011 was used twice
 

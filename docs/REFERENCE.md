@@ -103,8 +103,10 @@ constants themselves were not re-derived and carry their own provenance
   it, and `without_secrets()` scrubs nothing today and carries the promise
   instead. (This line still described that migration after A5 removed it; the
   correction lands with A4, which read the section next door.)
-- **A credential is stored per `(provider, role, kind)`** (ADR 0105, built
-  2026-08-11), so clearing the chat credential leaves the speech one standing
+- **A credential is stored per `(connection, role, kind)`** (ADR 0105, built
+  2026-08-11; the scope moved from the vendor to the account in ADR 0208), so
+  clearing the chat credential leaves the speech one standing, clearing one
+  account's leaves another account's on the same vendor standing,
   and a role with no credential names what it is missing instead of spending
   another role's. A save that names no role reaches every role the kind can pay
   for — a key is a way into an account, and the drawn key row sits on the
@@ -123,10 +125,12 @@ constants themselves were not re-derived and carry their own provenance
   host it was never entered for. `JobKey::role()` is the single bridge to the
   credential axis above. `meetings` and `upload` are drawn columns with no
   runtime path; titles rides the assistant's resolution and has no override
-  (ADR 0087). The account plan is machine-wide but **keyed by vendor** --
-  `provider_plans` maps a vendor id to a plan id, because a plan belongs to a
-  credential and a credential is the machine's (ADR 0167). A vendor with no
-  entry is on its own default, and a default plan is stored as absence.
+  (ADR 0087). The account plan is **a field of the
+  connection** -- it was machine-wide, then keyed by vendor because a plan
+  belongs to a credential (ADR 0167), and the credential belongs to an account
+  (ADR 0208): two accounts on one vendor do not share a ceiling. A connection
+  with no plan is on its vendor's own default, and a default plan is stored as
+  absence.
 - **A kind is `api_key` or `subscription`, and only the first exists in this
   build.** A subscription is inadmissible for speech and voice in the type
   (ADR 0102), Groq accepts an API key alone, and the local lane accepts no kind

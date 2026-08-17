@@ -26,12 +26,6 @@ contents of the directory.
   carrying what it requires, what it touches, what validates it and what *done*
   observably means. Its `## Status` table is the state of the track. **This is
   the page a speech session starts on.**
-- [`connection-per-profile-kickoff.md`](connection-per-profile-kickoff.md) — the
-  page you paste into a fresh session to start the speech track's **B14**, where
-  the last machine-wide half of a connection — the server's URL and the
-  credential — moves onto the profile that uses it. Orientation only; the brief
-  is B14 in the plan, and the one design decision it opens is the owner's to
-  confirm.
 - [`speech-track.md`](speech-track.md) — stage one's account: the six findings
   the later stages are built on, and what a review of its own first pass found
   false in it. Not updated by later work. **Its H1 still reads *Kick-off*,

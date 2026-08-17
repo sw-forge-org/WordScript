@@ -1897,9 +1897,9 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                    the assistant's vendor and model — the job it
                                    is deciding about (ADR 0094). */
                                 let assistant = transform_config
-                                    .providers
-                                    .resolve(core::providers::JobKey::Assistant);
+                                    .job_provider(core::providers::JobKey::Assistant);
                                 let classifier_config = core::agent::AgentConfig {
+                                    connection: assistant.connection.clone(),
                                     provider: assistant.provider.clone(),
                                     agent_name: agent_name.clone(),
                                     // The same snapshot the lane came from
@@ -2138,9 +2138,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                        off the text. */
                     let naming = core::transcript_store::describe(
                         &text,
-                        &app_config
-                            .job_provider(core::providers::JobKey::Assistant)
-                            .provider,
+                        &app_config.job_provider(core::providers::JobKey::Assistant),
                         &app_config.chat_model_for_job(core::providers::JobKey::Assistant),
                     )
                     .await;
@@ -3141,11 +3139,13 @@ mod tests {
     }
 
     fn capture_config_for_prompt_tests(provider: &str) -> NativeCaptureConfig {
+        let connection = core::config::test_connection(provider);
         NativeCaptureConfig {
             providers: core::config::ProfileProviderSettings {
-                default: provider.to_string(),
+                default: connection.id.clone(),
                 ..Default::default()
             },
+            connections: vec![connection],
             ..Default::default()
         }
     }

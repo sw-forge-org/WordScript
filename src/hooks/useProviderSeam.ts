@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import {
+  connectionForVendor,
   NO_ANSWERS,
   runtimeIdFor,
   SELF_HOSTED_PROVIDER_ID,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/providerSeam";
 import { PROVIDERS, type LaneName } from "@/screens/data";
 import type { ProviderStatus, RegisteredProvider } from "@/types/providers";
+import type { AppConfig } from "@/types/ipc";
 
 /**
  * What the runtime says about the vendors a lane draws (ADR 0124, ADR 0106).
@@ -25,7 +27,15 @@ import type { ProviderStatus, RegisteredProvider } from "@/types/providers";
  * (ADR 0124): it is ten keyring reads and a local-runtime probe for a screen
  * that merely opened, with eight of the ten answering `Err`.
  */
-export function useProviderSeam(lane: LaneName, model?: string | null) {
+export function useProviderSeam(
+  lane: LaneName,
+  model?: string | null,
+  /** The config, for the account each drawn vendor is reached with (ADR 0208).
+   *  A vendor this machine holds no account on is asked about with none, and
+   *  answers `configured: false` — which is the truth: there is no key,
+   *  because there is nothing to hold one. */
+  config?: AppConfig,
+) {
   const [registered, setRegistered] = useState<RegisteredProvider[] | null>(null);
   const [statuses, setStatuses] = useState<Record<string, ProviderStatus>>({});
 
@@ -58,6 +68,9 @@ export function useProviderSeam(lane: LaneName, model?: string | null) {
         const status = await invoke<ProviderStatus>("provider_status", {
           request: {
             provider: row.provider,
+            connection: config
+              ? (connectionForVendor(config, row.provider)?.id ?? "")
+              : "",
             model: model?.trim() ? model.trim() : null,
             correction_model: null,
           },
@@ -76,7 +89,7 @@ export function useProviderSeam(lane: LaneName, model?: string | null) {
           .map((result) => result.value),
       ),
     );
-  }, [drawnIds, model]);
+  }, [config, drawnIds, model]);
 
   useEffect(() => {
     /* A failed read leaves `registered` at `null`, which the seam reads as

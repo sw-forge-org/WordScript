@@ -55,6 +55,10 @@ const CLASSIFIER_MAX_TOKENS: u32 = 10;
 
 #[derive(Debug, Clone, Default)]
 pub struct AgentConfig {
+    /// The account that pays for this job (ADR 0208). Resolved from the same
+    /// `JobProvider` as the vendor beside it, so a job cannot be sent to one
+    /// account's server with another account's key.
+    pub connection: String,
     pub provider: String,
     pub agent_name: String,
     pub agent_model: String,
@@ -206,6 +210,7 @@ Reply with \"yes\" or \"no\" only. No other text."
     );
 
     let request = ChatCompletionRequest {
+        connection: config.connection.clone(),
         provider: config.provider.clone(),
         model: config.agent_model.clone(),
         messages: vec![
@@ -410,6 +415,7 @@ The user has addressed you with a spoken instruction. Carry it out precisely and
 /// provider call.
 pub(crate) fn build_agent_request(text: &str, config: &AgentConfig) -> ChatCompletionRequest {
     ChatCompletionRequest {
+        connection: config.connection.clone(),
         provider: config.provider.clone(),
         model: config.agent_model.clone(),
         messages: vec![
@@ -589,6 +595,7 @@ mod tests {
 
     fn leaky_profile() -> AgentConfig {
         AgentConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             agent_name: "WordScript".to_string(),
             agent_model: "test".to_string(),

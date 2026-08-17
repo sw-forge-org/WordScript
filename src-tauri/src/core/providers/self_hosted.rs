@@ -150,20 +150,28 @@ struct LaneConfiguration {
 }
 
 impl LaneConfiguration {
-    /// The impure half: the config on disk, the environment, the secret store.
-    fn read() -> Result<Self, ProviderCommandError> {
-        let config = AppConfig::load_from_disk();
+    /// The impure half: the connection on disk, the environment, the secret
+    /// store.
+    ///
+    /// **The URL and the model id are read off the connection** (ADR 0208).
+    /// They were `AppConfig` fields because there was nowhere else for them to
+    /// live, which is what ADR 0165 recorded; a profile that points at another
+    /// server now reads that server here, and the token beside it belongs to
+    /// the same object — so this lane cannot assemble one connection's endpoint
+    /// with another's credential.
+    fn read(connection: &str) -> Result<Self, ProviderCommandError> {
+        let (base_url, model) = stored_endpoint_fields(connection);
 
         Ok(Self {
             endpoint: resolve_endpoint_from(
-                Some(config.self_hosted_base_url.as_str()),
+                Some(base_url.as_str()),
                 std::env::var(SELF_HOSTED_BASE_URL_ENV).ok().as_deref(),
             ),
             model: resolve_model_from(
-                Some(config.self_hosted_model.as_str()),
+                Some(model.as_str()),
                 std::env::var(SELF_HOSTED_MODEL_ENV).ok().as_deref(),
             ),
-            token: stored_token()?,
+            token: stored_token(connection)?,
         })
     }
 
@@ -250,7 +258,7 @@ impl Provider for SelfHosted {
         &self,
         request: &ProviderStatusRequest,
     ) -> Result<ProviderStatus, ProviderCommandError> {
-        provider_status(request.model.as_deref())
+        provider_status(&request.connection, request.model.as_deref())
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -267,26 +275,29 @@ impl Provider for SelfHosted {
 
     fn credential_status(
         &self,
+        connection: &str,
         role: ProviderRole,
     ) -> Result<RoleCredentialStatus, ProviderCommandError> {
-        Ok(LaneConfiguration::read()?.role_credential_status(role))
+        Ok(LaneConfiguration::read(connection)?.role_credential_status(role))
     }
 
     fn save_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
         api_key: &str,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        save_api_key(role, kind, api_key)
+        save_api_key(connection, role, kind, api_key)
     }
 
     fn clear_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        clear_api_key(role, kind)
+        clear_api_key(connection, role, kind)
     }
 
     /// **`/models` rather than nothing, and the key it checks may be absent.**
@@ -297,9 +308,10 @@ impl Provider for SelfHosted {
     /// because most of these servers take none.
     fn validate_api_key(
         &self,
+        connection: &str,
         _api_key: Option<String>,
     ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
-        Box::pin(validate_endpoint())
+        Box::pin(validate_endpoint(connection.to_string()))
     }
 }
 
@@ -332,8 +344,11 @@ impl SpeechProvider for SelfHosted {
     }
 }
 
-fn provider_status(model: Option<&str>) -> Result<ProviderStatus, ProviderCommandError> {
-    let lane = LaneConfiguration::read()?;
+fn provider_status(
+    connection: &str,
+    model: Option<&str>,
+) -> Result<ProviderStatus, ProviderCommandError> {
+    let lane = LaneConfiguration::read(connection)?;
     let role_credentials: Vec<RoleCredentialStatus> = SELF_HOSTED_CREDENTIAL_ROLES
         .iter()
         .map(|role| lane.role_credential_status(*role))
@@ -390,11 +405,24 @@ fn resolve_endpoint_from(
     })
 }
 
-fn resolve_endpoint() -> Result<ResolvedEndpoint, EndpointProblem> {
+fn resolve_endpoint(connection: &str) -> Result<ResolvedEndpoint, EndpointProblem> {
     resolve_endpoint_from(
-        Some(AppConfig::load_from_disk().self_hosted_base_url.as_str()),
+        Some(stored_endpoint_fields(connection).0.as_str()),
         std::env::var(SELF_HOSTED_BASE_URL_ENV).ok().as_deref(),
     )
+}
+
+/// The base URL and model id one connection carries, or two empty strings for
+/// one this machine no longer holds.
+///
+/// **One read for the pair**, because two reads a millisecond apart can
+/// disagree and a lane assembled from both is the two-copies-of-one-fact defect
+/// this file already names once.
+fn stored_endpoint_fields(connection: &str) -> (String, String) {
+    AppConfig::load_from_disk()
+        .connection(connection)
+        .map(|entry| (entry.base_url.clone(), entry.model.clone()))
+        .unwrap_or_default()
 }
 
 /// The model id this server is told to use when a job names none, and which
@@ -408,9 +436,9 @@ fn resolve_model_from(
         .or_else(|| typed(from_env).map(|model| (model, SelfHostedSource::Environment)))
 }
 
-fn configured_model() -> Option<(String, SelfHostedSource)> {
+fn configured_model(connection: &str) -> Option<(String, SelfHostedSource)> {
     resolve_model_from(
-        Some(AppConfig::load_from_disk().self_hosted_model.as_str()),
+        Some(stored_endpoint_fields(connection).1.as_str()),
         std::env::var(SELF_HOSTED_MODEL_ENV).ok().as_deref(),
     )
 }
@@ -422,15 +450,15 @@ fn configured_model() -> Option<(String, SelfHostedSource)> {
 /// a secret store that could not be read, and answering that with an
 /// unauthenticated request would turn a keyring problem into a 401 from
 /// somebody else's server.
-fn stored_token() -> Result<Option<String>, ProviderCommandError> {
+fn stored_token(connection: &str) -> Result<Option<String>, ProviderCommandError> {
     let kind = CredentialKind::ApiKey;
-    let user = credential_entry_user(ProviderRole::Speech, kind);
+    let user = credential_entry_user(connection, ProviderRole::Speech, kind);
 
     if let Some(token) = credential_store::cached(&user) {
         return Ok(Some(token));
     }
 
-    match credential_store::read_from(&OsSecretStore, SELF_HOSTED_PROVIDER_ID, ProviderRole::Speech, kind)
+    match credential_store::read_from(&OsSecretStore, connection, ProviderRole::Speech, kind)
         .map_err(secret_store_error)?
     {
         Some(token) => {
@@ -441,8 +469,8 @@ fn stored_token() -> Result<Option<String>, ProviderCommandError> {
     }
 }
 
-fn resolve_token() -> Result<String, ProviderCommandError> {
-    Ok(stored_token()?.unwrap_or_default())
+fn resolve_token(connection: &str) -> Result<String, ProviderCommandError> {
+    Ok(stored_token(connection)?.unwrap_or_default())
 }
 
 /// The model id, which is typed and never substituted.
@@ -459,13 +487,14 @@ fn resolve_token() -> Result<String, ProviderCommandError> {
 /// capture puts the configured id on every request it builds, exactly as it
 /// puts the local model on a local one; this second read is for the callers
 /// that are not the capture, and it resolves to the same value.
-fn resolve_model(model: Option<&str>) -> Result<String, ProviderCommandError> {
+fn resolve_model(connection: &str, model: Option<&str>) -> Result<String, ProviderCommandError> {
     typed(model)
-        .or_else(|| configured_model().map(|(model, _)| model))
+        .or_else(|| configured_model(connection).map(|(model, _)| model))
         .ok_or_else(|| ProviderCommandError::invalid_request(NO_MODEL_SENTENCE))
 }
 
 fn self_hosted_client(
+    connection: &str,
     timeout_ms: u64,
     max_retries: u8,
 ) -> Result<CompatibleClient, ProviderCommandError> {
@@ -475,7 +504,7 @@ fn self_hosted_client(
        this order, and `a_public_plain_http_endpoint_is_refused_before_a_token_reaches_it`
        asserts it through this function because this is the only door to a
        request on this lane. */
-    let endpoint = resolve_endpoint().map_err(|problem| {
+    let endpoint = resolve_endpoint(connection).map_err(|problem| {
         ProviderCommandError::new(
             ProviderErrorKind::InvalidRequest,
             problem.sentence(),
@@ -487,7 +516,7 @@ fn self_hosted_client(
     CompatibleClient::new(
         SELF_HOSTED_VENDOR,
         endpoint.url,
-        resolve_token()?,
+        resolve_token(connection)?,
         timeout_ms,
         max_retries,
     )
@@ -539,6 +568,7 @@ fn normalize_token(token: &str) -> Result<String, ProviderCommandError> {
 }
 
 fn save_api_key(
+    connection: &str,
     role: ProviderRole,
     kind: CredentialKind,
     api_key: &str,
@@ -547,29 +577,30 @@ fn save_api_key(
     ensure_supported_kind(kind)?;
     let token = normalize_token(api_key)?;
 
-    credential_store::write_to(&OsSecretStore, SELF_HOSTED_PROVIDER_ID, role, kind, &token)
+    credential_store::write_to(&OsSecretStore, connection, role, kind, &token)
         .map_err(secret_store_error)?;
-    credential_store::cache_key(&credential_entry_user(role, kind), Some(token));
+    credential_store::cache_key(&credential_entry_user(connection, role, kind), Some(token));
 
-    credential_status()
+    credential_status(connection)
 }
 
 fn clear_api_key(
+    connection: &str,
     role: ProviderRole,
     kind: CredentialKind,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     ensure_supported_role(role)?;
     ensure_supported_kind(kind)?;
 
-    credential_store::clear_in(&OsSecretStore, SELF_HOSTED_PROVIDER_ID, role, kind)
+    credential_store::clear_in(&OsSecretStore, connection, role, kind)
         .map_err(secret_store_error)?;
-    credential_store::cache_key(&credential_entry_user(role, kind), None);
+    credential_store::cache_key(&credential_entry_user(connection, role, kind), None);
 
-    credential_status()
+    credential_status(connection)
 }
 
-fn credential_status() -> Result<ProviderCredentialStatus, ProviderCommandError> {
-    let lane = LaneConfiguration::read()?;
+fn credential_status(connection: &str) -> Result<ProviderCredentialStatus, ProviderCommandError> {
+    let lane = LaneConfiguration::read(connection)?;
     let role_credentials: Vec<RoleCredentialStatus> = SELF_HOSTED_CREDENTIAL_ROLES
         .iter()
         .map(|role| lane.role_credential_status(*role))
@@ -578,8 +609,8 @@ fn credential_status() -> Result<ProviderCredentialStatus, ProviderCommandError>
     Ok(aggregate_credential(SELF_HOSTED_PROVIDER_ID, &role_credentials))
 }
 
-fn credential_entry_user(role: ProviderRole, kind: CredentialKind) -> String {
-    credential_store::entry_user(SELF_HOSTED_PROVIDER_ID, role, kind)
+fn credential_entry_user(connection: &str, role: ProviderRole, kind: CredentialKind) -> String {
+    credential_store::entry_user(connection, role, kind)
 }
 
 fn secret_store_error(error: keyring::Error) -> ProviderCommandError {
@@ -591,8 +622,10 @@ fn secret_store_error(error: keyring::Error) -> ProviderCommandError {
     )
 }
 
-async fn validate_endpoint() -> Result<ValidateProviderApiKeyResponse, ProviderCommandError> {
-    let client = self_hosted_client(DEFAULT_TIMEOUT_MS, 0)?;
+async fn validate_endpoint(
+    connection: String,
+) -> Result<ValidateProviderApiKeyResponse, ProviderCommandError> {
+    let client = self_hosted_client(&connection, DEFAULT_TIMEOUT_MS, 0)?;
     client
         .validate_models_endpoint()
         .await
@@ -625,8 +658,9 @@ fn response_format_for(requested: Option<String>) -> (String, bool) {
 async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<TranscriptionResponse, ProviderCommandError> {
-    let model = resolve_model(request.model.as_deref())?;
+    let model = resolve_model(&request.connection, request.model.as_deref())?;
     let client = self_hosted_client(
+        &request.connection,
         request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
         request.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
     )?;
@@ -723,6 +757,12 @@ fn model_capabilities(model: &str) -> ModelCapabilities {
 
 #[cfg(test)]
 mod tests {
+    /// The connection these tests configure and store against (ADR 0208).
+    /// **Named rather than the vendor id**, because the endpoint and the token
+    /// belong to one account now — this lane's whole point is that the server
+    /// is somebody's own, and two of them are two connections.
+    const TEST_CONNECTION: &str = "connection-my-server";
+
     use std::{cell::RefCell, collections::HashMap};
 
     use keyring::Error as KeyringError;
@@ -831,7 +871,7 @@ mod tests {
                 (SELF_HOSTED_TOKEN_ENV, Some("a-token-that-must-not-travel")),
             ],
             || {
-                let refused = refusal(self_hosted_client(5_000, 0));
+                let refused = refusal(self_hosted_client(TEST_CONNECTION, 5_000, 0));
 
                 assert_eq!(refused.kind, ProviderErrorKind::InvalidRequest);
                 assert!(refused.message.contains("speech.example.com"));
@@ -982,12 +1022,15 @@ mod tests {
 
         // A typed id survives untouched — no catalogue, no substitution.
         assert_eq!(
-            resolve_model(Some("ggml-large-v3-turbo")).unwrap(),
+            resolve_model(TEST_CONNECTION, Some("ggml-large-v3-turbo")).unwrap(),
             "ggml-large-v3-turbo",
         );
         // Including one another lane catalogues, which every other adapter
         // would replace. Here it is very likely exactly what is installed.
-        assert_eq!(resolve_model(Some("whisper-1")).unwrap(), "whisper-1");
+        assert_eq!(
+            resolve_model(TEST_CONNECTION, Some("whisper-1")).unwrap(),
+            "whisper-1",
+        );
     }
 
     #[test]
@@ -1094,21 +1137,21 @@ mod tests {
         let (role, kind) = (ProviderRole::Speech, CredentialKind::ApiKey);
 
         assert_eq!(
-            credential_entry_user(role, kind),
-            "self_hosted.speech.api_key",
+            credential_entry_user(TEST_CONNECTION, role, kind),
+            "connection-my-server.speech.api_key",
         );
 
-        credential_store::write_to(&store, SELF_HOSTED_PROVIDER_ID, role, kind, "a-server-token")
+        credential_store::write_to(&store, TEST_CONNECTION, role, kind, "a-server-token")
             .expect("the fake store accepts a write");
         assert_eq!(
-            credential_store::read_from(&store, SELF_HOSTED_PROVIDER_ID, role, kind).unwrap(),
+            credential_store::read_from(&store, TEST_CONNECTION, role, kind).unwrap(),
             Some("a-server-token".to_string()),
         );
 
-        credential_store::clear_in(&store, SELF_HOSTED_PROVIDER_ID, role, kind)
+        credential_store::clear_in(&store, TEST_CONNECTION, role, kind)
             .expect("the fake store accepts a delete");
         assert_eq!(
-            credential_store::read_from(&store, SELF_HOSTED_PROVIDER_ID, role, kind).unwrap(),
+            credential_store::read_from(&store, TEST_CONNECTION, role, kind).unwrap(),
             None,
         );
 

@@ -168,7 +168,11 @@ pub struct TranscriptNaming {
 /// title this" from "the model titled it badly" — the fallback belongs at the
 /// one place that builds the filename. The language answers `None` on the same
 /// terms, and `core::language_detect` is what stands behind it.
-pub async fn describe(text: &str, provider: &str, model: &str) -> TranscriptNaming {
+pub async fn describe(
+    text: &str,
+    job: &super::providers::JobProvider,
+    model: &str,
+) -> TranscriptNaming {
     let trimmed = text.trim();
     if trimmed.is_empty() || model.trim().is_empty() {
         return TranscriptNaming::default();
@@ -180,7 +184,8 @@ pub async fn describe(text: &str, provider: &str, model: &str) -> TranscriptNami
     let excerpt: String = trimmed.chars().take(600).collect();
 
     let request = super::providers::ChatCompletionRequest {
-        provider: provider.to_string(),
+        connection: job.connection.clone(),
+        provider: job.provider.clone(),
         model: model.to_string(),
         messages: vec![
             super::providers::ChatMessage {

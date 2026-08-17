@@ -682,7 +682,7 @@ pub async fn commit_pending_preview<R: Runtime>(
        does and carries no override of its own (ADR 0094). */
     let naming = super::transcript_store::describe(
         &final_text,
-        &preview.app_config.job_provider(JobKey::Assistant).provider,
+        &preview.app_config.job_provider(JobKey::Assistant),
         &preview.app_config.chat_model_for_job(JobKey::Assistant),
     )
     .await;

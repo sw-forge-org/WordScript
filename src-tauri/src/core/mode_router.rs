@@ -360,12 +360,13 @@ pub async fn apply_mode_transform(
     // And off the SNAPSHOT rather than the live config (ADR 0207): the lane was
     // already resolved here, the model was read from `app_config`, and a
     // profile switched during a recording moved one of the two.
-    let chat_model = |job: JobKey| config.chat_model_for(&config.providers.resolve(job));
+    let chat_model = |job: JobKey| config.chat_model_for(&config.job_provider(job));
 
     match mode {
         ProcessingMode::Agent => {
             let agent_config = super::agent::AgentConfig {
-                provider: config.providers.resolve(JobKey::Assistant).provider,
+                connection: config.job_provider(JobKey::Assistant).connection,
+                provider: config.job_provider(JobKey::Assistant).provider,
                 agent_name: config.agent_name.clone(),
                 agent_model: chat_model(JobKey::Assistant),
                 profile_label: config.profile_label.clone(),
@@ -389,7 +390,8 @@ pub async fn apply_mode_transform(
         }
         ProcessingMode::Translate => {
             let translate_config = super::translate::TranslateConfig {
-                provider: config.providers.resolve(JobKey::Translate).provider,
+                connection: config.job_provider(JobKey::Translate).connection,
+                provider: config.job_provider(JobKey::Translate).provider,
                 model: chat_model(JobKey::Translate),
                 settings: config.translate.clone(),
                 profile_prompt: config.profile_prompt.clone(),
@@ -413,7 +415,8 @@ pub async fn apply_mode_transform(
                 .or(Some(app_config.enhance_target.clone()))
                 .unwrap_or_default();
             let enhance_config = super::prompt_enhance::PromptEnhanceConfig {
-                provider: config.providers.resolve(JobKey::Enhance).provider,
+                connection: config.job_provider(JobKey::Enhance).connection,
+                provider: config.job_provider(JobKey::Enhance).provider,
                 model: chat_model(JobKey::Enhance),
                 sub_mode: enhance_sub_mode.as_str().to_string(),
                 target: enhance_target.as_str().to_string(),

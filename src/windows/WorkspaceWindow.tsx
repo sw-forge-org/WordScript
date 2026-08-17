@@ -30,6 +30,7 @@ import { useRuntime } from "@/hooks/useRuntime";
 import {
   profileSwitchLocked,
   resolveActiveTextProfile,
+  activeConnection as activeConnectionOf,
   resolveJobProvider,
   textProfileInitials,
 } from "@/lib/textProfiles";
@@ -137,9 +138,12 @@ export default function WorkspaceWindow() {
      with the copies visibly disagreeing on one line of the window. The union is
      gone; there is nothing left to collapse onto and nothing to keep in step. */
   const providerSource = form ?? state.config;
-  const connectionProvider = providerSource
-    ? resolveJobProvider(resolveActiveTextProfile(providerSource), "dictation").provider
-    : DEFAULT_PROVIDER_ID;
+  /* THE ACCOUNT THE STRIP IS ABOUT, and the vendor read off it (ADR 0208). The
+     profile names an account and the account names the vendor, so a machine
+     dictating through its own server states that server's id rather than a
+     machine-wide field no profile agreed to. */
+  const connectionAccount = providerSource ? activeConnectionOf(providerSource) : undefined;
+  const connectionProvider = connectionAccount?.provider ?? DEFAULT_PROVIDER_ID;
   /* The drawn name, for the sentences below. A registered id always has one —
      `providerSeam.test.ts` holds that direction — so the fallback is reachable
      only for an id the runtime has already refused, which the error branch
@@ -156,7 +160,7 @@ export default function WorkspaceWindow() {
     connectionProvider === "local"
       ? form?.local_model ?? state.config?.local_model ?? "base"
       : connectionProvider === SELF_HOSTED_PROVIDER_ID
-        ? form?.self_hosted_model ?? state.config?.self_hosted_model ?? null
+        ? connectionAccount?.model || null
         : form?.model ?? state.config?.model ?? null;
   /* The last fallback is the runtime's own default, read from the catalogue
      rather than spelled here (ADR 0115): a config that has never been written
@@ -389,7 +393,7 @@ export default function WorkspaceWindow() {
     connectionProvider === "local"
       ? `${form.local_model} · preview`
       : connectionProvider === SELF_HOSTED_PROVIDER_ID
-        ? form.self_hosted_model || "no model id"
+        ? connectionAccount?.model || "no model id"
         : `${connectionName} · ${form.model}`;
   const work = activeProfile.work_mode;
   const target = work?.insert_behavior === "clipboard_only" ? "Clipboard only" : "Insert at cursor";

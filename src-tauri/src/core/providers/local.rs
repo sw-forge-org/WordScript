@@ -176,8 +176,14 @@ impl Provider for Local {
         &[]
     }
 
+    /// **The connection is ignored, and that is what this lane is** (ADR 0208).
+    /// A local runtime authenticates against nothing, so there is no account to
+    /// scope a credential by — the argument exists on the trait because every
+    /// other lane needs it, and answering it with the runtime's readiness is
+    /// the honest reply rather than an error.
     fn credential_status(
         &self,
+        _connection: &str,
         role: ProviderRole,
     ) -> Result<RoleCredentialStatus, ProviderCommandError> {
         let setup = inspect_local_setup(default_status_model().as_str(), &resolve_local_chat_model_name(None));
@@ -187,6 +193,7 @@ impl Provider for Local {
 
     fn save_api_key(
         &self,
+        _connection: &str,
         _role: ProviderRole,
         _kind: CredentialKind,
         api_key: &str,
@@ -196,6 +203,7 @@ impl Provider for Local {
 
     fn clear_api_key(
         &self,
+        _connection: &str,
         _role: ProviderRole,
         _kind: CredentialKind,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
@@ -204,6 +212,7 @@ impl Provider for Local {
 
     fn validate_api_key(
         &self,
+        _connection: &str,
         api_key: Option<String>,
     ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
         Box::pin(validate_api_key(api_key))

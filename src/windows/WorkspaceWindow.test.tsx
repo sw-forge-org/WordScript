@@ -54,12 +54,31 @@ vi.mock("../hooks/useProvider", () => ({
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 
 /** A config whose active profile dictates through one named vendor (ADR 0094). */
-function configOn(providerId: string, overrides: Parameters<typeof createAppConfig>[0] = {}) {
-  const config = createAppConfig(overrides);
+/** A machine whose active profile runs on one vendor's account (ADR 0208).
+ *
+ *  The profile names an ACCOUNT and the account names the vendor, so a fixture
+ *  that wants *this profile is on its own server* has to give the machine that
+ *  server to point at — `model` is the id the account carries, which is where
+ *  the self-hosted lane's model id lives now. */
+function configOn(
+  providerId: string,
+  account: Partial<{ model: string; base_url: string }> = {},
+  overrides: Parameters<typeof createAppConfig>[0] = {},
+) {
+  const connection = {
+    id: `connection-${providerId}`,
+    label: providerId,
+    provider: providerId,
+    base_url: "",
+    model: "",
+    plan: "",
+    ...account,
+  };
+  const config = createAppConfig({ connections: [connection], ...overrides });
   const active = config.text_profiles.find(
     (profile) => profile.id === config.active_text_profile_id,
   )!;
-  active.providers = { default: providerId, overrides: {} };
+  active.providers = { default: connection.id, overrides: {} };
   return config;
 }
 
@@ -232,7 +251,7 @@ describe("WorkspaceWindow", () => {
   /** The lane's name comes from `LANE_LABEL` (ADR 0160) rather than from a
    *  fourth spelling of it along this edge — one list per fact (ADR 0123). */
   it("spells the lane the way every other surface spells it", async () => {
-    runtimeConfig = configOn("self_hosted", { self_hosted_model: "faster-whisper-medium" });
+    runtimeConfig = configOn("self_hosted", { model: "faster-whisper-medium" });
 
     const { container } = render(<WorkspaceWindow />);
     await waitFor(() =>
@@ -253,7 +272,7 @@ describe("WorkspaceWindow", () => {
    * the workspace and looking at it, which is the fifth time on this surface.
    */
   it("names the self-hosted connection rather than calling it Groq", async () => {
-    runtimeConfig = configOn("self_hosted", { self_hosted_model: "faster-whisper-medium" });
+    runtimeConfig = configOn("self_hosted", { model: "faster-whisper-medium" });
 
     const { container } = render(<WorkspaceWindow />);
     await waitFor(() =>

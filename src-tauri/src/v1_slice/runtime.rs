@@ -310,6 +310,7 @@ pub fn runtime_contract_for_app<R: Runtime>(app: &AppHandle<R>) -> SliceRuntimeC
     let correction_is_local =
         config.job_provider(correction_job).provider == LOCAL_PROVIDER_ID;
     let provider_status = providers::provider_status(ProviderStatusRequest {
+        connection: config.job_provider(JobKey::Dictation).connection,
         provider,
         model: Some(model),
         correction_model: Some(if correction_is_local {
@@ -681,10 +682,12 @@ mod tests {
             .iter_mut()
             .find(|profile| profile.id == active_id)
             .expect("active profile");
+        let connection = crate::core::config::test_connection(provider);
         profile.providers = Some(crate::core::config::ProfileProviderSettings {
-            default: provider.to_string(),
+            default: connection.id.clone(),
             ..Default::default()
         });
+        config.connections = Some(vec![connection]);
     }
 
     #[test]

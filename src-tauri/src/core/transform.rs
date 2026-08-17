@@ -4,7 +4,8 @@ use regex::{Captures, NoExpand, Regex, RegexBuilder};
 
 use super::communication_style::CommunicationStyle;
 use super::config::{
-    DictionaryEntry, ProcessingMode, ProfileProviderSettings, SnippetEntry, TransformPreset,
+    Connection, DictionaryEntry, ProcessingMode, ProfileProviderSettings, SnippetEntry,
+    TransformPreset,
     TranslateSettings, default_agent_model, default_correction_model,
     default_local_agent_model, default_local_correction_model,
 };
@@ -32,6 +33,14 @@ pub struct NativeTransformConfig {
     /// Prompt Enhance through `mode_router`. One id here is what let the
     /// recogniser's vendor decide all of them.
     pub providers: ProfileProviderSettings,
+    /// The connections that axis resolves against (ADR 0208).
+    ///
+    /// **Snapshotted beside the axis rather than read from disk**, for the
+    /// reason every other field here is: a profile switched between the
+    /// recording and the transform must not move the account the session is
+    /// already paying with. Carrying the ids without the objects would leave
+    /// this struct unable to answer *which vendor* at all.
+    pub connections: Vec<Connection>,
     pub profile_prompt: String,
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
@@ -110,6 +119,7 @@ impl NativeTransformConfig {
     ) -> Self {
         Self {
             providers: config.providers.clone(),
+            connections: config.connections.clone(),
             profile_prompt: config.prompt.clone(),
             profile_label: config.profile_label.clone(),
             stt_hints: config.stt_hints.clone(),
@@ -159,7 +169,15 @@ impl NativeTransformConfig {
 
     /// What the correction transform runs on, and what pays for it.
     pub fn correction_provider(&self) -> JobProvider {
-        self.providers.resolve(self.correction_job())
+        self.job_provider(self.correction_job())
+    }
+
+    /// What one job of this session runs on (ADR 0208).
+    ///
+    /// The one door from this snapshot onto the axis, so the connection list a
+    /// job resolves against is this session's and never the one on disk now.
+    pub fn job_provider(&self, job: JobKey) -> JobProvider {
+        self.providers.resolve(job, &self.connections)
     }
 
     /// **The correction's model, on the lane the correction takes** (ADR 0206).
@@ -233,7 +251,7 @@ impl NativeTransformConfig {
     /// because that is what the retry path actually runs for it.
     pub fn mode_provider(&self, mode: &ProcessingMode) -> JobProvider {
         match mode.job_key() {
-            Some(job) => self.providers.resolve(job),
+            Some(job) => self.job_provider(job),
             None => self.correction_provider(),
         }
     }
@@ -328,6 +346,7 @@ pub async fn apply_native_transform(
         ));
 
         let request = ChatCompletionRequest {
+            connection: job.connection,
             provider: job.provider,
             model,
             messages: vec![
@@ -1248,14 +1267,18 @@ mod tests {
     fn the_correction_model_follows_the_correction_lane_and_not_the_recognisers() {
         use std::collections::BTreeMap;
 
+        let cloud = super::super::config::test_connection(
+            super::super::providers::DEFAULT_PROVIDER_ID,
+        );
+        let local = super::super::config::test_connection(
+            super::super::providers::LOCAL_PROVIDER_ID,
+        );
         let capture = super::super::capture::NativeCaptureConfig {
             providers: ProfileProviderSettings {
-                default: super::super::providers::DEFAULT_PROVIDER_ID.to_string(),
-                overrides: BTreeMap::from([(
-                    JobKey::Cleanup,
-                    super::super::providers::LOCAL_PROVIDER_ID.to_string(),
-                )]),
+                default: cloud.id.clone(),
+                overrides: BTreeMap::from([(JobKey::Cleanup, local.id.clone())]),
             },
+            connections: vec![cloud, local],
             correction_model: "llama-3.3-70b-versatile".to_string(),
             local_correction_model: "llama3.2:latest".to_string(),
             ..Default::default()
@@ -1272,7 +1295,7 @@ mod tests {
         // And the recogniser is untouched by any of it: it is a different job
         // and it kept its own vendor.
         assert_eq!(
-            config.providers.resolve(JobKey::Dictation).provider,
+            config.job_provider(JobKey::Dictation).provider,
             super::super::providers::DEFAULT_PROVIDER_ID,
         );
     }
@@ -1290,11 +1313,13 @@ mod tests {
 
         let local = JobProvider {
             job: JobKey::Cleanup,
+            connection: "connection-local".to_string(),
             provider: super::super::providers::LOCAL_PROVIDER_ID.to_string(),
             overridden: true,
         };
         let cloud = JobProvider {
             job: JobKey::Cleanup,
+            connection: super::super::config::DEFAULT_CONNECTION_ID.to_string(),
             provider: super::super::providers::DEFAULT_PROVIDER_ID.to_string(),
             overridden: false,
         };

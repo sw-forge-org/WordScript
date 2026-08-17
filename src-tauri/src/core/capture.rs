@@ -18,7 +18,8 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use super::{
     communication_style::CommunicationStyle,
     config::{
-        AppConfig, DictionaryEntry, ProfileProviderSettings, SnippetEntry, TextProfileWorkMode,
+        AppConfig, Connection, DictionaryEntry, ProfileProviderSettings, SnippetEntry,
+        TextProfileWorkMode,
         TranslateSettings, default_agent_model, default_correction_model,
         default_local_agent_model, default_local_correction_model, default_speech_model,
     },
@@ -249,6 +250,15 @@ pub struct NativeCaptureConfig {
     /// instead means every stage downstream resolves its own job, from one
     /// derivation taken once off the active profile.
     pub providers: ProfileProviderSettings,
+    /// The connections that axis resolves against (ADR 0208).
+    ///
+    /// **The session runs on the account it started on.** The axis names
+    /// connections and the connections name vendors, endpoints and — through
+    /// the OS store — accounts; snapshotting the ids without the objects would
+    /// leave the session resolving *which server* against whatever the config
+    /// says by the time the transform runs.
+    #[serde(default)]
+    pub connections: Vec<Connection>,
     pub model: String,
     pub local_profile: String,
     pub local_prompt_strength: String,
@@ -321,6 +331,7 @@ impl Default for NativeCaptureConfig {
     fn default() -> Self {
         Self {
             providers: ProfileProviderSettings::default(),
+            connections: Vec::new(),
             model: default_speech_model().to_string(),
             local_profile: "local-base-fast".to_string(),
             local_prompt_strength: "profile".to_string(),
@@ -381,6 +392,7 @@ impl NativeCaptureConfig {
         // deciding it off `Dictation` is what sent a cloud correction model to
         // a local runtime.
         let providers = active_profile.resolved_providers();
+        let connections = app_config.connections().to_vec();
         /* WHICH MODEL LISTENS, ASKED WHERE THE HISTORY PATH ASKS IT (ADR 0203).
            The three lanes and their fallbacks used to live here as a match this
            function owned, and `history.rs` answered the same question off the
@@ -393,6 +405,7 @@ impl NativeCaptureConfig {
 
         Self {
             providers,
+            connections,
             model,
             local_profile: speech.local_profile,
             local_prompt_strength: speech.local_prompt_strength,
@@ -430,7 +443,7 @@ impl NativeCaptureConfig {
     /// What one of this capture's jobs runs on, and what pays for it
     /// (ADR 0094).
     pub fn job_provider(&self, job: JobKey) -> JobProvider {
-        self.providers.resolve(job)
+        self.providers.resolve(job, &self.connections)
     }
 
     /// The vendor that listens. Every "is this the local lane" question on the
@@ -453,7 +466,8 @@ impl NativeCaptureConfig {
         audio_path: &str,
         timeout_ms: u64,
     ) -> super::providers::TranscribeAudioFileRequest {
-        let provider = self.speech_provider();
+        let job = self.job_provider(JobKey::Dictation);
+        let provider = job.provider;
         let is_local = provider == super::providers::LOCAL_PROVIDER_ID;
         let context = super::transcription_hints::BiasRequestContext::from_work_mode(
             &self.work_mode,
@@ -468,6 +482,7 @@ impl NativeCaptureConfig {
 
         super::providers::TranscribeAudioFileRequest {
             provider,
+            connection: job.connection,
             audio_path: audio_path.to_string(),
             model: non_empty(&self.model),
             profile: is_local.then(|| non_empty(&self.local_profile)).flatten(),
@@ -2666,11 +2681,24 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     /// A profile whose whole axis sits on the local runtime.
+    ///
+    /// **A connection, not a vendor id** (ADR 0208): the profile names the
+    /// account and the account names the lane, so a fixture has to give the
+    /// snapshot both halves — `local_lane_connections` is the other one.
     fn local_lane_providers() -> ProfileProviderSettings {
         ProfileProviderSettings {
-            default: super::super::providers::LOCAL_PROVIDER_ID.to_string(),
+            default: super::super::config::test_connection(
+                super::super::providers::LOCAL_PROVIDER_ID,
+            )
+            .id,
             ..Default::default()
         }
+    }
+
+    fn local_lane_connections() -> Vec<Connection> {
+        vec![super::super::config::test_connection(
+            super::super::providers::LOCAL_PROVIDER_ID,
+        )]
     }
 
     /// A level summary for the tests that are about the verdict rather than
@@ -2717,6 +2745,7 @@ mod tests {
     fn audio_ready_round_trip_preserves_bias_policy_and_local_decode_settings() {
         let config = NativeCaptureConfig {
             providers: local_lane_providers(),
+            connections: local_lane_connections(),
             local_profile: "local-large-v3".to_string(),
             local_prompt_strength: "profile_and_terms".to_string(),
             local_prompt_carry: true,
@@ -2903,6 +2932,7 @@ mod tests {
         let cloud = NativeCaptureConfig::default();
         let local = NativeCaptureConfig {
             providers: local_lane_providers(),
+            connections: local_lane_connections(),
             ..Default::default()
         };
 
@@ -4358,6 +4388,7 @@ mod tests {
             ..Default::default()
         });
         config.text_profiles[0].providers = Some(local_lane_providers());
+        config.connections = Some(local_lane_connections());
 
         assert_eq!(config.speech_model().as_deref(), Some("small"));
         assert_eq!(

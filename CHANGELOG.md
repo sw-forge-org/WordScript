@@ -53,6 +53,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a profile carries its whole connection, server and account included (ADR 0208)
+
+- **Your accounts are objects now, and a profile points at one.** A connection
+  carries the vendor, the server URL, the model id, the account plan and the
+  credential; the `Account` row on the connection card in AI Models picks which
+  one this profile uses, and `New` gives you a second on the same vendor. That
+  is the case nothing could express before: an employer's Groq key and a private
+  one were one entry in the OS secret store, so switching profiles moved the
+  vendor and never who was paying.
+- **Switching a profile switches the account.** Two profiles on two accounts of
+  one vendor resolve to two different stored keys, and a test says so on both
+  sides of the seam — the entry the runtime reads, and the account a key typed
+  on the screen is stored under.
+- **Two profiles may share one account**, which is what keeps a second writing
+  style from costing a second copy of the same key: one entry, rotated once.
+- **`Your server` moved with them.** The endpoint and the model id were
+  machine-wide because there was nowhere else for them to live; they belong to
+  the account that names the server now, beside the token that may be sent to
+  it — so two servers are two accounts rather than one field you retype. The
+  three `WORDSCRIPT_SELF_HOSTED_*` variables are unchanged and still lose to
+  what is typed.
+- **The account plan follows the account.** It was keyed by vendor, which could
+  not tell a paid work account from a free private one on the same vendor.
+- **Your stored keys are moved, not copied.** The first load re-keys each one
+  from the vendor id onto the account that owns it and deletes what it moved: a
+  key left behind under an old name is a secret the product can no longer show
+  you or clear.
+- **Removing an account never repoints a profile.** The profiles that named it
+  keep naming it and say so; choosing who pays for you is not a deletion's
+  decision.
+
 ### Fixed — the two instruments that reported something the runtime did not do (ADR 0203, ADR 0204)
 
 - **A record names the model that listened.** History resolved the model off the

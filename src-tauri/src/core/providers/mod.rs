@@ -161,8 +161,20 @@ impl JobKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobProvider {
     pub job: JobKey,
-    /// The id the job actually runs on: its own override, or the connection's
-    /// default when it has none.
+    /// The connection the job actually runs on: its own override, or the
+    /// profile's default when it has none (ADR 0208).
+    ///
+    /// **This is the credential's scope**, so it travels beside the provider
+    /// for the same reason the provider travels beside the job: a caller
+    /// holding this cannot reach for an account that belongs to another
+    /// connection, because there is no id here but this one.
+    pub connection: String,
+    /// The vendor behind that connection.
+    ///
+    /// **Derived, never stored twice.** The profile names a connection and the
+    /// connection names the vendor; empty means the profile names a connection
+    /// this machine no longer holds, which is a state the surface states and
+    /// the runtime refuses rather than repairs.
     pub provider: String,
     /// Whether the job named this provider itself. It is what decides whether a
     /// surface draws a key row of its own for the job (ADR 0094), and it is not
@@ -183,7 +195,14 @@ impl JobProvider {
     /// contract (ADR 0105), and this method exists so that no call site has to
     /// restate the pair correctly on its own.
     pub fn credential(&self) -> Result<RoleCredentialStatus, ProviderCommandError> {
-        resolve_role_credential(&self.provider, self.role())
+        if self.provider.is_empty() {
+            return Err(ProviderCommandError::invalid_request(format!(
+                "The connection {} runs on no longer exists. Pick one on AI Models.",
+                self.job.label(),
+            )));
+        }
+
+        resolve_role_credential(&self.connection, &self.provider, self.role())
     }
 }
 
@@ -732,6 +751,19 @@ pub struct ProviderStatus {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProviderStatusRequest {
     pub provider: String,
+    /// Which account this status is about (ADR 0208).
+    ///
+    /// **The vendor names the adapter and the connection names the account**,
+    /// which is why both travel: a status answers *what does this vendor do*
+    /// from the registry and *is there a key* from the OS store, and only the
+    /// second question has an account in it.
+    ///
+    /// Empty is a legitimate request and means *no account named* — it is what
+    /// the machine tab's local probe sends, because that lane stores no
+    /// credential and has nothing to name. On a lane that does, an empty
+    /// connection answers `configured: false` rather than inventing one.
+    #[serde(default)]
+    pub connection: String,
     pub model: Option<String>,
     pub correction_model: Option<String>,
 }
@@ -739,6 +771,10 @@ pub struct ProviderStatusRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SaveProviderApiKeyRequest {
     pub provider: String,
+    /// The account this key belongs to — the scope it is stored under
+    /// (ADR 0208).
+    #[serde(default)]
+    pub connection: String,
     pub api_key: String,
     /// Which role this credential is being stored for.
     ///
@@ -758,6 +794,12 @@ pub struct SaveProviderApiKeyRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ClearProviderApiKeyRequest {
     pub provider: String,
+    /// The account being cleared. **Clearing one connection never clears
+    /// another's**, which is ADR 0105's rule one axis out: two accounts on one
+    /// vendor are two keys, and forgetting the scope here would sign the reader
+    /// out of the profile they were not looking at.
+    #[serde(default)]
+    pub connection: String,
     /// Absent means every role this provider serves, for the named kind only.
     /// **Clearing one role never clears another's** (ADR 0105), and clearing a
     /// key never reaches a subscription: "remove the key" is not "sign out".
@@ -770,6 +812,9 @@ pub struct ClearProviderApiKeyRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ValidateProviderApiKeyRequest {
     pub provider: String,
+    /// Whose stored key to check when `api_key` is absent (ADR 0208).
+    #[serde(default)]
+    pub connection: String,
     pub api_key: Option<String>,
 }
 
@@ -783,6 +828,16 @@ pub struct ValidateProviderApiKeyResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TranscribeAudioFileRequest {
     pub provider: String,
+    /// Which account pays for this call, and — on the lane that types its own —
+    /// which server it goes to (ADR 0208).
+    ///
+    /// **Carried on the request rather than read from the config at the
+    /// adapter**, for the reason the capture snapshots everything else: the
+    /// session runs on the connection it started on, and a profile switched
+    /// between the recording and the retry does not redirect a call that is
+    /// already in flight.
+    #[serde(default)]
+    pub connection: String,
     pub audio_path: String,
     pub model: Option<String>,
     pub profile: Option<String>,
@@ -975,6 +1030,11 @@ pub struct ChatMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatCompletionRequest {
     pub provider: String,
+    /// Which account pays for this call (ADR 0208). Every chat job resolves it
+    /// from its own `JobProvider`, so a profile transforming on its employer's
+    /// account and dictating on a private one is two connections and not one.
+    #[serde(default)]
+    pub connection: String,
     pub model: String,
     pub messages: Vec<ChatMessage>,
     pub temperature: f32,
@@ -1010,21 +1070,25 @@ pub fn default_provider_id() -> &'static str {
 /// The fold `aggregate_credential` states, without building the whole status:
 /// the local lane's status probes the runner and the model, and this question
 /// does not need either.
-pub fn provider_credentials_configured(provider: &str) -> Result<bool, ProviderCommandError> {
+pub fn provider_credentials_configured(
+    connection: &str,
+    provider: &str,
+) -> Result<bool, ProviderCommandError> {
     let entry = registry::resolve_entry(provider)?;
-    let roles = role_credentials(entry)?;
+    let roles = role_credentials(connection, entry)?;
 
     Ok(aggregate_credential(entry.id, &roles).configured)
 }
 
-/// Every role this provider registered, answered.
+/// Every role this provider registered, answered for one connection.
 fn role_credentials(
+    connection: &str,
     entry: &'static ProviderEntry,
 ) -> Result<Vec<RoleCredentialStatus>, ProviderCommandError> {
     entry
         .roles()
         .into_iter()
-        .map(|role| entry.provider.credential_status(role))
+        .map(|role| entry.provider.credential_status(connection, role))
         .collect()
 }
 
@@ -1119,10 +1183,15 @@ pub fn save_provider_api_key(
     let kind = request.kind.unwrap_or(CredentialKind::DEFAULT);
 
     for role in credential_target_roles(entry, request.role, kind)? {
-        entry.provider.save_api_key(role, kind, &request.api_key)?;
+        entry
+            .provider
+            .save_api_key(&request.connection, role, kind, &request.api_key)?;
     }
 
-    Ok(aggregate_credential(entry.id, &role_credentials(entry)?))
+    Ok(aggregate_credential(
+        entry.id,
+        &role_credentials(&request.connection, entry)?,
+    ))
 }
 
 #[tauri::command]
@@ -1133,10 +1202,48 @@ pub fn clear_provider_api_key(
     let kind = request.kind.unwrap_or(CredentialKind::DEFAULT);
 
     for role in credential_target_roles(entry, request.role, kind)? {
-        entry.provider.clear_api_key(role, kind)?;
+        entry
+            .provider
+            .clear_api_key(&request.connection, role, kind)?;
     }
 
-    Ok(aggregate_credential(entry.id, &role_credentials(entry)?))
+    Ok(aggregate_credential(
+        entry.id,
+        &role_credentials(&request.connection, entry)?,
+    ))
+}
+
+/// Moves every credential stored under a vendor id onto the connection that
+/// owns it now (ADR 0208).
+///
+/// **The registry decides what there is to move**, so a vendor that registers
+/// one role has one entry looked for and a vendor that accepts two kinds has
+/// two — the same table that decides where a credential may be stored decides
+/// what a migration carries. An id no adapter claims moves nothing, because
+/// nothing could have been stored under it.
+///
+/// Returns how many entries moved, which is what makes this testable against an
+/// in-memory store without asking the caller to guess how many there should
+/// have been.
+pub fn rekey_connection_credentials(
+    store: &impl credential_store::SecretStore,
+    provider: &str,
+    connection: &str,
+) -> Result<usize, keyring::Error> {
+    let Ok(entry) = registry::resolve_entry(provider) else {
+        return Ok(0);
+    };
+
+    let mut moved = 0;
+    for role in entry.roles() {
+        for kind in entry.provider.credential_kinds() {
+            if credential_store::rekey(store, provider, connection, role, *kind)? {
+                moved += 1;
+            }
+        }
+    }
+
+    Ok(moved)
 }
 
 /// What answers for one job's role on one provider (ADR 0105).
@@ -1147,6 +1254,7 @@ pub fn clear_provider_api_key(
 /// in. A role with no credential answers `configured: false` and names what is
 /// missing; it never returns the other kind the same provider holds.
 pub fn resolve_role_credential(
+    connection: &str,
     provider: &str,
     role: ProviderRole,
 ) -> Result<RoleCredentialStatus, ProviderCommandError> {
@@ -1160,7 +1268,7 @@ pub fn resolve_role_credential(
         )));
     }
 
-    entry.provider.credential_status(role)
+    entry.provider.credential_status(connection, role)
 }
 
 #[tauri::command]
@@ -1169,7 +1277,7 @@ pub async fn validate_provider_api_key(
 ) -> Result<ValidateProviderApiKeyResponse, ProviderCommandError> {
     registry::resolve_entry(&request.provider)?
         .provider
-        .validate_api_key(request.api_key)
+        .validate_api_key(&request.connection, request.api_key)
         .await
 }
 
@@ -1205,6 +1313,58 @@ mod tests {
     /// first. A registry with ten entries would have retired the stand-in ten
     /// times. This one is retired never, and it says what it means.
     const UNREGISTERABLE_ID: &str = "not-a-vendor-this-build-carries";
+
+    /// **The migration moves the key, and the registry decides what there is
+    /// to move** (ADR 0208). Groq registers speech and chat and accepts one
+    /// kind, so a machine with both keys stored under the vendor id ends up
+    /// with both under the connection — and with nothing left behind, because a
+    /// copy would leave a secret no surface can reach.
+    #[test]
+    fn the_re_key_moves_every_entry_the_registry_knows_about() {
+        use credential_store::{MemorySecretStore, SecretStore, KEY_SERVICE};
+
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, "groq.speech.api_key", "gsk_speech")
+            .unwrap();
+        store
+            .write(KEY_SERVICE, "groq.chat.api_key", "gsk_chat")
+            .unwrap();
+
+        let moved = rekey_connection_credentials(&store, "groq", "connection-default").unwrap();
+
+        assert_eq!(moved, 2, "one per registered role, for the kind Groq accepts");
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-default.speech.api_key").unwrap(),
+            Some("gsk_speech".to_string()),
+        );
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-default.chat.api_key").unwrap(),
+            Some("gsk_chat".to_string()),
+        );
+        assert_eq!(store.read(KEY_SERVICE, "groq.speech.api_key").unwrap(), None);
+        assert_eq!(store.read(KEY_SERVICE, "groq.chat.api_key").unwrap(), None);
+    }
+
+    /// A vendor no adapter claims moves nothing, because nothing could have
+    /// been stored under it — and a lane that stores no credential at all is
+    /// the same answer for the opposite reason.
+    #[test]
+    fn the_re_key_is_silent_for_a_vendor_with_nothing_to_move() {
+        use credential_store::MemorySecretStore;
+
+        let store = MemorySecretStore::default();
+
+        assert_eq!(
+            rekey_connection_credentials(&store, UNREGISTERABLE_ID, "connection-default").unwrap(),
+            0,
+        );
+        assert_eq!(
+            rekey_connection_credentials(&store, LOCAL_PROVIDER_ID, "connection-local").unwrap(),
+            0,
+            "the local lane authenticates against nothing, so it carries nothing",
+        );
+    }
 
     #[test]
     fn normalizes_provider_values_to_supported_ids() {

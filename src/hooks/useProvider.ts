@@ -66,6 +66,10 @@ export function useProvider(
   providerId: string | null = DEFAULT_PROVIDER_ID,
   model?: string | null,
   correctionModel?: string | null,
+  /** Which account this vendor is reached with (ADR 0208). Empty asks about
+   *  the vendor with no account named, which is what the lane that stores no
+   *  credential sends — and what a caller with no config yet has. */
+  connectionId: string = "",
 ) {
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -80,6 +84,7 @@ export function useProvider(
       const next = await invoke<ProviderStatus>("provider_status", {
         request: {
           provider: providerId,
+          connection: connectionId,
           model: model?.trim() ? model.trim() : null,
           correction_model: correctionModel?.trim() ? correctionModel.trim() : null,
         },
@@ -95,7 +100,7 @@ export function useProvider(
     } finally {
       setIsLoading(false);
     }
-  }, [correctionModel, model, providerId]);
+  }, [connectionId, correctionModel, model, providerId]);
 
   /* THE THREE CREDENTIAL DOORS TAKE THE SAME GUARD. A `null` provider is *no
      connection resolved yet*, and `resolve_entry` reads an empty provider as
@@ -107,7 +112,7 @@ export function useProvider(
     setIsLoading(true);
     try {
       const credential = await invoke<ProviderCredentialStatus>("save_provider_api_key", {
-        request: { provider: providerId, api_key: apiKey },
+        request: { provider: providerId, connection: connectionId, api_key: apiKey },
       });
       await refresh();
       setLastValidation(null);
@@ -128,7 +133,7 @@ export function useProvider(
     setIsLoading(true);
     try {
       const credential = await invoke<ProviderCredentialStatus>("clear_provider_api_key", {
-        request: { provider: providerId },
+        request: { provider: providerId, connection: connectionId },
       });
       await refresh();
       setLastValidation(null);
@@ -149,7 +154,11 @@ export function useProvider(
     setIsLoading(true);
     try {
       const validation = await invoke<ValidateProviderApiKeyResponse>("validate_provider_api_key", {
-        request: { provider: providerId, api_key: apiKey?.trim() ? apiKey : null },
+        request: {
+          provider: providerId,
+          connection: connectionId,
+          api_key: apiKey?.trim() ? apiKey : null,
+        },
       });
       setLastValidation(validation);
       setError(null);

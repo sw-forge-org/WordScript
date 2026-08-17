@@ -98,7 +98,7 @@ impl Provider for OpenAi {
         &self,
         request: &ProviderStatusRequest,
     ) -> Result<ProviderStatus, ProviderCommandError> {
-        provider_status(request.model.as_deref())
+        provider_status(&request.connection, request.model.as_deref())
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -115,33 +115,37 @@ impl Provider for OpenAi {
 
     fn credential_status(
         &self,
+        connection: &str,
         role: ProviderRole,
     ) -> Result<RoleCredentialStatus, ProviderCommandError> {
-        role_credential_status(role).map_err(ProviderCommandError::from)
+        role_credential_status(connection, role).map_err(ProviderCommandError::from)
     }
 
     fn save_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
         api_key: &str,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        save_api_key(role, kind, api_key)
+        save_api_key(connection, role, kind, api_key)
     }
 
     fn clear_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        clear_api_key(role, kind)
+        clear_api_key(connection, role, kind)
     }
 
     fn validate_api_key(
         &self,
+        connection: &str,
         api_key: Option<String>,
     ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
-        Box::pin(validate_api_key(api_key))
+        Box::pin(validate_api_key(connection.to_string(), api_key))
     }
 }
 
@@ -169,8 +173,11 @@ impl ChatProvider for OpenAi {
     }
 }
 
-fn provider_status(model: Option<&str>) -> Result<ProviderStatus, ProviderCommandError> {
-    let role_credentials = role_credentials().map_err(ProviderCommandError::from)?;
+fn provider_status(
+    connection: &str,
+    model: Option<&str>,
+) -> Result<ProviderStatus, ProviderCommandError> {
+    let role_credentials = role_credentials(connection).map_err(ProviderCommandError::from)?;
 
     Ok(ProviderStatus {
         provider: OPENAI_PROVIDER_ID.to_string(),
@@ -186,27 +193,29 @@ fn provider_status(model: Option<&str>) -> Result<ProviderStatus, ProviderComman
 }
 
 fn save_api_key(
+    connection: &str,
     role: ProviderRole,
     kind: CredentialKind,
     api_key: &str,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     ensure_supported_kind(kind)?;
     let api_key = normalize_api_key(api_key)?;
-    credential_store::write_to(&OsSecretStore, OPENAI_PROVIDER_ID, role, kind, &api_key)
+    credential_store::write_to(&OsSecretStore, connection, role, kind, &api_key)
         .map_err(secret_store_error)?;
-    credential_store::cache_key(&credential_entry_user(role, kind), Some(api_key));
-    credential_status().map_err(ProviderCommandError::from)
+    credential_store::cache_key(&credential_entry_user(connection, role, kind), Some(api_key));
+    credential_status(connection).map_err(ProviderCommandError::from)
 }
 
 fn clear_api_key(
+    connection: &str,
     role: ProviderRole,
     kind: CredentialKind,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     ensure_supported_kind(kind)?;
-    credential_store::clear_in(&OsSecretStore, OPENAI_PROVIDER_ID, role, kind)
+    credential_store::clear_in(&OsSecretStore, connection, role, kind)
         .map_err(secret_store_error)?;
-    credential_store::cache_key(&credential_entry_user(role, kind), None);
-    credential_status().map_err(ProviderCommandError::from)
+    credential_store::cache_key(&credential_entry_user(connection, role, kind), None);
+    credential_status(connection).map_err(ProviderCommandError::from)
 }
 
 /// A subscription is refused where it would be stored, and the sentence says
@@ -228,13 +237,14 @@ fn ensure_supported_kind(kind: CredentialKind) -> Result<(), ProviderCommandErro
 }
 
 async fn validate_api_key(
+    connection: String,
     api_key: Option<String>,
 ) -> Result<ValidateProviderApiKeyResponse, ProviderCommandError> {
     let (api_key, checked_with) = match api_key {
         Some(value) if !value.trim().is_empty() => {
             (normalize_api_key(&value)?, "provided_key".to_string())
         }
-        _ => (load_any_stored_api_key()?, "stored_key".to_string()),
+        _ => (load_any_stored_api_key(&connection)?, "stored_key".to_string()),
     };
 
     let client = openai_client(api_key, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_RETRIES)?;
@@ -268,7 +278,7 @@ fn openai_client(
 async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<TranscriptionResponse, ProviderCommandError> {
-    let api_key = load_api_key(ProviderRole::Speech)?;
+    let api_key = load_api_key(&request.connection, ProviderRole::Speech)?;
     let client = openai_client(
         api_key,
         request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
@@ -317,7 +327,7 @@ async fn transcribe_audio_file(
 async fn create_chat_completion(
     request: ChatCompletionRequest,
 ) -> Result<String, ProviderCommandError> {
-    let api_key = load_api_key(ProviderRole::Chat)?;
+    let api_key = load_api_key(&request.connection, ProviderRole::Chat)?;
     let client = openai_client(
         api_key,
         request.timeout_ms.unwrap_or(8_000),
@@ -508,28 +518,28 @@ fn model_capabilities(model: &str) -> ModelCapabilities {
     }
 }
 
-fn credential_status() -> Result<ProviderCredentialStatus, OpenAiError> {
+fn credential_status(connection: &str) -> Result<ProviderCredentialStatus, OpenAiError> {
     Ok(aggregate_credential(
         OPENAI_PROVIDER_ID,
-        &role_credentials()?,
+        &role_credentials(connection)?,
     ))
 }
 
-fn role_credentials() -> Result<Vec<RoleCredentialStatus>, OpenAiError> {
+fn role_credentials(connection: &str) -> Result<Vec<RoleCredentialStatus>, OpenAiError> {
     OPENAI_CREDENTIAL_ROLES
         .iter()
-        .map(|role| role_credential_status(*role))
+        .map(|role| role_credential_status(connection, *role))
         .collect()
 }
 
-fn role_credential_status(role: ProviderRole) -> Result<RoleCredentialStatus, OpenAiError> {
+fn role_credential_status(connection: &str, role: ProviderRole) -> Result<RoleCredentialStatus, OpenAiError> {
     let kind = CredentialKind::ApiKey;
 
-    match credential_store::read_from(&OsSecretStore, OPENAI_PROVIDER_ID, role, kind)
+    match credential_store::read_from(&OsSecretStore, connection, role, kind)
         .map_err(secret_store_error)?
     {
         Some(api_key) => {
-            credential_store::cache_key(&credential_entry_user(role, kind), Some(api_key.clone()));
+            credential_store::cache_key(&credential_entry_user(connection, role, kind), Some(api_key.clone()));
             Ok(RoleCredentialStatus {
                 provider: OPENAI_PROVIDER_ID.to_string(),
                 role,
@@ -552,21 +562,21 @@ fn role_credential_status(role: ProviderRole) -> Result<RoleCredentialStatus, Op
     }
 }
 
-fn credential_entry_user(role: ProviderRole, kind: CredentialKind) -> String {
-    credential_store::entry_user(OPENAI_PROVIDER_ID, role, kind)
+fn credential_entry_user(connection: &str, role: ProviderRole, kind: CredentialKind) -> String {
+    credential_store::entry_user(connection, role, kind)
 }
 
 /// The key that pays for one role — **never another role's, and never another
 /// vendor's** (ADR 0105).
-fn load_api_key(role: ProviderRole) -> Result<String, ProviderCommandError> {
+fn load_api_key(connection: &str, role: ProviderRole) -> Result<String, ProviderCommandError> {
     let kind = CredentialKind::ApiKey;
-    let user = credential_entry_user(role, kind);
+    let user = credential_entry_user(connection, role, kind);
 
     if let Some(api_key) = credential_store::cached(&user) {
         return Ok(api_key);
     }
 
-    match credential_store::read_from(&OsSecretStore, OPENAI_PROVIDER_ID, role, kind)
+    match credential_store::read_from(&OsSecretStore, connection, role, kind)
         .map_err(secret_store_error)?
     {
         Some(api_key) => {
@@ -586,9 +596,9 @@ fn load_api_key(role: ProviderRole) -> Result<String, ProviderCommandError> {
     }
 }
 
-fn load_any_stored_api_key() -> Result<String, ProviderCommandError> {
+fn load_any_stored_api_key(connection: &str) -> Result<String, ProviderCommandError> {
     for role in OPENAI_CREDENTIAL_ROLES {
-        match load_api_key(*role) {
+        match load_api_key(connection, *role) {
             Ok(api_key) => return Ok(api_key),
             Err(error) if error.kind == ProviderErrorKind::MissingApiKey => continue,
             Err(error) => return Err(error),

@@ -34,6 +34,12 @@ here, in three files that split by *kind of document* rather than by leg:
   instrument notes and standing warnings its leg accumulated, several of which
   are written down nowhere else. Legs 1–4c and Leg 9 had no kick-off page.
 
+- [`speech-track-b14-kickoff.md`](speech-track-b14-kickoff.md) — the spent
+  **kick-off page** for the speech track's B14, which closed 2026-08-17 as
+  ADR 0208. Kept for the shape of the ask rather than for the answer: it names
+  the two candidate connection shapes and hands the choice to the owner, and the
+  recommendation the session brought back was the one the owner corrected.
+
 ## Closed tracks and spent plans
 
 - [`plans/settings-rework.md`](plans/settings-rework.md) — the settings surface

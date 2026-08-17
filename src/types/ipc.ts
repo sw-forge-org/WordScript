@@ -429,6 +429,31 @@ export type OverlayAnchor =
   | "bottom_center"
   | "bottom_right";
 
+/** Where a job runs, and which account pays for it (ADR 0208).
+ *
+ *  Mirrors `core::config::Connection`. **The vendor lives here and nowhere
+ *  else** — a profile names a connection, the connection names the vendor — so
+ *  the two cannot disagree, and the endpoint sits beside the credential it may
+ *  be sent with. */
+export interface Connection {
+  /** What a profile points at, and what the credential is stored under.
+   *  Changing it orphans the key beneath it. */
+  id:        string;
+  /** What the reader calls this account. The only field here for a person. */
+  label:     string;
+  /** The registered vendor id this connection talks to. */
+  provider:  string;
+  /** The base URL for the lane that is typed rather than known (ADR 0165).
+   *  Empty on every lane whose host is the vendor's own. */
+  base_url:  string;
+  /** The model id sent when a job names none. Empty is the ordinary state and
+   *  not a default waiting to be filled in. */
+  model:     string;
+  /** The account plan, with empty meaning this vendor's own default
+   *  (ADR 0167). */
+  plan:      string;
+}
+
 export interface AppConfig {
   model:                   string;
   language:                string;
@@ -443,30 +468,22 @@ export interface AppConfig {
   local_correction_model:  string;
   filter_fillers:          boolean;
   professionalize:         boolean;
-  /// Which account plan this machine is on, **per vendor** (ADR 0167). Plans
-  /// come from `resolve_provider_tiers`; a vendor with no entry is on its own
-  /// default, and a default plan is stored as absence rather than as its id.
+  /// Every account this machine holds, and where each one is reached
+  /// (ADR 0208).
   ///
-  /// It was one machine-wide string until this build, which ADR 0094 left open
-  /// deliberately and which was harmless only while exactly one registered
-  /// vendor sold more than one ceiling.
+  /// **The object the profile axis points at.** A profile names a connection
+  /// per job; the connection carries the vendor, the endpoint, the plan, and
+  /// owns the credential in the OS store — which is what makes switching the
+  /// profile switch the server and the account rather than only the vendor.
   ///
-  /// **Patch it through `buildProviderPlanPatch`, never by hand**: `patch` is a
+  /// `null` is a config this build has never written and lifts on load; an
+  /// empty array is a reader who deleted every connection, and is left alone.
+  ///
+  /// **Patch it through `buildConnectionsPatch`, never by hand**: `patch` is a
   /// shallow merge over `AppConfig`, so writing this key means writing the
-  /// whole map, and a surface that rebuilds it from one row drops every other
-  /// vendor's plan.
-  provider_plans:          Record<string, string> | null;
-  /// The OpenAI-compatible server the `Your server` lane posts to (D1b,
-  /// ADR 0165). Machine-wide, and not a secret — the optional bearer token
-  /// that may go with it is in the OS secret store, never here.
-  ///
-  /// **It outranks `WORDSCRIPT_SELF_HOSTED_BASE_URL`**, and the status block
-  /// says which of the two answered, so no surface derives that for itself.
-  self_hosted_base_url:    string;
-  /// The model id that server is told to use when a job names none. Empty is
-  /// the ordinary state of a fresh install: nothing in this build knows what
-  /// somebody else's server serves, so it is typed rather than picked.
-  self_hosted_model:       string;
+  /// whole list, and a row that rebuilt it from one connection would drop every
+  /// other account.
+  connections:             Connection[] | null;
   local_model:             string;
   local_profile:           string;
   local_prompt_strength:   "off" | "profile" | "profile_and_terms";

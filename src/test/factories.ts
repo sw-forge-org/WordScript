@@ -13,7 +13,16 @@ import {
 export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     model: runtimeDefault("speech"),
-    provider_plans: {},
+    connections: [
+      {
+        id: "connection-default",
+        label: "Groq",
+        provider: "groq",
+        base_url: "",
+        model: "",
+        plan: "",
+      },
+    ],
     language: "",
     active_text_profile_id: "general",
     text_profiles: [
@@ -40,8 +49,6 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     local_correction_model: runtimeDefault("local_correction"),
     filter_fillers: true,
     professionalize: false,
-    self_hosted_base_url: "",
-    self_hosted_model: "",
     local_model: "base",
     local_profile: "local-base-fast",
     local_prompt_strength: "profile",

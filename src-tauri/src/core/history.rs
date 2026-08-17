@@ -1059,7 +1059,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
            own — so it has no override until that row is drawn (ADR 0094). */
         let naming = super::transcript_store::describe(
             &transformed_text,
-            &app_config.job_provider(JobKey::Assistant).provider,
+            &app_config.job_provider(JobKey::Assistant),
             &app_config.chat_model_for_job(JobKey::Assistant),
         )
         .await;

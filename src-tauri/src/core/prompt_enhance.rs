@@ -9,6 +9,10 @@ use super::workspace_context::WorkspaceContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptEnhanceConfig {
+    /// The account that pays for this job (ADR 0208). Resolved from the same
+    /// `JobProvider` as the vendor beside it, so a job cannot be sent to one
+    /// account's server with another account's key.
+    pub connection: String,
     pub provider: String,
     pub model: String,
     pub sub_mode: String,
@@ -159,6 +163,7 @@ pub async fn apply_prompt_enhance(
     ));
 
     let request = ChatCompletionRequest {
+        connection: config.connection.clone(),
         provider: config.provider.clone(),
         model: config.model.clone(),
         messages: vec![
@@ -455,6 +460,7 @@ mod tests {
     #[test]
     fn enhance_mode_adds_role_and_constraints() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),
@@ -478,6 +484,7 @@ mod tests {
     #[test]
     fn expand_mode_has_detailed_structure() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "expand".to_string(),
@@ -681,6 +688,7 @@ mod tests {
     #[test]
     fn enhance_keeps_original_language_for_mixed_input() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),
@@ -698,6 +706,7 @@ mod tests {
     #[test]
     fn workspace_context_injected_into_system_prompt() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),
@@ -730,6 +739,7 @@ mod tests {
     #[test]
     fn vocabulary_terms_reach_the_enhance_prompt() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),
@@ -752,6 +762,7 @@ mod tests {
     #[test]
     fn the_vocabulary_line_is_bounded_like_the_context_line() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),
@@ -781,6 +792,7 @@ mod tests {
     #[test]
     fn no_vocabulary_means_no_terms_line() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),
@@ -796,6 +808,7 @@ mod tests {
     #[test]
     fn workspace_context_not_injected_when_none() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),
@@ -836,6 +849,7 @@ mod tests {
     #[tokio::test]
     async fn empty_input_returns_immediately() {
         let config = PromptEnhanceConfig {
+            connection: "connection-default".to_string(),
             provider: "groq".to_string(),
             model: "test-model".to_string(),
             sub_mode: "enhance".to_string(),

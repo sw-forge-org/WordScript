@@ -75,7 +75,14 @@ import {
   resolveProfileProviderSettings,
 } from "@/lib/textProfiles";
 import {
-  buildProviderPlanPatch,
+  activeConnectionOf,
+  buildConnectionPlanPatch,
+  buildConnectionsPatch,
+  buildConnectionRemovalPatch,
+  buildNewConnectionPatch,
+  buildVendorConnectionPatch,
+  profilesUsingConnection,
+  resolveConnections,
   connectionCapabilitySentence,
   credentialStateFor,
   drawnNameFor,
@@ -176,9 +183,13 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      direction `ProviderPick` has read since D1. The gallery has no config, so
      there the segment keeps its own state and the drawings switch. */
   const [drawnLane, setDrawnLane] = useState<LaneName>("Cloud");
-  const storedProvider = runtime
-    ? resolveProfileProviderSettings(resolveActiveTextProfile(runtime.config)).default
-    : undefined;
+  /* THE LANE IS THE ACCOUNT'S VENDOR, READ BACKWARDS (ADR 0208). It was the
+     stored value itself while that value was a vendor id; a profile names an
+     account now, so the lane is one lookup further away and the two must not be
+     confused — `providers.default` is an account id and `laneForProviderId`
+     answers about vendors. */
+  const storedAccount = runtime ? activeConnectionOf(runtime.config) : undefined;
+  const storedProvider = storedAccount?.provider;
   const lane = storedProvider ? laneForProviderId(storedProvider) : drawnLane;
 
   const chooseLane = useCallback(
@@ -197,7 +208,14 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
         next === "Cloud" ? runtimeIdFor(LANES.Cloud.provider) : LANE_PROVIDER_IDS[next];
       if (!target || target === storedProvider) return;
 
-      runtime.patch(buildProfileProvidersPatch(runtime.config, { default: target }));
+      /* PICKING A LANE PICKS AN ACCOUNT (ADR 0208), creating one for that vendor
+         when this machine holds none — which is what keeps this chip row
+         meaning exactly what it meant before the axis existed. */
+      const { patch, connectionId } = buildVendorConnectionPatch(runtime.config, target);
+      runtime.patch({
+        ...patch,
+        ...buildProfileProvidersPatch(runtime.config, { default: connectionId }),
+      });
     },
     [runtime, storedProvider],
   );
@@ -408,6 +426,12 @@ function LaneRows({
   return (
     <>
       <ProviderPick lane="Cloud" selected="Groq" />
+      {/* THE ACCOUNT, BETWEEN THE VENDOR AND ITS KEY (ADR 0208) — the order the
+          questions come in, and the row every credential below is scoped to.
+          Only under a runtime: the gallery has no config and therefore no
+          accounts, and a picker over nothing is the false affordance this card
+          spent two records removing. */}
+      {runtime && <AccountRow runtime={runtime} />}
       <CloudCredentialRows runtime={runtime} />
     </>
   );
@@ -500,6 +524,11 @@ function WiredSelfHostedRows({ runtime }: { runtime: WorkspaceRuntime }) {
 
   return (
     <>
+      {/* FIRST ON THIS LANE, because the URL and the token below are this
+          account's own fields rather than the machine's (ADR 0208): two servers
+          are two accounts, and reading the rows without knowing which one they
+          belong to is the question this row answers. */}
+      <AccountRow runtime={runtime} />
       <ServerUrlRow runtime={runtime} endpoint={endpoint} />
       <ReachabilityRow ready={credential?.configured ?? false} />
       <ServerTokenRow credential={credential} refresh={refresh} />
@@ -543,6 +572,132 @@ function useCommittedSetting(stored: string, write: (next: string) => void) {
   return { draft, setDraft, commit };
 }
 
+/**
+ * WHICH ACCOUNT THIS LANE IS REACHED WITH (ADR 0208).
+ *
+ * **The row the whole step exists for.** A profile named a vendor until this
+ * step, so an employer's Groq account and a private one were the same key in
+ * the OS store and a profile switch moved neither the server nor who pays. The
+ * account is an object now, the profile points at one, and this is where the
+ * pointing happens.
+ *
+ * **It sits under the vendor and above the credential**, because that is the
+ * order the questions come in: what kind of connection, which vendor, whose
+ * account, and only then the key that account holds. Every credential row below
+ * it is scoped to what this row selects.
+ *
+ * **Renaming toggles the select into a field**, which is the idiom the API key
+ * row already uses two rows down: the resting state is what the drawing shows,
+ * and the state the drawing has no picture of is borrowed from the surface that
+ * does.
+ */
+function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
+  const [renaming, setRenaming] = useState(false);
+  const active = activeConnectionOf(runtime.config);
+  const vendor = active?.provider ?? "";
+  const accounts = resolveConnections(runtime.config).filter(
+    (entry) => entry.provider === vendor,
+  );
+
+  const { draft, setDraft, commit } = useCommittedSetting(active?.label ?? "", (next) => {
+    if (!active || !next) return;
+    runtime.patch(buildConnectionsPatch(runtime.config, { ...active, label: next }));
+  });
+
+  /* WHAT A DELETION COSTS, COUNTED BEFORE IT HAPPENS. A profile whose account
+     is removed keeps naming it and goes inert — the runtime never repoints it,
+     because choosing who pays for somebody is not a migration's decision
+     (ADR 0208). So the number belongs on the control that does it. */
+  const used = active ? profilesUsingConnection(runtime.config, active.id) : 0;
+
+  const select = (
+    <Select
+      value={active?.id ?? ""}
+      onChange={(event) =>
+        runtime.patch(
+          buildProfileProvidersPatch(runtime.config, { default: event.target.value }),
+        )
+      }
+      aria-label="Account"
+    >
+      {accounts.map((entry) => (
+        <option key={entry.id} value={entry.id}>
+          {entry.label}
+        </option>
+      ))}
+    </Select>
+  );
+
+  return (
+    <Row
+      label="Account"
+      hint={
+        accounts.length > 1
+          ? "Which of your accounts with this vendor pays for the jobs below. A profile carries its own, so switching profiles switches the account."
+          : "The account these jobs are billed to. Add a second one to keep an employer's and a private one apart — a profile carries whichever it is set to."
+      }
+      control={
+        <span className="ws-rowflex">
+          {renaming ? (
+            <Field
+              w="150px"
+              aria-label="Account name"
+              value={draft}
+              autoFocus
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={() => {
+                commit();
+                setRenaming(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commit();
+                  setRenaming(false);
+                }
+              }}
+            />
+          ) : (
+            select
+          )}
+          {!renaming && active && (
+            <Button variant="ghost" onClick={() => setRenaming(true)}>
+              Rename
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            icon={<Icon name="plus" />}
+            onClick={() => {
+              if (!vendor) return;
+              const { patch, connectionId } = buildNewConnectionPatch(runtime.config, vendor);
+              runtime.patch({
+                ...patch,
+                ...buildProfileProvidersPatch(runtime.config, { default: connectionId }),
+              });
+            }}
+          >
+            New
+          </Button>
+          {active && accounts.length > 1 && (
+            <Button
+              variant="ghost"
+              icon={<Icon name="trash" />}
+              title={
+                used > 1
+                  ? `${used} profiles use this account. They keep naming it and their jobs stop running until you point them somewhere else.`
+                  : "Removing it leaves this profile without an account until you pick another."
+              }
+              onClick={() => runtime.patch(buildConnectionRemovalPatch(runtime.config, active.id))}
+            >
+              Remove
+            </Button>
+          )}
+        </span>
+      }
+    />
+  );
+}
+
 function ServerUrlRow({
   runtime,
   endpoint,
@@ -550,10 +705,16 @@ function ServerUrlRow({
   runtime: WorkspaceRuntime;
   endpoint: SelfHostedEndpointStatus | null;
 }) {
-  const stored = runtime.config.self_hosted_base_url;
-  const { draft, setDraft, commit } = useCommittedSetting(stored, (next) =>
-    runtime.patch({ self_hosted_base_url: next }),
-  );
+  /* THE URL BELONGS TO THE ACCOUNT, NOT TO THE MACHINE (ADR 0208). ADR 0165 put
+     it on `AppConfig` and said why: there was nowhere else for it to live. There
+     is now, and it is the object that also owns the token — which is what makes
+     *this server with that key* unrepresentable rather than merely discouraged. */
+  const account = activeConnectionOf(runtime.config);
+  const stored = account?.base_url ?? "";
+  const { draft, setDraft, commit } = useCommittedSetting(stored, (next) => {
+    if (!account) return;
+    runtime.patch(buildConnectionsPatch(runtime.config, { ...account, base_url: next }));
+  });
 
   const fromEnvironment = endpoint?.base_url_source === "environment";
 
@@ -608,6 +769,10 @@ function ServerUrlRow({
  * claiming a reachability nobody measured.
  */
 function ReachabilityRow({ ready }: { ready: boolean }) {
+  /* The probe asks about THIS account's server (ADR 0208) — two accounts on
+     this lane are two machines, and a reachability answer that did not say
+     which one it reached would be the fake readiness ADR 0067 forbids. */
+  const { connectionId } = useContext(Wired);
   const [answered, setAnswered] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -618,7 +783,11 @@ function ReachabilityRow({ ready }: { ready: boolean }) {
     setAnswered(false);
     try {
       const answer = await invoke<{ ok: boolean }>("validate_provider_api_key", {
-        request: { provider: SELF_HOSTED_PROVIDER_ID, api_key: null },
+        request: {
+          provider: SELF_HOSTED_PROVIDER_ID,
+          connection: connectionId ?? "",
+          api_key: null,
+        },
       });
       if (answer?.ok) setAnswered(true);
       else setProblem("The server replied and did not accept the request.");
@@ -664,6 +833,9 @@ function ServerTokenRow({
   credential: RoleCredentialStatus | null;
   refresh?: () => void | Promise<void>;
 }) {
+  /* The token belongs to the account that names the server, and this is the
+     line that keeps the pair together (ADR 0208). */
+  const { connectionId } = useContext(Wired);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -677,7 +849,11 @@ function ServerTokenRow({
     setProblem(null);
     try {
       await invoke("save_provider_api_key", {
-        request: { provider: SELF_HOSTED_PROVIDER_ID, api_key: draft.trim() },
+        request: {
+          provider: SELF_HOSTED_PROVIDER_ID,
+          connection: connectionId ?? "",
+          api_key: draft.trim(),
+        },
       });
       setDraft("");
       setEditing(false);
@@ -694,7 +870,7 @@ function ServerTokenRow({
     setProblem(null);
     try {
       await invoke("clear_provider_api_key", {
-        request: { provider: SELF_HOSTED_PROVIDER_ID },
+        request: { provider: SELF_HOSTED_PROVIDER_ID, connection: connectionId ?? "" },
       });
       await refresh?.();
     } catch (cause) {
@@ -774,10 +950,14 @@ function ServerModelRow({
   runtime: WorkspaceRuntime;
   endpoint: SelfHostedEndpointStatus | null;
 }) {
-  const stored = runtime.config.self_hosted_model;
-  const { draft, setDraft, commit } = useCommittedSetting(stored, (next) =>
-    runtime.patch({ self_hosted_model: next }),
-  );
+  /* The id belongs to whoever runs the server, so it belongs to the account that
+     names the server (ADR 0208). */
+  const account = activeConnectionOf(runtime.config);
+  const stored = account?.model ?? "";
+  const { draft, setDraft, commit } = useCommittedSetting(stored, (next) => {
+    if (!account) return;
+    runtime.patch(buildConnectionsPatch(runtime.config, { ...account, model: next }));
+  });
 
   const fromEnvironment = endpoint?.model_source === "environment";
 
@@ -837,7 +1017,7 @@ function ServerModelRow({
  * looks editable invites somebody to append to a secret they cannot see.
  */
 function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
-  const { answers, refresh, connection } = useContext(Wired);
+  const { answers, refresh, connection, connectionId } = useContext(Wired);
   /* NULL IS *NOT READ YET* AND AN EMPTY ARRAY IS *THIS LANE HAS NO PLANS*, and
      the two were one value until ADR 0167. `resolve_provider_tiers` answers `[]`
      for both a lane with nothing to sell and a vendor with no adapter, which is
@@ -910,10 +1090,14 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
     setProblem(null);
     try {
       await invoke("save_provider_api_key", {
-        request: { provider: providerId, api_key: draft.trim() },
+        request: {
+          provider: providerId,
+          connection: connectionId ?? "",
+          api_key: draft.trim(),
+        },
       });
       const validation = await invoke<{ ok: boolean }>("validate_provider_api_key", {
-        request: { provider: providerId, api_key: null },
+        request: { provider: providerId, connection: connectionId ?? "", api_key: null },
       });
       if (!validation?.ok) setProblem("The key was saved and the provider did not accept it.");
       setDraft("");
@@ -929,7 +1113,9 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
   const clear = async () => {
     setBusy(true);
     try {
-      await invoke("clear_provider_api_key", { request: { provider: providerId } });
+      await invoke("clear_provider_api_key", {
+        request: { provider: providerId, connection: connectionId ?? "" },
+      });
       await refresh?.();
     } catch (cause) {
       setProblem(String(cause));
@@ -1144,7 +1330,12 @@ function AccountPlanRow({
     );
   }
 
-  const stored = runtime.config.provider_plans?.[providerId] ?? "";
+  /* THE PLAN IS THE ACCOUNT'S (ADR 0167, rescoped by ADR 0208). It was keyed by
+     vendor on the argument that a plan belongs to a credential — which is true,
+     and the credential is an account's: a paid work account and a free private
+     one on one vendor do not share a ceiling. */
+  const account = activeConnectionOf(runtime.config);
+  const stored = account?.plan ?? "";
   return (
     <Row
       label="Account plan"
@@ -1161,8 +1352,9 @@ function AccountPlanRow({
              edit. */
           value={tiers.some((tier) => (tier.default ? "" : tier.id) === stored) ? stored : ""}
           onChange={(event) =>
+            account &&
             runtime.patch(
-              buildProviderPlanPatch(runtime.config, providerId, event.target.value),
+              buildConnectionPlanPatch(runtime.config, account.id, event.target.value),
             )
           }
           aria-label="Account plan"

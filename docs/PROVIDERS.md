@@ -825,7 +825,9 @@ speak it.**
   `WORDSCRIPT_SELF_HOSTED_BASE_URL`, `_MODEL` and `_TOKEN` remain as the door
   for a machine nobody has typed on and are **outranked** by what is typed, with
   the status naming which of the two answered. The optional bearer token is in
-  the OS secret store under `self_hosted.speech.api_key` — this lane **accepts**
+  the OS secret store under `{connection}.speech.api_key` (ADR 0208 rescoped the
+  entry from the vendor id to the account's, so two servers are two tokens) —
+  this lane **accepts**
   a credential and **requires** none, which is the pair the registry used to
   hold equal. The lane is selectable: ADR 0067 rule 1 says an offered lane must
   be operable, and it is.

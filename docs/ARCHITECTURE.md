@@ -176,7 +176,10 @@ The active product core lives in `src-tauri/src/core/`.
   local text-profile model. Config writes are lock-serialized
   (`CONFIG_FILE_LOCK`) so overlapping commands cannot clobber each other. Its
   five model defaults are re-exported from `model_catalogue` rather than spelled
-  as constants (ADR 0115).
+  as constants (ADR 0115). **It also owns `Connection`** (ADR 0208): the account
+  objects a profile's provider axis points at, carrying the vendor, the
+  endpoint, the model id and the plan, with `adopt_connection_axis` lifting the
+  three machine-wide fields that preceded them onto the account each belongs to.
 - `model_catalogue.rs`: the one model catalogue, loaded from
   `shared/model_catalogue.json` through `include_str!` behind
   `CATALOGUE_VERSION` — the shape `regression_corpus` already has, with
@@ -340,12 +343,16 @@ The active product core lives in `src-tauri/src/core/`.
   two models disagree is not integrated yet**, so that shape is proved by a
   fixture in `registry.rs` rather than left unproved until D1.
 
-  **A credential is resolved per `(provider, role)`** (ADR 0105, ADR 0102's
-  storage half, built 2026-08-11). `ProviderRole` and `CredentialKind` are the
-  two axes as values: `Provider` carries `credential_status(role)`,
-  `save_api_key(role, kind, key)`, `clear_api_key(role, kind)` and
-  `credential_kinds()`, and the secret-store entry is keyed
-  `(provider, role, kind)` so **clearing one role cannot clear another's**. The
+  **A credential is resolved per `(connection, role)`** (ADR 0105, ADR 0102's
+  storage half, built 2026-08-11; rescoped by ADR 0208 on 2026-08-17).
+  `ProviderRole` and `CredentialKind` are the two axes as values: `Provider`
+  carries `credential_status(connection, role)`,
+  `save_api_key(connection, role, kind, key)`,
+  `clear_api_key(connection, role, kind)` and `credential_kinds()`, and the
+  secret-store entry is keyed `(scope, role, kind)` — the scope being the
+  account rather than the vendor — so **clearing one role cannot clear
+  another's, and clearing one account cannot clear another's**. A lane that
+  stores no credential ignores the argument, which is what `local` does. The
   roles a save may reach come from `ProviderEntry::roles()` — a credential
   cannot be stored for a role with no implementation, the storage-shaped version
   of the rule above. A save that names no role reaches every role the kind can
@@ -394,12 +401,14 @@ The active product core lives in `src-tauri/src/core/`.
   (D1a). **Speech only** — the chat role is G3's, and the seam states that gap
   as WordScript's rather than the vendor's.
 - `providers/self_hosted.rs`: an OpenAI-compatible endpoint the user operates
-  (D1a, configured by D1b). The base URL and the model id are `AppConfig` fields
-  typed on the connection card and **outranking**
-  `WORDSCRIPT_SELF_HOSTED_BASE_URL` and `_MODEL`, which stay as the door for a
-  machine nobody has typed on; the optional bearer token is in the OS secret
-  store under `self_hosted.speech.api_key`, because this lane **accepts** a
-  credential and **requires** none (ADR 0165). It catalogues no model,
+  (D1a, configured by D1b, moved onto the account by ADR 0208). The base URL and
+  the model id are fields of the **connection** that names the server, typed on
+  the connection card and **outranking** `WORDSCRIPT_SELF_HOSTED_BASE_URL` and
+  `_MODEL`, which stay machine-wide as the door for a machine nobody has typed
+  on; the optional bearer token is in the OS secret store under
+  `{connection}.speech.api_key` — beside the URL it may be sent to, which is
+  what makes *this server with that token* unrepresentable — because this lane
+  **accepts** a credential and **requires** none (ADR 0165). It catalogues no model,
   substitutes no default and states no upload ceiling — three absences that are
   the lane rather than gaps in it — and it downgrades a segment-carrying
   `response_format` to `json`, because it claims no segments and a server that

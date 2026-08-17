@@ -82,7 +82,7 @@ impl Provider for Groq {
         &self,
         request: &ProviderStatusRequest,
     ) -> Result<ProviderStatus, ProviderCommandError> {
-        provider_status(request.model.as_deref())
+        provider_status(&request.connection, request.model.as_deref())
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -99,33 +99,37 @@ impl Provider for Groq {
 
     fn credential_status(
         &self,
+        connection: &str,
         role: ProviderRole,
     ) -> Result<RoleCredentialStatus, ProviderCommandError> {
-        role_credential_status(role).map_err(ProviderCommandError::from)
+        role_credential_status(connection, role).map_err(ProviderCommandError::from)
     }
 
     fn save_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
         api_key: &str,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        save_api_key(role, kind, api_key)
+        save_api_key(connection, role, kind, api_key)
     }
 
     fn clear_api_key(
         &self,
+        connection: &str,
         role: ProviderRole,
         kind: CredentialKind,
     ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
-        clear_api_key(role, kind)
+        clear_api_key(connection, role, kind)
     }
 
     fn validate_api_key(
         &self,
+        connection: &str,
         api_key: Option<String>,
     ) -> ProviderFuture<ValidateProviderApiKeyResponse> {
-        Box::pin(validate_api_key(api_key))
+        Box::pin(validate_api_key(connection.to_string(), api_key))
     }
 }
 
@@ -153,8 +157,11 @@ impl ChatProvider for Groq {
     }
 }
 
-fn provider_status(model: Option<&str>) -> Result<GroqProviderStatus, ProviderCommandError> {
-    let role_credentials = role_credentials().map_err(ProviderCommandError::from)?;
+fn provider_status(
+    connection: &str,
+    model: Option<&str>,
+) -> Result<GroqProviderStatus, ProviderCommandError> {
+    let role_credentials = role_credentials(connection).map_err(ProviderCommandError::from)?;
 
     Ok(GroqProviderStatus {
         provider: "groq".to_string(),
@@ -170,25 +177,27 @@ fn provider_status(model: Option<&str>) -> Result<GroqProviderStatus, ProviderCo
 }
 
 fn save_api_key(
+    connection: &str,
     role: ProviderRole,
     kind: CredentialKind,
     api_key: &str,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     ensure_supported_kind(kind)?;
     let api_key = normalize_api_key(api_key)?;
-    credential_store::write_to(&OsSecretStore, GROQ_PROVIDER_ID, role, kind, &api_key).map_err(secret_store_error)?;
-    credential_store::cache_key(&credential_entry_user(role, kind), Some(api_key));
-    credential_status().map_err(ProviderCommandError::from)
+    credential_store::write_to(&OsSecretStore, connection, role, kind, &api_key).map_err(secret_store_error)?;
+    credential_store::cache_key(&credential_entry_user(connection, role, kind), Some(api_key));
+    credential_status(connection).map_err(ProviderCommandError::from)
 }
 
 fn clear_api_key(
+    connection: &str,
     role: ProviderRole,
     kind: CredentialKind,
 ) -> Result<ProviderCredentialStatus, ProviderCommandError> {
     ensure_supported_kind(kind)?;
-    credential_store::clear_in(&OsSecretStore, GROQ_PROVIDER_ID, role, kind).map_err(secret_store_error)?;
-    credential_store::cache_key(&credential_entry_user(role, kind), None);
-    credential_status().map_err(ProviderCommandError::from)
+    credential_store::clear_in(&OsSecretStore, connection, role, kind).map_err(secret_store_error)?;
+    credential_store::cache_key(&credential_entry_user(connection, role, kind), None);
+    credential_status(connection).map_err(ProviderCommandError::from)
 }
 
 /// A kind this lane cannot authenticate with is refused where it would be
@@ -206,13 +215,14 @@ fn ensure_supported_kind(kind: CredentialKind) -> Result<(), ProviderCommandErro
 }
 
 async fn validate_api_key(
+    connection: String,
     api_key: Option<String>,
 ) -> Result<ValidateGroqApiKeyResponse, ProviderCommandError> {
     let (api_key, checked_with) = match api_key {
         Some(value) if !value.trim().is_empty() => {
             (normalize_api_key(&value)?, "provided_key".to_string())
         }
-        _ => (load_any_stored_api_key()?, "stored_key".to_string()),
+        _ => (load_any_stored_api_key(&connection)?, "stored_key".to_string()),
     };
 
     let client = groq_client(api_key, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_RETRIES)?;
@@ -240,7 +250,7 @@ fn groq_client(
 async fn transcribe_audio_file(
     request: TranscribeAudioFileRequest,
 ) -> Result<GroqTranscriptionResponse, ProviderCommandError> {
-    let api_key = load_groq_api_key(ProviderRole::Speech)?;
+    let api_key = load_groq_api_key(&request.connection, ProviderRole::Speech)?;
     let client = groq_client(
         api_key,
         request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
@@ -288,7 +298,7 @@ async fn transcribe_audio_file(
 async fn create_chat_completion(
     request: ChatCompletionRequest,
 ) -> Result<String, ProviderCommandError> {
-    let api_key = load_groq_api_key(ProviderRole::Chat)?;
+    let api_key = load_groq_api_key(&request.connection, ProviderRole::Chat)?;
     let client = groq_client(
         api_key,
         request.timeout_ms.unwrap_or(8_000),
@@ -395,14 +405,14 @@ fn resolve_speech_model(model: &str) -> String {
     }
 }
 
-fn credential_status() -> Result<ProviderCredentialStatus, GroqProviderError> {
-    Ok(aggregate_credential("groq", &role_credentials()?))
+fn credential_status(connection: &str) -> Result<ProviderCredentialStatus, GroqProviderError> {
+    Ok(aggregate_credential("groq", &role_credentials(connection)?))
 }
 
-fn role_credentials() -> Result<Vec<RoleCredentialStatus>, GroqProviderError> {
+fn role_credentials(connection: &str) -> Result<Vec<RoleCredentialStatus>, GroqProviderError> {
     GROQ_CREDENTIAL_ROLES
         .iter()
-        .map(|role| role_credential_status(*role))
+        .map(|role| role_credential_status(connection, *role))
         .collect()
 }
 
@@ -412,12 +422,15 @@ fn role_credentials() -> Result<Vec<RoleCredentialStatus>, GroqProviderError> {
 /// has; the field is still present rather than implied, because the surface
 /// that eventually draws two kinds reads it, and a lane that omitted it would
 /// be the one exception a reader has to special-case.
-fn role_credential_status(role: ProviderRole) -> Result<RoleCredentialStatus, GroqProviderError> {
+fn role_credential_status(
+    connection: &str,
+    role: ProviderRole,
+) -> Result<RoleCredentialStatus, GroqProviderError> {
     let kind = CredentialKind::ApiKey;
 
-    match credential_store::read_from(&OsSecretStore, GROQ_PROVIDER_ID, role, kind).map_err(secret_store_error)? {
+    match credential_store::read_from(&OsSecretStore, connection, role, kind).map_err(secret_store_error)? {
         Some(api_key) => {
-            credential_store::cache_key(&credential_entry_user(role, kind), Some(api_key.clone()));
+            credential_store::cache_key(&credential_entry_user(connection, role, kind), Some(api_key.clone()));
             Ok(RoleCredentialStatus {
                 provider: "groq".to_string(),
                 role,
@@ -441,15 +454,18 @@ fn role_credential_status(role: ProviderRole) -> Result<RoleCredentialStatus, Gr
 }
 
 /// The key that pays for one role — **never another role's** (ADR 0105).
-fn load_groq_api_key(role: ProviderRole) -> Result<String, ProviderCommandError> {
+fn load_groq_api_key(
+    connection: &str,
+    role: ProviderRole,
+) -> Result<String, ProviderCommandError> {
     let kind = CredentialKind::ApiKey;
-    let user = credential_entry_user(role, kind);
+    let user = credential_entry_user(connection, role, kind);
 
     if let Some(api_key) = credential_store::cached(&user) {
         return Ok(api_key);
     }
 
-    match credential_store::read_from(&OsSecretStore, GROQ_PROVIDER_ID, role, kind).map_err(secret_store_error)? {
+    match credential_store::read_from(&OsSecretStore, connection, role, kind).map_err(secret_store_error)? {
         Some(api_key) => {
             let normalized = normalize_api_key(&api_key).map_err(ProviderCommandError::from)?;
             credential_store::cache_key(&user, Some(normalized.clone()));
@@ -473,9 +489,9 @@ fn load_groq_api_key(role: ProviderRole) -> Result<String, ProviderCommandError>
 /// about a role: `/models` is neither recognition nor completion. So it checks
 /// the first role that holds one and says nothing about the others — a key that
 /// authenticates for one role authenticates for all of them on this lane.
-fn load_any_stored_api_key() -> Result<String, ProviderCommandError> {
+fn load_any_stored_api_key(connection: &str) -> Result<String, ProviderCommandError> {
     for role in GROQ_CREDENTIAL_ROLES {
-        match load_groq_api_key(*role) {
+        match load_groq_api_key(connection, *role) {
             Ok(api_key) => return Ok(api_key),
             Err(error) if error.kind == ProviderErrorKind::MissingApiKey => continue,
             Err(error) => return Err(error),
@@ -514,8 +530,8 @@ fn normalize_api_key(api_key: &str) -> Result<String, GroqProviderError> {
         })
 }
 
-fn credential_entry_user(role: ProviderRole, kind: CredentialKind) -> String {
-    credential_store::entry_user(GROQ_PROVIDER_ID, role, kind)
+fn credential_entry_user(connection: &str, role: ProviderRole, kind: CredentialKind) -> String {
+    credential_store::entry_user(connection, role, kind)
 }
 
 fn secret_store_error(error: keyring::Error) -> GroqProviderError {
@@ -630,6 +646,12 @@ pub fn format_upload_limit(limit_bytes: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The account these entries are stored under (ADR 0208). It was the
+    /// vendor id until the connection axis landed, and the assertion the tests
+    /// here make — one role never reads another's key — is unchanged by which
+    /// scope leads.
+    const TEST_CONNECTION: &str = "connection-default";
+
     use std::{cell::RefCell, collections::HashMap};
 
     use keyring::Error as KeyringError;
@@ -659,7 +681,7 @@ mod tests {
         fn role_key(&self, role: ProviderRole) -> Option<String> {
             self.get(
                 credential_store::KEY_SERVICE,
-                &credential_entry_user(role, CredentialKind::ApiKey),
+                &credential_entry_user(TEST_CONNECTION, role, CredentialKind::ApiKey),
             )
         }
     }
@@ -717,18 +739,18 @@ mod tests {
         let store = FakeSecretStore::default();
         store.set(
             credential_store::KEY_SERVICE,
-            &credential_entry_user(ProviderRole::Speech, CredentialKind::ApiKey),
+            &credential_entry_user(TEST_CONNECTION, ProviderRole::Speech, CredentialKind::ApiKey),
             "gsk_speech_key",
         );
 
         assert_eq!(
-            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Speech, CredentialKind::ApiKey)
+            credential_store::read_from(&store, TEST_CONNECTION, ProviderRole::Speech, CredentialKind::ApiKey)
                 .expect("read must succeed")
                 .as_deref(),
             Some("gsk_speech_key"),
         );
         assert_eq!(
-            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Chat, CredentialKind::ApiKey)
+            credential_store::read_from(&store, TEST_CONNECTION, ProviderRole::Chat, CredentialKind::ApiKey)
                 .expect("read must succeed"),
             None,
         );
@@ -739,7 +761,7 @@ mod tests {
         let store = FakeSecretStore::default();
 
         assert_eq!(
-            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Speech, CredentialKind::ApiKey)
+            credential_store::read_from(&store, TEST_CONNECTION, ProviderRole::Speech, CredentialKind::ApiKey)
                 .expect("read must succeed"),
             None
         );
@@ -754,7 +776,7 @@ mod tests {
         let store = FakeSecretStore::default();
         credential_store::write_to(
             &store,
-            GROQ_PROVIDER_ID,
+            TEST_CONNECTION,
             ProviderRole::Speech,
             CredentialKind::ApiKey,
             "gsk_speech_key",
@@ -762,15 +784,20 @@ mod tests {
         .expect("write must succeed");
         credential_store::write_to(
             &store,
-            GROQ_PROVIDER_ID,
+            TEST_CONNECTION,
             ProviderRole::Chat,
             CredentialKind::ApiKey,
             "gsk_chat_key",
         )
         .expect("write must succeed");
 
-        credential_store::clear_in(&store, GROQ_PROVIDER_ID, ProviderRole::Chat, CredentialKind::ApiKey)
-            .expect("clear must succeed");
+        credential_store::clear_in(
+            &store,
+            TEST_CONNECTION,
+            ProviderRole::Chat,
+            CredentialKind::ApiKey,
+        )
+        .expect("clear must succeed");
 
         assert_eq!(
             store.role_key(ProviderRole::Speech).as_deref(),
@@ -778,7 +805,7 @@ mod tests {
         );
         assert_eq!(store.role_key(ProviderRole::Chat), None);
         assert_eq!(
-            credential_store::read_from(&store, GROQ_PROVIDER_ID, ProviderRole::Chat, CredentialKind::ApiKey)
+            credential_store::read_from(&store, TEST_CONNECTION, ProviderRole::Chat, CredentialKind::ApiKey)
                 .expect("read must succeed"),
             None,
         );

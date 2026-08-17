@@ -22,7 +22,20 @@
  * down, which ADR 0106 names explicitly.
  */
 import { PROVIDERS, type LaneName } from "@/screens/data";
-import type { AppConfig } from "@/types/ipc";
+import type { AppConfig, Connection } from "@/types/ipc";
+import {
+  activeConnection,
+  connectionById,
+  DEFAULT_CONNECTION_ID,
+  resolveConnections,
+} from "@/lib/textProfiles";
+
+export {
+  activeConnection as activeConnectionOf,
+  connectionById,
+  DEFAULT_CONNECTION_ID,
+  resolveConnections,
+};
 import type {
   ProviderCapabilities,
   ProviderRole,
@@ -458,30 +471,152 @@ export function selectableProviderNames(lane: LaneName, answers: RuntimeAnswers)
 }
 
 /**
- * Writes one vendor's account plan, leaving every other vendor's alone
- * (ADR 0167).
+ * Writes one connection, leaving every other account alone (ADR 0208).
  *
- * **`patch` is a shallow merge over `AppConfig`**, so writing `provider_plans`
- * means writing the whole map. A row that built it from its own vendor would
- * drop every other one — which is the defect the axis exists to prevent,
- * arriving through the door that was supposed to fix it.
+ * **`patch` is a shallow merge over `AppConfig`**, so writing `connections`
+ * means writing the whole list. A row that built it from its own account would
+ * drop every other one — the defect ADR 0167 recorded on the plan map, one
+ * object over, and the reason both doors are functions rather than inline
+ * object literals at the call site.
  *
- * **A default plan is stored as absence**, and that is why an empty id deletes
- * rather than writes. The runtime resolves an empty id to the vendor's default
- * (`groq::capture_limits`); storing the default's own id as well would be a
- * second spelling of one answer, and the two drift the day a vendor renames its
- * free plan. `adopt_provider_plan_axis` holds the same rule on the Rust side.
+ * An id that matches nothing is appended, which is how *New connection* lands.
  */
-export function buildProviderPlanPatch(
+export function buildConnectionsPatch(
   config: AppConfig,
-  provider: string,
+  connection: Connection,
+): Partial<AppConfig> {
+  const current = resolveConnections(config);
+  const next = current.some((entry) => entry.id === connection.id)
+    ? current.map((entry) => (entry.id === connection.id ? connection : entry))
+    : [...current, connection];
+  return { connections: next };
+}
+
+/**
+ * Removes one account, and never repoints the profiles that named it.
+ *
+ * **A profile keeps naming what it named** (ADR 0208): its jobs go inert with
+ * that name in the sentence, because choosing a different account for somebody
+ * is choosing who pays. The surface states how many profiles are about to lose
+ * their connection BEFORE this is called; that count is
+ * `profilesUsingConnection`.
+ */
+export function buildConnectionRemovalPatch(
+  config: AppConfig,
+  connectionId: string,
+): Partial<AppConfig> {
+  return {
+    connections: resolveConnections(config).filter((entry) => entry.id !== connectionId),
+  };
+}
+
+/** How many profiles name this account, for the sentence a deletion owes. */
+export function profilesUsingConnection(config: AppConfig, connectionId: string): number {
+  return config.text_profiles.filter((profile) => {
+    const axis = profile.providers;
+    if (!axis) return connectionId === DEFAULT_CONNECTION_ID;
+    return (
+      axis.default === connectionId ||
+      Object.values(axis.overrides ?? {}).includes(connectionId)
+    );
+  }).length;
+}
+
+/** The first account this machine holds on one vendor, if any. */
+export function connectionForVendor(
+  config: AppConfig,
+  vendorId: string,
+): Connection | undefined {
+  return resolveConnections(config).find((entry) => entry.provider === vendorId);
+}
+
+/** An id no account on this machine is using yet.
+ *
+ *  **Readable and derived rather than random**, matching the ids the migration
+ *  writes: an entry name in the OS secret store is the one string a person may
+ *  actually have to look at, and `connection-groq-2` says more there than a
+ *  UUID does. */
+function unusedConnectionId(config: AppConfig, vendorId: string): string {
+  const taken = new Set(resolveConnections(config).map((entry) => entry.id));
+  const base = `connection-${vendorId}`;
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * The account a vendor is reached with, creating one when this machine holds
+ * none (ADR 0208).
+ *
+ * **Picking a lane picks an account**, which is what keeps the lane chips
+ * working exactly as they did: a reader who has never heard the word
+ * *connection* switches to `Your server`, gets an account for it, and types a
+ * URL into the rows below. The second account is the thing they go looking for,
+ * and it is one button away.
+ *
+ * Returns the patch that creates it — empty when nothing had to be created —
+ * beside the id to point a profile at.
+ */
+export function buildVendorConnectionPatch(
+  config: AppConfig,
+  vendorId: string,
+): { patch: Partial<AppConfig>; connectionId: string } {
+  const existing = connectionForVendor(config, vendorId);
+  if (existing) return { patch: {}, connectionId: existing.id };
+
+  const created: Connection = {
+    id: unusedConnectionId(config, vendorId),
+    label: drawnNameFor(vendorId) ?? vendorId,
+    provider: vendorId,
+    base_url: "",
+    model: "",
+    plan: "",
+  };
+  return { patch: buildConnectionsPatch(config, created), connectionId: created.id };
+}
+
+/**
+ * A second account on one vendor — the case the whole axis exists for.
+ *
+ * Named after the vendor with a number rather than left blank, because an
+ * account with no name is the one thing this object must never be: the reader
+ * renames it to *Employer* the moment they know which one it is.
+ */
+export function buildNewConnectionPatch(
+  config: AppConfig,
+  vendorId: string,
+): { patch: Partial<AppConfig>; connectionId: string } {
+  const sameVendor = resolveConnections(config).filter((entry) => entry.provider === vendorId);
+  const created: Connection = {
+    id: unusedConnectionId(config, vendorId),
+    label: `${drawnNameFor(vendorId) ?? vendorId} ${sameVendor.length + 1}`,
+    provider: vendorId,
+    base_url: "",
+    model: "",
+    plan: "",
+  };
+  return { patch: buildConnectionsPatch(config, created), connectionId: created.id };
+}
+
+/**
+ * Writes one connection's account plan.
+ *
+ * **A default plan is stored as absence**, and that is why an empty id clears
+ * the field rather than writing a name. The runtime resolves an empty plan to
+ * the vendor's default (`groq::capture_limits`); storing the default's own id
+ * as well would be a second spelling of one answer, and the two drift the day a
+ * vendor renames its free plan.
+ */
+export function buildConnectionPlanPatch(
+  config: AppConfig,
+  connectionId: string,
   planId: string,
 ): Partial<AppConfig> {
-  const next = { ...(config.provider_plans ?? {}) };
-  const id = planId.trim();
-  if (id) next[provider] = id;
-  else delete next[provider];
-  return { provider_plans: next };
+  const connection = resolveConnections(config).find((entry) => entry.id === connectionId);
+  if (!connection) return {};
+  return buildConnectionsPatch(config, { ...connection, plan: planId.trim() });
 }
 
 /**

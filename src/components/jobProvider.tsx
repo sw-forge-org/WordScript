@@ -26,6 +26,7 @@ import {
   resolveProfileProviderSettings,
 } from "@/lib/textProfiles";
 import {
+  buildVendorConnectionPatch,
   credentialStateFor,
   drawnNameFor,
   NO_ANSWERS,
@@ -37,6 +38,7 @@ import {
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
 import { useProviderSeam } from "@/hooks/useProviderSeam";
+import type { AppConfig } from "@/types/ipc";
 import { useUploadCapacity } from "@/hooks/useUploadCapacity";
 import { laneJobModels } from "@/lib/modelCatalogue";
 import type { ProviderRole, UploadCapacity } from "@/types/providers";
@@ -103,6 +105,18 @@ export const Wired = createContext<{
    */
   connection?: string;
   setConnection?: (drawnName: string) => void;
+  /**
+   * WHICH ACCOUNT THAT VENDOR IS REACHED WITH (ADR 0208).
+   *
+   * The vendor above answers *where does this run*; this answers *whose
+   * credential pays for it*, and the two are different questions the moment a
+   * reader holds an employer's account and a private one on one vendor. Every
+   * credential call on this screen carries it, so a key typed while the work
+   * account is selected cannot land under the private one.
+   *
+   * `undefined` in the gallery, where there is no config and no account.
+   */
+  connectionId?: string;
   /**
    * WHICH VENDOR ONE JOB OVERRIDES TO, written per job (ADR 0128).
    *
@@ -218,15 +232,16 @@ export function JobProviderRuntime({
   runtime: WorkspaceRuntime;
   children: ReactNode;
 }) {
-  const { answers, refresh } = useProviderSeam(lane, runtime.config.model);
+  const { answers, refresh } = useProviderSeam(lane, runtime.config.model, runtime.config);
 
   /* THE CONNECTION IS THE STORED ONE, not the drawn one. `LANES.Cloud.provider`
      is `"Groq"` because that is what the prototype drew; what the pipeline
      spends is `providers.default` on the active profile, which A4 made
      per-profile and per-job. A stored id with no drawn name falls back to the
      drawing rather than rendering a storage key into a chip. */
-  const stored = resolveConfigJobProvider(runtime.config, "dictation").provider;
-  const connection = drawnNameFor(stored) ?? LANES[lane].provider;
+  const resolvedDictation = resolveConfigJobProvider(runtime.config, "dictation");
+  const connectionId = resolvedDictation.connection;
+  const connection = drawnNameFor(resolvedDictation.provider) ?? LANES[lane].provider;
 
   const setConnection = useCallback(
     (drawnName: string) => {
@@ -237,7 +252,15 @@ export function JobProviderRuntime({
          a name the registry cannot resolve is dropped on load, so the write
          would look like it worked and then vanish. */
       if (!id) return;
-      runtime.patch(buildProfileProvidersPatch(runtime.config, { default: id }));
+      /* THE PROFILE POINTS AT AN ACCOUNT, NOT AT A VENDOR (ADR 0208). Picking a
+         vendor this machine holds no account for creates one, so the chip row
+         keeps meaning what it always meant while the credential beneath it
+         gains an owner. */
+      const { patch, connectionId: target } = buildVendorConnectionPatch(runtime.config, id);
+      runtime.patch({
+        ...patch,
+        ...buildProfileProvidersPatch(runtime.config, { default: target }),
+      });
     },
     [runtime],
   );
@@ -250,24 +273,33 @@ export function JobProviderRuntime({
     (job: JobKey, drawnName: string | null) => {
       const axis = resolveProfileProviderSettings(resolveActiveTextProfile(runtime.config));
       const overrides = { ...axis.overrides };
+      let created: Partial<AppConfig> = {};
 
       if (drawnName === null) {
         delete overrides[job];
       } else {
         const id = runtimeIdFor(drawnName);
         if (!id) return;
-        /* Overriding to the connection's own vendor is not an override. Storing
-           it would freeze this job onto today's connection, so the row stops
-           following one the user changes later — which is the opposite of what
-           picking the connection's name means. */
-        if (id === axis.default) {
+        /* An override names an ACCOUNT too (ADR 0208), so a job pointed at a
+           vendor this machine has no account for gets one — the same door the
+           connection above uses, and the reason it is one function. */
+        const target = buildVendorConnectionPatch(runtime.config, id);
+        created = target.patch;
+        /* Overriding to the connection's own account is not an override.
+           Storing it would freeze this job onto today's connection, so the row
+           stops following one the user changes later — which is the opposite of
+           what picking the connection's name means. */
+        if (target.connectionId === axis.default) {
           delete overrides[job];
         } else {
-          overrides[job] = id;
+          overrides[job] = target.connectionId;
         }
       }
 
-      runtime.patch(buildProfileProvidersPatch(runtime.config, { overrides }));
+      runtime.patch({
+        ...created,
+        ...buildProfileProvidersPatch(runtime.config, { overrides }),
+      });
     },
     [runtime],
   );
@@ -281,6 +313,7 @@ export function JobProviderRuntime({
         answers,
         refresh,
         connection,
+        connectionId,
         setConnection,
         setJobOverride,
       }}

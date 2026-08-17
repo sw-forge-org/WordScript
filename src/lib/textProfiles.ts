@@ -8,6 +8,7 @@ import type {
   ProfileCaptureSettings,
   ProfileModesSettings,
   ProfileProviderSettings,
+  Connection,
   ProfileSpeechSettings,
   SnippetEntry,
   TextProfile,
@@ -18,6 +19,46 @@ import type {
   TextProfileWorkMode,
 } from "../types/ipc";
 import { PROCESSING_MODE_LABELS } from "./transformRules";
+
+/** The id the migration gives this machine's first account, and the one a
+ *  profile with no written axis falls back to. Mirrors
+ *  `core::config::DEFAULT_CONNECTION_ID` — a stable string rather than a
+ *  generated one, because two sides have to agree on it without having met. */
+export const DEFAULT_CONNECTION_ID = "connection-default";
+
+/** The connection a fresh install starts with, mirroring `default_connection`. */
+const SEEDED_CONNECTION: Connection = {
+  id: DEFAULT_CONNECTION_ID,
+  label: "Groq",
+  provider: "groq",
+  base_url: "",
+  model: "",
+  plan: "",
+};
+
+/** Every account this machine holds, with an absent list read as the seeded one.
+ *
+ *  Mirrors `AppConfig::connections` (ADR 0208), including the distinction the
+ *  `Option` carries: **never written** is not **written empty**. A config this
+ *  build has not lifted yet still has to answer *where does a job run*, and a
+ *  reader who deleted every account is answered with none. */
+export function resolveConnections(config: AppConfig): Connection[] {
+  return config.connections ?? [SEEDED_CONNECTION];
+}
+
+/** One account by id, or `undefined` for one this machine no longer holds. */
+export function connectionById(
+  config: AppConfig,
+  id: string,
+): Connection | undefined {
+  return resolveConnections(config).find((entry) => entry.id === id);
+}
+
+/** The account the active profile's dictation runs on — the one the connection
+ *  card configures and every credential row on it is scoped to. */
+export function activeConnection(config: AppConfig): Connection | undefined {
+  return connectionById(config, resolveConfigJobProvider(config, "dictation").connection);
+}
 import { runtimeDefault } from "./modelCatalogue";
 
 function createProfileId() {
@@ -131,8 +172,15 @@ export function createDefaultTextProfileWorkMode(): TextProfileWorkMode {
 // ── Per-Profile Settings Defaults ────────────────────────────────────────────
 
 /** The axis a fresh profile starts on: one connection, nothing overriding it. */
+/** Mirrors `ProfileProviderSettings::default()`.
+ *
+ *  **The value is an ACCOUNT id since ADR 0208**, not a vendor id: a profile
+ *  points at a connection and the connection names the vendor. The seeded id is
+ *  a constant on both sides for the reason the Rust one is — a profile block
+ *  written before any account existed still has to name the one the machine is
+ *  given on its first load. */
 export function createDefaultProfileProviderSettings(): ProfileProviderSettings {
-  return { default: "groq", overrides: {} };
+  return { default: DEFAULT_CONNECTION_ID, overrides: {} };
 }
 
 /* The mirror of `ProfileSpeechSettings::default()`, and the four model fields
@@ -242,18 +290,28 @@ export function resolveProfileProviderSettings(
   return cloneProfileProviderSettings(profile.providers);
 }
 
-/** What one job runs on: its own override, or the connection when it has none.
+/** What one job runs on: its own override, or the profile's connection when it
+ *  has none.
+ *
  *  Mirrors `ProfileProviderSettings::resolve` — the runtime owns the decision
- *  and this restates it for a surface that has to draw the answer. */
+ *  and this restates it for a surface that has to draw the answer, **including
+ *  the vendor lookup** (ADR 0208): the profile names a connection and the
+ *  connection names the vendor, so a caller with no connection list gets the
+ *  name and an empty vendor rather than a guess. An empty `provider` is a
+ *  connection this machine no longer holds. */
 export function resolveJobProvider(
   profile: Pick<TextProfile, "providers">,
   job: JobKey,
-): { provider: string; overridden: boolean } {
+  connections: Connection[] = [],
+): { connection: string; provider: string; overridden: boolean } {
   const axis = resolveProfileProviderSettings(profile);
   const override = axis.overrides[job];
-  return override === undefined
-    ? { provider: axis.default, overridden: false }
-    : { provider: override, overridden: true };
+  const connection = override === undefined ? axis.default : override;
+  return {
+    connection,
+    provider: connections.find((entry) => entry.id === connection)?.provider ?? "",
+    overridden: override !== undefined,
+  };
 }
 
 export function resolveProfileModesSettings(profile: Pick<TextProfile, "modes">): ProfileModesSettings {
@@ -395,8 +453,12 @@ export function displayTextProfileLabel(profile: TextProfile): string {
 export function resolveConfigJobProvider(
   config: AppConfig,
   job: JobKey,
-): { provider: string; overridden: boolean } {
-  return resolveJobProvider(resolveActiveTextProfile(config), job);
+): { connection: string; provider: string; overridden: boolean } {
+  return resolveJobProvider(
+    resolveActiveTextProfile(config),
+    job,
+    resolveConnections(config),
+  );
 }
 
 export function resolveActiveTextProfile(config: AppConfig): TextProfile {

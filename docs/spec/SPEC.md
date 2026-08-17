@@ -1,6 +1,12 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-16 (the input-level axis,
+Status: created 2026-07-24, last drift check 2026-08-17 (the connection axis,
+which read the provider and credential clauses: **a connection is an object a
+profile points at** — the vendor, the endpoint, the plan and the credential are
+one stored object, a profile names one per job, and the secret-store scope that
+was the vendor id is the connection's, so two accounts on one vendor are two
+keys and a profile switch moves which one pays (ADR 0208); the input-level axis
+before it,
 which read the events clause: **the runtime measures the microphone before
 there is a capture** — `input_monitor_level` is its own discriminator so
 `audio_level` keeps meaning "a capture is producing this", the monitor is
@@ -413,10 +419,23 @@ UI implementation details, not Rust event names or Tauri channels.
   entry, never a stub returning "unsupported", and `Some(..)` does not compile
   without an implementation the compiler has seen. `VoiceProvider` is declared
   and implemented by nobody.
+- **A connection is a stored object and a profile points at one per job**
+  (ADR 0208), built 2026-08-17. `AppConfig::connections` holds
+  `{ id, label, provider, base_url, model, plan }` per account: the vendor lives
+  there and nowhere else, the endpoint sits beside the credential it may be sent
+  with, and the OS-store scope is the connection's id. A profile whose
+  connection was deleted keeps naming it and its jobs go inert with that name —
+  repointing it would be the build deciding who pays. The lift makes one
+  connection per vendor any profile names, moves `provider_plans`,
+  `self_hosted_base_url` and `self_hosted_model` onto it, and **moves** the
+  stored keys from `{vendor}.{role}.{kind}` to `{connection}.{role}.{kind}`
+  rather than copying them.
 - **The provider axis in the config is per job** (ADR 0094's other half), built
   2026-08-12. A profile holds `providers: { default, overrides }` — a resolved
   default plus a **sparse** map keyed by `JobKey`, where an absent job is not a
-  job without an answer but one whose answer is *follow the connection*. That
+  job without an answer but one whose answer is *follow the connection*. **Both
+  values are connection ids since ADR 0208**, and the vendor is read off the
+  connection rather than stored twice. That
   absence is the stored form of the drawn select's first option, and it
   resolves at read time rather than being baked in at write time. `JobKey` is
   the eight drawn columns (`dictation`, `meetings`, `upload`, `cleanup`,
@@ -431,12 +450,13 @@ UI implementation details, not Rust event names or Tauri channels.
   The machine-wide one is gone; the schema-5 profile migration lifts the
   per-profile one onto the axis behind a `core::backup` snapshot. Titles ride
   the assistant's resolution and carry no override, because ADR 0087 settled
-  that its row states rather than sets. **The account plan is machine-wide and
-  keyed by vendor**: `provider_plans` maps a vendor id to a plan id, the two
-  readers look their own vendor up through `AppConfig::plan_for`, and the lift
-  off the old single string offers it to every registered vendor and lands it on
-  the ones whose `tiers()` declare it, behind a `core::backup` snapshot
-  (ADR 0167).
+  that its row states rather than sets. **The account plan rides on the connection**:
+  it was machine-wide, then keyed by vendor on the argument that a plan belongs
+  to a credential (ADR 0167), and the object that argument was reaching for is
+  the connection — two accounts on one vendor do not share a ceiling.
+  `AppConfig::plan_for` takes a connection id; the lift off the old per-vendor
+  map lands each plan on the account it was bought for, behind a `core::backup`
+  snapshot (ADR 0208).
 - **`VoiceProvider`'s contract is designed and its method is not written**
   (ADR 0114). The trait carried no methods because no vendor shape had been
   read; fourteen synthesis candidates across four protocol shapes have now been
@@ -472,10 +492,12 @@ UI implementation details, not Rust event names or Tauri channels.
   `upload`** rather than refusing them. A free base URL is gated on HTTPS **or**
   a private host. Self-hosted *synthesis* was not read and is not claimed.
   **Built 2026-08-16** (ADR 0164 for the adapters, ADR 0165 for the
-  configuration): the endpoint and the model id are `AppConfig` fields typed on
-  the connection card and outranking `WORDSCRIPT_SELF_HOSTED_BASE_URL` and
-  `_MODEL`; the optional bearer token is in the OS secret store under
-  `self_hosted.speech.api_key`; and the lane never asks a server for
+  configuration) and **moved onto the connection 2026-08-17** (ADR 0208): the
+  endpoint and the model id are fields of the account that names the server,
+  typed on the connection card and outranking
+  `WORDSCRIPT_SELF_HOSTED_BASE_URL` and `_MODEL`, which stay machine-wide
+  because an environment is; the optional bearer token is in the OS secret store
+  under `{connection}.speech.api_key`, beside the URL it may be sent to; and the lane never asks a server for
   `verbose_json`, because it claims no segments and a server that does not know
   the spelling answers 400 to the whole request.
 - **A model id resolves from one dated catalogue** (ADR 0115, scoped by
@@ -583,11 +605,14 @@ UI implementation details, not Rust event names or Tauri channels.
   is what that lane *is* rather than a lane missing one. Still open: credential
   *shape* — self-hosted's base URL plus model id, the enterprise three's three
   ladders, and the OAuth token set itself, which is ADR 0102's acquisition half.
-- **The credential resolves from `(provider, role)`, and "follow the connection"
-  follows the provider only** (ADR 0105), built 2026-08-11. `ProviderRole` is
-  `speech`, `chat` or `voice` — the three traits as a value. The secret-store
-  entry is keyed `(provider, role, kind)`, and **clearing one role's credential
-  cannot clear another's**; a role with no credential answers `configured:
+- **The credential resolves from `(connection, role)`, and "follow the
+  connection" follows the provider only** (ADR 0105, rescoped by ADR 0208),
+  built 2026-08-11 and moved 2026-08-17. `ProviderRole` is `speech`, `chat` or
+  `voice` — the three traits as a value. The secret-store entry is keyed
+  `(scope, role, kind)` where the scope was the vendor id and is now the
+  connection's, so an employer's account and a private one on one vendor are two
+  entries; **clearing one role's credential cannot clear another's, and clearing
+  one account's cannot clear another account's**; a role with no credential answers `configured:
   false` and names what is missing, never the other kind the same provider
   holds. Which roles exist is `ProviderEntry::roles()`, so a credential cannot
   be stored for a role with no implementation. A save that names no role reaches
@@ -596,7 +621,10 @@ UI implementation details, not Rust event names or Tauri channels.
   subscription is filtered out of that fan-out for every role but chat. The
   command surface is `SaveProviderApiKeyRequest { provider, api_key, role?,
   kind? }` and `ClearProviderApiKeyRequest { provider, role?, kind? }`, both
-  optional so no surface has to send a role it has no control for.
+  optional so no surface has to send a role it has no control for, and both
+  carry the `connection` the credential belongs to. An empty connection is
+  legitimate and means *no account named* — it is what the local lane's probe
+  sends, since that lane authenticates against nothing.
   `ProviderStatus` answers per role in `role_credentials` and folds them into
   the one `credential` block **conservatively**: configured means every role has
   one, because overstating readiness is the fake-state defect and understating
