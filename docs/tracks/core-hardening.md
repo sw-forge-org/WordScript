@@ -48,7 +48,7 @@ What two passes bought is that the cluster went from invisible to instrumented.
 | Mishearings at large | **Yes, unmeasured** | One instance in the corpus; still no WER, no rate |
 | Cleanup invents tokens | **Yes, groups A and C** | No new guardrail; rate unchanged |
 | **Cleanup flips the person** | **Yes, 1 in 200, found 2026-08-13** | Nothing. The corpus carries the case and both negative directions; **no rule was written on purpose** — see step 6 |
-| **Dictation comes back in English** | **Yes, 7 of 50, found 2026-08-16** | Nothing. Three causes ruled out — the fourth, *not prompt bias*, **was withdrawn the same evening**: a 65-byte, entirely English initial prompt was sent, resolved to the character from the log. The language is never pinned because the control is drawn and unwired, and **the detected language is discarded**. Step 9 |
+| **Dictation comes back in English** | **Not once in the 114 records that exist today** — it was 7 of 50 on 2026-08-16 | The comparison ran 2026-08-17 (step 9). The fifty records are **deleted**; their prompt survives in the log and is **wholly English on all fifty**, so `prompt_chars` cannot separate the affected from the clean. The prompt gained German terms at 17:48 that evening and the window since carries **0 events over more audio**. Suggestive, four confounds deep, and no fix: the language is still never pinned and **the detected language is still discarded** |
 | **The transcript stops before the audio does** | **Yes — a fourth event 2026-08-16, four days after the third** | Instrumented 2026-08-12, nothing reacts. The new event **passed every instrument**, `last_segment_avg_logprob=-0.192` included, which removes confidence as a detector and leaves text density as the only proposal that would have caught it. The ten-second test the record asks for — delete the learned terms — has still not been run. Steps 8 and 9 |
 | **The panel names the wrong stage** | **No — fixed 2026-08-17** (ADR 0204) | The foot names what WordScript's own rules did and derives the rest from the diff: *nothing was added or reworded* is a subsequence test, not a rule id. `post_corrected` is no longer read as a rewrite — on the record that produced the report its whole effect was two spaces. Five cases hold it |
 | **The record names the wrong model** | **No for new records — fixed 2026-08-17** (ADR 0203) | One resolver, `AppConfig::speech_model()`, asked by the request, the record and the capture ceiling; a lane that sent no id records none. **The records written before the fix keep the wrong value and are not migrated**, so no per-model rate may cross 2026-08-17 |
@@ -252,8 +252,36 @@ rather than compacted, because the items are cited by number elsewhere.
    ADR 0080 carries the prompt from the request, and neither used. One event, so
    corpus first.
 
-9. **The English prompt is the leading candidate for the English drift, and the
-   exclusion that stood against it was false.** Added 2026-08-16;
+9. ~~**The English prompt is the leading candidate for the English drift, and
+   the exclusion that stood against it was false.**~~ **Measured 2026-08-17, and
+   the answer has three parts** — the record's own
+   *The comparison this record asked for* section carries all of it:
+
+   - **The population is deleted.** The history cap was 50, so every dictation
+     after the measurement pushed one of the fifty out, and ADR 0074's pairing
+     deleted each transcript file with its record. Neither the seven nor the
+     forty-three exists anywhere on this machine. **This applies to every rate
+     on this track**: a measurement over `history.json` cannot be re-checked a
+     day later unless it was persisted when it was made. The cap is 1000 since
+     2026-08-17 00:14, which lengthens the window but does not recover anything.
+   - **`prompt_chars` cannot separate the two groups, and that is the result.**
+     The log still carries all fifty sessions — exactly fifty in the record's
+     window, which is the check that the window and the population are one
+     thing. Forty-seven were sent 70 bytes and three 65, and **both reconstruct
+     to a wholly English prompt**. Identical exposure, so no retrospective count
+     over this file can test the hypothesis. A constant is not evidence against
+     a cause; it is a variable this population does not vary.
+   - **The exposure changed by itself three hours later.** Vocabulary learning
+     put the first German term in the slots at 17:48:38 that evening, with no
+     commit touching the recogniser path. The 114-record window since carries
+     **zero drift events over more audio than the measured one** — 88 minutes
+     against 54, 29 long dictations against 14. Suggestive and confounded four
+     ways (two readers, a vocabulary that grew as well as changed language,
+     different days, and an outcome still classified by reading). **A real test
+     is a contrast, not a count**, and nothing here licenses a change to the
+     prompt: `speech.language` is still empty and still unsettable.
+
+   The original step, for the reasoning it carries. Added 2026-08-16;
    [`known-issues/dictation-comes-back-in-english.md`](../known-issues/dictation-comes-back-in-english.md)
    carries the correction. *Not prompt bias* was argued from
    `use_as_prompt_hint: false` — a field nothing has read since ADR 0035, and
@@ -330,6 +358,17 @@ false-positive rate nobody has looked at, and in this cluster a false positive
 data cannot answer this" into "the answer is no". Three questions are blocked on
 population right now and every one of them is one careless sentence away from
 being reported as closed.
+
+**The evidence expires, so persist what a number was computed over.** Found
+2026-08-17 running step 9: the fifty records the English-drift rate was measured
+on had been deleted by the history cap the same night, and ADR 0074's pairing
+took their transcript files with them. The scratchpad had rolled too. A rate in
+a record whose population is gone cannot be re-checked, re-split or corrected —
+and this cluster's own history is that harnesses are found wrong by *reading the
+instances*. Quote the record ids, and copy the rows a finding rests on into the
+record or the corpus while they still exist. The runtime log is the one store
+that reaches back a week, which is why the prompt half of step 9 was answerable
+at all.
 
 **Check your own instrument before believing it.** The second pass found the
 invention rate reporting 8.0 % where the truth was 5.2 %, because the harness was

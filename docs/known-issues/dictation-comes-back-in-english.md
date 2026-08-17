@@ -1,7 +1,13 @@
 # German dictation comes back translated into English
 
-Status: **open, reported and measured 2026-08-16.** Nothing is fixed. The
-control that would address it is drawn but not wired, which is the finding.
+Status: **open, reported and measured 2026-08-16, re-measured 2026-08-17.**
+Nothing is fixed. The control that would address it is drawn but not wired,
+which is the finding. The comparison the correction asked for has now been run —
+[the section below](#the-comparison-this-record-asked-for-run-2026-08-17): the
+fifty records it named have been deleted by the history cap, the prompt they
+were sent survives in the log and is **wholly English on all fifty**, and the
+114-record window that exists today — under a prompt that has carried German
+terms since 2026-08-16 17:48 — contains **no drift event at all**.
 
 **One of the four exclusions was withdrawn the same evening.** *Not prompt bias*
 was argued from `use_as_prompt_hint: false`, a field nothing has read since ADR
@@ -292,6 +298,142 @@ by a different route. Between them the two records now show this prompt
 displacing content, surviving into delivered text, and standing as the best
 available explanation for an English output — which makes the term-list
 question larger than either record alone.
+
+## The comparison this record asked for, run 2026-08-17
+
+The correction above closed with *"the seven affected against the forty-three
+clean is a comparison this record can make with no code at all. **Do that before
+proposing anything.**"* It was run. Three findings, and the first one is about
+the evidence rather than about the defect.
+
+### 1. The fifty records are gone, and the runtime deleted them
+
+`history.json` retained 50 records because the history cap **was** 50. Every
+dictation after the measurement pushed the oldest out, and ADR 0074's index
+pairing means `remove_transcript_files` took each record's `.md` with it. The
+cap was raised on 2026-08-17 at 00:14:45 (the store grows past index 50 from
+`history-1786918485493-51` on), by which point the file held only the last 50 —
+back to **2026-08-16 20:43**. The scratchpad has rolled too: 100 entries,
+oldest 2026-08-16 22:05.
+
+So none of the seven affected transcripts, and none of the forty-three clean
+ones, exists anywhere on this machine any more. **A measurement made on
+`history.json` cannot be re-checked a day later unless it was persisted when it
+was made.** That is a fact about this whole cluster's instruments, not about
+this record: every rate on the core-hardening track was computed over a rolling
+buffer that turns over in about ten hours at this dictation rate.
+
+### 2. What survived is the exposure, and it does not separate the groups
+
+The runtime log reaches back to 2026-08-10, so `prompt_chars` for exactly those
+fifty sessions is still readable. In the record's own window — 2026-08-15 16:54
+to 2026-08-16 17:11 — there are **exactly 50 `Groq transcription start` lines**,
+which is the check that the window and the population are the same thing:
+
+| prompt_chars | sessions | reconstructed prompt |
+| --- | --- | --- |
+| 70 | 47 | `Likely phrases: decision log; weekly update; action items; risk review` |
+| 65 | 3 | `Likely phrases: Commit; decision log; weekly update; action items` |
+
+Both reconstructions land on the byte, and the 65 one is the record's own from
+the correction above. **Every one of the fifty carried an initial prompt, and
+both prompts are wholly English.** Seven drifted and forty-three did not under
+*identical* exposure, and at most three of the seven can be in the 65 group
+because the group has three members.
+
+**So the comparison the step asked for cannot separate the affected from the
+clean.** That is a result and not a refutation: a constant is not evidence
+against a cause, it is a variable this population does not vary. What it rules
+out is the retrospective version of the question — no count over one machine's
+history can test a prompt hypothesis while every record on it was sent the same
+prompt.
+
+(`prompt_chars` is `str::len` — **bytes**, not characters. `heißt` is six of
+them, which is what makes the arithmetic below close.)
+
+### 3. The exposure did change, three hours after the measurement
+
+Vocabulary learning changed the prompt's language on its own, with no code
+change touching the recogniser path in between (checked against the commit log
+for that evening):
+
+| From | prompt_chars | Prompt |
+| --- | --- | --- |
+| — | 70 | `decision log; weekly update; action items; risk review` |
+| 08-16 17:09:22 | 65 | `Commit; decision log; weekly update; action items` |
+| 08-16 17:48:38 | 59 | `Commit; heißt; decision log; weekly update` |
+| 08-16 18:46:17 | 53 | `Commit; heißt; Agenten; decision log` |
+| 08-16 23:42:07 | 56 | `Commit; heißt; Agenten; Transkriptionen` |
+
+**At 17:48:38 the prompt stopped being wholly English** — the first German term
+entered the slots — and it has carried two or three German terms since. The
+measured window ends at 17:11, entirely inside the English-only era.
+
+The window that exists today lies entirely inside the mixed era: **114 records,
+2026-08-16 20:43 to 2026-08-17 06:21**, same profile, same `whisper-large-v3-turbo`
+on the wire, `speech.language` still empty and still unsettable. Classified the
+same way this record classified the first fifty — by reading, with a screen to
+decide what to read:
+
+| | count | share |
+| --- | --- | --- |
+| Records measured | 114 | |
+| **Affected (shape A or B)** | **0** | **0 %** |
+| Screened as possibly English | 2 | |
+| Excluded as legitimate code-switching after reading | 2 | |
+
+Both exclusions are the case this record already named as the boundary any rule
+has to survive:
+
+> Alright, passt so weit alles, looks good to me. Ehm… Commit non-pushen.
+
+> Da steht Locked while recording. **The profile sets the recognizer which is
+> fixed once the recording starts. The processing mode can still be changed**
+> und so weiter und so fort.
+
+The first is the owner speaking English phrases inside a German sentence; the
+second is the owner **reading English UI copy aloud** — WordScript's own
+settings text — which is the same shape as the `Datenschutz und
+Transkripteinstellungen` exclusion. Neither is German rendered as English.
+
+**The screen was checked before it was believed.** It is a sentence-level
+English-function-word test, and run over the six shape-B passages quoted in the
+table above it flags **all six** — and it flags the documented legitimate
+code-switch too, which is why reading decides and the screen only chooses what
+to read.
+
+**And the zero is not a length artifact.** The current window carries *more*
+audio than the measured one, not less: 88 minutes against 54, 29 sessions of a
+minute or longer against 14, over 124 transcription starts against 50. Shape B
+appears in the later part of substantial dictations, and there were more of
+those, not fewer.
+
+### What this licenses, and what it does not
+
+7 of 50 under a wholly English prompt, 0 of 114 under a mixed one. Taken at face
+value that is a rate change no chance process would produce, and it is exactly
+the direction the English-prompt hypothesis predicts. **It is not proof, and
+four things stand between it and one:**
+
+- **Two different readers.** The first fifty were classified by reading all
+  fifty; these 114 by screening and reading the hits. The screen's sensitivity
+  is demonstrated on the six documented passages and on nothing else.
+- **The prompt is not the only thing that changed.** The vocabulary grew from
+  four terms to eight, and the terms are different words. *German in the prompt*
+  and *these particular terms* are not separable here.
+- **Different days, different content, one user, one profile.** The register is
+  the same kind of talk, which is an impression rather than a measurement.
+- **The detected language is still discarded.** The instrument this record asks
+  for in *The measurement that cannot be made yet* does not exist, so the
+  outcome is still classified by a human reading text rather than by what the
+  recogniser reported.
+
+**What a real test looks like, stated so it is not re-derived:** a contrast, not
+a count. The bilingual `BLANK_STATE_RECOGNIZER_PROMPT` against an English
+`Likely phrases:` prefix over the same audio — the same shape as the natural
+experiment above, run on purpose. Nothing in this section is a proposal to
+change the prompt, and none of it displaces the cause chain: `speech.language`
+is still empty, still unsettable, and still the fix that pins the outcome.
 
 ## Related
 
