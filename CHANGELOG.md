@@ -72,6 +72,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now names WordScript's own rules — the prompt strip, the address repair — and
   derives the rest from the diff: *nothing else was added or reworded* is a
   word-subsequence test, not a rule id.
+- **A retry names the recogniser that produced its text** (ADR 0205). Only the
+  retry that re-sends the kept audio names this machine's — the one that just
+  re-runs the transform sends no audio anywhere, and now inherits the retried
+  record's provider, model and decode settings instead of describing a request
+  that never happened. The two retry branches had also been writing different
+  vendors into the same field depending on whether the retry produced text.
+- **A correction runs on a model its own vendor serves** (ADR 0206). The capture
+  chose the correction model by whether the *recogniser* was local — a different
+  job — so a profile that listens on Groq and corrects on the local runtime sent
+  it `llama-3.3-70b-versatile`, a name no local runtime has. Both models are
+  carried now and the lane picks one where the job is resolved; a long text
+  escalates to its own lane's model rather than always to the cloud's; and a
+  retry corrects on what the session would have.
 
 ### Fixed — setting a hotkey takes one press, and removing one takes no replacement (ADR 0201)
 

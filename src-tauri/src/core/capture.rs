@@ -19,7 +19,8 @@ use super::{
     communication_style::CommunicationStyle,
     config::{
         AppConfig, DictionaryEntry, ProfileProviderSettings, SnippetEntry, TextProfileWorkMode,
-        TranslateSettings, default_correction_model, default_speech_model,
+        TranslateSettings, default_correction_model, default_local_correction_model,
+        default_speech_model,
     },
     paths::user_data_dir,
     providers::{JobKey, JobProvider},
@@ -274,7 +275,15 @@ pub struct NativeCaptureConfig {
     // with flags derived from the profile's stored mode instead of the one it was
     // actually running in. `work_mode` carries the stored mode; the pipeline
     // supplies the preset explicitly.
+    /// **Both correction models, and this struct chooses neither** (ADR 0206).
+    /// It used to carry one, picked by whether the RECOGNISER was local — a
+    /// different job than the correction, so a profile that listened on Groq
+    /// and corrected on Local handed the local runtime a cloud model id. The
+    /// choice belongs where the correction job is resolved, which is
+    /// `NativeTransformConfig::correction_model_for`.
     pub correction_model: String,
+    #[serde(default)]
+    pub local_correction_model: String,
     // Snapshotted with everything else the session runs on, so "only the
     // processing mode can still change mid-recording" is literally true. These
     // used to be re-read from disk at pipeline time, which meant editing the
@@ -323,6 +332,7 @@ impl Default for NativeCaptureConfig {
             dictionary_entries: Vec::new(),
             snippet_entries: Vec::new(),
             correction_model: default_correction_model().to_string(),
+            local_correction_model: default_local_correction_model().to_string(),
             audio_device: String::new(),
             max_recording_seconds: DEFAULT_MAX_RECORDING_SECONDS,
             silence_timeout_seconds: DEFAULT_SILENCE_TIMEOUT_SECONDS,
@@ -355,12 +365,12 @@ impl NativeCaptureConfig {
         let communication_style = app_config.active_text_profile_communication_style();
         let translate = app_config.active_text_profile_translate_settings();
 
-        // The recogniser's own job, resolved off the axis rather than read off
-        // a field of its own — the model and the correction lane below follow
-        // from which vendor *listens*, and that is `Dictation` and nothing else.
+        // The whole axis, carried rather than collapsed: this snapshot feeds
+        // five jobs and the recogniser is one of them. The correction's lane is
+        // NOT derived here any more (ADR 0206) — it is a different job, and
+        // deciding it off `Dictation` is what sent a cloud correction model to
+        // a local runtime.
         let providers = active_profile.resolved_providers();
-        let speech_provider = providers.resolve(JobKey::Dictation).provider.clone();
-        let local_provider_selected = speech_provider == super::providers::LOCAL_PROVIDER_ID;
         /* WHICH MODEL LISTENS, ASKED WHERE THE HISTORY PATH ASKS IT (ADR 0203).
            The three lanes and their fallbacks used to live here as a match this
            function owned, and `history.rs` answered the same question off the
@@ -392,11 +402,8 @@ impl NativeCaptureConfig {
             work_mode,
             dictionary_entries: active_profile.dictionary_entries,
             snippet_entries: active_profile.snippet_entries,
-            correction_model: if local_provider_selected {
-                speech.local_correction_model
-            } else {
-                speech.correction_model
-            },
+            correction_model: speech.correction_model,
+            local_correction_model: speech.local_correction_model,
             profile_label: profile_label.clone(),
             agent_name,
             communication_style,

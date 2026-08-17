@@ -5,7 +5,7 @@ use regex::{Captures, NoExpand, Regex, RegexBuilder};
 use super::communication_style::CommunicationStyle;
 use super::config::{
     DictionaryEntry, ProcessingMode, ProfileProviderSettings, SnippetEntry, TransformPreset,
-    TranslateSettings, default_correction_model,
+    TranslateSettings, default_correction_model, default_local_correction_model,
 };
 use super::profile_context::{profile_context_line, truncate_line};
 use super::providers::{
@@ -15,6 +15,12 @@ use super::runtime_log;
 use super::workspace_context::WorkspaceContext;
 
 const MAX_DICTIONARY_HINTS: usize = 12;
+
+/// Whether a resolved job runs on the machine's own runtime. One derivation,
+/// because "which model id is even valid here" hangs off it (ADR 0206).
+fn is_local_lane(job: &JobProvider) -> bool {
+    job.provider == super::providers::LOCAL_PROVIDER_ID
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct NativeTransformConfig {
@@ -29,7 +35,18 @@ pub struct NativeTransformConfig {
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub snippet_entries: Vec<SnippetEntry>,
     pub post_process: bool,
+    /// The correction's model on the cloud lane, with `local_correction_model`
+    /// beside it — **both carried, neither chosen here** (ADR 0206).
+    ///
+    /// Which of the two applies is a question about the correction *job*, and
+    /// the job is not known when this struct is built: the effective mode
+    /// decides whether the correction runs as `Cleanup` or `Rewrite`, and the
+    /// axis then decides that job's vendor. This is the same reason `providers`
+    /// is carried whole rather than resolved to one id, and picking a model
+    /// early is how a profile that listened on Groq and corrected on Local sent
+    /// a cloud model id to the local runtime.
     pub correction_model: String,
+    pub local_correction_model: String,
     pub filter_fillers: bool,
     pub professionalize: bool,
     pub language: String,
@@ -94,11 +111,10 @@ impl NativeTransformConfig {
             dictionary_entries: config.dictionary_entries.clone(),
             snippet_entries: config.snippet_entries.clone(),
             post_process: preset.post_process,
-            correction_model: if config.correction_model.trim().is_empty() {
-                default_correction_model().to_string()
-            } else {
-                config.correction_model.clone()
-            },
+            // Both, unresolved: `correction_model_for` picks one where the job
+            // is known (ADR 0206), and it is also what fills an empty field.
+            correction_model: config.correction_model.clone(),
+            local_correction_model: config.local_correction_model.clone(),
             filter_fillers: preset.filter_fillers,
             professionalize: preset.professionalize,
             language: config.language.clone(),
@@ -135,6 +151,45 @@ impl NativeTransformConfig {
     /// What the correction transform runs on, and what pays for it.
     pub fn correction_provider(&self) -> JobProvider {
         self.providers.resolve(self.correction_job())
+    }
+
+    /// **The correction's model, on the lane the correction takes** (ADR 0206).
+    ///
+    /// Asked here rather than at snapshot time, beside `correction_provider`,
+    /// because the two are one answer: a model id belongs to a vendor. The
+    /// capture used to choose by whether the *recogniser* was local, which is a
+    /// different job and a different question — a profile listening on Groq and
+    /// correcting on Local sent `llama-3.3-70b-versatile` to a local runtime
+    /// that serves no such name, and the refusal read as the user's server
+    /// being wrong.
+    ///
+    /// An empty field lands on the lane's own default rather than on the cloud
+    /// one, for the same reason.
+    pub fn correction_model_for(&self, job: &JobProvider) -> String {
+        let named = if is_local_lane(job) {
+            self.local_correction_model.trim()
+        } else {
+            self.correction_model.trim()
+        };
+
+        if named.is_empty() {
+            self.lane_default_correction_model(job)
+        } else {
+            named.to_string()
+        }
+    }
+
+    /// The lane's standard correction model, which overrides the profile's
+    /// choice in exactly one case: a text long enough that the smaller model
+    /// would truncate it. **Per lane** — the escalation used to name the cloud
+    /// default on every lane, so a long dictation on a local profile asked the
+    /// local runtime for a Groq model.
+    pub fn lane_default_correction_model(&self, job: &JobProvider) -> String {
+        if is_local_lane(job) {
+            default_local_correction_model().to_string()
+        } else {
+            default_correction_model().to_string()
+        }
     }
 
     /// What a given mode runs on under this config.
@@ -216,14 +271,16 @@ pub async fn apply_native_transform(
         }
     } else {
         let word_count = trimmed.split_whitespace().count();
-        let model = if word_count > 300 {
-            default_correction_model().to_string()
-        } else {
-            config.correction_model.clone()
-        };
-        let timeout_ms = if word_count > 300 { 30_000 } else { 8_000 };
         let correction_started_at = Instant::now();
         let job = config.correction_provider();
+        // The lane first, the model second (ADR 0206). A long text escalates to
+        // the lane's standard model rather than to the cloud's.
+        let model = if word_count > 300 {
+            config.lane_default_correction_model(&job)
+        } else {
+            config.correction_model_for(&job)
+        };
+        let timeout_ms = if word_count > 300 { 30_000 } else { 8_000 };
 
         runtime_log::record(format!(
             "[WordScript] Native transform correction start job={} provider={} overridden={} words={} model={} timeout_ms={} filter_fillers={} professionalize={}",
@@ -1142,7 +1199,81 @@ mod tests {
         );
 
         assert_eq!(config.profile_prompt, "release freeze\ncustomer follow-up");
-        assert_eq!(config.correction_model, default_correction_model());
+        // The blank is carried and filled where the lane is known (ADR 0206),
+        // because "which default" is itself a question about the lane.
+        assert_eq!(
+            config.correction_model_for(&config.correction_provider()),
+            default_correction_model(),
+        );
+    }
+
+    /// **The correction's model follows the correction's own vendor**, and the
+    /// recogniser's lane has no say in it (ADR 0206). This profile listens on
+    /// the cloud and corrects on the machine — the shape that used to send
+    /// `llama-3.3-70b-versatile` to a local runtime serving no such name.
+    #[test]
+    fn the_correction_model_follows_the_correction_lane_and_not_the_recognisers() {
+        use std::collections::BTreeMap;
+
+        let capture = super::super::capture::NativeCaptureConfig {
+            providers: ProfileProviderSettings {
+                default: super::super::providers::DEFAULT_PROVIDER_ID.to_string(),
+                overrides: BTreeMap::from([(
+                    JobKey::Cleanup,
+                    super::super::providers::LOCAL_PROVIDER_ID.to_string(),
+                )]),
+            },
+            correction_model: "llama-3.3-70b-versatile".to_string(),
+            local_correction_model: "llama3.2:latest".to_string(),
+            ..Default::default()
+        };
+
+        let config = NativeTransformConfig::from_capture_config(
+            &capture,
+            ProcessingMode::Cleanup.transform_preset(),
+        );
+        let job = config.correction_provider();
+
+        assert_eq!(job.provider, super::super::providers::LOCAL_PROVIDER_ID);
+        assert_eq!(config.correction_model_for(&job), "llama3.2:latest");
+        // And the recogniser is untouched by any of it: it is a different job
+        // and it kept its own vendor.
+        assert_eq!(
+            config.providers.resolve(JobKey::Dictation).provider,
+            super::super::providers::DEFAULT_PROVIDER_ID,
+        );
+    }
+
+    /// A text long enough to escalate takes the lane's own standard model. The
+    /// escalation used to name the cloud default on every lane, so the one case
+    /// that overrides the user's choice was also the one that could leave their
+    /// lane.
+    #[test]
+    fn a_long_text_escalates_within_its_own_lane() {
+        let config = NativeTransformConfig::from_capture_config(
+            &super::super::capture::NativeCaptureConfig::default(),
+            ProcessingMode::Cleanup.transform_preset(),
+        );
+
+        let local = JobProvider {
+            job: JobKey::Cleanup,
+            provider: super::super::providers::LOCAL_PROVIDER_ID.to_string(),
+            overridden: true,
+        };
+        let cloud = JobProvider {
+            job: JobKey::Cleanup,
+            provider: super::super::providers::DEFAULT_PROVIDER_ID.to_string(),
+            overridden: false,
+        };
+
+        assert_eq!(
+            config.lane_default_correction_model(&local),
+            default_local_correction_model(),
+        );
+        assert_eq!(
+            config.lane_default_correction_model(&cloud),
+            default_correction_model(),
+        );
     }
 
     #[test]

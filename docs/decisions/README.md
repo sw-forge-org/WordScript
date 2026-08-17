@@ -32,10 +32,24 @@ Status: Proposed | Accepted | Superseded by NNNN
 
 - ADRs are never rewritten retroactively.
 - A changed decision requires a new ADR that marks the prior one as superseded.
+- **Filing a record adds one line to the list below**, and the line is the
+  record's own title. Not a summary: an index that paraphrases 190 records is
+  190 chances to say something the record does not, and the one that existed
+  had gone 40 records stale before anybody looked.
 - `spec-sync` may identify a decision that needs human review, but it does not
   create an ADR without explicit confirmation.
 
 ## Existing ADRs
+
+**Two eras, and the second one is a list rather than a digest.** Through 0168
+each entry carries a summary written when the record landed. That practice
+stopped being kept up and the gap was found on 2026-08-17 with **40 records
+unlisted** — 36 in an unbroken run at the end, and four gaps inside the digest
+itself. A digest nobody maintains is worse than a plain list, because it reads
+as complete. From 0169 an entry is **one line, and the line is the record's own
+title**, which is checkable against `ls docs/decisions/` in a second and cannot
+drift into a claim about what a record says. The reasoning lives in the record;
+that is what a record is for (ADR 0123: one list per fact).
 
 - [0001](0001-tauri-rust-als-runtime-owner.md): Tauri/Rust owns product runtime behavior.
 - [0002](0002-cloud-first-groq-byok.md): cloud-first Groq BYOK provider strategy.
@@ -1081,11 +1095,18 @@ Status: Proposed | Accepted | Superseded by NNNN
   an unwritten transcript is none. This also supplies the fallback ADR 0018
   named and owes a reported surface under ADR 0019.
 
-- **0135, 0136 and 0137 have no entry here yet.** They are the Context objects
-  track's founding records and its window decision, filed 2026-08-14. Noted
-  rather than written for that track, because an index entry summarising a
-  record its own track has not finished reading is how a summary drifts from
-  what it summarises.
+- **0135, 0136 and 0137 carry their own titles and no summary**, which was the
+  point when they were filed on 2026-08-14: an index entry summarising a record
+  its own track has not finished reading is how a summary drifts from what it
+  summarises. They were listed with their titles on 2026-08-17, when the same
+  rule became the rule for everything from 0169.
+
+- [0135](0135-retention-is-a-guard-rather-than-a-timer-the-copilot-runs-on-turns-and-the-picker-is-a-sentence-with-a-sheet-behind-it.md):
+  Retention is a guard rather than a timer, the copilot runs on turns, and the picker is a sentence with a sheet behind it.
+- [0136](0136-what-is-taken-from-the-donor-and-the-one-thing-it-does-that-must-not-be.md):
+  What is taken from the donor, and the one thing it does that must not be.
+- [0137](0137-ask-actions-and-the-meeting-hud-are-os-windows-and-a-drawn-box-was-never-going-to-answer-that.md):
+  Ask, Actions and the meeting HUD are OS windows, and a drawn box was never going to answer that.
 
 - [0138](0138-a-retention-rule-names-the-collection-it-governs-and-the-copilot-does-not-read-your-dictations.md):
   **two pickers governed a collection they never named, and nobody could say
@@ -1183,6 +1204,9 @@ Status: Proposed | Accepted | Superseded by NNNN
   reducer commit, and an unlistened second channel is that forbidden shape left
   available for a future surface to bind to by mistake. All four defect
   directions of the sweep now report zero.
+
+- [0155](0155-the-overlay-stops-being-unmapped-because-every-map-costs-one-black-frame.md):
+  The overlay stops being unmapped, because every map costs one black frame.
 
 - [0156](0156-a-readout-names-a-rule-with-the-readers-own-words-and-an-id-it-cannot-resolve-stays-an-id.md):
   **a readout names a rule with the reader's own words, and an id it cannot
@@ -1389,6 +1413,85 @@ Status: Proposed | Accepted | Superseded by NNNN
   `Enterprise`'s own `No adapter` for a different subject, and printing the
   seam's reason here put one fact on the screen twice a few pixels apart.
   `port:diff` measured identical with the change reverted and applied.
+
+### 0169 onwards, one line each
+
+- [0169](0169-a-transient-that-outlives-a-park-is-bounded-by-a-clock-the-park-cannot-stop.md):
+  A transient that outlives a park is bounded by a clock the park cannot stop.
+- [0170](0170-the-runtime-measures-the-microphone-before-there-is-a-capture-and-the-reading-is-drawn-at-two-speeds.md):
+  The runtime measures the microphone before there is a capture, and the reading is drawn at two speeds.
+- [0171](0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md):
+  An instruction is read once, so Home has two lives, and a counter with no reading is dark rather than zero.
+- [0172](0172-an-unlit-cell-is-an-assertion-so-the-calendar-spans-what-the-record-can-vouch-for-and-nothing-more.md):
+  An unlit cell is an assertion, so the calendar spans what the record can vouch for and nothing more.
+- [0173](0173-the-calendar-draws-every-day-because-a-grid-that-hides-what-it-cannot-prove-reads-as-broken.md):
+  The calendar draws every day, because a grid that hides what it cannot prove reads as broken.
+- [0174](0174-all-time-figures-need-a-record-that-does-not-forget-so-the-ledger-is-counts-per-day-and-never-text.md):
+  All-time figures need a record that does not forget, so the ledger is counts per day and never text.
+- [0175](0175-a-tile-may-only-report-what-the-runtime-can-see-so-apps-goes-turnaround-arrives-and-the-rate-is-a-median.md):
+  A tile may only report what the runtime can see, so Apps goes, Turnaround arrives, and the rate is a median.
+- [0176](0176-a-lifetime-figure-that-can-fall-is-not-a-lifetime-figure-so-a-pruned-day-is-retired-and-only-a-button-clears-it.md):
+  A lifetime figure that can fall is not a lifetime figure, so a pruned day is retired and only a button clears it.
+- [0177](0177-a-rate-that-counts-a-models-words-over-an-open-microphone-is-not-a-speaking-rate.md):
+  A rate that counts a model's words over an open microphone is not a speaking rate.
+- [0178](0178-time-saved-may-only-credit-what-somebody-would-have-typed-and-the-baseline-is-the-readers-to-set.md):
+  Time saved may only credit what somebody would have typed, and the baseline is the reader's to set.
+- [0179](0179-the-ledger-is-the-only-thing-in-an-archive-that-cannot-be-rebuilt-so-a-restore-raises-it-and-never-replaces-it.md):
+  The ledger is the only thing in an archive that cannot be rebuilt, so a restore raises it and never replaces it.
+- [0180](0180-the-lane-that-most-dictations-take-never-names-a-language-so-the-language-is-measured-on-the-text.md):
+  The lane that most dictations take never names a language, so the language is measured on the text.
+- [0181](0181-the-wait-starts-when-you-stop-speaking-not-when-the-file-is-already-written.md):
+  The wait starts when you stop speaking, not when the file is already written.
+- [0182](0182-a-counters-basis-belongs-under-the-figure-and-the-preview-path-is-not-the-park.md):
+  A counter's basis belongs under the figure, and the preview path is not the park.
+- [0183](0183-the-calendar-is-a-year-you-scroll-through-and-a-period-it-can-speak-for.md):
+  The calendar is a year you scroll through, and only a period the record can speak for.
+- [0184](0184-a-list-is-paged-and-a-screen-offers-what-it-used-to-recite.md):
+  A list is paged, and a screen offers what it used to recite.
+- [0185](0185-retention-is-a-duration-you-set-and-a-count-you-are-told-and-the-audio-a-failure-parks-is-its-own-collection.md):
+  Retention is a duration you set and a count you are told, and the audio a failure parks is its own collection.
+- [0186](0186-a-tile-explains-itself-everywhere-and-only-german-was-a-claim-the-record-never-made.md):
+  A tile explains itself everywhere, and `only German` was a claim the record never made.
+- [0187](0187-a-ramp-whose-every-real-value-is-the-maximum-is-not-a-ramp.md):
+  A ramp whose every real value is the maximum is not a ramp.
+- [0188](0188-one-call-names-the-file-and-the-language-and-it-stands-behind-the-insert.md):
+  One call names the file and the language, and it stands behind the insert.
+- [0189](0189-a-marker-is-a-day-with-a-name-and-it-never-joins-the-ramp.md):
+  A marker is a day with a name, and it never joins the ramp.
+- [0190](0190-the-install-date-is-a-ledger-field-because-a-config-field-would-be-somebody-elses-install.md):
+  The install date is a ledger field, because a config field would be somebody else's install.
+- [0191](0191-a-counter-with-ten-glyphs-gets-a-decimal-point-by-widening-a-gap-it-already-has.md):
+  A counter with ten glyphs gets a decimal point by widening a gap it already has.
+- [0192](0192-the-standing-facts-go-back-to-the-top-and-this-reverses-0171.md):
+  The standing facts go back to the top, and this reverses 0171.
+- [0193](0193-a-delivery-mode-is-a-fact-and-not-a-warning.md):
+  A delivery mode is a fact and not a warning.
+- [0194](0194-what-stays-an-icon-is-what-you-repeat-and-on-a-transcript-row-that-is-copy.md):
+  What stays an icon is what you repeat, and on a transcript row that is Copy.
+- [0195](0195-a-transcript-delete-gets-an-undo-window-instead-of-a-confirm.md):
+  A transcript delete gets an undo window instead of a confirm.
+- [0196](0196-the-lane-is-its-own-fact-and-a-locked-control-says-that-it-is-locked.md):
+  The lane is its own fact, and a locked control says THAT it is locked.
+- [0197](0197-a-profile-is-made-active-where-profiles-are-managed.md):
+  A profile is made active where profiles are managed.
+- [0198](0198-the-toggle-outranks-the-breakpoint-until-the-window-crosses-it-and-the-column-beside-the-sidebar-is-laid-out-once.md):
+  The toggle outranks the breakpoint until the window crosses it, and the column beside the sidebar is laid out once.
+- [0199](0199-a-link-in-the-product-opens-something-and-an-adr-number-is-not-a-destination.md):
+  A link in the product opens something, and an ADR number is not a destination.
+- [0200](0200-an-analysis-depends-on-the-value-of-its-request-because-a-settled-save-replaces-every-object-in-the-config.md):
+  An analysis depends on the value of its request, because a settled save replaces every object in the config.
+- [0201](0201-a-chord-with-a-key-is-finished-when-the-keys-come-up-and-an-empty-slot-is-a-value-you-can-choose.md):
+  A chord with a key is finished when the keys come up, and an empty slot is a value you can choose.
+- [0202](0202-the-preference-is-written-after-the-column-has-moved-and-the-slide-was-never-the-cost.md):
+  The preference is written after the column has moved, and the slide was never the cost.
+- [0203](0203-the-model-a-record-names-is-the-one-the-profile-sent-and-a-lane-that-sent-none-names-none.md):
+  The model a record names is the one the profile sent, and a lane that sent none names none.
+- [0204](0204-the-raw-panels-foot-names-the-rule-that-changed-the-text-and-claims-only-what-the-diff-proves.md):
+  The raw panel's foot names the rule that changed the text, and claims only what the diff proves.
+- [0205](0205-a-retry-names-the-recogniser-that-produced-its-text-and-only-the-retry-that-listened-again-names-this-machines.md):
+  A retry names the recogniser that produced its text, and only the retry that listened again names this machine's.
+- [0206](0206-the-corrections-model-belongs-to-the-corrections-lane-and-the-choice-is-made-where-the-job-is-resolved.md):
+  The correction's model belongs to the correction's lane, and the choice is made where the job is resolved.
 
 ## Resolved: the number 0011 was used twice
 

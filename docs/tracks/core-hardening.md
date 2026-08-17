@@ -311,6 +311,25 @@ rather than compacted, because the items are cited by number elsewhere.
       one trailing space, which is also why the panel's new sentence is derived
       from the diff rather than from the rule list.
 
+    Two things the first pass left open were closed the same day, both of them
+    the same defect one job further on:
+
+    - **ADR 0205 — a retry names the recogniser that produced its text.** There
+      are two kinds of retry and only one of them listens; the other inherits
+      the retried record's provider, model and decode block. The two retry
+      branches had also been writing different vendors into one field.
+    - **ADR 0206 — the correction's model follows the correction's lane.** The
+      capture chose it by whether the *recogniser* was local, so a profile that
+      listens on Groq and corrects locally sent a cloud model id to the local
+      runtime; the retry chose the right job off the connection-wide field. Both
+      carry the profile's two models now and the lane picks where the job is
+      resolved. The long-text escalation is per lane too.
+
+    Still open and stated so it is not re-derived: `chat_model_for_job` has the
+    same shape for Agent, Translate, Prompt Enhance and the transcript title —
+    connection-wide, while the profile's speech block carries `agent_model` of
+    its own. Four surfaces, so it earns its own record rather than a fold-in.
+
     Added 2026-08-16, both found on the single record above:
     [`known-issues/heard-and-written-do-not-say-which-stage-changed-what.md`](../known-issues/heard-and-written-do-not-say-which-stage-changed-what.md)
     and

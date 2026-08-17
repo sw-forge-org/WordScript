@@ -70,6 +70,30 @@ fn measurement_profile(config: &serde_json::Value) -> &serde_json::Value {
         .unwrap_or_else(|| panic!("profile {PROFILE_ID} not in config.json"))
 }
 
+/// A model id off the profile's speech block, falling back to the
+/// connection-wide field and then to the catalogue — the order the runtime
+/// resolves them in (ADR 0203, ADR 0206). Read out of the JSON rather than
+/// through `AppConfig` because this harness measures the file on this machine
+/// as it stands, deliberately, and a typed load would normalize it.
+fn profile_or_connection(
+    profile: &serde_json::Value,
+    config: &serde_json::Value,
+    key: &str,
+    fallback: &str,
+) -> String {
+    let named = |value: &serde_json::Value| {
+        value[key]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+
+    named(&profile["speech"])
+        .or_else(|| named(config))
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 fn dictionary_entries(profile: &serde_json::Value) -> Vec<DictionaryEntry> {
     profile["dictionary_entries"]
         .as_array()
@@ -114,17 +138,19 @@ fn correction_request(
     config: &NativeTransformConfig,
 ) -> ChatCompletionRequest {
     let word_count = text.split_whitespace().count();
+    // It mirrors the correction call it measures, so it resolves the same job
+    // rather than a connection-wide field (ADR 0094) — and the model off that
+    // job's lane rather than off the cloud one (ADR 0206).
+    let job = config.correction_provider();
     let model = if word_count > 300 {
-        default_correction_model().to_string()
+        config.lane_default_correction_model(&job)
     } else {
-        config.correction_model.clone()
+        config.correction_model_for(&job)
     };
     let timeout_ms = if word_count > 300 { 30_000 } else { 8_000 };
 
     ChatCompletionRequest {
-        // It mirrors the correction call it measures, so it resolves the same
-        // job rather than a connection-wide field (ADR 0094).
-        provider: config.correction_provider().provider,
+        provider: job.provider,
         model,
         messages: vec![
             ChatMessage {
@@ -160,10 +186,22 @@ async fn measure_profile_context_width() {
         dictionary_entries: dictionary_entries(profile),
         snippet_entries: Vec::new(),
         post_process: preset.post_process,
-        correction_model: app_config["correction_model"]
-            .as_str()
-            .unwrap_or(default_correction_model())
-            .to_string(),
+        // The PROFILE's two, with the connection-wide fields as the fallback,
+        // because that is the order the product resolves them in (ADR 0206).
+        // Reading the connection value here measured a model the live session
+        // would not have used on any profile that sets one of its own.
+        correction_model: profile_or_connection(
+            profile,
+            &app_config,
+            "correction_model",
+            default_correction_model(),
+        ),
+        local_correction_model: profile_or_connection(
+            profile,
+            &app_config,
+            "local_correction_model",
+            default_local_correction_model(),
+        ),
         filter_fillers: preset.filter_fillers,
         professionalize: preset.professionalize,
         language: String::new(),

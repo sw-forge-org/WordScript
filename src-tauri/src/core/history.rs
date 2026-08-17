@@ -365,6 +365,81 @@ struct LocalHistoryContext {
     local_best_of: Option<u8>,
 }
 
+/// Which kind of retry produced a record, and the record it retried (ADR 0205).
+///
+/// **The distinction is not bookkeeping — it decides what listened.** A retry
+/// with a transcript re-runs the transform over text that already exists and
+/// sends no audio anywhere; a retry without one re-transcribes the kept capture
+/// through this machine's *current* profile, deliberately, because the retry
+/// usually happens after a setting was changed.
+pub enum RetryOrigin<'a> {
+    /// Only the transform ran again. Nothing listened, so the recogniser fields
+    /// belong to the record the transcript came from.
+    Transformed(&'a TranscriptionHistoryEntry),
+    /// The kept audio was sent again. A recogniser did run, and it is the one
+    /// this machine is configured with now.
+    Retranscribed(&'a TranscriptionHistoryEntry),
+}
+
+impl RetryOrigin<'_> {
+    fn retried(&self) -> &TranscriptionHistoryEntry {
+        match self {
+            Self::Transformed(entry) | Self::Retranscribed(entry) => entry,
+        }
+    }
+}
+
+/// WHAT LISTENED — the four fields of a record that describe a recogniser, and
+/// the one place that decides whose they are (ADR 0205).
+///
+/// `provider`, `model` and the local decode block are properties of the request
+/// that produced `raw_transcript`. On every live path that is the active
+/// profile, resolved now. On a transform-only retry it is **not**: the config
+/// may have changed since, no request was made, and reading the current one
+/// gives a record that names a recogniser which did not run — the same wrong
+/// attribution ADR 0203 removed from the model field, one path further on.
+struct SpeechAttribution {
+    provider: String,
+    model: Option<String>,
+    local: LocalHistoryContext,
+}
+
+impl SpeechAttribution {
+    /// This machine's active profile: every path where a recogniser ran for
+    /// this record, the re-transcribing retry included.
+    fn from_config(config: &AppConfig) -> Self {
+        Self {
+            provider: speech_provider(config),
+            model: config.speech_model(),
+            local: local_history_context(config),
+        }
+    }
+
+    /// The record the transcript came out of, for a run that only transformed
+    /// it. Copied whole, including a `None` model — a record that names no
+    /// recogniser cannot lend one.
+    fn inherited(entry: &TranscriptionHistoryEntry) -> Self {
+        Self {
+            provider: entry.provider.clone(),
+            model: entry.model.clone(),
+            local: LocalHistoryContext {
+                provider_profile: entry.provider_profile.clone(),
+                local_prompt_strength: entry.local_prompt_strength.clone(),
+                local_prompt_carry: entry.local_prompt_carry,
+                local_beam_size: entry.local_beam_size,
+                local_best_of: entry.local_best_of,
+            },
+        }
+    }
+
+    fn for_retry(config: &AppConfig, retry: Option<&RetryOrigin<'_>>) -> Self {
+        match retry {
+            Some(RetryOrigin::Transformed(entry)) => Self::inherited(entry),
+            Some(RetryOrigin::Retranscribed(_)) | None => Self::from_config(config),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct TranscriptionHistoryStore {
     loaded: bool,
@@ -847,18 +922,23 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
     // run got. With a transcript, only the transform re-runs. Without one — a
     // transcription that timed out — the retry starts from the audio the
     // runtime kept, which is the whole reason it is kept.
-    let raw_transcript = match existing
+    let (raw_transcript, retry_origin) = match existing
         .raw_transcript
         .clone()
         .filter(|value| !value.trim().is_empty())
     {
-        Some(transcript) => transcript,
-        None => transcribe_retained_capture(&existing).await?,
+        Some(transcript) => (transcript, RetryOrigin::Transformed(&existing)),
+        None => (
+            transcribe_retained_capture(&existing).await?,
+            RetryOrigin::Retranscribed(&existing),
+        ),
     };
 
     let app_config = AppConfig::load_from_disk();
     let mut transform_config = transform_config_from_app_config(&app_config);
-    let local_history = local_history_context(&app_config);
+    /* WHOSE RECOGNISER THIS RECORD NAMES (ADR 0205), decided by which of the
+       two retries just ran rather than by reading the config either way. */
+    let attribution = SpeechAttribution::for_retry(&app_config, Some(&retry_origin));
 
     /* THE MODE THE RECORD RAN IN, not a correction (ADR 0075).
        This function used to call `apply_native_transform` for every entry,
@@ -918,17 +998,22 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 status: TranscriptionHistoryStatus::Empty,
                 source: TranscriptionHistorySource::Retry,
                 retry_of: Some(existing.id.clone()),
-                provider: retry_job.provider.clone(),
-                model: app_config.speech_model(),
+                /* THE SAME VENDOR THE SUCCESSFUL RECORD NAMES, which is what
+                   the resolution above asked for and did not get: this branch
+                   named the transform job's vendor while the branch below named
+                   the recogniser's, so one retry wrote two different answers to
+                   the same field depending on whether it produced text. */
+                provider: attribution.provider.clone(),
+                model: attribution.model.clone(),
                 language: optional_non_empty(&app_config.language),
                 active_profile: app_config.active_text_profile_label(),
                 effective_mode: Some(retry_mode.clone()),
                 title: None,
-                provider_profile: local_history.provider_profile,
-                local_prompt_strength: local_history.local_prompt_strength,
-                local_prompt_carry: local_history.local_prompt_carry,
-                local_beam_size: local_history.local_beam_size,
-                local_best_of: local_history.local_best_of,
+                provider_profile: attribution.local.provider_profile.clone(),
+                local_prompt_strength: attribution.local.local_prompt_strength.clone(),
+                local_prompt_carry: attribution.local.local_prompt_carry,
+                local_beam_size: attribution.local.local_beam_size,
+                local_best_of: attribution.local.local_best_of,
                 raw_transcript: Some(raw_transcript),
                 transformed_transcript: None,
                 corrected: transformed.corrected,
@@ -981,7 +1066,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
 
         let entry = history_entry_from_insert_result(
             &app_config,
-            Some(existing.id.as_str()),
+            Some(retry_origin),
             Some(raw_transcript),
             transformed,
             &insert_result,
@@ -1038,7 +1123,11 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
 
 pub fn history_entry_from_insert_result(
     app_config: &AppConfig,
-    retry_of: Option<&str>,
+    // Which record this re-ran and how (ADR 0205). `None` on the live paths,
+    // where the session is its own origin. It carries the kind rather than just
+    // the id because the kind is what decides whose recogniser the record
+    // names: a transform-only retry sent no audio anywhere.
+    retry: Option<RetryOrigin<'_>>,
     raw_transcript: Option<String>,
     transformed: NativeTransformResult,
     insert_result: &NativeInsertResult,
@@ -1058,7 +1147,7 @@ pub fn history_entry_from_insert_result(
     // parked path, whose delay is the park's rather than the runtime's.
     turnaround_ms: Option<u64>,
 ) -> Result<TranscriptionHistoryEntry, String> {
-    let local_history = local_history_context(app_config);
+    let attribution = SpeechAttribution::for_retry(app_config, retry.as_ref());
 
     record_entry_with_work_mode(
         RecordHistoryEntryRequest {
@@ -1067,23 +1156,23 @@ pub fn history_entry_from_insert_result(
             } else {
                 TranscriptionHistoryStatus::Failed
             },
-            source: if retry_of.is_some() {
+            source: if retry.is_some() {
                 TranscriptionHistorySource::Retry
             } else {
                 TranscriptionHistorySource::NativePipeline
             },
-            retry_of: retry_of.map(ToString::to_string),
-            provider: speech_provider(app_config),
-            model: app_config.speech_model(),
+            retry_of: retry.as_ref().map(|origin| origin.retried().id.clone()),
+            provider: attribution.provider,
+            model: attribution.model,
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
             title: naming.title,
-            provider_profile: local_history.provider_profile,
-            local_prompt_strength: local_history.local_prompt_strength,
-            local_prompt_carry: local_history.local_prompt_carry,
-            local_beam_size: local_history.local_beam_size,
-            local_best_of: local_history.local_best_of,
+            provider_profile: attribution.local.provider_profile,
+            local_prompt_strength: attribution.local.local_prompt_strength,
+            local_prompt_carry: attribution.local.local_prompt_carry,
+            local_beam_size: attribution.local.local_beam_size,
+            local_best_of: attribution.local.local_best_of,
             raw_transcript,
             transformed_transcript: Some(insert_result.text.clone()),
             corrected: transformed.corrected,
@@ -1298,12 +1387,14 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
     // two that no live session would ever produce.
     let preset = config.active_text_profile_transform_preset();
 
-    // The correction lane follows the correction's own vendor, not the
-    // connection's: the local runtime names its models differently, so asking
-    // "which correction model" before "which vendor for this job" is how a
-    // re-transform ends up sending a local model id to a cloud endpoint.
-    let correction_is_local = config.job_provider(preset.correction_job()).provider
-        == super::providers::LOCAL_PROVIDER_ID;
+    /* THE PROFILE'S TWO CORRECTION MODELS, CHOSEN NOWHERE HERE (ADR 0206).
+       This path used to answer "which correction model" itself, off the
+       connection-wide fields, while the live capture answered it off the
+       PROFILE's — so a retry could correct on a different model than the
+       session it was retrying, and neither of them had asked the correction
+       job's lane in the same way. Both are carried now, both come from the
+       profile, and the lane picks one where it is resolved. */
+    let speech = active_profile.resolved_speech();
 
     NativeTransformConfig {
         providers: active_profile.resolved_providers(),
@@ -1311,11 +1402,8 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
         dictionary_entries: active_profile.dictionary_entries,
         snippet_entries: active_profile.snippet_entries,
         post_process: preset.post_process,
-        correction_model: if correction_is_local {
-            config.local_correction_model.clone()
-        } else {
-            config.correction_model.clone()
-        },
+        correction_model: speech.correction_model,
+        local_correction_model: speech.local_correction_model,
         filter_fillers: preset.filter_fillers,
         professionalize: preset.professionalize,
         // Through the same resolver the live session uses. Reaching into
@@ -2629,6 +2717,142 @@ mod tests {
         let entry = sample_entry_for_mode(None, ProcessingMode::Auto);
         let resolved = resolve_retry_mode(&entry, &AppConfig::default());
         assert!(!resolved.is_auto(), "Auto reached the transform");
+    }
+
+    // ── What a retry names, and why it depends on which retry ran (ADR 0205) ──
+
+    /// A machine whose active profile listens on Groq's turbo model, so a
+    /// record that names anything else on it names something that did not run
+    /// here.
+    fn config_listening_on_turbo() -> AppConfig {
+        use super::super::config::{ProfileSpeechSettings, TextProfile};
+
+        AppConfig {
+            model: "whisper-large-v3".to_string(),
+            active_text_profile_id: "founder-ops".to_string(),
+            text_profiles: vec![TextProfile {
+                id: "founder-ops".to_string(),
+                speech: Some(ProfileSpeechSettings {
+                    model: "whisper-large-v3-turbo".to_string(),
+                    ..Default::default()
+                }),
+                ..TextProfile::default()
+            }],
+            ..AppConfig::default()
+        }
+    }
+
+    fn record_from_another_lane() -> TranscriptionHistoryEntry {
+        let mut entry = sample_entry_for_mode(Some(ProcessingMode::Cleanup), ProcessingMode::Cleanup);
+        entry.provider = "local".to_string();
+        entry.model = Some("large-v3-q5_0".to_string());
+        entry.provider_profile = Some("local-large-quality".to_string());
+        entry.local_prompt_strength = Some("profile".to_string());
+        entry.local_prompt_carry = Some(true);
+        entry.local_beam_size = Some(5);
+        entry.local_best_of = Some(5);
+        entry
+    }
+
+    /// **A transform-only retry sends no audio anywhere**, so the record it
+    /// writes describes the recogniser that produced the transcript it re-ran —
+    /// which is the retried record's, whatever this machine is set to now.
+    #[test]
+    fn a_transform_only_retry_names_the_recogniser_that_produced_the_transcript() {
+        let retried = record_from_another_lane();
+        let config = config_listening_on_turbo();
+
+        let attribution =
+            SpeechAttribution::for_retry(&config, Some(&RetryOrigin::Transformed(&retried)));
+
+        assert_eq!(attribution.provider, "local");
+        assert_eq!(attribution.model.as_deref(), Some("large-v3-q5_0"));
+        // The decode settings are the same claim about the same request, so
+        // they travel with it rather than being re-read off a config that was
+        // not asked anything.
+        assert_eq!(
+            attribution.local.provider_profile.as_deref(),
+            Some("local-large-quality"),
+        );
+        assert_eq!(attribution.local.local_beam_size, Some(5));
+        assert_eq!(attribution.local.local_best_of, Some(5));
+    }
+
+    /// **A retry without a transcript re-transcribes the kept capture**, and it
+    /// does so through the current config on purpose — the retry usually
+    /// happens because a setting was changed. A recogniser ran, so the record
+    /// names it.
+    #[test]
+    fn a_retry_that_sent_the_audio_again_names_this_machines_recogniser() {
+        let retried = record_from_another_lane();
+        let config = config_listening_on_turbo();
+
+        let attribution =
+            SpeechAttribution::for_retry(&config, Some(&RetryOrigin::Retranscribed(&retried)));
+
+        assert_eq!(attribution.provider, "groq");
+        assert_eq!(attribution.model.as_deref(), Some("whisper-large-v3-turbo"));
+        // Not the retried record's local decode block: nothing local ran.
+        assert_eq!(attribution.local.provider_profile, None);
+        assert_eq!(attribution.local.local_beam_size, None);
+    }
+
+    /// A record that names no recogniser cannot lend one, and the retry does
+    /// not fill the gap with this machine's answer.
+    #[test]
+    fn a_retried_record_with_no_model_lends_no_model() {
+        let mut retried = record_from_another_lane();
+        retried.model = None;
+
+        let attribution = SpeechAttribution::for_retry(
+            &config_listening_on_turbo(),
+            Some(&RetryOrigin::Transformed(&retried)),
+        );
+
+        assert_eq!(attribution.model, None);
+    }
+
+    /// **A retry corrects on the model the session would have** (ADR 0206).
+    /// The retry builder read the connection-wide fields while the capture read
+    /// the profile's, so a profile with a correction model of its own was
+    /// retried on a different one — silently, because the two agree on a
+    /// machine that never set one.
+    #[test]
+    fn a_retry_carries_the_same_correction_models_the_capture_does() {
+        use super::super::config::{ProfileSpeechSettings, TextProfile};
+
+        let config = AppConfig {
+            correction_model: "the-connections-choice".to_string(),
+            local_correction_model: "the-connections-local-choice".to_string(),
+            active_text_profile_id: "founder-ops".to_string(),
+            text_profiles: vec![TextProfile {
+                id: "founder-ops".to_string(),
+                speech: Some(ProfileSpeechSettings {
+                    correction_model: "the-profiles-choice".to_string(),
+                    local_correction_model: "the-profiles-local-choice".to_string(),
+                    ..Default::default()
+                }),
+                ..TextProfile::default()
+            }],
+            ..AppConfig::default()
+        };
+
+        let live = super::super::capture::NativeCaptureConfig::from_app_config(config.clone());
+        let retried = transform_config_from_app_config(&config);
+
+        assert_eq!(retried.correction_model, "the-profiles-choice");
+        assert_eq!(retried.correction_model, live.correction_model);
+        assert_eq!(retried.local_correction_model, live.local_correction_model);
+    }
+
+    /// The live paths are unchanged by all of this: no origin, this machine's
+    /// profile.
+    #[test]
+    fn a_session_of_its_own_names_the_profile_that_ran_it() {
+        let attribution = SpeechAttribution::for_retry(&config_listening_on_turbo(), None);
+
+        assert_eq!(attribution.provider, "groq");
+        assert_eq!(attribution.model.as_deref(), Some("whisper-large-v3-turbo"));
     }
 
     fn sample_entry_for_mode(

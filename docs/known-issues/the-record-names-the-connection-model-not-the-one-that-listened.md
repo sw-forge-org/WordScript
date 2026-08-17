@@ -127,9 +127,25 @@ reader has to carry:
   reported wrong rather than repaired, which is this cluster's standing rule
   applied to itself.
 
-One thing the fix deliberately does not settle: **a retry record still names
-this machine's current recogniser** although a retry re-runs the transform over
-an existing transcript and nothing listens. The code says so where it happens.
+### The retry, settled the same day
+
+The first version of this fix left one path open and said so in the code: **a
+retry record named this machine's current recogniser** although a retry re-runs
+the transform over an existing transcript and nothing listens. Closed by
+[ADR 0205](../decisions/0205-a-retry-names-the-recogniser-that-produced-its-text-and-only-the-retry-that-listened-again-names-this-machines.md),
+and reading the path turned the question into a sharper one:
+
+- **There are two kinds of retry.** With a transcript, only the transform
+  re-runs and nothing is sent anywhere; without one, `transcribe_retained_capture`
+  sends the kept audio again — deliberately through the *current* config,
+  because the retry usually follows a settings change. So the first inherits the
+  retried record's recogniser and the second names this machine's.
+- **It was four fields, not one.** `provider_profile` and the three local decode
+  settings describe the same request and were being re-read the same way.
+- **The two retry branches had disagreed with each other**: the empty-text
+  branch wrote the *transform* job's vendor into `provider` while the successful
+  branch wrote the recogniser's. They now write the same answer, which is what
+  the comment above that resolution had asked for.
 
 ## Related
 
