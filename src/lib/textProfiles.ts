@@ -180,7 +180,7 @@ export function createDefaultTextProfileWorkMode(): TextProfileWorkMode {
  *  written before any account existed still has to name the one the machine is
  *  given on its first load. */
 export function createDefaultProfileProviderSettings(): ProfileProviderSettings {
-  return { default: DEFAULT_CONNECTION_ID, overrides: {} };
+  return { default: DEFAULT_CONNECTION_ID, overrides: {}, models: {} };
 }
 
 /* The mirror of `ProfileSpeechSettings::default()`, and the four model fields
@@ -233,7 +233,15 @@ function cloneProfileProviderSettings(
   settings?: ProfileProviderSettings | null,
 ): ProfileProviderSettings {
   if (!settings) return createDefaultProfileProviderSettings();
-  return { default: settings.default, overrides: { ...(settings.overrides ?? {}) } };
+  return {
+    default: settings.default,
+    overrides: { ...(settings.overrides ?? {}) },
+    /* ABSENT IN EVERY CONFIG WRITTEN BEFORE THE MODEL AXIS (ADR 0211), and it
+       has to be defaulted HERE rather than left undefined: every writer builds
+       its patch by spreading what this returns, so a missing key would be a
+       stored model dropped by the next unrelated save. */
+    models: { ...(settings.models ?? {}) },
+  };
 }
 
 function cloneProfileSpeechSettings(settings?: ProfileSpeechSettings | null): ProfileSpeechSettings {
@@ -303,7 +311,7 @@ export function resolveJobProvider(
   profile: Pick<TextProfile, "providers">,
   job: JobKey,
   connections: Connection[] = [],
-): { connection: string; provider: string; overridden: boolean } {
+): { connection: string; provider: string; overridden: boolean; model: string } {
   const axis = resolveProfileProviderSettings(profile);
   const override = axis.overrides[job];
   const connection = override === undefined ? axis.default : override;
@@ -311,6 +319,11 @@ export function resolveJobProvider(
     connection,
     provider: connections.find((entry) => entry.id === connection)?.provider ?? "",
     overridden: override !== undefined,
+    /* THE MODEL RIDES WITH THE RESOLUTION, mirroring `JobProvider` (ADR 0211).
+       As STORED: whether this job's vendor serves the id is a catalogue question
+       and `JobProvider::named_model` is the runtime's answer to it. A surface
+       drawing this needs both — what was chosen, and whether it still applies. */
+    model: axis.models[job] ?? "",
   };
 }
 

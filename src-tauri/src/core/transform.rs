@@ -193,6 +193,14 @@ impl NativeTransformConfig {
     /// An empty field lands on the lane's own default rather than on the cloud
     /// one, for the same reason.
     pub fn correction_model_for(&self, job: &JobProvider) -> String {
+        /* THE JOB'S OWN MODEL FIRST (ADR 0211). It arrives on the resolution
+           rather than as a field of its own, so this snapshot needed no second
+           thing to carry: the axis it already holds whole answers *with what*
+           beside *on whose account*. */
+        if let Some(named) = job.named_model() {
+            return named.to_string();
+        }
+
         let named = if is_local_lane(job) {
             self.local_correction_model.trim()
         } else {
@@ -213,6 +221,11 @@ impl NativeTransformConfig {
     /// their own job off this snapshot's axis, and the model has to come from
     /// the same object or the two can disagree about the session.
     pub fn chat_model_for(&self, job: &JobProvider) -> String {
+        // The job's own model first, for the reason above (ADR 0211).
+        if let Some(named) = job.named_model() {
+            return named.to_string();
+        }
+
         let named = if is_local_lane(job) {
             self.local_agent_model.trim()
         } else {
@@ -1277,6 +1290,7 @@ mod tests {
             providers: ProfileProviderSettings {
                 default: cloud.id.clone(),
                 overrides: BTreeMap::from([(JobKey::Cleanup, local.id.clone())]),
+                models: BTreeMap::new(),
             },
             connections: vec![cloud, local],
             correction_model: "llama-3.3-70b-versatile".to_string(),
@@ -1316,12 +1330,14 @@ mod tests {
             connection: "connection-local".to_string(),
             provider: super::super::providers::LOCAL_PROVIDER_ID.to_string(),
             overridden: true,
+            model: String::new(),
         };
         let cloud = JobProvider {
             job: JobKey::Cleanup,
             connection: super::super::config::DEFAULT_CONNECTION_ID.to_string(),
             provider: super::super::providers::DEFAULT_PROVIDER_ID.to_string(),
             overridden: false,
+            model: String::new(),
         };
 
         assert_eq!(

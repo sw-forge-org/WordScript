@@ -598,7 +598,7 @@ describe("AI Models, choosing the connection", () => {
        arriving as a row that stores somewhere nothing reads. */
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
       default: "connection-groq",
-      overrides: {},
+      overrides: {}, models: {},
     });
   });
 
@@ -619,7 +619,7 @@ describe("AI Models, choosing the connection", () => {
 
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
       default: "connection-groq",
-      overrides: {},
+      overrides: {}, models: {},
     });
   });
 
@@ -641,7 +641,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "connection-groq", overrides: {} };
+    active.providers = { default: "connection-groq", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
     const keyButtons = await screen.findAllByRole("button", { name: /Replace|Add/ });
@@ -681,14 +681,14 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: employer.id, overrides: {} };
+    active.providers = { default: employer.id, overrides: {}, models: {} };
     /* A SECOND PROFILE ON THE SAME ACCOUNT, which is the half of ADR 0208 that
        still holds: it keeps naming what it named and its jobs go inert. */
     config.text_profiles.push({
       ...active,
       id: "profile-other",
       label: "Other",
-      providers: { default: employer.id, overrides: {} },
+      providers: { default: employer.id, overrides: {}, models: {} },
     });
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
@@ -709,11 +709,11 @@ describe("AI Models, choosing the connection", () => {
     expect(written.connections).toEqual([CLOUD_ACCOUNT]);
     expect(axisOf(written, config.active_text_profile_id)).toEqual({
       default: CLOUD_ACCOUNT.id,
-      overrides: {},
+      overrides: {}, models: {},
     });
     expect(axisOf(written, "profile-other")).toEqual({
       default: employer.id,
-      overrides: {},
+      overrides: {}, models: {},
     });
   });
 
@@ -735,7 +735,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: employer.id, overrides: {} };
+    active.providers = { default: employer.id, overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
     await user.click(await screen.findByRole("button", { name: "Remove" }));
@@ -773,7 +773,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: employer.id, overrides: {} };
+    active.providers = { default: employer.id, overrides: {}, models: {} };
     const answering = invoked.getMockImplementation()!;
     invoked.mockImplementation(async (command: string, args?: Parameters<typeof invoke>[1]) => {
       if (command === "clear_connection_credentials") {
@@ -803,7 +803,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: employer.id, overrides: {} };
+    active.providers = { default: employer.id, overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
     expect(await screen.findByRole("button", { name: "Remove" })).toHaveAttribute(
@@ -836,7 +836,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "connection-deleted", overrides: {} };
+    active.providers = { default: "connection-deleted", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
     const row = (await screen.findByLabelText("Account")).closest(".ws-row");
@@ -859,7 +859,7 @@ describe("AI Models, choosing the connection", () => {
     await user.selectOptions(await screen.findByLabelText("Account"), CLOUD_ACCOUNT.id);
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
       default: CLOUD_ACCOUNT.id,
-      overrides: {},
+      overrides: {}, models: {},
     });
   });
 
@@ -889,7 +889,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: employer.id, overrides: {} };
+    active.providers = { default: employer.id, overrides: {}, models: {} };
 
     /* The runtime answering about the OTHER account — which is what a stale read
        is, and what one render after every account switch holds. */
@@ -918,7 +918,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: employer.id, overrides: {} };
+    active.providers = { default: employer.id, overrides: {}, models: {} };
 
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
@@ -963,7 +963,7 @@ describe("AI Models, choosing the connection", () => {
     ]);
     expect(axisOf(patch.mock.calls[0][0], runtime.config.active_text_profile_id)).toEqual({
       default: "connection-openai",
-      overrides: {},
+      overrides: {}, models: {},
     });
   });
 
@@ -984,7 +984,7 @@ describe("AI Models, choosing the connection", () => {
         plan: "",
       },
     ];
-    active.providers = { default: "connection-openai", overrides: {} };
+    active.providers = { default: "connection-openai", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
     /* Several rows draw a Replace button — every overriding job row has one —
@@ -1042,7 +1042,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "connection-openai", overrides: {} };
+    active.providers = { default: "connection-openai", overrides: {}, models: {} };
     invoked.mockImplementation(async (command: string) => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") return STATUS;
@@ -1086,7 +1086,7 @@ describe("AI Models, choosing the connection", () => {
         plan: "",
       },
     ];
-    active.providers = { default: "connection-anthropic", overrides: {} };
+    active.providers = { default: "connection-anthropic", overrides: {}, models: {} };
     invoked.mockImplementation(async (command: string) => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") return STATUS;
@@ -1121,7 +1121,7 @@ describe("AI Models, choosing the connection", () => {
         plan: "",
       },
     ];
-    active.providers = { default: "connection-openai", overrides: {} };
+    active.providers = { default: "connection-openai", overrides: {}, models: {} };
     /* BOTH READS MOVE, and that is the seam's own rule rather than fixture
        bookkeeping: `resolveProviderAnswer` prefers `provider_status`'s
        capability block over the registered list where it holds one, so a
@@ -1159,7 +1159,7 @@ describe("AI Models, choosing the connection", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: "openrouter", overrides: {} };
+    active.providers = { default: "openrouter", overrides: {}, models: {} };
     invoked.mockImplementation(async (command: string) => {
       if (command === "registered_providers") return REGISTERED;
       if (command === "provider_status") return STATUS;
@@ -1188,7 +1188,7 @@ describe("AI Models, choosing the connection", () => {
         plan: "",
       },
     ];
-    active.providers = { default: "connection-openai", overrides: {} };
+    active.providers = { default: "connection-openai", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
     /* `Follow the connection · Groq` on a profile connected to OpenAI is the
@@ -1242,6 +1242,7 @@ describe("AI Models, the per-job override", () => {
       overrides: Object.fromEntries(
         Object.entries(overrides).map(([job, vendor]) => [job, `connection-${vendor}`]),
       ),
+      models: {},
     };
     return config;
   }
@@ -1295,7 +1296,7 @@ describe("AI Models, the per-job override", () => {
 
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
       default: CLOUD_ACCOUNT.id,
-      overrides: { upload: "connection-openai" },
+      overrides: { upload: "connection-openai" }, models: {},
     });
 
     /* *Use the default* DELETES the key. Writing the connection's id would
@@ -1313,7 +1314,7 @@ describe("AI Models, the per-job override", () => {
 
     expect(axisOf(patch.mock.calls[0][0], stored.active_text_profile_id)).toEqual({
       default: CLOUD_ACCOUNT.id,
-      overrides: {},
+      overrides: {}, models: {},
     });
   });
 
@@ -2406,7 +2407,7 @@ describe("Your server, configured", () => {
     const active = config.text_profiles.find(
       (profile) => profile.id === config.active_text_profile_id,
     )!;
-    active.providers = { default: account.id, overrides: {} };
+    active.providers = { default: account.id, overrides: {}, models: {} };
     return config;
   }
 
@@ -2437,7 +2438,7 @@ describe("Your server, configured", () => {
     };
     expect(
       written.text_profiles?.find((p) => p.id === runtime.config.active_text_profile_id)?.providers,
-    ).toEqual({ default: "connection-self_hosted", overrides: {} });
+    ).toEqual({ default: "connection-self_hosted", overrides: {}, models: {} });
   });
 
   it("stores the URL that is typed into it", async () => {

@@ -1500,6 +1500,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A status names the account it answered about, and a deletion repoints only the profile that ordered it.
 - [0210](0210-a-removed-account-takes-its-credential-with-it-and-the-ask-replaces-an-undo-window-that-was-never-there.md):
   A removed account takes its credential with it, and the ask replaces an undo window that was never there.
+- [0211](0211-a-model-is-stored-on-the-same-key-as-the-account-because-a-model-id-is-only-meaningful-for-a-vendor.md):
+  A model is stored on the same key as the account, because a model id is only meaningful for a vendor.
 
 ## Resolved: the number 0011 was used twice
 

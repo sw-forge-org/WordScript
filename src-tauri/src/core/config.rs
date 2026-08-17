@@ -783,6 +783,7 @@ impl TextProfile {
         self.providers = Some(ProfileProviderSettings {
             default: normalize_provider_value(&stored),
             overrides: BTreeMap::new(),
+            models: BTreeMap::new(),
         });
     }
 
@@ -1078,6 +1079,25 @@ pub struct ProfileProviderSettings {
     /// write and unwrite, and the resolution happens at read time rather than
     /// being baked in at write time (ADR 0094).
     pub overrides: BTreeMap<JobKey, String>,
+    /// The model each job runs on, where the reader named one (ADR 0211).
+    ///
+    /// **On this object rather than in the speech block, because the two cells
+    /// of a job row are one decision.** A model id is only meaningful for a
+    /// vendor — a Groq chat id names nothing at OpenAI — and the vendor is per
+    /// job since ADR 0094. Keeping the model on a coarser key than the account
+    /// is what let one `agent_model` stand behind five jobs on two vendors,
+    /// where one of them was always naming a model its vendor does not serve.
+    ///
+    /// **Sparse for the same reason `overrides` is**: absent means *the
+    /// profile's default for this job's role*, which is a value the surface can
+    /// write and unwrite. It is also what the surface writes when a row's
+    /// account moves, because a model chosen for Groq is not a choice about
+    /// OpenAI.
+    ///
+    /// The role defaults stay where they are — `speech.model`,
+    /// `speech.correction_model`, `speech.agent_model` and their local mirrors —
+    /// and this map is what outranks them per job.
+    pub models: BTreeMap<JobKey, String>,
 }
 
 impl Default for ProfileProviderSettings {
@@ -1085,6 +1105,7 @@ impl Default for ProfileProviderSettings {
         Self {
             default: DEFAULT_CONNECTION_ID.to_string(),
             overrides: BTreeMap::new(),
+            models: BTreeMap::new(),
         }
     }
 }
@@ -1118,6 +1139,14 @@ impl ProfileProviderSettings {
             connection,
             provider,
             overridden,
+            /* THE MODEL RIDES WITH THE RESOLUTION (ADR 0211), so every caller
+               that already asks *what does this job run on* gets *with what* in
+               the same answer — and gets it off the same snapshot, which is what
+               ADR 0207 found the two halves failing to do. Unvalidated here on
+               purpose: whether the named id belongs to this job's vendor is
+               `JobProvider::named_model`'s question, and it needs the catalogue
+               rather than the config. */
+            model: self.models.get(&job).cloned().unwrap_or_default(),
         }
     }
 
@@ -1149,6 +1178,19 @@ impl ProfileProviderSettings {
             *connection = connection.trim().to_string();
         }
         self.overrides.retain(|_, connection| !connection.is_empty());
+
+        /* THE MODELS GET THE SAME TREATMENT AND FOR THE SAME REASON (ADR 0211):
+           whitespace names nothing anybody picked, and an empty entry is the
+           stored form of *follow the role default* written the long way. What is
+           NOT done here is dropping a model this job's vendor does not serve —
+           that is a resolution-time question (`JobProvider::named_model`), it
+           needs the catalogue, and a normalization that answered it would be
+           deciding on load what a reader may have typed for a vendor whose newest
+           model this build has never read about (ADR 0115). */
+        for model in self.models.values_mut() {
+            *model = model.trim().to_string();
+        }
+        self.models.retain(|_, model| !model.is_empty());
     }
 }
 
@@ -1737,10 +1779,18 @@ impl AppConfig {
     pub(crate) fn chat_model_for_job(&self, job: JobKey) -> String {
         let profile = self.active_text_profile();
         let speech = profile.resolved_speech();
+        let resolved = profile.job_provider(job, self.connections());
 
-        if profile.job_provider(job, self.connections()).provider
-            == super::providers::LOCAL_PROVIDER_ID
-        {
+        /* THE JOB'S OWN MODEL OUTRANKS EVERY DEFAULT BELOW (ADR 0211), and it is
+           the answer to what the two fields under it could not express: five chat
+           jobs read one `agent_model`, so moving translate's model moved four
+           other jobs and a profile with two cloud vendors named a model one of
+           them does not serve. */
+        if let Some(named) = resolved.named_model() {
+            return named.to_string();
+        }
+
+        if resolved.provider == super::providers::LOCAL_PROVIDER_ID {
             first_named(
                 [&speech.local_agent_model, &self.local_agent_model],
                 default_local_agent_model(),
@@ -1775,6 +1825,13 @@ impl AppConfig {
         let speech = profile.resolved_speech();
         let job = profile.job_provider(JobKey::Dictation, self.connections());
 
+        /* THE LOCAL RECOGNISER IS NOT A VENDOR'S MODEL AND TAKES NO OVERRIDE
+           (ADR 0211). Every other model on this axis is an id a vendor serves; the
+           local one is a FILE on this machine, picked on `On this machine` with
+           its decode settings attached (`local_profile`), and `normalize` derives
+           this field from that choice. A job row offering a second place to name
+           it would be two controls over one fact, and the one here would be the
+           one that cannot check whether the file is installed. */
         if job.provider == super::providers::LOCAL_PROVIDER_ID {
             let named = speech.local_model.trim();
             return Some(if named.is_empty() {
@@ -1782,6 +1839,13 @@ impl AppConfig {
             } else {
                 named.to_string()
             });
+        }
+
+        // Everywhere else the job's own model wins, including the typed id on
+        // somebody's own server: that lane publishes no list, so an override
+        // there is the only per-job answer there can be.
+        if let Some(named) = job.named_model() {
+            return Some(named.to_string());
         }
 
         // The third lane reads the id off the connection (ADR 0165, rescoped by
@@ -3450,6 +3514,7 @@ mod tests {
                 (JobKey::Assistant, UNREGISTERABLE_PROVIDER_ID.to_string()),
                 (JobKey::Translate, local.id.clone()),
             ]),
+            models: BTreeMap::new(),
         });
         config.connections = Some(vec![local]);
 
@@ -3496,6 +3561,7 @@ mod tests {
         profile.providers = Some(ProfileProviderSettings {
             default: cloud.id.clone(),
             overrides: BTreeMap::from([(JobKey::Assistant, local.id.clone())]),
+            models: BTreeMap::new(),
         });
         config.connections = Some(vec![cloud, local]);
 
@@ -3562,6 +3628,7 @@ mod tests {
                     providers: Some(ProfileProviderSettings {
                         default: work.id.clone(),
                         overrides: BTreeMap::new(),
+                        models: BTreeMap::new(),
                     }),
                     ..TextProfile::default()
                 },
@@ -3572,6 +3639,7 @@ mod tests {
                     providers: Some(ProfileProviderSettings {
                         default: private.id.clone(),
                         overrides: BTreeMap::new(),
+                        models: BTreeMap::new(),
                     }),
                     ..TextProfile::default()
                 },
@@ -3641,6 +3709,189 @@ mod tests {
         assert_eq!(email, DEFAULT_CONNECTION_ID);
     }
 
+    /// Builds a config whose active profile runs on `default` with the given
+    /// per-job overrides and models, over the connections handed in.
+    fn config_with_axis(
+        connections: Vec<Connection>,
+        default: &str,
+        overrides: BTreeMap<JobKey, String>,
+        models: BTreeMap<JobKey, String>,
+    ) -> AppConfig {
+        let mut config = AppConfig::default();
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        profile.providers = Some(ProfileProviderSettings {
+            default: default.to_string(),
+            overrides,
+            models,
+        });
+        config.connections = Some(connections);
+        config
+    }
+
+    /// **TWO CHAT JOBS ON TWO VENDORS RUN ON TWO MODELS** (ADR 0211).
+    ///
+    /// The sentence the whole model axis exists for. Five chat jobs read one
+    /// `agent_model`, so this state — cleanup on Groq, the assistant on OpenAI —
+    /// had one stored value standing behind both, and one of the two was always
+    /// naming a model its vendor does not serve.
+    #[test]
+    fn two_chat_jobs_on_two_vendors_run_on_the_models_each_was_given() {
+        let groq = test_connection(DEFAULT_PROVIDER_ID);
+        let openai = test_connection("openai");
+        let config = config_with_axis(
+            vec![groq.clone(), openai.clone()],
+            &groq.id,
+            BTreeMap::from([(JobKey::Assistant, openai.id.clone())]),
+            BTreeMap::from([
+                (JobKey::Cleanup, "llama-3.3-70b-versatile".to_string()),
+                (JobKey::Assistant, "gpt-5.6-terra".to_string()),
+            ]),
+        );
+
+        assert_eq!(config.chat_model_for_job(JobKey::Cleanup), "llama-3.3-70b-versatile");
+        assert_eq!(config.chat_model_for_job(JobKey::Assistant), "gpt-5.6-terra");
+        assert_eq!(
+            config.chat_model_for_job(JobKey::Translate),
+            default_agent_model(),
+            "a job that named none still follows the profile's default for its role",
+        );
+    }
+
+    /// **A MODEL BELONGING TO ANOTHER VENDOR IS NOT SENT** (ADR 0211).
+    ///
+    /// The state a connection change leaves behind, and the reason the guard is
+    /// at resolution rather than on load. Sending it is not a clean failure: the
+    /// OpenAI adapter substitutes its own default and records the swap in the
+    /// runtime log, so the surface names one model while the request carries
+    /// another (ADR 0067).
+    #[test]
+    fn a_model_that_belongs_to_another_vendor_falls_back_to_the_default() {
+        let openai = test_connection("openai");
+        let config = config_with_axis(
+            vec![openai.clone()],
+            &openai.id,
+            BTreeMap::new(),
+            BTreeMap::from([(JobKey::Cleanup, "llama-3.3-70b-versatile".to_string())]),
+        );
+
+        assert_eq!(
+            config.chat_model_for_job(JobKey::Cleanup),
+            default_agent_model(),
+            "a Groq id on an OpenAI job is a leftover, not a choice",
+        );
+    }
+
+    /// **AN ID THE CATALOGUE HAS NEVER SEEN PASSES** (ADR 0115, held by
+    /// ADR 0211). It is a typed override — a vendor's newest model, or the id
+    /// somebody's own server answers to — and refusing it would make this build's
+    /// read-date the limit of what the product can run.
+    #[test]
+    fn a_typed_model_this_build_has_never_read_about_survives() {
+        let groq = test_connection(DEFAULT_PROVIDER_ID);
+        let config = config_with_axis(
+            vec![groq.clone()],
+            &groq.id,
+            BTreeMap::new(),
+            BTreeMap::from([(JobKey::Rewrite, "a-model-shipped-after-this-build".to_string())]),
+        );
+
+        assert_eq!(
+            config.chat_model_for_job(JobKey::Rewrite),
+            "a-model-shipped-after-this-build",
+        );
+    }
+
+    /// **THE LOCAL RECOGNISER TAKES NO PER-JOB MODEL** (ADR 0211). It is a file
+    /// on this machine rather than a vendor's id, chosen on `On this machine`
+    /// with its decode settings attached, and `local_profile` is what keeps the
+    /// two together.
+    #[test]
+    fn a_local_dictation_keeps_the_machines_own_recogniser() {
+        let local = test_connection(LOCAL_PROVIDER_ID);
+        let mut config = config_with_axis(
+            vec![local.clone()],
+            &local.id,
+            BTreeMap::new(),
+            BTreeMap::from([(JobKey::Dictation, "ggml-medium".to_string())]),
+        );
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        let mut speech = profile.speech.clone().unwrap_or_default();
+        speech.local_model = "small".to_string();
+        profile.speech = Some(speech);
+
+        assert_eq!(
+            config.speech_model().as_deref(),
+            Some("small"),
+            "the installed file answers, not the row's model cell",
+        );
+    }
+
+    /// The cloud half of the same question: a per-job speech model IS the answer
+    /// there, because it is an id the vendor serves and the profile's
+    /// `speech.model` is one value for every speech job.
+    #[test]
+    fn a_cloud_dictation_takes_the_model_its_row_names() {
+        let groq = test_connection(DEFAULT_PROVIDER_ID);
+        let config = config_with_axis(
+            vec![groq.clone()],
+            &groq.id,
+            BTreeMap::new(),
+            BTreeMap::from([(JobKey::Dictation, "whisper-large-v3".to_string())]),
+        );
+
+        assert_eq!(config.speech_model().as_deref(), Some("whisper-large-v3"));
+    }
+
+    /// **ON YOUR OWN SERVER THE ROW OUTRANKS THE ENDPOINT'S OWN ID**
+    /// (ADR 0211's second half).
+    ///
+    /// `Connection.model` stays where ADR 0165 put it, because a server that
+    /// publishes no list is identified by the id it answers to — that is half its
+    /// address, not a choice between offers, and one typing serves every job on
+    /// it. A job that names its own model is then the one case where the reader
+    /// did make a choice, and it wins.
+    #[test]
+    fn a_self_hosted_job_takes_its_own_model_over_the_servers() {
+        let mut server =
+            test_connection(crate::core::providers::self_hosted::SELF_HOSTED_PROVIDER_ID);
+        server.base_url = "http://10.0.0.2:8080/v1".to_string();
+        server.model = "faster-whisper-medium".to_string();
+
+        let plain = config_with_axis(
+            vec![server.clone()],
+            &server.id,
+            BTreeMap::new(),
+            BTreeMap::new(),
+        );
+        assert_eq!(
+            plain.speech_model().as_deref(),
+            Some("faster-whisper-medium"),
+            "one typing on the server serves every job on it",
+        );
+
+        let chosen = config_with_axis(
+            vec![server.clone()],
+            &server.id,
+            BTreeMap::new(),
+            BTreeMap::from([(JobKey::Dictation, "faster-whisper-large-v3".to_string())]),
+        );
+        assert_eq!(
+            chosen.speech_model().as_deref(),
+            Some("faster-whisper-large-v3"),
+            "and a row that names one is a choice, which outranks the address",
+        );
+    }
+
     #[test]
     fn a_job_resolves_the_role_its_call_is_made_in() {
         assert_eq!(JobKey::Dictation.role(), ProviderRole::Speech);
@@ -3672,6 +3923,7 @@ mod tests {
         profile.providers = Some(ProfileProviderSettings {
             default: cloud.id.clone(),
             overrides: BTreeMap::from([(JobKey::Rewrite, local.id.clone())]),
+            models: BTreeMap::new(),
         });
         config.connections = Some(vec![cloud, local]);
 
@@ -4621,6 +4873,7 @@ mod tests {
             providers: Some(ProfileProviderSettings {
                 default: LOCAL_PROVIDER_ID.to_string(),
                 overrides: BTreeMap::from([(JobKey::Cleanup, DEFAULT_PROVIDER_ID.to_string())]),
+                models: BTreeMap::new(),
             }),
             speech: Some(ProfileSpeechSettings {
                 migrated_provider: Some(DEFAULT_PROVIDER_ID.to_string()),
@@ -4868,6 +5121,7 @@ mod tests {
                     JobKey::Assistant,
                     "connection-local".to_string(),
                 )]),
+                models: BTreeMap::new(),
             }),
             ..TextProfile::default()
         };

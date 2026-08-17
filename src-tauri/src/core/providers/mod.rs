@@ -181,11 +181,53 @@ pub struct JobProvider {
     /// derivable afterwards — an override that happens to name the same vendor
     /// as the connection is still an override.
     pub overridden: bool,
+    /// The model this job was told to run on, as stored, and empty where the
+    /// profile named none (ADR 0211).
+    ///
+    /// **Beside the provider for the reason the connection is beside it**: a
+    /// model id is only meaningful for a vendor, so a caller holding this cannot
+    /// pair a model with a vendor that never served it. Read through
+    /// [`JobProvider::named_model`] rather than directly — this field is what
+    /// was stored, that method is what may be sent.
+    pub model: String,
 }
 
 impl JobProvider {
     pub fn role(&self) -> ProviderRole {
         self.job.role()
+    }
+
+    /// The model this job runs on, where the profile named one **and this job's
+    /// vendor serves it** (ADR 0211).
+    ///
+    /// `None` means *fall back to the profile's default for this role*, and it
+    /// covers two states on purpose: nothing was named, or what was named belongs
+    /// to somebody else. The second is a value left behind by a connection
+    /// change, and it is the one worth refusing here — sending it either spends a
+    /// request to be told the model does not exist, or gets silently swapped for
+    /// the vendor's own default by the adapter (`openai::resolve_model`,
+    /// `openrouter`), which leaves the surface naming one model and the log
+    /// another. The lie is quieter than the failure and therefore worse
+    /// (ADR 0067).
+    ///
+    /// **An id the catalogue has never seen passes** (ADR 0115). It is a typed
+    /// override — a vendor's newest model, or the id somebody's own server
+    /// answers to, which publishes no list at all — and refusing it would make
+    /// this build's read-date the limit of what the product can run.
+    ///
+    /// A job whose connection resolves to no vendor answers `None`: there is
+    /// nothing to check the id against, and a job with no vendor is inert anyway
+    /// (`credential`).
+    pub fn named_model(&self) -> Option<&str> {
+        let named = self.model.trim();
+        if named.is_empty() || self.provider.is_empty() {
+            return None;
+        }
+
+        match super::model_catalogue::provider_for_model_id(named, self.role()) {
+            Some(owner) if owner != self.provider => None,
+            _ => Some(named),
+        }
     }
 
     /// What answers for this job, resolved from the provider this job runs on.

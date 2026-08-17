@@ -1,14 +1,59 @@
 import { describe, expect, it } from "vitest";
 import { createAppConfig } from "../test/factories";
 import {
+  buildProfileProvidersPatch,
   buildTextProfilesPatch,
   createDefaultProfileModesSettings,
   createDefaultTextProfileWorkMode,
   createEmptyTextProfileCuration,
   describeTextProfileWorkMode,
   resolveActiveTextProfile,
+  resolveJobProvider,
+  resolveProfileProviderSettings,
   resolveTextProfileWorkMode,
 } from "./textProfiles";
+
+describe("the model axis on the provider object (ADR 0211)", () => {
+  /** **A STORED MODEL SURVIVES AN UNRELATED SAVE.**
+   *
+   *  Every writer builds its patch by spreading what `resolveProfileProviderSettings`
+   *  returns, so a key that resolver forgets is a key the next save drops — and
+   *  the reader would watch their per-task model disappear because they touched
+   *  a different row. Absent in every config written before this axis, which is
+   *  exactly the shape this defaults from. */
+  it("keeps a job's model when another part of the axis is written", () => {
+    const config = createAppConfig();
+    const active = resolveActiveTextProfile(config);
+    active.providers = {
+      default: "connection-default",
+      overrides: {},
+      models: { translate: "gpt-5.6-terra" },
+    };
+    config.text_profiles = config.text_profiles.map((profile) =>
+      profile.id === active.id ? active : profile,
+    );
+
+    const patch = buildProfileProvidersPatch(config, { default: "connection-work" });
+    const written = patch.text_profiles!.find((profile) => profile.id === active.id)!;
+
+    expect(resolveProfileProviderSettings(written)).toEqual({
+      default: "connection-work",
+      overrides: {},
+      models: { translate: "gpt-5.6-terra" },
+    });
+  });
+
+  /** A profile written before the axis existed reads as *no model named*, which
+   *  is the same answer as a job that never had one: the role default. */
+  it("reads a config written before the axis as naming no models", () => {
+    const config = createAppConfig();
+    const active = resolveActiveTextProfile(config);
+    active.providers = { default: "connection-default", overrides: {} } as never;
+
+    expect(resolveProfileProviderSettings(active).models).toEqual({});
+    expect(resolveJobProvider(active, "translate").model).toBe("");
+  });
+});
 
 describe("textProfiles", () => {
   it("falls back to the first persisted profile instead of legacy top-level mirrors", () => {

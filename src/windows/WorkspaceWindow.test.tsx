@@ -78,7 +78,7 @@ function configOn(
   const active = config.text_profiles.find(
     (profile) => profile.id === config.active_text_profile_id,
   )!;
-  active.providers = { default: connection.id, overrides: {} };
+  active.providers = { default: connection.id, overrides: {}, models: {} };
   return config;
 }
 

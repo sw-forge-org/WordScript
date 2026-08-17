@@ -258,6 +258,11 @@ export type JobKey =
 export interface ProfileProviderSettings {
   default:                 string;
   overrides:               Partial<Record<JobKey, string>>;
+  /** The model each job runs on, where the reader named one (ADR 0211). Sparse
+   *  for the reason `overrides` is: absent means *the profile's default for this
+   *  job's role*. It sits on this object rather than in the speech block because
+   *  a model id is only meaningful for a vendor, and the vendor is per job. */
+  models:                  Partial<Record<JobKey, string>>;
 }
 
 export interface ProfileSpeechSettings {
