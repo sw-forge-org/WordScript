@@ -1,8 +1,12 @@
 # Every history record names the connection's model, not the model that listened
 
-Status: **open, found 2026-08-16.** Nothing is fixed. **All 50 records in the
-owner's history name a model no request used**, and every rate this repo has
-measured per model is therefore attributed to the wrong row.
+Status: **Fixed 2026-08-17 by
+[ADR 0203](../decisions/0203-the-model-a-record-names-is-the-one-the-profile-sent-and-a-lane-that-sent-none-names-none.md)
+for every record written from now on.** Found 2026-08-16, when **all 50 records
+in the owner's history named a model no request used** — 105 by the time the fix
+landed. **The records written before it keep the wrong value and nothing
+migrates them** (the owner's call: this machine's local state is disposable), so
+the measurement rule below outlives the code fix. The report is kept as written.
 
 Found while resolving an unrelated report: the log line and the history record
 for the same session name different models.
@@ -93,6 +97,39 @@ where the profile's `speech.local_model` is what runs.
   is the same seam and does not.
 
 No fix is written here.
+
+## What was written, 2026-08-17
+
+ADR 0203 carries the reasoning. The three questions above, answered:
+
+- **One resolver.** `AppConfig::speech_model()` asks the active profile and then
+  the lane — local takes `speech.local_model` (falling back to `base`),
+  self-hosted takes `self_hosted_model`, every other lane takes `speech.model`.
+  `NativeCaptureConfig::from_app_config`, `capture_budget::resolve` and the four
+  history sites call it; nothing computes a second answer. The local lane's
+  half, named above as unchecked, was the same defect and is fixed with it.
+- **A lane that sent no id gets a record that names none.** The answer is an
+  `Option`, because Groq resolves an empty model to its turbo row and a record
+  naming that row would be a plausible sentence about a request nobody made.
+- **The seam has a test.** Three cases in `capture.rs`: a profile override beats
+  the connection value, the local lane names the profile's own weights, and
+  nothing configured records nothing.
+
+**The old records are not corrected and not cleared.** Two consequences a later
+reader has to carry:
+
+- **No per-model rate may be computed across the boundary.** Records before
+  2026-08-17 say `whisper-large-v3` regardless of what ran; records after it say
+  what was sent. A rate over the whole file is a rate over two different
+  attributions.
+- **The transcript files keep their wrong `model:` line.** ADR 0074's front
+  matter was written at record time and is not rewritten — a dated artifact is
+  reported wrong rather than repaired, which is this cluster's standing rule
+  applied to itself.
+
+One thing the fix deliberately does not settle: **a retry record still names
+this machine's current recogniser** although a retry re-runs the transform over
+an existing transcript and nothing listens. The code says so where it happens.
 
 ## Related
 

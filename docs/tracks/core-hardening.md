@@ -50,8 +50,8 @@ What two passes bought is that the cluster went from invisible to instrumented.
 | **Cleanup flips the person** | **Yes, 1 in 200, found 2026-08-13** | Nothing. The corpus carries the case and both negative directions; **no rule was written on purpose** — see step 6 |
 | **Dictation comes back in English** | **Yes, 7 of 50, found 2026-08-16** | Nothing. Three causes ruled out — the fourth, *not prompt bias*, **was withdrawn the same evening**: a 65-byte, entirely English initial prompt was sent, resolved to the character from the log. The language is never pinned because the control is drawn and unwired, and **the detected language is discarded**. Step 9 |
 | **The transcript stops before the audio does** | **Yes — a fourth event 2026-08-16, four days after the third** | Instrumented 2026-08-12, nothing reacts. The new event **passed every instrument**, `last_segment_avg_logprob=-0.192` included, which removes confidence as a detector and leaves text density as the only proposal that would have caught it. The ten-second test the record asks for — delete the learned terms — has still not been run. Steps 8 and 9 |
-| **The panel names the wrong stage** | **Yes, all records where a rule fired and the texts differ**, found 2026-08-16 | Nothing. The foot picks its sentence by string comparison while `applied_rules` sits unread in the same function. It reported a 16-byte prompt strip as *"The AI stage rewrote it."* and a cleanup defect was filed against a paragraph cleanup never touched. Step 10 |
-| **The record names the wrong model** | **Yes, 50 of 50**, found 2026-08-16 | Nothing. History reads `config.model`; the capture path sends the profile's `speech.model`. Every per-model rate this track has published is misattributed. Step 10 |
+| **The panel names the wrong stage** | **No — fixed 2026-08-17** (ADR 0204) | The foot names what WordScript's own rules did and derives the rest from the diff: *nothing was added or reworded* is a subsequence test, not a rule id. `post_corrected` is no longer read as a rewrite — on the record that produced the report its whole effect was two spaces. Five cases hold it |
+| **The record names the wrong model** | **No for new records — fixed 2026-08-17** (ADR 0203) | One resolver, `AppConfig::speech_model()`, asked by the request, the record and the capture ceiling; a lane that sent no id records none. **The records written before the fix keep the wrong value and are not migrated**, so no per-model rate may cross 2026-08-17 |
 
 ## What the second pass did
 
@@ -269,8 +269,21 @@ rather than compacted, because the items are cited by number elsewhere.
    `prompt_chars` is in the log for all fifty records, and 7 affected against 43
    clean is a comparison that needs no code. Run it before proposing anything.
 
-10. **The instruments themselves are now two records.** Added 2026-08-16, both
-    found on the single record above:
+10. ~~**The instruments themselves are now two records.**~~ **Done 2026-08-17**
+    — ADR 0203 (the model) and ADR 0204 (the sentence). Both records carry a
+    *What was written* section; two things the next reader inherits rather than
+    re-derives:
+
+    - **No per-model rate may cross 2026-08-17.** The records written before the
+      fix keep `whisper-large-v3` regardless of what ran and are deliberately
+      not migrated (the owner's call: this machine's local state is disposable).
+      The transcript files keep the same wrong line in their front matter.
+    - **`post_corrected` is not evidence of a rewrite** and never was. On the
+      record that produced both reports its entire effect was one leading and
+      one trailing space, which is also why the panel's new sentence is derived
+      from the diff rather than from the rule list.
+
+    Added 2026-08-16, both found on the single record above:
     [`known-issues/heard-and-written-do-not-say-which-stage-changed-what.md`](../known-issues/heard-and-written-do-not-say-which-stage-changed-what.md)
     and
     [`known-issues/the-record-names-the-connection-model-not-the-one-that-listened.md`](../known-issues/the-record-names-the-connection-model-not-the-one-that-listened.md).

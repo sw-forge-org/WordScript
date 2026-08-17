@@ -333,7 +333,16 @@ impl Default for NativeCaptureConfig {
 
 impl NativeCaptureConfig {
     pub fn load_from_disk() -> Self {
-        let app_config = AppConfig::load_from_disk();
+        Self::from_app_config(AppConfig::load_from_disk())
+    }
+
+    /// The capture's whole snapshot, derived from a config rather than from the
+    /// disk — which is what makes the derivation testable against the other
+    /// paths that answer questions about the same session (ADR 0203). Two
+    /// documents and a comment in `text_rules.rs` already named this function
+    /// while only `load_from_disk` existed, because this is the step they meant:
+    /// config in, session snapshot out.
+    pub fn from_app_config(app_config: AppConfig) -> Self {
         let active_profile = app_config.active_text_profile();
         let work_mode = app_config.resolved_active_text_profile_work_mode();
 
@@ -352,25 +361,15 @@ impl NativeCaptureConfig {
         let providers = active_profile.resolved_providers();
         let speech_provider = providers.resolve(JobKey::Dictation).provider.clone();
         let local_provider_selected = speech_provider == super::providers::LOCAL_PROVIDER_ID;
-        let model = if local_provider_selected {
-            if speech.local_model.trim().is_empty() {
-                "base".to_string()
-            } else {
-                speech.local_model
-            }
-        } else if speech_provider == super::providers::self_hosted::SELF_HOSTED_PROVIDER_ID {
-            /* THE THIRD LANE WITH A MODEL FIELD OF ITS OWN (D1b, ADR 0165).
-               `speech.model` is a catalogued cloud id and this lane has no
-               catalogue: sending `whisper-large-v3` to somebody's own server
-               names a model it almost certainly does not serve, and the 404
-               would arrive as *your server rejected the request* rather than as
-               *WordScript sent the wrong id*. Empty is a legitimate answer —
-               the adapter then falls back to its own two doors and refuses with
-               the next action named if neither answers. */
-            app_config.self_hosted_model.clone()
-        } else {
-            speech.model
-        };
+        /* WHICH MODEL LISTENS, ASKED WHERE THE HISTORY PATH ASKS IT (ADR 0203).
+           The three lanes and their fallbacks used to live here as a match this
+           function owned, and `history.rs` answered the same question off the
+           connection-wide field — so a profile with a recogniser of its own
+           dictated on one model and filed the record under another. Empty stays
+           empty on the two lanes that have an adapter-side door: the request
+           then carries no id and the lane picks, which is exactly the case the
+           record reports as *no model named* rather than inventing one. */
+        let model = app_config.speech_model().unwrap_or_default();
 
         Self {
             providers,
@@ -2644,6 +2643,7 @@ fn classify_capture_stream_error(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::config::{ProfileSpeechSettings, TextProfile};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     /// A profile whose whole axis sits on the local runtime.
@@ -4284,6 +4284,89 @@ mod tests {
         assert!(!guard.rebuild_in_progress);
         assert!(!guard.paused);
         assert!(guard.paused_at.is_none());
+    }
+
+    // ── What listened, and what the record will say about it (ADR 0203) ──────
+
+    /// A config whose profile names a recogniser of its own while the
+    /// connection-wide fields name something else. This is not a contrived
+    /// shape: it is what any profile that sets a speech model at all produces,
+    /// and it is the shape the owner's own machine was in for all 50 records
+    /// the defect was found on.
+    fn config_with_a_profile_of_its_own(speech: ProfileSpeechSettings) -> AppConfig {
+        AppConfig {
+            model: "whisper-large-v3".to_string(),
+            local_model: "large-v3-turbo".to_string(),
+            active_text_profile_id: "founder-ops".to_string(),
+            text_profiles: vec![TextProfile {
+                id: "founder-ops".to_string(),
+                speech: Some(speech),
+                ..TextProfile::default()
+            }],
+            ..AppConfig::default()
+        }
+    }
+
+    /// **The two paths that answer "which model" answer with the same string.**
+    /// The provider half of this seam has had a test since ADR 0094; the model
+    /// half did not, which is how the history path kept reading an axis older
+    /// than the one the request was built from.
+    #[test]
+    fn the_record_names_the_model_the_request_carries() {
+        let config = config_with_a_profile_of_its_own(ProfileSpeechSettings {
+            model: "whisper-large-v3-turbo".to_string(),
+            ..Default::default()
+        });
+
+        assert_eq!(
+            config.speech_model().as_deref(),
+            Some("whisper-large-v3-turbo"),
+            "the profile's recogniser wins over the connection-wide default",
+        );
+        assert_eq!(
+            NativeCaptureConfig::from_app_config(config.clone()).model,
+            config.speech_model().unwrap_or_default(),
+            "the request and the record are built from one answer",
+        );
+    }
+
+    /// The local lane asks the profile too, and its fallback is a resolution
+    /// rather than a guess: whisper loads a file.
+    #[test]
+    fn the_local_lane_names_the_profiles_own_weights() {
+        let mut config = config_with_a_profile_of_its_own(ProfileSpeechSettings {
+            local_model: "small".to_string(),
+            ..Default::default()
+        });
+        config.text_profiles[0].providers = Some(local_lane_providers());
+
+        assert_eq!(config.speech_model().as_deref(), Some("small"));
+        assert_eq!(
+            NativeCaptureConfig::from_app_config(config.clone()).model,
+            "small",
+        );
+
+        config.text_profiles[0].speech = Some(ProfileSpeechSettings {
+            local_model: String::new(),
+            ..Default::default()
+        });
+        assert_eq!(config.speech_model().as_deref(), Some("base"));
+    }
+
+    /// **A lane that sends no model id gets a record that names none.** The
+    /// adapter picks its own default in that case, and a record naming the id
+    /// it *would* have picked is a plausible sentence about a request nobody
+    /// made — which is the failure class this whole cluster is about, committed
+    /// by the instrument.
+    #[test]
+    fn nothing_configured_is_recorded_as_nothing_rather_than_as_a_default() {
+        let config = config_with_a_profile_of_its_own(ProfileSpeechSettings {
+            model: String::new(),
+            ..Default::default()
+        });
+
+        assert_eq!(config.speech_model(), None);
+        assert!(NativeCaptureConfig::from_app_config(config).model.is_empty());
     }
 }
 

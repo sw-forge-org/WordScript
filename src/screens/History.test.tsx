@@ -688,6 +688,90 @@ describe("the raw panel's foot", () => {
     expect(intact.note).toBeUndefined();
   });
 
+  /* THE RECORD THIS SENTENCE WAS WRITTEN FOR — `history-1786910918745-50`,
+     2026-08-16, abridged to the tail where the two texts part. The owner read
+     "The AI stage rewrote it" on this pair and reported a cleanup defect; the
+     whole difference is WordScript's own prompt strip plus one leading and one
+     trailing space, which is also why `post_corrected` is on it. */
+  it("names the strip on the record whose foot sent a defect report to the wrong stage", () => {
+    const stripped = rawOf(
+      entry({
+        raw_transcript: " in die Neuronen verwendet wird. Likely phrases:\" Commit.",
+        transformed_transcript: "in die Neuronen verwendet wird. Commit. ",
+        corrected: true,
+        applied_rules: ["prompt_echo_stripped", "post_corrected"],
+      }),
+    );
+
+    expect(stripped.note).toBe(
+      "WordScript removed its own prompt from this. Nothing else was added or reworded.",
+    );
+    expect(stripped.note).not.toContain("AI stage");
+  });
+
+  /* The claim is about the diff, so it has to fall the moment the diff stops
+     supporting it: one word swapped for another and the sentence stops saying
+     nothing was reworded. */
+  it("stops exonerating the AI stage as soon as a word was swapped", () => {
+    const both = rawOf(
+      entry({
+        raw_transcript: "Absetzt davon. Likely phrases: Commit.",
+        transformed_transcript: "Abgesehen davon. Commit.",
+        corrected: true,
+        applied_rules: ["prompt_echo_stripped", "post_corrected"],
+      }),
+    );
+
+    expect(both.note).toBe(
+      "WordScript removed its own prompt from this. Anything else that differs is the AI stage's.",
+    );
+  });
+
+  it("names the address repair as WordScript's own, not the AI stage's", () => {
+    const repaired = rawOf(
+      entry({
+        raw_transcript: "Sagt mir bitte Bescheid.",
+        transformed_transcript: "Sag mir bitte Bescheid.",
+        corrected: true,
+        applied_rules: ["singular_address_restored", "post_correction_no_change"],
+      }),
+    );
+
+    expect(repaired.note).toContain("WordScript repaired the address the recogniser pluralized.");
+  });
+
+  /* A cleanup that dropped fillers and invented nothing is the case this
+     cluster spends its time telling apart from the other one, so the panel
+     says which of the two it is looking at. */
+  it("says when the AI stage only took words out", () => {
+    const trimmed = rawOf(
+      entry({
+        raw_transcript: "also ähm das ist so ein Fall",
+        transformed_transcript: "also das ist so ein Fall",
+        corrected: true,
+        applied_rules: ["post_corrected"],
+      }),
+    );
+
+    expect(trimmed.note).toBe("The AI stage removed words and added none.");
+  });
+
+  /* And a genuine rewrite gets no caller sentence at all: the panel's own
+     default is true there, and a second sentence saying the same thing is the
+     rule dump the record warned against. */
+  it("leaves a real rewrite to the panel's own default", () => {
+    const rewritten = rawOf(
+      entry({
+        raw_transcript: "kannst du mir das mal eben zusammenfassen",
+        transformed_transcript: "Bitte fasse mir das kurz zusammen.",
+        corrected: true,
+        applied_rules: ["post_corrected"],
+      }),
+    );
+
+    expect(rewritten.note).toBeUndefined();
+  });
+
   it("marks a short capture in the list, so the fold does not have to be opened", () => {
     const badges = badgesFor(
       entry({

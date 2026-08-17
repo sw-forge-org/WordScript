@@ -215,7 +215,6 @@ fn ceiling_from_limits(limits: &ProviderCaptureLimits) -> Option<(u64, CaptureCe
 /// Resolve the budget from the active profile.
 pub fn resolve(config: &AppConfig) -> CaptureBudget {
     let profile = config.active_text_profile();
-    let speech = profile.resolved_speech();
     let capture = profile.resolved_capture();
     // The budget is the recogniser's ceiling, so it is `Dictation`'s vendor and
     // never the connection's — a profile that routes listening to Local is
@@ -230,11 +229,14 @@ pub fn resolve(config: &AppConfig) -> CaptureBudget {
     // until then, so a profile that routed dictation to OpenAI was handed
     // Groq's plan id — harmless while OpenAI sold one ceiling and ignored the
     // argument, and a ceiling off by a factor of four the day it does not.
-    let model = if speech.local_model.trim().is_empty() {
-        speech.model.clone()
-    } else {
-        speech.local_model.clone()
-    };
+    // **Through the same resolver the request and the record use** (ADR 0203).
+    // This was a third answer to "which model listens": it took `local_model`
+    // whenever that was non-empty, which is every profile, so a cloud lane was
+    // handed the name of a local one. Harmless while no cloud adapter reads the
+    // argument — and wrong in the one place it is read, a local lane whose
+    // `local_model` is blank, where the decode factor was computed from a cloud
+    // id the local runtime has never heard of.
+    let model = config.speech_model().unwrap_or_default();
     let limits = providers::capture_limits(&provider, &model, config.plan_for(&provider));
 
     // The earliest real limit wins, and the reason follows the winner — a

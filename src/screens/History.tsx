@@ -198,6 +198,13 @@ export function badgesFor(entry: TranscriptionHistoryEntry): ListItemBadge[] {
  * that was never recorded, which changes how everything above it should be
  * read. A transform warning about an over-shortened correction is the smaller
  * fact when half the audio is gone, so it goes second.
+ *
+ * TEXTS THAT DIFFER GET A SENTENCE TOO NOW (ADR 0204). "The AI stage rewrote
+ * it" was the panel's default for every one of them, and on 2026-08-16 it sent
+ * a defect report at the wrong stage: the difference was WordScript's own
+ * prompt strip, the AI stage had returned the text it was given, and the record
+ * said which — `applied_rules` sat in this function, read one line above for
+ * `stageRan` and never consulted for the sentence.
  */
 export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
   const heard = entry.raw_transcript ?? "";
@@ -215,8 +222,95 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
     note:
       captureGapNote(entry) ??
       entry.transform_warning ??
-      (identical && stageRan ? "The AI stage ran and changed nothing." : undefined),
+      (identical
+        ? stageRan
+          ? "The AI stage ran and changed nothing."
+          : undefined
+        : changedTextNote(entry, heard, written)),
   };
+}
+
+/**
+ * WHAT CHANGED, WHERE THE RUNTIME NAMED IT — never a list of rule ids.
+ *
+ * Two things go into a sentence and neither is a string comparison on its own:
+ *
+ * **The rules WordScript ran itself**, which are deterministic, run before the
+ * mode branch (ADR 0080, ADR 0081) and are the ones a reader keeps mistaking
+ * for the AI stage. They are named, one clause each.
+ *
+ * **The shape of the difference**, which is the only thing this screen can
+ * prove about the AI stage: if every word of *Written* appears in *Heard* in
+ * the same order, then nothing was added and no word was swapped for another —
+ * whatever else happened, the meaning was not rewritten. That is the claim
+ * whose absence cost a wrong diagnosis, and it is checkable here.
+ *
+ * What it deliberately does not do: attribute a specific word to a specific
+ * stage. The panel holds two texts and a rule list, not the text between the
+ * stages, and a sentence claiming more than that is the failure class this
+ * record belongs to committed by the instrument. `post_corrected` is on the
+ * record that produced this defect and its whole effect there was one leading
+ * and one trailing space, so "a rule fired" is not evidence of a rewrite and is
+ * not treated as one.
+ */
+function changedTextNote(
+  entry: TranscriptionHistoryEntry,
+  heard: string,
+  written: string,
+): string | undefined {
+  const repairs = [
+    entry.applied_rules.includes("prompt_echo_stripped")
+      ? "removed its own prompt from this"
+      : undefined,
+    entry.applied_rules.includes("singular_address_restored")
+      ? "repaired the address the recogniser pluralized"
+      : undefined,
+  ].filter((clause): clause is string => Boolean(clause));
+
+  const removedOnly = onlyRemovedWords(heard, written);
+
+  if (repairs.length === 0) {
+    /* No rule of WordScript's own, so the difference is the AI stage's and the
+       panel's own default says so. The one thing worth adding is the shape:
+       a cleanup that dropped fillers and invented nothing is the case this
+       cluster spends its time trying to tell apart from the other one. */
+    return removedOnly ? "The AI stage removed words and added none." : undefined;
+  }
+
+  return (
+    `WordScript ${repairs.join(" and ")}. ` +
+    (removedOnly
+      ? "Nothing else was added or reworded."
+      : "Anything else that differs is the AI stage's.")
+  );
+}
+
+/**
+ * Whether *Written* is *Heard* with words taken out and none put in.
+ *
+ * A subsequence test over whitespace-separated words, which is the strongest
+ * claim available from two strings: a word that was replaced breaks it, a word
+ * that was added breaks it, and re-spacing does not. It is deliberately not a
+ * diff — the panel does not need to know WHICH words went, only that nothing
+ * arrived that the recogniser never said.
+ */
+function onlyRemovedWords(heard: string, written: string): boolean {
+  const words = (text: string) => text.trim().split(/\s+/).filter(Boolean);
+  const source = words(heard);
+  const kept = words(written);
+
+  /* A delivery with no words left is not "words removed" in any sense a reader
+     would recognise, and a sentence saying nothing was added would read as
+     reassurance over a text that is gone. */
+  if (kept.length === 0) return false;
+
+  let at = 0;
+  for (const word of kept) {
+    while (at < source.length && source[at] !== word) at += 1;
+    if (at >= source.length) return false;
+    at += 1;
+  }
+  return true;
 }
 
 /**

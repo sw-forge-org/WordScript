@@ -1527,6 +1527,48 @@ impl AppConfig {
         }
     }
 
+    /// **The model that listens** — resolved off the same object the vendor is
+    /// (ADR 0203).
+    ///
+    /// The speech job and nothing else: a profile that transforms on another
+    /// vendor does not change what listened. Which is what the history path
+    /// meant to ask and did not: it read the connection-wide `model` while the
+    /// capture read the *profile's* `speech.model`, so every record on a machine
+    /// with a per-profile recogniser named a model no request carried. The
+    /// provider half of the same question has gone through `job_provider` since
+    /// ADR 0094; this is the model half, in one place both paths call.
+    ///
+    /// `None` is a real answer and the reason this is an `Option`: the cloud and
+    /// self-hosted lanes let the adapter pick when nothing is configured, and a
+    /// record inventing the id it *would* have picked is this cluster's own
+    /// failure class committed by an instrument. The local lane has no such
+    /// door — whisper loads a file — so `base` is a resolution rather than a
+    /// guess.
+    pub(crate) fn speech_model(&self) -> Option<String> {
+        let profile = self.active_text_profile();
+        let speech = profile.resolved_speech();
+        let provider = profile.job_provider(JobKey::Dictation).provider;
+
+        if provider == super::providers::LOCAL_PROVIDER_ID {
+            let named = speech.local_model.trim();
+            return Some(if named.is_empty() {
+                "base".to_string()
+            } else {
+                named.to_string()
+            });
+        }
+
+        // The third lane keeps its own field (ADR 0165): `speech.model` is a
+        // catalogued cloud id and somebody's own server serves none of them.
+        let named = if provider == super::providers::self_hosted::SELF_HOSTED_PROVIDER_ID {
+            self.self_hosted_model.trim()
+        } else {
+            speech.model.trim()
+        };
+
+        (!named.is_empty()).then(|| named.to_string())
+    }
+
     pub(crate) fn resolved_active_text_profile_work_mode(&self) -> TextProfileWorkMode {
         let work_mode = self.active_text_profile_work_mode();
         TextProfileWorkMode {

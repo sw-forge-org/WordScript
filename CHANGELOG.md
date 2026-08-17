@@ -53,6 +53,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the two instruments that reported something the runtime did not do (ADR 0203, ADR 0204)
+
+- **A record names the model that listened.** History resolved the model off the
+  connection-wide field while the request was built from the profile's, so every
+  record on this machine was filed under `whisper-large-v3` while every request
+  went to `whisper-large-v3-turbo` — 105 of 105. One resolver,
+  `AppConfig::speech_model()`, now answers for the request, the record and the
+  capture ceiling; three cases hold the seam.
+- **A lane that sent no model id records none.** The empty case used to be
+  filled in with a default, which names a model no request carried — the same
+  plausible-and-wrong shape the whole hardening cluster is about.
+- **Records written before the fix are not migrated and keep the wrong value**,
+  so no per-model rate may be computed across 2026-08-17.
+- **The Heard/Written foot says what changed instead of that something ran.** It
+  reported a 16-byte prompt strip as *"The AI stage rewrote it."* and a defect
+  was filed against a cleanup that had returned the text it was given. The foot
+  now names WordScript's own rules — the prompt strip, the address repair — and
+  derives the rest from the diff: *nothing else was added or reworded* is a
+  word-subsequence test, not a rule id.
+
 ### Fixed — setting a hotkey takes one press, and removing one takes no replacement (ADR 0201)
 
 - **The click that opens the recorder now starts it.** The Hotkeys row swapped

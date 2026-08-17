@@ -919,7 +919,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 source: TranscriptionHistorySource::Retry,
                 retry_of: Some(existing.id.clone()),
                 provider: retry_job.provider.clone(),
-                model: Some(active_model_for_provider(&app_config)),
+                model: app_config.speech_model(),
                 language: optional_non_empty(&app_config.language),
                 active_profile: app_config.active_text_profile_label(),
                 effective_mode: Some(retry_mode.clone()),
@@ -1074,7 +1074,7 @@ pub fn history_entry_from_insert_result(
             },
             retry_of: retry_of.map(ToString::to_string),
             provider: speech_provider(app_config),
-            model: Some(active_model_for_provider(app_config)),
+            model: app_config.speech_model(),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
@@ -1134,7 +1134,7 @@ pub fn record_insert_failure(
             source: TranscriptionHistorySource::NativePipeline,
             retry_of: None,
             provider: speech_provider(app_config),
-            model: Some(active_model_for_provider(app_config)),
+            model: app_config.speech_model(),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
@@ -1251,7 +1251,7 @@ pub fn record_empty_result(
             source: TranscriptionHistorySource::NativePipeline,
             retry_of: None,
             provider: speech_provider(app_config),
-            model: Some(active_model_for_provider(app_config)),
+            model: app_config.speech_model(),
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
@@ -1334,28 +1334,21 @@ fn transform_config_from_app_config(config: &AppConfig) -> NativeTransformConfig
     }
 }
 
-/// The recogniser's model for the vendor `Dictation` runs on.
-///
-/// The speech job and nothing else: this names the model a record was
-/// transcribed with, and a profile that transforms on a different vendor does
-/// not change what listened.
-fn active_model_for_provider(config: &AppConfig) -> String {
-    if speech_provider(config) == super::providers::LOCAL_PROVIDER_ID {
-        let trimmed = config.local_model.trim();
-        if trimmed.is_empty() {
-            "base".to_string()
-        } else {
-            trimmed.to_string()
-        }
-    } else {
-        let trimmed = config.model.trim();
-        if trimmed.is_empty() {
-            "whisper-large-v3-turbo".to_string()
-        } else {
-            trimmed.to_string()
-        }
-    }
-}
+/* THE MODEL A RECORD WAS TRANSCRIBED WITH IS `AppConfig::speech_model` AND NOT
+   A SECOND ANSWER HERE (ADR 0203). This file used to carry its own two-arm
+   version reading the connection-wide `model` and `local_model`, one axis older
+   than the capture path it was describing: every record on a machine whose
+   profile names a recogniser of its own was filed under a model no request
+   carried, and the per-model rates measured off this file with it. The doc
+   comment that stated the contract sits on the resolver now.
+
+   ONE THING THIS FIX DOES NOT ANSWER, LEFT VISIBLE RATHER THAN QUIETLY DECIDED:
+   the two retry sites above call the same resolver, and a retry re-runs the
+   transform over a transcript that already exists — nothing listens. So a
+   retried record names this machine's *current* recogniser for a request that
+   never happened, next to a `provider` that deliberately names the transform
+   job's vendor. Both readings are defensible and neither is measured; the
+   record carries the question. */
 
 /// Which vendor listened for this machine's active profile.
 ///

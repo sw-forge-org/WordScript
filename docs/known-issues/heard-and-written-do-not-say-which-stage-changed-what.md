@@ -1,8 +1,10 @@
 # The Heard/Written panel reports a 16-byte prompt strip as "The AI stage rewrote it"
 
-Status: **open, found 2026-08-16.** Nothing is fixed. The evidence the panel
-needs is already on the record and already crosses the seam; the screen does not
-read it.
+Status: **Fixed 2026-08-17 by
+[ADR 0204](../decisions/0204-the-raw-panels-foot-names-the-rule-that-changed-the-text-and-claims-only-what-the-diff-proves.md).**
+Found 2026-08-16. The panel reads `applied_rules` now and derives the rest from
+the diff; what it still cannot do is attribute a word to a stage, and it no
+longer pretends to. The report below is kept as written.
 
 Found because it produced a wrong diagnosis in the field. The owner opened the
 raw panel on `history-1786910918745-50`, read the foot, and reported that the AI
@@ -86,6 +88,29 @@ So the sentence has to name what a rule did, not that a rule ran.
 
 No fix is proposed here and none is written. The record exists so the next
 reader of a **Heard**/**Written** pair does not repeat the diagnosis.
+
+## What was written, 2026-08-17
+
+ADR 0204 carries the reasoning; the shape in one place:
+
+- **Two rules get a clause of their own** — `prompt_echo_stripped` and
+  `singular_address_restored`, the two that are WordScript's own and run before
+  the mode branch. They are the ones a reader mistakes for the AI stage.
+- **The second sentence comes from the diff, not from a rule.** If every word of
+  *Written* appears in *Heard* in the same order, nothing was added and no word
+  was swapped: *Nothing else was added or reworded.* When that fails it steps
+  back to *Anything else that differs is the AI stage's.*
+- **`post_corrected` is not read as evidence of a rewrite**, because on the very
+  record that produced this report its whole effect was one leading and one
+  trailing space.
+- **The record above is the first test case**, with its own two texts.
+
+On this record the foot now reads *"WordScript removed its own prompt from this.
+Nothing else was added or reworded."*
+
+Left undone on purpose: every other rule id still lands in the panel's default,
+and no word is ever attributed to a stage — the panel holds two texts and a rule
+list, not the text between the stages.
 
 ## Related
 
