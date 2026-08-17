@@ -122,6 +122,28 @@ fn long_enough(text: &str) -> bool {
     text.split_whitespace().count() >= MIN_WORDS || text.chars().count() >= MIN_CHARS
 }
 
+/// The floor under a language a MODEL named (ADR 0188), which is lower than the
+/// one trigram statistics need and is not zero.
+///
+/// Three words rather than eight, because that is roughly where a model stops
+/// guessing and starts reading: `Whats up my fellow American` is five words, is
+/// plainly English, and is the run that started this. Not zero, because a model
+/// never refuses — it would name a language for `Removing` and for `Ja`, and a
+/// counter that tallies interjections drifts toward whatever short exclamations
+/// happen to look like.
+pub const MIN_NAMED_WORDS: usize = 3;
+
+/// …and the same proportion in characters, for the scripts that do not space
+/// their words. Ten is to twenty what three is to eight.
+const MIN_NAMED_CHARS: usize = 10;
+
+/// Whether a text is worth attributing a NAMED language to.
+pub fn long_enough_to_name(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.split_whitespace().count() >= MIN_NAMED_WORDS
+        || trimmed.chars().count() >= MIN_NAMED_CHARS
+}
+
 /// The two-letter code for a three-letter one, or the three-letter code itself
 /// where this product knows no shorter name for it.
 fn iso_639_1(code: &str) -> String {

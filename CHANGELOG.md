@@ -53,6 +53,129 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the calendar names two days, and a delete can be taken back (ADR 0189–0195)
+
+- **Two days on the activity calendar carry a name rather than a count.**
+  WordScript's publication on 23 February 2026, and the day you installed it.
+  A marker never joins the colour ramp — a marked day you did not dictate on is
+  a green circle, and one you did keeps its own ramp step and takes a green ring
+  inside the same radius. The legend gained an entry for it and the day's hover
+  names it above its own readings.
+- **The install date is a new ledger field, and it is never invented.** On a
+  fresh machine it is today; on one that has run for months it comes from the
+  config file's creation time, or from the ledger's first row, or the marker is
+  simply not drawn. It merges across machines by earliest-wins — so it means
+  *when you first installed WordScript*, which is what the marker says — and it
+  survives the reset in Privacy & Data, because that button is about what was
+  recorded.
+- **A deleted transcript can be brought back for six seconds.** The row leaves
+  at once and the runtime is told when the window closes, so nothing is
+  destroyed until you have stopped being able to change your mind. Deleting a
+  second row inside the first one's window carries out the first. Leaving the
+  screen or closing the window carries out whatever is pending, rather than
+  losing it.
+- **A profile can be made active from the Profiles screen**, by right-click on
+  its row or from the `…` in its header — the two are one verb list. It was
+  reachable only from the picker at the foot of the sidebar, which lists every
+  profile by name and shows you nothing to choose by.
+
+### Changed — the row got shorter, the strip got clearer, and the counter learned a decimal point (ADR 0191–0196)
+
+- **Turnaround reads in seconds.** `2400 ms` is a true figure in a unit nobody
+  waits in. The matrix counter has ten digit glyphs and no period, so the point
+  is drawn in the blank column the frame already keeps between two digits — with
+  that gap widened, because a mark that is not visibly separated is a mark the
+  eye reads as part of its neighbour.
+- **Home's standing facts are the first thing on the screen again**, above the
+  counters rather than under them. This reverses a decision made when the block
+  carried two 42 px keycaps: the shortcut was an instruction and is read once,
+  but *which mode the next dictation runs as* is a question you have every day.
+- **A transcript row draws two controls and a menu instead of six controls.**
+  View raw and Copy stay on the row; Show in file manager, Retry, Restore and
+  Delete moved into a menu that the `…` and a right-click both open. Every row
+  is now the same width, including the ones that can be restored, and no verb
+  was lost — a disabled Retry still says why.
+- **A clipboard delivery is grey.** `Clipboard only` and `Clipboard` carried the
+  same orange as the product's primary button, which on a clipboard-only profile
+  is every row in the list reporting a warning about a setting you chose.
+  Anything that actually failed is unchanged.
+- **The status strip names the lane separately from the provider.** It read
+  `Groq cloud · llama-3.3-70b`; it now reads `Cloud · Groq · llama-3.3-70b`.
+  Where the work runs and who does it are two facts, and on the local and
+  self-hosted lanes the lane already names the vendor.
+- **A locked profile stops explaining itself for the length of a recording.**
+  The sidebar printed thirty words under the row while you were talking. It says
+  `Locked while recording` and offers the rest on the hover.
+
+### Fixed — the calendar's left arrow lied about the end of the record (ADR 0189)
+
+- **The earlier-weeks arrow stayed lit at the first column of the year.**
+  Pressing it did nothing visible: the scroller rests five pixels in — which is
+  what keeps a circle from being shaved at either edge — and the reach test was
+  taken against a bare zero. It is disabled at the start of the drawn year now,
+  in the same shape the later arrow already had at the end.
+
+### Fixed — nothing waits on a filename any more, and the language is asked of the model that is already there (ADR 0188)
+
+- **The naming call stood in front of every delivery.** It asks the chat model
+  what a dictation should be called, and the pipeline awaited it before inserting
+  the text — and before showing the parked preview. Up to four seconds of
+  filename in front of the overlay you are waiting for, and up to four more in
+  front of the insert when you pressed commit. Every caller now names the file
+  after the text has been delivered.
+- **A parked dictation made that call twice and used one answer.** The pipeline
+  named text it was about to stage a preview of, then threw the name away,
+  because the record is written later — by the commit, which names the text
+  again. That first call is gone: one naming call per dictation, always.
+- **The same call now also answers the language**, on the same request and for
+  two extra tokens, which is what lets short dictations be counted at all. The
+  offline detector stays as the fallback for every run where no model answered —
+  offline, no key, no chat model, a timeout — and for the model's own `??`.
+- **Languages counts what you SPOKE, not what was delivered.** In Translate the
+  tile has been counting the language you translated into, and in Draft and
+  Prompt Enhance whatever language the model chose to write in. It reads the raw
+  transcript now, and in those three modes it ignores the model's answer, which
+  described the file it had just named.
+- **A named language needs three words.** A model never refuses, so it would name
+  one for `Ja` and for `Removing`, and a counter that tallies interjections
+  drifts toward whatever short exclamations happen to look like.
+
+### Fixed — the calendar's colour scale was built for somebody else (ADR 0187)
+
+- **The ramp tops out at 150 dictations a day instead of 11.** The steps were
+  chosen before this product had measured a single day; the first full day it
+  measured held 104 dictations and 6,065 words, and its owner called that a light
+  Sunday. Every threshold was cleared inside the first hour, so every real day
+  painted the brightest colour and the legend explained a gradient nobody could
+  be on. The four steps now read: you dictated · a working session · a heavy day
+  · an exceptional one.
+- **A day with a single dictation is still lit.** That floor cannot move: an
+  unlit cell says nothing was dictated that day, and it may not be spent on a day
+  somebody worked.
+
+### Fixed — a counter explains itself from anywhere on it, and Languages stops overclaiming (ADR 0186)
+
+- **The tooltips answer over the whole tile.** Every counter carries a sentence
+  explaining what its figure is, and the hover only fired over the label — one
+  line of small caps at the top of a narrow column. Pointing at the number, which
+  is the thing anybody is actually asking about, produced nothing. A click on a
+  tile now swaps the view as well, which it had quietly stopped doing.
+- **`only German` no longer claims a language nobody measured.** A dictation
+  under about a sentence has no language a trigram model can read, so it is
+  counted in none (ADR 0180) — on this machine 40 runs in 107. The tile said
+  `only German` anyway, to somebody who had also dictated in English. The foot
+  now states what it read, `measured on 67 of 107`, and spends the word *only*
+  where nothing was refused. The hover names the floor.
+- **The two short English asides stay uncounted, and that is the right answer.**
+  Run through the detector, `Whats up my fellow American` comes back Hungarian at
+  0.05 confidence; the reliability gate throwing it away is the measurement
+  working.
+- **The standing facts stopped saying the mode twice.** `Next dictation runs as
+  Cleanup · Founder ops notes on Cleanup` — the profile now names its mode only
+  where it differs from the one the router resolved, which is the case worth
+  reading. The row fits on one line again, and is centred under the display it
+  belongs to.
+
 ### Changed — retention is one rule you set, and the audio a failure parks can be counted and deleted (ADR 0185)
 
 - **One picker, and it asks in months.** `Privacy & Data` offered a count and an
@@ -127,12 +250,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that lowers these numbers. Clearing your transcription history does not, and
   deleting a single transcript does not; the row says so.
 
+### Added — History is a list you can move through, and Home has a visible switch (ADR 0184)
+
+- **The two dots under Home's opening block are buttons.** They said which view
+  you were on and could not be pressed; the only way to change it was to guess
+  that a block of read-outs is clickable. Each dot now selects its view, and
+  pressing the one you are on does nothing rather than bouncing you away.
+- **The calendar states how many days of the year you dictated on.** Days rather
+  than dictations: one long thought and eight false starts are the same
+  afternoon, and the grid under the figure counts days too.
+- **History is paged.** 10, 25, 50 or 100 records at a time, 25 by default, with
+  the range and the page spelled out at the foot of the list. Changing the size
+  keeps the record at the top of the page at the top of the page.
+- **And it filters by month, defaulting to all time.** The transcripts have
+  always been written into `YYYY/MM/` folders and the list was the only place
+  that could not be read that way. The picker is the first control on the
+  toolbar and is always there, so it also says what the list is scoped to.
+- **Two doors instead of a recital.** The foot named the transcripts folder, the
+  index file, the retention days and the cap under every visit, and none of it
+  could be acted on there — its one link was an anchor with no handler. `Open
+  folder` opens the directory, `Retention rules` opens Privacy & Data, and the
+  count over the list is gone: the pager says `26–50 of 60`, which is the same
+  figure with your position added.
+- The toolbar reads in three groups now: which records, what a row shows and how
+  many, what to do with the set.
+
+### Added — the activity calendar is a year you can move through (ADR 0183)
+
+- **A year picker, top right.** It offers the years the record actually holds
+  days for, plus the current one, and nothing else: a year whose rows have aged
+  out of the ledger would draw as a grid of unlit circles, which would claim you
+  dictated on none of those days rather than that the days are gone. The line
+  under the grid names the day the record starts.
+- **Scrolling, with two arrows for a mouse that has no second axis.** A year is
+  wider than the box that shows it; a trackpad and a shifted wheel move it, and
+  the arrows step four weeks at a time. Every position lands on a whole column,
+  including after a free scroll, so no day is ever cut in half at an edge. A year
+  opens at its newest end — today for this year, December for a past one.
+- **The weekday labels stopped scrolling away.** They were inside the drawing,
+  which meant the first thing a scroll took away was the labels that say which
+  row is which. They are pinned beside the grid now, on the rows' centre lines.
+- **A legend, bottom right.** `Less` to `More` across the five steps of the ramp,
+  because the scale is a question about the whole grid and hovering thirty cells
+  to infer it is not an answer.
+- The block still swaps to the counters when you click it — the hit area is a
+  layer behind the view now, so the picker and the arrows can be pressed without
+  swapping anything.
+
+### Changed — a counter's basis is under the figure, not in its hover (ADR 0182)
+
+- **Time saved names the typing speed it divided by.** `vs 40 wpm typing`, under
+  the figure. The baseline is not context about that number — it IS the number,
+  and the same four weeks read 43 minutes at 40 words a minute and 15 at 60. It
+  was behind a hover, which is unread standing up and unreachable on a touch
+  screen.
+- **Languages says how much of the record your main language is.** The foot read
+  `mostly German · +2`, which counts the others and says nothing about the first;
+  it now reads `mostly German · 86 %`, measured against the dictations that COULD
+  be identified rather than against all of them. One language reads `only
+  German`, and the share never rounds to a hundred while a second language
+  exists. The hover no longer lists languages; it states where the figure comes
+  from.
+- **The typing baseline is three descriptions and a field.** It was a dropdown of
+  eight bare numbers, which asks you for a figure about yourself that almost
+  nobody has measured and gives you nowhere to put the one you know if you have
+  it. Now `Two fingers · 30`, `Average · 40`, `Touch typist · 70`, beside a field
+  that takes any speed from 10 to 200 — and the onboarding flow asks for it on
+  its last step, so the figure is not left silently at a default.
+
 ### Fixed
 
 - **The turnaround was never written to a record.** `history_entry_from_insert_result`
   took the measurement as an argument and stored `None`, so the histogram behind
   the tile could never fill and the tile stayed dark on a machine with sixty
   dictations in it.
+- **And it was dropped a second time, on the path most dictations take.** A
+  profile that does not paste at the cursor stages a preview instead, and the
+  commit behind that preview passed `None` — on the argument that a parked
+  overlay's delay is not a latency the runtime should claim. True of the park and
+  wrong for everything else, because staging a preview is the ORDINARY path for
+  clipboard-only delivery: on the reporting machine all fifty stored records had
+  no turnaround at all. The measurement now travels with the preview. It fills
+  from the next dictation; nothing is backfilled, because nothing measured the
+  records already on disk.
 - **Home stopped showing the instruction to readers who had already started.**
   The choice between "press this to dictate" and the counters hung on one tile
   having a reading; it now hangs on whether the record has anything to say at

@@ -100,4 +100,15 @@ export const ICON_PATHS = {
      port — the glyph is the panel with its leading column marked, which is what
      the control acts on, drawn at this set's radii and stroke. */
   sidebar: "<rect x=\"3\" y=\"4.5\" width=\"18\" height=\"15\" rx=\"2\"/><path d=\"M9.5 4.5v15\"/>",
+  /* NOT IN THE PROTOTYPE, and it is the only glyph in this set that is not a
+     picture of anything: an overflow control has no subject, which is why every
+     platform draws the same three dots for it (ADR 0194).
+
+     IT CARRIES ITS OWN FILL, which no other glyph here does. `Icon` sets
+     `fill="none"` and strokes at 1.75, so a bare `<circle>` in this file comes
+     out as a RING — which is what `dot` above is, deliberately. Three rings at
+     this size are a smudge; three dots have to be solid, so the fill is on the
+     shape rather than in the component, where changing it would restyle all
+     eighty. */
+  more: "<g fill=\"currentColor\" stroke=\"none\"><circle cx=\"5.5\" cy=\"12\" r=\"1.6\"/><circle cx=\"12\" cy=\"12\" r=\"1.6\"/><circle cx=\"18.5\" cy=\"12\" r=\"1.6\"/></g>",
 } as const;

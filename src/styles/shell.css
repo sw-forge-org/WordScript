@@ -202,6 +202,16 @@
     margin-top: var(--s4);
   }
 
+  /* THE PAGE CONTROL AT THE FOOT OF A LIST (ADR 0184). The two buttons hold the
+     edges and the range sits between them, so *where am I* is read in the middle
+     of the movement rather than off to one side. */
+  .ws-pager { display: flex; align-items: center; gap: var(--s3); width: 100%; }
+  .ws-pager-at {
+    flex: 1; text-align: center;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+
   /* ═════════════════════════════════════════════════════════════════════════
      ROW STACK
      ═════════════════════════════════════════════════════════════════════════ */
@@ -2150,6 +2160,41 @@
     color: var(--fg-dim);
   }
 
+  /* ── The undo window's one line (ADR 0195) ────────────────────────────────
+     `.ws-strip`'s shape and NOT its ground. That strip is tinted in `--accent`
+     because it carries something owed — a question standing open. This carries
+     a completed action somebody asked for, which is the quietest possible fact:
+     tinting it would make the calmest event on the screen its loudest object for
+     six seconds. So it takes the elevated surface every neutral panel here uses
+     and nothing else.
+     ═══════════════════════════════════════════════════════════════════════ */
+  .ws-undo {
+    display: flex; align-items: center; gap: var(--s3);
+    margin-bottom: var(--s3);
+    padding: var(--s2) var(--s3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    background: var(--bg-elevated);
+  }
+  .ws-undo-tile {
+    width: 26px; height: 26px; flex: none;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    background: color-mix(in srgb, var(--fg-muted) 16%, transparent);
+    color: var(--fg-dim);
+  }
+  .ws-undo-tile svg { width: 14px; height: 14px; }
+  /* ONE LINE, CUT BY THE BOX. A record the model named runs to a full sentence,
+     and a notice that wrapped to three lines would push the list further down
+     than the row it is standing in for ever occupied. */
+  .ws-undo-text {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-muted);
+  }
+  .ws-undo-text b { color: var(--fg-dim); font-weight: 550; }
+
   /* ── Chips — a word list is chips, not rows with hover actions ───────────── */
 
   .ws-chip {
@@ -3565,6 +3610,7 @@
      ═══════════════════════════════════════════════════════════════════════ */
   .ws-home-switch { display: flex; flex-direction: column; gap: var(--s3); }
   .ws-home-switch-face {
+    position: relative;
     display: flex;
     justify-content: center;
     width: 100%;
@@ -3574,25 +3620,77 @@
     text-align: left;
     color: inherit;
     font: inherit;
-    cursor: pointer;
     border-radius: var(--r-small);
   }
+  /* THE SWAP IS A LAYER BEHIND THE VIEW (ADR 0183). It was the element the view
+     sat inside, which stopped working the moment the calendar had controls of
+     its own: a `<button>` may not contain one, and every arrow press would have
+     swapped the view on its way through. */
+  .ws-home-switch-hit {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    border-radius: inherit;
+  }
+  .ws-home-switch-body {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    /* Transparent to the pointer, so a click on the grid's margins, on the foot
+       or anywhere in the counter view reaches the hit area underneath. The few
+       descendants with their own answer to a click take it back below. */
+    pointer-events: none;
+  }
+  /* `.ws-tile` is in the list because it carries the counter's `title`, and a
+     native tooltip needs the element under the cursor to take the pointer: with
+     the body transparent, all four hovers on Home went dead at once. It was the
+     LABEL that took it back, which made the hover a one-line strip at the top of
+     each column — a reader pointing at the figure still got nothing, and the
+     tooltips read as broken (ADR 0186). The whole tile takes it now, and the
+     swap moved onto the body's own click for it. */
+  .ws-home-switch-body
+    :is(.ws-cal-cell, .ws-cal-scroll, .ws-cal-period, .ws-cal-step, .ws-tile) {
+    pointer-events: auto;
+  }
+  /* The counter view holds nothing with its own answer to a click, so the body
+     is the control there and says so. The calendar view has no attribute and no
+     handler: its cells and arrows keep the hit area underneath. */
+  .ws-home-switch-body[data-swaps] { cursor: pointer; }
   /* IT IS INVISIBLE UNTIL IT IS REACHED. The hit area is the whole block, so a
      hover ground would light a third of the screen; the affordance is carried by
      the dots instead. The focus ring is not optional — a control a keyboard can
      reach has to be a control a keyboard can SEE. */
-  .ws-home-switch-face:focus-visible {
+  .ws-home-switch-hit:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 4px;
   }
   /* The face is a flex row so its one child can be centred; the child still
      takes the whole width, or the four-column counter grid would collapse to
      its content and stop being four equal tracks. */
-  .ws-home-switch-face > * { flex: 1; min-width: 0; }
+  .ws-home-switch-face > .ws-home-switch-body { flex: 1; min-width: 0; }
 
   /* The carousel indicator. Two dots, the lit one being the view you are on —
      the one piece of discoverability a control with no frame has. */
-  .ws-home-dots { display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .ws-home-dots { display: flex; align-items: center; justify-content: center; gap: 0; }
+  /* FIVE PIXELS OF INK, SIXTEEN OF TARGET (ADR 0184). The dot is the smallest
+     mark on the block and may not grow just because it became pressable, so the
+     button is a transparent pad around it and the pads replace the `gap`.
+     Sixteen rather than a full twenty-four: the two hit areas cannot overlap or
+     a press near the seam would land on whichever dot is later in the DOM, and
+     this control is the second way to do something the whole block above it
+     already does. */
+  .ws-home-dots button {
+    display: grid; place-items: center;
+    width: 16px; height: 16px; padding: 0;
+    border: 0; background: none; cursor: pointer;
+    border-radius: var(--r-round);
+  }
+  .ws-home-dots button:hover i { opacity: 0.7; }
+  .ws-home-dots button:hover i[data-on] { opacity: 1; }
+  .ws-home-dots button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
   .ws-home-dots i {
     width: 5px; height: 5px;
     border-radius: var(--r-round);
@@ -3688,9 +3786,66 @@
   /* Centred in the block, because the display is narrower than the column it
      lives in and a 493 px drawing pinned to the left edge of a 696 px column
      reads as unfinished rather than as deliberate. */
-  .ws-cal { position: relative; display: block; width: var(--cal-w); max-width: 100%; margin-inline: auto; }
+  /* THE PERIOD PICKER SITS OVER THE GRID'S RIGHT EDGE, not in a bar of its own:
+     a whole row spent on one pop-up would push the drawing down by its height
+     in a block that is already the tallest thing on Home. */
+  /* THE HEAD AND THE FOOT ARE LAID OUT AGAINST THE DRAWING, NOT THE BLOCK. The
+     block is Home's whole column and the drawing is narrower and centred in it;
+     a head stretched to the block would stand the headline and the picker out at
+     edges nothing else on the display reaches. */
+  .ws-cal-head, .ws-cal-foot {
+    width: min(var(--cal-frame), 100%);
+    margin-inline: auto;
+  }
+  .ws-cal-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+    margin-bottom: var(--s2);
+  }
+  /* The headline is a reading, so it carries the reading's weight rather than a
+     label's: it is the one figure on this block that is not drawn as circles. */
+  .ws-cal-count { color: var(--fg-dim); font-size: var(--t-body); }
+
+  /* THE WEEKDAY COLUMN AND THE SCROLLING BOX, SIDE BY SIDE. The labels are
+     outside the box on purpose (ADR 0183): inside it they were the first thing a
+     scroll to the right took away, which is the one part of the drawing a reader
+     cannot reconstruct from the rest. */
+  /* THE GAP IS THE MONTH LABELS' OWN. Upstream sets the month baseline five
+     pixels above the first row of cells; the weekday column takes the same five
+     to the first column, so the two label runs stand off the grid by the same
+     amount and the drawing reads as one object rather than as a grid with
+     something stuck to its side. */
+  .ws-cal-frame {
+    display: flex; align-items: flex-start; justify-content: center;
+    gap: var(--cal-gap);
+    min-width: 0;
+  }
+  .ws-cal-weekdays { flex: none; color: var(--fg-dim); }
+
+  /* THE BOX IS A HALF-YEAR WIDE AND THE DRAWING MAY BE LONGER (ADR 0183). The
+     `min()` keeps a narrow stage from overflowing; the width itself is a whole
+     number of columns, so at any snapped scroll position both edges fall in the
+     gaps between cells and no circle is ever cut. `scroll-behavior` lives here
+     rather than in the arrow handler so a wheel and a press animate the same
+     way. */
+  .ws-cal-scroll {
+    width: min(var(--cal-view), 100%);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-behavior: smooth;
+    overscroll-behavior-x: contain;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ws-cal-scroll { scroll-behavior: auto; }
+  }
+
+  /* Its natural width, and NOT capped at the box: the overflow is what there is
+     to scroll. Before ADR 0183 this was `max-width: 100%`, which made the
+     drawing shrink to fit — the right answer when there was nothing to scroll to
+     and the wrong one now, because a year squeezed into a half-year's width is a
+     different display rather than the same one further out. */
+  .ws-cal { position: relative; display: block; width: var(--cal-w); flex: none; }
   .ws-cal { --rhm-text-color: var(--fg-dim); }
-  .ws-cal svg { width: 100%; max-width: 100%; height: auto; }
+  .ws-cal svg { width: 100%; height: auto; }
 
   /* The cell is the matrix's pixel at calendar scale, and it carries its own
      colour and intensity as attributes — the ramp is data, not decoration, so
@@ -3736,12 +3891,64 @@
   /* WHAT THE DISPLAY IS ALLOWED TO CLAIM. Not a caption: an unlit cell asserts
      that nothing was dictated that day, and that assertion only holds inside the
      window the history file still reaches back over. */
-  .ws-cal-note {
+  /* THE FOOT: THE ARROWS, THE SPAN, THE RAMP. Three items on one line, the note
+     centred between two edges that hold their own width — so the sentence stays
+     centred under the grid whether or not the legend is wider than the arrows. */
+  .ws-cal-foot {
+    display: flex; align-items: center; gap: var(--s3);
     margin-top: var(--s3);
+  }
+  .ws-cal-steps, .ws-cal-legend { display: flex; align-items: center; gap: 4px; flex: none; }
+  .ws-cal-step {
+    display: grid; place-items: center;
+    width: 22px; height: 22px; padding: 0;
+    border: 0; border-radius: var(--r-small);
+    background: none; color: var(--fg-dim);
+    cursor: pointer;
+  }
+  .ws-cal-step:hover:not(:disabled) { background: var(--bg-elevated); color: var(--fg); }
+  /* Disabled says *there is nothing that way*, which is a reading of the record
+     and not a state to hide: an arrow that vanished at the edge would move the
+     other one and make the foot twitch. */
+  .ws-cal-step:disabled { opacity: 0.35; cursor: default; }
+  .ws-cal-step svg { width: 14px; height: 14px; }
+  /* The first chevron points the other way. One glyph, turned, rather than a
+     second path to keep in step with it. */
+  .ws-cal-step:first-child svg { transform: rotate(180deg); }
+
+  .ws-cal-note {
+    flex: 1;
+    margin: 0;
     text-align: center;
     font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
     color: var(--fg-muted);
   }
+
+  /* The ramp at the size the cell is not: a legend is a key, and a key drawn at
+     full cell size competes with the grid it explains. */
+  .ws-cal-legend {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-cal-legend i {
+    width: 9px; height: 9px;
+    border-radius: var(--r-round);
+  }
+  /* THE RAMP IS ONE GROUP INSIDE THE KEY (ADR 0189). The legend used to be the
+     ramp and nothing else, so it could be one flex row; it now holds a NAMED
+     entry beside an unnamed run of swatches, and only the run is `aria-hidden`.
+     The group keeps the swatches' own rhythm without changing the line. */
+  .ws-cal-legend > span { display: flex; align-items: center; gap: 4px; }
+  .ws-cal-legend .ws-sep { opacity: 0.45; }
+  /* A milestone is filled rather than ramped, because it carries no count —
+     see the calendar's own note on why it never joins the ramp. */
+  .ws-cal-key-marker { background: var(--success); }
+
+  /* THE NAME OF A NAMED DAY, above the counts in its own panel. It takes the
+     tooltip's own heading colour rather than the green it explains: the circle
+     is the colour, and a coloured line of text under a coloured heading is two
+     objects competing to be the thing you read first. */
+  .ws-cal-tip-marker { color: var(--fg); font-weight: 550; }
 
   .ws-hero-invoke .ws-what {
     display: flex; flex-direction: column; gap: 2px;
@@ -3756,10 +3963,20 @@
   /* The standing facts, on one line at the foot of the hero. They were a card of
      their own with a heading, which spent a whole grouping surface on four words
      that never change while you read them. */
+  /* CENTRED, BECAUSE WHAT IS ABOVE IT IS (ADR 0186). The prototype's row began
+     at the left edge under a hero that also began there; the counters and the
+     calendar are centred now, and a line of standing facts starting at the left
+     under a centred display reads as a third block rather than as that block's
+     foot. */
+  /* THE RULE CHANGED ENDS WITH THE ROW (ADR 0192). This line used to be the
+     display's foot and is now its head, so the hairline that separates the two
+     moves from above it to below it — a `border-top` on the first element in a
+     block draws a rule against the screen's own top margin, which reads as a
+     stray line rather than as a separator. */
   .ws-hero-facts {
-    display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
-    padding-top: var(--s4);
-    border-top: 1px solid color-mix(in srgb, var(--fg-muted) 16%, transparent);
+    display: flex; align-items: center; justify-content: center; gap: var(--s3); flex-wrap: wrap;
+    padding-bottom: var(--s4);
+    border-bottom: 1px solid color-mix(in srgb, var(--fg-muted) 16%, transparent);
     font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
     color: var(--fg-muted);
   }
@@ -3773,10 +3990,15 @@
      zero basis, so on a wrapping row it never took a line of its own — it took
      whatever the facts left and its button, which does not shrink, hung over
      the column's right edge by however much was missing. Five pixels at 702 CSS
-     px, and more the narrower the window. An `auto` basis is what lets the
-     wrap the row already declares actually happen; `margin-left: auto` keeps
-     the button at the trailing edge on whichever line it lands. */
-  .ws-hero-facts .ws-grow { flex: 0 0 auto; margin-left: auto; }
+     px, and more the narrower the window. An `auto` basis is what lets the wrap
+     the row already declares actually happen.
+
+     THE `margin-left: auto` THAT PINNED IT RIGHT IS GONE (ADR 0186). An auto
+     margin eats the free space before `justify-content` ever sees it, so the row
+     could not be centred while it was there — and the button belongs to the
+     sentence it follows, not to the far edge of a line the sentence no longer
+     fills. */
+  .ws-hero-facts .ws-grow { flex: 0 0 auto; }
 
   /* ═════════════════════════════════════════════════════════════════════════
      THE LIST — history, profiles, targets, notes, uploads.

@@ -227,7 +227,17 @@ export function Motion() {
           <div className="ws-mx-lab">
             <figure className="ws-mx-cell">
               <div className="ws-mx-stage" data-tall>
-                <ActivityCalendar buckets={sampleDays(now)} now={now} />
+                {/* The picker, the arrows and the legend need a record with more
+                    than one year in it to be worth looking at, and the gallery
+                    has no runtime — so the two years and the start date are
+                    sample data like the counts, and are marked as such in the
+                    caption below. */}
+                <ActivityCalendar
+                  buckets={sampleDays(now)}
+                  years={[now.getFullYear(), now.getFullYear() - 1]}
+                  startedOn={`${now.getFullYear() - 1}-03-04`}
+                  now={now}
+                />
               </div>
               <figcaption>
                 <b>Twenty-six weeks</b>

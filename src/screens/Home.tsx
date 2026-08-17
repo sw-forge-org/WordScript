@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ActivityCalendar,
@@ -19,19 +19,24 @@ import {
   SectionHeader,
   StatTile,
   TranscriptRow,
+  UndoNotice,
 } from "@/components/shell";
 import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
+import { useUndoableDelete } from "@/hooks/useUndoableDelete";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
 import {
   SAVED_WINDOW_DAYS,
   TYPING_BASELINE_WPM,
+  activityMarkers,
   ledgerBuckets,
   ledgerLanguages,
   ledgerPauseShare,
+  ledgerTopLanguageShare,
   ledgerTimeSaved,
   ledgerMedianTurnaround,
   ledgerMedianWpm,
   ledgerTotals,
+  ledgerYears,
 } from "@/lib/activity";
 import { TRANSLATE_LANGUAGES } from "@/types/ipc";
 import { useActivityLedger } from "@/hooks/useActivityLedger";
@@ -138,24 +143,57 @@ function languageLabel(code: string): string {
 }
 
 /** The line under the languages figure: the one you mostly dictate in, and how
- *  many others there are.
+ *  much of the record it is.
  *
  *  A LIST DOES NOT SCALE AND THE FIGURE ALREADY COUNTS. Three names fit and ten
  *  are a smear, so the foot answers the question the number cannot — which
- *  language you actually work in — and leaves the rest to the count. */
-function languageFoot(languages: { code: string; count: number }[]): string {
+ *  language you actually work in — and says how strong the claim is.
+ *
+ *  THE SHARE IS UNDER THE FIGURE AND NOT IN THE HOVER (ADR 0182). It was
+ *  `+2`, which counts the others without saying whether the first is nine
+ *  dictations in ten or six: the same `+2` sits over a record that is almost
+ *  all German and one that is a third English. A hover is not where a reading
+ *  goes — the tooltip carries what the tile IS, the foot carries what it says.
+ *
+ *  AND IT NEVER ROUNDS UP TO A HUNDRED WHILE A SECOND LANGUAGE EXISTS. 99.6 %
+ *  is not `100 %` on a tile whose own figure says `2`; the two would contradict
+ *  each other, and the count is the measurement.
+ *
+ *  THE SECOND LINE IS THE BASIS, AND IT IS THE REASON THIS TILE READ AS BROKEN
+ *  (ADR 0186). `only German` is a claim about every dictation, and the tile had
+ *  never read every dictation: a text under about eight words is in no language
+ *  bucket at all (ADR 0180), which on this machine was 40 runs in 107. Somebody
+ *  who had dictated in English twice — five words and one — was told *only
+ *  German* and correctly concluded the measurement was wrong, when what was
+ *  wrong was the sentence. So the exclusive word is spent only where nothing was
+ *  refused, and the count it was read off stands underneath either way. Same
+ *  rule as every other tile on the row: a figure states what it was computed
+ *  over (ADR 0182). */
+function languageFoot(
+  languages: { code: string; count: number }[],
+  dictations: number,
+): ReactNode {
   const [first, ...rest] = languages;
-  if (rest.length === 0) return languageLabel(first.code);
-  return `mostly ${languageLabel(first.code)} · +${rest.length}`;
-}
-
-/** The hover, capped at three. Beyond that a tooltip becomes a table. */
-function languageTitle(languages: { code: string; count: number }[]): string {
-  const named = languages
-    .slice(0, 3)
-    .map(({ code, count }) => `${languageLabel(code)} ${count}`)
-    .join(", ");
-  return languages.length > 3 ? `${named}, and ${languages.length - 3} more.` : `${named}.`;
+  const name = languageLabel(first.code);
+  /* The runs that landed in SOME bucket — the same denominator the share uses,
+     and never `dictations`, which counts the refused ones too. */
+  const measured = languages.reduce((sum, language) => sum + language.count, 0);
+  const refused = dictations > measured;
+  const share = ledgerTopLanguageShare(languages) ?? 0;
+  const reading =
+    rest.length === 0
+      ? refused
+        ? name
+        : `only ${name}`
+      : `mostly ${name} · ${Math.min(99, Math.round(share * 100))} %`;
+  if (!refused) return reading;
+  return (
+    <>
+      {reading}
+      <br />
+      {`measured on ${measured} of ${dictations}`}
+    </>
+  );
 }
 
 function heroCopy(mode: string): { title: string; description: string } {
@@ -246,6 +284,18 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
 
   const profile = runtime ? resolveActiveTextProfile(runtime.config) : null;
   const profileMode = profile ? resolveTextProfileWorkMode(profile).processing_mode : undefined;
+  /* THE TWO MODE READINGS THE FACT LINE HOLDS APART. `effectiveLabel` is what
+     the router resolved for the NEXT dictation — runtime truth, and the reason
+     this line exists; `profileLabel` is what the active profile asks for, which
+     is a different claim only when it is `Auto` or has been overridden. They are
+     compared as LABELS rather than as modes so the unwired screen ( `Cleanup`
+     against `Auto`) and a failed resolve (`—`) both compare as themselves. */
+  const effectiveLabel = runtime
+    ? effectiveMode
+      ? PROCESSING_MODE_LABELS[effectiveMode]
+      : "—"
+    : "Cleanup";
+  const profileLabel = runtime ? PROCESSING_MODE_LABELS[profileMode ?? "auto"] : "Auto";
   const activation = runtime?.config.activation_mode ?? "hold";
   const copy = heroCopy(activation);
 
@@ -271,7 +321,8 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      again, as if it had never started. What decides between the two lives of
      this block is whether the RECORD has anything to say; a tile with no reading
      of its own draws a dark display, which is exactly what ADR 0161 asks for. */
-  const display = ledgerTotals(ledger).dictations > 0;
+  const dictations = ledgerTotals(ledger).dictations;
+  const display = dictations > 0;
 
   /* THE OTHER LIFE OF THE SAME BLOCK (decision 1). The calendar and the tiles
      are alternatives rather than companions — one is your rhythm, the other is
@@ -285,6 +336,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      so the display may only span what the file still reaches over. */
   const calendar = Boolean(runtime?.config.home_activity_calendar);
   const buckets = useMemo(() => ledgerBuckets(ledger), [ledger]);
+  const markers = useMemo(() => activityMarkers(ledger), [ledger]);
 
   /* THE ONE SOURCE OF ADR 0044'S THREE THAT HAS A RECEIVER (ADR 0076). A
      delivery that fell back to the clipboard or to the scratchpad is a
@@ -305,8 +357,17 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
       )
     : [];
 
+  /* THE SAME UNDO WINDOW HISTORY HAS (ADR 0195). Home's five rows are a slice of
+     the same record and draw the same builder, so a delete has to behave the
+     same way on both — and the hook is shared for the reason `TranscriptRow` is:
+     two copies of a timing rule are two rules. */
+  const trash = useUndoableDelete((id: string) => void remove(id));
+
   const rows = runtime
-    ? entries.slice(0, RECENT_LIMIT).map((entry) => {
+    ? entries
+        .filter((entry) => !trash.hides(entry.id))
+        .slice(0, RECENT_LIMIT)
+        .map((entry) => {
         const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
         return {
           id: entry.id,
@@ -347,7 +408,8 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           copy: () => void navigator.clipboard.writeText(text),
           revealFile: () => void reveal(entry.transcript_path),
           retry: () => void retry(entry.id),
-          remove: () => void remove(entry.id),
+          /* Held back, not carried out (ADR 0195). Same rule as History's. */
+          remove: () => trash.request(entry.id, titleOf(entry, "title")),
           restore: () =>
             void invoke("insert_text_native", {
               request: { text, source: "history_restore", corrected: entry.corrected },
@@ -375,6 +437,67 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           inside a masthead it does not have. */}
       {banner}
       <HomeOpen>
+        {/* THE STANDING FACTS ARE THE FIRST THING ON HOME, AND THAT REVERSES
+            ADR 0171 (ADR 0192). That decision moved the shortcut OUT of the
+            prominent position on the argument that an instruction is read
+            exactly once, and put it at the foot of the hero as one line of small
+            caps. The argument was right about the 42 px keycaps and wrong about
+            the line: the standing facts are not an instruction, they are the
+            answer to *what is about to happen when I press it* — which mode the
+            next dictation runs as, which profile is live, which keys. That is a
+            question a reader has every day, not once.
+
+            So the line comes back to the top, above the display, and the rule
+            underneath it changes ends: it used to be the display's foot and it
+            is now its head. */}
+        <HeroFacts
+          action={
+            <Button
+              variant="ghost"
+              icon={<Icon name="arrow" />}
+              onClick={runtime ? () => runtime.open?.({ view: "profiles" }) : undefined}
+            >
+              Change in profile
+            </Button>
+          }
+        >
+          {/* THE SHORTCUT'S PERMANENT HOME. It left the top of the screen with
+              the 42 px caps and it did not leave the screen: the reader who has
+              forgotten which keys to press has to find them somewhere, and the
+              standing facts are where the facts that do not change with the next
+              dictation live. The keys are the runtime's resolved display, never
+              the raw token (T9). */}
+          <span>
+            {`${invokeVerb(activation)} `}
+            <Keycaps combo={keycapCombo(trigger ?? runtime?.config.hotkey ?? "Ctrl+Super")} />
+            {" in any app"}
+          </span>
+          <span className="ws-sep">·</span>
+          {/* ONE TEXT NODE EITHER SIDE OF THE `<b>`, exactly as the prototype
+              writes it. A JSX `{" "}` is a SECOND text node, and three of this
+              row's spans measured 0.015px wide of the prototype because of it —
+              the only style divergence this leg introduced, and it took a
+              `port:diff` run to see. */}
+          <span>
+            {"Next dictation runs as "}
+            <b>{effectiveLabel}</b>
+          </span>
+          <span className="ws-sep">·</span>
+          {/* THE PROFILE NAMES ITS MODE ONLY WHERE THAT IS A SECOND FACT
+              (ADR 0186). In the prototype these two spans read `Cleanup` and
+              `General writing on Auto` and said different things; in the running
+              app the profile mostly IS the effective mode, and the row spent its
+              last third repeating the word before it — `Next dictation runs as
+              Cleanup · Founder ops notes on Cleanup`. Where they agree the
+              second mention goes, which is also what puts the standing facts
+              back on one line. Where they differ — a profile on Auto that the
+              router resolved to something — the mode stays, because THAT is the
+              case a reader needs to be able to see. */}
+          <span>
+            <b>{runtime ? displayTextProfileLabel(profile!) : "General writing"}</b>
+            {profileLabel === effectiveLabel ? "" : ` on ${profileLabel}`}
+          </span>
+        </HeroFacts>
         {display ? (
           /* CLICKING THE BLOCK SWAPS IT (decision 9). No settings row is added
              for this and none is wanted: a preference about a display belongs on
@@ -385,9 +508,27 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           <HomeSwitch
             calendar={calendar}
             onToggle={() => runtime?.patch({ home_activity_calendar: !calendar })}
+            /* The dots name a view rather than flipping to the other one, so
+               they write the value they name — pressing the one you are on is
+               then a no-op rather than a bounce (ADR 0184). */
+            onSelect={(next) => runtime?.patch({ home_activity_calendar: next })}
           >
             {calendar ? (
-              <ActivityCalendar buckets={buckets} />
+              /* THE YEARS AND THE START DATE COME FROM THE LEDGER (ADR 0183),
+                 because the calendar may only offer a period the record can
+                 speak for: a pruned year would draw as a grid of unlit circles,
+                 which claims nothing was dictated on days the ledger no longer
+                 holds. */
+              <ActivityCalendar
+                buckets={buckets}
+                years={ledgerYears(ledger)}
+                /* THE DAYS THE CALENDAR NAMES RATHER THAN COUNTS (ADR 0189).
+                   The publication is the same date everywhere; the install date
+                   is this ledger's and may be absent, which draws one marker
+                   instead of two rather than inventing the second. */
+                markers={markers}
+                startedOn={ledger?.started_on ?? null}
+              />
             ) : (
               <HomeDisplay>
                 {/* WORDS PER MINUTE — a SPEAKING rate since ADR 0177, and
@@ -422,8 +563,26 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                       ? `About ${Math.round(saved.value)} minutes saved in the last four weeks`
                       : "No reading for the last four weeks"
                   }
-                  foot={saved ? "≈ minutes · last 4 weeks" : "nothing yet · last 4 weeks"}
-                  title={`Your words at ${baseline} wpm of typing, less the time you dictated them. The baseline is a guess — change it in Privacy & Data.`}
+                  /* THE BASELINE IS UNDER THE FIGURE, NOT IN THE HOVER
+                     (ADR 0182). It is not context about the reading — it IS the
+                     reading: the same four weeks are 43 minutes at 40 wpm and 15
+                     at 60. A number whose whole meaning depends on an assumption
+                     may not keep that assumption behind a hover, which is unread
+                     on a touch screen and unread standing up. The second line
+                     rather than a longer first one: the scope and the comparison
+                     are two claims, and a tile is 150 px wide. */
+                  foot={
+                    saved ? (
+                      <>
+                        {"≈ minutes · last 4 weeks"}
+                        <br />
+                        {`vs ${baseline} wpm typing`}
+                      </>
+                    ) : (
+                      "nothing yet · last 4 weeks"
+                    )
+                  }
+                  title="Your dictated words as typing time, less the time you spent dictating them. Nothing here has ever watched you type — set the baseline in Privacy & Data."
                 />
                 {/* THE ONE TILE THAT ANSWERS TO A SETTING. `Apps` stood here
                     and could not work: the target application is only resolved
@@ -434,15 +593,24 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                     "time until the text is with you" and "how much you edited
                     afterwards". Turnaround is inside it at both ends, and since
                     ADR 0181 it starts where the wait does. */}
+                {/* AND IT READS IN SECONDS (ADR 0191). `2400` was a true figure
+                    in a unit nobody waits in: a reader knows what two and a half
+                    seconds feels like and has to divide to find it. Whole
+                    seconds would have thrown the measurement away — a 2,400 ms
+                    median drawn as `2` discards every bit of a 25 ms histogram —
+                    so the counter lights a decimal point in the blank column it
+                    already keeps between two glyphs, and the four reserved
+                    positions stay four. */}
                 <StatTile
                   label="Turnaround"
-                  value={turnaround}
+                  value={turnaround === null ? null : turnaround / 1000}
+                  decimals={1}
                   ariaLabel={
                     turnaround === null
                       ? "No reading yet"
-                      : `${Math.round(turnaround)} milliseconds from speaking to text`
+                      : `${(turnaround / 1000).toFixed(1)} seconds from speaking to text`
                   }
-                  foot={turnaround === null ? "nothing timed yet" : "ms · median · all time"}
+                  foot={turnaround === null ? "nothing timed yet" : "seconds · median · all time"}
                   title="From you stopping to the text being ready. Moves with the model and the lane."
                 />
                 {/* LANGUAGES, MEASURED ON THE TEXT (ADR 0180). It carried a
@@ -462,13 +630,30 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                   /* THE FOOT NAMES THE ONE YOU MOSTLY DICTATE IN AND COUNTS THE
                      REST. Every language on one line was fine at two and a smear
                      at ten, and the tile's own figure already says how many there
-                     are — what it cannot say is which one you actually work in. */
-                  foot={languages.length > 0 ? languageFoot(languages) : "from your next dictation"}
-                  title={
+                     are — what it cannot say is which one you actually work in.
+
+                     AND IT STATES HOW MANY DICTATIONS IT READ (ADR 0186), which
+                     is what turns `only German` from a wrong claim into a true
+                     one: the runs too short to name a language are in no bucket
+                     at all, and a tile that hides them tells a bilingual reader
+                     they speak one language. */
+                  foot={
                     languages.length > 0
-                      ? `Measured on the text, not on your language setting. ${languageTitle(languages)}`
-                      : "Measured on the text once a dictation is long enough to be sure of."
+                      ? languageFoot(languages, dictations)
+                      : "from your next dictation"
                   }
+                  /* THE HOVER CARRIES WHAT THE TILE IS, AND NOTHING IT MEASURED
+                     (ADR 0182). It listed every language with its count, which
+                     put the one reading a person actually wants — which language
+                     this record is mostly in — where it is read standing up if
+                     at all. That reading is in the foot now, and this says only
+                     where the figure comes from. */
+                  /* IT NAMES THE FLOOR NOW, because the reader who wonders why
+                     a language is missing is asking about exactly that: under
+                     roughly a sentence, trigram statistics are a coin flip, and
+                     a five-word English aside really did come back as Hungarian
+                     before the reliability gate threw it away (ADR 0186). */
+                  title="Measured on the text, not on your language setting. A dictation under about eight words — or one the detector cannot be sure of — is counted in no language at all."
                 />
               </HomeDisplay>
             )}
@@ -481,44 +666,6 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
             }
           />
         )}
-        <HeroFacts
-          action={
-            <Button
-              variant="ghost"
-              icon={<Icon name="arrow" />}
-              onClick={runtime ? () => runtime.open?.({ view: "profiles" }) : undefined}
-            >
-              Change in profile
-            </Button>
-          }
-        >
-          {/* THE SHORTCUT'S PERMANENT HOME. It left the top of the screen with
-              the 42 px caps and it did not leave the screen: the reader who has
-              forgotten which keys to press has to find them somewhere, and the
-              standing facts are where the facts that do not change with the next
-              dictation live. The keys are the runtime's resolved display, never
-              the raw token (T9). */}
-          <span>
-            {`${invokeVerb(activation)} `}
-            <Keycaps combo={keycapCombo(trigger ?? runtime?.config.hotkey ?? "Ctrl+Super")} />
-            {" in any app"}
-          </span>
-          <span className="ws-sep">·</span>
-          {/* ONE TEXT NODE EITHER SIDE OF THE `<b>`, exactly as the prototype
-              writes it. A JSX `{" "}` is a SECOND text node, and three of this
-              row's spans measured 0.015px wide of the prototype because of it —
-              the only style divergence this leg introduced, and it took a
-              `port:diff` run to see. */}
-          <span>
-            {"Next dictation runs as "}
-            <b>{runtime ? (effectiveMode ? PROCESSING_MODE_LABELS[effectiveMode] : "—") : "Cleanup"}</b>
-          </span>
-          <span className="ws-sep">·</span>
-          <span>
-            <b>{runtime ? displayTextProfileLabel(profile!) : "General writing"}</b>
-            {` on ${runtime ? PROCESSING_MODE_LABELS[profileMode ?? "auto"] : "Auto"}`}
-          </span>
-        </HeroFacts>
       </HomeOpen>
 
       {/* THE DECISION INBOX — ADR 0044. Three sources, one list, and the reason
@@ -652,6 +799,8 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
             </Button>
           }
         >
+          {/* The row that just left, and the way back to it (ADR 0195). */}
+          {trash.pending && <UndoNotice what={trash.pending.title} onUndo={trash.undo} />}
           <ListRows>
             {rows.map((row) => (
               <TranscriptRow

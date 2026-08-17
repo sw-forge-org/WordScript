@@ -27,6 +27,7 @@ import {
   type OnboardingStep,
 } from "@/components/shell";
 import { InertSegment, ProviderPick } from "./Models";
+import { TypingBaseline } from "./Privacy";
 import { LANES, libraryModel, type LaneName } from "./data";
 
 /**
@@ -53,6 +54,11 @@ const OB_STEPS: OnboardingStep[] = [
 export function OnboardingScreen() {
   const [index, setIndex] = useState(0);
   const [lane, setLane] = useState<LaneName>("Cloud");
+  /* LOCAL, LIKE EVERY OTHER ANSWER IN THIS FLOW. The flow has no entry point
+     yet (`ENTRY_POINT_HOLES`) and writes no config; the banner at the top says
+     so for the whole screen, which is why this control is not marked
+     separately. The default is the runtime's own. */
+  const [baseline, setBaseline] = useState(40);
   const step = OB_STEPS[index];
   const last = index === OB_STEPS.length - 1;
 
@@ -78,7 +84,7 @@ export function OnboardingScreen() {
       {step.id === "hotkey" && <Hotkey />}
       {step.id === "insert" && <Insert />}
       {step.id === "try" && <TryIt />}
-      {step.id === "done" && <Done />}
+      {step.id === "done" && <Done baseline={baseline} onBaseline={setBaseline} />}
 
       <OnboardingFoot
         onBack={index > 0 ? () => setIndex(index - 1) : undefined}
@@ -540,7 +546,7 @@ function TryIt() {
   );
 }
 
-function Done() {
+function Done({ baseline, onBaseline }: { baseline: number; onBaseline: (wpm: number) => void }) {
   return (
     <>
       <Card title="Ready" description="What is set, and where to change it.">
@@ -578,6 +584,35 @@ function Done() {
               </Button>
             }
           />
+        </CardRows>
+      </Card>
+
+      {/* THE ONE NUMBER HOME CANNOT MEASURE, ASKED WHILE SOMEBODY IS STILL
+          ANSWERING QUESTIONS (ADR 0182).
+
+          IT IS HERE AND NOT A STEP OF ITS OWN, for the reason the card below
+          gives: nothing that fails to block a first dictation earns a step, and
+          this blocks nothing. But it is asked rather than left to a settings
+          screen nobody visits, because `Time saved` is DIVIDED by it — the same
+          four weeks read 43 minutes at 40 words a minute and 15 at 60, and a
+          reader who never chose has a figure that looks measured and is not.
+
+          The reader who does not know their speed is why the presets describe
+          how you type rather than listing numbers; forty is preselected, so
+          skipping this card is a valid answer and lands where it landed
+          before. */}
+      <Card
+        title="What Home counts it against"
+        description="One figure on Home is your words as typing time, less the time you dictated them. This is the typing speed in that sum."
+      >
+        <CardRows>
+          <Row
+            label="Typing baseline"
+            layout="stack"
+            hint="Nothing in WordScript has ever watched you type, and nothing will. Pick the description that fits, or enter the figure if you know it."
+          >
+            <TypingBaseline value={baseline} onChange={onBaseline} />
+          </Row>
         </CardRows>
       </Card>
 

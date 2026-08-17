@@ -681,3 +681,32 @@ export function textProfileInitials(profile: TextProfile): string {
 
   return (words.map((word) => word[0]?.toUpperCase() ?? "").join("") || "PR").slice(0, 2);
 }
+/* ════════════════════════════════════════════════════════════════════════════
+   WHEN THE ACTIVE PROFILE MAY NOT BE SWITCHED, AND WHAT TO SAY ABOUT IT.
+
+   The runtime is the authority — `sessions::PROFILE_LOCKED_DURING_SESSION` —
+   and three surfaces now have to agree with it: the sidebar switcher, the
+   settings header's, and the Profiles row menu (ADR 0197). Each of them had, or
+   would have grown, its own spelling of "recording or processing" and its own
+   sentence about why. That is three copies of one rule, which is how two of them
+   end up disagreeing with the runtime and each other (ADR 0123).
+
+   It lives with the profile helpers because the question is about a PROFILE —
+   can this one be made active right now — rather than about the session, which
+   is only the reason the answer is no.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Whether a capture or its pipeline is running, which is when the runtime
+ *  refuses a profile switch. */
+export function profileSwitchLocked(state: { status?: string } | null | undefined): boolean {
+  return state?.status === "recording" || state?.status === "processing";
+}
+
+/** What a locked control says on the surface: three words, because a control
+ *  that is refusing has to say THAT it is refusing and nothing else (ADR 0196). */
+export const PROFILE_LOCKED_LINE = "Locked while recording";
+
+/** And why, on the hover or in a menu entry's hint, where a sentence is
+ *  affordable. Mirrors the runtime's own refusal. */
+export const PROFILE_LOCKED_HINT =
+  "Locked while recording — the profile sets the recognizer, which is fixed once a recording starts. The processing mode can still be changed.";

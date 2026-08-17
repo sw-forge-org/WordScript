@@ -288,6 +288,42 @@ describe("Home, wired", () => {
     expect(await screen.findByText("Cleanup")).toBeInTheDocument();
   });
 
+  /**
+   * ADR 0186. The row read `Next dictation runs as Cleanup · Founder ops notes
+   * on Cleanup` — the same word twice, and a third of a line spent saying
+   * nothing. The profile keeps its mode only where the mode is a SECOND fact.
+   */
+  it("names the mode once when the profile and the router agree on it", async () => {
+    const config = createAppConfig();
+    config.text_profiles = config.text_profiles.map((profile) =>
+      profile.id === "general"
+        ? ({
+            ...profile,
+            work_mode: { ...profile.work_mode, processing_mode: "cleanup" },
+          } as typeof profile)
+        : profile,
+    );
+    const { container } = render(
+      <HomeScreen runtime={createWorkspaceRuntime({ active: true, config })} />,
+    );
+
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("resolve_current_processing_mode"));
+    const facts = container.querySelector(".ws-hero-facts")!;
+    await waitFor(() => expect(facts).toHaveTextContent("Next dictation runs as Cleanup"));
+    expect(facts).toHaveTextContent("General writing");
+    expect(facts).not.toHaveTextContent("on Cleanup");
+  });
+
+  /* …and where they disagree it is the one thing on the row worth reading: the
+     profile asks for Auto, the router resolved Cleanup. */
+  it("keeps the profile's own mode where it differs from the effective one", async () => {
+    const { container } = render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("resolve_current_processing_mode"));
+    const facts = container.querySelector(".ws-hero-facts")!;
+    await waitFor(() => expect(facts).toHaveTextContent("General writing on Auto"));
+  });
+
   it("lists this machine's last five records rather than the drawing's five", async () => {
     render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
@@ -402,7 +438,14 @@ describe("Home · the display", () => {
     expect(
       await screen.findByLabelText("About 8 minutes saved in the last four weeks"),
     ).toBeInTheDocument();
-    expect(screen.getByText("≈ minutes · last 4 weeks")).toBeInTheDocument();
+    const tile = screen.getByText("Time saved").closest(".ws-tile") as HTMLElement;
+    expect(tile).toHaveTextContent("≈ minutes · last 4 weeks");
+    /* ADR 0182: the baseline is UNDER the figure and not behind a hover. It is
+       not context about this reading — it is the divisor, and the same four
+       weeks read 43 minutes at 40 wpm and 15 at 60. */
+    expect(tile).toHaveTextContent("vs 40 wpm typing");
+    /* ADR 0186 moved the hover onto the tile; what it may not say is unchanged. */
+    expect(tile.getAttribute("title")).not.toMatch(/40 wpm/);
   });
 
   it("STATES AN EMPTY WINDOW WHILE THE ALL-TIME RATE SURVIVES IT", async () => {
@@ -451,12 +494,81 @@ describe("Home · the display", () => {
     render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     expect(await screen.findByLabelText("3 languages dictated")).toBeInTheDocument();
-    /* THE FOOT NAMES ONE AND COUNTS THE REST. Ten languages on one line is a
-       smear, and the figure above already says how many there are — what it
-       cannot say is which one the reader actually works in. Named through
+    /* THE FOOT NAMES ONE AND SAYS HOW MUCH OF THE RECORD IT IS. Ten languages
+       on one line is a smear, and the figure above already says how many there
+       are — what it cannot say is which one the reader actually works in, and
+       whether that is nine dictations in ten or six. Named through
        `Intl.DisplayNames`, so a language this product does not translate
-       between is still a name rather than a code. */
-    expect(screen.getByText("mostly German · +2")).toBeInTheDocument();
+       between is still a name rather than a code.
+
+       30 of 35 MEASURED runs, not of the dictations: a text too short to be
+       sure of is in no language bucket at all (ADR 0180), and dividing by the
+       day count would drop the share every time somebody dictates a sentence. */
+    expect(screen.getByText("mostly German · 86 %")).toBeInTheDocument();
+    /* ADR 0182: the hover says where the figure comes from and states no
+       reading of its own. ADR 0186: it hangs on the tile, so it answers over
+       the figure and the foot as well as over the label. */
+    const tile = screen.getByText("Languages").closest(".ws-tile") as HTMLElement;
+    expect(tile.getAttribute("title")).toMatch(/Measured on the text/);
+    expect(tile.getAttribute("title")).not.toMatch(/German/);
+    expect(tile.querySelector(".ws-tile-label")?.getAttribute("title")).toBeNull();
+  });
+
+  /**
+   * THE DEFECT ADR 0186 IS NAMED FOR. The record held 107 dictations and 67
+   * language readings; the tile said `only German` to somebody who had also
+   * dictated in English, and they reported the measurement as broken. It was
+   * not — the two English runs were five words and one, and nothing can name a
+   * language from that. The sentence was what lied.
+   */
+  it("does not claim one language exclusively while runs went unread", async () => {
+    mockRuntimeHistory(
+      [timedEntry(400, 120, { id: "a" }), timedEntry(200, 60, { id: "b" }), timedEntry(100, 30, { id: "c" })],
+      { de: 2 },
+    );
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByLabelText("1 languages dictated");
+    const tile = screen.getByText("Languages").closest(".ws-tile") as HTMLElement;
+    expect(tile).toHaveTextContent("German");
+    expect(tile).not.toHaveTextContent("only German");
+    /* The basis, under the figure where ADR 0182 puts it: two of the three
+       dictations could be read, and the third is why the tile says `1`. */
+    expect(tile).toHaveTextContent("measured on 2 of 3");
+  });
+
+  /* The same shortfall beside a second language: the share stays against the
+     runs that WERE read (ADR 0180), and the count underneath says how many
+     that was. */
+  it("counts the share against the measured runs and states how many they were", async () => {
+    mockRuntimeHistory(
+      [timedEntry(400, 120, { id: "a" }), timedEntry(200, 60, { id: "b" }), timedEntry(100, 30, { id: "c" })],
+      { de: 1, en: 1 },
+    );
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByLabelText("2 languages dictated");
+    const tile = screen.getByText("Languages").closest(".ws-tile") as HTMLElement;
+    expect(tile).toHaveTextContent("mostly German · 50 %");
+    expect(tile).toHaveTextContent("measured on 2 of 3");
+  });
+
+  /* One language is not "mostly" anything, and a `100 %` beside a figure that
+     says `2` would have the tile contradicting itself (ADR 0182). */
+  it("says only, not mostly, where one language is the whole record", async () => {
+    mockRuntimeHistory([timedEntry(400, 120)], { de: 12 });
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findByText("only German")).toBeInTheDocument();
+  });
+
+  it("never rounds the share up to a hundred while a second language exists", async () => {
+    mockRuntimeHistory([timedEntry(400, 120)], { de: 499, en: 1 });
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    /* 99.8 % rounds to 100, and the figure above says two. The cap keeps the
+       two halves of the tile agreeing. */
+    expect(await screen.findByText("mostly German · 99 %")).toBeInTheDocument();
   });
 
   /* A counter with no reading is dark rather than zero (ADR 0161), and that
@@ -610,6 +722,103 @@ describe("Home · the two views of the opening block", () => {
     /* Persisted, not merely swapped: this is the assertion that separates a
        preference from a piece of local state. */
     expect(patch).toHaveBeenCalledWith({ home_activity_calendar: true });
+  });
+
+  /**
+   * ADR 0184. The dots were `aria-hidden` decoration, so the only way to change
+   * the view was to guess that a block of read-outs is clickable. They are two
+   * buttons now — and buttons that SELECT rather than toggle, because with
+   * exactly two views "go to the calendar" is a shorter thought than "go to the
+   * other one", and pressing the one you are on should do nothing.
+   */
+  it("changes the view from the dots, without needing anyone to guess the block is a button", async () => {
+    const patch = vi.fn();
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    const calendar = await screen.findByRole("button", { name: "Activity calendar" });
+    expect(calendar).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Counters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(calendar);
+    expect(patch).toHaveBeenCalledWith({ home_activity_calendar: true });
+  });
+
+  it("writes the view it names rather than flipping, so the dot you are on is a no-op", async () => {
+    const patch = vi.fn();
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Counters" }));
+    /* Already on the counters: the write says so rather than bouncing the
+       reader into the calendar. */
+    expect(patch).toHaveBeenCalledWith({ home_activity_calendar: false });
+  });
+
+  /**
+   * ADR 0186. The hover belongs to the TILE and not to its label: the label is
+   * one line of small caps at the top of a narrow column, and a reader pointing
+   * at the figure — the thing they are asking about — used to get nothing at
+   * all, which is what "the tooltips do not work" meant.
+   */
+  it("explains every counter from anywhere on it, not from its label alone", async () => {
+    mockRuntimeHistory([timedEntry(400, 120)], { de: 30, en: 4 });
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Words per minute");
+    for (const label of ["Words per minute", "Time saved", "Turnaround", "Languages"]) {
+      const tile = screen.getByText(label).closest(".ws-tile") as HTMLElement;
+      expect(tile.getAttribute("title"), label).toBeTruthy();
+      expect(tile.querySelector(".ws-tile-label")?.getAttribute("title"), label).toBeNull();
+    }
+  });
+
+  /**
+   * THE OTHER HALF OF ADR 0186, and the reason the tooltip could not simply be
+   * moved. A tile that takes the pointer is a tile a click no longer falls
+   * through to the hit area behind — and the tiles are most of the counter
+   * view, so the block would have quietly stopped swapping from the place it is
+   * mostly pressed.
+   */
+  it("still swaps the view when a counter tile itself is clicked", async () => {
+    const patch = vi.fn();
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    const tile = (await screen.findByText("Turnaround")).closest(".ws-tile") as HTMLElement;
+    await userEvent.click(tile);
+    expect(patch).toHaveBeenCalledWith({ home_activity_calendar: true });
+  });
+
+  /**
+   * ADR 0183's defect, which the layer that catches those clicks must not bring
+   * back: the calendar's own controls bubble through the same element, and a
+   * handler that fired for them would swap the view on every arrow press.
+   */
+  it("does not swap the view when the calendar's own controls are pressed", async () => {
+    const patch = vi.fn();
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(
+      <HomeScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          patch,
+          config: createAppConfig({ home_activity_calendar: true }),
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(document.querySelector(".ws-cal")).not.toBeNull());
+    /* The guard is the attribute: no `data-swaps`, no handler on the layer the
+       calendar's controls bubble through. */
+    expect(document.querySelector(".ws-home-switch-body")).not.toHaveAttribute("data-swaps");
+
+    const cell = document.querySelector(".ws-cal-cell") as HTMLElement;
+    await userEvent.click(cell);
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("adds no settings row for it — the control is the display", async () => {

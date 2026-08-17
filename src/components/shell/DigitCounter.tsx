@@ -39,20 +39,72 @@ export const DIGIT_ROWS = 7;
 export const DIGIT_COLS = 5;
 /** One blank column between two glyphs. Without it a `11` is a single shape. */
 export const DIGIT_SPACING_COLS = 1;
+
+/**
+ * HOW WIDE THE GAP AT A DECIMAL POINT IS, AND IT IS NOT THE ORDINARY ONE
+ * (ADR 0191).
+ *
+ * THE FIRST BUILD LIT ONE CELL IN THE ORDINARY ONE-COLUMN GAP AND THE OWNER
+ * COULD NOT READ IT: `1.0` was reported as reading `10`. Both halves of that are
+ * the same mistake. A single dot at the foot of a 6 px gap is four pixels of ink
+ * against a display made of four-pixel dots — it does not announce itself — and
+ * more importantly the gap it sits in is IDENTICAL to the gap between every
+ * other pair of digits, so the eye has nothing to group by and reads one number.
+ *
+ * THE SEPARATION IS THE SIGNAL AND THE DOT ONLY CONFIRMS IT. Two blank columns
+ * make the split visible before the point is even looked at: whatever is left of
+ * that gap is one number and whatever is right of it is another. So the gap
+ * doubles and the point is drawn 2 x 2 in it — solid enough to be a mark rather
+ * than a stray lit cell, and centred in a gap wide enough to hold it.
+ *
+ * AND THE MARK DOES NOT TOUCH THE DIGIT AFTER IT. Reported on the running app
+ * with the two-column version: the point and the first decimal digit merged into
+ * one shape, which is the same failure one step smaller — a mark that runs into
+ * its neighbour is a mark the eye reads as part of the neighbour. So the gap is
+ * three columns and the point takes the first two of them, leaving one clear
+ * column between the point and the digit it qualifies. It stays hard against the
+ * digit on its LEFT, which is where a decimal point belongs: it says *this
+ * number continues*, and it says it about the integer part.
+ *
+ * IT COSTS TWO COLUMNS OF WIDTH AND NOTHING ELSE. The four reserved positions
+ * stay four, the dot pitch is unchanged, and the tile is two columns wider than
+ * its three neighbours inside a grid track that has the room. A counter nobody
+ * can read correctly is not worth twelve pixels.
+ */
+export const DECIMAL_GAP_COLS = 3;
+
+/** How much of that gap the mark itself takes, measured from the digit on its
+ *  left. The remainder is the clear column that keeps it off the digit on its
+ *  right — see `DECIMAL_GAP_COLS`. */
+export const DECIMAL_POINT_COLS = 2;
 /** Decision 5 of the home activity track: every counter holds four. */
 export const RESERVED_POSITIONS = 4;
 
 /**
  * The digits a value is spelled with, or `null` when it has none to spell.
  *
- * Rounded, because the matrix has no decimal point and a rate is read as a whole
- * number anyway. Floored at zero, because none of the four admitted shapes —
- * rate, ratio, small set, window — can be negative, and there is no minus glyph
- * to say so if one were.
+ * Rounded, because a rate is read as a whole number. Floored at zero, because
+ * none of the four admitted shapes — rate, ratio, small set, window — can be
+ * negative, and there is no minus glyph to say so if one were.
+ *
+ * `decimals` MOVES THE ROUNDING RATHER THAN ADDING A CHARACTER (ADR 0191). The
+ * digits string stays a run of digits and nothing else — `2.4` is `"24"` — and
+ * where the point falls is `decimalColumn`'s business, not this function's.
+ * There is no `.` glyph in `MATRIX_FRAMES.digits` and there is not going to be
+ * one; the point is a single lit cell in a column that already exists.
  */
-export function counterDigits(value: number | null | undefined): string | null {
+export function counterDigits(
+  value: number | null | undefined,
+  decimals = 0,
+): string | null {
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
-  return String(Math.max(0, Math.round(value)));
+  const places = Math.max(0, Math.trunc(decimals));
+  const scale = 10 ** places;
+  const shown = String(Math.max(0, Math.round(value * scale)));
+  /* A LEADING ZERO IS PART OF THE NUMBER WHEN THERE IS A POINT. Without it a
+     value of 0.8 spells `"8"` and would draw as `.8` — a shape that reads as
+     dirt on the display rather than as a number. */
+  return places > 0 ? shown.padStart(places + 1, "0") : shown;
 }
 
 /**
@@ -67,10 +119,28 @@ export function counterDigits(value: number | null | undefined): string | null {
 export function counterFrame(
   value: number | null | undefined,
   positions = RESERVED_POSITIONS,
+  decimals = 0,
 ): Frame {
-  const shown = counterDigits(value);
+  const shown = counterDigits(value, decimals);
   const slots = Math.max(positions, shown?.length ?? 0);
-  const cols = slots * DIGIT_COLS + (slots - 1) * DIGIT_SPACING_COLS;
+  const places = Math.max(0, Math.trunc(decimals));
+  /* WHICH SLOT THE POINT FOLLOWS. `-1` is no point at all, which is every tile
+     but one — and also the degenerate case where the point would fall before the
+     first slot and have no integer part to separate. */
+  const pointAfter = places > 0 && places < slots ? slots - places - 1 : -1;
+  const gapAfter = (slot: number) =>
+    slot === pointAfter ? DECIMAL_GAP_COLS : DIGIT_SPACING_COLS;
+
+  /* The start column of every slot, walked once rather than derived by a
+     formula: the gaps are no longer all the same width, and a closed form for
+     "where does slot k begin" would have to encode that twice. */
+  const starts: number[] = [];
+  let cursor = 0;
+  for (let slot = 0; slot < slots; slot += 1) {
+    starts.push(cursor);
+    cursor += DIGIT_COLS + (slot < slots - 1 ? gapAfter(slot) : 0);
+  }
+  const cols = cursor;
   const frame: Frame = Array.from({ length: DIGIT_ROWS }, () =>
     Array<number>(cols).fill(0),
   );
@@ -80,10 +150,24 @@ export function counterFrame(
   const offset = slots - shown.length;
   for (let index = 0; index < shown.length; index += 1) {
     const glyph = MATRIX_FRAMES.digits[Number(shown[index])];
-    const start = (offset + index) * (DIGIT_COLS + DIGIT_SPACING_COLS);
+    const start = starts[offset + index];
     for (let row = 0; row < DIGIT_ROWS; row += 1) {
       for (let col = 0; col < DIGIT_COLS; col += 1) {
         frame[row][start + col] = glyph[row][col];
+      }
+    }
+  }
+
+  /* THE POINT: A 2 x 2 MARK AT THE BASELINE, IN THE WIDENED GAP. There is no
+     `.` in `MATRIX_FRAMES.digits` and there is not going to be one — it is ten
+     digit frames and nothing else — so the point is drawn rather than set, in
+     space the frame already holds. See `DECIMAL_GAP_COLS` for why one cell in an
+     ordinary gap was unreadable. */
+  if (pointAfter >= 0) {
+    const column = starts[pointAfter] + DIGIT_COLS;
+    for (let row = DIGIT_ROWS - 2; row < DIGIT_ROWS; row += 1) {
+      for (let col = column; col < column + DECIMAL_POINT_COLS; col += 1) {
+        if (col < cols) frame[row][col] = 1;
       }
     }
   }
@@ -96,6 +180,10 @@ interface DigitCounterProps {
    *  it is deliberately not spelled as `0`. */
   value: number | null | undefined;
   positions?: number;
+  /** How many digits stand to the right of the point, drawn as one lit cell in
+   *  the blank column that already separates two glyphs (ADR 0191). `0` is the
+   *  whole-number display every other tile uses. */
+  decimals?: number;
   /** Pixel size and spacing of one dot, in the matrix's own units. */
   size?: number;
   gap?: number;
@@ -108,15 +196,16 @@ interface DigitCounterProps {
 export function DigitCounter({
   value,
   positions = RESERVED_POSITIONS,
+  decimals = 0,
   size = 4,
   gap = 2,
   ariaLabel,
   className,
 }: DigitCounterProps) {
-  const frame = counterFrame(value, positions);
+  const frame = counterFrame(value, positions, decimals);
   const cols = frame[0].length;
   const width = cols * (size + gap) - gap;
-  const unlit = counterDigits(value) === null;
+  const unlit = counterDigits(value, decimals) === null;
 
   return (
     <span

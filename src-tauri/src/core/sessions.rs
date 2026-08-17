@@ -148,6 +148,18 @@ struct PendingTranscriptionPreview {
     /// (ADR 0177). Carried for the same reason `effective_mode` is: the commit
     /// writes the record, and by then the capture is long over.
     capture: history::CaptureFacts,
+    /// Milliseconds from the capture stopping to the text existing (ADR 0181),
+    /// measured before this preview was staged.
+    ///
+    /// CARRIED RATHER THAN DROPPED, AND ADR 0182 IS WHY. The commit wrote `None`
+    /// here on the grounds that a parked preview's delay is the park's — true of
+    /// the park and false of everything else that reaches this struct. A profile
+    /// that does not auto-paste stages a preview for EVERY dictation, so on a
+    /// clipboard-only machine no record carried a turnaround at all and the
+    /// histogram behind the tile could never fill. The wait ended when the text
+    /// existed; how long the reader then took to press a button is a different
+    /// interval and is not added to this one.
+    turnaround_ms: Option<u64>,
     /// Which staging this preview came from. The deadline armed for one preview
     /// may not commit another: an abort inside the deadline window frees the
     /// session for a new capture, and that capture can stage its own preview
@@ -236,6 +248,7 @@ impl NativeSessionState {
         transformed: NativeTransformResult,
         effective_mode: Option<ProcessingMode>,
         capture: history::CaptureFacts,
+        turnaround_ms: Option<u64>,
     ) -> Result<(u64, PendingTranscriptionPreviewEvent), String> {
         if !matches!(self.stage, NativeSessionStage::Processing) || self.active_session.is_none() {
             return Err("No native session is waiting for a preview commit.".to_string());
@@ -249,6 +262,7 @@ impl NativeSessionState {
             transformed,
             effective_mode,
             capture,
+            turnaround_ms,
             epoch: self.preview_counter,
             commit_at_ms: now_ms().saturating_add(PREVIEW_COMMIT_DEADLINE_MS),
             occurred_at_ms: now_ms(),
@@ -631,19 +645,6 @@ pub async fn commit_pending_preview<R: Runtime>(
     }
 
     let final_text = preview.transformed.text.trim().to_string();
-    /* Titled from what is BEING COMMITTED, not from what was staged: the
-       overlay can edit a preview before it lands, and a file named after the
-       text somebody just corrected would be named after the mistake
-       (ADR 0077). */
-    /* On the assistant's resolution, for ADR 0087's reason: the title row
-       states rather than sets, so it follows the same chat job the assistant
-       does and carries no override of its own (ADR 0094). */
-    let title = super::transcript_store::title_for(
-        &final_text,
-        &preview.app_config.job_provider(JobKey::Assistant).provider,
-        &preview.app_config.chat_model_for_job(JobKey::Assistant),
-    )
-    .await;
     if final_text.is_empty() {
         return Err(
             "Pending transcription preview does not contain any text to commit.".to_string(),
@@ -665,6 +666,27 @@ pub async fn commit_pending_preview<R: Runtime>(
     .await
     .map_err(|e| format!("Commit task panicked: {e}"))?;
 
+    /* NAMED AFTER THE TEXT HAS BEEN DELIVERED, NEVER BEFORE (ADR 0188). This
+       call stood in front of the insert, so pressing commit bought up to four
+       seconds of filename before anything moved — on the path a clipboard-only
+       profile takes, which is 49 of this machine's last 50 dictations. The
+       record below needs the answer; the reader does not.
+
+       Titled from what is BEING COMMITTED, not from what was staged: the
+       overlay can edit a preview before it lands, and a file named after the
+       text somebody just corrected would be named after the mistake
+       (ADR 0077).
+
+       On the assistant's resolution, for ADR 0087's reason: the title row
+       states rather than sets, so it follows the same chat job the assistant
+       does and carries no override of its own (ADR 0094). */
+    let naming = super::transcript_store::describe(
+        &final_text,
+        &preview.app_config.job_provider(JobKey::Assistant).provider,
+        &preview.app_config.chat_model_for_job(JobKey::Assistant),
+    )
+    .await;
+
     match insert_result {
         Ok(result) if result.ok => {
             let history_entry = history::history_entry_from_insert_result(
@@ -674,14 +696,19 @@ pub async fn commit_pending_preview<R: Runtime>(
                 preview.transformed.clone(),
                 &result,
                 preview.effective_mode.clone(),
-                title.clone(),
+                naming.clone(),
                 preview.capture.clone(),
-                /* THE PARKED PATH HAS NO TURNAROUND TO REPORT. Its text was
-                   produced in a session that ended some time ago and is being
-                   delivered now; the interval between the two is how long the
-                   overlay sat parked, which is not a latency the runtime should
-                   claim as its own. */
-                None,
+                /* THE PIPELINE'S CLOCK, NOT THIS FUNCTION'S (ADR 0182). This
+                   read `None`, on the argument that a preview delivered later is
+                   reporting how long the overlay sat parked. That is true of the
+                   interval between the staging and this commit, and this is not
+                   that interval: `turnaround_ms` was measured when the text came
+                   into existence, before the preview was staged at all. Writing
+                   `None` here meant every dictation on a profile that does not
+                   auto-paste — which is every dictation on a clipboard-only
+                   machine — reported no turnaround, and the tile stayed dark
+                   over fifty records. */
+                preview.turnaround_ms,
             )
             .ok();
 
@@ -793,9 +820,13 @@ pub async fn commit_pending_preview<R: Runtime>(
                 preview.transformed.clone(),
                 &result,
                 preview.effective_mode.clone(),
-                title.clone(),
+                naming.clone(),
                 preview.capture.clone(),
-                None,
+                /* The same clock as the branch above (ADR 0182). The insert
+                   failed, and the text still came into existence when it did —
+                   the record states what the wait was, and the failure is its
+                   own field. */
+                preview.turnaround_ms,
             );
             let error = result
                 .error
@@ -826,7 +857,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                 preview.transformed,
                 error.clone(),
                 preview.effective_mode,
-                title,
+                naming,
                 preview.capture.clone(),
             );
             let _ = fail_processing_session_from_native_error(app, &session_id, &error);
@@ -874,6 +905,9 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
     capture: history::CaptureFacts,
+    // What the pipeline measured before it staged this preview (ADR 0181), so
+    // the commit can report it (ADR 0182).
+    turnaround_ms: Option<u64>,
 ) -> Result<PendingTranscriptionPreviewEvent, String> {
     let (epoch, payload, session_id) = {
         let state = app
@@ -887,6 +921,7 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
             transformed,
             effective_mode,
             capture,
+            turnaround_ms,
         )?;
         (epoch, payload, state.processing_session_id())
     };
@@ -1325,9 +1360,25 @@ mod tests {
                 },
                 None,
                 history::CaptureFacts::none(),
+                Some(1_210),
             )
             .unwrap();
         epoch
+    }
+
+    /// ADR 0182. The commit writes the record, so what the pipeline measured
+    /// has to survive the staging — and it did not: the preview held no such
+    /// field and the commit passed `None`, which on a profile that does not
+    /// auto-paste is every dictation there is.
+    #[test]
+    fn a_staged_preview_carries_the_pipelines_turnaround_to_the_commit() {
+        let mut state = NativeSessionState::default();
+        state.start_capture("hotkey").unwrap();
+        state.stop_for_processing().unwrap();
+        stage_preview(&mut state, "Final transcript");
+
+        let (_, preview) = state.take_pending_preview(None).unwrap();
+        assert_eq!(preview.turnaround_ms, Some(1_210));
     }
 
     #[test]
@@ -1349,6 +1400,7 @@ mod tests {
                 },
                 None,
                 history::CaptureFacts::none(),
+                Some(1_210),
             )
             .unwrap();
 

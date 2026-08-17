@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -98,7 +98,6 @@ describe("History, wired", () => {
     await waitFor(() => expect(invoked).toHaveBeenCalledWith("transcription_history_entries", expect.anything()));
     /* The row opens with what the model named it (ADR 0078). */
     expect(await screen.findByText("Die Umstrukturierung der Einstellungen")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "1 transcription" })).toBeInTheDocument();
     /* The drawing's rows are the gallery's and must not leak onto the product. */
     expect(screen.queryByText("Consolidate insert recovery into a single home.")).not.toBeInTheDocument();
   });
@@ -110,14 +109,28 @@ describe("History, wired", () => {
     expect(
       await screen.findByText("Nothing has been transcribed on this machine yet."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "0 transcriptions" })).toBeInTheDocument();
+    /* ADR 0184: no count over the list. An empty record says so in words, which
+       is the reading `0 transcriptions` only ever approximated. */
+    expect(screen.queryByRole("heading", { name: /transcription/ })).toBeNull();
   });
+
+  /**
+   * FOUR OF THE SIX ROW VERBS ARE IN A MENU NOW (ADR 0194), so every case that
+   * grades one has to open it first. It is a helper rather than six copies of
+   * two lines because the thing being asserted is what the verb DOES — a case
+   * that spelled the opening out would be graded on the opening.
+   */
+  async function rowMenu(user: ReturnType<typeof userEvent.setup>) {
+    await user.click((await screen.findAllByRole("button", { name: "More actions" }))[0]);
+    return screen.getByRole("menu");
+  }
 
   it("reveals a record's own file, on the path the record names", async () => {
     const user = userEvent.setup();
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const reveal = await screen.findByRole("button", { name: "Show in file manager" });
+    const menu = await rowMenu(user);
+    const reveal = within(menu).getByRole("menuitem", { name: /Show in file manager/ });
     expect(reveal).toBeEnabled();
     await user.click(reveal);
 
@@ -126,50 +139,162 @@ describe("History, wired", () => {
     });
   });
 
+  /**
+   * ADR 0194 — WHAT STAYED OUTSIDE THE MENU, AND IT IS THE POINT OF THE MOVE.
+   *
+   * Six controls per row gave a list rows of two widths, because Restore is
+   * conditional. Two stay: the row's own disclosure, and the verb somebody
+   * repeats down a whole list. The rest is one control wide on every row.
+   */
+  it("draws two controls and one menu on every row, whatever the record is", async () => {
+    mockRuntimeHistory([
+      entry({ id: "e1" }),
+      /* The row that used to be one control wider than its neighbour. */
+      entry({ id: "e2", insert_mode: "clipboard_fallback", pasted: false }),
+    ]);
+    const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findAllByRole("button", { name: "Copy" });
+    const runs = [...container.querySelectorAll(".ws-list-actions")];
+    expect(runs).toHaveLength(2);
+    for (const run of runs) {
+      expect([...run.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")))
+        .toEqual(["View raw transcript", "Copy", "More actions"]);
+    }
+  });
+
+  /** ADR 0082 already answers a right-click with the row's verbs, and ADR 0194
+   *  keeps that promise to ONE list: the `…` and the right-click open the same
+   *  menu rather than two arrangements of the same commands. */
+  it("answers a right-click with the same verb list the button opens", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
+    const fromButton = [...(await rowMenu(user)).querySelectorAll("[role='menuitem']")].map(
+      (item) => item.textContent,
+    );
+    await user.keyboard("{Escape}");
+
+    fireEvent.contextMenu(container.querySelector(".ws-list-item-text")!);
+    const fromPointer = [...screen.getByRole("menu").querySelectorAll("[role='menuitem']")].map(
+      (item) => item.textContent,
+    );
+    expect(fromPointer).toEqual(fromButton);
+  });
+
   /* ADR 0074: the one record that has no file is one that produced no text.
      ADR 0065 then applies unchanged — drawn, disabled, reason on the control —
      which is the shape Retry already has on a record with no audio. */
   it("disables the reveal on a record that produced no text, with the reason on it", async () => {
+    const user = userEvent.setup();
     mockRuntimeHistory([entry({ status: "empty", transformed_transcript: null, transcript_path: null })]);
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const reveal = await screen.findByRole("button", {
-      name: /Show in file manager — this run produced no text/,
+    /* ADR 0065 survives the move into the menu (ADR 0194): drawn, inert, and
+       carrying the reason — which the menu has room to state in full rather
+       than hiding in a tooltip. */
+    const reveal = within(await rowMenu(user)).getByRole("menuitem", {
+      name: /Show in file manager/,
     });
     expect(reveal).toBeDisabled();
+    expect(reveal).toHaveTextContent("this run produced no text");
   });
 
-  it("states the folder of Markdown files again, because ADR 0074 built it", async () => {
+  /* ADR 0184. The foot recited the folder, the index file, the retention days
+     and the cap under every visit — four facts of furniture on a working screen,
+     none of them actionable where they stood. The folder is a button, the two
+     numbers are one press away in Privacy & Data, and the index was never
+     anything a reader of this screen could act on at all. */
+  it("recites nothing under the list — the folder is a door instead", async () => {
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    expect(
-      await screen.findByText(/Every transcript is a Markdown file in \/home\/f\/WordScript\/transcripts/),
-    ).toBeInTheDocument();
-    /* The index is still named, because it is where a retry reads from. */
-    expect(
-      screen.getByText(/indexed in \/home\/f\/.local\/share\/wordscript\/history.json/),
-    ).toBeInTheDocument();
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
+    expect(screen.queryByText(/Every transcript is a Markdown file/)).toBeNull();
+    expect(screen.queryByText(/indexed in/)).toBeNull();
+    expect(screen.queryByText(/Kept 30 days/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument();
   });
 
-  it("takes both retention numbers from the config rather than from the drawing", async () => {
-    const runtime = createWorkspaceRuntime({
-      active: true,
-      config: createAppConfig({ history_retention_days: 30, history_limit: 50 }),
-    });
-    render(<HistoryScreen runtime={runtime} />);
+  /**
+   * DELETE IS HELD BACK RATHER THAN CONFIRMED (ADR 0195), and this screen grades
+   * the half it owns: the row leaves at once, the way back is offered, and the
+   * runtime has been told NOTHING. A case that only asserted the `invoke` would
+   * pass on a build with no undo window at all.
+   *
+   * THE CLOCK ITSELF IS GRADED IN `useUndoableDelete.test.ts` AND DELIBERATELY
+   * NOT HERE. This screen polls the runtime every five seconds and debounces its
+   * search; driving it on fake timers means every assertion is also a statement
+   * about those two, and the first version of this case hung on exactly that.
+   * The timing rule belongs to the hook, which has no such machinery around it.
+   */
+  it("takes the row out and offers it back, without telling the runtime", async () => {
+    const user = userEvent.setup();
+    /* TWO RECORDS, SO THE LIST STILL EXISTS AFTERWARDS. With one, holding it
+       back empties the set and the card draws its empty state — which is right,
+       and grades the empty state rather than the row leaving it. */
+    mockRuntimeHistory([entry({ id: "e1" }), entry({ id: "e2", title: "The other record" })]);
+    const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    expect(await screen.findByText(/Kept 30 days, capped at 50 entries/)).toBeInTheDocument();
-  });
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
+    await user.click(within(await rowMenu(user)).getByRole("menuitem", { name: "Delete" }));
 
-  it("deletes and retries through the runtime's own commands", async () => {
-    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
-
-    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
-    await waitFor(() =>
-      expect(invoked).toHaveBeenCalledWith("delete_transcription_history_entry", {
-        request: { id: "e1" },
-      }),
+    /* IN THE LIST, NOT ON THE SCREEN. The notice NAMES the row it is offering
+       back, so the title is still on the page and has to be — a `queryByText`
+       over the whole document reads the notice and calls the row present. */
+    const list = within(container.querySelector(".ws-list")!);
+    expect(list.queryByText("Die Umstrukturierung der Einstellungen")).toBeNull();
+    expect(list.getByText("The other record")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+    expect(invoked).not.toHaveBeenCalledWith(
+      "delete_transcription_history_entry",
+      expect.anything(),
     );
+  });
+
+  /** The whole point of the window: the runtime is never told at all. */
+  it("puts the row back and tells the runtime nothing when the undo is pressed", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
+    await user.click(within(await rowMenu(user)).getByRole("menuitem", { name: "Delete" }));
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(
+      within(container.querySelector(".ws-list")!).getByText(
+        "Die Umstrukturierung der Einstellungen",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    expect(invoked).not.toHaveBeenCalledWith(
+      "delete_transcription_history_entry",
+      expect.anything(),
+    );
+  });
+
+  /**
+   * THE PAGER AND THE LIST AGREE ABOUT A HELD-BACK ROW (ADR 0195). The filter
+   * runs before the count rather than at the render, or a record hidden from the
+   * rows would still be counted by the foot — `1–25 of 60` over twenty-four
+   * rows, which reads as a broken screen rather than as a pending delete.
+   */
+  it("counts the held-back row out of the set, not just out of the rows", async () => {
+    const user = userEvent.setup();
+    mockRuntimeHistory(
+      Array.from({ length: 21 }, (_, index) =>
+        entry({ id: `e${index}`, title: `Record ${index}` }),
+      ),
+    );
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Record 0");
+    await user.selectOptions(screen.getByLabelText("Per page"), "10");
+    expect(screen.getByText(/1–10 of 21/)).toBeInTheDocument();
+
+    await user.click(within(await rowMenu(user)).getByRole("menuitem", { name: "Delete" }));
+    expect(screen.queryByText(/of 21/)).toBeNull();
+    expect(screen.getByText(/1–10 of 20/)).toBeInTheDocument();
   });
 
   /* THE RUNTIME'S RULE, NOT HALF OF IT. `retry_transcription_history_entry`
@@ -178,30 +303,35 @@ describe("History, wired", () => {
      disabling on `audio_path` alone greyed the control out on every completed
      record while the runtime would have re-run any of them. */
   it("retries a record that kept its transcript, with no audio left", async () => {
+    const user = userEvent.setup();
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(retry).toBeEnabled();
+    expect(within(await rowMenu(user)).getByRole("menuitem", { name: "Retry" })).toBeEnabled();
   });
 
   it("refuses only where there is neither a transcript nor a recording", async () => {
+    const user = userEvent.setup();
     mockRuntimeHistory([entry({ raw_transcript: null, transformed_transcript: null, audio_path: null })]);
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const dead = await screen.findByRole("button", {
-      name: "Retry — no transcript and no recording left to re-run",
-    });
+    const dead = within(await rowMenu(user)).getByRole("menuitem", { name: /Retry/ });
     expect(dead).toBeDisabled();
+    expect(dead).toHaveTextContent("no transcript and no recording left to re-run");
   });
 
   it("offers Restore to cursor only where the text did not reach the cursor", async () => {
+    const user = userEvent.setup();
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
-    expect(screen.queryByRole("button", { name: "Restore to cursor" })).not.toBeInTheDocument();
+    expect(
+      within(await rowMenu(user)).queryByRole("menuitem", { name: "Restore to cursor" }),
+    ).not.toBeInTheDocument();
 
     cleanup();
     mockRuntimeHistory([entry({ insert_mode: "clipboard_fallback", pasted: false })]);
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
-    expect(await screen.findByRole("button", { name: "Restore to cursor" })).toBeInTheDocument();
+    expect(
+      within(await rowMenu(user)).getByRole("menuitem", { name: "Restore to cursor" }),
+    ).toBeInTheDocument();
   });
 
   it("unfolds the two texts and names the file the record was written to", async () => {
@@ -229,11 +359,15 @@ describe("History, wired", () => {
     expect(within(toolbar).queryByRole("switch")).not.toBeInTheDocument();
   });
 
-  it("carries the pairing with Privacy & Data as a note, not as a second rule", async () => {
+  /* The pairing with Privacy & Data, from this side (§11.51): this screen is
+     the records, that one is the rule about them. It was a sentence with a dead
+     link under the list; since ADR 0184 it is a control on the toolbar. */
+  it("carries the pairing with Privacy & Data as a control, not as a standing note", async () => {
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
     expect(
-      await screen.findByRole("link", { name: "Change the rule in Privacy & Data" }),
+      await screen.findByRole("button", { name: "Retention rules" }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Privacy & Data/ })).toBeNull();
   });
 
   it("narrows the list through the runtime's query rather than in the browser", async () => {
@@ -246,8 +380,180 @@ describe("History, wired", () => {
         query: { status: "failed" },
       }),
     );
-    /* And the heading says which set it counted. */
-    expect(screen.getByRole("heading", { name: /match/ })).toBeInTheDocument();
+    /* The runtime does the narrowing, which is the whole assertion: the browser
+       holds no second copy of the rule. */
+  });
+});
+
+/**
+ * ADR 0184. A record that is capped at 1000 entries and drawn as one scroll is a
+ * screen a reader loses their place in — so the list is paged, the size is the
+ * reader's, and the two doors the foot has only ever described in prose are
+ * controls now.
+ */
+describe("the pages, the folder and the rule", () => {
+  const many = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      entry({ id: `e${index}`, title: `Record ${index}` }),
+    );
+
+  it("draws one page of records and says which page of what", async () => {
+    mockRuntimeHistory(many(60));
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    /* Twenty-five is the default, so sixty records are three pages, and the
+       pager states the whole set as well as the slice — since ADR 0184 it is the
+       only place this screen counts at all. */
+    expect(await screen.findByText("Record 0")).toBeInTheDocument();
+    expect(screen.queryByText("Record 25")).not.toBeInTheDocument();
+    expect(screen.getByText(/1–25 of 60/)).toBeInTheDocument();
+    expect(screen.getByText(/page 1 of 3/)).toBeInTheDocument();
+  });
+
+  it("moves a page at a time, and holds the ends", async () => {
+    mockRuntimeHistory(many(60));
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Record 0");
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Record 25")).toBeInTheDocument();
+    expect(screen.queryByText("Record 0")).not.toBeInTheDocument();
+    expect(screen.getByText(/26–50 of 60/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText(/51–60 of 60/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+  });
+
+  it("keeps the reader's place when the page size changes", async () => {
+    mockRuntimeHistory(many(60));
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Record 0");
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Record 25")).toBeInTheDocument();
+
+    /* Record 25 was at the top of the page; at ten a page it is on page three,
+       and landing back at page one would be the same lost place this control
+       exists to prevent. */
+    await userEvent.selectOptions(screen.getByLabelText("Per page"), "10");
+    expect(screen.getByText(/21–30 of 60/)).toBeInTheDocument();
+    expect(screen.getByText("Record 25")).toBeInTheDocument();
+  });
+
+  it("draws no page control where there is only one page", async () => {
+    mockRuntimeHistory(many(3));
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Record 0");
+    /* A control that says `1 of 1` is furniture, which this screen refuses
+       elsewhere too. */
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+
+  it("starts a narrowed set at its own first page", async () => {
+    mockRuntimeHistory(many(60));
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Record 0");
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText(/26–50 of 60/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "failed");
+    await waitFor(() => expect(screen.getByText(/1–25 of 60/)).toBeInTheDocument());
+  });
+
+  /* ADR 0184. The transcripts are written into `YYYY/MM/` folders and the list
+     was the only place that could not be read that way. All time stays the
+     default: the common question is *what did I dictate*, and only the follow-up
+     is *when*. */
+  it("lists every month together until a month is asked for", async () => {
+    mockRuntimeHistory([
+      entry({ id: "a", title: "August one", created_at_ms: new Date(2026, 7, 3).getTime() }),
+      entry({ id: "b", title: "June one", created_at_ms: new Date(2026, 5, 9).getTime() }),
+    ]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const picker = (await screen.findByLabelText("Month")) as HTMLSelectElement;
+    expect(picker).toHaveValue("");
+    expect([...picker.options].map((option) => option.textContent)).toEqual([
+      "All time",
+      "August 2026",
+      "June 2026",
+    ]);
+    expect(screen.getByText("August one")).toBeInTheDocument();
+    expect(screen.getByText("June one")).toBeInTheDocument();
+
+    await userEvent.selectOptions(picker, "2026-06");
+    expect(screen.getByText("June one")).toBeInTheDocument();
+    expect(screen.queryByText("August one")).toBeNull();
+
+    /* And the months are still all of them: choosing June may not leave June as
+       the only month there has ever been. */
+    expect([...picker.options]).toHaveLength(3);
+  });
+
+  it("keeps the month picker on a one-month record, because a control that comes and goes is not learned", async () => {
+    mockRuntimeHistory([entry({ created_at_ms: new Date(2026, 7, 3).getTime() })]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Die Umstrukturierung der Einstellungen");
+    const picker = screen.getByLabelText("Month") as HTMLSelectElement;
+    expect([...picker.options].map((option) => option.textContent)).toEqual([
+      "All time",
+      "August 2026",
+    ]);
+    /* And it says what the list is scoped to, which is the first thing a reader
+       coming back after a year needs to know. */
+    expect(picker).toHaveValue("");
+  });
+
+  it("starts a month at its own first page", async () => {
+    mockRuntimeHistory([
+      ...many(40).map((record, index) => ({
+        ...record,
+        created_at_ms: new Date(2026, 7, 1 + (index % 28)).getTime(),
+      })),
+      entry({ id: "june", title: "June one", created_at_ms: new Date(2026, 5, 9).getTime() }),
+    ]);
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByText("Record 0");
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText(/26–41 of 41/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Month"), "2026-06");
+    /* One record in June, so there is no page control left at all — and
+       certainly not page two of it. */
+    expect(screen.getByText("June one")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+
+  it("opens the folder the foot names, with no file to reveal", async () => {
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open folder" }));
+    /* No path is the runtime's own way of saying *the directory itself*, and it
+       creates it first on a machine that has not dictated yet. */
+    expect(invoked).toHaveBeenCalledWith("reveal_transcript_in_file_manager", {
+      request: { path: null },
+    });
+  });
+
+  it("offers the rule as a control and not only as a sentence", async () => {
+    const open = vi.fn();
+    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true, open })} />);
+
+    /* The foot has described the retention rule for three legs and left the
+       reader to go and find it. The toolbar is where the actions on this set
+       live, so the door belongs beside Export and the folder. */
+    await userEvent.click(await screen.findByRole("button", { name: "Retention rules" }));
+    /* A SECTION: Privacy & Data is a pane of the settings sheet, not
+       one of the four workspace views, and `open` refuses an id neither list
+       knows — so `{ view: "privacy" }` was a press that went nowhere. */
+    expect(open).toHaveBeenCalledWith({ section: "privacy" });
   });
 });
 
@@ -259,12 +565,16 @@ describe("the badge derivation", () => {
     expect(badgesFor(entry())).toEqual([]);
   });
 
+  /* ADR 0193: a delivery mode is a fact, not a warning. The two healthy ones
+     went grey and the failures did not — which is what the second half of this
+     case is for, because a change that greyed all four would pass a case that
+     only graded the first two. */
   it("reads the delivery badge off insert_mode, and never two of them", () => {
     expect(badgesFor(entry({ insert_mode: "clipboard_only" }))).toEqual([
-      { text: "Clipboard only", tone: "warning" },
+      { text: "Clipboard only", tone: "neutral" },
     ]);
     expect(badgesFor(entry({ insert_mode: "clipboard_fallback", pasted: false }))).toEqual([
-      { text: "Clipboard", tone: "warning" },
+      { text: "Clipboard", tone: "neutral" },
     ]);
     expect(badgesFor(entry({ insert_mode: "scratchpad_fallback", pasted: false }))).toEqual([
       { text: "Insert failed", tone: "danger" },
@@ -479,13 +789,19 @@ describe("Written and Heard", () => {
   /* It narrows nothing, so the count may not move — a control that looked like
      the status filter beside it and did not behave like one would be worse
      than no control. */
-  it("changes no count, because it is not a filter", async () => {
+  it("narrows nothing, because it is not a filter", async () => {
     mockRuntimeHistory([pair, entry({ id: "second" })]);
-    render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
-    await screen.findByRole("heading", { name: "2 transcriptions" });
+    const { container } = render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    /* Both records carry the same title, so this is the plural query on
+       purpose — the assertion is the COUNT of rows, not which one is which. */
+    await screen.findAllByText("Die Umstrukturierung der Einstellungen");
+    const before = container.querySelectorAll(".ws-list-item").length;
+    expect(before).toBe(2);
 
     await userEvent.click(screen.getByRole("button", { name: "Heard" }));
-    expect(screen.getByRole("heading", { name: "2 transcriptions" })).toBeInTheDocument();
+    /* The same records, showing their other text. A control that sat beside the
+       status filter and quietly changed the set would be worse than no control. */
+    expect(container.querySelectorAll(".ws-list-item")).toHaveLength(before);
   });
 
   /* No fallback under Heard: borrowing the transformed text would put the AI's

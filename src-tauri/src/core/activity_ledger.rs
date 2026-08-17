@@ -213,11 +213,41 @@ pub struct ActivityLedger {
     /// What the derived counts in this file mean — see `LEDGER_SCHEMA`.
     #[serde(default)]
     pub schema: u32,
-    /// `YYYY-MM-DD` of the first row ever written. The closest thing to an
-    /// install date this product has, and it survives the prune because
+    /// `YYYY-MM-DD` of the first row ever written. It survives the prune because
     /// `retired` still speaks for the days behind it.
+    ///
+    /// IT IS NOT THE INSTALL DATE AND THIS NOTE USED TO SAY IT WAS. It is the
+    /// first day somebody DICTATED, which on a machine installed in March and
+    /// first used in August is five months late — see `installed_on`.
     #[serde(default)]
     pub started_on: Option<String>,
+    /// `YYYY-MM-DD` of the day this reader first installed WordScript
+    /// (ADR 0190).
+    ///
+    /// IT LIVES HERE AND NOT IN `AppConfig`, and that is the load-bearing
+    /// choice. The ledger travels in `BackupArchive` and is the one part of an
+    /// archive that is MERGED rather than replaced (ADR 0179); the config is
+    /// replaced wholesale on an import, so a field there would be overwritten by
+    /// the exporting machine's on every restore and then be a claim about
+    /// somebody else's install.
+    ///
+    /// EARLIEST WINS ACROSS MACHINES, AND THE FIELD MEANS WHAT THAT MAKES IT
+    /// MEAN. `raise_to` takes the earlier of two, so importing an archive from
+    /// an older machine moves this date BACK — which is correct for *when you
+    /// first installed WordScript* and wrong for *when this machine got it*. The
+    /// first reading is the one the merge rule already implements for
+    /// `started_on`, so it is the one taken, and the surface says `WordScript
+    /// installed` rather than naming a machine. A field whose label and whose
+    /// merge rule disagree is a field that lies on exactly the machines where it
+    /// matters.
+    ///
+    /// `None` IS A REAL ANSWER. On an installation that predates this field
+    /// there may be nothing honest to write — see `backfill_installed_on`, which
+    /// refuses rather than stamping today onto a machine that has run for
+    /// months. A missing marker costs nothing; a wrong one is a claim the reader
+    /// can check and find false.
+    #[serde(default)]
+    pub installed_on: Option<String>,
     /// Every day that has aged out of `days`, summed. The reason a total can
     /// promise never to fall (ADR 0176).
     #[serde(default)]
@@ -358,6 +388,16 @@ impl ActivityLedger {
                 self.started_on = Some(started.clone());
             }
         }
+        /* SAME RULE FOR THE INSTALL DATE, AND THE FIELD MEANS WHAT THIS MAKES IT
+           MEAN (ADR 0190): *when you first installed WordScript*, not *when this
+           machine got it*. An archive that reaches further back is evidence the
+           reader has been running this product for longer than the local file
+           knows, and the marker on the calendar is named accordingly. */
+        if let Some(installed) = &other.installed_on {
+            if self.installed_on.as_deref().map_or(true, |own| own > installed.as_str()) {
+                self.installed_on = Some(installed.clone());
+            }
+        }
         raise_buckets(&mut self.rate_buckets, &other.rate_buckets, RATE_BUCKETS);
         raise_buckets(
             &mut self.turnaround_buckets,
@@ -461,6 +501,46 @@ fn migrate(ledger: &mut ActivityLedger) {
         ledger.rate_buckets = Vec::new();
     }
     ledger.schema = LEDGER_SCHEMA;
+}
+
+/// What an installation that predates the field stamps as its install date
+/// (ADR 0190).
+///
+/// THE ONLY WRONG ANSWER IS TODAY. Writing *today* into a field named *installed
+/// on*, on a machine that has run for months, fabricates a date the reader can
+/// check against their own memory and find false — on the one display whose
+/// entire argument is that every circle on it asserts something true. So this
+/// takes evidence where there is evidence and refuses where there is none:
+///
+///  1. **`started_on`**, the first day this ledger ever wrote a row. It is late
+///     rather than wrong — nobody installs a dictation product and waits — and
+///     it is the closest thing to an install date the product ever recorded.
+///  2. **The config file's creation time**, which is written on the first launch
+///     and therefore predates any dictation. Better than (1) where the platform
+///     records it; several do not, and `created()` says so rather than guessing.
+///  3. **Nothing.** The calendar draws one marker instead of two, which is a
+///     display with one fact on it rather than a display with a lie on it.
+///
+/// A FRESH INSTALL NEVER REACHES ANY OF THIS: it has no ledger and no config
+/// yet, so its first launch writes today and today is the truth.
+fn backfill_installed_on(ledger: &ActivityLedger) -> Option<String> {
+    /* The config file is the earlier of the two where it can be read at all, so
+       it is tried first — the ledger's first row is bounded below by it. */
+    if let Some(stamp) = created_day(&super::paths::config_file_path()) {
+        return Some(stamp);
+    }
+    ledger.started_on.clone()
+}
+
+/// A file's creation day in local time, where the platform records one.
+///
+/// `created()` is `Err` on filesystems that keep no birth time, which is a
+/// refusal and not a zero: falling back to `modified()` would read the last
+/// config WRITE, and a config is written every time a toggle moves.
+fn created_day(path: &std::path::Path) -> Option<String> {
+    let created = std::fs::metadata(path).ok()?.created().ok()?;
+    let since = created.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(day_key(since.as_millis() as u64))
 }
 
 fn write_to_disk(ledger: &ActivityLedger) -> Result<(), String> {
@@ -646,7 +726,18 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
     }
 
     if ledger.started_on.is_none() {
-        ledger.started_on = Some(key);
+        ledger.started_on = Some(key.clone());
+    }
+    /* THE INSTALL DATE, WHERE THIS IS THE FIRST TIME ANYTHING HAS ASKED
+       (ADR 0190). On a fresh machine the backfill finds a config written minutes
+       ago and answers with today, which is the truth; on one that has run for
+       months it answers with the evidence, or refuses. `key` is the last
+       fallback — this dictation's own day — and it is reached only where there
+       is no config file and no earlier row, which is a machine with no history
+       at all. */
+    if ledger.installed_on.is_none() {
+        let stamp = backfill_installed_on(ledger).unwrap_or(key);
+        ledger.installed_on = Some(stamp);
     }
     ledger.schema = LEDGER_SCHEMA;
     prune(ledger);
@@ -685,8 +776,32 @@ pub fn snapshot() -> Result<ActivityLedger, String> {
 /// The seed runs here rather than at startup so it costs nothing on a launch
 /// nobody opens the workspace on, and it is idempotent — a ledger with rows is
 /// already seeded and returns immediately.
+/// Fill in the install date if nothing has yet, and keep it once it is there.
+///
+/// IT RUNS ON THE READ AND NOT ONLY ON A DICTATION, because the marker it feeds
+/// is on a display somebody can open before they have dictated anything — and
+/// because on a machine that has run for months the evidence for it is on disk
+/// NOW and is not getting any better. Idempotent: a ledger that already carries
+/// one is left alone and not written.
+fn stamp_install() -> Result<(), String> {
+    let mut guard = ledger_store().lock().map_err(|error| error.to_string())?;
+    let ledger = guard.get_or_insert_with(read_from_disk);
+    if ledger.installed_on.is_some() {
+        return Ok(());
+    }
+    let Some(stamp) = backfill_installed_on(ledger) else {
+        /* No config file and no row: nothing on this machine can say when it
+           arrived, so the field stays empty and the calendar draws one marker
+           rather than two. */
+        return Ok(());
+    };
+    ledger.installed_on = Some(stamp);
+    write_to_disk(ledger)
+}
+
 #[tauri::command]
 pub fn read_activity_ledger() -> Result<ActivityLedger, String> {
+    let _ = stamp_install();
     /* THE CHEAP CHECK FIRST. Reading history, counting its words and measuring
        the language of every record is real work, and on every open after the
        first there is nothing for it to seed. */
@@ -718,7 +833,22 @@ pub fn read_activity_ledger() -> Result<ActivityLedger, String> {
                         .map(|integrity| integrity.recorded_seconds),
                     turnaround_ms: entry.turnaround_ms,
                     credited: super::history::mode_credits_typing(entry.effective_mode.as_ref()),
-                    language: super::language_detect::detect(delivered),
+                    /* THE SPOKEN TEXT AND THE SAME RULE THE LIVE PATH USES
+                       (ADR 0188), through the same function — a second place
+                       deciding what a record's language is would be a second
+                       place to decide it differently. The seed has no model
+                       answer to pass: nothing stores one, so a rebuilt ledger
+                       re-measures with the offline detector alone. */
+                    language: super::history::contributed_language(
+                        None,
+                        entry
+                            .raw_transcript
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|raw| !raw.is_empty())
+                            .unwrap_or(delivered),
+                        entry.effective_mode.as_ref(),
+                    ),
                 }
             })
             .collect();
@@ -743,11 +873,23 @@ pub fn read_activity_ledger() -> Result<ActivityLedger, String> {
 #[tauri::command]
 pub fn reset_activity_ledger() -> Result<ActivityLedger, String> {
     let mut guard = ledger_store().lock().map_err(|error| error.to_string())?;
+    /* THE INSTALL DATE SURVIVES THE RESET, AND IT IS THE ONLY THING THAT DOES
+       (ADR 0190). This button is about what was RECORDED — how much you
+       dictated, how fast, how long it took — and when the product arrived on
+       this machine is not one of those. Clearing it would also be
+       unrecoverable in a way none of the figures are: a count can be rebuilt by
+       living another day, and a date that has passed cannot be measured again.
+       The reader who wants the date gone can delete the file. */
+    let installed_on = guard
+        .get_or_insert_with(read_from_disk)
+        .installed_on
+        .clone();
     let fresh = ActivityLedger {
         schema: LEDGER_SCHEMA,
         rate_bucket_wpm: RATE_BUCKET_WPM,
         turnaround_bucket_ms: TURNAROUND_BUCKET_MS,
         reset_at_ms: Some(super::sessions::now_ms()),
+        installed_on,
         ..ActivityLedger::default()
     };
     write_to_disk(&fresh)?;
@@ -1393,6 +1535,9 @@ mod tests {
         assert!(after.days.is_empty());
         assert_eq!(after.totals().words, 0);
         assert!(after.started_on.is_none());
+        /* ADR 0190. The one field the reset does not take: it is about what was
+           RECORDED, and when the product arrived is not a recording. */
+        assert!(after.installed_on.is_some(), "the install date survives a reset");
         assert!(ledger_file_path().exists(), "the file is replaced, not removed");
 
         /* The failure this stamp exists against: clearing the figures while the

@@ -56,6 +56,8 @@ import {
   describeTextProfileWorkMode,
   duplicateTextProfile,
   moveEntry,
+  PROFILE_LOCKED_HINT,
+  profileSwitchLocked,
   resolveConfigJobProvider,
   resolveProfileCaptureSettings,
   resolveProfileModesSettings,
@@ -524,6 +526,12 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
     id: string;
   } | null>(null);
 
+  /** What the runtime said when it declined a switch, in its own words
+   *  (ADR 0197). Held in state rather than logged, because the log is not on
+   *  screen; cleared on the next attempt, so a refusal cannot outlive the
+   *  condition that caused it. */
+  const [refused, setRefused] = useState<string | null>(null);
+
 
   /**
    * An open panel belongs to the row it was opened on, so leaving that row
@@ -824,6 +832,31 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
     setEditing(null);
   };
 
+  /* WHETHER THE RUNTIME WOULD REFUSE A SWITCH RIGHT NOW (ADR 0197). Derived by
+     the same predicate the sidebar picker is handed, so the two cannot disagree
+     about what "a session is running" means. */
+  const switchLocked = profileSwitchLocked(runtime.state);
+
+  /**
+   * MAKE A PROFILE THE ACTIVE ONE, asking the runtime before believing it.
+   *
+   * A REFUSAL IS SHOWN AND NOT SWALLOWED. `.catch(() => {})` on this call is the
+   * whole of the "sometimes it just does not switch" the owner reported against
+   * the sidebar picker: the runtime declines, the swallow eats it, and the
+   * surface springs back with nothing said. This screen has a notice line under
+   * its head, so the refusal goes there in the runtime's own words.
+   */
+  const activateProfile = (id: string) => {
+    setRefused(null);
+    void invoke("switch_active_text_profile", { profileId: id })
+      .then(() =>
+        runtime.patch(buildTextProfilesPatch(config, config.text_profiles, id)),
+      )
+      .catch((error) =>
+        setRefused(typeof error === "string" ? error : "The runtime refused the switch."),
+      );
+  };
+
   /**
    * THE ROW'S VERBS, and the same three shapes on every list this screen has.
    *
@@ -836,7 +869,48 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
     if (!menu) return [];
     if (menu.kind === "profile") {
       const lastOne = listRows.length <= 1;
+      const alreadyActive = menu.id === config.active_text_profile_id;
       return [
+        /**
+         * MAKING A PROFILE ACTIVE IS A THING YOU DO TO A PROFILE, AND THIS IS
+         * WHERE YOU DO THINGS TO A PROFILE (ADR 0197).
+         *
+         * It was reachable from exactly one control in the product — the picker
+         * at the foot of the sidebar — which is a `<select>` of every profile by
+         * name, on a surface that shows you none of them. The screen that lists
+         * them, describes them, flags their health and lets you rename,
+         * duplicate, export and delete them could not make one of them the
+         * active one. So the row you have already selected in order to look at
+         * it is the row that offers it.
+         *
+         * IT LEADS THE MENU because it is the only entry here that changes what
+         * the NEXT dictation does; the other four change a stored object.
+         *
+         * THE RUNTIME IS STILL THE AUTHORITY AND IS ASKED FIRST, exactly as the
+         * sidebar picker asks it: the config is patched only after the command
+         * succeeds. Patching first and invoking after is what left that picker
+         * showing a profile the runtime had refused to switch to.
+         */
+        {
+          label: "Set as active",
+          icon: "check",
+          /* Two different reasons it cannot run, and they are not the same fact
+             — one is about this profile, the other about right now. Drawn and
+             inert with the reason either way (ADR 0065). */
+          hint: alreadyActive
+            ? "This is already the active profile"
+            : switchLocked
+              ? PROFILE_LOCKED_HINT
+              : undefined,
+          disabled: alreadyActive || switchLocked,
+          onSelect:
+            alreadyActive || switchLocked
+              ? undefined
+              : () => {
+                  setMenu(null);
+                  activateProfile(menu.id);
+                },
+        },
         {
           label: "Rename",
           icon: "type",
@@ -1021,6 +1095,13 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
         lead="What a profile knows, and what it changes about how you are written."
         banner={banner}
       />
+
+      {/* A REFUSAL THE READER CAN SEE (ADR 0197). The runtime declines a switch
+          during a session and can decline for other reasons too; a screen that
+          swallowed that would leave a menu entry which silently does nothing —
+          the same defect the sidebar picker shipped with. It clears on the next
+          attempt, so a refusal cannot outlive the condition that caused it. */}
+      {refused && <Note icon="alert">{refused}</Note>}
 
       <Pane
         list={

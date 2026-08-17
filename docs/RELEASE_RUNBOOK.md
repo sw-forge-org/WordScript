@@ -92,10 +92,15 @@ Before any release-track build:
 
 ## Gates Before the First Public Release
 
-- Dependable transcription for `General Writing` and active profiles
-- Guided local runner, model, and cleanup setup
-- Platform signing and a defined trust path
-- A reviewed release-note, tag, and promotion process
-- Defined updater semantics
-- Stable Linux packaging without the current `linuxdeploy` failure
-- An explicit decision to promote the workflow beyond internal draft handoffs
+**The gate list, with a state per row, lives in
+[tracks/v1-release.md](tracks/v1-release.md) and only there.** It stood here as
+seven unstated bullets, which is a list nobody can take a reading off: no state,
+no date, no way to tell a gate that is open from one nothing has started. The
+track carries the same gates plus the ones this page never had — the
+compatibility window that closes with the first install, the licence obligations
+a distributed artifact takes on, and the lane behind the surface — each with the
+command that re-reads it.
+
+This page stays the build procedure: the matrix, the artifacts, the pre-build
+gates and the post-run checks. **Do not restore a copy of the gate list here**
+(ADR 0123).

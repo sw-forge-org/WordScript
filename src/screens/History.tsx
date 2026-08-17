@@ -10,16 +10,17 @@ import {
   Icon,
   ListRows,
   Note,
-  SectionHeader,
   SegmentControl,
   Select,
   Toolbar,
   ToolbarSearch,
   TranscriptRow,
+  UndoNotice,
   ViewTop,
 } from "@/components/shell";
 import type { ListItemBadge, RawTranscript } from "@/components/shell";
 import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
+import { useUndoableDelete } from "@/hooks/useUndoableDelete";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
 import type {
   TranscriptionHistoryEntry,
@@ -114,6 +115,17 @@ export function historyTime(ms: number, now = Date.now()): string {
  *    reads `Clipboard`; `scratchpad_fallback` and a `direct_paste` that did not
  *    paste both read `Insert failed`, because in both the text reached neither
  *    the cursor nor the clipboard.
+ *
+ *    AND THE FIRST TWO ARE GREY (ADR 0193). They carried `warning`, which paints
+ *    them in `--accent` — the product's orange, the same colour as its primary
+ *    button. On a machine whose profile is clipboard-only that is every row in
+ *    the list glowing amber about a setting the reader chose, which is the
+ *    §11.20 defect stated in colour rather than in count: when the healthy case
+ *    is loud, the failing one has nothing to stand out from. A DELIVERY MODE IS
+ *    A FACT ABOUT HOW THE TEXT ARRIVED, NOT A WARNING. `Failed`, `Empty`,
+ *    `Insert failed` and `Audio missing` keep `danger` and are unchanged: those
+ *    four say something went wrong, and one of them says the text itself is
+ *    incomplete.
  *  - `Retried once` is `retry_of`, and it says "once" because the record links
  *    exactly one level — an entry names the entry it retried, and the runtime
  *    keeps no count. A second retry of the same capture is a third record, not
@@ -144,10 +156,10 @@ export function badgesFor(entry: TranscriptionHistoryEntry): ListItemBadge[] {
 
   switch (entry.insert_mode) {
     case "clipboard_only":
-      badges.push({ text: "Clipboard only", tone: "warning" });
+      badges.push({ text: "Clipboard only", tone: "neutral" });
       break;
     case "clipboard_fallback":
-      badges.push({ text: "Clipboard", tone: "warning" });
+      badges.push({ text: "Clipboard", tone: "neutral" });
       break;
     case "scratchpad_fallback":
       badges.push({ text: "Insert failed", tone: "danger" });
@@ -311,6 +323,44 @@ const STATUS_FILTERS: { value: "" | TranscriptionHistoryStatus; label: string }[
   { value: "failed", label: "Failed" },
 ];
 
+/**
+ * HOW MANY RECORDS STAND ON ONE PAGE (ADR 0184).
+ *
+ * TWENTY-FIVE IS THE DEFAULT AND IT IS THE FLOOR OF THE CAP RATHER THAN A ROUND
+ * NUMBER. `history_limit` was clamped to 25–1000 in the runtime, so twenty-five
+ * is the smallest record this product can hold: at the ceiling of a thousand it
+ * is forty pages, and on the smallest possible history it is exactly one — the
+ * page control appears when there is something to page through and not before.
+ * ADR 0185 has since pinned that field to the ceiling, so a full index is now
+ * the case to size for rather than the edge of one.
+ *
+ * A row here is three lines of text and six controls. Ten pages a record nobody
+ * can scan; a hundred is a scroll a reader loses their place in, which is the
+ * complaint that started this. Both are offered because *scan a lot quickly* and
+ * *work through a few carefully* are different jobs on the same screen.
+ */
+const PAGE_SIZES = [10, 25, 50, 100];
+const DEFAULT_PAGE_SIZE = 25;
+
+/** A record's month, as the filter keys it: `2026-08`, which sorts as a string
+ *  and matches the `YYYY/MM/` folders the transcripts themselves are written
+ *  into (ADR 0074). */
+export function monthKey(at: number): string {
+  const date = new Date(at);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** `2026-08` as `August 2026`. Through `Intl` rather than a table of twelve
+ *  names, for the reason the calendar's language labels go through it: a second
+ *  list of month names in this repository is a second list to get wrong. */
+export function monthLabel(key: string): string {
+  const [year, month] = key.split("-").map(Number);
+  if (!year || !month) return key;
+  return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(
+    new Date(year, month - 1, 1),
+  );
+}
+
 /** A filter is not config, so the search box debounces its own query rather
  *  than reaching for `patchText` — nothing here is saved anywhere. */
 const SEARCH_DEBOUNCE_MS = 250;
@@ -347,8 +397,6 @@ const REVEAL_HAS_NO_FILE =
 export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   const {
     entries,
-    storagePath,
-    transcriptRoot,
     reveal,
     error,
     refresh,
@@ -366,6 +414,24 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
      once — a reader scanning for recogniser errors has to be able to see which
      text they are scanning without opening a control to find out. */
   const [shows, setShows] = useState<ShownText>("title");
+  /* PAGED IN THE SCREEN AND NOT IN THE QUERY (ADR 0184). The runtime already
+     hands over the whole filtered set — capped at `history_limit`, which is
+     1000 at its widest — and it is the same set the count in the heading is read
+     off. Asking the runtime for a window instead would mean two round trips per
+     page and a count that no longer matches what was counted. */
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [page, setPage] = useState(0);
+  /* ALL TIME IS THE DEFAULT AND THE MONTH IS THE EXCEPTION (ADR 0184). The
+     transcripts are written into `YYYY/MM/` folders, and a reader who knows
+     they wrote something *in June* has had no way to say so — but the list they
+     land on is still the whole record, because the common question is *what did
+     I dictate* and only the follow-up is *when*.
+
+     IT NARROWS IN THE BROWSER RATHER THAN IN THE QUERY, unlike the search and
+     the status, and that is not an inconsistency: the runtime's query has no
+     month field, the whole set is already here, and adding one would mean the
+     month list and the list itself could disagree about which months exist. */
+  const [month, setMonth] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -386,6 +452,23 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
     };
   }, [runtime.active, query, refresh]);
 
+  /* A NARROWED SET IS A NEW SET, so it starts at its own first page. Without
+     this, searching from page four lands on a page the result does not have and
+     the reader sees an empty card under a pager that counts matches. */
+  useEffect(() => {
+    setPage(0);
+  }, [query, month]);
+
+  /* THE MONTHS THE RECORD ACTUALLY HOLDS, newest first — never a run of twelve
+     with nothing behind most of them. Read off the entries the runtime returned
+     rather than off the month filter's own result, or choosing June would leave
+     June as the only month there had ever been. */
+  const months = useMemo(() => {
+    const seen = new Set<string>();
+    for (const item of entries) seen.add(monthKey(item.created_at_ms));
+    return [...seen].sort((left, right) => right.localeCompare(left));
+  }, [entries]);
+
   const act = useCallback(async (id: string, run: () => Promise<unknown>) => {
     setBusyId(id);
     try {
@@ -394,6 +477,26 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
       setBusyId(null);
     }
   }, []);
+
+  /* DELETE IS HELD BACK FOR SIX SECONDS RATHER THAN CONFIRMED (ADR 0195). The
+     runtime's delete takes the transcript file with it and cannot be undone, so
+     the window is this screen holding the row back — the `invoke` fires when the
+     window closes and not before. */
+  const trash = useUndoableDelete(
+    useCallback((id: string) => void act(id, () => remove(id)), [act, remove]),
+  );
+
+  /* A ROW INSIDE ITS UNDO WINDOW IS NOT DRAWN AND IS NOT DELETED (ADR 0195).
+     The filter is here rather than at the render, so the count, the pager and
+     the empty state all agree with the list — a record hidden from the rows
+     while a pager still counted it would report `1–25 of 60` over
+     twenty-four. */
+  const visible = useMemo(() => {
+    const inMonth = month
+      ? entries.filter((item) => monthKey(item.created_at_ms) === month)
+      : entries;
+    return trash.pending ? inMonth.filter((item) => !trash.hides(item.id)) : inMonth;
+  }, [entries, month, trash.pending, trash.hides]);
 
   const onExport = useCallback(async () => {
     const path = await save({
@@ -411,7 +514,7 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
     }
   }, [exportEntries, query]);
 
-  const rows: HistoryRow[] = entries.map((entry) => {
+  const rows: HistoryRow[] = visible.map((entry) => {
         const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
         return {
           id: entry.id,
@@ -435,7 +538,9 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
           act: {
             reveal: () => void reveal(entry.transcript_path),
             retry: () => void act(entry.id, () => retry(entry.id)),
-            remove: () => void act(entry.id, () => remove(entry.id)),
+            /* Not `remove` — the window is (ADR 0195). The row goes now and the
+               runtime is told in six seconds. */
+            remove: () => trash.request(entry.id, titleOf(entry, shows)),
             restore: () =>
               void act(entry.id, () =>
                 invoke("insert_text_native", {
@@ -448,40 +553,101 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   });
 
   const count = rows.length;
-  /* The count is the result of the filters, so it says which set it counted
-     rather than implying it is everything on the machine. */
-  const filtered = Boolean(search || status);
-  const heading = filtered
-    ? `${count} ${count === 1 ? "match" : "matches"}`
-    : `${count} ${count === 1 ? "transcription" : "transcriptions"}`;
+  /* Which set the list is showing — filtered or the whole record — which the
+     empty state says in words when there is nothing to draw. */
+  const filtered = Boolean(search || status || month);
 
-  /* THE DRAWN SENTENCE IS TRUE AGAIN (ADR 0074). Leg 4c replaced it with the
-     one file the runtime kept, because a product may not send somebody to a
-     folder that is not there. The folder is there now, so the claim goes back
-     — with the resolved root rather than the drawing's `~/WordScript/…`, since
-     the root follows `WORDSCRIPT_DATA_DIR` and this sentence is about THIS
-     machine. The index is named after it: it is where a retry reads from and
-     is the second thing a reader of this foot may want to find. */
-  const foot =
-    notice ??
-    `Every transcript is a Markdown file in ${
-      transcriptRoot ?? "~/WordScript/transcripts"
-    }. Kept ${runtime.config.history_retention_days} days, capped at ${
-      runtime.config.history_limit
-    } entries${storagePath ? `, indexed in ${storagePath}` : ""}.`;
+  /* THE PAGE IS CLAMPED RATHER THAN REMEMBERED. Deleting the last record on page
+     four, or typing one more letter into the search, leaves a page number with
+     nothing behind it — and an empty list under a pager that counts thirty
+     matches reads as a broken screen rather than as a page that ended. */
+  const pages = Math.max(1, Math.ceil(count / pageSize));
+  const current = Math.min(page, pages - 1);
+  const from = current * pageSize;
+  const shown = rows.slice(from, from + pageSize);
+
+  /* THE STANDING SENTENCE IS GONE (ADR 0184), and what it said is not lost —
+     it is offered instead of recited. It named the transcripts folder, the
+     index file, the retention days and the cap, on every visit, under every
+     list, whether or not anybody was going to act on any of it: four facts of
+     furniture at the foot of a working screen. The folder is a button now and
+     the two numbers live in Privacy & Data, one press away on the same toolbar.
+     What remains here is the one line that is NOT standing — what an export just
+     did, which nothing else on the screen reports. */
 
   return (
     <>
       <ViewTop title="History" lead="Every transcription kept on this machine." banner={banner} />
 
+      {/* THE TOOLBAR HAS THREE JOBS AND NOW READS IN THAT ORDER (ADR 0184).
+          It grew one control at a time and ended up as a line of four unrelated
+          things, so a reader had to read each one to find out what it did.
+          Left to right: WHICH RECORDS (search, status) — WHAT A ROW SHOWS AND
+          HOW MANY (the text segment, the page size) — WHAT TO DO WITH THE SET
+          (export it, open the folder it lives in). The label follows: `Filters`
+          was already wrong for the segment, and two more non-filters would have
+          made it a lie. */}
       <Toolbar
-        label="Filters"
+        label="Records, view and actions"
         right={
-          <Button variant="ghost" icon={<Icon name="download" />} onClick={() => void onExport()}>
-            Export
-          </Button>
+          <>
+            <Button variant="ghost" icon={<Icon name="download" />} onClick={() => void onExport()}>
+              Export
+            </Button>
+            {/* THE FOLDER, WHICH THE FOOT HAS NAMED ALL ALONG. The sentence
+                under the list has stated the path since ADR 0074 and left the
+                reader to find it themselves; `reveal_transcript_in_file_manager`
+                opens exactly that directory when it is handed no file, and
+                creates it first on a machine that has not dictated yet. */}
+            <Button variant="ghost" icon={<Icon name="folder" />} onClick={() => void reveal(null)}>
+              Open folder
+            </Button>
+            {/* AND THE DOOR TO THE RULE THAT GOVERNS ALL OF THIS. The foot has
+                stated for three legs how long a record is kept, and the only
+                way to change it was to go and find Privacy & Data yourself.
+                Since ADR 0185 there is one rule there rather than two, and the
+                count is that screen's stated ceiling rather than a second
+                picker. The folder itself is not settable —
+                `transcripts_dir()` follows `WORDSCRIPT_DATA_DIR` and nothing in
+                the UI — so what this button offers is what a reader can actually
+                change, and it says which. */}
+            {/* A SECTION AND NOT A VIEW, WHICH IS WHY THE FIRST BUILD OF THIS
+                BUTTON DID NOTHING. `privacy` is in `SECTIONS` — Privacy & Data
+                is a pane of the settings sheet, and `ViewId` is the four
+                workspace views. `open` refuses an id neither list knows rather
+                than guessing, so `{ view: "privacy" }` was a press that
+                silently went nowhere. */}
+            <Button
+              variant="ghost"
+              icon={<Icon name="arrow" />}
+              title="How long these are kept — in Privacy & Data"
+              onClick={() => runtime.open?.({ section: "privacy" })}
+            >
+              Retention rules
+            </Button>
+          </>
         }
       >
+        {/* THE MONTH IS FIRST AND IS ALWAYS THERE. First because it is the
+            coarsest of the three — you pick a stretch of time, then search
+            inside it — and always because a control that appears once a record
+            crosses a month boundary is a control nobody learns is there. On a
+            one-month record it holds `All time` and that month, which is a
+            question with one answer and is still worth the line: it says what
+            this list is scoped to, which is the thing a reader coming back after
+            a year needs to know first. */}
+        <Select
+          value={month}
+          aria-label="Month"
+          onChange={(event) => setMonth(event.target.value)}
+        >
+          <option value="">All time</option>
+          {months.map((key) => (
+            <option key={key} value={key}>
+              {monthLabel(key)}
+            </option>
+          ))}
+        </Select>
         <ToolbarSearch>
           <Field
             placeholder="Search transcripts…"
@@ -507,10 +673,73 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
           onChange={(next) => setShows(next as ShownText)}
           options={SHOWN_TEXT_OPTIONS}
         />
+        <Select
+          value={String(pageSize)}
+          aria-label="Per page"
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            /* THE READER KEEPS THEIR PLACE. Changing the page size while on page
+               four and landing back at page one is the same lost-your-place
+               complaint this control exists to answer; the record at the top of
+               the page stays at the top of the page. */
+            setPage(Math.floor(from / next));
+            setPageSize(next);
+          }}
+        >
+          {PAGE_SIZES.map((size) => (
+            <option key={size} value={size}>
+              {size} per page
+            </option>
+          ))}
+        </Select>
       </Toolbar>
 
-      <SectionHeader title={heading}>
-        <Card>
+      {/* THE ROW THAT JUST LEFT, AND THE WAY BACK TO IT (ADR 0195). It stands
+          where the list starts rather than floating over it, because the reader
+          is looking at the list and the fact is about a row that was in it. */}
+      {trash.pending && <UndoNotice what={trash.pending.title} onUndo={trash.undo} />}
+
+      {/* NO COUNT OVER THE LIST ANY MORE (ADR 0184). `N transcriptions` was the
+          heading of this section, and the pager under the list now says
+          `26–50 of 60` — which is the same figure with the reader's position
+          added, on the control they are already looking at when they want it.
+          Two counts of one set is one more than a screen needs, and the one that
+          went is the one that could only ever say how many. */}
+      <Card
+          /* THE PAGE CONTROL IS AT THE FOOT OF THE LIST IT PAGES, and only when
+             there is more than one page: a control that says `1 of 1` is
+             furniture, and this screen already refuses to draw a standing
+             all-clear elsewhere. The range is spelled out rather than left to
+             the page number, because *which records am I looking at* is the
+             question a page number only half answers. */
+          footer={
+            pages > 1 ? (
+              <span className="ws-pager">
+                <Button
+                  variant="ghost"
+                  disabled={current === 0}
+                  onClick={() => setPage(current - 1)}
+                  aria-label="Previous page"
+                >
+                  Previous
+                </Button>
+                <span className="ws-pager-at">
+                  {`${from + 1}–${Math.min(count, from + pageSize)} of ${count}`}
+                  <span className="ws-sep">·</span>
+                  {`page ${current + 1} of ${pages}`}
+                </span>
+                <Button
+                  variant="ghost"
+                  disabled={current >= pages - 1}
+                  onClick={() => setPage(current + 1)}
+                  aria-label="Next page"
+                >
+                  Next
+                </Button>
+              </span>
+            ) : undefined
+          }
+        >
           {count === 0 ? (
             <EmptyState icon={<Icon name="history" />}>
               {error ??
@@ -520,7 +749,7 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
             </EmptyState>
           ) : (
             <ListRows>
-              {rows.map((row) => (
+              {shown.map((row) => (
                 <TranscriptRow
                   key={row.id}
                   title={row.title}
@@ -544,14 +773,28 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
               ))}
             </ListRows>
           )}
-        </Card>
-      </SectionHeader>
+      </Card>
 
-      {/* The pairing with Privacy & Data, stated from this side too (§11.51):
-          this screen is the records, that one is the rule about them. */}
-      <Note icon="privacy" tail={<DocLink>Change the rule in Privacy &amp; Data</DocLink>}>
-        {foot}
-      </Note>
+      {/* WHAT AN EXPORT JUST DID, AND NOTHING ELSE. The standing sentence that
+          stood here — the folder, the index, the retention days, the cap — is
+          gone with ADR 0184: it recited four facts under every visit, and all
+          four are now behind controls on the toolbar. This appears only when
+          there is something to report, which on this screen is one action.
+          The link goes with it and acts, which it never did: it was an
+          `<a href="#">` with no handler, the one door here that looked like a
+          door and was a drawing. */}
+      {notice && (
+        <Note
+          icon="privacy"
+          tail={
+            <DocLink onClick={() => runtime.open?.({ section: "privacy" })}>
+              Privacy &amp; Data
+            </DocLink>
+          }
+        >
+          {notice}
+        </Note>
+      )}
     </>
   );
 }

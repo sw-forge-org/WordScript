@@ -5,6 +5,8 @@ import {
   buildTextProfilesPatch,
   cloneTextProfile,
   displayTextProfileLabel,
+  PROFILE_LOCKED_HINT,
+  PROFILE_LOCKED_LINE,
   resolveActiveTextProfile,
   textProfileInitials,
 } from "@/lib/textProfiles";
@@ -29,10 +31,32 @@ interface ProfileSwitcherProps {
   variant?: "nav" | "sheet";
 }
 
-/** Mirrors `sessions::PROFILE_LOCKED_DURING_SESSION`. Shown before the attempt
- *  rather than after it, so the control explains itself instead of failing. */
-const LOCKED_HINT =
-  "Locked while recording — the profile sets the recognizer, which is fixed once a recording starts. The processing mode can still be changed.";
+/**
+ * WHY THE PICKER WILL NOT MOVE, IN THREE WORDS ON THE ROW AND A SENTENCE ON THE
+ * HOVER (ADR 0196).
+ *
+ * It was one string doing both jobs, and it was a paragraph:
+ *
+ * > Locked while recording — the profile sets the recognizer, which is fixed
+ * > once a recording starts. The processing mode can still be changed.
+ *
+ * Thirty words printed UNDER THE SIDEBAR ROW, in a 200 px column, for the whole
+ * duration of every recording — four wrapped lines of explanation standing under
+ * a control nobody is trying to press, at the exact moment the reader is talking
+ * and not reading. What a locked control has to say in that position is THAT it
+ * is locked; why is a question somebody asks afterwards, and a tooltip is where
+ * afterwards lives.
+ *
+ * Same rule the counters' tooltips were cut to (ADR 0186) and the same one that
+ * took the recited foot off History (ADR 0184): a surface states the fact and
+ * offers the reason. It does not recite the reason at somebody who did not ask.
+ *
+ * BOTH STRINGS LIVE IN `lib/textProfiles` (ADR 0197), because the Profiles row
+ * menu now refuses the same switch for the same reason and a second copy of a
+ * refusal is a second refusal to keep in step with the runtime.
+ */
+const LOCKED_LINE = PROFILE_LOCKED_LINE;
+const LOCKED_HINT = PROFILE_LOCKED_HINT;
 
 /**
  * THE ACTIVE PROFILE — `demo.css`'s `.nav-profile`, ported by Leg 3.
@@ -166,9 +190,13 @@ export function ProfileSwitcher({
         {picker}
       </div>
       {sessionActive && !collapsed && (
-        <p className="ws-nav-lock">
+        /* THE LINE SAYS WHAT; THE HOVER SAYS WHY (ADR 0196). The title is on the
+           line rather than only on the row above it, so the reader who wants the
+           reason finds it by pointing at the sentence that raised the
+           question. */
+        <p className="ws-nav-lock" title={LOCKED_HINT}>
           <Icon name="lock" />
-          <span>{LOCKED_HINT}</span>
+          <span>{LOCKED_LINE}</span>
         </p>
       )}
       {refused && !sessionActive && !collapsed && (

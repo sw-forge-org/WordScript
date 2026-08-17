@@ -2017,24 +2017,16 @@ fn handle_audio_ready<R: Runtime + 'static>(
                 }
 
                 let text = transformed.text.trim().to_string();
-                /* THE FILE'S NAME, ASKED OF THE MODEL (ADR 0077). After the
-                   transform and before the record, which is also after the
-                   text has reached the cursor on every path that reaches one —
-                   so nothing the user is waiting for is behind this call. It
-                   answers `None` on any failure and the first words are used
-                   instead. */
-                let transcript_title = if text.is_empty() {
-                    None
-                } else {
-                    core::transcript_store::title_for(
-                        &text,
-                        &app_config
-                            .job_provider(core::providers::JobKey::Assistant)
-                            .provider,
-                        &app_config.chat_model_for_job(core::providers::JobKey::Assistant),
-                    )
-                    .await
-                };
+                /* THE NAMING CALL USED TO STAND HERE, AND IT COST TWICE OVER
+                   (ADR 0188). Here is before the insert AND before the preview
+                   is staged, so up to four seconds of filename sat in front of
+                   every delivery this branch makes — and on the parked path its
+                   answer was then thrown away, because that branch returns and
+                   the record is written later by
+                   `commit_pending_transcription_preview`, which names the text
+                   again. One wasted call per parked dictation, in front of the
+                   overlay the reader is waiting for. It now sits inside the
+                   insert branch, after the text has moved. */
                 if text.is_empty() {
                     let _ = core::history::record_empty_result(
                         &app_config,
@@ -2080,6 +2072,14 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             transformed.clone(),
                             Some(effective_mode.clone()),
                             capture_facts.clone(),
+                            /* THE CLOCK GOES WITH THE PREVIEW (ADR 0182). This
+                               branch is taken whenever the profile does not
+                               auto-paste, which on a clipboard-only machine is
+                               every dictation — and the commit at the other end
+                               used to write `None`, so the measurement taken
+                               four lines above was thrown away on the product's
+                               most common path. */
+                            Some(turnaround_ms),
                         ) {
                             Ok(preview) => {
                                 core::runtime_log::record(format!(
@@ -2127,12 +2127,29 @@ fn handle_audio_ready<R: Runtime + 'static>(
                         return;
                     }
 
-                    match core::insertion::insert_transcription_from_legacy(
+                    let insert_outcome = core::insertion::insert_transcription_from_legacy(
                         &app,
                         &text,
                         transformed.corrected,
                         Some(app_config.active_text_profile_auto_paste()),
-                    ) {
+                    );
+
+                    /* THE FILE'S NAME AND THE TEXT'S LANGUAGE, ASKED OF THE
+                       MODEL IN ONE CALL (ADR 0077, ADR 0188) — after the insert
+                       returned, so the reader is never waiting on it. Both
+                       answers may be `None` on any failure: the first words name
+                       the file, and `core::language_detect` reads the language
+                       off the text. */
+                    let naming = core::transcript_store::describe(
+                        &text,
+                        &app_config
+                            .job_provider(core::providers::JobKey::Assistant)
+                            .provider,
+                        &app_config.chat_model_for_job(core::providers::JobKey::Assistant),
+                    )
+                    .await;
+
+                    match insert_outcome {
                         Ok(result) if result.ok => {
                             if !processing_session_still_current(&app, &session_id, "insertion_ok")
                             {
@@ -2147,7 +2164,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
-                                transcript_title.clone(),
+                                naming.clone(),
                                 capture_facts.clone(),
                                 Some(turnaround_ms),
                             )
@@ -2263,7 +2280,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
-                                transcript_title.clone(),
+                                naming.clone(),
                                 capture_facts.clone(),
                                 Some(turnaround_ms),
                             );
@@ -2336,7 +2353,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 transformed.clone(),
                                 error.clone(),
                                 Some(effective_mode.clone()),
-                                transcript_title.clone(),
+                                naming.clone(),
                                 capture_facts.clone(),
                             );
                             core::runtime_log::record(format!(

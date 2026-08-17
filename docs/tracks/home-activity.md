@@ -1,11 +1,17 @@
 # The home activity track
 
-Opened 2026-08-16. **Stage A is closed — A1 to A5 are all landed — and Stage B
-row B3 went with it, because the owner asked for all-time counters and B3 is what
-they need. B1, B2 and B4 remain, and each waits on another track.** Both the
-orientation page and the sequence — start a session here.
+Opened 2026-08-16. **Stage A is closed — A1 to A11 are all landed. Stage C
+opened 2026-08-17 from an owner brief and is closed the same day: C1 to C11 are
+landed and C12 was withdrawn. Stage B row B3 went with Stage A, because the owner
+asked for all-time counters and B3 is what they need. B1, B2 and B4 remain, and
+each waits on another track.** Both the orientation page and the sequence — start
+a session here.
 
-Owns **ADR 0171–0180**.
+Owns **ADR 0171–0184 and 0186–0197** — 0185 went to the privacy work. **0198 is
+the next free number**, and 0196 and 0197 are two readings that came out of the
+same owner session but are not Home's: the window's status strip and the Profiles
+screen. They are here because this track was in the tree and no other track
+claims either surface.
 [ADR 0171](../decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md)
 covers what A1 and A2 built;
 [ADR 0172](../decisions/0172-an-unlit-cell-is-an-assertion-so-the-calendar-spans-what-the-record-can-vouch-for-and-nothing-more.md)
@@ -15,9 +21,29 @@ reverses one decision inside 0172 after the owner saw the result;
 [ADR 0174](../decisions/0174-all-time-figures-need-a-record-that-does-not-forget-so-the-ledger-is-counts-per-day-and-never-text.md)
 builds the activity ledger and **closes Stage B row B3**;
 [ADR 0175](../decisions/0175-a-tile-may-only-report-what-the-runtime-can-see-so-apps-goes-turnaround-arrives-and-the-rate-is-a-median.md)
-retires `Apps`, brings in Turnaround and makes the rate a median. **0176 is the
-next free number** — but grep the tree before claiming it, because six tracks
-share `main` and a number gets cited in source before its file lands.
+retires `Apps`, brings in Turnaround and makes the rate a median; ADR 0176
+through [ADR 0182](../decisions/0182-a-counters-basis-belongs-under-the-figure-and-the-preview-path-is-not-the-park.md)
+are the correction passes A6 and A7, and
+[ADR 0183](../decisions/0183-the-calendar-is-a-year-you-scroll-through-and-a-period-it-can-speak-for.md)
+gives the calendar its year picker, its scroll and its legend (A8), and
+[ADR 0184](../decisions/0184-a-list-is-paged-and-a-screen-offers-what-it-used-to-recite.md)
+adds the manual switch and pages History (A9);
+[ADR 0186](../decisions/0186-a-tile-explains-itself-everywhere-and-only-german-was-a-claim-the-record-never-made.md)
+and [ADR 0187](../decisions/0187-a-ramp-whose-every-real-value-is-the-maximum-is-not-a-ramp.md)
+are A10, and
+[ADR 0188](../decisions/0188-one-call-names-the-file-and-the-language-and-it-stands-behind-the-insert.md)
+is A11.
+[ADR 0189](../decisions/0189-a-marker-is-a-day-with-a-name-and-it-never-joins-the-ramp.md)
+through
+[ADR 0197](../decisions/0197-a-profile-is-made-active-where-profiles-are-managed.md)
+are the whole of Stage C — markers and the left arrow (0189), the install date
+(0190), the counter's decimal point (0191), the standing facts moving back to the
+top (0192, **which reverses 0171**), the delivery badges (0193), the row's
+overflow menu (0194, **which qualifies 0082**), the undo window (0195, **which
+departs from 0082**), the status strip and the lock line (0196), and *Set as
+active* on Profiles (0197). **0198 is the next free number** — but grep the tree
+before claiming it, because eight tracks share `main` and a number gets cited in
+source before its file lands.
 
 ## Why this track exists
 
@@ -197,7 +223,7 @@ to *yes* shortens the banner.
 | **Languages** | **yes, by a different route** | B1's plan — pass `response.language` through — was measured and delivers nothing: Groq reports `reports_detected_language: Unsupported` and the local lane has no field for it, so on the two lanes most dictations take, nothing would ever arrive. Measured on the DELIVERED TEXT instead, in the runtime, offline ([ADR 0180](../decisions/0180-the-lane-that-most-dictations-take-never-names-a-language-so-the-language-is-measured-on-the-text.md)). Still tied to the core-hardening record where a German dictation returns in English — it now makes that defect countable |
 | **Meetings, uploads in the calendar** | **no** | origins that do not exist. [`context-objects.md`](context-objects.md) owns them; the calendar reserves the tooltip lines and shows them only once an origin can produce one |
 | **Anything lifetime-scoped** | **yes** | `core::activity_ledger`, and since [ADR 0176](../decisions/0176-a-lifetime-figure-that-can-fall-is-not-a-lifetime-figure-so-a-pruned-day-is-retired-and-only-a-button-clears-it.md) a pruned day is RETIRED into the totals rather than dropped, so no figure can fall. It is in the full backup and merges by field-wise maximum ([ADR 0179](../decisions/0179-the-ledger-is-the-only-thing-in-an-archive-that-cannot-be-rebuilt-so-a-restore-raises-it-and-never-replaces-it.md)), and the one control that clears it is a red button in Privacy & Data |
-| **Turnaround** | **yes, and corrected** | Measured from the capture STOPPING rather than from the audio file already existing, so the encode is inside the figure ([ADR 0181](../decisions/0181-the-wait-starts-when-you-stop-speaking-not-when-the-file-is-already-written.md)). The value was also being dropped on the floor by `history_entry_from_insert_result`, which is why the tile was dark on a machine with sixty dictations in it |
+| **Turnaround** | **yes, and corrected twice** | Measured from the capture STOPPING rather than from the audio file already existing, so the encode is inside the figure ([ADR 0181](../decisions/0181-the-wait-starts-when-you-stop-speaking-not-when-the-file-is-already-written.md)). The value was also being dropped on the floor by `history_entry_from_insert_result`, which is why the tile was dark on a machine with sixty dictations in it — and then a second time by the preview commit, which is the path EVERY dictation takes when the profile does not auto-paste ([ADR 0182](../decisions/0182-a-counters-basis-belongs-under-the-figure-and-the-preview-path-is-not-the-park.md)) |
 
 ## How the unbuilt half declares itself
 
@@ -599,6 +625,96 @@ asks for one.
 **Suite at the close: 729 frontend cases over 49 files, 888 Rust cases.**
 `npm run build` and `npx tsc --noEmit` clean.
 
+## The record — Stage C, 2026-08-17
+
+Fourth session. Unit was the whole of Stage C plus three readings the owner added
+by voice while it ran; **C1 to C11 all landed and C12 stays withdrawn**. Durable
+form is in
+[ADR 0189](../decisions/0189-a-marker-is-a-day-with-a-name-and-it-never-joins-the-ramp.md)
+through
+[ADR 0197](../decisions/0197-a-profile-is-made-active-where-profiles-are-managed.md);
+what is here is what the next session needs.
+
+**Suite: 788 → 806 over 49 → 50 files, and 917 Rust cases unchanged.** Eighteen
+frontend cases added, none deleted; twelve were rewritten in place against facts
+that moved. `npm run build`, `npx tsc --noEmit` and `cd src-tauri && cargo test`
+all clean. One Rust pass, announced before it happened — a dev host was running
+the whole session (PID 1050932) and `activity_ledger.rs` was written once.
+Runtime log 14,490 → 15,186 lines at the announcement, which is that host's own
+output; no capture measurement was in flight.
+
+### The three things the owner reported while the session was running
+
+All three came from using the running app, and **two of them were defects in what
+this session had just built** — which is the useful part.
+
+1. **The decimal point was unreadable, and `1.0` read as `10`.** Both halves are
+   one mistake. A single lit cell at the foot of the ordinary one-column gap is
+   four pixels of ink on a display made of four-pixel dots, and the gap it sat in
+   was IDENTICAL to the gap between every other pair of digits — so the eye had
+   nothing to group by. **The separation is the signal and the dot only confirms
+   it**: the gap is three columns now and the mark is 2 × 2.
+2. **Then the mark merged with the digit after it.** Same failure one step
+   smaller. The point takes the first two columns of the gap and leaves one clear
+   column before the digit it qualifies; it stays hard against the digit on its
+   LEFT, which is where a decimal point belongs.
+3. **A profile could not be made active from the screen that manages profiles.**
+   Not a defect this session introduced — it has been true since Leg 7 — and it
+   is [ADR 0197](../decisions/0197-a-profile-is-made-active-where-profiles-are-managed.md).
+
+**Two of the three were about six pixels of a glyph**, and neither was findable
+by reading the code or by any unit case: the frame arithmetic was correct at
+every step. The rule this adds to the Traps section is that **a matrix glyph is
+graded by looking at it at its real size**, in the same family as the geometry
+trap A3 already carries.
+
+### Two rows that depart from a standing ADR, and both say so by number
+
+- **C8 reverses ADR 0171** — [ADR 0192](../decisions/0192-the-standing-facts-go-back-to-the-top-and-this-reverses-0171.md).
+  0171 was right about the 42 px keycaps and wrong about the line, and they are
+  not the same object: the caps were an INSTRUCTION, and the fact line is *what
+  is about to happen when I press it*, which is a question a reader has every
+  day.
+- **C11 departs from ADR 0082's *deleting always asks*** —
+  [ADR 0195](../decisions/0195-a-transcript-delete-gets-an-undo-window-instead-of-a-confirm.md),
+  for this one object and no other. A transcript row is deleted often and in
+  runs, and a confirm that is clicked through is not a safety net.
+
+**C10 qualifies ADR 0082 rather than departing from it** —
+[ADR 0194](../decisions/0194-what-stays-an-icon-is-what-you-repeat-and-on-a-transcript-row-that-is-copy.md).
+Its icon rule was written for a list you REORDER; read literally it would send
+all six verbs into the menu on a list that has no reorder at all. The rule's own
+reasoning selects `Copy`, because a transcript row is a record you take text out
+of repeatedly.
+
+### The two C3 questions, answered
+
+Both were flagged as *do not guess* by the previous brief, and both are in
+[ADR 0190](../decisions/0190-the-install-date-is-a-ledger-field-because-a-config-field-would-be-somebody-elses-install.md).
+
+- **What an existing install stamps.** The config file's creation time first —
+  it is written on the first launch and predates any dictation — then
+  `started_on`, then nothing. `created()` is `Err` on filesystems with no birth
+  time and that is a refusal, not a reason to fall back to `modified()`, which
+  reads the last config WRITE. **A missing marker costs nothing; a wrong one
+  costs the display its credibility.**
+- **What *earliest wins* means.** *When you first installed WordScript*, not
+  *when this machine got it* — because that is what `raise_to` already
+  implements, and **a field whose label and whose merge rule disagree is a field
+  that lies on exactly the machines where it matters.** The marker says
+  `WordScript installed`.
+- **The reset does not clear it**, as recommended. That button is about what was
+  RECORDED, and a date that has passed cannot be measured again the way a count
+  can be rebuilt by living another day.
+
+### One number the next session inherits
+
+**The Turnaround tile is two columns wider than its three neighbours** — 25
+columns against 23, 148 px against 136 — because the decimal gap costs two. The
+dot pitch is identical, the grid track has the room, and the tile is centred in
+it. If a second tile ever takes a decimal, the row's four tracks are still
+`1fr` each and nothing has to move.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -612,6 +728,14 @@ asks for one.
 | **A5 · done** | The switch, its indicator, and persistence. `AppConfig.home_activity_calendar`, additive, on `workspace_nav_rail`'s shape. | The choice survives a restart |
 
 | **A6 · done** | **The correction pass** — the owner read the four formulas back and asked whether each one means what its label says. Three did not, one was never stored, and the ledger could fall. [ADR 0176](../decisions/0176-a-lifetime-figure-that-can-fall-is-not-a-lifetime-figure-so-a-pruned-day-is-retired-and-only-a-button-clears-it.md) through [ADR 0181](../decisions/0181-the-wait-starts-when-you-stop-speaking-not-when-the-file-is-already-written.md). | Words per minute divides spoken words by speech seconds; time saved divides one set of runs against a baseline the reader owns; turnaround starts at the capture stop and is actually written to the record; languages counts what came back; the ledger cannot fall, travels in the backup and has a reset |
+
+| **A9 · done** | **The manual switch, and History's list** — [ADR 0184](../decisions/0184-a-list-is-paged-and-a-screen-offers-what-it-used-to-recite.md). Home's half by ownership; History's because the same reading drove both and no track claims that screen. | The dots are two buttons that select a view; the calendar states how many days of the drawn year have a record; History is paged at a size the reader sets, filters by month with all time as the default, and its recited foot is gone — the folder and the retention rule are controls on the toolbar instead |
+| **A8 · done** | **The calendar gets a year, a scroll and a key** — [ADR 0183](../decisions/0183-the-calendar-is-a-year-you-scroll-through-and-a-period-it-can-speak-for.md). | The period is a year and only a year, opening at its newest end; the box is twenty-six whole columns and every scroll position is snapped to one, so no circle is ever cut; the weekday labels are pinned outside the scroller; the ramp has a legend; and the swap is a layer behind the view, so the controls can be pressed without swapping it |
+| **A7 · done** | **The evening after** — the owner used the counters and reported three things: turnaround still measured nothing, and two readings were behind hovers. [ADR 0182](../decisions/0182-a-counters-basis-belongs-under-the-figure-and-the-preview-path-is-not-the-park.md). | The preview path carries the turnaround to its commit, so a clipboard-only machine fills the histogram at all; the baseline and the language share are under their figures and the hovers state only what the tile is; the baseline is three named speeds and a field, asked once in Onboarding |
+
+| **A10 · done** | **The night after** — the owner used the finished block and reported that the tooltips did not work, that `Languages` said *only German* to somebody who dictates in two, that the fact line said the mode twice, and that the calendar's ramp was orange everywhere. [ADR 0186](../decisions/0186-a-tile-explains-itself-everywhere-and-only-german-was-a-claim-the-record-never-made.md) and [ADR 0187](../decisions/0187-a-ramp-whose-every-real-value-is-the-maximum-is-not-a-ramp.md). | The hover is on the tile and answers over the figure, and a click on a tile still swaps the view; the language foot states what it read and spends *only* where nothing was refused; the profile names its mode only where it differs from the effective one, on a centred line; the ramp's steps are 1 · 15 · 60 · 150 |
+
+| **A11 · done** | **The naming call carries the language, and stops standing in front of the text** — [ADR 0188](../decisions/0188-one-call-names-the-file-and-the-language-and-it-stands-behind-the-insert.md). Asked as *would a model do this better*, answered by reading the callers: the call was already there, already in the wrong place, and already being made twice on the parked path. | One naming call per dictation, after delivery, answering title and language; the offline detector is the fallback and not the instrument; the tile measures the SPOKEN text, so Translate stops reporting the language it delivered |
 
 **A2 carries the empty state and A5 does not.** The first draft of this sequence
 put it in A5, which would have left every build between A2 and A5 showing a
@@ -628,6 +752,35 @@ the data half is the named track's.
 | **B2** | Target application on the record, plus the retention rule that names the new collection | privacy decision, runtime ownership |
 | **B3 · done** | Lifetime counters that survive pruning — `core::activity_ledger`, one row per day, counts only ([ADR 0174](../decisions/0174-all-time-figures-need-a-record-that-does-not-forget-so-the-ledger-is-counts-per-day-and-never-text.md)) | this track |
 | **B4** | Meetings and uploads as calendar origins | [`context-objects.md`](context-objects.md) |
+
+**Stage C — the owner brief of 2026-08-17.** Nothing here is blocked and nothing
+here rebuilds a decision: the calendar stays a GitHub-style year on the five-step
+ramp, and the two views stay two views. Three groups, and **the dictation-list
+group is here for A9's reason** — the same reading drives Home and History, the
+two screens draw one component, and no track claims History.
+
+| Step | What | Done means |
+|---|---|---|
+| **C1 · done** | **The left arrow lies about the end of the record.** `measure()` sets `left: node.scrollLeft > 1`, but the scroller does not rest at zero: `snapped()` is congruent to `GRID_LEFT_PAD` — deliberately, because a position congruent to 0 shaves a circle at both edges — so the settle handler parks the box at `scrollLeft = 5` and `5 > 1` stays true. Pressing it sets a negative position, the browser clamps to 0, and the settle puts it back at 5. The right arrow is correct because the far end lands on `max` exactly. **Fix the threshold, never the snap** — clamping `snapped()` to 0 reintroduces the shaved circle ADR 0183 took two passes to remove | The left arrow is disabled at the first column of the drawn year, in the same shape the right one is at the last, with a case that asserts it **after the settle has run** — a case that asserts straight after the click passes today and would have passed before the bug |
+| **C2 · done** | **Two marker days, both green.** `2026-02-23`, WordScript's GitHub publication, hardcoded, labelled `WordScript Initiation`; and the day the reader installed the app. **A marker is a day with a name and not a count**, so it never joins the `dictations` ramp — a marker painted as activity is the invented figure ADR 0161 forbids, on the one display whose whole argument is that an unlit circle asserts something | Both days are drawn on the calendar and neither changes any figure the block reports |
+| **C3 · done** | **The install date is a new ledger field**, because `started_on` is not one and its own doc comment says so — it is the first day a row was written. It belongs in `core::activity_ledger` and **not** in `AppConfig`: the ledger already travels in `BackupArchive` (ADR 0179) and is the one part of an archive that is **merged rather than replaced**, through `raise_to`, which already resolves `started_on` by *earliest wins*. In the config it would be overwritten by the exporting machine's on every import and then be a claim about somebody else's install | The date is written on a first run, survives a restart, and comes back from an export on another machine |
+| **C4 · done** | **A marker is its own legend entry and its own tooltip line.** Both, or the green is decoration nobody can read. The legend is `aria-hidden="true"` today — right for an unlabelled ramp whose numbers are in the hover, **wrong the moment an entry carries a name** — so the marker's entry comes out of the hidden region. The tooltip carries the marker above the day's own readings, because it is why the reader stopped there | A reader who has never seen the calendar can say what a green circle means without hovering one |
+| **C5 · done** | **A marker never overwrites activity.** A marker day with no dictation is a green fill; a marker day that was also dictated on keeps the accent fill **at its own ramp step** and takes a green ring. The ring is drawn inside the radius — `r = (size / 2) * 0.9` on a 15 px cell with a 3 px gutter — or two adjacent markers touch | Both facts are legible on the same cell, and the day's ramp step is unchanged by the marker |
+| **C6 · done** | **A year that carries a marker is offered by the year picker.** It offers only years the ledger holds day rows for, plus the current year (ADR 0183) — so the 2026 publication date is unreachable on any machine installed in 2027 | Choosing the marker's year is possible on a machine whose ledger does not reach it |
+| **C7 · done** | **Turnaround reads in seconds, and this is not a formatting change.** `DigitCounter` is documented as ten 7 × 5 digit frames with *no separator and no sign*, and `counterDigits` rounds — whole seconds would draw a 2,400 ms median as `2` and throw away every bit of a 25 ms histogram. **The shape that costs nothing: light the decimal point in the blank column that is already there.** `counterFrame` puts exactly one blank column between two glyphs so `11` does not read as one shape; one lit cell at the bottom of it is a decimal point at zero extra width, and the four reserved positions stay four | The tile reads `2.4`, its foot names seconds rather than `ms`, and the `ariaLabel` says what the foot says |
+| **C8 · done** | **The standing facts move to the top of the hero, and this reverses a decision on the record.** ADR 0171 moved the shortcut *out* of the prominent position because an instruction is read exactly once. The owner wants it back, more prominent. Do it — **and write the reversal down by number**, in this track's own pattern, or the next reader finds 0171 and moves it back. Mechanically: `HeroFacts` before the display block, and the `border-top` becomes a `border-bottom` | The line is the first thing on Home and the ADR names 0171 |
+| **C9 · done** | **The delivery badges go grey; only a real failure stays red.** `badgesFor()` gives `Clipboard only` and `Clipboard` the `warning` tone, which paints them in `--accent` — the product's orange, the same colour as its primary button. A delivery mode is a fact about how the text arrived, not a warning. **Unchanged and deliberately:** `Failed`, `Empty`, `Insert failed`, `Audio missing` keep `danger` | A healthy clipboard-only record is grey on both screens, and nothing that failed is |
+| **C10 · done** | **Two actions stay on the row; the rest move into an overflow menu.** Six controls hang off every row and `restore` is conditional, so a list has rows of two widths. **The menu already exists** — `RowMenu` in `FloatBar.tsx`, with labelled entries, icons, hints and a disabled state — and ADR 0082 already answers a right-click with it, so the `…` and the right-click open **one** verb list. Delete goes into the menu; `Retry`'s disabled reason and `Reveal`'s must survive the move (ADR 0065). **ADR 0082's icon rule has to be qualified rather than ignored**: *what stays an icon is only what you repeat positionally* would send all six into the menu on a row with no reorder. Say why a transcript row differs — it is a record you copy repeatedly, not configuration you edit occasionally | Both screens draw the same two controls and the same menu, and no verb was lost in the move |
+| **C11 · done** | **Delete gets an undo window — decided 2026-08-17: soft delete with a `Deleted · Undo` notice, not a confirm.** **This departs from ADR 0082's *deleting always asks*, and the ADR must say so by number.** The argument: a transcript row is deleted often and in runs, and a confirm on every row of a list you are clearing stops being read by the third one. **The runtime's delete is hard and takes the file with it** — `delete_transcription_history_entry` removes the entry *and* calls `remove_transcript_files`, and there is no restore — so the window is the frontend holding the row back and the `invoke` fires when it closes. **Three cases need an answer, not a default:** leaving the screen with one pending (flush it), closing the window with one pending, and a second delete inside the first one's window. **There is no toast surface in the shipped shell**: `src/components/ui/toast.tsx` is mounted nowhere, History has a one-line `notice` under its toolbar, Home has nothing | A deleted row can be brought back inside the window, is gone after it, and no pending delete dies with the webview |
+| **C12 · withdrawn** | ~~A confirm on multi-selection in History~~. The brief asked for it; the owner then decided multi-selection is not wanted. There is no selection column, no `n selected` bar and no bulk command in the tree, and none is being built. **Kept rather than deleted** so the next reader finds the decision instead of the gap. If multi-selection ever lands the confirm is not optional — an undo window is right for one row and wrong for thirty | — |
+
+**Developer Mode is not in this table and is deliberately elsewhere.** The same
+brief asked for a Settings switch that hides every preview surface at runtime.
+It is a release gate rather than a Home question — the build a stranger installs
+must open on what is real — and it lives in
+[`v1-release.md`](v1-release.md) as that track's Stage A. What touches this track
+is one row of it: the `Meetings and uploads · Preview` line in the day tooltip
+keeps its wording and starts reading a registry.
 
 ## Traps
 
@@ -695,6 +848,17 @@ restarts, the hotkeys go with it, and a dictation in flight is lost. It is
 sequenced last for that reason, and it is the one step that needs
 `cd src-tauri && cargo test`.
 
+**A MATRIX GLYPH IS GRADED BY LOOKING AT IT, AND THE ARITHMETIC BEING RIGHT
+PROVES NOTHING — NEW, STAGE C.** The counter's decimal point was correct at every
+step: the right column, the right row, inside the frame, under test. It was also
+unreadable, and `1.0` was reported as reading `10`. Then the fix was correct and
+the mark merged with the digit beside it. **Both failures are about the SPACE
+around a mark rather than about the mark**, and a frame is 4 px dots on 6 px
+pitch — everything is nearly touching everything, so a gap that is not visibly
+larger than the standard gap carries no information at all. Same family as the
+geometry trap above: the unit suite sees a lit cell at `[6][17]` and cannot see
+that a reader sees one number.
+
 **`capture_integrity` is `null` more often than it looks.** It is absent on
 retries and on every entry older than the measurement. Words per minute divided
 by a summed `recorded_seconds` that silently skipped half the records is a
@@ -721,58 +885,53 @@ absence — a streak, a gap, a "you haven't dictated since" — has to pass thro
 
 ## The prompt for the next session
 
-**Stage A is closed.** A1 to A5 are landed and
-[ADR 0172](../decisions/0172-an-unlit-cell-is-an-assertion-so-the-calendar-spans-what-the-record-can-vouch-for-and-nothing-more.md)
-is the record. Read the two record sections above before anything else — the A3/A4/A5
-one and *What the readings actually measure* — because both carry findings that
-are not in the tree's own comments.
+**Stage A and Stage C are both closed** — A1 to A11 and C1 to C11 are landed,
+C12 stays withdrawn. Read the record sections above before anything else, in
+particular the A3/A4/A5 one, *What the readings actually measure*, and the Stage
+C one: all three carry findings that are not in the tree's own comments.
 
-Work in the repo root on `main`. Do not create a branch. **Five other tracks work
-in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so run
-`git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0176 is the next free ADR number unless the tree says
-otherwise — grep, do not trust this line.**
+Work in the repo root on `main`. Do not create a branch. **Seven other tracks
+work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
+run `git status` and `git log --oneline -5` before you start, and stage your own
+paths. Never `git add -A`. **0198 is the next free ADR number unless the tree
+says otherwise — grep, do not trust this line.**
 
-### Stage B is what is left, and four of its five rows are not yours to start
+### There is no open stage. What is left is Stage B, and it is not yours to start
 
-Every row below waits on another track's data. **Do not build the surface for a
-row whose data has not landed**; a drawn tile with no field behind it is the thing
-this track spent Stage A making impossible. The table under *What can be wired
-today* is still the authority on which is which.
+Every remaining row waits on another track's data, and the table under *What can
+be wired today* is the authority on which is which. **Do not build the surface
+for a row whose data has not landed**; a drawn tile with no field behind it is
+the thing this track spent Stage A making impossible.
 
-**The one row this track owns outright is B3**, and Stage A produced the evidence
-for it:
+| Row | Waits on |
+|---|---|
+| **B1 · replaced** | The provider route delivers nothing (ADR 0180). What is still owed by the speech track is language BREADTH elsewhere, which is not this tile's table |
+| **B2** | The target application on the record, plus the privacy decision that names the new collection. `Apps` is RETIRED rather than deferred (ADR 0175) — do not bring the tile back without re-opening that ADR |
+| **B4** | Meetings and uploads as calendar origins — [`context-objects.md`](context-objects.md). The tooltip already holds their line, unwired and tagged |
 
-> **B3 — a per-day aggregate that survives pruning.** The calendar can only draw
-> what `history.json` still holds, and on the machine this was built against that
-> is a single column. A ledger of counts per day — no text, no app names, one row
-> per day, bounded at a year or so — makes the 26-week display honest and makes
-> decision 7's *grows with the installation* literally true, because the ledger's
-> own first day IS the install date. It is Rust, it is a new persistent
-> collection, and it needs a privacy line even though it stores only counts.
->
-> **Sequence it as its own unit with its own Rust pass.** Stage A's A5 pass is
-> spent; do not bolt this onto an unrelated one.
+**So a session opening this page should probably not be a home-activity
+session.** If the owner brings new readings, they open a Stage D and this page is
+where it goes. If they do not, the three live questions below are what this track
+still has to say, and every one of them is a PROPOSAL rather than a task.
 
-Before starting B3, put one question to the owner: **their `history_limit: 50`
-and `history_retention_days: 7` may simply be leftovers from testing.** The
-defaults are 200 and 90. If they raise them, the calendar is worth looking at
-again from that day forward, and B3's urgency changes — not its correctness.
+### Three things to raise, and none of them is a row yet
 
-### A second thing worth raising, and it is not a Stage B row yet
+1. **`Words per minute` is throughput, not articulation — and this is the one
+   that has been open longest.** ADR 0177 fixed the numerator and the
+   denominator, so the tile is now a speaking rate; what is still true is that
+   the SPEECH clock only exists from ADR 0177 forward. Nothing before it can be
+   re-measured. That is a fact about the record rather than a defect.
+2. **A marker is a shape this display now has and uses twice.** If a third ever
+   arrives — a release, an anniversary, a day the reader names themselves — the
+   legend's one word stops being enough and the hover becomes the only place a
+   name is readable. **That is the point at which markers need a list rather than
+   two constants**, and it is worth noticing before somebody adds a third one to
+   `activityMarkers` by hand.
+3. **The undo window is one row deep and says so** (ADR 0195). If multi-selection
+   ever lands on History, the confirm is not optional — an undo window is right
+   for one row and wrong for thirty, and C12 was withdrawn rather than deleted so
+   that this decision is findable rather than re-derived.
 
-**`Words per minute` is throughput, not articulation.** Stage A widened the
-tooltip to say so and deliberately left the label and the tile set alone, because
-decision 4 is made. If the owner wants a true speaking rate it needs
-**speech-seconds rather than stream-seconds** — the runtime already computes a
-`voice_threshold_dbfs` in `input_level`, so the concept exists but nothing sums
-voiced time per capture. That is a runtime change and a new row; **propose it, do
-not quietly build it.**
-
-Related and not this track's: a two-second capture produced ten words
-(*"Alright, come with me and go to the next one"*), which is a recogniser
-hallucination landing in a real reading at full weight.
-[`core-hardening.md`](core-hardening.md) owns it.
 
 ### Rules that still have teeth here
 
@@ -788,11 +947,16 @@ hallucination landing in a real reading at full weight.
    report both; no heavy builds, `cargo test` included, during one.
 5. **Measure geometry in a browser, do not read `shell.css` and believe it.**
    Stage A's corrected trap is three separate ways that goes wrong.
+6. **A matrix glyph is graded by looking at it at its real size.** Stage C's own
+   trap, and it cost two rounds: the arithmetic was right both times.
+7. **The owner does not want every change tested.** Said in as many words on
+   2026-08-17. A case earns its place where a fact could silently move — a
+   derivation, a refusal, a timing rule — and not where a constant changed.
 
 **Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
 Rust moved. Quote the counts as a delta against the baselines you measure at the
-start. Baselines at the close of this session: **729 frontend cases over 49
-files, 888 Rust cases.** Run `npm audit` if anything lands in `package.json`; the intent is
+start. Baselines at the close of this session: **806 frontend cases over 50
+files, 917 Rust cases.** Run `npm audit` if anything lands in `package.json`; the intent is
 that nothing does.
 
 **Before you stop**, write your record into this page above the sequence, update

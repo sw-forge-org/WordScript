@@ -1,6 +1,6 @@
 # WordScript — the implementation board
 
-Status: 2026-08-16
+Status: 2026-08-17
 
 **This page answers one question: what is being built right now, by whom, and
 where does its sequence live.** It is the entry point for a session that is
@@ -35,8 +35,9 @@ updated; a kick-off is spent when its unit closes.
 | **Speech** | 2026-08-11 | **Stage A closed, Stage B running, Stage D opened**; 18 of ~29 steps done, and the workspace's own strip now names whichever connection it is on | [`tracks/speech-track-plan.md`](tracks/speech-track-plan.md) | [`tracks/speech-track.md`](tracks/speech-track.md) for orientation, then the plan |
 | **Runtime ownership** | 2026-08-13 | **Six of the original seven done 2026-08-14; an eighth step added 2026-08-16.** Steps 6 and 8 are open and both wait on an event nobody can schedule — a natural `Short` capture, and a learned word — each with its instrument already in place | [`tracks/runtime-ownership.md`](tracks/runtime-ownership.md) | the same file — it is both |
 | **Context objects** | 2026-08-14 | **Open, five stages, none started**; A–D are unblocked, E waits on one roadmap gate | [`tracks/context-objects.md`](tracks/context-objects.md) | the same file — it is both |
-| **Home activity** | 2026-08-16 | **Stage A1 and A2 landed** — the counters and the empty state are on Home; A3–A5 open | [`tracks/home-activity.md`](tracks/home-activity.md) | the same file — it is both |
+| **Home activity** | 2026-08-16 | **Stage A closed, A1–A11**, four of them owner-driven correction passes. Stage B is three things other tracks owe. **Stage C opened 2026-08-17** from an owner brief — twelve rows, all unblocked, two reversing a standing ADR | [`tracks/home-activity.md`](tracks/home-activity.md) | the same file — it is both |
 | **Activation gestures** | 2026-07-29 | **Open, nothing built** — blocked on three capability gaps and the decisions they owe | [`tracks/activation-gestures.md`](tracks/activation-gestures.md) | the same file |
+| **V1 release** | 2026-08-17 | **Open — a measurement, not a build queue.** Thirteen delivery gates with a state and a re-reading command; three measured *not started*, one is the owner's. Stage A (Developer Mode) is the one gate it builds itself | [`tracks/v1-release.md`](tracks/v1-release.md) | the same file — it is both |
 
 ### GUI port
 
@@ -529,11 +530,11 @@ word while its sentence said *wired in part* — and the answer turned into a
 larger one: **the most prominent surface in the product is spent on an
 instruction, and an instruction is read exactly once.**
 
-Owns ADR 0171–0180.
+Owns ADR 0171–0184 and 0186–0188 — 0185 went to the privacy work — and claims
+0189–0196 for Stage C.
 [ADR 0171](decisions/0171-an-instruction-is-read-once-so-home-has-two-lives-and-a-counter-with-no-reading-is-dark-rather-than-zero.md)
-covers what A1 and A2 built. The rest of the decisions live on the track page
-until a session builds against them, because an ADR is append-only and writing
-one before anything exists invites editing it later.
+covers what A1 and A2 built; the rest are on the track page, in order, against
+the step each one closed.
 
 Home's opening block becomes **either an activity calendar or four counter
 tiles**, the reader's choice. They are alternatives because they answer
@@ -546,17 +547,30 @@ display as the dot-matrix readout rather than a borrowed GitHub graphic.
 by `port:diff` against `demo.js`, and the prototype has neither surface; filing
 this as a leg would either corrupt that measure or hide behind it.
 
-**Stage A is unblocked in full** and stands on readings history already carries.
-A1 and A2 are landed as of 2026-08-16: the counter component with its gallery
-entry, and the four tiles plus the empty state on Home. The 42 px keycaps are
-gone and the shortcut sits in the hero's fact line. A3 and A4 — the calendar and
-its day tooltip — are the next session; A5 is last because it writes under
-`src-tauri/`.
+**Stage A is closed** — A1 to A11, landed between 2026-08-16 and 2026-08-17,
+including four correction passes driven by the owner using the finished block and
+reporting what it got wrong.
+
 Stage B is four things other tracks owe — recognized language (speech /
 core-hardening), the target application plus the privacy rule that would name
-that collection, lifetime counters that survive the 200/90 pruning, and meetings
-and uploads as calendar origins (context objects). Everything in Stage B is
-drawn and declares itself, per ADR 0161.
+that collection, lifetime counters that survive pruning, and meetings and uploads
+as calendar origins (context objects). **B3 closed with Stage A**; the other
+three are drawn and declare themselves, per ADR 0161.
+
+**Stage C opened 2026-08-17 from an owner brief and is unblocked in full.**
+Twelve rows in three independent groups: the calendar's left arrow — whose root
+cause is located, the reach test is taken against a raw zero while the scroller
+rests at `GRID_LEFT_PAD` — plus a class of day the track never had, a **marker**,
+which is a day with a name rather than a count and therefore never joins the
+ramp; Home's turnaround unit, which needs a decimal point on a counter documented
+as having no separator; and the dictation list Home and History share through one
+`TranscriptRow`. **Two rows depart from a standing ADR and must say so by
+number** — the standing facts move back to the top against ADR 0171, and delete
+gets an undo window instead of ADR 0082's *deleting always asks*. One row is
+withdrawn on the page rather than deleted, so the decision is findable.
+
+**Developer Mode is not here.** The same brief asked for it; it is a release gate
+rather than a Home question and lives in the V1 release track.
 
 ### Activation gestures
 
@@ -565,9 +579,49 @@ shortcut defaults cannot serve three activation modes, the three capability gaps
 that block a per-mode gesture, and the decisions still owed. Nothing is built.
 It is listed here so it stops being invisible, not because it is scheduled.
 
+### V1 release
+
+Opened 2026-08-17. **It is a measuring instrument and not a build queue.** One
+question: can somebody who did not build WordScript get it, install it and
+dictate with it. Today the answer is no and the shipped artifact is
+`npm run tauri dev`, so the page exists to turn that into a reading somebody can
+take — gate by gate, with a date and a piece of evidence — instead of a feeling
+about how close it is.
+
+Owns ADR 0197–0202.
+
+**The gate list moved here** from [`RELEASE_RUNBOOK.md`](RELEASE_RUNBOOK.md),
+which carried it as seven unstated bullets — a list with no state per row is a
+list you cannot take a reading off. The runbook keeps the build procedure and
+links to the board (ADR 0123). Thirteen gates, each with a state, a last-measured
+date and the command that re-reads it. **Three read *not started* by measurement
+rather than by assumption** — no signing identity, no updater plugin, no licence
+notices in the artifact — and one is the owner's decision rather than work.
+
+Three gates are on the board that the runbook's list did not carry:
+
+- **The compatibility window closes exactly once.** ADR 0112's ballast is
+  removable today only because no published versioned release exists. The first
+  install makes every one of those shapes a real obligation and every deletion a
+  migration.
+- **An AGPL artifact owes what a private build does not** — the source offer,
+  and notices for the two vendored trees (`heat-map` MIT, `global-hotkey`
+  Apache-2.0 OR MIT). A notice in the repository is not a notice in the bundle.
+- **One cloud lane, no streaming**, so the board is not read as *four packaging
+  items and we ship*.
+
+**One gate it closes with its own hands**: Developer Mode, a Settings switch
+that hides every preview surface at runtime, behind **one flag registry** rather
+than the 33 inline marker literals in the tree, with a walker test so the next
+one cannot be spelled outside it. Off by default — the build a stranger installs
+must open on what is real.
+
+**It carries no phase table and no product-state report**, by ADR 0123. Those
+are [`ROADMAP.md`](ROADMAP.md) and [`STATUS.md`](STATUS.md).
+
 ## Sharing `main`
 
-Three tracks work in one tree with no branches. The rules that come from that,
+Eight tracks work in one tree with no branches. The rules that come from that,
 learned the expensive way:
 
 - **Run `git status` and `git log --oneline -5` before you start.** Another

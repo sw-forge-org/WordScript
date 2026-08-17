@@ -258,6 +258,50 @@ pub fn mode_credits_typing(mode: Option<&ProcessingMode>) -> bool {
     )
 }
 
+/// Whether the delivered text is in the language it was SPOKEN in (ADR 0188).
+///
+/// Three modes answer no, and the languages tile was wrong in all three:
+/// Translate delivers the language you asked for rather than the one you used,
+/// and Agent and Prompt Enhance deliver a model's prose, which is in whatever
+/// language the model chose. A tile asking *which languages do you dictate in*
+/// was counting the output.
+///
+/// It decides two things at once, and that is why it is one function. The
+/// measurement reads the SPOKEN text either way (the same correction ADR 0177
+/// made to the rate) — and where this is false, the model's own answer is
+/// discarded as well, because the naming call was shown the delivered text and
+/// answered honestly about the file it was naming.
+pub fn mode_keeps_the_spoken_language(mode: Option<&ProcessingMode>) -> bool {
+    !matches!(
+        mode,
+        Some(ProcessingMode::Translate)
+            | Some(ProcessingMode::Agent)
+            | Some(ProcessingMode::PromptEnhance)
+    )
+}
+
+/// The language one record contributes to the ledger, from whichever instrument
+/// could answer (ADR 0188).
+///
+/// ORDER, AND IT IS NOT A PREFERENCE FOR MODELS: the naming call reaches short
+/// runs that trigram statistics must refuse, so where it answered, it answers.
+/// Where it did not — offline, no key, no chat model, a timeout, a `??` — the
+/// offline detector reads the text, which is the guarantee ADR 0180 exists for.
+/// Where neither can, the run is in no bucket at all, which is a refusal rather
+/// than a gap.
+pub fn contributed_language(
+    named: Option<String>,
+    spoken: &str,
+    mode: Option<&ProcessingMode>,
+) -> Option<String> {
+    let keeps = mode_keeps_the_spoken_language(mode);
+    named
+        .map(|code| code.trim().to_lowercase())
+        .filter(|code| !code.is_empty())
+        .filter(|_| keeps && super::language_detect::long_enough_to_name(spoken))
+        .or_else(|| super::language_detect::detect(spoken))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeleteTranscriptionHistoryEntryRequest {
     pub id: String,
@@ -398,12 +442,19 @@ fn next_history_id(created_at_ms: u64, entries_len: usize) -> String {
 pub fn record_entry(
     request: RecordHistoryEntryRequest,
 ) -> Result<TranscriptionHistoryEntry, String> {
-    record_entry_with_work_mode(request, None)
+    record_entry_with_work_mode(request, None, None)
 }
 
+/// `named_language` IS A PARAMETER AND NOT A REQUEST FIELD (ADR 0188), because
+/// it is not a property of the record: nothing stores it, the entry has no field
+/// for it, and it exists only long enough to reach the ledger contribution this
+/// funnel writes on its way out. Putting it on the request would have added a
+/// line to eighteen literal constructions to carry a value seventeen of them
+/// have no opinion about.
 fn record_entry_with_work_mode(
     request: RecordHistoryEntryRequest,
     work_mode: Option<TextProfileWorkMode>,
+    named_language: Option<String>,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
@@ -538,8 +589,24 @@ fn record_entry_with_work_mode(
             credited: mode_credits_typing(entry.effective_mode.as_ref()),
             /* MEASURED ON THE TEXT, NEVER READ OFF `entry.language` (ADR 0180),
                which is the configured hint and would count how often a dropdown
-               was changed. */
-            language: super::language_detect::detect(delivered),
+               was changed.
+
+               AND ON THE TEXT THAT WAS SPOKEN (ADR 0188). The delivered text is
+               the wrong one in three modes: Translate delivers the language you
+               asked for, Agent and Prompt Enhance whatever the model wrote in.
+               The raw transcript is what you SAID, which is what the tile
+               claims to count; it falls back to the delivered text only where
+               the record kept no raw one. */
+            language: contributed_language(
+                named_language,
+                entry
+                    .raw_transcript
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|raw| !raw.is_empty())
+                    .unwrap_or(delivered),
+                entry.effective_mode.as_ref(),
+            ),
         }) {
             super::runtime_log::record(format!(
                 "[WordScript] Activity ledger write failed error={error}"
@@ -886,6 +953,8 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 speech_seconds: None,
             },
             Some(app_config.resolved_active_text_profile_work_mode()),
+            // Nothing was transformed, so nothing was named.
+            None,
         )?
     } else {
         let insert_result = insert_transcription_from_legacy(
@@ -903,7 +972,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
            row states rather than sets — it resolves through the same chat model
            Agent, Translate and Prompt Enhance use and adds no setting of its
            own — so it has no override until that row is drawn (ADR 0094). */
-        let title = super::transcript_store::title_for(
+        let naming = super::transcript_store::describe(
             &transformed_text,
             &app_config.job_provider(JobKey::Assistant).provider,
             &app_config.chat_model_for_job(JobKey::Assistant),
@@ -917,7 +986,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             transformed,
             &insert_result,
             Some(retry_mode.clone()),
-            title,
+            naming,
             // A retry re-transcribes audio an earlier session captured. The
             // capture measurement belongs to that session's record and is not
             // copied forward onto a run that never made a capture — and neither
@@ -976,8 +1045,10 @@ pub fn history_entry_from_insert_result(
     // The mode the transform ran in, where the caller resolved one. `None` on
     // the paths that never consulted the mode router.
     effective_mode: Option<ProcessingMode>,
-    // What the model called it (ADR 0077), or `None` for the first words.
-    title: Option<String>,
+    // What the naming call answered (ADR 0077, ADR 0188): the file's name, or
+    // `None` for the first words, and the language of the text, or `None` for
+    // the offline detector.
+    naming: super::transcript_store::TranscriptNaming,
     // What the capture measured about itself — integrity (ADR 0079), input
     // level, and the speech clock (ADR 0177). `CaptureFacts::none()` on a retry,
     // which has no capture of its own.
@@ -1007,7 +1078,7 @@ pub fn history_entry_from_insert_result(
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
-            title,
+            title: naming.title,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -1039,6 +1110,7 @@ pub fn history_entry_from_insert_result(
             turnaround_ms,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
+        naming.language,
     )
 }
 
@@ -1049,7 +1121,8 @@ pub fn record_insert_failure(
     transformed: NativeTransformResult,
     error: String,
     effective_mode: Option<ProcessingMode>,
-    title: Option<String>,
+    // The naming call's two answers (ADR 0188), as everywhere else.
+    naming: super::transcript_store::TranscriptNaming,
     // What the capture measured about itself, carried as one (ADR 0177).
     capture: CaptureFacts,
 ) -> Result<TranscriptionHistoryEntry, String> {
@@ -1065,7 +1138,7 @@ pub fn record_insert_failure(
             language: optional_non_empty(&app_config.language),
             active_profile: app_config.active_text_profile_label(),
             effective_mode,
-            title,
+            title: naming.title,
             provider_profile: local_history.provider_profile,
             local_prompt_strength: local_history.local_prompt_strength,
             local_prompt_carry: local_history.local_prompt_carry,
@@ -1094,6 +1167,7 @@ pub fn record_insert_failure(
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
+        naming.language,
     )
 }
 
@@ -1154,6 +1228,8 @@ pub fn record_transcription_failure(
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
+        // Nothing was transcribed, so there is no language to name.
+        None,
     )
 }
 
@@ -1209,6 +1285,8 @@ pub fn record_empty_result(
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
+        // An empty result has no text, so nothing to name and no language.
+        None,
     )
 }
 
@@ -1585,6 +1663,99 @@ mod tests {
         set_history_policy_override_for_tests(DEFAULT_HISTORY_LIMIT, 90);
         reset_store_for_tests();
         path
+    }
+
+    /// ADR 0188. The naming call reaches what the trigrams must refuse — five
+    /// words of English are a Hungarian coin flip to a trigram model and are
+    /// obvious to a language one — so where it answered, it answers.
+    #[test]
+    fn a_named_language_wins_over_the_detector_and_a_missing_one_falls_back_to_it() {
+        assert_eq!(
+            contributed_language(
+                Some("EN ".to_string()),
+                "Whats up my fellow American",
+                Some(&ProcessingMode::Cleanup),
+            )
+            .as_deref(),
+            Some("en"),
+        );
+
+        /* Nothing named it — offline, no key, a timeout, a `??`. The detector
+           reads the text, which is the guarantee ADR 0180 exists for. */
+        assert_eq!(
+            contributed_language(
+                None,
+                "Ich habe heute den ganzen Vormittag an der neuen Auswertung gearbeitet.",
+                Some(&ProcessingMode::Cleanup),
+            )
+            .as_deref(),
+            Some("de"),
+        );
+
+        /* And where neither instrument can answer, the run is in no bucket at
+           all — a refusal rather than a gap. */
+        assert_eq!(
+            contributed_language(None, "Removing", Some(&ProcessingMode::Cleanup)),
+            None,
+        );
+    }
+
+    /// The floor under a named language: a model never refuses, so it would name
+    /// one for `Ja` and for `Removing`, and a counter that tallies interjections
+    /// drifts toward whatever short exclamations look like.
+    #[test]
+    fn a_named_language_needs_more_than_a_word_or_two() {
+        assert_eq!(
+            contributed_language(
+                Some("de".to_string()),
+                "Ja",
+                Some(&ProcessingMode::Cleanup),
+            ),
+            None,
+        );
+        assert_eq!(
+            contributed_language(
+                Some("de".to_string()),
+                "Ja genau das",
+                Some(&ProcessingMode::Cleanup),
+            )
+            .as_deref(),
+            Some("de"),
+        );
+    }
+
+    /// The three modes whose output is not the reader's own language. The tile
+    /// asks which languages you DICTATE in, and the naming call was shown the
+    /// file it was naming — so its answer is discarded and the spoken text is
+    /// what gets measured.
+    #[test]
+    fn a_translating_or_generating_mode_reports_what_was_spoken() {
+        let spoken = "Ich habe heute den ganzen Vormittag an der neuen Auswertung gearbeitet.";
+        for mode in [
+            ProcessingMode::Translate,
+            ProcessingMode::Agent,
+            ProcessingMode::PromptEnhance,
+        ] {
+            assert_eq!(
+                contributed_language(Some("en".to_string()), spoken, Some(&mode)).as_deref(),
+                Some("de"),
+                "{mode:?} must not report the language it delivered",
+            );
+        }
+
+        /* Every other mode delivers the language it was given, so the model's
+           answer about the delivered text is an answer about the spoken one. */
+        for mode in [
+            ProcessingMode::Cleanup,
+            ProcessingMode::Verbatim,
+            ProcessingMode::Rewrite,
+        ] {
+            assert_eq!(
+                contributed_language(Some("en".to_string()), spoken, Some(&mode)).as_deref(),
+                Some("en"),
+                "{mode:?} keeps the language it was spoken in",
+            );
+        }
     }
 
     #[test]
@@ -2121,7 +2292,7 @@ mod tests {
                 clipboard_restore: NativeClipboardRestoreStatus::NotAttempted,
             },
             None,
-            None,
+            super::super::transcript_store::TranscriptNaming::default(),
             CaptureFacts::none(),
             None,
         )

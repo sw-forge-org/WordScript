@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVITY_STEPS,
   ACTIVITY_WEEKS,
   SAVED_WINDOW_DAYS,
   TYPING_BASELINE_WPM,
@@ -12,6 +13,7 @@ import {
   ledgerTimeSaved,
   ledgerMedianTurnaround,
   ledgerMedianWpm,
+  ledgerTopLanguageShare,
   ledgerTotals,
   type ActivityLedger,
   type LedgerDay,
@@ -133,10 +135,10 @@ describe("the ramp", () => {
 
   it("lights every threshold in order", () => {
     expect(activityStep(1)).toBe(1);
-    expect(activityStep(2)).toBe(1);
-    expect(activityStep(3)).toBe(2);
-    expect(activityStep(6)).toBe(3);
-    expect(activityStep(11)).toBe(4);
+    expect(activityStep(14)).toBe(1);
+    expect(activityStep(15)).toBe(2);
+    expect(activityStep(60)).toBe(3);
+    expect(activityStep(150)).toBe(4);
     expect(activityStep(400)).toBe(4);
   });
 
@@ -144,6 +146,26 @@ describe("the ramp", () => {
     /* The whole reason the thresholds are fixed: one dictation is the dimmest
        lit step whether or not some other day had forty. */
     expect(activityStep(1)).toBe(1);
+  });
+
+  /**
+   * ADR 0187. The ramp topped out at eleven dictations, and the first full day
+   * this product measured held 104 — a day its owner called light. A scale whose
+   * every real value is the maximum is not a scale.
+   */
+  it("keeps a heavy day short of the brightest step", () => {
+    /* The measured Sunday: a lot, and not the top of anybody's range. */
+    expect(activityStep(104)).toBe(3);
+    /* A morning's worth is lit and is not a heavy day. */
+    expect(activityStep(11)).toBe(1);
+    expect(activityStep(40)).toBe(2);
+  });
+
+  /* The floor is the one threshold that may not move: below it the cell is
+     unlit, and an unlit cell says nothing happened. */
+  it("lights a day that holds a single dictation", () => {
+    expect(ACTIVITY_STEPS[0]).toBe(1);
+    expect(activityStep(1)).toBeGreaterThan(0);
   });
 });
 
@@ -416,5 +438,25 @@ describe("the languages, measured on the text (ADR 0180)", () => {
     expect(
       ledgerLanguages(ledger({}, [], [], undefined, { languages: { de: 0 } })),
     ).toEqual([]);
+  });
+
+  /* ADR 0182. The tile's own figure counts the languages; the share says how
+     much of the record the first of them is, which is the reading a `+2` never
+     gave. */
+  it("measures the top language against the runs that WERE measured", () => {
+    const languages = ledgerLanguages(
+      ledger({ [key(0)]: row() }, [], [], undefined, { languages: { de: 30, en: 4, sv: 1 } }),
+    );
+
+    /* 30 of 35, and 35 is deliberately not the dictation count: a run whose
+       text was too short to be sure of is in no bucket at all, and dividing by
+       the day count would report a share that falls whenever somebody dictates
+       a sentence. */
+    expect(ledgerTopLanguageShare(languages)).toBeCloseTo(30 / 35, 10);
+  });
+
+  it("has no share to give where nothing was measured", () => {
+    expect(ledgerTopLanguageShare([])).toBeNull();
+    expect(ledgerTopLanguageShare([{ code: "de", count: 0 }])).toBeNull();
   });
 });

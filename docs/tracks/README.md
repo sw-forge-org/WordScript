@@ -45,16 +45,28 @@ contents of the directory.
   retention, and the meeting behind roadmap gate 3. **Named for the object and
   not for meetings** — the meeting is one origin of five and the only gated one.
   Both the orientation page and the sequence.
-- [`home-activity.md`](home-activity.md) — opened 2026-08-16, nothing built.
-  Home opens on a drawing of a keyboard, and an instruction is read exactly
-  once. Its opening block becomes either an activity calendar or four counter
-  tiles, on the same dot-matrix palette as the readout, with the reader
-  choosing. The decisions are made and are on the page; Stage A is unblocked in
-  full, Stage B is four things other tracks owe. Both the orientation page and
-  the sequence.
+- [`home-activity.md`](home-activity.md) — opened 2026-08-16. Home opens on a
+  drawing of a keyboard, and an instruction is read exactly once. Its opening
+  block became either an activity calendar or four counter tiles, on the same
+  dot-matrix palette as the readout, with the reader choosing. **Stage A is
+  closed, A1 to A11.** Stage B is four things other tracks owe, three still
+  open. **Stage C opened 2026-08-17 from an owner brief and is unblocked in
+  full** — the calendar's left arrow and two marker days, Home's turnaround unit
+  and its standing-facts line, and the dictation list Home and History share.
+  Two of its rows reverse a standing ADR and say so. Both the orientation page
+  and the sequence.
 - [`activation-gestures.md`](activation-gestures.md) — open, nothing built. Why
   one set of shortcut defaults cannot serve three activation modes, and the
   decisions still owed.
+- [`v1-release.md`](v1-release.md) — opened 2026-08-17. **A measuring
+  instrument, not a build queue.** One question: can somebody who did not build
+  WordScript get it, install it and dictate with it. Thirteen gates with a state,
+  a last-measured date and the command that re-reads each one — three of them
+  measured as *not started* rather than assumed, and three that the runbook's
+  own gate list does not carry at all. The gate list moves here from
+  [`../RELEASE_RUNBOOK.md`](../RELEASE_RUNBOOK.md), which now links to it. **One
+  gate it closes with its own hands**: Developer Mode, the runtime preview
+  filter behind one registry. Both the orientation page and the sequence.
 
 ## Convention
 

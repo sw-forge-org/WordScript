@@ -99,7 +99,8 @@ export {
   CELL_SPACE,
   clockOf,
   readableDay,
-  WINDOW_NOTE,
+  readableStart,
+  windowNote,
 } from "./ActivityCalendar";
 
 /* ── The icon set, the orchestrator's body, the provider marks — Leg 2b ── */
@@ -116,6 +117,7 @@ export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
 export { EditorPanel, ConfirmPanel, FlagPanel } from "./EditorPanel";
 export type { EditorFieldSpec, EditorIssue } from "./EditorPanel";
 export { TranscriptRow } from "./TranscriptRow";
+export { UndoNotice } from "./UndoNotice";
 export { OwedList, Owed } from "./Owed";
 export { Log, Diff, DiffPane, DiffMark } from "./Log";
 export {

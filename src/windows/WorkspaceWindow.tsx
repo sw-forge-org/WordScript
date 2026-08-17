@@ -18,14 +18,17 @@ import { runtimeDefault } from "@/lib/modelCatalogue";
 import {
   DEFAULT_PROVIDER_ID,
   drawnNameFor,
+  laneForProviderId,
   SELF_HOSTED_PROVIDER_ID,
 } from "@/lib/providerSeam";
+import { LANE_LABEL } from "@/screens/data";
 import { useColorScheme, type ColorScheme } from "@/hooks/useColorScheme";
 import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useNavRail } from "@/hooks/useNavRail";
 import { useProvider } from "@/hooks/useProvider";
 import { useRuntime } from "@/hooks/useRuntime";
 import {
+  profileSwitchLocked,
   resolveActiveTextProfile,
   resolveJobProvider,
   textProfileInitials,
@@ -282,7 +285,10 @@ export default function WorkspaceWindow() {
     setVisitedViews((seen) => (seen.includes(view) ? seen : [...seen, view]));
   }, [view]);
 
-  const sessionActive = state.status === "recording" || state.status === "processing";
+  /* ONE PREDICATE, THREE SURFACES (ADR 0197). Profiles refuses the same switch
+     for the same reason now, so "recording or processing" is derived in
+     `lib/textProfiles` rather than spelled here and again there. */
+  const sessionActive = profileSwitchLocked(state);
 
   /* THE STRIP'S THREE FACTS, and every one is read rather than asserted. */
   const readiness = state.error
@@ -360,12 +366,31 @@ export default function WorkspaceWindow() {
      above for the chip, which folded every cloud vendor onto `groq`. Two
      derivations of one fact, side by side on one line, disagreeing — the strip
      naming OpenAI while the chip beside it reported the Groq key. */
-  const lane =
+  /* THE LANE IS ITS OWN FACT NOW, AND THAT IS THE POINT (ADR 0196). This line
+     read `Groq cloud · llama-3.3-70b`, which welds two independent answers into
+     one token: WHERE the work runs and WHO does it. They move independently —
+     the same vendor exists on more than one lane, and the same lane holds
+     several vendors — so a reader scanning for "am I on the machine or on the
+     network" had to parse a vendor name to find out, and on the two lanes where
+     the vendor IS the lane the word `cloud` simply was not there to look for.
+
+     THE NAME COMES FROM `LANE_LABEL` AND IS NOT SPELLED HERE. That map is the
+     one list of what a lane is called on a surface (ADR 0160), and a fourth
+     spelling of `Your server` along the one edge of the window that is never
+     scrolled away is exactly the drift ADR 0123 forbids. */
+  const lane = LANE_LABEL[laneForProviderId(connectionProvider)];
+  /* WHAT IS ANSWERING, ON THAT LANE. On Cloud that is a vendor and a model,
+     because Cloud holds several vendors; on the other two the lane already
+     named the vendor — `Your server` IS the provider — so restating it would
+     print the same word twice with a dot between. `preview` stays on the local
+     row: the product does not offer that lane and says so wherever it comes up
+     (ADR 0067). */
+  const engine =
     connectionProvider === "local"
-      ? `Local runtime · ${form.local_model} · preview`
+      ? `${form.local_model} · preview`
       : connectionProvider === SELF_HOSTED_PROVIDER_ID
-        ? `Your server · ${form.self_hosted_model || "no model id"}`
-        : `${connectionName} cloud · ${form.model}`;
+        ? form.self_hosted_model || "no model id"
+        : `${connectionName} · ${form.model}`;
   const work = activeProfile.work_mode;
   const target = work?.insert_behavior === "clipboard_only" ? "Clipboard only" : "Insert at cursor";
   const mode = work?.processing_mode ?? "auto";
@@ -464,7 +489,7 @@ export default function WorkspaceWindow() {
             tone={readiness.tone}
             label={readiness.label}
             title={readiness.title}
-            facts={[lane, target]}
+            facts={[lane, engine, target]}
           />
         </div>
 

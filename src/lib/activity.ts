@@ -86,8 +86,24 @@ export const ACTIVITY_WEEKS = 26;
  *  busier — the same two dictations are step 4 one week and step 1 the next, and
  *  the reader learns nothing they can carry. Worse, a history holding exactly
  *  one dictation would paint it the brightest step, which reads as a heavy day.
- *  Fixed steps make the colour an absolute claim about a day. */
-export const ACTIVITY_STEPS = [1, 3, 6, 11];
+ *  Fixed steps make the colour an absolute claim about a day.
+ *
+ *  AND THE SCALE WAS AN ORDER OF MAGNITUDE OFF (ADR 0187). It stood at
+ *  `[1, 3, 6, 11]`, which is a ramp for somebody who dictates a handful of notes
+ *  a week. The first day this product measured in full ran to 104 dictations and
+ *  6,065 words — and the owner called it a LIGHT one, on a Sunday. Every step
+ *  above the first was therefore reached before breakfast, every real day painted
+ *  the brightest colour, and a ramp whose every value is the maximum is a ramp
+ *  that says nothing. What the four steps name now:
+ *
+ *    1 — you dictated  ·  15 — a working session
+ *   60 — a heavy day   ·  150 — an exceptional one
+ *
+ *  THE FIRST STEP STAYS AT ONE AND MAY NEVER RISE. An unlit cell asserts that
+ *  nothing was dictated that day; raising the floor would spend that claim on
+ *  days somebody actually worked, which is the one thing this grid must not
+ *  say. */
+export const ACTIVITY_STEPS = [1, 15, 60, 150];
 
 /** A day, as the calendar and its tooltip need it.
  *
@@ -182,9 +198,17 @@ export interface LedgerDay {
 }
 
 export interface ActivityLedger {
-  /** `YYYY-MM-DD` of the first row ever written — the closest thing to an
-   *  install date this product has. It survives the prune (ADR 0176). */
+  /** `YYYY-MM-DD` of the first row ever written. NOT the install date — it is
+   *  the first day somebody dictated, which on a machine installed in March and
+   *  first used in August is five months late. */
   started_on: string | null;
+  /** `YYYY-MM-DD` of the day this reader first installed WordScript (ADR 0190).
+   *
+   *  `null` IS A REAL ANSWER AND NOT A GAP. On an installation that predates the
+   *  field there may be nothing honest to put here, and a fabricated date is a
+   *  claim the reader can check and find wrong. A missing marker costs nothing;
+   *  a wrong one costs the display its credibility. */
+  installed_on?: string | null;
   /** Every day that has aged out of `days`, summed. Why a total can promise
    *  never to fall: the row leaves the file and its figures do not. */
   retired?: LedgerDay;
@@ -235,6 +259,121 @@ export function ledgerBuckets(ledger: ActivityLedger | null): Map<string, Activi
   }
 
   return days;
+}
+
+/**
+ * THE YEARS THE CALENDAR MAY OFFER, NEWEST FIRST (ADR 0183).
+ *
+ * DERIVED FROM THE DAY ROWS AND NOT FROM `started_on`, and the difference is the
+ * whole point. The ledger keeps 800 day rows and RETIRES the rest into the
+ * totals (ADR 0176): the figures survive, the days do not. A year offered on the
+ * strength of an install date would therefore draw as a grid of unlit
+ * circles — which asserts *you dictated on none of these days* about days the
+ * record can no longer speak for at all, and that is the one claim this display
+ * is not allowed to make.
+ *
+ * A year with rows is a year with something to draw. A year with none is absent,
+ * whether that is because it was pruned or because it never happened; the line
+ * under the grid names the install date, which is where the difference shows.
+ */
+export function ledgerYears(ledger: ActivityLedger | null): number[] {
+  if (!ledger) return [];
+  const years = new Set<number>();
+  for (const [key, row] of Object.entries(ledger.days)) {
+    if (!row || row.dictations <= 0) continue;
+    const year = Number(key.slice(0, 4));
+    if (Number.isFinite(year) && year > 0) years.add(year);
+  }
+  return [...years].sort((left, right) => right - left);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MARKERS — A DAY WITH A NAME RATHER THAN A COUNT (ADR 0189).
+
+   The calendar had exactly one kind of day until now: a day with a number
+   behind it, painted somewhere on a five-step ramp. A marker is the other kind
+   — a day that matters because of what happened to the PRODUCT rather than
+   because of how much was dictated on it.
+
+   THE ONE RULE THAT GOVERNS ALL OF THIS: A MARKER NEVER JOINS THE RAMP. It
+   carries no count, so painting it as a lit cell would be a figure the runtime
+   never produced — which is the invented reading ADR 0161 forbids, on the one
+   display whose whole argument is that an unlit circle asserts something. It
+   gets its own colour, its own legend entry and its own tooltip line, and the
+   day's own step is decided by the day's own dictations and by nothing else.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** The day WordScript was published on GitHub — the product's own beginning,
+ *  and the same date on every machine that will ever run it.
+ *
+ *  HARDCODED, DELIBERATELY. It is a fact about the project rather than about
+ *  this installation, so there is nothing for the runtime to measure and no
+ *  file for it to come out of. */
+export const PUBLICATION_DAY = "2026-02-23";
+export const PUBLICATION_LABEL = "WordScript Initiation";
+
+/** The name the install marker carries.
+ *
+ *  IT SAYS *WORDSCRIPT* AND NOT *THIS MACHINE*, and that word is load-bearing
+ *  (ADR 0190). The ledger merges across machines by earliest-wins, so importing
+ *  an archive from an older machine moves this date back — which is correct for
+ *  "when you first installed WordScript" and wrong for "when this machine got
+ *  it". The merge rule picked the meaning; the label has to use the same one. */
+export const INSTALL_LABEL = "WordScript installed";
+
+/** A day the calendar names. */
+export interface ActivityMarker {
+  /** `YYYY/M/D`, the heat map's own key. */
+  date: string;
+  label: string;
+}
+
+/**
+ * THE DAYS THIS CALENDAR NAMES, keyed the way the cells are.
+ *
+ * Two of them at most: the publication, which every installation shares, and
+ * the day this reader installed the product, which most have and some cannot.
+ * An installation whose ledger carries no `installed_on` draws one marker
+ * instead of two — see that field's own note on why a fabricated date is worse
+ * than a missing one.
+ *
+ * The two collapse into one entry when they fall on the same day, because a
+ * reader who installed WordScript the day it was published has one anniversary
+ * and not two, and two circles cannot share a cell.
+ */
+export function activityMarkers(ledger: ActivityLedger | null): Map<string, ActivityMarker> {
+  const markers = new Map<string, ActivityMarker>();
+  const add = (iso: string | null | undefined, label: string) => {
+    /* A DATE THAT WILL NOT PARSE NAMES NO DAY. `ledgerKeyToDayKey` hands back
+       what it was given when it cannot read it, so an unparsed string would
+       become a marker keyed on nonsense — present in the legend, attached to no
+       cell, and impossible to find. */
+    const [year, month, day] = (iso ?? "").split("-").map(Number);
+    if (!year || !month || !day) return;
+    const date = ledgerKeyToDayKey(iso!);
+    const standing = markers.get(date);
+    markers.set(date, {
+      date,
+      label: standing ? `${standing.label} · ${label}` : label,
+    });
+  };
+
+  add(PUBLICATION_DAY, PUBLICATION_LABEL);
+  add(ledger?.installed_on ?? null, INSTALL_LABEL);
+  return markers;
+}
+
+/** The years a marker falls in, so the picker can offer one the ledger has no
+ *  day rows for (ADR 0189). A 2026 publication date is otherwise unreachable on
+ *  a machine installed in 2027 — the marker exists, the year does not, and the
+ *  calendar can never be pointed at it. */
+export function markerYears(markers: Map<string, ActivityMarker>): number[] {
+  const years = new Set<number>();
+  for (const key of markers.keys()) {
+    const year = Number(key.split("/")[0]);
+    if (Number.isFinite(year) && year > 0) years.add(year);
+  }
+  return [...years].sort((left, right) => right - left);
 }
 
 /** One word a minute per bucket, matching `RATE_BUCKET_WPM` in the runtime. The
@@ -467,4 +606,25 @@ export function ledgerLanguages(
     .filter(([code, count]) => code.trim().length > 0 && count > 0)
     .map(([code, count]) => ({ code, count }))
     .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code));
+}
+
+/**
+ * HOW MUCH OF THE RECORD THE MOST-USED LANGUAGE IS — a share of the dictations
+ * that were MEASURED, never of all of them.
+ *
+ * The denominator is the only thing to get right here, and it is not
+ * `dictations`. A run whose text was too short to be sure of is in no language
+ * bucket at all (ADR 0180), so dividing by the day count would report a share
+ * that falls whenever somebody dictates a sentence — the language did not
+ * change, the measurement simply had nothing to read. Against the measured runs
+ * the figure answers the question the tile's own count cannot: of the ones we
+ * could name, how many were this one.
+ */
+export function ledgerTopLanguageShare(
+  languages: { code: string; count: number }[],
+): number | null {
+  if (languages.length === 0) return null;
+  const measured = languages.reduce((sum, language) => sum + language.count, 0);
+  if (measured <= 0) return null;
+  return languages[0].count / measured;
 }

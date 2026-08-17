@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WorkspaceWindow from "./WorkspaceWindow";
 import { createAppConfig } from "../test/factories";
+import { LANE_LABEL } from "@/screens/data";
 
 const CONFIG = createAppConfig();
 
@@ -217,8 +218,28 @@ describe("WorkspaceWindow", () => {
     const { container } = render(<WorkspaceWindow />);
     const strip = container.querySelector(".ws-win-foot");
     expect(strip).toHaveTextContent("Ready");
-    expect(strip).toHaveTextContent(`Groq cloud · ${CONFIG.model}`);
+    /* THE LANE IS ITS OWN FACT AND THE VENDOR IS ANOTHER (ADR 0196). It read
+       `Groq cloud · llama…`, which welds where the work runs to who does it —
+       two answers that move independently, in one token a reader has to parse a
+       vendor name out of to find the lane. */
+    /* The strip writes its own `·` between facts and the caller writes none, so
+       the lane and the vendor are two entries here rather than one string with a
+       separator in it — which is the whole change. */
+    expect(strip).toHaveTextContent(`Cloud·Groq · ${CONFIG.model}`);
     expect(strip).toHaveTextContent("Insert at cursor");
+  });
+
+  /** The lane's name comes from `LANE_LABEL` (ADR 0160) rather than from a
+   *  fourth spelling of it along this edge — one list per fact (ADR 0123). */
+  it("spells the lane the way every other surface spells it", async () => {
+    runtimeConfig = configOn("self_hosted", { self_hosted_model: "faster-whisper-medium" });
+
+    const { container } = render(<WorkspaceWindow />);
+    await waitFor(() =>
+      expect(container.querySelector(".ws-win-foot")).toHaveTextContent(
+        LANE_LABEL["Self-hosted"],
+      ),
+    );
   });
 
   /**
@@ -237,10 +258,12 @@ describe("WorkspaceWindow", () => {
     const { container } = render(<WorkspaceWindow />);
     await waitFor(() =>
       expect(container.querySelector(".ws-win-foot")).toHaveTextContent(
-        "Your server · faster-whisper-medium",
+        "Your server·faster-whisper-medium",
       ),
     );
-    expect(container.querySelector(".ws-win-foot")).not.toHaveTextContent("Groq cloud");
+    /* The lane and the vendor are one thing on this lane, so the strip says it
+       once (ADR 0196) — and never says the cloud vendor it is not on. */
+    expect(container.querySelector(".ws-win-foot")).not.toHaveTextContent("Groq");
   });
 
   /**
@@ -256,7 +279,7 @@ describe("WorkspaceWindow", () => {
     const { container } = render(<WorkspaceWindow />);
     await waitFor(() => expect(provider.asked).toContain("openai"));
     expect(provider.asked).not.toContain("groq");
-    expect(container.querySelector(".ws-win-foot")).toHaveTextContent("OpenAI cloud");
+    expect(container.querySelector(".ws-win-foot")).toHaveTextContent("Cloud·OpenAI");
   });
 
   it("names the vendor whose key is missing rather than always naming Groq", async () => {

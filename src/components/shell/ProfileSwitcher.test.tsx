@@ -108,8 +108,17 @@ describe("ProfileSwitcher", () => {
     const combobox = screen.getByRole("combobox", { name: /switch active profile/i });
     expect(combobox).toBeDisabled();
     expect(container.querySelector(".ws-nav-profile")).toHaveAttribute("data-locked");
-    expect(screen.getByText(/locked while recording/i)).toBeInTheDocument();
-    expect(screen.getByText(/processing mode can still be changed/i)).toBeInTheDocument();
+    /* THE LINE SAYS WHAT AND THE HOVER SAYS WHY (ADR 0196). The reason was
+       printed in full under a 200 px sidebar row for the whole duration of every
+       recording — thirty words at somebody who is talking rather than reading.
+       Both facts are still here; only one of them is on screen. */
+    const lock = container.querySelector(".ws-nav-lock")!;
+    expect(lock).toHaveTextContent("Locked while recording");
+    expect(lock.textContent).not.toMatch(/processing mode can still be changed/i);
+    expect(lock).toHaveAttribute(
+      "title",
+      expect.stringMatching(/processing mode can still be changed/i),
+    );
 
     await user.click(combobox);
     expect(onChange).not.toHaveBeenCalled();
