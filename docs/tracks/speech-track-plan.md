@@ -981,6 +981,17 @@ produce, which is why nobody has reported it.
 > Cloud, Local, Your Server und Enterprise. Aber auch alles was damit
 > zusammenhängt.
 
+**And confirmed as a decision the same day, with the reason** — which is why
+this is a step rather than a question:
+
+> Ja, das muss wirklich pro Profil sein. Das ist ja auch ein großer Nutzen der
+> Profile dann letztendlich, wenn das gut umgesetzt ist.
+
+So *whether* is settled. What is open is *how*, and it is one design decision
+with two candidate shapes (below). **Start a session on
+[`connection-per-profile-kickoff.md`](connection-per-profile-kickoff.md)**,
+which is orientation; this section is the brief.
+
 **What is already per profile after ADR 0094, 0203, 0206 and 0207**: which
 vendor each job runs on, and every model — recogniser, correction, chat — plus
 the local decode block. Switching a profile switches all of it.
@@ -1001,21 +1012,53 @@ employer's profile and a private one*:
 - **The plan follows the credential** (ADR 0167), so `provider_plans` moves with
   whatever the credential does and is not a separate decision.
 
-- **Requires** — B5 and B8 for the surface, and a decision before either:
-  **what is a profile's connection?** Either the profile carries an endpoint and
-  a credential *reference* and the store grows a profile component in its key,
-  or connections become objects of their own that profiles point at. The second
-  is the shape that survives two profiles sharing one work account; the first is
-  smaller. **Not a code question** — it decides what a reader is asked to fill in
-  twice.
-- **Touches** — `AppConfig`'s self-hosted fields (a config migration, and this
-  machine's is disposable), `credential_store`'s entry user, every readiness
-  surface that asks *is there a key for this vendor*, and the Connection card.
-- **The rule it is measured against** — a lane that is offered must be operable
-  (ADR 0067). A per-profile endpoint with a machine-wide credential is a lane
-  that looks switchable and is not.
-- **Validates** — `cargo test`, `npm test`, `npm run build`, and by hand with
-  two profiles pointing at two different servers.
+**And one machine-wide read of a fact that is already per profile**, small and
+in the same family: a history record's `language` is
+`optional_non_empty(&app_config.language)` while the profile carries
+`speech.language`. It is one line and it belongs to whoever is here anyway.
+
+**What must NOT move, stated so the sweep has an edge.** These are facts about
+the machine, not about a working life, and a profile that carried them would be
+asking the reader to answer the same question once per profile:
+`local_model_dirs` (a disk), the audio device, sample rate, channels and dtype
+(hardware), the hotkeys and the overlay placement (one keyboard, one screen),
+history retention and the log level. **The test is whose fact it is**, not
+whether the field could technically be moved.
+
+- **The decision this waits on, and it is the whole of the step's design work:
+  what is a profile's connection?** Two shapes, and the difference shows up the
+  moment two profiles share one work account:
+
+  - **A. The profile carries the connection.** Endpoint, model and a credential
+    reference on the profile; the store's entry user grows a profile component
+    (`{profile}.{provider}.{role}.{kind}`). Smaller, and the reader types the
+    same company key again in the second profile that uses it.
+  - **B. A connection is an object profiles point at.** A named connection holds
+    the endpoint and owns the credential; a profile references one per job.
+    Survives sharing, and it is the shape the `Connection` card's own language
+    already implies. Costs a new object, a surface to manage it, and a migration
+    that invents names for what exists today.
+
+  **Neither is obviously right and the choice is not the agent's alone** — it
+  decides what a reader is asked to fill in twice. Bring the trade-off back with
+  a recommendation before building, and write the ADR that records it.
+- **Requires** — B5 and B8 for the surface. Nothing else blocks it.
+- **Touches** — `AppConfig`'s self-hosted fields and `provider_plans` (a config
+  migration, and this machine's config is disposable, ADR 0112);
+  `credential_store`'s `entry_user`; every readiness surface that asks *is there
+  a key for this vendor* (`provider_status`, the Connection card, Onboarding,
+  Diagnostics); and `AppConfig::speech_model`, which reads the machine-wide
+  self-hosted model today precisely because there is nowhere else to read it.
+- **The rules it is measured against** — a lane that is offered must be operable
+  (ADR 0067): a per-profile endpoint over a machine-wide credential is a lane
+  that looks switchable and is not. And ADR 0094's own argument, which this step
+  finishes rather than extends: the axis exists because two profiles are exactly
+  the place two different connections belong.
+- **Validates** — `cargo test`, `npm test`, `npm run build`, `port:diff` on
+  `models`, and by hand: two profiles, two servers, two accounts on one vendor,
+  switched between mid-session. **A test that a profile switch moves the
+  credential**, because that is the sentence the whole step exists for and the
+  one nothing checks today.
 
 ## Stage C — capture
 
