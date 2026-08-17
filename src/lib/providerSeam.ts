@@ -86,6 +86,13 @@ export const SELF_HOSTED_PROVIDER_ID = "self_hosted";
  */
 export const DEFAULT_PROVIDER_ID = "groq";
 
+/** The vendor that is this machine, mirroring `core::providers::LOCAL_PROVIDER_ID`.
+ *
+ *  Named because two rules turn on it and neither is about a lane: the local
+ *  recogniser is a file rather than a served id (ADR 0211), and the lane
+ *  authenticates against nothing, so it stores no credential (ADR 0105). */
+export const LOCAL_PROVIDER_ID = "local";
+
 export const RUNTIME_IDS: Record<string, string> = {
   Groq: "groq",
   OpenAI: "openai",
@@ -473,6 +480,101 @@ export function selectableProviderNames(lane: LaneName, answers: RuntimeAnswers)
       return Boolean(id && answers.registered?.some((row) => row.provider === id));
     })
     .map((provider) => provider.name);
+}
+
+/** One account as a job row may offer it: what it is called, whose it is, and
+ *  whether picking it would produce a job that runs. */
+export type AccountChoice = {
+  /** The connection id, which is what a job override stores. */
+  id: string;
+  label: string;
+  /** The vendor's runtime id, and its drawn name where this build has one. */
+  provider: string;
+  drawnName: string;
+  operable: boolean;
+  /** Why not, where not — the sentence the option carries instead of a guess. */
+  reason?: string;
+};
+
+/** The accounts one vendor holds, under the lane that vendor belongs to. */
+export type AccountGroup = { lane: LaneName; drawnName: string; accounts: AccountChoice[] };
+
+/**
+ * EVERY ACCOUNT ON THIS MACHINE, GROUPED LANE → PROVIDER → ACCOUNT (ADR 0211).
+ *
+ * **The list a job row picks from, and it is not scoped to a lane.** The config
+ * has stored a connection per job since ADR 0094's axis met ADR 0208's object,
+ * and a connection carries its own vendor — so *dictation on Cloud, cleanup on
+ * Local, the assistant on your own server* is a state the config accepts. What
+ * forbade it was this list: the surface offered the vendors of ONE lane, so a
+ * cross-lane override was storable and unpickable. Grouping is what the lane is
+ * for here; it stopped being a mode.
+ *
+ * **Operability is per account and per role** (ADR 0067), because that is what
+ * the reader is about to commit to: a vendor with no adapter, a lane the product
+ * withholds, or a vendor that does not serve this job's role is offered with the
+ * reason attached rather than silently dropped — dropping it would make an
+ * account the reader can see in the inventory vanish from the row that would use
+ * it, with nothing saying why.
+ *
+ * A vendor this build has no drawn name for keeps its stored id as the label
+ * rather than being hidden (ADR 0127): the account exists, the reader can see
+ * it, and a group with no name is still better than a job whose account is
+ * unnameable.
+ */
+export function accountChoices(
+  config: AppConfig,
+  role: ProviderRole,
+  answers: RuntimeAnswers,
+  /** The file this picker is about to send, where there is one (B7, ADR 0129).
+   *  A vendor too small for THIS file is refused like one with no adapter and
+   *  unlike one with no key: a key can be added and the file will not shrink. It
+   *  is never rerouted around — the option greys, says why, and the reader
+   *  picks. */
+  constraint?: { fileBytes: number | null; capacities: Record<string, UploadCapacity> },
+): AccountGroup[] {
+  const groups: AccountGroup[] = [];
+
+  for (const account of resolveConnections(config)) {
+    const drawnName = drawnNameFor(account.provider) ?? account.provider;
+    const answer = constraint
+      ? resolveUploadAnswer(
+          drawnName,
+          role,
+          answers,
+          constraint.fileBytes,
+          constraint.capacities[account.provider],
+        )
+      : resolveProviderAnswer(drawnName, role, answers);
+    const choice: AccountChoice = {
+      id: account.id,
+      label: account.label || drawnName,
+      provider: account.provider,
+      drawnName,
+      /* PENDING IS NOT INOPERABLE. The status read is outstanding, which claims
+         nothing about the vendor — and a select that greys its options until a
+         keyring read comes back is a control that looks broken on every open. */
+      operable: answer.operable || answer.reason.kind === "pending",
+      reason:
+        !answer.operable && answer.reason.kind !== "pending"
+          ? answer.reason.sentence
+          : undefined,
+    };
+
+    const lane = laneForProviderId(account.provider);
+    const group = groups.find(
+      (entry) => entry.lane === lane && entry.drawnName === drawnName,
+    );
+    if (group) group.accounts.push(choice);
+    else groups.push({ lane, drawnName, accounts: [choice] });
+  }
+
+  /* LANES IN THE ORDER THE SCREEN DRAWS THEM, and vendors in the order their
+     accounts were created. The first is the reader's mental order — the segment
+     above the list has read `Cloud · Local · Your server · Enterprise` since
+     Leg 6 — and the second is the only order the config knows. */
+  const order: LaneName[] = ["Cloud", "Local", "Self-hosted", "Enterprise"];
+  return groups.sort((a, b) => order.indexOf(a.lane) - order.indexOf(b.lane));
 }
 
 /**

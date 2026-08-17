@@ -18,29 +18,36 @@ import {
   StatusBadge,
   Toggle,
 } from "@/components/shell";
-import { LANES, providerNames, type JobKey, type LaneName } from "@/screens/data";
+import { LANE_LABEL, LANES, providerNames, type JobKey, type LaneName } from "@/screens/data";
 import {
   buildProfileProvidersPatch,
+  modelSlotForJob,
   resolveActiveTextProfile,
   resolveConfigJobProvider,
+  resolveJobProvider,
   resolveProfileProviderSettings,
+  roleDefaultModel,
 } from "@/lib/textProfiles";
 import {
+  accountChoices,
   buildVendorConnectionPatch,
+  connectionById,
   credentialStateFor,
   drawnNameFor,
   NO_ANSWERS,
   resolveProviderAnswer,
   resolveUploadAnswer,
+  resolveConnections,
   roleForDrawnCapability,
   runtimeIdFor,
+  LOCAL_PROVIDER_ID,
   SELF_HOSTED_PROVIDER_ID,
   type RuntimeAnswers,
 } from "@/lib/providerSeam";
 import { useProviderSeam } from "@/hooks/useProviderSeam";
 import type { AppConfig } from "@/types/ipc";
 import { useUploadCapacity } from "@/hooks/useUploadCapacity";
-import { laneJobModels } from "@/lib/modelCatalogue";
+import { laneJobModels, vendorModels } from "@/lib/modelCatalogue";
 import type { ProviderRole, UploadCapacity } from "@/types/providers";
 import type { WorkspaceRuntime } from "@/screens/props";
 
@@ -129,6 +136,28 @@ export const Wired = createContext<{
    * shape and there is no config to write to.
    */
   setJobOverride?: (job: JobKey, drawnName: string | null) => void;
+  /**
+   * WHICH ACCOUNT ONE JOB RUNS ON, written per job (ADR 0211).
+   *
+   * **A connection id rather than a vendor's drawn name**, which is what took the
+   * lane filter off this control: an account carries its own vendor, so a job can
+   * be pointed at any account on the machine and the lane it lands in is read
+   * back off it. `setJobOverride` above named a VENDOR and had to create an
+   * account to point at; the accounts are an inventory the reader keeps now, and
+   * a job row picks from it rather than adding to it.
+   *
+   * `null` clears the override, which is the stored form of *follow the
+   * profile's account* — the absence is the value (ADR 0094).
+   */
+  setJobAccount?: (job: JobKey, connectionId: string | null) => void;
+  /**
+   * WHICH MODEL ONE JOB RUNS ON (ADR 0211).
+   *
+   * `null` clears it, and the job falls back to the profile's slot for its
+   * family (`modelSlotForJob`). Stored beside the account rather than in the
+   * speech block, because a model id is only meaningful for a vendor.
+   */
+  setJobModel?: (job: JobKey, model: string | null) => void;
 }>({ on: false, answers: NO_ANSWERS });
 
 export function useWired() {
@@ -304,6 +333,62 @@ export function JobProviderRuntime({
     [runtime],
   );
 
+  /**
+   * WHICH ACCOUNT ONE JOB RUNS ON — an id, and no account is created to hold it
+   * (ADR 0211).
+   *
+   * `setJobOverride` above takes a vendor's drawn name and creates an account
+   * where the machine holds none, which is what a lane-scoped chip row needed.
+   * This one picks from the inventory: every account is offered, the lane is read
+   * back off the one chosen, and *dictation on Cloud, cleanup on your own server*
+   * stops being storable-but-unpickable.
+   *
+   * **THE MODEL GOES WITH THE ACCOUNT WHEN THE VENDOR CHANGES**, in the same
+   * patch. A model chosen for Groq is not a choice about OpenAI — leaving it
+   * would store a pair the resolver has to refuse (`JobProvider::named_model`)
+   * and the row would name a model the request never carries. Moving between two
+   * accounts of ONE vendor keeps it: the same vendor serves the same models.
+   */
+  const setJobAccount = useCallback(
+    (job: JobKey, connectionId: string | null) => {
+      const profile = resolveActiveTextProfile(runtime.config);
+      const axis = resolveProfileProviderSettings(profile);
+      const connections = resolveConnections(runtime.config);
+      const overrides = { ...axis.overrides };
+      const models = { ...axis.models };
+
+      const before = resolveJobProvider(profile, job, connections).provider;
+      /* Overriding to the profile's own account is not an override. Storing it
+         would freeze this job onto today's account, so the row stops following
+         one the reader changes later (ADR 0094). */
+      if (connectionId === null || connectionId === axis.default) {
+        delete overrides[job];
+      } else {
+        overrides[job] = connectionId;
+      }
+      const after = resolveJobProvider({ providers: { ...axis, overrides } }, job, connections)
+        .provider;
+      if (before !== after) delete models[job];
+
+      runtime.patch(buildProfileProvidersPatch(runtime.config, { overrides, models }));
+    },
+    [runtime],
+  );
+
+  /** WHICH MODEL ONE JOB RUNS ON (ADR 0211). `null` clears it back to the
+   *  profile's slot for the job's family, which is the absence rather than a
+   *  copy of the default written into the map. */
+  const setJobModel = useCallback(
+    (job: JobKey, model: string | null) => {
+      const axis = resolveProfileProviderSettings(resolveActiveTextProfile(runtime.config));
+      const models = { ...axis.models };
+      if (model === null || !model.trim()) delete models[job];
+      else models[job] = model.trim();
+      runtime.patch(buildProfileProvidersPatch(runtime.config, { models }));
+    },
+    [runtime],
+  );
+
   return (
     <Wired.Provider
       value={{
@@ -316,6 +401,8 @@ export function JobProviderRuntime({
         connectionId,
         setConnection,
         setJobOverride,
+        setJobAccount,
+        setJobModel,
       }}
     >
       <InertBecause.Provider value={NOT_INTEGRATED}>{children}</InertBecause.Provider>
@@ -423,6 +510,16 @@ export function Follows({
     wired && lane === "Self-hosted"
       ? { endpoint: answers.statuses[SELF_HOSTED_PROVIDER_ID]?.self_hosted_endpoint ?? null }
       : null;
+
+  /* WHERE THIS JOB RUNS, ON EVERY LANE AND OVER EVERY ACCOUNT (ADR 0211).
+     Two rows replace four lane-shaped variants: the account the job runs on, and
+     the model it runs there. What the lane used to decide — a picker on Cloud, a
+     badge on Local, a URL on Your server — is decided by the chosen ACCOUNT now,
+     which is what a lane demoted from mode to grouping means. */
+  const accountRows =
+    wired && wiredRuntime && jobKey ? (
+      <JobAccountRows jobKey={jobKey} cap={cap} hint={hint} runtime={wiredRuntime} />
+    ) : null;
 
   /* The provider row only exists where there is a provider to pick. On
      Local the choice is a file and on Self-hosted it is a URL, so offering
@@ -567,6 +664,21 @@ export function Follows({
   const withReason = (children: ReactNode) =>
     reason ? <InertBecause.Provider value={reason}>{children}</InertBecause.Provider> : children;
 
+  /* THE PRODUCT DRAWS THE TASK-FIRST PAIR; THE GALLERY KEEPS THE DRAWING
+     (ADR 0211). `accountRows` needs a config — every account on the machine, the
+     model each job names — and the gallery has none, so there it stays the four
+     lane-shaped rows the prototype drew. That is the same arrangement ADR 0127
+     made for the override literal: the drawing is the inventory of what the
+     product intends to offer, the product shows only what is stored. */
+  if (accountRows) {
+    return (
+      <CardRows>
+        <InertBecause.Provider value={null}>{accountRows}</InertBecause.Provider>
+        {extra}
+      </CardRows>
+    );
+  }
+
   return (
     <CardRows>
       {/* THE PROVIDER ROW IS THE WAY OUT OF THE REASON, so the reason may not
@@ -586,6 +698,237 @@ export function Follows({
       {withReason(modelAndKeyRows)}
       {extra}
     </CardRows>
+  );
+}
+
+/**
+ * WHERE ONE JOB RUNS AND WITH WHAT — the two cells of a task-first row, and one
+ * decision between them (ADR 0211).
+ *
+ * **Not scoped to a lane, which is the whole point.** The account picker offers
+ * every account on the machine grouped lane → provider → account, so a profile
+ * that dictates on Cloud and cleans up on its own server is a state a reader can
+ * *reach* rather than one the config merely accepts. The model then comes from
+ * the chosen account's vendor — the catalogue's rows for that vendor and this
+ * job's role, never the lane's list, because the lane's list is Groq's.
+ *
+ * **The model cell has three shapes and the account decides which**: a select
+ * where the vendor publishes rows, a typed field where it publishes none (your
+ * own server, ADR 0165), and a read-out with a door where the model is not a
+ * served id at all but a file on this machine (ADR 0211's one exception).
+ */
+function JobAccountRows({
+  jobKey,
+  cap,
+  hint,
+  runtime,
+}: {
+  jobKey: JobKey;
+  cap: "stt" | "llm";
+  hint?: ReactNode;
+  runtime: WorkspaceRuntime;
+}) {
+  const answers = useAnswers();
+  const { setJobAccount, setJobModel, open } = useContext(Wired);
+  /* THE FILE THIS ROW IS ABOUT TO SEND, WHERE THERE IS ONE (B7, ADR 0129). Off
+     the upload surfaces `fileBytes` is `null` and every account answers exactly
+     as the provider answer alone would — which is why AI Models did not move
+     when the constraint arrived, and why the account picker must carry it rather
+     than drop it: the intake renders THESE rows. */
+  const constraint = useUploadConstraint();
+  const role = roleForDrawnCapability(cap);
+  const profile = resolveActiveTextProfile(runtime.config);
+  const connections = resolveConnections(runtime.config);
+  const resolved = resolveJobProvider(profile, jobKey, connections);
+  const account = connectionById(runtime.config, resolved.connection);
+  const groups = accountChoices(runtime.config, role, answers, constraint);
+  const followed = connectionById(runtime.config, resolveProfileProviderSettings(profile).default);
+
+  const local = resolved.provider === LOCAL_PROVIDER_ID;
+  const drawn = drawnNameFor(resolved.provider) ?? resolved.provider;
+  /* WHY THIS ROW CANNOT RUN, WHERE IT CANNOT (ADR 0106, ADR 0128). The account
+     picker itself is never governed by it — a row inert because its vendor has no
+     adapter is a row whose fix IS this select, and disabling the way out with the
+     sentence explaining the problem is the trap that record exists for. The model
+     below is a choice ON the vendor and stays inert. */
+  const answer = resolveProviderAnswer(drawn, role, answers);
+  const reason =
+    !answer.operable && answer.reason.kind !== "pending" ? answer.reason.sentence : undefined;
+  /* WHETHER THE ACCOUNT THIS JOB RUNS ON CAN PAY FOR IT — stated, not editable
+     (ADR 0211). A key row of its own on a job row is a second credential editor
+     scoped to a job, which is how *Account* came to look like the thing a job
+     runs on; the credential belongs to the account, so the row says what is true
+     and points at the inventory that owns it. */
+  const credential = local ? "set" : credentialStateFor(drawn, role, answers);
+  const offered = vendorModels(resolved.provider, role === "speech" ? "speech" : "chat");
+  const roleDefault = roleDefaultModel(profile, jobKey, local);
+  /* WHAT THIS JOB WOULD RUN ON RIGHT NOW, and the two halves are not the same
+     question: `resolved.model` is what the profile stored, `effective` is what
+     the runtime would spend. They disagree exactly where a stored id belongs to
+     another vendor — a leftover from an account change — and the row has to be
+     able to say so rather than showing a value no request carries. */
+  const stale =
+    Boolean(resolved.model) && offered.length > 0 && !offered.includes(resolved.model);
+  const followsModel = !resolved.model || stale;
+
+  return (
+    <>
+      <Row
+        label="Runs on"
+        hint={
+          hint ??
+          "Any account on this machine. The lane is how they are grouped, not a mode this screen is in."
+        }
+        control={
+          <span className="ws-rowflex">
+            <SelectMark name={resolved.provider ? drawnNameFor(resolved.provider) ?? "" : ""} />
+            <Select
+              value={resolved.overridden ? resolved.connection : ""}
+              aria-label="Runs on"
+              onChange={(event) =>
+                setJobAccount?.(jobKey, event.target.value || null)
+              }
+            >
+              {/* THE ABSENCE IS THE VALUE (ADR 0094), so following is an option
+                  rather than a second control, and it names the account it
+                  follows — a row reading `Follow the profile's account` over a
+                  profile the reader cannot see from here says nothing. */}
+              <option value="">
+                {`Follow the profile · ${followed?.label ?? "no account"}`}
+              </option>
+              {groups.map((group) => (
+                <optgroup
+                  key={`${group.lane}-${group.drawnName}`}
+                  label={`${LANE_LABEL[group.lane]} · ${group.drawnName}`}
+                >
+                  {group.accounts.map((choice) => (
+                    <option
+                      key={choice.id}
+                      value={choice.id}
+                      disabled={!choice.operable}
+                      title={choice.reason}
+                    >
+                      {choice.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </Select>
+            {!resolved.provider ? (
+              <StatusBadge tone="warning">Account gone</StatusBadge>
+            ) : credential === "set" ? (
+              <StatusBadge tone="success">Key set</StatusBadge>
+            ) : credential === "missing" ? (
+              <StatusBadge tone="warning">No key</StatusBadge>
+            ) : (
+              <StatusBadge tone="plan">Not read</StatusBadge>
+            )}
+          </span>
+        }
+      />
+
+      {/* THE REASON GOVERNS THE MODEL AND STOPS THERE (ADR 0128). A model is a
+          choice ON the vendor, so a vendor with no adapter has no model to
+          choose; the account picker above is the way out of that state and is
+          never disabled by the sentence describing it. */}
+      <InertBecause.Provider value={reason ?? null}>
+      {local ? (
+        /* THE ONE PLACE A MODEL IS NOT A CHOICE ON THIS ROW (ADR 0211). It is a
+           file on this machine, and the row that installs it is the one that
+           knows whether it is there. */
+        <Row
+          label="Model"
+          hint="The file this machine has. It comes with its decode settings, so it is chosen where it is installed."
+          control={
+            <span className="ws-rowflex">
+              <StatusBadge tone="plan">{roleDefault || "base"}</StatusBadge>
+              {open && (
+                <Button
+                  variant="ghost"
+                  icon={<Icon name="arrow" />}
+                  onClick={() => open({ view: "settings", section: "models" })}
+                >
+                  On this machine
+                </Button>
+              )}
+            </span>
+          }
+        />
+      ) : offered.length === 0 ? (
+        /* YOUR OWN SERVER PUBLISHES NO LIST (ADR 0165), so this is typed. Empty
+           falls back to the id the server itself was given, which is half its
+           address and set once in the inventory. */
+        <TypedModelRow
+          jobKey={jobKey}
+          stored={resolved.model}
+          placeholder={account?.model || "faster-whisper-medium"}
+          onWrite={(next) => setJobModel?.(jobKey, next)}
+        />
+      ) : (
+        <Row
+          label="Model"
+          hint={
+            stale
+              ? `The model this row named is not one ${drawnNameFor(resolved.provider) ?? resolved.provider} serves, so the profile's ${modelSlotForJob(jobKey)} model runs instead. Pick one to change that.`
+              : `What this job runs on ${drawnNameFor(resolved.provider) ?? resolved.provider}. Following means the profile's ${modelSlotForJob(jobKey)} model.`
+          }
+          control={
+            <DrawnSelect
+              value={followsModel ? "" : resolved.model}
+              aria-label="Model"
+              onChange={(event) => setJobModel?.(jobKey, event.target.value || null)}
+            >
+              <option value="">{`Follow the profile · ${roleDefault}`}</option>
+              {offered.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </DrawnSelect>
+          }
+        />
+      )}
+      </InertBecause.Provider>
+    </>
+  );
+}
+
+/** The model id a lane with no list to offer takes: typed, committed on blur or
+ *  Enter, and empty means *the id the server itself was given* (ADR 0165). */
+function TypedModelRow({
+  jobKey,
+  stored,
+  placeholder,
+  onWrite,
+}: {
+  jobKey: JobKey;
+  stored: string;
+  placeholder: string;
+  onWrite: (next: string | null) => void;
+}) {
+  return (
+    <Row
+      /* `Model`, LIKE EVERY OTHER JOB ROW, and not `Model id` (ADR 0211). The
+         inventory's field of that name is the id the SERVER answers to — half
+         its address — and two controls sharing one label on one screen is how a
+         reader comes to believe they are one setting. Same question here as in
+         the select beside it: what does this job run on. */
+      label="Model"
+      hint="Your server publishes no list, so this is typed. Empty sends the id the server itself was given."
+      control={
+        <DrawnField
+          key={`${jobKey}-${stored}`}
+          w="190px"
+          aria-label="Model"
+          defaultValue={stored}
+          placeholder={placeholder}
+          onBlur={(event) => onWrite(event.target.value || null)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onWrite((event.target as HTMLInputElement).value || null);
+          }}
+        />
+      }
+    />
   );
 }
 

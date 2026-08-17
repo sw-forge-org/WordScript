@@ -176,6 +176,27 @@ export function runtimeDefault(slot: RuntimeDefaultSlot): string {
 }
 
 /**
+ * WHAT ONE VENDOR SERVES FOR ONE ROLE, as model ids (ADR 0211).
+ *
+ * **The list a job row's Model cell offers, and it is keyed by vendor rather
+ * than by lane.** `laneJobModels` above is the drawing's list: one lane, one
+ * job, and on `Cloud` it is Groq's rows because that is the lane the prototype
+ * drew. A job whose account is on OpenAI needs OpenAI's rows — and offering it
+ * the lane's list is how the surface came to name models the request would never
+ * carry (`JobProvider::named_model` refuses them, `openai::resolve_model`
+ * silently swaps them).
+ *
+ * Empty for a vendor with no rows, which is an answer rather than a gap: your
+ * own server publishes no list at all, so that lane's model is typed and this
+ * returning nothing is what tells the row to draw a field instead of a select.
+ */
+export function vendorModels(provider: string, role: ModelRole): string[] {
+  return CATALOGUE.models
+    .filter((row) => row.provider === provider && row.role === role)
+    .map((row) => row.model_id);
+}
+
+/**
  * How a row is installed, or nothing where it is not this build's to install.
  *
  * Throws for a slug that names no row at all, like every other accessor here —

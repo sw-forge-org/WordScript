@@ -415,9 +415,14 @@ describe("AI Models, wired", () => {
     expect(model.getAttribute("title")).not.toContain("Not integrated yet");
 
     /* And the writing jobs on the same connection are untouched by a denial
-       that is not theirs — the axis the runtime denied is speech. */
+       that is not theirs — the axis the runtime denied is speech. **A row the
+       runtime has no complaint about now carries no sentence at all** (ADR 0211):
+       the blanket *not integrated yet* was true of a screen that offered one
+       lane, and a task-first row states what IS rather than what most of the
+       screen used to be. */
     const cleanup = await modelRowOf("Cleanup");
-    expect(cleanup.getAttribute("title")).not.toContain("speech recognition");
+    expect(cleanup).not.toBeDisabled();
+    expect(cleanup.getAttribute("title") ?? "").not.toContain("speech recognition");
   });
 
   /**
@@ -1191,13 +1196,15 @@ describe("AI Models, choosing the connection", () => {
     active.providers = { default: "connection-openai", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    /* `Follow the connection · Groq` on a profile connected to OpenAI is the
-       row lying about where the job runs, and it is the sentence a user reads
-       to find that out. */
+    /* `Follow the profile · Groq` on a profile pointed at OpenAI is the row
+       lying about where the job runs, and it is the sentence a user reads to
+       find that out. **It names the ACCOUNT now** (ADR 0211): two accounts on
+       one vendor are two answers, so a row naming the vendor would be back to
+       being unable to say which of them pays. */
     const cleanup = (await screen.findByText("Cleanup")).closest(".ws-job") as HTMLElement;
-    expect(within(cleanup).getByLabelText("Provider")).toHaveValue(
-      "Follow the connection · OpenAI",
-    );
+    const runsOn = within(cleanup).getByLabelText("Runs on") as HTMLSelectElement;
+    expect(runsOn).toHaveValue("");
+    expect(runsOn.selectedOptions[0].textContent).toBe("Follow the profile · OpenAI");
   });
 });
 
@@ -1251,24 +1258,25 @@ describe("AI Models, the per-job override", () => {
     return (screen.getByText(name).closest(".ws-job") as HTMLElement) ?? screen.getByText(name);
   }
 
-  it("follows the connection where nothing is stored, though the drawing overrides", async () => {
+  it("follows the profile's account where nothing is stored, though the drawing overrides", async () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: configWith({}) })} />);
 
     /* `Upload` is one of the three rows `data.ts` draws with `override:
        "OpenAI"`. The stored answer is that it overrides nothing, and the
        product states the stored answer. */
     const upload = rowOf("Upload");
-    await waitFor(() =>
-      expect(within(upload).getByLabelText("Provider")).toHaveValue(
-        "Follow the connection · Groq",
-      ),
-    );
-    /* And the key row belongs to the override, so it is not drawn at all —
-       the row is on the connection and the connection's key is above. */
-    expect(within(upload).queryByText(/^(Set|Not set|Not read)$/)).toBeNull();
+    await waitFor(() => expect(within(upload).getByLabelText("Runs on")).toHaveValue(""));
+    const runsOn = within(upload).getByLabelText("Runs on") as HTMLSelectElement;
+    expect(runsOn.selectedOptions[0].textContent).toBe("Follow the profile · Groq");
+    /* AND NO KEY EDITOR ON A JOB ROW (ADR 0211). A credential belongs to the
+       account, so the row states whether this job can be paid for and the
+       inventory is where that is changed — a second key field scoped to a job is
+       how *Account* came to look like the thing a job runs on. */
+    expect(within(upload).queryByRole("button", { name: /Add key|Replace/ })).toBeNull();
+    expect(within(upload).getByText("Key set")).toBeInTheDocument();
   });
 
-  it("draws the override shape only for the job that stores one", async () => {
+  it("names the stored account on the row that overrides, and only that row", async () => {
     render(
       <ModelsScreen
         runtime={createWorkspaceRuntime({ active: true, config: configWith({ upload: "openai" }) })}
@@ -1276,66 +1284,70 @@ describe("AI Models, the per-job override", () => {
     );
 
     await waitFor(() =>
-      expect(within(rowOf("Upload")).getByLabelText("Provider")).toHaveValue("OpenAI"),
+      expect(within(rowOf("Upload")).getByLabelText("Runs on")).toHaveValue("connection-openai"),
     );
     /* Translate is drawn with `override: "Anthropic"` and stores nothing. */
-    expect(within(rowOf("Translate")).getByLabelText("Provider")).toHaveValue(
-      "Follow the connection · Groq",
-    );
+    expect(within(rowOf("Translate")).getByLabelText("Runs on")).toHaveValue("");
   });
 
-  it("writes the override as a runtime id and clears it rather than storing the connection", async () => {
+  it("writes the override as an account id and clears it by following again", async () => {
     const user = userEvent.setup();
     const patch = vi.fn();
-    const config = configWith({});
+    const config = configWith({ cleanup: "openai" });
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config, patch })} />);
 
-    const select = within(rowOf("Upload")).getByLabelText("Provider");
+    const select = within(rowOf("Upload")).getByLabelText("Runs on");
     await waitFor(() => expect(select).not.toBeDisabled());
-    await user.selectOptions(select, "OpenAI");
+    /* THE OPTION IS AN ACCOUNT, PICKED BY ITS OWN NAME. A vendor's name would
+       be back to *which account of theirs*, which is the question ADR 0208's
+       object exists to answer. */
+    await user.selectOptions(select, "connection-openai");
 
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
       default: CLOUD_ACCOUNT.id,
-      overrides: { upload: "connection-openai" }, models: {},
+      overrides: { cleanup: "connection-openai", upload: "connection-openai" },
+      models: {},
     });
 
-    /* *Use the default* DELETES the key. Writing the connection's id would
-       freeze the job onto today's connection (ADR 0094 — the absence is the
-       value), so the row would stop following one the user changes later. */
+    /* FOLLOWING AGAIN DELETES THE KEY. Writing the profile's own account id
+       would freeze the job onto today's account (ADR 0094 — the absence is the
+       value), so the row would stop following one the reader changes later. */
     patch.mockClear();
-    cleanup();
-    const stored = configWith({ upload: "openai" });
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: stored, patch })} />);
-    const useDefault = await within(rowOf("Upload")).findByRole("button", {
-      name: "Use the default",
-    });
-    await waitFor(() => expect(useDefault).not.toBeDisabled());
-    await user.click(useDefault);
+    const back = within(rowOf("Cleanup")).getByLabelText("Runs on");
+    await user.selectOptions(back, "");
 
-    expect(axisOf(patch.mock.calls[0][0], stored.active_text_profile_id)).toEqual({
+    expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
       default: CLOUD_ACCOUNT.id,
-      overrides: {}, models: {},
+      overrides: {},
+      models: {},
     });
   });
 
-  it("offers a vendor with no adapter, disabled, carrying its reason", async () => {
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: configWith({}) })} />);
+  it("offers an account whose vendor has no adapter, disabled, carrying its reason", async () => {
+    /* THE RULE THIS CASE HOLDS, ONE AXIS OVER (ADR 0128, ADR 0211). The list is
+       accounts now, so what stays visible-and-disabled is an ACCOUNT the reader
+       holds on a vendor this build cannot operate: deleting it would hide an
+       account they can see in the inventory, and enabling it would offer a
+       routing that cannot run. Which VENDORS exist at all is the inventory's
+       list, and it still shows every one of them. */
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({ active: true, config: configWith({ translate: "anthropic" }) })}
+      />,
+    );
 
-    const select = within(rowOf("Translate")).getByLabelText("Provider");
+    const select = within(rowOf("Translate")).getByLabelText("Runs on");
     await waitFor(() => expect(select).not.toBeDisabled());
 
-    /* THE RULE THIS CASE HOLDS: an unbuilt vendor stays visible so the screen
-       keeps showing what the product still owes, and is disabled so it cannot
-       be chosen. Deleting the option and enabling it are both wrong. */
-    const anthropic = within(select as HTMLElement).getByRole("option", { name: "Anthropic" });
+    const anthropic = within(select as HTMLElement).getByRole("option", { name: "anthropic" });
     expect(anthropic).toBeDisabled();
     expect(anthropic).toHaveAttribute("title", expect.stringContaining("no adapter"));
 
-    const openai = within(select as HTMLElement).getByRole("option", { name: "OpenAI" });
-    expect(openai).not.toBeDisabled();
+    const groq = within(select as HTMLElement).getByRole("option", { name: CLOUD_ACCOUNT.label });
+    expect(groq).not.toBeDisabled();
   });
 
-  it("keeps the provider select operable on a row that is inert", async () => {
+  it("keeps the account picker operable on a row that is inert", async () => {
     /* An override onto a vendor with no adapter: the row cannot run, and the
        fix is this very select. Disabling it with the sentence that explains
        the problem is the trap this case exists for. */
@@ -1349,14 +1361,15 @@ describe("AI Models, the per-job override", () => {
     );
 
     const row = rowOf("Translate");
-    await waitFor(() => expect(within(row).getByLabelText("Provider")).toHaveValue("Anthropic"));
-    expect(within(row).getByLabelText("Provider")).not.toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Use the default" })).not.toBeDisabled();
+    await waitFor(() =>
+      expect(within(row).getByLabelText("Runs on")).toHaveValue("connection-anthropic"),
+    );
+    expect(within(row).getByLabelText("Runs on")).not.toBeDisabled();
     /* The model row is a choice ON the vendor, so it stays inert. */
     expect(within(row).getByLabelText("Model")).toBeDisabled();
   });
 
-  it("reads the overriding job's key from the runtime instead of claiming it is set", async () => {
+  it("states the overriding job's key from the runtime instead of claiming it is set", async () => {
     /* THE DEFECT THIS CASE EXISTS FOR. The row read a literal
        `StatusBadge tone="success">Set` from Leg 6 until ADR 0128 — a green
        badge asserting a stored credential nothing had been asked about. */
@@ -1387,9 +1400,12 @@ describe("AI Models, the per-job override", () => {
     );
 
     const upload = rowOf("Upload");
-    await waitFor(() => expect(within(upload).getByText("Not set")).toBeInTheDocument());
-    expect(within(upload).queryByText("Set")).toBeNull();
-    expect(within(upload).getByRole("button", { name: "Add key" })).toBeInTheDocument();
+    await waitFor(() => expect(within(upload).getByText("No key")).toBeInTheDocument());
+    expect(within(upload).queryByText("Key set")).toBeNull();
+    /* AND THE ROW DOES NOT OFFER TO FIX IT HERE (ADR 0211): the key belongs to
+       the account, so the statement is the row's and the field is the
+       inventory's. */
+    expect(within(upload).queryByRole("button", { name: /Add key|Replace/ })).toBeNull();
   });
 });
 

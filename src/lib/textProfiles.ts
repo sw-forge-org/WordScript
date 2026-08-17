@@ -327,6 +327,63 @@ export function resolveJobProvider(
   };
 }
 
+/** Which of the profile's three stored model slots a job falls back to when it
+ *  names none of its own (ADR 0211). */
+export type ModelSlot = "speech" | "correction" | "agent";
+
+/**
+ * WHICH SLOT A JOB READS WHEN IT NAMES NO MODEL — and it is not the mapping the
+ * job's ROLE would give you (ADR 0211, ADR 0206).
+ *
+ * The three speech jobs read the recogniser. The other five are all chat jobs by
+ * role, and they split: the correction transform runs as `cleanup` or `rewrite`
+ * (`TransformPreset::correction_job`) and reads `correction_model`, while
+ * translate, prompt enhance and the assistant each name their own job through
+ * `chat_model_for` and read `agent_model`.
+ *
+ * **One place, because the surface has to name the same default the runtime will
+ * use.** A row saying *follows the profile's chat model* over a job the runtime
+ * corrects with `correction_model` is a sentence about a different value than the
+ * one that gets spent.
+ */
+export function modelSlotForJob(job: JobKey): ModelSlot {
+  switch (job) {
+    case "dictation":
+    case "meetings":
+    case "upload":
+      return "speech";
+    case "cleanup":
+    case "rewrite":
+      return "correction";
+    default:
+      return "agent";
+  }
+}
+
+/**
+ * The model this job runs on when it names none: the profile's own slot for the
+ * job's family, on the lane the job's account is on.
+ *
+ * `local` is *this job runs on the machine's own runtime*, which is a different
+ * question from which lane the screen is showing — the whole point of the axis
+ * being per job (ADR 0094).
+ */
+export function roleDefaultModel(
+  profile: Pick<TextProfile, "speech">,
+  job: JobKey,
+  local: boolean,
+): string {
+  const speech = resolveProfileSpeechSettings(profile);
+  switch (modelSlotForJob(job)) {
+    case "speech":
+      return local ? speech.local_model : speech.model;
+    case "correction":
+      return local ? speech.local_correction_model : speech.correction_model;
+    default:
+      return local ? speech.local_agent_model : speech.agent_model;
+  }
+}
+
 export function resolveProfileModesSettings(profile: Pick<TextProfile, "modes">): ProfileModesSettings {
   return cloneProfileModesSettings(profile.modes);
 }

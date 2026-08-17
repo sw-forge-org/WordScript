@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 
 import { JobProviderPicker } from "./jobProvider";
-import { createWorkspaceRuntime } from "@/test/factories";
+import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
+import type { WorkspaceRuntime } from "@/screens/props";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
@@ -92,8 +93,26 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function providerOptions(): Promise<HTMLOptionElement[]> {
-  const select = await screen.findByLabelText("Provider");
+  const select = await screen.findByLabelText("Runs on");
   return [...within(select as HTMLElement).getAllByRole("option")] as HTMLOptionElement[];
+}
+
+/**
+ * TWO ACCOUNTS, WHICH IS WHAT THE SPLIT VERDICT NEEDS TO BE VISIBLE (ADR 0211).
+ *
+ * The picker offers ACCOUNTS now rather than the lane's vendors, so *this file is
+ * too large for Groq, OpenAI takes it* is only a choice a reader can see if they
+ * hold an account on each. That is the honest version of what the vendor list
+ * implied: picking OpenAI used to create an empty account behind the reader's
+ * back, and an account with no key is not a routing.
+ */
+function twoAccounts(): WorkspaceRuntime {
+  const config = createAppConfig();
+  config.connections = [
+    { id: "connection-default", label: "Groq", provider: "groq", base_url: "", model: "", plan: "" },
+    { id: "connection-openai", label: "Private OpenAI", provider: "openai", base_url: "", model: "", plan: "" },
+  ];
+  return createWorkspaceRuntime({ config });
 }
 
 describe("the picker at the point of use", () => {
@@ -118,18 +137,16 @@ describe("the picker at the point of use", () => {
     expect(candidates.map((row) => row.provider)).toContain("openai");
   });
 
-  it("greys the vendor that cannot take this file and says why, without rerouting", async () => {
-    render(
-      <JobProviderPicker jobKey="upload" cap="stt" runtime={createWorkspaceRuntime()} fileBytes={40 * MIB} />,
-    );
+  it("greys the account that cannot take this file and says why, without rerouting", async () => {
+    render(<JobProviderPicker jobKey="upload" cap="stt" runtime={twoAccounts()} fileBytes={40 * MIB} />);
 
     await waitFor(async () => {
-      const groq = (await providerOptions()).find((option) => option.value === "Groq")!;
+      const groq = (await providerOptions()).find((option) => option.value === "connection-default")!;
       expect(groq.disabled).toBe(true);
     });
 
     const options = await providerOptions();
-    const groq = options.find((option) => option.value === "Groq")!;
+    const groq = options.find((option) => option.value === "connection-default")!;
     expect(groq.title).toContain("25 MiB");
     expect(groq.title).toContain("40 MiB");
 
@@ -137,20 +154,20 @@ describe("the picker at the point of use", () => {
        a recording to a vendor the user did not pick is a data decision wearing
        the costume of a convenience — the donor's `transcriptionFallback.js`
        targets `skip` for the same reason. */
-    const openai = options.find((option) => option.value === "OpenAI")!;
+    const openai = options.find((option) => option.value === "connection-openai")!;
     expect(openai.disabled).toBe(false);
     expect(invoked).not.toHaveBeenCalledWith("save_config", expect.anything());
   });
 
   it("asks nothing before there is a file", async () => {
-    render(<JobProviderPicker jobKey="upload" cap="stt" runtime={createWorkspaceRuntime()} />);
+    render(<JobProviderPicker jobKey="upload" cap="stt" runtime={twoAccounts()} />);
 
     await waitFor(() => expect(invoked).toHaveBeenCalledWith("registered_providers"));
     /* A constraint invented out of the surface's own latency would grey every
        vendor while the screen was merely open. */
     expect(invoked).not.toHaveBeenCalledWith("resolve_upload_capacity", expect.anything());
 
-    const groq = (await providerOptions()).find((option) => option.value === "Groq")!;
+    const groq = (await providerOptions()).find((option) => option.value === "connection-default")!;
     expect(groq.disabled).toBe(false);
   });
 
