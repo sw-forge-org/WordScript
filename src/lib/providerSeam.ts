@@ -21,7 +21,7 @@
  * field as `false` would make a row silently inert — the same defect one layer
  * down, which ADR 0106 names explicitly.
  */
-import { PROVIDERS, type LaneName } from "@/screens/data";
+import { LANE_LABEL, PROVIDERS, type LaneName } from "@/screens/data";
 import type { AppConfig, Connection } from "@/types/ipc";
 import {
   activeConnection,
@@ -537,7 +537,15 @@ export function accountChoices(
 
   for (const account of resolveConnections(config)) {
     const drawnName = drawnNameFor(account.provider) ?? account.provider;
-    const answer = constraint
+    /* THE PRODUCT'S OWN LOCK COMES FIRST, BEFORE ANY RUNTIME ANSWER (B12). An
+       account on a withheld lane is offered and refused with the reason — the
+       same treatment ADR 0128 gives a vendor with no adapter, and the opposite of
+       hiding it, which would leave the reader with an account in the inventory
+       that vanishes from every row that could use it. */
+    const withheld = withheldOnLane(laneForProviderId(account.provider));
+    const answer = withheld
+      ? { operable: false as const, reason: { kind: "no_adapter" as const, sentence: withheld } }
+      : constraint
       ? resolveUploadAnswer(
           drawnName,
           role,
@@ -551,14 +559,27 @@ export function accountChoices(
       label: account.label || drawnName,
       provider: account.provider,
       drawnName,
-      /* PENDING IS NOT INOPERABLE. The status read is outstanding, which claims
-         nothing about the vendor — and a select that greys its options until a
-         keyring read comes back is a control that looks broken on every open. */
-      operable: answer.operable || answer.reason.kind === "pending",
-      reason:
-        !answer.operable && answer.reason.kind !== "pending"
-          ? answer.reason.sentence
-          : undefined,
+      /* TWO REASONS DO NOT DISABLE AN OPTION, AND BOTH WERE FOUND BY LOOKING.
+         **A missing credential is not a reason to refuse the pick** (ADR 0128's
+         own words): the vendor is integrated, correct about what it does and one
+         action away from working — and the account this job ALREADY runs on can
+         be the one missing a key, so disabling it renders the selected option
+         greyed out, which reads as a broken control rather than as a missing key.
+         The row states the key beside the picker and the reason rides on the
+         option. **Pending is not inoperable** either: the read is outstanding,
+         which claims nothing, and a select that greys everything until the
+         keyring answers looks broken on every open.
+
+         What DOES disable: no adapter, a withheld lane, a role the vendor does
+         not serve, and a file too large for it (ADR 0129 — a key can be added and
+         the file will not shrink). */
+      operable:
+        answer.operable ||
+        answer.reason.kind === "pending" ||
+        answer.reason.kind === "no_credential",
+      /* The sentence rides along even where it does not disable, because *no key
+         yet* is exactly what a reader needs to know at the moment of picking. */
+      reason: answer.operable || answer.reason.kind === "pending" ? undefined : answer.reason.sentence,
     };
 
     const lane = laneForProviderId(account.provider);
@@ -644,6 +665,86 @@ export function buildConnectionRemovalPatch(
   if (!successor) return patch;
 
   return { ...patch, ...buildProfileProvidersPatch(config, { default: successor.id }) };
+}
+
+/**
+ * WHY A LANE IS WITHHELD BY THE PRODUCT, OR NOTHING WHERE IT IS NOT — one list,
+ * read by everything that offers a lane (ADR 0067, B12, and ADR 0123's rule).
+ *
+ * **It is not a capability question and `resolveProviderAnswer` cannot answer
+ * it.** That function knows adapters, roles and credentials — all runtime facts —
+ * and `Local` fails none of them: the adapter exists, it transcribes, and it
+ * needs no key. What withholds it is a product decision with a date attached, and
+ * the decision lived in two inline conditions on one screen. A third caller now
+ * needs it, and the third caller is the one that would have quietly reversed the
+ * lock: an account picker that offered every account the machine holds would let
+ * a job be routed to a lane the segment above it refuses to select.
+ */
+export function laneWithheld(lane: LaneName): string | undefined {
+  /* THE SENTENCES ARE THE ONES THE ROWS ALREADY CARRIED, to the word. They are
+     written for a row LABELLED with the lane, so they name no subject; a caller
+     whose control does not (an option in a picker) puts the lane in front —
+     `withheldOnLane` below. Rewriting them here would have moved copy the reader
+     has read, for no reason but this function's convenience. */
+  if (lane === "Local") {
+    return "Not offered yet: Phase 5 still owes the acceleration probe, the bundling decision and streaming.";
+  }
+  if (lane === "Enterprise") {
+    return "This lane has no adapter yet, so there is nothing behind it to run a job.";
+  }
+  return undefined;
+}
+
+/** The same reason with its subject in front, for a control that does not carry
+ *  the lane's name — an option in a list of accounts is the one that exists. */
+export function withheldOnLane(lane: LaneName): string | undefined {
+  const reason = laneWithheld(lane);
+  return reason && `${LANE_LABEL[lane]}: ${reason}`;
+}
+
+/**
+ * WHICH ACCOUNT THE CARD CONFIGURES WHILE ONE LANE IS SHOWN (ADR 0212).
+ *
+ * **The lane stopped being a mode, so it stopped answering *what does this
+ * profile run on*.** It groups: the reader looks at one lane's accounts, and the
+ * rows below configure the one this returns. The profile's own account wins where
+ * it is on that lane — opening the screen on the lane you dictate through shows
+ * the account you dictate with — and otherwise the lane's first account does,
+ * because a card scoped to a lane must not fill its rows from another one's.
+ *
+ * `undefined` is a real answer: the lane holds no account on this machine yet, and
+ * the rows say so rather than editing somebody else's.
+ */
+export function accountForLane(config: AppConfig, lane: LaneName): Connection | undefined {
+  const onLane = resolveConnections(config).filter(
+    (account) => laneForProviderId(account.provider) === lane,
+  );
+  const profiles = activeConnection(config);
+  return onLane.find((account) => account.id === profiles?.id) ?? onLane[0];
+}
+
+/**
+ * WHICH PROFILES NAME THIS ACCOUNT, BY LABEL — a derivation and never a field
+ * (ADR 0123, ADR 0212).
+ *
+ * **The pointer lives on the profile**, so the account cannot hold a list of its
+ * users without holding a second copy of a fact that would then be able to
+ * disagree with the first. The inventory reads it; nothing writes it.
+ *
+ * A profile with no axis written counts as naming the seeded account, which is
+ * what `resolve` does with it at read time.
+ */
+export function profileLabelsUsing(config: AppConfig, connectionId: string): string[] {
+  return config.text_profiles
+    .filter((profile) => {
+      const axis = profile.providers;
+      if (!axis) return connectionId === DEFAULT_CONNECTION_ID;
+      return (
+        axis.default === connectionId ||
+        Object.values(axis.overrides ?? {}).includes(connectionId)
+      );
+    })
+    .map((profile) => profile.label || profile.id);
 }
 
 /** How many profiles name this account, for the sentence a deletion owes. */

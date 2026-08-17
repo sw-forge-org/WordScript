@@ -799,7 +799,14 @@ function JobAccountRows({
               {groups.map((group) => (
                 <optgroup
                   key={`${group.lane}-${group.drawnName}`}
-                  label={`${LANE_LABEL[group.lane]} · ${group.drawnName}`}
+                  /* `Your server · Your server` was what the pair produced on the
+                     one lane whose label IS its vendor's name — found by looking
+                     at it. One word where they are one thing. */
+                  label={
+                    LANE_LABEL[group.lane] === group.drawnName
+                      ? group.drawnName
+                      : `${LANE_LABEL[group.lane]} · ${group.drawnName}`
+                  }
                 >
                   {group.accounts.map((choice) => (
                     <option

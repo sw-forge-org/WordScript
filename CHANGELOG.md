@@ -86,6 +86,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so, since choosing who pays for a writing style you are not looking at is not a
   deletion's decision.
 
+### Added — AI Models is organised by task (ADR 0211, ADR 0212)
+
+- **Every job picks any account on this machine, and a model from that account's
+  vendor.** The config has stored an account per job since the connection axis
+  landed, so *dictation on Groq, cleanup on your own OpenAI account* was already
+  a state it accepted — and the screen forbade it, because the picker offered one
+  lane's vendors. It offers accounts now, grouped lane → provider → account, and
+  the lane a job lands in is read off the account it runs on.
+- **A model belongs to the task.** Eight jobs pointed at three stored slots, and
+  five of them shared one: moving Translate's model moved four other jobs. Each
+  job carries its own now, from the list its own vendor serves, and a job that
+  names none says which of the profile's defaults it follows. Two exceptions, both
+  stated on the row: the local recogniser is a file on this machine, chosen where
+  it is installed, and your own server's model id is half its address, typed once
+  beside the URL — a job on it may still name its own.
+- **The lane stopped being a mode.** Picking one used to create an account and
+  repoint your profile in one click, neither of them stated. It groups the accounts
+  the card configures; assigning one to a profile is the `Account` row, which
+  carries the profile's name, and adding one is its own button that adds without
+  assigning.
+- **The card says what it holds and who uses it.** `Connection` became
+  `Accounts`, with a read-out naming the profiles that bill through each one —
+  which is the sentence you need before rotating a key. And the screen states
+  which profile it is setting, once, at the top.
+- **A job row states its account's key and does not offer to change it.** The
+  credential belongs to the account; a key field scoped to a job is what made a
+  credential look like the thing a job runs on.
+
 ### Fixed — a removed account left its key behind (ADR 0210)
 
 - **Removing an account deletes its credential from the OS secret store**, and

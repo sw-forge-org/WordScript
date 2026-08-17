@@ -1502,6 +1502,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A removed account takes its credential with it, and the ask replaces an undo window that was never there.
 - [0211](0211-a-model-is-stored-on-the-same-key-as-the-account-because-a-model-id-is-only-meaningful-for-a-vendor.md):
   A model is stored on the same key as the account, because a model id is only meaningful for a vendor.
+- [0212](0212-ai-models-is-organised-by-task-and-the-lane-is-how-accounts-are-grouped-rather-than-a-mode-the-screen-is-in.md):
+  AI Models is organised by task, and the lane is how accounts are grouped rather than a mode the screen is in.
 
 ## Resolved: the number 0011 was used twice
 

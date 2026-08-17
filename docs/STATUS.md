@@ -186,6 +186,19 @@ Status: 2026-08-17
   removal asks first, because a key deleted from the OS store cannot be put back. **A status names the account it answered about** (ADR 0209): the answer
   is keyed by vendor and the credential rows are scoped to an account, so without
   the echo a second account on one vendor was shown the first one's key.
+- **AI Models is organised by task, and a job runs on any account with any
+  model** (ADR 0211, ADR 0212, 2026-08-17). Each job row picks from every account
+  this machine holds — grouped lane → provider → account — and takes a model from
+  that account's vendor, stored per job beside the account it was chosen for. So
+  one profile can dictate on one account and clean up on another vendor's, which
+  the config accepted before this and the surface forbade. **The lane groups the
+  accounts; it is not a mode and writes nothing** — assigning an account to a
+  profile is the `Account` row, which names the profile, and adding one is its own
+  action. Two model exceptions are stated on the row rather than implied away: the
+  local recogniser is a file chosen on `On this machine`, and a self-hosted
+  server's id is half its address. **The reachable variety is two lanes**: `Local`
+  is withheld until Phase 5 and `self_hosted` serves speech and not chat, so the
+  picker offers those accounts and refuses them with the reason.
 - **A control the runtime cannot answer for is drawn and inert rather than
   deleted** (ADR 0065, ADR 0067): **two of four provider lanes since 2026-08-16
   and it was three** — `Your server` is typed into and picked like any other

@@ -825,7 +825,7 @@ describe("AI Models, choosing the connection", () => {
    * state it and get out of it. It stated nothing: an empty select over an empty
    * list, and an *Add* button that was live and did nothing.
    */
-  it("states a pointer that resolves to nothing and offers every account as the way out", async () => {
+  it("states a pointer that resolves to nothing on the rows it stops, and offers every account as the way out", async () => {
     const user = userEvent.setup();
     const patch = vi.fn();
     const config = createAppConfig();
@@ -844,27 +844,27 @@ describe("AI Models, choosing the connection", () => {
     active.providers = { default: "connection-deleted", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    const row = (await screen.findByLabelText("Account")).closest(".ws-row");
-    expect(row).not.toBeNull();
-    expect(row).toHaveTextContent(
-      "General writing points at an account this machine no longer holds",
-    );
-    /* EVERY ACCOUNT, NOT ONE VENDOR'S. With no active account there is no vendor
-       to scope the list to, and a list scoped to nothing is the empty select this
-       case exists to replace. */
-    const options = within(row as HTMLElement).getAllByRole("option");
-    expect(options.map((option) => option.textContent)).toEqual([
-      "— pick an account —",
+    /* **IT IS STATED WHERE IT BITES NOW** (ADR 0212). The dangling default was
+       reported on the `Account` row, which was the only place that knew about it
+       while the card followed the profile. The card follows the shown LANE, and
+       what a dead pointer actually breaks is the jobs: every row that follows the
+       profile says so, and the picker beside the sentence is the way out. */
+    const dictation = (await screen.findByText("Dictation")).closest(".ws-job") as HTMLElement;
+    await waitFor(() => expect(within(dictation).getByText("Account gone")).toBeInTheDocument());
+
+    /* EVERY ACCOUNT, NOT ONE VENDOR'S AND NOT ONE LANE'S. */
+    const runsOn = within(dictation).getByLabelText("Runs on") as HTMLSelectElement;
+    expect([...runsOn.options].map((option) => option.textContent)).toEqual([
+      "Follow the profile · no account",
       "Groq",
       "The office box",
     ]);
-    /* NO BUTTON THAT DOES NOTHING. `New` needs a vendor and there is none. */
-    expect(within(row as HTMLElement).queryByRole("button", { name: "New" })).toBeNull();
 
-    await user.selectOptions(await screen.findByLabelText("Account"), CLOUD_ACCOUNT.id);
+    await user.selectOptions(runsOn, CLOUD_ACCOUNT.id);
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
-      default: CLOUD_ACCOUNT.id,
-      overrides: {}, models: {},
+      default: "connection-deleted",
+      overrides: { dictation: CLOUD_ACCOUNT.id },
+      models: {},
     });
   });
 
@@ -1367,6 +1367,164 @@ describe("AI Models, the per-job override", () => {
     expect(within(row).getByLabelText("Runs on")).not.toBeDisabled();
     /* The model row is a choice ON the vendor, so it stays inert. */
     expect(within(row).getByLabelText("Model")).toBeDisabled();
+  });
+
+  /**
+   * **ONE PROFILE, THREE ACCOUNTS ACROSS TWO LANES, SET FROM ONE SCREEN**
+   * (ADR 0211, ADR 0212).
+   *
+   * The sentence B15 exists for, and it was storable-but-unpickable: the config
+   * has held a connection per job since ADR 0094 met ADR 0208, while the surface
+   * offered one lane's vendors. Nothing in this case reaches for a lane control.
+   *
+   * **Two lanes and not three, and the limit is the runtime's rather than this
+   * screen's**: `Local` is withheld by the product until Phase 5 (B12) and
+   * `self_hosted` registers speech and not chat (`registry.rs`), so the
+   * assistant cannot be pointed at somebody's own server today. The reachable
+   * variety is what the row offers; a wider one arrives with the adapter.
+   */
+  it("puts three jobs on three accounts from the job rows alone", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { id: "connection-openai", label: "Private OpenAI", provider: "openai", base_url: "", model: "", plan: "" },
+      {
+        id: "connection-self_hosted",
+        label: "Home server",
+        provider: "self_hosted",
+        base_url: "http://10.0.0.2:8080/v1",
+        model: "faster-whisper-medium",
+        plan: "",
+      },
+    ];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: CLOUD_ACCOUNT.id, overrides: {}, models: {} };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    const runsOnOf = (job: string) =>
+      within(rowOf(job)).getByLabelText("Runs on") as HTMLSelectElement;
+
+    await waitFor(() => expect(runsOnOf("Cleanup")).not.toBeDisabled());
+    await user.selectOptions(runsOnOf("Cleanup"), "connection-openai");
+    expect(axisOf(patch.mock.calls[0][0], active.id)).toEqual({
+      default: CLOUD_ACCOUNT.id,
+      overrides: { cleanup: "connection-openai" },
+      models: {},
+    });
+
+    /* Upload — a speech job, which is the role that lane serves — onto the
+       server. Written off the same config as the first pick, because the mock
+       patch does not feed itself back: what this asserts is the write each row
+       makes, not the accumulation. */
+    patch.mockClear();
+    await user.selectOptions(runsOnOf("Upload"), "connection-self_hosted");
+    expect(axisOf(patch.mock.calls[0][0], active.id)).toEqual({
+      default: CLOUD_ACCOUNT.id,
+      overrides: { upload: "connection-self_hosted" },
+      models: {},
+    });
+
+    /* AND THE SERVER IS OFFERED ON A CHAT JOB AND REFUSED WITH ITS REASON, which
+       is the seam doing its job rather than this screen hiding an account
+       (ADR 0128 one axis over): the adapter registers speech and not chat. */
+    const onChat = within(rowOf("The assistant")).getByLabelText("Runs on") as HTMLSelectElement;
+    const server = [...onChat.options].find((option) => option.value === "connection-self_hosted")!;
+    expect(server.disabled).toBe(true);
+    expect(server.title).toContain("chat");
+
+    /* **AND NOTHING MOVED WHICH PROFILE IS ACTIVE** — the measure this step is
+       held to. Every axis write goes through `buildTextProfilesPatch`, which
+       restates the active id beside the profile list, so the assertion is that it
+       is restated and never CHANGED: a screen that moved the reader between
+       profiles as a side effect of setting a job would show up here. */
+    for (const [written] of patch.mock.calls) {
+      if ("active_text_profile_id" in written) {
+        expect(written.active_text_profile_id).toBe(config.active_text_profile_id);
+      }
+    }
+  });
+
+  /** **THE MODEL GOES WITH THE ACCOUNT WHEN THE VENDOR CHANGES** (ADR 0211). A
+   *  model chosen for Groq is not a choice about OpenAI, and leaving it would
+   *  store a pair the resolver has to refuse while the row named a model no
+   *  request carries. Same vendor, second account: the choice still holds. */
+  it("clears a row's model when its account moves to another vendor, and keeps it within one", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { id: "connection-groq-2", label: "Groq private", provider: "groq", base_url: "", model: "", plan: "" },
+      { id: "connection-openai", label: "Private OpenAI", provider: "openai", base_url: "", model: "", plan: "" },
+    ];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = {
+      default: CLOUD_ACCOUNT.id,
+      overrides: {},
+      models: { cleanup: "llama-3.3-70b-versatile" },
+    };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
+
+    const runsOn = within(rowOf("Cleanup")).getByLabelText("Runs on");
+    await waitFor(() => expect(runsOn).not.toBeDisabled());
+
+    await user.selectOptions(runsOn, "connection-groq-2");
+    expect(axisOf(patch.mock.calls[0][0], active.id)).toEqual({
+      default: CLOUD_ACCOUNT.id,
+      overrides: { cleanup: "connection-groq-2" },
+      models: { cleanup: "llama-3.3-70b-versatile" },
+    });
+
+    patch.mockClear();
+    await user.selectOptions(runsOn, "connection-openai");
+    expect(axisOf(patch.mock.calls[0][0], active.id)).toEqual({
+      default: CLOUD_ACCOUNT.id,
+      overrides: { cleanup: "connection-openai" },
+      models: {},
+    });
+  });
+
+  /**
+   * **THE COLLAPSED ROW HAS TO BE TRUE AT A GLANCE** (ADR 0212).
+   *
+   * Found by rendering the card, not by a test: the summary badge read the LANE's
+   * drawn catalogue entry, so a cleanup routed to OpenAI with a model of its own
+   * summarised itself as Groq's `llama-3.1-8b-instant` — the *surface names one
+   * model, the request carries another* defect on the one line a reader takes in
+   * without opening anything.
+   */
+  it("names the account's own model on the collapsed job row", async () => {
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { id: "connection-openai", label: "Private OpenAI", provider: "openai", base_url: "", model: "", plan: "" },
+    ];
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = {
+      default: CLOUD_ACCOUNT.id,
+      overrides: { cleanup: "connection-openai" },
+      models: { cleanup: "gpt-5.6-terra" },
+    };
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    /* THE BADGE ITSELF, not the row: the model id also appears in the picker
+       inside the row, and an assertion that cannot tell the summary from the
+       control would pass on the defect this case exists for. */
+    const badgeOf = (job: string) => rowOf(job).querySelector(".ws-jobmodel")?.textContent ?? "";
+    await waitFor(() => expect(badgeOf("Cleanup")).toContain("gpt-5.6-terra"));
+    expect(badgeOf("Cleanup")).not.toContain("llama-3.1-8b-instant");
+
+    /* A row that named no model of its own says which default it falls back to,
+       rather than looking like a choice. */
+    expect(badgeOf("Rewrite")).toContain("default");
   });
 
   it("states the overriding job's key from the runtime instead of claiming it is set", async () => {
@@ -2046,7 +2204,7 @@ describe("On this machine, and what a server is", () => {
     render(<ModelsScreen />);
     await userEvent.click(screen.getByRole("button", { name: "Local" }));
 
-    const connection = screen.getByText("Connection").closest("section") as HTMLElement;
+    const connection = screen.getByText("Accounts").closest("section") as HTMLElement;
     const labels = Array.from(connection.querySelectorAll(".ws-row-text > b")).map((node) =>
       /* The lane row's own `PreviewTag` rides inside the label, so the tag text
          comes off before the label is compared. */
@@ -2073,7 +2231,7 @@ describe("On this machine, and what a server is", () => {
     await userEvent.click(screen.getByRole("button", { name: "Manage" }));
 
     expect(screen.getByText("Runners on this machine")).toBeInTheDocument();
-    expect(screen.queryByText("Connection")).toBeNull();
+    expect(screen.queryByText("Accounts")).toBeNull();
   });
 
   it("calls nothing on this machine a server, on either tab", async () => {
@@ -2438,23 +2596,37 @@ describe("Your server, configured", () => {
     expect(screen.queryByRole("radiogroup", { name: "Provider" })).toBeNull();
   });
 
-  it("writes the lane onto the provider axis when it is chosen", async () => {
+  /**
+   * **CHOOSING A LANE WRITES NOTHING** (ADR 0212), and this case is the reversal
+   * of the one it replaces.
+   *
+   * It used to write `buildVendorConnectionPatch` plus the profile's default, so
+   * the screen's topmost control created an account AND repointed a profile the
+   * reader was never shown — one click of a segment, two decisions, neither of
+   * them stated. The lane groups now. Adding the account is its own labelled
+   * action, and it still does not assign: pointing a writing style at an account
+   * is the `Account` row's decision and that row carries the profile's name.
+   */
+  it("shows a lane without writing anything, and adds an account without assigning it", async () => {
     const patch = vi.fn();
     withEndpoint(ENDPOINT);
     const runtime = createWorkspaceRuntime({ active: true, patch });
     render(<ModelsScreen runtime={runtime} />);
 
     await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+    expect(patch).not.toHaveBeenCalled();
 
-    /* THE RUNTIME id, and onto the same axis the chip row writes: picking a
-       lane and picking a vendor are one question asked at two altitudes. */
-    expect(patch).toHaveBeenCalledTimes(1);
+    /* This machine holds no account on that lane, so the rows below cannot be
+       filled from another one's — they say so and offer the way on. */
+    const add = await screen.findByRole("button", { name: "Add account" });
+    await userEvent.click(add);
+
     const written = patch.mock.calls[0][0] as {
-      text_profiles?: { id: string; providers?: { default?: string } }[];
+      connections?: { id: string; provider: string }[];
+      text_profiles?: unknown;
     };
-    expect(
-      written.text_profiles?.find((p) => p.id === runtime.config.active_text_profile_id)?.providers,
-    ).toEqual({ default: "connection-self_hosted", overrides: {}, models: {} });
+    expect(written.connections?.some((entry) => entry.provider === "self_hosted")).toBe(true);
+    expect(written.text_profiles).toBeUndefined();
   });
 
   it("stores the URL that is typed into it", async () => {

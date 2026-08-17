@@ -179,7 +179,12 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
        lanes … are drawn and inert*, which stopped being true the moment `Your
        server` could be chosen and configured — a banner is a claim about the
        build and this one would have been contradicted by the card under it. */
-    banner: saysSo("Wired in part — the cloud connection, Your server and On this machine are real; the other two lanes and every job override are drawn and inert."),
+    /* THE JOB OVERRIDES STOPPED BEING DRAWN (ADR 0211, ADR 0212). Every job row
+       picks a real account from the machine's inventory and a real model from that
+       account's vendor, both stored; what is still a drawing is the two withheld
+       lanes and the per-job settings that have no config shape yet. A banner is a
+       claim about the build, and this one had gone false under its own card. */
+    banner: saysSo("Wired in part — the accounts, what each job runs on and On this machine are real; the two withheld lanes and the job settings beside the model are drawn and inert."),
     render: (props) => <ModelsScreen {...props} />,
   },
   {

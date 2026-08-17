@@ -54,7 +54,7 @@ import {
   type LaneName,
 } from "./data";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { formatModelSize, modelInstall } from "@/lib/modelCatalogue";
+import { formatModelSize, modelInstall, vendorModels } from "@/lib/modelCatalogue";
 import { useLocalSetup } from "@/hooks/useLocalSetup";
 import { useModelLibrary } from "@/hooks/useModelLibrary";
 import { buildProfileSpeechPatch } from "@/lib/textProfiles";
@@ -72,16 +72,23 @@ import {
   buildProfileProvidersPatch,
   resolveActiveTextProfile,
   resolveConfigJobProvider,
+  resolveJobProvider,
+  roleDefaultModel,
   resolveProfileModesSettings,
   resolveProfileProviderSettings,
 } from "@/lib/textProfiles";
 import {
+  accountForLane,
   activeConnectionOf,
+  laneWithheld,
+  LOCAL_PROVIDER_ID,
   buildConnectionPlanPatch,
+  connectionById,
   buildConnectionsPatch,
   buildConnectionRemovalPatch,
   buildNewConnectionPatch,
   buildVendorConnectionPatch,
+  profileLabelsUsing,
   profilesUsingConnection,
   resolveConnections,
   connectionCapabilitySentence,
@@ -185,43 +192,27 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      provider axis; the screen then follows what is stored, which is the same
      direction `ProviderPick` has read since D1. The gallery has no config, so
      there the segment keeps its own state and the drawings switch. */
-  const [drawnLane, setDrawnLane] = useState<LaneName>("Cloud");
-  /* THE LANE IS THE ACCOUNT'S VENDOR, READ BACKWARDS (ADR 0208). It was the
-     stored value itself while that value was a vendor id; a profile names an
-     account now, so the lane is one lookup further away and the two must not be
-     confused — `providers.default` is an account id and `laneForProviderId`
-     answers about vendors. */
+  /* THE LANE THE READER IS LOOKING AT — AND IT IS NOT A MODE ANY MORE
+     (ADR 0212).
+     A profile runs its jobs on whatever accounts they name, on several lanes at
+     once if that is what it says, so *which lane is this screen in* stopped
+     being a question about the config. The segment groups: it decides which
+     lane's accounts the card below configures, and it opens on the lane the
+     profile's own account is on so the screen still starts where the reader
+     dictates from.
+
+     **AND IT WRITES NOTHING.** It used to write `buildVendorConnectionPatch` plus
+     `buildProfileProvidersPatch`, so the screen's topmost control silently
+     repointed a profile the reader was never shown — the defect at the centre of
+     this step. Assigning an account to a profile is the `Account` row's job now,
+     which names the profile it writes (ADR 0209). */
   const storedAccount = runtime ? activeConnectionOf(runtime.config) : undefined;
   const storedProvider = storedAccount?.provider;
-  const lane = storedProvider ? laneForProviderId(storedProvider) : drawnLane;
-
-  const chooseLane = useCallback(
-    (next: LaneName) => {
-      if (!runtime) {
-        setDrawnLane(next);
-        return;
-      }
-
-      /* THE LANE IS WRITTEN AS THE VENDOR IT MEANS. `Cloud` has several and no
-         memory of which one you were on before you left it, so it lands on the
-         drawn default — one click on the chip row moves it, and a chip row that
-         says `Groq` over a config that says `groq` is at least not lying. The
-         two locked lanes cannot be reached from here at all. */
-      const target =
-        next === "Cloud" ? runtimeIdFor(LANES.Cloud.provider) : LANE_PROVIDER_IDS[next];
-      if (!target || target === storedProvider) return;
-
-      /* PICKING A LANE PICKS AN ACCOUNT (ADR 0208), creating one for that vendor
-         when this machine holds none — which is what keeps this chip row
-         meaning exactly what it meant before the axis existed. */
-      const { patch, connectionId } = buildVendorConnectionPatch(runtime.config, target);
-      runtime.patch({
-        ...patch,
-        ...buildProfileProvidersPatch(runtime.config, { default: connectionId }),
-      });
-    },
-    [runtime, storedProvider],
+  const [drawnLane, setDrawnLane] = useState<LaneName>(
+    storedProvider ? laneForProviderId(storedProvider) : "Cloud",
   );
+  const lane = drawnLane;
+  const chooseLane = setDrawnLane;
   /* ONE `local_setup` READ FOR THE WHOLE SCREEN, AND IT MOVED UP HERE IN B12
      (ADR 0163). Both tabs state where this machine stands now — the connection
      card says whether the withheld lane is withheld by the product or by the
@@ -239,7 +230,7 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
     <>
       <ViewTop
         title="AI Models"
-        lead="One connection, and what each job runs on it."
+        lead="What each job runs on, and the accounts it can be billed to."
         banner={banner}
         tabs={
           <SubTabs
@@ -302,6 +293,80 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
    AND THE THIRD ONE IS READ AS *Your server* (ADR 0160). The identifier is
    unchanged; only what a reader sees is, because *server* now names exactly one
    thing on this screen — a machine that is not this one. */
+/**
+ * WHICH PROFILE THIS SCREEN IS SETTING (ADR 0212).
+ *
+ * **A statement with a door, not a second switcher.** Which profile is active is
+ * a workspace-wide fact with one control already — the switcher in the nav foot —
+ * and a select here would be a second answer to one question (ADR 0123), with the
+ * mid-session semantics that control already handles. What was missing was not a
+ * way to switch; it was the sentence saying whose accounts and whose models these
+ * are. Every row that writes the profile still carries its own `ScopeTag`; this
+ * says it once, before the first of them.
+ */
+function ProfileScope({ runtime }: { runtime: WorkspaceRuntime }) {
+  const profile = resolveActiveTextProfile(runtime.config);
+  return (
+    <Note>
+      <span className="ws-rowflex">
+        <span>
+          Setting <b>{profile.label}</b> — the accounts and models below are this
+          profile&apos;s. Switch profiles in the sidebar; other profiles keep their own.
+        </span>
+        <Button
+          variant="ghost"
+          icon={<Icon name="arrow" />}
+          onClick={() => runtime.open?.({ view: "profiles" })}
+        >
+          Profiles
+        </Button>
+      </span>
+    </Note>
+  );
+}
+
+/**
+ * THE WAY ONTO A LANE THIS MACHINE HOLDS NO ACCOUNT ON (ADR 0212).
+ *
+ * **The creation the lane chips used to do invisibly.** Picking a lane wrote
+ * `buildVendorConnectionPatch` plus the profile's default, so an account appeared
+ * and a profile was repointed on one click of a segment. Both halves are explicit
+ * now: this row adds the account, and the `Account` row assigns it to a profile
+ * with the profile's name on it (ADR 0209).
+ *
+ * **It does not assign.** Adding an account is inventory work; deciding that a
+ * writing style should start billing through it is not, and doing both on one
+ * press is the conflation this step exists to end.
+ */
+function AddAccountRow({ lane, runtime }: { lane: LaneName; runtime: WorkspaceRuntime }) {
+  const vendor = lane === "Cloud" ? runtimeIdFor(LANES.Cloud.provider) : LANE_PROVIDER_IDS[lane];
+  const withheld = laneWithheld(lane);
+
+  return (
+    <Row
+      label="Account"
+      hint={
+        withheld ??
+        `This machine holds no ${LANE_LABEL[lane]} account yet. Add one, then point a job or a profile at it.`
+      }
+      control={
+        <span className="ws-rowflex">
+          <StatusBadge tone="plan">None yet</StatusBadge>
+          {vendor && !withheld && (
+            <Button
+              variant="ghost"
+              icon={<Icon name="plus" />}
+              onClick={() => runtime.patch(buildNewConnectionPatch(runtime.config, vendor).patch)}
+            >
+              Add account
+            </Button>
+          )}
+        </span>
+      }
+    />
+  );
+}
+
 function LaneRows({
   lane,
   runtime,
@@ -313,6 +378,17 @@ function LaneRows({
    *  owns it, and a summary that names a total has to be able to reach it. */
   onManage?: () => void;
 }) {
+  /* A LANE THIS MACHINE HOLDS NO ACCOUNT ON YET (ADR 0212). The rows below all
+     write to one — the URL, the token, the plan, the key — and with none they
+     would accept a value and drop it, which is the false affordance ADR 0067
+     rule 1 is about. It was unreachable while picking the lane CREATED the
+     account behind the reader's back; the creation is an explicit action now, so
+     the state exists and gets a row that says so and offers the way out.
+     `Local` needs none: it authenticates against nothing. */
+  if (runtime && lane !== "Local" && !accountForLane(runtime.config, lane)) {
+    return <AddAccountRow lane={lane} runtime={runtime} />;
+  }
+
   if (lane === "Local") {
     return (
       <>
@@ -627,7 +703,12 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const openProfiles = useOpenProfiles();
-  const active = activeConnectionOf(runtime.config);
+  /* THE ACCOUNT THE SHOWN LANE HOLDS (ADR 0212). It was the profile's own, which
+     was the same thing while the lane WAS the profile's account read backwards;
+     the lane groups now, so a card showing `Cloud` while the profile dictates
+     through its own server must fill its rows from a Cloud account rather than
+     reporting a dangling pointer. */
+  const active = accountForLane(runtime.config, "Cloud");
   const vendor = active?.provider ?? "";
   const everyAccount = resolveConnections(runtime.config);
   /* WHICH PROFILE THIS ROW IS WRITING, BY NAME (ADR 0209). The select writes
@@ -660,6 +741,7 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
      and the count says so by naming the others. */
   const used = active ? profilesUsingConnection(runtime.config, active.id) : 0;
   const others = Math.max(0, used - 1);
+  const usedBy = active ? profileLabelsUsing(runtime.config, active.id) : [];
 
   /* THE CREDENTIAL GOES FIRST AND THE CONFIG SECOND (ADR 0210). ADR 0208's
      migration MOVES a key rather than copying it, on the argument that a key
@@ -723,10 +805,13 @@ function AccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
       hint={
         problem ??
         (!active
-          ? `${profile.label} points at an account this machine no longer holds, so its jobs have nothing to pay with. Pick one here.`
-          : accounts.length > 1
-            ? "Which of your accounts with this vendor pays for the jobs below. A profile carries its own, so switching profiles switches the account."
-            : "The account these jobs are billed to. Add a second one to keep an employer's and a private one apart — a profile carries whichever it is set to.")
+          ? `This lane holds no account on this machine yet. Add one to bill jobs on it.`
+          : /* THE USED-BY READ-OUT, DERIVED AND NEVER STORED (ADR 0123). An
+               account carrying a list of its users would be a second copy of a
+               pointer that lives on the profile, and the two would be able to
+               disagree. It is the sentence a reader needs before renaming or
+               removing one: rotating this key touches everything named here. */
+            `${usedBy.length ? `Used by ${namedFew(usedBy)}.` : "No profile names this account yet."} A profile carries its own account, so switching profiles switches who pays.`)
       }
       control={
         <span className="ws-rowflex">
@@ -834,8 +919,10 @@ function ServerUrlRow({
   /* THE URL BELONGS TO THE ACCOUNT, NOT TO THE MACHINE (ADR 0208). ADR 0165 put
      it on `AppConfig` and said why: there was nowhere else for it to live. There
      is now, and it is the object that also owns the token — which is what makes
-     *this server with that key* unrepresentable rather than merely discouraged. */
-  const account = activeConnectionOf(runtime.config);
+     *this server with that key* unrepresentable rather than merely discouraged.
+     **The account is this LANE's** (ADR 0212), because these rows only render on
+     it and the lane no longer follows the profile. */
+  const account = accountForLane(runtime.config, "Self-hosted");
   const stored = account?.base_url ?? "";
   const { draft, setDraft, commit } = useCommittedSetting(stored, (next) => {
     if (!account) return;
@@ -1084,8 +1171,8 @@ function ServerModelRow({
   endpoint: SelfHostedEndpointStatus | null;
 }) {
   /* The id belongs to whoever runs the server, so it belongs to the account that
-     names the server (ADR 0208). */
-  const account = activeConnectionOf(runtime.config);
+     names the server (ADR 0208) — this lane's account (ADR 0212). */
+  const account = accountForLane(runtime.config, "Self-hosted");
   const stored = account?.model ?? "";
   const { draft, setDraft, commit } = useCommittedSetting(stored, (next) => {
     if (!account) return;
@@ -1096,6 +1183,13 @@ function ServerModelRow({
 
   return (
     <Row
+      /* THE ONE MODEL FIELD LEFT IN THE INVENTORY, AND IT IS NOT A MODEL CHOICE
+         (ADR 0211). A vendor that publishes a list makes choosing from it a
+         choice, and choices belong to the task axis — this server publishes
+         none, so its id identifies WHAT ANSWERS at that URL. It is the second
+         half of the address, like the port, and it sits here for the same reason
+         the URL does: one typing serves every job on the server. A job row that
+         names its own model outranks it. */
       label="Model id"
       hint={
         fromEnvironment ? (
@@ -1105,7 +1199,7 @@ function ServerModelRow({
             type here is used instead of it.
           </>
         ) : (
-          "Your server publishes no list to pick from, so this is typed: whatever its operator named the model it serves."
+          "The id this server answers to — half its address, not a choice from a list. Every job on it sends this unless the job names its own."
         )
       }
       control={
@@ -1483,8 +1577,9 @@ function AccountPlanRow({
   /* THE PLAN IS THE ACCOUNT'S (ADR 0167, rescoped by ADR 0208). It was keyed by
      vendor on the argument that a plan belongs to a credential — which is true,
      and the credential is an account's: a paid work account and a free private
-     one on one vendor do not share a ceiling. */
-  const account = activeConnectionOf(runtime.config);
+     one on one vendor do not share a ceiling. This row renders on the Cloud lane,
+     so it reads that lane's account (ADR 0212). */
+  const account = accountForLane(runtime.config, "Cloud");
   const stored = account?.plan ?? "";
   return (
     <Row
@@ -1796,9 +1891,57 @@ function LaneJobRow({
     <Job
       name={name}
       what={what}
-      control={jobBadge(lane, jobKey)}
+      /* THE COLLAPSED ROW HAS TO BE TRUE AT A GLANCE (ADR 0212). It carried
+         `jobBadge`, which reads the LANE's drawn catalogue entry — so a cleanup
+         routed to OpenAI with a model of its own summarised itself as Groq's
+         `llama-3.1-8b-instant`, which is the exact *surface names one model, the
+         request carries another* defect this step exists to end, on the one line
+         a reader takes in without opening anything. Found by rendering it, not by
+         a test. The drawing keeps `jobBadge`, because that is what `port:diff`
+         measures. */
+      control={<JobBadge lane={lane} jobKey={jobKey} cap={cap} />}
       rows={<Follows lane={lane} jobKey={jobKey} cap={cap} hint={hint} extra={children} />}
       extra={extra}
+    />
+  );
+}
+
+/**
+ * WHAT ONE JOB RUNS ON, IN THE ONE LINE THE COLLAPSED ROW SHOWS (ADR 0212).
+ *
+ * Under a runtime: the account's vendor mark and the model the resolution would
+ * actually spend — the job's own where it named one its vendor serves, the
+ * profile's slot for its family otherwise, and `default` said out loud in that
+ * case. In the gallery: `jobBadge`, unchanged, because the drawing is what
+ * `port:diff` compares against the prototype.
+ */
+function JobBadge({
+  lane,
+  jobKey,
+  cap = "llm",
+}: {
+  lane: LaneName;
+  jobKey: JobKey;
+  cap?: "stt" | "llm";
+}) {
+  const runtime = useRuntime();
+  if (!runtime) return jobBadge(lane, jobKey);
+
+  const profile = resolveActiveTextProfile(runtime.config);
+  const resolved = resolveJobProvider(profile, jobKey, resolveConnections(runtime.config));
+  const local = resolved.provider === LOCAL_PROVIDER_ID;
+  const role = cap === "stt" ? "speech" : "chat";
+  const offered = vendorModels(resolved.provider, role);
+  const named = resolved.model && (!offered.length || offered.includes(resolved.model))
+    ? resolved.model
+    : "";
+  const model = named || roleDefaultModel(profile, jobKey, local) || connectionById(runtime.config, resolved.connection)?.model || "";
+
+  return (
+    <JobModel
+      mark={drawnNameFor(resolved.provider) ?? null}
+      model={model}
+      override={named ? undefined : "default"}
     />
   );
 }
@@ -1921,8 +2064,9 @@ const SELF_HOSTED_MODEL_ENV = "WORDSCRIPT_SELF_HOSTED_MODEL";
  *  and drifted (ADR 0160, ADR 0161, ADR 0162, all applied twice). The machine's
  *  half varies per disk and is composed below; this half does not vary at all,
  *  so it is a constant and the roadmap is its owner. */
-const LOCAL_WITHHELD =
-  "Not offered yet: Phase 5 still owes the acceleration probe, the bundling decision and streaming.";
+/** Read from the seam rather than spelled here (ADR 0123): the job rows refuse
+ *  an account on this lane with the same sentence. */
+const LOCAL_WITHHELD = laneWithheld("Local") ?? "";
 
 /** The three things the lane needs on this disk, in the order they are used. */
 const LOCAL_PARTS: { ready: (setup: LocalProviderSetupStatus) => boolean; name: string }[] = [
@@ -1979,6 +2123,16 @@ function localStanding(
 
 /** `a, b and c`. Written here rather than reached for, because the one thing it
  *  is used on is a list of at most three known strings. */
+/** Three names and a count, because the read-out is a sentence and a machine with
+ *  seven profiles made it three lines of one (measured at the real 569 px column,
+ *  which is the width this card is actually read at). The names are the ones a
+ *  reader recognises; the number is what makes the rest countable. */
+function namedFew(names: string[]): string {
+  if (names.length <= 3) return listWords(names);
+  const rest = names.length - 3;
+  return `${names.slice(0, 3).join(", ")} and ${rest} other ${rest === 1 ? "profile" : "profiles"}`;
+}
+
 function listWords(words: string[]): string {
   if (words.length <= 1) return words[0] ?? "";
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
@@ -2012,16 +2166,28 @@ function ModelsTab({
   const open = runtime?.open;
   return (
     <>
-      {/* ONE CONNECTION. This is the card that makes the rest of the screen
-          short: a lane, a provider, a key, and a sentence saying that everything
-          below follows it. Most people set this once and never open a job row.
+      {/* WHICH PROFILE THIS SCREEN IS SETTING, ONCE AND AT THE TOP (ADR 0212).
+          The owner's question was *in welchem Profil wähle ich gerade was aus*,
+          and every answer this screen had was per row: a `ScopeTag` on the
+          controls that happened to carry one. The accounts and the models on it
+          belong to a profile, so the profile is named before any of them — and
+          the door is the switcher's, because which profile is ACTIVE is a
+          workspace-wide fact and a second control for it would be a second
+          answer to one question (ADR 0123). */}
+      {runtime && <ProfileScope runtime={runtime} />}
+
+      {/* THE ACCOUNTS. This was `Connection`, singular, and it was the spine of
+          the screen — which is what made a credential look like the thing a job
+          runs on. It is an inventory now: what this machine holds, per lane, with
+          the keys and the plans that belong to them. What runs where is the list
+          below (ADR 0212).
 
           THE LANE IS FOUR AND NOT TWO. Cloud and Local were the two the surface
           had, which left self-hosted and enterprise with nowhere to live — and
           that homelessness is what produced the third screen. */}
       <SectionHeader
-        title="Connection"
-        description="Set once. Every job below follows it unless you say otherwise."
+        title="Accounts"
+        description="What this machine can bill jobs to. Which job runs on which is the list below."
       >
         <Card>
           <CardRows>
@@ -2047,7 +2213,7 @@ function ModelsTab({
                   />
                 )
               }
-              hint="Where this runs. Everything below follows from it."
+              hint="How the accounts below are grouped. Which job runs on which is the list further down — a profile can run on several lanes at once."
               control={
                 <SegmentControl
                   options={(["Cloud", "Local", "Self-hosted", "Enterprise"] as LaneName[]).map(
@@ -2077,8 +2243,11 @@ function ModelsTab({
                          because a disabled `<button>` fires no mouse events and
                          can therefore carry neither tooltip nor hint (B12,
                          ADR 0163). */
-                      disabled:
-                        Boolean(runtime) && value !== "Cloud" && value !== "Self-hosted",
+                      /* ONE LIST FOR WHY A LANE IS WITHHELD (ADR 0123). It was
+                         this condition and `LockedLanes`' two sentences, and the
+                         account picker on every job row needed the same fact —
+                         three copies of a product decision with a date on it. */
+                      disabled: Boolean(runtime) && Boolean(laneWithheld(value)),
                     }),
                   )}
                   value={lane}
