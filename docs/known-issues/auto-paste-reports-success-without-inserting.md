@@ -174,9 +174,9 @@ machine: `org.freedesktop.portal.RemoteDesktop` **v2**, offering
 per paste.
 
 **Measured 2026-08-18:** the restored grant does suppress the dialog across an
-app restart on KDE Plasma 6. Three starts with the stored token and nothing
-pressed, `Start` returning in 18, 13 and 10 ms and the token coming back
-unrotated -- milliseconds is a compositor honouring `ExplicitlyRevoked`, where a
+app restart on KDE Plasma 6. Twelve starts with the stored token and nothing
+pressed, `Start` returning in 7-20 ms and the token coming back unrotated every
+time -- milliseconds is a compositor honouring `ExplicitlyRevoked`, where a
 dialog somebody had to read would have been seconds. The remaining gap is the
 other lane: no dictation has ended in an **XWayland** window since the grant, so
 `active_driver=xdotool` after a grant exists is reasoned rather than recorded.

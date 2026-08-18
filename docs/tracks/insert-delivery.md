@@ -151,11 +151,11 @@ library.
 | --- | --- | --- |
 | 1 | Stop losing the transcript when a paste cannot be confirmed | **done** 2026-08-18, ADR 0227 → **corrected by ADR 0229** |
 | 2 | Correct `PLATFORMS.md`, which described the portal path as shipped behaviour | **done** 2026-08-18 |
-| 3 | Decide the dependency and the grant flow | **decided** 2026-08-18: `ashpd`. Grant flow still open, see below |
+| 3 | Decide the dependency and the grant flow | **done** 2026-08-18: `ashpd`, and the grant flow is one button in Delivery & Insert with a refusal remembered rather than re-asked (ADR 0228's two answers, built in ADR 0234) |
 | 4 | `NativeInsertDriver::RemoteDesktopPortal` over a persistent connection, `Ctrl+V` via `NotifyKeyboardKeysym` | **done** 2026-08-18, `core/portal_session.rs` |
 | 5 | Move the restore token out of `$XDG_RUNTIME_DIR` | **done** 2026-08-18, `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json`, `0600` |
 | 6 | Wire it into the chain behind the probe, one driver per run | **done** 2026-08-18, `PasteLane` + ADR 0228's table, with tests per row |
-| 7 | Verify in the native host against a native Wayland window and an XWayland window | **half done** -- the runtime half is measured, the two pastes are owed. See below |
+| 7 | Verify in the native host against a native Wayland window and an XWayland window | **measured except one dictation** -- two portal pastes into native Wayland windows (9 ms, 2 ms), twelve restarts with no dialog, and the XWayland probe and driver command both measured. What is owed is a dictation ending in an XWayland window, which needs the owner. See below |
 | 8 | Consider `ConnectToEIS`/libei as the injection call, now cheap | **considered, deferred** 2026-08-18. See below |
 
 ### What step 4-6 landed, and the two bugs they had to clear first
@@ -191,7 +191,7 @@ the delivery mode is not changed behind the user's back. Both answers are writte
 into [ADR 0228](../decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md),
 now Accepted.
 
-### Step 7: what is measured, and the two pastes that are owed
+### Step 7: what is measured, and the one dictation that is owed
 
 **Measured on the reporting machine, 2026-08-18, app running from `main`:**
 
@@ -240,13 +240,14 @@ a paste whose delivery is now a D-Bus call that returned `Ok`.
 [WordScript] Portal grant restore phase=Granted session_active=true elapsed_ms=70
 ```
 
-Three app starts on 2026-08-18, each of them the dev host restarting the process
-after a rebuild, nothing pressed and no dialog on screen: `Start` returned in
-**18 ms, 13 ms and 10 ms** with the stored token sent, and the whole restore
-including the D-Bus connection took 70, 45 and 38 ms. `rotated=false` each time,
-so KWin handed back the token it was given. A rebuild restart is the same
-measurement as a manual one -- a new process reading the token off disk -- and it
-is a stronger one for "press nothing", because nobody was at the keyboard.
+**Twelve app starts** on 2026-08-18, every one of them the dev host restarting
+the process after a rebuild, nothing pressed and no dialog on screen: `Start`
+returned with the stored token sent in **7 to 20 ms**, median 13, and
+`rotated=false` on all twelve -- KWin handed back the token it was given. The one
+`rotated=true` in the log is the original grant, where there was no token to hand
+back. A rebuild restart is the same measurement as a manual one -- a new process
+reading the token off disk -- and it is the stronger one for "press nothing",
+because nobody was at the keyboard for any of them.
 
 **KWin honours `ExplicitlyRevoked`, and ADR 0228 stands as written.** The
 alternative reading was `elapsed_ms` in the thousands, which is a human reading a
@@ -383,23 +384,23 @@ site can be replaced later without moving the driver's position in the chain.
 Revisit it if `NotifyKeyboardKeysym` turns out to drop keys under load, which
 nothing so far suggests.
 
-### Step 5 is not cosmetic
+### Step 5 was not cosmetic, and it is done
 
-`portal_token_path()` writes under `XDG_RUNTIME_DIR`, which is cleared on reboot.
-That turns "one grant ever" into "one grant per boot" — close enough to the
-per-paste prompt the owner rejected that it would undo the reason this driver was
-chosen. It belongs under `$XDG_STATE_HOME` (or `~/.local/state/wordscript/`),
-mode `0600`.
+`portal_token_path()` wrote under `XDG_RUNTIME_DIR`, which the system clears on
+reboot. That turns "one grant ever" into "one grant per boot" — close enough to
+the per-paste prompt the owner rejected that it would undo the reason this driver
+was chosen. It lives under `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json`
+at mode `0600` in a `0700` directory, and a test fails if that path ever moves
+back under the runtime dir.
 
-### Open decisions for step 3
+### The two open decisions for step 3 are answered
 
-1. Is the first grant requested **lazily**, on the first `auto_paste` run that
-   needs it, or offered up front in Settings as a one-time "enable insert on
-   Wayland" action? Lazy raises a dialog mid-dictation on a fresh install; up
-   front puts it where the user is already configuring.
-2. If the grant is refused or later revoked, does `auto_paste` fall back to the
-   clipboard with its stated reason (as it does now), or does it turn the
-   delivery mode off and say so?
+Both were the owner's, both on 2026-08-18, and both are written into
+[ADR 0228](../decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md)
+rather than repeated here: the grant is asked for **up front**, by one button in
+Delivery & Insert that no dictation can reach, and a refusal leaves `auto_paste`
+falling back to the clipboard with its stated reason rather than switching the
+delivery mode off behind the user's back.
 
 ## Records this track carries
 
