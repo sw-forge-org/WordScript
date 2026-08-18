@@ -74,6 +74,28 @@ pub enum HotKeyState {
     Released,
 }
 
+/// WordScript patch: which operating-system event path produced a
+/// [`GlobalHotKeyEvent`].
+///
+/// Only X11 has two, and they do not carry the same weight: a core key event
+/// arrives through the grab and depends on focus, so the server is free to
+/// synthesise one the keyboard never sent — losing focus to another window
+/// fabricates a release of every key it believed to be down. The XInput2 raw
+/// stream is what the device itself reported and knows nothing about focus.
+/// A consumer that ends something on the release edge needs to be able to tell
+/// the two apart before it believes the key came up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum HotKeyEventOrigin {
+    /// The platform's ordinary shortcut path: an X11 core `KeyPress`/`KeyRelease`
+    /// delivered through the grab, or the single event path macOS and Windows
+    /// offer. On X11 this one can be synthetic.
+    Grab,
+    /// X11 XInput2 raw device events — what the keyboard reported, independent
+    /// of focus and of any grab. Never synthetic.
+    RawDevice,
+}
+
 /// Describes a global hotkey event emitted when a [`HotKey`] is pressed or released.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -95,6 +117,9 @@ pub struct GlobalHotKeyEvent {
     /// Always false on the `Pressed` edge, and always false for grabbed shortcuts,
     /// where a real main key already makes the intent unambiguous.
     pub interrupted: bool,
+    /// WordScript patch: which OS event path this event came from. See
+    /// [`HotKeyEventOrigin`] — on X11 a `Grab` release may be synthetic.
+    pub origin: HotKeyEventOrigin,
 }
 
 /// A reciever that could be used to listen to global hotkey events.

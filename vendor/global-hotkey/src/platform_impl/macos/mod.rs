@@ -405,12 +405,14 @@ unsafe extern "C" fn hotkey_handler(
                 id: event_hotkey.id,
                 state: crate::HotKeyState::Pressed,
                 interrupted: false,
+                origin: crate::HotKeyEventOrigin::Grab,
             }),
             #[allow(non_upper_case_globals)]
             kEventHotKeyReleased => GlobalHotKeyEvent::send(GlobalHotKeyEvent {
                 id: event_hotkey.id,
                 state: crate::HotKeyState::Released,
                 interrupted: false,
+                origin: crate::HotKeyEventOrigin::Grab,
             }),
             _ => {}
         };
@@ -472,6 +474,7 @@ unsafe extern "C" fn media_key_event_callback(
                 // A media key is a real key: the intent is unambiguous, so the
                 // contract in `lib.rs` fixes this at false.
                 interrupted: false,
+                origin: crate::HotKeyEventOrigin::Grab,
             });
 
             return ptr::null();
@@ -523,6 +526,7 @@ unsafe extern "C" fn key_event_callback(
                         id: *id,
                         state,
                         interrupted: false,
+                        origin: crate::HotKeyEventOrigin::Grab,
                     });
                 }
             }

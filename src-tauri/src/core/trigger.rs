@@ -3,8 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use global_hotkey::HotKeyEventOrigin;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_global_shortcut::{
     GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState,
 };
@@ -22,6 +23,11 @@ const DEFAULT_DEBOUNCE_MS: u64 = 300;
 /// and thereby made every stray tap produce a transcript.
 const HOLD_ARM_MS: u64 = 300;
 const DEFAULT_HOLD_WATCHDOG_SECONDS: u64 = 120;
+/// How long after a real registration a repeat request still counts as one of
+/// the "concurrent startup calls from multiple windows" the idempotency guard
+/// exists for. Past it, a repeat is a deliberate act and must be allowed to
+/// actually re-register — see the guard in `register_native_shortcuts`.
+const IDEMPOTENT_SKIP_WINDOW_MS: u128 = 10_000;
 const DEFAULT_DOUBLE_TAP_WINDOW_MS: u64 = 400;
 
 /// Permanent structured logging for the trigger lane (T11). Every shortcut
@@ -44,6 +50,22 @@ fn log_trigger(event: &str, fields: &[(&str, String)]) {
         }
     }
     super::runtime_log::record(line);
+}
+
+/// Names the OS event path a shortcut event arrived on.
+///
+/// On X11 the two are not equally trustworthy. A `grab` release is a core key
+/// event delivered through the passive grab and tied to focus: the server
+/// fabricates one for every key it believes to be down when a window takes the
+/// focus away, so a click on another window produces a release the keyboard
+/// never sent. A `raw` release comes from the XInput2 device stream and means
+/// the key physically came up. Every other platform has one path and reports
+/// `grab`.
+fn describe_event_origin(origin: HotKeyEventOrigin) -> &'static str {
+    match origin {
+        HotKeyEventOrigin::Grab => "grab",
+        HotKeyEventOrigin::RawDevice => "raw",
+    }
 }
 
 /// Renders the decision the state machine took for one received shortcut
@@ -223,6 +245,14 @@ pub struct NativeTriggerConfig {
     /// reason. A hold whose `Released` event never arrives would otherwise run
     /// until the silence timeout or the maximum-length cap and look like an
     /// unrelated capture bug (D11). `0` disables the watchdog.
+    ///
+    /// It cannot tell a lost release from a long dictation, and it ends both.
+    /// Measured 2026-08-18: two holds hit the 120 s default and the release
+    /// arrived 4.5 s and 4.2 s AFTER the watchdog had already stopped the
+    /// session -- the key was still down, the user was still speaking, and the
+    /// only record was a `release_missing` line the user never sees. Whatever
+    /// this is set to is therefore a hard ceiling on a single dictation, not
+    /// merely a safety net; see docs/known-issues/capture-shortcut-recording.md.
     pub hold_watchdog_seconds: u64,
     /// How close together the two taps of a double-tap must be, in
     /// milliseconds.
@@ -253,12 +283,33 @@ impl NativeTriggerConfig {
         let app_config = AppConfig::load_from_disk();
         let mode_hotkeys = ModeHotkeys::from_app_config(&app_config);
 
+        // The hold ceiling is the SAME ceiling every other activation mode
+        // obeys: "When a recording stops" -> Maximum length, per profile
+        // (`max_recording_seconds`, 720 s by default). It used to be a separate
+        // number with its own 120 s default and no settings control at all, so
+        // a hold was cut off at two minutes while tap and double-tap ran for
+        // twelve — a second list for one fact (ADR 0123), and the shorter of
+        // the two was the invisible one. Measured 2026-08-18: two dictations
+        // ended mid-sentence at exactly 120 s with the key still down.
+        //
+        // `hold_watchdog_seconds == 0` keeps its meaning and switches the
+        // watchdog off entirely; any other value now follows the card.
+        let capture_ceiling_seconds = app_config
+            .active_text_profile()
+            .resolved_capture()
+            .max_recording_seconds;
+        let hold_watchdog_seconds = if app_config.hold_watchdog_seconds == 0 {
+            0
+        } else {
+            capture_ceiling_seconds
+        };
+
         Self {
             hotkey: app_config.hotkey,
             pause_hotkey: app_config.pause_hotkey,
             abort_hotkey: app_config.abort_hotkey,
             activation_mode: NativeActivationMode::from_config(&app_config.activation_mode),
-            hold_watchdog_seconds: app_config.hold_watchdog_seconds,
+            hold_watchdog_seconds,
             double_tap_window_ms: app_config.double_tap_window_ms,
             mode_hotkeys,
             ..Self::default()
@@ -473,6 +524,9 @@ pub struct NativeTriggerState {
     /// Runtime truth per slot, rebuilt on every registration and updated in
     /// place as events arrive.
     bindings: Vec<BindingInfo>,
+    /// When the last registration actually registered anything, as opposed to
+    /// being skipped as idempotent. See `IDEMPOTENT_SKIP_WINDOW_MS`.
+    last_real_registration_at: Option<Instant>,
     /// True while the recorder holds the grabs open (T4). Independent of
     /// `paused`.
     suspended: bool,
@@ -540,6 +594,7 @@ impl NativeTriggerState {
             toggled_on: false,
             hold_session: 0,
             hold_started_at: None,
+            last_real_registration_at: None,
             hold_release_seen: false,
             hold_phase: HoldPhase::Idle,
             hold_action_generation: 0,
@@ -874,6 +929,21 @@ pub fn register_native_shortcuts<R: Runtime>(
     // Idempotency guard: skip unregister/re-register when shortcuts haven't changed.
     // This prevents a brief gap where the shortcut is unregistered (and a user press
     // would be silently dropped) on every concurrent startup call from multiple windows.
+    //
+    // It compares the state we KEPT, never the grabs the OS actually holds, so a
+    // registration that has died out from under us still looks current and every
+    // later attempt to re-register is skipped. Reported 2026-08-18: after a
+    // clean session the capture key stopped producing any `event=shortcut` at
+    // all, and changing settings did nothing — each attempt logged
+    // `skipped_idempotent`. Nothing in the process could rebuild the grabs; only
+    // `resume_native_trigger` can, because it clears these very fields first,
+    // and it is reachable solely through the hotkey recorder.
+    //
+    // The guard's stated purpose bounds it in TIME: "concurrent startup call
+    // from multiple windows". Those arrive within moments of each other. A
+    // request minutes later is a deliberate act — a settings change, a repair
+    // attempt — and skipping it buys nothing while removing the only self-heal
+    // the app has. So the guard now applies only inside that window.
     {
         let current = state.lock().map_err(|error| error.to_string())?;
         let base_unchanged = current.registered_hotkey.as_deref()
@@ -890,7 +960,22 @@ pub fn register_native_shortcuts<R: Runtime>(
                 .unwrap_or(false)
         }) && current.registered_mode_hotkeys.len() == mode_bindings.len();
 
-        if base_unchanged && mode_unchanged {
+        let within_startup_window =
+            registration_is_within_startup_window(current.last_real_registration_at, Instant::now());
+
+        log_trigger(
+            "register_standing",
+            &[(
+                "detail",
+                describe_standing_registration(
+                    &current.bindings,
+                    current.last_real_registration_at,
+                    Instant::now(),
+                ),
+            )],
+        );
+
+        if base_unchanged && mode_unchanged && within_startup_window {
             drop(current);
             log_trigger("register", &[("outcome", "skipped_idempotent".to_string())]);
             let mut state = state.lock().map_err(|error| error.to_string())?;
@@ -1037,6 +1122,7 @@ pub fn register_native_shortcuts<R: Runtime>(
     let mut state = state.lock().map_err(|error| error.to_string())?;
     state.bindings = bindings;
     state.config = config;
+    state.last_real_registration_at = Some(Instant::now());
     state.registered_hotkey = Some(hotkey.display);
     state.registered_pause_hotkey = Some(pause_hotkey.display);
     state.registered_abort_hotkey = Some(abort_hotkey.display);
@@ -1104,6 +1190,7 @@ pub fn handle_global_shortcut_event<R: Runtime>(
                     ShortcutState::Released => "released".to_string(),
                 },
             ),
+            ("origin", describe_event_origin(event.origin).to_string()),
         ],
     );
 
@@ -1517,6 +1604,62 @@ fn record_binding_observation(state: &mut NativeTriggerState, label: &str, event
 /// Ends a hold whose `Released` event never arrived, with a stated reason
 /// instead of letting it drift into the silence timeout or the maximum-length
 /// cap (T10). `0` seconds disables the watchdog.
+/// Whether a repeat registration request still falls inside the burst of
+/// concurrent startup calls the idempotency guard exists for.
+///
+/// Pure so the rule is testable without an `AppHandle`. `None` -- no real
+/// registration has happened yet -- is deliberately NOT inside the window:
+/// there is nothing established to protect, so the request must do its work.
+fn registration_is_within_startup_window(
+    last_real_registration_at: Option<Instant>,
+    now: Instant,
+) -> bool {
+    last_real_registration_at
+        .map(|at| now.duration_since(at).as_millis() < IDEMPOTENT_SKIP_WINDOW_MS)
+        .unwrap_or(false)
+}
+
+/// What the registration currently in force has delivered, as one field on every
+/// registration decision.
+///
+/// The 2026-08-18 report is sixteen consecutive `outcome=skipped_idempotent`
+/// lines with no `event=shortcut` anywhere after them, and not one of those lines
+/// said how long the grabs had stood or whether they had ever delivered
+/// anything — so how long they had already been dead was unbounded. This bounds
+/// it. Logged BEFORE the decision on every path, because a real registration
+/// resets the counters: after the fact they are gone.
+///
+/// A FACT, not a verdict. Zero events is equally what an unpressed binding looks
+/// like, which is why this reports counters rather than announcing that the grabs
+/// are gone. Mechanism 2 of
+/// `docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md` stays
+/// undiagnosed until an occurrence is caught with this in the log.
+///
+/// Pure so the format is testable without an `AppHandle`.
+fn describe_standing_registration(
+    bindings: &[BindingInfo],
+    last_real_registration_at: Option<Instant>,
+    now: Instant,
+) -> String {
+    let Some(at) = last_real_registration_at else {
+        return "none_yet".to_string();
+    };
+
+    let capture = bindings.iter().find(|binding| binding.label == "capture");
+    let events: u64 = bindings
+        .iter()
+        .map(|binding| binding.presses + binding.releases)
+        .sum();
+
+    format!(
+        "age_ms={} capture_presses={} capture_releases={} events_all_bindings={}",
+        now.duration_since(at).as_millis(),
+        capture.map(|binding| binding.presses).unwrap_or(0),
+        capture.map(|binding| binding.releases).unwrap_or(0),
+        events,
+    )
+}
+
 fn arm_hold_watchdog<R: Runtime>(app: &AppHandle<R>, hold_session: u64, watchdog_seconds: u64) {
     if watchdog_seconds == 0 {
         return;
@@ -1549,13 +1692,36 @@ fn arm_hold_watchdog<R: Runtime>(app: &AppHandle<R>, hold_session: u64, watchdog
             return;
         }
 
+        // NOT "release_missing": at this point the release has not arrived YET,
+        // which is a different statement from it never arriving. Measured
+        // 2026-08-18, both watchdog firings were followed by a real release
+        // 4 s later (`ignored_release_without_press`) -- the user was simply
+        // still holding the key. Naming the outcome after a defect sent one
+        // investigation looking for a lost event that was never lost.
         log_trigger(
             "hold_watchdog",
             &[
                 ("hold_session", hold_session.to_string()),
                 ("after_seconds", watchdog_seconds.to_string()),
-                ("outcome", "release_missing".to_string()),
+                ("outcome", "hold_limit_reached".to_string()),
             ],
+        );
+
+        // SAY SO. The watchdog used to call `stop_session` like an ordinary
+        // release, so a dictation cut off at the ceiling was delivered exactly
+        // like one the user ended — which is why it was reported as
+        // inexplicable. The capture monitor's own ceiling already announces
+        // itself this way; both now use the SAME sentence, because since
+        // 2026-08-18 they are the same ceiling and which timer won the race is
+        // not a fact the user has to learn (ADR 0123).
+        let reason = crate::core::capture::NativeCaptureStopReason::MaxDuration.message();
+        crate::core::sessions::note_capture_stop_reason(&app, reason);
+        let _ = app.emit(
+            "wordscript-event",
+            serde_json::json!({
+                "event": "recording_stopped",
+                "reason": reason,
+            }),
         );
 
         if let Some(effect) = stop_session(&app, active_capture_is_recording(&app)) {
@@ -2968,6 +3134,14 @@ mod tests {
     }
 
     #[test]
+    fn the_two_x11_event_paths_are_named_apart_in_the_log() {
+        // The whole point of the field is that a reader can tell a focus-loss
+        // release from a real one; two labels that read alike would defeat it.
+        assert_eq!(describe_event_origin(HotKeyEventOrigin::Grab), "grab");
+        assert_eq!(describe_event_origin(HotKeyEventOrigin::RawDevice), "raw");
+    }
+
+    #[test]
     fn status_exposes_the_timing_constants_the_ui_has_to_state() {
         let state = NativeTriggerState::default();
         let status = state.status();
@@ -3045,6 +3219,87 @@ mod tests {
         assert!(slots.iter().filter(|(_, value)| value.is_empty()).count() == 7);
     }
 
+    /// The idempotency guard skips a re-registration when the state it kept
+    /// looks unchanged -- and it never asks the OS whether the grabs are still
+    /// alive. Reported 2026-08-18: after a clean session the capture key
+    /// produced no `event=shortcut` at all, and every settings change logged
+    /// `skipped_idempotent` instead of rebuilding them. The only path that can
+    /// force a real registration is `resume_native_trigger`, which clears the
+    /// compared fields first, and it is reachable only through the hotkey
+    /// recorder.
+    ///
+    /// Bounding the guard in time is what restores the self-heal, so these
+    /// cases pin the bound rather than the comparison.
+    #[test]
+    fn the_idempotency_guard_only_covers_the_startup_burst() {
+        let now = Instant::now();
+        let a_moment_ago = now
+            .checked_sub(Duration::from_millis(200))
+            .expect("instant arithmetic");
+        let minutes_ago = now
+            .checked_sub(Duration::from_millis(IDEMPOTENT_SKIP_WINDOW_MS as u64 + 5_000))
+            .expect("instant arithmetic");
+
+        assert!(
+            registration_is_within_startup_window(Some(a_moment_ago), now),
+            "concurrent startup calls from several windows are what the guard is for"
+        );
+        assert!(
+            !registration_is_within_startup_window(Some(minutes_ago), now),
+            "a later request is deliberate -- skipping it removes the only way back \
+             from grabs that died out from under us"
+        );
+        assert!(
+            !registration_is_within_startup_window(None, now),
+            "nothing registered yet means nothing to protect"
+        );
+    }
+
+    /// The instrument mechanism 2 of the same record asks for: a registration
+    /// decision that says what the registration in force has delivered. The
+    /// reported failure was sixteen `skipped_idempotent` lines carrying none of
+    /// this, so the interval in which the grabs had already been dead was
+    /// unbounded.
+    #[test]
+    fn a_registration_decision_reports_what_the_standing_grabs_delivered() {
+        let now = Instant::now();
+        let long_ago = now
+            .checked_sub(Duration::from_millis(900_000))
+            .expect("instant arithmetic");
+
+        let mut capture = BindingInfo::new("capture", "capture", "Shift", "Shift");
+        capture.presses = 3;
+        capture.releases = 2;
+        let bindings = vec![
+            capture,
+            BindingInfo::new("pause", "capture", "", ""),
+        ];
+
+        let detail = describe_standing_registration(&bindings, Some(long_ago), now);
+        assert!(detail.contains("age_ms=900"), "{detail}");
+        assert!(detail.contains("capture_presses=3"), "{detail}");
+        assert!(detail.contains("capture_releases=2"), "{detail}");
+        assert!(detail.contains("events_all_bindings=5"), "{detail}");
+
+        // A binding that has stood for a quarter of an hour and delivered nothing
+        // is the shape the failure leaves. Reported as counters, not as a verdict:
+        // it is also what a binding nobody pressed looks like.
+        let silent = vec![BindingInfo::new("capture", "capture", "Shift", "Shift")];
+        let detail = describe_standing_registration(&silent, Some(long_ago), now);
+        assert!(detail.contains("capture_presses=0"), "{detail}");
+        assert!(detail.contains("events_all_bindings=0"), "{detail}");
+
+        assert_eq!(
+            describe_standing_registration(&silent, None, now),
+            "none_yet",
+            "nothing has been registered yet, so there is no age to report"
+        );
+    }
+
+    /// The `#[test]` was missing, so this case had never once run — the only one
+    /// in this module without it. Found while adding the case below, and it is
+    /// the same shape as the `devtools` feature that was gated on and never
+    /// declared: something written to hold a fact, compiled in, and inert.
     #[test]
     fn registration_failure_reason_names_the_shortcut_and_the_likely_cause() {
         let reason = registration_failure_reason("Ctrl + F9", "HotKey already registered");

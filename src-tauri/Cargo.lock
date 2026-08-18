@@ -6689,6 +6689,7 @@ dependencies = [
  "chrono",
  "cpal",
  "enigo",
+ "global-hotkey",
  "gtk",
  "hound",
  "keyring",

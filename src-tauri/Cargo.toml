@@ -33,6 +33,11 @@ tauri-build = { version = "2", features = [] }
 tauri       = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
+# Named directly only so the trigger log can say which OS event path a
+# shortcut event came from; the plugin re-exports the event type but not the
+# origin enum. `[patch.crates-io]` below points both at the same vendored
+# crate, so this is the plugin's own dependency, not a second copy.
+global-hotkey = "0.7"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 serde       = { version = "1", features = ["derive"] }
@@ -91,6 +96,15 @@ libc = "0.2"
 # This feature is used for production builds or when a dev server is not specified.
 # DO NOT REMOVE!!
 custom-protocol = ["tauri/custom-protocol"]
+# `overlay_open_devtools` in lib.rs gates on `any(debug_assertions, feature =
+# "devtools")` at two sites, and this declaration was missing — so the feature
+# arm could never be true and cargo emitted two `unexpected_cfg_value` warnings
+# naming the lines. A gate that cannot gate is worse than no gate: it reads as a
+# supported way to inspect a release build and is not one. Declared rather than
+# deleted, because the arm states the real Tauri rule — `open_devtools()` exists
+# only under `debug_assertions` OR this feature — and a release build handed
+# `--features devtools` now actually gets the inspector.
+devtools = ["tauri/devtools"]
 
 [profile.dev]
 # Dev builds: smaller target/ with debug=1 instead of debug=2.

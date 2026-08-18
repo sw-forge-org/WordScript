@@ -14,7 +14,7 @@ use x11rb::protocol::{xkb, ErrorKind, Event};
 use x11rb::rust_connection::RustConnection;
 use xkeysym::RawKeysym;
 
-use crate::{hotkey::HotKey, Error, GlobalHotKeyEvent};
+use crate::{hotkey::HotKey, Error, GlobalHotKeyEvent, HotKeyEventOrigin};
 
 // WordScript patch: modifier-only shortcuts are *observed*, not grabbed.
 //
@@ -56,9 +56,15 @@ impl GlobalHotKeyManager {
     pub fn new() -> crate::Result<Self> {
         let (thread_tx, thread_rx) = unbounded();
         std::thread::spawn(|| {
-            if let Err(_err) = events_processor(thread_rx) {
+            if let Err(err) = events_processor(thread_rx) {
+                // stderr as well as tracing: the `tracing` feature is not enabled
+                // in this tree, so the only report this thread's death had was
+                // compiled out. A backend that stops delivering key events while
+                // every caller still reads "registered" is the failure shape of
+                // docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md.
+                eprintln!("[global-hotkey] x11 event thread ended: {err}");
                 #[cfg(feature = "tracing")]
-                tracing::error!("{}", _err);
+                tracing::error!("{}", err);
             }
         });
         Ok(Self { thread_tx })
@@ -444,6 +450,7 @@ impl Observer {
                         id: state.id,
                         state: crate::HotKeyState::Pressed,
                         interrupted: false,
+                        origin: HotKeyEventOrigin::RawDevice,
                     });
                 }
             }
@@ -467,6 +474,7 @@ impl Observer {
                         id: state.id,
                         state: crate::HotKeyState::Released,
                         interrupted: state.interrupted,
+                        origin: HotKeyEventOrigin::RawDevice,
                     });
                     state.pressed = false;
                     state.interrupted = false;
@@ -509,7 +517,30 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
     let full_mask = KeyButMask::CONTROL | KeyButMask::SHIFT | KeyButMask::MOD4 | KeyButMask::MOD1;
 
     loop {
-        while let Ok(Some(event)) = conn.poll_for_event() {
+        // `while let Ok(Some(event))` swallowed the Err arm: a broken X
+        // connection made the pattern fail to match, the inner loop ended, and
+        // the OUTER loop went straight back to polling a dead connection -- 1 ms
+        // apart, forever, delivering nothing and saying nothing. The manager
+        // thread stayed alive, so no caller could observe it, and the app's own
+        // registration state still read "registered". That is candidate 3 of
+        // docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md, and it
+        // is the only one of the three that was reachable by reading this file.
+        //
+        // Not a diagnosis of that bug: this makes the failure REPORTABLE rather
+        // than proving it is the one that happened. There is nothing to retry --
+        // every grab lives on this connection -- so the thread ends with a
+        // reason instead of spinning.
+        loop {
+            let event = match conn.poll_for_event() {
+                Ok(Some(event)) => event,
+                Ok(None) => break,
+                Err(err) => {
+                    return Err(format!(
+                        "x11 connection lost while polling for hotkey events, \
+                         so no further key event can arrive: {err}"
+                    ))
+                }
+            };
             match event {
                 Event::KeyPress(event) => {
                     let keycode = event.detail;
@@ -524,6 +555,7 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
                                     id: state.id,
                                     state: crate::HotKeyState::Pressed,
                                     interrupted: false,
+                                    origin: HotKeyEventOrigin::Grab,
                                 });
                                 state.pressed = true;
                             }
@@ -540,6 +572,7 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
                                     id: state.id,
                                     state: crate::HotKeyState::Released,
                                     interrupted: false,
+                                    origin: HotKeyEventOrigin::Grab,
                                 });
                                 state.pressed = false;
                             }

@@ -19,7 +19,8 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    hotkey::HotKey, modifier_only::ModifierOnlyObserver, GlobalHotKeyEvent, HotKeyState,
+    hotkey::HotKey, modifier_only::ModifierOnlyObserver, GlobalHotKeyEvent, HotKeyEventOrigin,
+    HotKeyState,
 };
 
 static HOTKEY_REGISTRY: Lazy<std::sync::Mutex<HashMap<u32, HotKey>>> =
@@ -178,6 +179,7 @@ unsafe extern "system" fn ll_keyboard_proc(
                     HotKeyState::Released
                 },
                 interrupted: emission.interrupted,
+                origin: HotKeyEventOrigin::Grab,
             });
         }
     }
@@ -227,6 +229,7 @@ unsafe extern "system" fn ll_keyboard_proc(
                 id,
                 state: HotKeyState::Pressed,
                 interrupted: false,
+                origin: HotKeyEventOrigin::Grab,
             });
             return 1;
         }
@@ -243,6 +246,7 @@ unsafe extern "system" fn ll_keyboard_proc(
                     id: active_id,
                     state: HotKeyState::Released,
                     interrupted: false,
+                    origin: HotKeyEventOrigin::Grab,
                 });
                 return 1;
             }
