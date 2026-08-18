@@ -401,6 +401,15 @@ rows draw two, consistently, across Models, Agents, Integrations, Notes &
 Meetings, Privacy and About. Three lines beside neighbours drawing one is the
 departure worth fixing.
 
+**AND `62ch` IS NOT THE MEASURE ON THE SETTINGS SHEET — THE COLUMN IS**
+(ADR 0224). Measured in the real app on 2026-08-18 at the **625 CSS px** this
+reporting machine renders the workspace at: the sheet's column is 379 px, a
+`.ws-row-hint` in it draws **313 px** wide, and its `max-width: 62ch` computes to
+**436 px**. The cap never binds there and cannot be what a sentence is written
+against; what decides the wrap is the column, and at that column two lines is
+about 70 characters. The cap is a ceiling for the wide case, not a budget.
+The row-hint figures in the table above are still the numbers to write to.
+
 **A ROW MUST NOT PRINT THE RUNTIME TEXT ITS OWN CONTROL DISPLAYS.** A device
 name, a monitor label, a release summary: that text is what sets the control's
 width, so the row spends its text column on the string and then tries to print

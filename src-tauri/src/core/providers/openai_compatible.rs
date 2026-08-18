@@ -145,11 +145,113 @@ struct ChatCompletionPayload {
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatChoiceMessage,
+    /// Why the model stopped. `length` is the budget running out, which is the
+    /// one value [`text_from`] refuses — see its docblock.
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ChatChoiceMessage {
     content: String,
+}
+
+/// **HOW MUCH SLACK A REASONING MODEL NEEDS ON TOP OF THE ANSWER BUDGET.**
+///
+/// `max_tokens` on the wire caps reasoning AND answer together; every caller in
+/// this product means *how long may the answer be*. The two readings were the
+/// same number until Groq retired its Llama chat line (ADR 0214) and every
+/// replacement it serves reasons — and this adapter is the layer that knows the
+/// wire's reading, so it is where the translation belongs.
+///
+/// **One number rather than a catalogue column, because the headroom is not a
+/// per-model fact we have measured.** `reasoning_effort` is one: it is posted,
+/// it is documented, and a row states it. What a given model then spends
+/// thinking varies per prompt, so a column would claim a precision that would go
+/// stale at every read-date. Measured on 2026-08-18 against the real title
+/// prompt: `gpt-oss-120b` at `low` spends 38, `gpt-oss-20b` at `low` spends 5.
+/// 256 clears both several times over.
+///
+/// **It costs nothing when it is not used.** A budget is a cap and not a
+/// reservation — a model that finishes at 52 tokens is billed for 52.
+const REASONING_HEADROOM_TOKENS: u32 = 256;
+
+/// The effort to post and the budget to send with it (ADR 0221).
+///
+/// **This is the fix for a defect ADR 0214 half-closed**, and the half it missed
+/// is the reason it is one function rather than a line at each call site. That
+/// record measured `gpt-oss-20b` against `transcript_store::describe`'s 48-token
+/// budget, set `reasoning_effort` and stopped — but the title rides the
+/// ASSISTANT's job (ADR 0087), which runs `gpt-oss-120b`, and 120b at `low`
+/// spends 38 of those 48 thinking. The reply came back cut after its first line
+/// with `finish_reason: length`, so the parse found a language and no title and
+/// History has named nothing since. Two more callers sit under the same edge:
+/// `agent`'s intent classifier asks for 10 tokens and `transform`'s correction
+/// floors at 40.
+///
+/// **`none` gets no headroom, and that is not a special case.** It is the one
+/// value that switches reasoning OFF — `qwen3.6-27b`'s row — so there is nothing
+/// to leave room for.
+///
+/// A model the catalogue does not carry answers `None` and keeps the caller's
+/// budget untouched: a typed override reaches the wire as written (ADR 0115),
+/// and inflating a budget for a model we cannot say reasons would be this
+/// function guessing.
+fn completion_budget(model: &str, answer_tokens: u32) -> (u32, Option<&'static str>) {
+    let Some(effort) = model_catalogue::reasoning_effort_for(model, ProviderRole::Chat) else {
+        return (answer_tokens, None);
+    };
+
+    let budget = if effort == "none" {
+        answer_tokens
+    } else {
+        answer_tokens.saturating_add(REASONING_HEADROOM_TOKENS)
+    };
+    (budget, Some(effort))
+}
+
+/// The completion's text, or the reason there is not one.
+///
+/// **A REPLY THAT RAN OUT OF BUDGET IS A FAILURE AND NOT A SHORT ANSWER.**
+/// `finish_reason: length` says the model was still writing, so what arrived is
+/// the beginning of an answer and nothing marks where it stops. Returning it
+/// would deliver a cleanup cut mid-sentence, a translation missing its end or a
+/// title truncated to the language code — text that claims to be finished and is
+/// not, which is the fake-readiness rule applied to a completion.
+///
+/// **Every caller is already built for this and none of them was reached.** A
+/// correction falls back to the raw text with `post_correction_failed_fallback`,
+/// a translation with `llm_call_failed`, a classifier to *not the assistant*, a
+/// title to the first-words slug — each of them says so. A truncated string
+/// reaching those callers as `Ok` is what let a 200 be indistinguishable from a
+/// failure for a day.
+fn text_from(vendor: &'static str, payload: &ChatCompletionPayload) -> Result<String, CompatibleError> {
+    let refuse = |message: String| CompatibleError {
+        kind: ProviderErrorKind::Parse,
+        message,
+        status: None,
+        retry_after_seconds: None,
+    };
+
+    let Some(choice) = payload.choices.first() else {
+        return Err(refuse(format!(
+            "{vendor} chat completion returned no text choices."
+        )));
+    };
+
+    if choice.finish_reason.as_deref() == Some("length") {
+        return Err(refuse(format!(
+            "{vendor} chat completion ran out of its token budget before it finished, so the answer is incomplete and was discarded."
+        )));
+    }
+
+    let content = choice.message.content.trim().to_string();
+    if content.is_empty() {
+        return Err(refuse(format!(
+            "{vendor} chat completion returned no text choices."
+        )));
+    }
+    Ok(content)
 }
 
 /// One transcription request, with every vendor decision already taken.
@@ -352,39 +454,45 @@ impl CompatibleClient {
             .iter()
             .map(|message| message.content.len())
             .sum::<usize>();
+
+        /* HOW MUCH THIS MODEL MAY THINK BEFORE IT ANSWERS, AND WHAT THAT COSTS
+           THE BUDGET (ADR 0214). **Sent only where the catalogue names an effort
+           for this id**, which is the rule that keeps this one line correct for
+           four adapters: a model that does not reason gets no parameter, and a
+           self-hosted server — whose ids are its operator's and are in no
+           catalogue by construction — gets none either.
+
+           It is not a tuning knob. Groq retired its Llama chat models on
+           2026-08-17 and every replacement it serves reasons; an unconstrained
+           reasoning model spends the whole `max_tokens` budget thinking and
+           returns an empty `content`, which reaches this product as a dictation
+           whose cleanup silently did nothing.
+
+           The budget moves with it, and that half was missing — see
+           [`completion_budget`], which carries the measurement and the three
+           callers whose budgets sit under a reasoning model's own cost. */
+        let (max_tokens, effort) = completion_budget(&request.model, request.max_tokens);
+
         runtime_log::record(format!(
-            "[WordScript] {} correction start model={} timeout_ms={} retries={} prompt_chars={} max_tokens={}",
+            "[WordScript] {} correction start model={} timeout_ms={} retries={} prompt_chars={} max_tokens={} answer_tokens={} effort={}",
             self.vendor,
             request.model,
             self.timeout.as_millis(),
             self.max_retries,
             prompt_chars,
+            max_tokens,
             request.max_tokens,
+            effort.unwrap_or("-"),
         ));
 
         let mut body = serde_json::json!({
             "model": request.model,
             "messages": request.messages,
             "temperature": request.temperature,
-            "max_tokens": request.max_tokens,
+            "max_tokens": max_tokens,
         });
 
-        /* HOW MUCH THIS MODEL MAY THINK BEFORE IT ANSWERS (ADR 0214).
-           **Sent only where the catalogue names an effort for this id**, which is
-           the rule that keeps this one line correct for four adapters: a model
-           that does not reason gets no parameter, and a self-hosted server —
-           whose ids are its operator's and are in no catalogue by construction —
-           gets none either.
-
-           It is not a tuning knob. Groq retired its Llama chat models on
-           2026-08-17 and every replacement it serves reasons; an unconstrained
-           reasoning model spends the whole `max_tokens` budget thinking and
-           returns an empty `content`, which reaches this product as a dictation
-           whose cleanup silently did nothing. Measured at 46 reasoning tokens
-           against the 48-token budget `transcript_store::describe` sends. */
-        if let Some(effort) =
-            model_catalogue::reasoning_effort_for(&request.model, ProviderRole::Chat)
-        {
+        if let Some(effort) = effort {
             body["reasoning_effort"] = serde_json::Value::String(effort.to_string());
         }
 
@@ -410,17 +518,7 @@ impl CompatibleClient {
                 retry_after_seconds: None,
             })?;
 
-        payload
-            .choices
-            .first()
-            .map(|choice| choice.message.content.trim().to_string())
-            .filter(|content| !content.is_empty())
-            .ok_or(CompatibleError {
-                kind: ProviderErrorKind::Parse,
-                message: format!("{} chat completion returned no text choices.", self.vendor),
-                status: None,
-                retry_after_seconds: None,
-            })
+        text_from(self.vendor, &payload)
             .inspect(|content| {
                 runtime_log::record(format!(
                     "[WordScript] {} correction complete elapsed_ms={} text_len={}",
@@ -617,6 +715,65 @@ fn retry_after_seconds(response: &reqwest::Response) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **THE 48-TOKEN TITLE BUDGET AGAINST THE MODEL THE TITLE ACTUALLY RUNS
+    /// ON**, which is the case ADR 0214 did not measure.
+    ///
+    /// The title rides the assistant's job (ADR 0087) and that job runs
+    /// `gpt-oss-120b`. Measured live on 2026-08-18: at `low` it spends 38
+    /// reasoning tokens, so 48 leaves ten — enough for the language line and
+    /// nothing else, and the reply comes back `finish_reason: length` with no
+    /// title on it. The headroom is what makes the answer budget an answer
+    /// budget.
+    #[test]
+    fn a_reasoning_model_gets_room_to_think_on_top_of_the_answer_budget() {
+        let (budget, effort) = completion_budget("openai/gpt-oss-120b", 48);
+        assert_eq!(effort, Some("low"));
+        assert_eq!(budget, 48 + REASONING_HEADROOM_TOKENS);
+
+        // The classifier asks for ten and `transform`'s correction floors at
+        // forty; both sit under a reasoning model's own cost the same way.
+        assert_eq!(completion_budget("openai/gpt-oss-20b", 10).0, 10 + REASONING_HEADROOM_TOKENS);
+    }
+
+    /// `none` is reasoning switched OFF, so there is nothing to leave room for —
+    /// and a model the catalogue does not carry keeps the caller's budget
+    /// untouched, because a typed override reaches the wire as written
+    /// (ADR 0115) and inflating for a model we cannot say reasons is a guess.
+    #[test]
+    fn a_model_that_does_not_think_keeps_the_budget_it_was_given() {
+        assert_eq!(completion_budget("qwen/qwen3.6-27b", 48), (48, Some("none")));
+        assert_eq!(completion_budget("a-model-shipped-after-this-build", 48), (48, None));
+    }
+
+    /// **A REPLY THAT RAN OUT OF BUDGET IS REFUSED**, because what arrived is the
+    /// beginning of an answer with nothing marking where it stops. This is the
+    /// shape the title call got back for a day behind a `status=200`: one line,
+    /// parseable, and not the answer.
+    #[test]
+    fn a_truncated_completion_is_a_failure_and_not_a_short_answer() {
+        let cut: ChatCompletionPayload = serde_json::from_str(
+            r#"{"choices":[{"message":{"content":"de\n"},"finish_reason":"length"}]}"#,
+        )
+        .expect("a payload");
+        let error = text_from("Groq", &cut).expect_err("a refusal");
+        assert!(matches!(error.kind, ProviderErrorKind::Parse));
+        assert!(error.message.contains("token budget"), "{}", error.message);
+
+        let finished: ChatCompletionPayload = serde_json::from_str(
+            r#"{"choices":[{"message":{"content":"de\nCode Review Anfrage"},"finish_reason":"stop"}]}"#,
+        )
+        .expect("a payload");
+        assert_eq!(
+            text_from("Groq", &finished).expect("the text"),
+            "de\nCode Review Anfrage"
+        );
+
+        // A vendor that reports no reason at all is not thereby truncated.
+        let quiet: ChatCompletionPayload =
+            serde_json::from_str(r#"{"choices":[{"message":{"content":"ja"}}]}"#).expect("a payload");
+        assert_eq!(text_from("Your server", &quiet).expect("the text"), "ja");
+    }
 
     #[test]
     fn the_vendor_name_reaches_the_sentence_a_user_reads() {

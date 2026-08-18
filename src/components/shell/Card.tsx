@@ -124,14 +124,18 @@ export function CardFooter({
 export function CardRows({
   tinted,
   className,
+  id,
   children,
 }: {
   tinted?: boolean;
   className?: string;
+  /** For a control elsewhere that says it opens these rows — `aria-controls`
+   *  names an element, so the element it names has to have a name (ADR 0224). */
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("ws-rows", className)} data-tinted={tinted ? "" : undefined}>
+    <div id={id} className={cn("ws-rows", className)} data-tinted={tinted ? "" : undefined}>
       {children}
     </div>
   );

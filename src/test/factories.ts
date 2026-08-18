@@ -23,7 +23,6 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
         plan: "",
       },
     ],
-    language: "",
     active_text_profile_id: "general",
     text_profiles: [
       {

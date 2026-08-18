@@ -49,6 +49,20 @@ here, in three files that split by *kind of document* rather than by leg:
   transcript rows, so there was no window to wait for and B14b became an ask
   instead (ADR 0210). A brief can be wrong about the tree it describes, and this
   is the example.
+- [`speech-track-b17-kickoff.md`](speech-track-b17-kickoff.md) — the spent
+  **kick-off page** for B17, B18 and B20, all three closed 2026-08-18 (ADR 0220,
+  ADR 0219, ADR 0218). **Kept for its own closing section**, which lists five
+  claims it made about the code that the file did not support: it contradicts
+  itself about whether two controls are live, it merges two disjoint sets of
+  settings into one count of four, it counts seven controls and two badges in a
+  row that has five and none, it names the wrong button for the vendor fault, and
+  it traces the readability complaint to breakpoints that in fact fire — the
+  settings sheet's column is 379 px at the width in question, not the 569 px the
+  brief inherited from the workspace column. **Four of the five are one habit**:
+  a claim written from an adjacent fact rather than from the file. The report it
+  filed as *unreproduced* was reproducible on every machine and became B23
+  (ADR 0217). B15's brief is the example of a brief wrong about the tree; this is
+  the example of a brief wrong about its own arithmetic.
 
 ## Closed tracks and spent plans
 

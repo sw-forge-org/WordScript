@@ -53,6 +53,256 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — AI Models says what belongs to the machine and what belongs to your profile (ADR 0226)
+
+- **The accounts are the machine's.** Their names, keys, plans and server
+  addresses are the same in every profile — add a key on one profile and it is
+  there on all of them. The screen said the opposite: a note above the cards
+  claimed the accounts belonged to the open profile.
+- **Exactly one thing on an account card is your profile's** — which account it
+  is billed to — and that is now the one thing wearing your profile's name.
+  Before, it was only in the tooltip.
+- **The note is gone.** The first line of the screen names both owners instead,
+  and the Accounts header says the list is the machine's.
+- **Your profile's name is on the screen once, not four times.** It is in the
+  switcher, in that first line, and on the account you bill to — the two repeats
+  further down are gone.
+- Nothing moved: the accounts, their cards and where you pick one are exactly
+  where they were.
+
+### Added — accounts fold, so a machine with several still fits on a screen (ADR 0224)
+
+- **Every account card can be collapsed.** Each one carries its own key, plan,
+  endpoint and used-by line since the last release, which made three accounts a
+  screen and a half. Measured on a three-account machine: the list was 1217 px
+  and is now 434 px at rest.
+- **The one your profile bills to is open when you arrive**, and the rest are
+  folded to a single line that still shows the vendor's mark, the account's name
+  and whether it holds a key. Opening one does not close another — two accounts
+  on one vendor exist so their keys can be compared.
+- Pressing an account to bill through it also opens it. The fold and the choice
+  are two separate controls, so opening a card never changes where jobs are paid
+  for.
+
+### Changed — the job list says what a control does before it says why (ADR 0224)
+
+- Twenty-two sentences under *What runs what* were shortened. The rule was to
+  lead with the control's own answer and drop the second clause, never to delete
+  the reason a reader needs once.
+- Three of them stopped calling an account *the connection*, which is what it was
+  called two releases ago.
+
+### Fixed — a dictation no longer sends one vendor's model to another (ADR 0225)
+
+- **A profile whose account moved to a second vendor kept sending the first
+  vendor's speech model.** The vendor quietly substituted its own and the History
+  record stored the model that was never sent — so the record named
+  `whisper-large-v3-turbo` for five dictations that actually ran on `whisper-1`.
+- A record now leaves the model out where the vendor picked it, rather than
+  naming one the request did not carry.
+- **A transcript title that cannot be made says so in the runtime log** — skipped,
+  failed with the reason, or made. It has always fallen back to the first words
+  of the dictation, silently, which is right for the reader and left no way to
+  find out why. Nothing changes on screen.
+
+### Fixed — History names transcripts again, and a thinking model no longer eats the answer (ADR 0221)
+
+- **The title was never being written, and the request looked perfectly
+  healthy.** Groq's replacement chat models all reason, and `max_tokens` on the
+  wire caps thinking and answer together. The title asks for 48 tokens;
+  `gpt-oss-120b` — the model the title runs on, because the title follows the
+  assistant — spends 38 of them thinking. What came back was the language line,
+  cut, under `HTTP 200`. Every dictation since 2026-08-17 11:45 has been filed
+  with no name.
+- **A budget is now what the ANSWER may cost.** The adapter adds a reasoning
+  model's thinking on top of what the caller asked for, because the adapter is
+  the layer that knows the wire's reading of the number.
+- **And a reply that ran out of budget is refused rather than delivered.** Half a
+  cleanup, a translation missing its end or a title truncated to a language code
+  is text claiming to be finished when it is not. Every caller already had an
+  honest fallback and none of them was being reached.
+- **Two things nobody had reported were broken the same way.** Auto stopped
+  routing to the assistant — its intent classifier asks for ten tokens — and a
+  short dictation's cleanup ran out before it started.
+- **The Title / Written / Heard segment works again with it.** Title falls back
+  to the written text when a record has no name, so with nothing named two of the
+  three positions were rendering the same thing. That fallback is correct and was
+  never the defect.
+- Records written while this was broken keep their first-words name. A title is
+  made when the text is delivered and nothing re-opens a record to name it.
+
+### Changed — an account is one card, with its own key on it (ADR 0223)
+
+- **The API key sat beside the account list, not inside an account**, so it read
+  as one key for the whole machine. Every account is a card now and carries its
+  own key, its own plan, and — on your own server — its own URL and token.
+- **The provider logos at the top did nothing when you clicked them.** They were
+  a statement, not a control, and they moved when you changed something further
+  down the page. They are gone; each account shows its own vendor's mark, and the
+  logos you can actually press are in *Add account*, which is the one place a
+  vendor gets chosen.
+- **Which account a profile bills to is now decided on the account.** One press
+  on a card. The row further down still says which one it is, because the job
+  rows say *follow the profile* and you have to be able to see what that means.
+- **The lane picker is gone.** It grouped the accounts, so the card showed a
+  quarter of what the machine holds and two of its four buttons were dead. Every
+  account is on one page. What you cannot make an account on yet — Local,
+  Enterprise — is named underneath, with the reason.
+- Adding an account offers every vendor and says why the ones without an adapter
+  cannot be picked, instead of hiding them.
+
+### Changed — the Accounts card is the same list as everything else (ADR 0222)
+
+- **Two accounts ran together with nothing between them**, because the space
+  inside one entry was the space between two of them.
+- **The open account was drawn as a filled primary button** — the weight of the
+  strongest action on the screen — so an account read as something to press,
+  while the account beside it read as prose.
+- Each one is now the list row History and Profiles use: a rule between entries,
+  the name over its vendor, the key state in the badge column, and Rename and
+  Remove as icons. The name is what you press to open an account's settings, and
+  the open one is marked by its ground.
+- Rename and Remove now say which account they act on, so two accounts on one
+  vendor no longer offer two buttons with the same name.
+- The breakpoints are untouched: at the width this window runs at, every row was
+  already stacked, and stacking was never what made the card hard to read.
+
+### Fixed — the workspace strip said `Needs key` on every machine, always (ADR 0217)
+
+- **From the day ADR 0208 moved credentials onto accounts, the status strip has
+  reported a missing key with the key present.** It asked the runtime about the
+  account by omitting it: `useProvider`'s connection argument defaults to the
+  empty string, and the secret-store entry name is `{scope}.{role}.{kind}` — so
+  the runtime read `.speech.api_key`, a name no save can ever produce. The
+  account was derived four lines above the call and simply not passed on. This is
+  the defect ADR 0209 closed on the AI Models card, standing on the one surface
+  that is never scrolled away.
+- **The runtime refuses the question now.** A status for a vendor that stores a
+  credential must name the account it is asked about; the local lane, which
+  authenticates against nothing, is exempt by construction rather than by name.
+  *No account was named* and *this account holds no key* are different facts, and
+  only the second is the reader's to act on.
+- **The suite could not have caught it**, which is half the finding: the test
+  double for that seam took one argument and ignored the rest, so a caller that
+  dropped the account got the vendor's answer from the mock and an empty entry
+  from the runtime.
+
+### Fixed — no credential is left keyed by a vendor (ADR 0218)
+
+- **A machine could hold an API key that no surface could show and no reader
+  could clear.** ADR 0208's migration re-keys the vendors its lift produced
+  connections for, and that lift builds its list from the ids the **profiles**
+  name — so a vendor the machine held a key for but no profile pointed at was in
+  neither list. The reporting machine's own pre-migration backup shows exactly
+  that: every profile on one vendor, and a self-hosted token written the day
+  before with no account to move onto. Revoking such a token from inside the
+  product was impossible.
+- **A sweep runs on every launch instead of once.** It adopts a vendor-scoped
+  entry onto the single account of that vendor, refuses where two accounts make
+  the target a guess, and names one where there is no account at all rather than
+  deleting a secret to tidy up a name — so the launch after an account appears is
+  the one that adopts it.
+- **A self-hosted server URL is no longer lost by the same gap.** The migration
+  took the machine-wide endpoint off the config and then spent it only where a
+  profile named that lane, so a machine that configured a server and went on
+  dictating in the cloud had the URL read, dropped and never written again.
+
+### Added — the language a profile dictates in can be set (ADR 0219)
+
+- **It was drawn on AI Models, settable nowhere, and read by the runtime all
+  along.** The value reaches the capture snapshot, the drift check and both cloud
+  adapters as the language hint. It is now edited on Profiles → Defaults and
+  stated on AI Models with the tag that opens it — the shape `Into` and `Keep the
+  profile's words` already use.
+- **Auto-detect is a choice rather than a blank**: an empty language means *let
+  the model decide*, which is what every profile has until somebody picks.
+- **`Pin this language` is refused until a language is chosen.** The drift check
+  lowers its corroboration threshold for the language the request carried, and an
+  auto-detected dictation carried none.
+- **The machine-wide `language` field is removed rather than kept in step.**
+  Nothing wrote it in either runtime, while the transcript record read it at four
+  sites and the request sent the profile's — both empty everywhere, so they
+  agreed by accident. A stored value is ignored on read and gone on the next
+  save.
+
+### Changed — the Accounts card is an inventory (ADR 0220)
+
+- **Every account this machine holds on the shown lane is visible at once**, each
+  with its vendor, whether it holds a key, which profiles use it, and its own
+  rename and remove. It was one row showing one account, and which one was a
+  derivation rather than a choice — at the width this workspace renders, that row
+  was 171 px tall.
+- **Which account the credential rows configure is the reader's choice.** Two
+  accounts on one vendor previously gave no way to tell which of them a key row
+  belonged to.
+- **Adding an account asks who it is with.** The button used the vendor already
+  on screen, so it could only ever create a second account on that vendor; the
+  provider chip row was the only route onto another. It asks for a vendor and a
+  name, and it no longer points the profile at what it creates.
+- **Choosing which account a profile bills to happens where the jobs are**, at
+  the head of *What runs what*, with the profile named — not inside the card that
+  lists what the machine holds.
+- The provider chips state the vendor of the account on show and no longer set
+  it. Re-pointing an existing account at a different vendor would leave its
+  stored key addressed to a company that never issued it.
+
+### Removed — three settings nobody needs an opinion about leave the job list (ADR 0216)
+
+- **`Bias from the profile's words`** offered `Off | Light | Standard` over
+  `bias_mode`, a field nothing in the product writes. The choice it implied had
+  already been decided against: every vocabulary term reaches every transform
+  stage unconditionally and slot allocation is the runtime's (ADR 0033,
+  ADR 0035). The vocabulary still steers the recognizer; what is gone is a
+  control that never did.
+- **Prompt Enhance's `Sub-mode` and `Prompt target`** were an inert segment and a
+  drawn select over two fields stored in `AppConfig` **and** in the profile's
+  work mode, with no writer for either. The fields keep their defaults.
+- **They are removed rather than marked, and that is the new rule's whole
+  point.** ADR 0161 keeps an unbuilt control visible because it is owed; a
+  control whose intent is withdrawn is not owed, and a preview badge on one
+  promises something nobody has decided to build. `port:diff` on `models` moves
+  from `29 | 287 | 33` to `65 | 281 | 33` and the movement is the decision.
+- **What the removal does NOT change is written down as two open steps**, because
+  a consequence noted in a closed record is one nobody reads. `bias_mode` remains
+  a live three-way switch that nothing writes — `Off` suppresses both prompts,
+  `Manual` substitutes a typed override — with two arms reachable only from tests
+  and a profile health flag guarding one of them that can therefore never fire.
+  And `enhance_sub_mode` / `enhance_target` still occupy two homes apiece with no
+  writer for either. Neither is a user-visible change today; both become one the
+  first time anything writes those fields.
+
+### Fixed — the surface asks the runtime's own question about a stored model, and three controls stop claiming what they do not do (ADR 0215)
+
+- **A job row could name one model while its request carried another.** The
+  frontend spelled the model guard twice and neither copy was the runtime's
+  rule: both asked *is this id among the vendor's catalogue rows*, where
+  `JobProvider::named_model` asks *does the catalogue attribute it to a
+  different vendor*. An id the catalogue has never seen is a typed override the
+  runtime sends untouched (ADR 0115) — and the surface drew *Follow the profile*
+  over it. **A vendor retirement puts every machine into that state at once**,
+  because a retired id is by construction one the catalogue no longer carries;
+  ADR 0214 removed three the same day. Both call sites ask `namedModel` now, one
+  function mirroring the Rust one, and a stored id the offered list does not
+  carry is added to the select rather than silently re-pointed by it.
+- **The name you address the assistant by was a live field that stored
+  nothing.** Not a disabled drawing: a reader could type into it and watch the
+  value survive until the next render, while `modes.agent_name` — read on every
+  dictation, and what decides when Auto routes one to the assistant — had no
+  writer anywhere in the tree. It writes the active profile now and names which
+  profile that is.
+- **The provider chips showed the profile's vendor over another account's
+  rows.** Every row under them has read the lane's own account since ADR 0213;
+  the chip row still followed the profile, so a profile pointed at *Your server*
+  left no chip marked and a capability sentence describing Groq, above an
+  account row and a key row showing the Groq account. It also repointed the
+  active profile without saying so, which is the write ADR 0209 requires be
+  labelled.
+- **The profile schema version read 4 on the frontend and 5 in the runtime**,
+  under a comment claiming no migrations were left on either side — false since
+  ADR 0094. Harmless today and not at the next migration.
+- The typed model-id placeholder on *Your server* named a cloud vendor's chat
+  family, and after ADR 0214 a retired one. It matches the wired row's example.
+
 ### Fixed — a card configures the account it shows, and a key cannot reach another vendor's account (ADR 0213)
 
 - **A key typed on one lane could be written into another lane's account, and

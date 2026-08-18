@@ -75,6 +75,17 @@ export type ModelRow = {
   model_id: string;
   streaming: ModelSupport;
   languages: string;
+  /**
+   * How much a model may think before it answers, where the vendor takes the
+   * parameter (ADR 0214).
+   *
+   * **Declared here and read by nobody on this side, which is deliberate and was
+   * previously silent.** Only the runtime posts it — `openai_compatible` keys it
+   * by the id on the wire — so no surface has a use for it. It is in the type
+   * because the file has the column: a mirror that omits a field claims the file
+   * is smaller than it is, and the next reader adds it back by hand.
+   */
+  reasoning_effort?: string;
   source: string;
   read_date: string;
   note?: string;
@@ -196,6 +207,26 @@ export function vendorModels(provider: string, role: ModelRole): string[] {
   return CATALOGUE.models
     .filter((row) => row.provider === provider && row.role === role)
     .map((row) => row.model_id);
+}
+
+/**
+ * WHICH VENDOR THE CATALOGUE ATTRIBUTES A MODEL ID TO, for the one role it would
+ * be run under — the mirror of `core::model_catalogue::provider_for_model_id`.
+ *
+ * **This is how a surface tells *an id I do not know* apart from *an id that
+ * belongs to somebody else*, and the two need opposite treatment.** An id this
+ * file has never seen is a typed override and passes (ADR 0115); an id attributed
+ * to another vendor is a value left behind by an account change. Answering the
+ * first as though it were the second is how the surface came to draw *Follow the
+ * profile* over a row whose request carries a stored id — the same *surface names
+ * one model, request carries another* defect ADR 0067 is about, running backwards.
+ *
+ * The role is part of the question for the reason the Rust one's is: one vendor's
+ * speech id and another's chat id have no reason to be distinguishable as strings.
+ */
+export function providerForModelId(modelId: string, role: ModelRole): string | undefined {
+  const wanted = modelId.trim();
+  return CATALOGUE.models.find((row) => row.role === role && row.model_id === wanted)?.provider;
 }
 
 /**

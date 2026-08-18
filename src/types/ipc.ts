@@ -461,7 +461,14 @@ export interface Connection {
 
 export interface AppConfig {
   model:                   string;
-  language:                string;
+  /* NO MACHINE-WIDE `language` (speech track B18). It mirrored a `core::config`
+     field that had no writer in either runtime, while the value the pipeline
+     spends is `ProfileSpeechSettings.language` — the one the capture snapshot
+     carries and every cloud adapter sends. `history.rs` read the machine-wide
+     one at four sites, so the two agreed only because both were empty
+     everywhere; giving the profile's field a control is what would have made
+     every record name a language its request did not carry. One field, one
+     reader (ADR 0123). */
   active_text_profile_id:  string;
   text_profiles:           TextProfile[];
   curated_profiles_seeded: boolean;

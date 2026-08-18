@@ -789,11 +789,30 @@ export function withheldOnLane(lane: LaneName): string | undefined {
  * the rows say so rather than editing somebody else's.
  */
 export function accountForLane(config: AppConfig, lane: LaneName): Connection | undefined {
-  const onLane = resolveConnections(config).filter(
-    (account) => laneForProviderId(account.provider) === lane,
-  );
+  const onLane = accountsOnLane(config, lane);
   const profiles = activeConnection(config);
   return onLane.find((account) => account.id === profiles?.id) ?? onLane[0];
+}
+
+/**
+ * EVERY ACCOUNT THIS MACHINE HOLDS ON ONE LANE, in the order they were created
+ * (speech track B17).
+ *
+ * **The list [`accountForLane`] was picking one out of and never showing.** A
+ * card headed *what this machine holds* that renders exactly one account — and
+ * that one by derivation rather than by a choice the reader made — is an
+ * inventory of one, and which one it was could not be read off the screen. The
+ * derivation is still right for *which account do the credential rows open on*;
+ * what was missing is the list it derives from.
+ *
+ * Creation order rather than any ranking, for the reason `accountChoices` gives:
+ * it is the only order the config knows, and a list that reshuffles itself
+ * between saves is one nobody can point at.
+ */
+export function accountsOnLane(config: AppConfig, lane: LaneName): Connection[] {
+  return resolveConnections(config).filter(
+    (account) => laneForProviderId(account.provider) === lane,
+  );
 }
 
 /**

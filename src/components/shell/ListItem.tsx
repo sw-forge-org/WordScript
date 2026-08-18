@@ -54,6 +54,11 @@ export function ListItem({
   actions,
   raw,
   open,
+  foot,
+  footTone,
+  onSelect,
+  selectHint,
+  current,
   onContextMenu,
 }: {
   title: string;
@@ -65,6 +70,36 @@ export function ListItem({
   actions?: ReactNode;
   raw?: RawTranscript;
   open?: boolean;
+  /**
+   * MAKES THE TITLE THE PICK, for a list where one row governs what is drawn
+   * under it (ADR 0222).
+   *
+   * **The title rather than a control beside it**, because what the reader is
+   * choosing IS the thing named — the Accounts card's own note for the
+   * hand-rolled row this replaced. A radio would be the right drawing for a
+   * setting with N mutually exclusive values (`LaneCard`); this is disclosure,
+   * and the row already has somewhere to say so.
+   *
+   * It is a `<button>` INSIDE the item rather than the item being one, which is
+   * what lets `actions` exist at all: a row-wide button cannot hold the icon
+   * buttons that act on the same row.
+   */
+  onSelect?: () => void;
+  /** The pick's tooltip — what opens, in the caller's own words. */
+  selectHint?: string;
+  /** This row is the one the rows below it are about. */
+  current?: boolean;
+  /**
+   * A SENTENCE UNDER THE ROW, AT THE ROW'S FULL WIDTH — and not `preview`.
+   *
+   * `preview` is a sample: one line of a transcript, truncated, because the
+   * record it samples is one click away. A foot is a fact the reader needs
+   * before acting on the row — *who uses this account* before Remove — so it is
+   * neither cut nor squeezed into the text column beside a fixed badge column
+   * (ADR 0222). See the geometry in `shell.css`.
+   */
+  foot?: string;
+  footTone?: "danger";
   /** The row's own actions, at the row (ADR 0082). Every list in the product
    *  answers a right-click the same way; what stays as an ICON on the row is
    *  only what you repeat positionally, which is the reorder pair. */
@@ -75,10 +110,25 @@ export function ListItem({
       <div
         className="ws-list-item"
         data-open={open ? "" : undefined}
+        data-current={current ? "" : undefined}
         onContextMenu={onContextMenu}
       >
         <div className="ws-list-item-text">
-          <b>{title}</b>
+          {onSelect ? (
+            <b>
+              <button
+                type="button"
+                className="ws-list-item-pick"
+                aria-pressed={current ?? false}
+                title={selectHint}
+                onClick={onSelect}
+              >
+                {title}
+              </button>
+            </b>
+          ) : (
+            <b>{title}</b>
+          )}
           <span className="ws-list-item-meta">
             {state && (
               <>
@@ -112,6 +162,11 @@ export function ListItem({
           </div>
         )}
         {actions && <div className="ws-list-actions">{actions}</div>}
+        {foot && (
+          <span className="ws-list-item-foot" data-tone={footTone}>
+            {foot}
+          </span>
+        )}
       </div>
       {open && raw && <RawPanel raw={raw} />}
     </>

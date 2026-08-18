@@ -1359,7 +1359,20 @@ pub enum OverlayAnchor {
 #[serde(default)]
 pub struct AppConfig {
     pub model: String,
-    pub language: String,
+    /* **NO MACHINE-WIDE `language`** (speech track B18). It stood here with no
+       writer anywhere in either runtime, while the value the pipeline actually
+       spends is `ProfileSpeechSettings::language` — carried into the capture
+       snapshot and sent as the hint by every cloud adapter. `history.rs` read
+       THIS one at four sites, so the two agreed only because both were empty on
+       every machine; the step that gave the profile's field a control was the
+       step that would have made every record name a language its request did
+       not carry, which is ADR 0203's defect rebuilt one axis over by its own
+       fix. The field is removed rather than kept in step, because keeping two
+       answers to one question in step is what ADR 0123 says nobody manages to
+       do. `active_text_profile_speech_language` is the one answer now.
+
+       A stored `"language"` key is ignored on read and gone on the next save;
+       nothing could have set it to anything but the empty string. */
     pub active_text_profile_id: String,
     pub text_profiles: Vec<TextProfile>,
     pub curated_profiles_seeded: bool,
@@ -1596,7 +1609,6 @@ impl Default for AppConfig {
 
         Self {
             model: default_speech_model().to_string(),
-            language: String::new(),
             active_text_profile_id: default_text_profile_id().to_string(),
             text_profiles: default_seeded_text_profiles(),
             curated_profiles_seeded: true,
@@ -1864,6 +1876,32 @@ impl AppConfig {
             speech.model.trim()
         };
 
+        /* **AND THE ROLE DEFAULT IS HELD TO THE RULE THE JOB'S OWN MODEL IS**
+           (ADR 0225, ADR 0215's rule on the field it did not cover).
+           `named_model` above refuses an id the catalogue attributes to another
+           vendor; `speech.model` is the profile-wide default underneath it and
+           was refused nothing, so a profile whose account moved to a second
+           vendor kept sending the first vendor's id.
+
+           **Measured on the reporting machine on 2026-08-18.** Five dictations
+           on an OpenAI account sent `whisper-large-v3`, a Groq row, and
+           `openai::resolve_model` swapped it for `whisper-1` — logged, as
+           designed. What was not designed is the other half: `history.rs` reads
+           THIS function for the record, so all five are stored naming a model no
+           request carried. That is ADR 0203's rule broken on the model exactly
+           the way B18 had just repaired it on the language, one field over.
+
+           `None` is the honest answer and not a missing one: the docblock above
+           already says it means *the adapter picks*, which is precisely what
+           happens. A self-hosted id is in no catalogue by construction
+           (ADR 0115) and passes untouched. */
+        if !named.is_empty()
+            && super::model_catalogue::provider_for_model_id(named, job.role())
+                .is_some_and(|owner| owner != job.provider)
+        {
+            return None;
+        }
+
         (!named.is_empty()).then(|| named.to_string())
     }
 
@@ -1972,6 +2010,24 @@ impl AppConfig {
         let label = self.active_text_profile().label;
         let trimmed = label.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+
+    /// **THE LANGUAGE A REQUEST ACTUALLY CARRIES** (speech track B18, ADR 0203's
+    /// rule applied to the second field it covers).
+    ///
+    /// `capture.rs` fills its snapshot from `ProfileSpeechSettings::language` and
+    /// every cloud adapter sends that as the hint, so this is the value a
+    /// dictation was heard under. The retry and history paths read a machine-wide
+    /// field until this step — one nothing could write, which is why the two
+    /// never visibly disagreed — and reading it was ADR 0203's *a record names
+    /// what the request carried* broken exactly the way that record describes for
+    /// the model. There is one field and one reader of it now.
+    ///
+    /// Empty means *auto-detect*, which is a state and not a missing value: the
+    /// adapters drop an empty hint and the record says nothing rather than
+    /// naming a language nobody chose.
+    pub fn active_text_profile_speech_language(&self) -> String {
+        self.active_text_profile().resolved_speech().language
     }
 
     /// The config as it may leave this runtime.
@@ -2115,6 +2171,21 @@ impl AppConfig {
         }
 
         let self_hosted = super::providers::self_hosted::SELF_HOSTED_PROVIDER_ID;
+        /* **A SERVER THIS MACHINE CONFIGURED AND NO PROFILE SELECTED IS STILL A
+           SERVER THIS MACHINE CONFIGURED** (speech track B20).
+           `migrated_self_hosted_base_url` and `_model` are machine-wide fields
+           taken above, and they were then spent only where a PROFILE happened to
+           name the lane — so a machine that typed a URL and went on dictating in
+           the cloud had it read off the file, dropped on the floor and stopped
+           being written, with nothing said. The same gap strands that lane's
+           credential, which is why both halves are one finding: the lift
+           enumerated who was SELECTED where it should have enumerated what was
+           HELD. */
+        if !vendors.iter().any(|vendor| vendor == self_hosted)
+            && !(base_url.trim().is_empty() && model.trim().is_empty())
+        {
+            vendors.push(self_hosted.to_string());
+        }
         let connections: Vec<Connection> = vendors
             .iter()
             .map(|vendor| Connection {
@@ -2476,6 +2547,46 @@ impl AppConfig {
                 }
             }
         }
+
+        /* **AND THE ONES THE LIFT COULD NOT SEE** (speech track B20). The block
+           above walks the connections the lift produced, and the lift builds its
+           vendor list from the ids the PROFILES name — so a vendor this machine
+           holds a credential for but no profile points at is in neither list,
+           and its entry stays keyed by vendor with nothing pointing at it. That
+           is the exact orphan ADR 0208's `rekey` MOVES rather than copies to
+           prevent, arrived at from the one direction the migration does not
+           cover.
+
+           **Not gated on `lifting_connections`, and that is the point.** The
+           reporting machine created the self-hosted account from the UI the day
+           AFTER its one-shot migration ran; a sweep that only ran with the
+           migration would have missed it for the same reason the migration did.
+           This one runs while an entry is still there to find, so the account
+           created later is the case it handles.
+
+           Once per process, because the answer cannot change without a launch
+           in between and `load_from_disk` is called on many paths — including
+           `refuse_foreign_account`, on every credential write. */
+        static SWEPT: std::sync::Once = std::sync::Once::new();
+        SWEPT.call_once(|| {
+            match super::providers::adopt_vendor_scoped_credentials(
+                &super::providers::credential_store::OsSecretStore,
+                config.connections(),
+            ) {
+                /* SILENT WHEN THERE IS NOTHING TO SAY, which is every launch on
+                   every machine that never carried one. */
+                Ok(outcomes) => {
+                    for outcome in outcomes {
+                        runtime_log::record(format!(
+                            "[WordScript] Vendor-scoped credential {outcome:?}"
+                        ));
+                    }
+                }
+                Err(error) => runtime_log::record(format!(
+                    "[WordScript] Vendor-scoped credential sweep FAILED error={error}"
+                )),
+            }
+        });
 
         if should_save {
             let _ = config.save_to_disk();
@@ -3442,6 +3553,50 @@ mod tests {
     }
 
     /// Points the active profile at a connection id, whether or not it exists.
+    /// **THE LANGUAGE A RECORD NAMES IS THE ONE THE REQUEST CARRIED** (speech
+    /// track B18, ADR 0203's rule on its second field).
+    ///
+    /// The capture snapshot fills itself from `ProfileSpeechSettings::language`
+    /// and every cloud adapter sends that as the hint; `history.rs` read a
+    /// machine-wide `AppConfig::language` at four sites instead. Both were empty
+    /// on every machine, so they agreed by accident and no test could see the
+    /// gap — until the step that gave the profile's field a control, which is
+    /// the step that would have made every record wrong. The field is gone and
+    /// this holds the one that replaced it against the snapshot it has to match.
+    #[test]
+    fn the_language_a_record_reads_is_the_one_the_capture_snapshot_sends() {
+        let mut config = AppConfig::default();
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        profile.speech = Some(ProfileSpeechSettings {
+            language: "de".to_string(),
+            ..Default::default()
+        });
+
+        let snapshot = super::super::capture::NativeCaptureConfig::from_app_config(config.clone());
+
+        assert_eq!(config.active_text_profile_speech_language(), "de");
+        assert_eq!(
+            config.active_text_profile_speech_language(),
+            snapshot.language,
+            "the record and the request read one field",
+        );
+    }
+
+    /// Auto-detect is a state, not a missing value: an empty language is what
+    /// every profile holds until somebody picks one, the adapters drop the hint,
+    /// and the record names nothing rather than a language nobody chose.
+    #[test]
+    fn a_profile_that_picked_no_language_names_none() {
+        let config = AppConfig::default();
+
+        assert!(config.active_text_profile_speech_language().is_empty());
+    }
+
     fn set_profile_connection_id(config: &mut AppConfig, connection: &str) {
         let active_id = config.active_text_profile_id.clone();
         let profile = config
@@ -3856,6 +4011,67 @@ mod tests {
         );
 
         assert_eq!(config.speech_model().as_deref(), Some("whisper-large-v3"));
+    }
+
+    /// **A PROFILE-WIDE SPEECH MODEL DOES NOT REACH A VENDOR THAT DOES NOT SERVE
+    /// IT** (ADR 0225, ADR 0215's rule on the field it did not cover).
+    ///
+    /// `named_model` refuses a foreign id on the job's OWN model and there was
+    /// nothing under it: `speech.model` is the profile's default for every
+    /// speech job, so a profile whose account moved to a second vendor went on
+    /// sending the first vendor's id. `openai::resolve_model` then swaps it for
+    /// its own default, logs the swap, and answers — and `history.rs` reads THIS
+    /// function for the record, so the entry names a model no request carried.
+    ///
+    /// Measured on the reporting machine on 2026-08-18: five dictations on an
+    /// OpenAI account, `requested=whisper-large-v3 owner=groq using=whisper-1`
+    /// in the log against `whisper-large-v3-turbo` in all five records.
+    ///
+    /// **`None` is the answer and not an absent one.** It is what this function
+    /// already means by *the adapter picks*, which is exactly what happens, and
+    /// it is the only answer that does not invent the id the adapter WOULD pick
+    /// — the failure class ADR 0203 named.
+    #[test]
+    fn a_role_default_belonging_to_another_vendor_is_not_sent_and_not_recorded() {
+        let openai = test_connection(crate::core::providers::openai::OPENAI_PROVIDER_ID);
+        let mut config = config_with_axis(
+            vec![openai.clone()],
+            &openai.id,
+            BTreeMap::new(),
+            BTreeMap::new(),
+        );
+        let active_id = config.active_text_profile_id.clone();
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        // A Groq row, which is what every profile written before the account
+        // moved is carrying.
+        profile.speech = Some(ProfileSpeechSettings {
+            model: "whisper-large-v3".to_string(),
+            ..Default::default()
+        });
+
+        assert_eq!(
+            config.speech_model(),
+            None,
+            "a Groq id must not be sent to OpenAI, and must not be recorded as sent",
+        );
+
+        // And the vendor's own row still answers, or the rule would have taken
+        // the field with it.
+        let profile = config
+            .text_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+            .expect("active profile");
+        // Named by its catalogue slug, never spelled as an id (ADR 0115).
+        profile.speech = Some(ProfileSpeechSettings {
+            model: crate::core::model_catalogue::model_id("openai-speech-whisper-1").to_string(),
+            ..Default::default()
+        });
+        assert!(config.speech_model().is_some(), "the account's own id passes");
     }
 
     /// **ON YOUR OWN SERVER THE ROW OUTRANKS THE ENDPOINT'S OWN ID**
@@ -4900,6 +5116,62 @@ mod tests {
     }
 
     // ── The connection axis (ADR 0208) ──────────────────────────────────────
+
+    /// **A SERVER THE MACHINE HELD AND NO PROFILE HAD SELECTED SURVIVES THE
+    /// LIFT** (speech track B20).
+    ///
+    /// The list was built from the ids the PROFILES name, and the endpoint taken
+    /// off the file was then spent only where one of them happened to name the
+    /// self-hosted lane. So a machine that typed a URL and went on dictating in
+    /// the cloud had it read, dropped and stopped being written, silently — and
+    /// the same gap is what stranded that lane's credential, because the
+    /// enumeration asked who was SELECTED where it should have asked what was
+    /// HELD.
+    #[test]
+    fn the_lift_keeps_a_server_no_profile_points_at() {
+        let mut config = AppConfig {
+            migrated_self_hosted_base_url: Some("https://speech.example.internal/v1".to_string()),
+            migrated_self_hosted_model: Some("ggml-large-v3-turbo".to_string()),
+            ..AppConfig::default()
+        };
+        // Every profile stays on the default vendor, which is the state the
+        // reporting machine's own pre-migration snapshot is in.
+        set_profile_connection_id(&mut config, DEFAULT_PROVIDER_ID);
+
+        config.normalize_for_runtime();
+
+        let self_hosted = crate::core::providers::self_hosted::SELF_HOSTED_PROVIDER_ID;
+        let server = config
+            .connections()
+            .iter()
+            .find(|entry| entry.provider == self_hosted)
+            .expect("the machine's server is an account even though no profile is on it");
+        assert_eq!(server.base_url, "https://speech.example.internal/v1");
+        assert_eq!(server.model, "ggml-large-v3-turbo");
+
+        // And no profile was repointed onto it: what was held is not what was
+        // chosen, and the lift decides neither.
+        assert_eq!(
+            config.job_provider(JobKey::Dictation).provider,
+            DEFAULT_PROVIDER_ID,
+        );
+    }
+
+    /// A machine that never configured one gets no empty account for it, or
+    /// every install would arrive holding a server it does not have.
+    #[test]
+    fn the_lift_invents_no_server_where_the_machine_held_none() {
+        let mut config = AppConfig::default();
+        set_profile_connection_id(&mut config, DEFAULT_PROVIDER_ID);
+
+        config.normalize_for_runtime();
+
+        let self_hosted = crate::core::providers::self_hosted::SELF_HOSTED_PROVIDER_ID;
+        assert!(config
+            .connections()
+            .iter()
+            .all(|entry| entry.provider != self_hosted));
+    }
 
     /// **What the lift carries, and from where.** One connection per vendor a
     /// profile actually names, the plan ADR 0167 keyed by that vendor, and the

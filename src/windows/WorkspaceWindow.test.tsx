@@ -21,9 +21,17 @@ const { invoke, saveConfig, listeners, openUrl, provider } = vi.hoisted(() => ({
   /* WHAT THE PROVIDER SEAM ANSWERED, AND WHO IT WAS ASKED ABOUT (D1c).
      `asked` is half the point: until this commit the mock was a constant, so
      the case that the chip asks about the connection the strip names could not
-     be written — the two disagreed for two adapters and every test passed. */
+     be written — the two disagreed for two adapters and every test passed.
+
+     **AND IT RECORDED ONLY THE VENDOR, WHICH IS ONE ARGUMENT SHORT OF THE
+     QUESTION** (ADR 0208). The credential's scope is the ACCOUNT, and a mock
+     that drops that argument cannot fail when the caller drops it either —
+     which is what happened: the strip omitted it, the runtime read a scope
+     nothing writes, and 866 green cases had no way to notice. `scopes` is the
+     same repair `asked` was, one axis over. */
   provider: {
     asked: [] as (string | null)[],
+    scopes: [] as string[],
     answers: new Map<string, unknown>(),
     failure: null as unknown,
   },
@@ -43,10 +51,21 @@ vi.mock("../hooks/useRuntime", () => ({
   }),
 }));
 vi.mock("../hooks/useProvider", () => ({
-  useProvider: (providerId: string | null) => {
+  /* THE MOCK ANSWERS PER ACCOUNT, THE WAY THE RUNTIME DOES. It answered per
+     vendor and ignored the scope, so a caller that named no account got the
+     vendor's answer here and an empty keyring entry in the product — the mock
+     was kinder than the runtime, which is the one thing a seam double must
+     never be. A status is keyed `provider@connection` now, and an unnamed
+     account answers `null` because that is what an unreadable scope is. */
+  useProvider: (providerId: string | null, _model?: unknown, _correction?: unknown, connectionId = "") => {
     provider.asked.push(providerId);
+    provider.scopes.push(connectionId);
     return {
-      status: providerId ? provider.answers.get(providerId) ?? null : null,
+      status: providerId
+        ? provider.answers.get(`${providerId}@${connectionId}`) ??
+          provider.answers.get(providerId) ??
+          null
+        : null,
       lastError: provider.failure,
     };
   },
@@ -125,6 +144,7 @@ afterEach(() => {
   vi.clearAllMocks();
   runtimeConfig = CONFIG;
   provider.asked.length = 0;
+  provider.scopes.length = 0;
   provider.answers.clear();
   provider.failure = null;
   document.documentElement.removeAttribute("data-theme");
@@ -299,6 +319,43 @@ describe("WorkspaceWindow", () => {
     await waitFor(() => expect(provider.asked).toContain("openai"));
     expect(provider.asked).not.toContain("groq");
     expect(container.querySelector(".ws-win-foot")).toHaveTextContent("Cloud·OpenAI");
+  });
+
+  /**
+   * **AND IT ASKS ABOUT THE ACCOUNT, NOT ONLY ABOUT THE VENDOR** — ADR 0209's
+   * defect one surface over, and the longest-lived one this screen has had.
+   *
+   * ADR 0208 made the credential's scope the ACCOUNT id and moved every stored
+   * key onto it. This call kept omitting the argument, so `useProvider` sent its
+   * `""` default and the runtime read the entry named `.speech.api_key` — a
+   * scope no writer can produce and therefore one no machine has. From the
+   * commit that landed the migration the strip has read `Needs key` on every
+   * machine, always, while the connection card six rows away showed the key
+   * present. The owner reported exactly that on 2026-08-17.
+   *
+   * **The suite could not have caught it**, and that is the second half of the
+   * finding: the `useProvider` double took one argument and ignored the rest, so
+   * a caller that dropped the scope got the vendor's answer from the mock and an
+   * empty keyring entry from the runtime. A seam double that is kinder than the
+   * seam turns 866 green cases into no evidence at all.
+   */
+  it("asks the runtime about the account the profile names, not about the vendor alone", async () => {
+    runtimeConfig = configOn("openai");
+    /* ONLY UNDER THE ACCOUNT. The `beforeEach` default is cleared on purpose:
+       with a vendor-keyed answer still in the map this case would pass against
+       the defect it exists to hold, which is how the defect survived. */
+    provider.answers.clear();
+    provider.answers.set("openai@connection-openai", providerStatus("openai"));
+
+    const { container } = render(<WorkspaceWindow />);
+    const strip = container.querySelector(".ws-win-foot");
+
+    await waitFor(() => expect(strip).toHaveTextContent("Ready"));
+    expect(strip).not.toHaveTextContent("Needs key");
+    /* And the scope is stated rather than inferred from the badge: an empty one
+       is the value that produced the report, so it is what the case names. */
+    expect(provider.scopes).toContain("connection-openai");
+    expect(provider.scopes.filter(Boolean)).not.toContain("");
   });
 
   it("names the vendor whose key is missing rather than always naming Groq", async () => {

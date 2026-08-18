@@ -213,14 +213,28 @@ describe("AI Models", () => {
     expect(container.querySelectorAll(".ws-job-prov")).toHaveLength(8);
   });
 
-  it("changes what a job runs when the lane changes — the one segment that governs", () => {
+  /**
+   * **THE SEGMENT IS GONE AND THE LANE STILL GOVERNS** (ADR 0223). The Accounts
+   * card lists every account on every lane, so there is nothing left for a
+   * segment to group; the lane the job rows read is DERIVED from the account the
+   * profile bills to. What this case measured — a job's drawn model follows the
+   * lane — is a fact about `LANES`, and the gallery now draws the one lane a
+   * profile with no account resolves to.
+   *
+   * The behaviour itself is measured under a runtime in `Models.test.tsx`, where
+   * an account decides the lane; that is the stronger evidence and it is why
+   * this one keeps the table rather than the click.
+   */
+  it("draws the lane's own model for a job, and the gallery opens on Cloud", () => {
     const { container } = render(<ModelsScreen />);
     /* Read the badge, not the page: the same string is also an <option> in the
        job's own Model select. */
     const badge = () => container.querySelector(".ws-jobmodel .ws-jobmodel-name")!.textContent;
     expect(badge()).toBe(LANES.Cloud.jobs.dictation.model);
-    fireEvent.click(screen.getByRole("button", { name: "Local" }));
-    expect(badge()).toBe(LANES.Local.jobs.dictation.model);
+    /* The lanes do not agree about what a job runs, which is why the lane is
+       part of the question at all. */
+    expect(LANES.Local.jobs.dictation.model).not.toBe(LANES.Cloud.jobs.dictation.model);
+    expect(screen.queryByRole("group", { name: "Lane" })).toBeNull();
   });
 
   /* **THE LANE IN THIS CASE IS ENTERPRISE AND IT USED TO BE SELF-HOSTED**
@@ -230,10 +244,14 @@ describe("AI Models", () => {
      jobs now type a model id like its writing jobs. Enterprise's is a fact
      about the three vendors on it: only Azure OpenAI transcribes. */
   it("says a job is not on this lane rather than offering an empty picker", () => {
-    render(<ModelsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: LANE_LABEL.Enterprise }));
-    expect(screen.getAllByText("Not on this lane")).toHaveLength(3);
-    expect(screen.getByText(LANES.Enterprise.jobs.dictation.none!)).toBeInTheDocument();
+    /* **THE TABLE RATHER THAN THE CLICK** (ADR 0223): the lane cannot be chosen
+       on this screen any more, and what this case is about is that a lane which
+       cannot run a job SAYS so instead of drawing a picker over nothing. That is
+       a fact about `LANES`, and `JobNone` is what renders it. */
+    for (const job of ["dictation", "meetings", "upload"] as const) {
+      expect(LANES.Enterprise.jobs[job].none, job).toBeTruthy();
+    }
+    expect(LANES.Enterprise.jobs.dictation.none).toMatch(/\S/);
   });
 
   /* And the lane that stopped refusing offers the typed field instead — the
@@ -241,10 +259,8 @@ describe("AI Models", () => {
      whose configuration does not says THAT on the connection card, not on
      eight job rows. */
   it("gives the self-hosted listening jobs the typed model id its writing jobs have", () => {
-    render(<ModelsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
-
-    expect(screen.queryByText("Not on this lane")).toBeNull();
+    /* Same as above: the lane is derived now (ADR 0223), so the assertion is
+       against the table the drawing reads rather than against a segment. */
     for (const job of ["dictation", "meetings", "upload"] as const) {
       expect(LANES["Self-hosted"].jobs[job].none).toBeUndefined();
       expect(LANES["Self-hosted"].jobs[job].model).toBe(

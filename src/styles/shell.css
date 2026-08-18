@@ -140,10 +140,16 @@
      separators, and the thirteenth prototype pass is the record of what a
      missing name costs: every list item, lane row, check and disclosure started
      flush against the rounded corner until it was fixed. */
-  .ws-card > :not(.ws-rows):not(.ws-list):not(.ws-lane):not(.ws-check-list):not(.ws-disc):not(.ws-owed-list):not(.ws-legend):not(.ws-type-row) {
+  .ws-card > :not(.ws-rows):not(.ws-list):not(.ws-lane):not(.ws-check-list):not(.ws-disc):not(.ws-owed-list):not(.ws-legend):not(.ws-type-row):not(.ws-acct-head) {
     padding-left: var(--pad-card);
     padding-right: var(--pad-card);
   }
+  /* `.ws-acct-head` joins the exempt list for the reason every other name on it
+     is there: it spans the card so its hairline reaches both edges, and it pays
+     `--pad-card` itself (ADR 0223). Without the name it paid it twice — the
+     failure this list's own docblock records for every separator it was added
+     for. It also owns the card's top inset, the way a grounded stack does. */
+  .ws-card > .ws-acct-head:first-child { margin-top: calc(-1 * var(--pad-card)); }
 
   .ws-card-head { display: flex; flex-direction: column; gap: 3px; }
   .ws-card-head h3 {
@@ -350,8 +356,17 @@
     transform: scale(0);
     transition: transform var(--dur-fast) var(--ease);
   }
-  .ws-lane-row[aria-checked="true"] .ws-radio { border-color: var(--accent); }
-  .ws-lane-row[aria-checked="true"] .ws-radio::after { transform: scale(1); }
+  /* THE DOT IS DRAWN BY THE ELEMENT THAT CARRIES `aria-checked`, and there are
+     two of them: `.ws-lane-row` and the account card's pick (ADR 0223). Found by
+     rendering the card — both radios drew empty, so the picked account was
+     marked by its ground and its name and by nothing the control itself said.
+     The name moved with the header's split (ADR 0224): `aria-checked` follows
+     the button that answers *bill here*, and after the split that is
+     `.ws-acct-pick` rather than the strip around it. */
+  .ws-lane-row[aria-checked="true"] .ws-radio,
+  .ws-acct-pick[aria-checked="true"] .ws-radio { border-color: var(--accent); }
+  .ws-lane-row[aria-checked="true"] .ws-radio::after,
+  .ws-acct-pick[aria-checked="true"] .ws-radio::after { transform: scale(1); }
 
   /* ═════════════════════════════════════════════════════════════════════════
      SUB-TABS — a pill row under a section header. Depth goes here, never into
@@ -4096,6 +4111,187 @@
     font-weight: 450; color: var(--fg);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+
+  /* ── The title as the pick ────────────────────────────────────────────────
+     For a list where one row governs what is drawn under it. It inherits the
+     title's own type and carries no button chrome: the reader is choosing the
+     thing named, so a control BESIDE the name would be a second object to aim
+     at. The Accounts card drew this as a filled primary button, which is the
+     weight of the one action on the screen — so an account read as a call to
+     action, and an unpicked one read as prose. Same fault as `.ws-badge`'s
+     tinted-not-filled note one screen over.
+
+     GROUND MARKS THE PICK, NOT AN EDGE BAR. A rule down the left of a row is
+     the accent stripe this system refuses everywhere else; a tint is the same
+     answer `.ws-lane-tile` gives for the same question. */
+  .ws-list-item-pick {
+    font: inherit; letter-spacing: inherit; font-stretch: inherit; color: inherit;
+    background: none; border: none; padding: 0; margin: 0;
+    text-align: left; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease);
+  }
+  .ws-list-item-pick:hover { color: var(--accent); }
+  /* THE MARK IS THE NAME, AND THE GROUND ONLY LOCATES IT. `--accent-soft` is
+     the badge tint — 16% of the accent — and a whole row of it renders as a
+     solid warm slab, which is LOUDER than the filled button this replaced and
+     reads as a warning band. Measured by rendering the card at the 379 px
+     column this workspace runs at.
+
+     `.ws-lane-row[aria-checked="true"]` is the system's own answer to the same
+     question and it tints a 30 px tile, not the row. There is no tile here, so
+     the accent goes on the one element that is already the subject — the name —
+     and the ground drops to a tint that separates the row without competing
+     with anything on it. */
+  .ws-list-item[data-current] {
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+  }
+  .ws-list-item[data-current] .ws-list-item-pick { color: var(--accent); font-weight: 550; }
+  /* The pick is how the row is reached by keyboard, so its ring must not be the
+     one thing the row's own padding clips. */
+  .ws-list-item-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  /* A row that can be picked shows what can be done to it without being
+     touched first: the actions are the second half of the same decision, and a
+     reader comparing two accounts should not have to hover each one to see
+     that either can be renamed. */
+  .ws-list-item:has(.ws-list-item-pick) .ws-list-actions { opacity: 1; visibility: visible; }
+  /* ═════════════════════════════════════════════════════════════════════════
+     THE ACCOUNT CARD — who it is with, its key, what it costs, who bills to it.
+
+     ONE CARD PER ACCOUNT, because an account IS one object and the surface had
+     it in four pieces: its vendor in a chip row at the top of the screen, its
+     name in a list, its key and plan in rows BELOW that list, and who billed to
+     it in another section (ADR 0223). The reader's complaint was all four at
+     once — the key looked like one key for the whole machine, because nothing
+     put it inside anything.
+
+     THE HEADER IS THE RADIO, on the `.ws-lane-row` pattern: the account is the
+     thing being chosen, so the strip that names it is the control. Rename and
+     Remove are in the card's last row rather than in the header, because a
+     row-wide button cannot hold the buttons that act on the row.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* THE HEADER IS A STRIP CARRYING TWO CONTROLS, NOT A CONTROL (ADR 0224). It
+     was the radio itself; the fold that shows and hides the card's rows acts on
+     the same card and cannot be a button inside one. So the strip holds the
+     pick, the key badge and the caret, and it is the strip that pays the card's
+     inset — the pick spends the left half of it so the hit area still reaches
+     the card's edge, which is what "the whole strip is the control" bought. */
+  .ws-acct-head {
+    display: flex; align-items: center; gap: var(--s3);
+    padding-right: var(--pad-card);
+    border-bottom: 1px solid var(--border);
+    width: 100%;
+    color: var(--fg);
+  }
+  .ws-acct-pick {
+    display: flex; align-items: center; gap: var(--s3);
+    flex: 1; min-width: 0;
+    padding: var(--row-py) 0 var(--row-py) var(--pad-card);
+    text-align: left;
+    color: var(--fg);
+  }
+  /* **THE PROFILE WHOSE PICK THIS IS, ON THE LINE UNDER THE NAME** (ADR 0226).
+     It answers a `ScopeTag`'s question — *this value is not the window's* — so it
+     is drawn like one, and it carries the accent rather than the muted ground
+     because on this card the accent already means *this one*: the radio, the
+     name and the ground all wear it, and a neutral chip among them would read as
+     a fourth unrelated status.
+
+     **IT IS NOT IN THE HEADER STRIP, AND THE HOST IS WHY.** The first build put
+     it beside the name and measured `nameClipped: true` at the 345 px this strip
+     runs to — six things on one line, and the name lost. The line below already
+     stacks and already holds the vendor, which is the other fact that qualifies
+     an account rather than names it. Where both are present the vendor leads,
+     because *which company* outranks *which of my profiles* when you are looking
+     for an account. */
+  .ws-acct-of { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-acct-bills {
+    display: inline-flex; align-items: center; gap: 4px;
+    min-width: 0; flex: 0 1 auto;
+    color: var(--accent); background: var(--accent-soft);
+    padding: 1px 6px; border-radius: 999px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ws-acct-bills svg { width: 10px; height: 10px; flex: none; }
+
+  /* A COLLAPSED CARD IS A HEADER AND NOTHING ELSE, so it keeps neither the rule
+     under it — a hairline with nothing beneath reads as a stray edge, which is
+     `.ws-disc`'s own note one section up — nor the card's bottom inset, which
+     would leave `--pad-card` of dead ground under a single line. */
+  .ws-acct:not([data-open]) { padding-bottom: 0; }
+  .ws-acct:not([data-open]) .ws-acct-head { border-bottom: none; }
+  /* The same glyph and the same quarter turn as `.ws-disc`, because it is the
+     same gesture. A reader who has opened one disclosure in this product has
+     learned this one. */
+  .ws-acct-fold svg { transition: transform var(--dur-base) var(--ease); }
+  .ws-acct[data-open] .ws-acct-fold svg { transform: rotate(90deg); }
+  /* The mark is 20 px against `.ws-lane-tile`'s 30 px tile: an account card
+     already says which vendor in words on the line beneath, so the logo is here
+     to be recognised at a glance rather than to be the row's anchor. */
+  .ws-acct-mark { width: 20px; height: 20px; flex: none; }
+  .ws-acct-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .ws-acct-name b {
+    font-stretch: var(--w-note); letter-spacing: var(--ls-note); font-size: var(--t-note);
+    font-weight: 500; color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* A ROW SINCE ADR 0226, because on the picked card it carries two things: the
+     vendor and the profile that bills here. One selector rather than a second
+     block beside it — two rules for one element is where a cascade collision
+     starts. */
+  .ws-acct-vendor {
+    display: flex; align-items: center; gap: var(--s2); min-width: 0;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+  }
+  /* GROUND MARKS THE PICKED CARD AND THE RADIO CONFIRMS IT. Same weight as the
+     list row's — `--accent-soft` over a whole card is the warning band that
+     treatment turned out to be — and the radio is the one element that carries
+     the accent at full strength, exactly as `.ws-lane-tile` does. */
+  .ws-acct[data-current] { background: color-mix(in srgb, var(--accent) 5%, var(--bg-surface)); }
+  .ws-acct[data-current] .ws-acct-name b { color: var(--accent); }
+  .ws-acct-pick:hover .ws-acct-name b { color: var(--accent); }
+  .ws-acct-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* ── A sentence under the row, at the row's full width ────────────────────
+     THE FOOT IS NOT THE PREVIEW AND THE DIFFERENCE IS MEASURABLE. History's
+     preview is one line of a transcript: it truncates, and truncating costs
+     nothing because the record is one click away. *Used by General writing,
+     Customer success replies and 3 other profiles* is what a reader needs
+     BEFORE pressing Remove, so it may not be cut — and it may not live in the
+     text column either. The badge column is a fixed 108 px and the actions take
+     about 60 more; at the 379 px column this workspace runs at that leaves the
+     text about 170, where the same sentence wrapped to five lines and made one
+     account taller than the two below it put together. Both were measured by
+     rendering the card at that width.
+
+     So the row wraps and the foot claims a line of its own, under the badge and
+     the actions rather than beside them. The item stays one block: one
+     hairline, one ground, one `data-account`. */
+  /* **`.ws-row > .ws-list > .ws-list-item` WAS HERE AND IS GONE** (ADR 0224).
+     ADR 0222 added it so that a list nested in a stacked `Row` would not pay
+     `--pad-card` twice, and it was derived from the two rules rather than seen —
+     the isolated harness parses this file incompletely and reported no `.ws-row`
+     padding at all, so it was never evidence either way. ADR 0223 then made
+     every account a card and took away the rule's only subject, one day later.
+
+     Measured on 2026-08-18 in the real app at 625 px: `.ws-acct .ws-list-item`
+     matches nothing on AI Models, and every `ListRows` in the product — Home,
+     History, Agents, Notes, Profiles twice — is a direct child of its card. A
+     rule matching nothing reads as a live invariant to whoever finds it next,
+     which is the drift ADR 0123 is about wearing a selector. `.ws-grp` states
+     the same thing for the container that DOES have subjects and stays. */
+
+  .ws-list-item:has(.ws-list-item-foot) { flex-wrap: wrap; align-items: flex-start; }
+  .ws-list-item-foot {
+    flex: 0 0 100%; order: 9;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+    color: var(--fg-dim);
+    margin-top: 3px;
+  }
+  .ws-list-item-foot[data-tone="danger"] { color: var(--danger); }
   .ws-list-item-meta {
     display: flex; align-items: center; gap: var(--s2);
     font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);

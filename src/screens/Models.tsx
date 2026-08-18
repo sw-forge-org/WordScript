@@ -28,6 +28,7 @@ import {
   Toolbar,
   ToolbarSearch,
   ProviderChips,
+  ProviderMark,
   Row,
   ScopeTag,
   SectionHeader,
@@ -54,7 +55,10 @@ import {
   type LaneName,
 } from "./data";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { formatModelSize, modelInstall, vendorModels } from "@/lib/modelCatalogue";
+/* `vendorModels` left with the second copy of the model guard (ADR 0215): this
+   file asked the catalogue directly to decide what a job row may name, and that
+   question belongs to `namedModel`. */
+import { formatModelSize, modelInstall } from "@/lib/modelCatalogue";
 import { useLocalSetup } from "@/hooks/useLocalSetup";
 import { useModelLibrary } from "@/hooks/useModelLibrary";
 import { buildProfileSpeechPatch } from "@/lib/textProfiles";
@@ -64,21 +68,27 @@ import { formatBudgetDuration, useCaptureBudget } from "@/hooks/useCaptureBudget
 import { useProviderSeam } from "@/hooks/useProviderSeam";
 import {
   TRANSLATE_LANGUAGES,
+  type Connection,
   type ProviderTier,
   type TranslateAddressForm,
   type TranslateSameLanguage,
 } from "@/types/ipc";
 import {
+  buildProfileModesPatch,
   buildProfileProvidersPatch,
+  namedModel,
   resolveActiveTextProfile,
   resolveConfigJobProvider,
   resolveJobProvider,
   roleDefaultModel,
   resolveProfileModesSettings,
+  resolveProfileSpeechSettings,
   resolveProfileProviderSettings,
 } from "@/lib/textProfiles";
 import {
+  accountChoices,
   accountForLane,
+  accountsOnLane,
   accountStatus,
   activeConnectionOf,
   laneWithheld,
@@ -207,13 +217,16 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      repointed a profile the reader was never shown — the defect at the centre of
      this step. Assigning an account to a profile is the `Account` row's job now,
      which names the profile it writes (ADR 0209). */
+  /* **AND THE SEGMENT IS GONE, SO THE LANE FOLLOWS THE ACCOUNT** (ADR 0223).
+     It was state seeded from the profile's account and changed by a segment in
+     the Accounts card. That card lists every account now, on every lane, so the
+     segment had nothing left to group and was two dead options out of four. The
+     lane is still what the job rows read, and the honest value for it is the one
+     the profile actually bills to — derived, so switching the profile's account
+     moves it instead of leaving the rows on a lane nothing runs. */
   const storedAccount = runtime ? activeConnectionOf(runtime.config) : undefined;
   const storedProvider = storedAccount?.provider;
-  const [drawnLane, setDrawnLane] = useState<LaneName>(
-    storedProvider ? laneForProviderId(storedProvider) : "Cloud",
-  );
-  const lane = drawnLane;
-  const chooseLane = setDrawnLane;
+  const lane: LaneName = storedProvider ? laneForProviderId(storedProvider) : "Cloud";
   /* ONE `local_setup` READ FOR THE WHOLE SCREEN, AND IT MOVED UP HERE IN B12
      (ADR 0163). Both tabs state where this machine stands now — the connection
      card says whether the withheld lane is withheld by the product or by the
@@ -226,12 +239,33 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      both states, so the hook is unconditional and its call is not: with no
      runtime nothing is invoked, and `Models.test.tsx` asserts exactly that. */
   const { setup, asked } = useLocalSetup(Boolean(runtime));
+  /* WHOSE JOB LIST THIS IS, FOR THE LEAD (ADR 0226). `undefined` in the gallery,
+     where there is no profile to name and the sentence says *the open profile*
+     rather than inventing one. */
+  const activeProfile = runtime ? resolveActiveTextProfile(runtime.config).label : undefined;
 
   const surface = (
     <>
       <ViewTop
         title="AI Models"
-        lead="What each job runs on, and the accounts it can be billed to."
+        /* **THE SCREEN HAS TWO OWNERS AND THE LEAD NAMES BOTH** (ADR 0226). It
+           said *what each job runs on, and the accounts it can be billed to* —
+           true, and silent about the one thing a reader cannot work out by
+           looking: that the accounts are the MACHINE's and the job list is the
+           PROFILE's. A `Note` under it used to claim both were the profile's,
+           which is false for the accounts and was two lines of prose besides.
+           The lead is where a reader already looks, so the sentence goes here
+           and the note goes away. */
+        lead={
+          activeProfile ? (
+            <>
+              Accounts belong to this machine. What each job runs on belongs to{" "}
+              <b>{activeProfile}</b>.
+            </>
+          ) : (
+            "Accounts belong to this machine. What each job runs on belongs to the open profile."
+          )
+        }
         banner={banner}
         tabs={
           <SubTabs
@@ -248,7 +282,6 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
       {tab === "Models" ? (
         <ModelsTab
           lane={lane}
-          onLane={chooseLane}
           runtime={runtime}
           setup={setup}
           asked={asked}
@@ -294,73 +327,76 @@ export function ModelsScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
    AND THE THIRD ONE IS READ AS *Your server* (ADR 0160). The identifier is
    unchanged; only what a reader sees is, because *server* now names exactly one
    thing on this screen — a machine that is not this one. */
-/**
- * WHICH PROFILE THIS SCREEN IS SETTING (ADR 0212).
- *
- * **A statement with a door, not a second switcher.** Which profile is active is
- * a workspace-wide fact with one control already — the switcher in the nav foot —
- * and a select here would be a second answer to one question (ADR 0123), with the
- * mid-session semantics that control already handles. What was missing was not a
- * way to switch; it was the sentence saying whose accounts and whose models these
- * are. Every row that writes the profile still carries its own `ScopeTag`; this
- * says it once, before the first of them.
- */
-function ProfileScope({ runtime }: { runtime: WorkspaceRuntime }) {
-  const profile = resolveActiveTextProfile(runtime.config);
-  return (
-    <Note>
-      <span className="ws-rowflex">
-        <span>
-          Setting <b>{profile.label}</b> — the accounts and models below are this
-          profile&apos;s. Switch profiles in the sidebar; other profiles keep their own.
-        </span>
-        <Button
-          variant="ghost"
-          icon={<Icon name="arrow" />}
-          onClick={() => runtime.open?.({ view: "profiles" })}
-        >
-          Profiles
-        </Button>
-      </span>
-    </Note>
-  );
-}
+/* **`ProfileScope` STOOD HERE AND IS GONE** (ADR 0226). ADR 0212 added it to
+   answer *in welchem Profil wähle ich gerade was aus* with a sentence before the
+   first card, and it got the answer half wrong: `connections` is an `AppConfig`
+   field, so the accounts, their keys, their plans and their endpoints are the
+   MACHINE's and every profile sees the same ones. Exactly one control on that
+   card belongs to the profile — the radio — and it was the one thing the note
+   did not point at.
+
+   Explaining a screen in a paragraph above it is also the wrong instrument for
+   the complaint that produced it. Three things say it now, each where it is
+   true: the lead names both owners, each section head names its own, and the
+   picked card carries the profile whose pick it is. */
 
 /**
- * THE WAY ONTO A LANE THIS MACHINE HOLDS NO ACCOUNT ON (ADR 0212).
+ * WHICH ACCOUNT THE ACTIVE PROFILE BILLS TO (speech track B17, ADR 0209).
  *
- * **The creation the lane chips used to do invisibly.** Picking a lane wrote
- * `buildVendorConnectionPatch` plus the profile's default, so an account appeared
- * and a profile was repointed on one click of a segment. Both halves are explicit
- * now: this row adds the account, and the `Account` row assigns it to a profile
- * with the profile's name on it (ADR 0209).
+ * **The one control that decides who pays, moved out of the inventory.** It was
+ * a `Select` inside the `Account` row on the Accounts card, which is the card
+ * headed *what this machine can bill jobs to* — so the inventory both listed the
+ * machine's accounts and repointed the profile, and ADR 0212's own split between
+ * those two acts survived at the lane level and not at the row level. Worse, the
+ * `New` button beside it did both on one press.
  *
- * **It does not assign.** Adding an account is inventory work; deciding that a
- * writing style should start billing through it is not, and doing both on one
- * press is the conflation this step exists to end.
+ * **It offers every account and not one lane's**, because that is what the value
+ * is: `providers.default` is a connection id, a connection carries its own
+ * vendor, and *dictation on Cloud with the assistant on your own server* is a
+ * state the config has accepted since ADR 0094's axis met ADR 0208's object. The
+ * grouping is `accountChoices`', so an account the product cannot operate is
+ * offered with the reason attached rather than silently dropped.
+ *
+ * **And it names the profile it writes** (ADR 0209). An unlabelled control that
+ * repoints who pays is the defect B14a closed one card over.
  */
-function AddAccountRow({ lane, runtime }: { lane: LaneName; runtime: WorkspaceRuntime }) {
-  const vendor = lane === "Cloud" ? runtimeIdFor(LANES.Cloud.provider) : LANE_PROVIDER_IDS[lane];
-  const withheld = laneWithheld(lane);
+function ProfileAccountRow({ runtime }: { runtime: WorkspaceRuntime }) {
+  const profile = resolveActiveTextProfile(runtime.config);
+  const stored = resolveProfileProviderSettings(profile).default;
+  const named = connectionById(runtime.config, stored);
 
   return (
     <Row
-      label="Account"
+      label="This profile bills to"
+      /* **A STATEMENT AND NOT A SECOND PICKER** (ADR 0223). This was a `Select`
+         over every account on the machine, and the Accounts card above now has a
+         radio per card writing the same field — two controls over one fact,
+         which is what ADR 0123 is about. The row stays because the rows below it
+         say *follow the profile* and a reader has to be able to see what that
+         resolves to; it states, and the card decides. */
       hint={
-        withheld ??
-        `This machine holds no ${LANE_LABEL[lane]} account yet. Add one, then point a job or a profile at it.`
+        named
+          ? "Every job below follows this account unless it names one of its own. Change it on a card above."
+          : /* A POINTER THAT RESOLVES TO NOTHING KEEPS ITS NAME (ADR 0209).
+               Dropping it would be repointing by deletion. */
+            `${profile.label} bills to an account this machine no longer holds. Pick one above.`
       }
+      /* **AND NO `ScopeTag`** (ADR 0226). It carried one because ADR 0209 required
+         a control that WRITES the profile to name it — and ADR 0223 turned this
+         into a statement, so the tag was naming the owner of a value the row no
+         longer sets. With the profile in the sheet header, in the lead and on the
+         picked card, it was the fourth copy of one word on one screen: the
+         owner's own reading of the shipped surface, and ADR 0123's rule about a
+         fact having one home applied to a name instead of a list. */
       control={
         <span className="ws-rowflex">
-          <StatusBadge tone="plan">None yet</StatusBadge>
-          {vendor && !withheld && (
-            <Button
-              variant="ghost"
-              icon={<Icon name="plus" />}
-              onClick={() => runtime.patch(buildNewConnectionPatch(runtime.config, vendor).patch)}
-            >
-              Add account
-            </Button>
+          {named ? (
+            <span className="ws-rowflex">
+              <ProviderMark name={drawnNameFor(named.provider) ?? named.provider} className="ws-acct-mark" />
+              <b>{named.label}</b>
+            </span>
+          ) : (
+            <StatusBadge tone="warning">No account</StatusBadge>
           )}
         </span>
       }
@@ -368,151 +404,83 @@ function AddAccountRow({ lane, runtime }: { lane: LaneName; runtime: WorkspaceRu
   );
 }
 
-function LaneRows({
-  lane,
-  runtime,
-  onManage,
-}: {
-  lane: LaneName;
-  runtime?: WorkspaceRuntime;
-  /** Opens *On this machine*. The lane summarises the installation; the tab
-   *  owns it, and a summary that names a total has to be able to reach it. */
-  onManage?: () => void;
-}) {
-  /* A LANE THIS MACHINE HOLDS NO ACCOUNT ON YET (ADR 0212). The rows below all
-     write to one — the URL, the token, the plan, the key — and with none they
-     would accept a value and drop it, which is the false affordance ADR 0067
-     rule 1 is about. It was unreachable while picking the lane CREATED the
-     account behind the reader's back; the creation is an explicit action now, so
-     the state exists and gets a row that says so and offers the way out.
-     `Local` needs none: it authenticates against nothing. */
-  if (runtime && lane !== "Local" && !accountForLane(runtime.config, lane)) {
-    return <AddAccountRow lane={lane} runtime={runtime} />;
-  }
-
-  if (lane === "Local") {
-    return (
-      <>
-        {/* THREE ROWS, AND IT WAS FIVE (ADR 0162).
-            **This branch was a second copy of the machine tab, not a summary of
-            it.** Four of its five rows restated what that tab already owns —
-            the runner, its endpoint, the installed total and the acceleration
-            — and the cost was measured rather than argued: ADR 0160 and
-            ADR 0161 each had to be applied twice, and the second application
-            was found by a screenshot after the first was tested and green.
-
-            THE CUT IS *WHICH ONE DO WE USE* AGAINST *WHAT IS ON THE DISK*.
-            A lane is a stored choice; an installation belongs to the machine
-            and outlives every lane switch. So the connection card keeps the
-            reachability and the credential — the two facts that are about
-            talking to the runner — and everything about the files is one
-            number and a door.
-
-            AND THE DRAWING ALREADY HAD THE DOOR. `Manage` has been in this row
-            since Leg 6 with no handler on it; the intent was always that the
-            lane points and the tab holds. */}
-        {/* **AND `Bundled | Yours` IS NOT HERE EITHER**, which the first pass at
-            this record left standing. Which program runs is a fact about the
-            machine and belongs to the tab that lists the runners; whether this
-            lane can reach it is the connection question and belongs here. The
-            duplicate was caught the same way its three predecessors were — by
-            looking at the rendered screen after the tests were green. */}
-        <Row
-          label="Language runner"
-          hint="Ollama or LM Studio, on this machine. Started on demand by whichever job needs it."
-          control={
-            <span className="ws-rowflex">
-              <SelectMark name="ollama" />
-              <StatusBadge tone="success">Running</StatusBadge>
-              <span className="ws-mono ws-muted">127.0.0.1:11434</span>
-            </span>
-          }
-        />
-        <Row
-          label="Credential"
-          hint="None, and there is nothing to add. This is the one lane where “no request leaves this machine” is true by construction rather than by promise."
-          control={<StatusBadge tone="success">Not needed</StatusBadge>}
-        />
-        <Row
-          label="Installed models"
-          hint="Managed on the other tab, because a model stays on the disk whichever lane you pick."
-          control={
-            <span className="ws-rowflex">
-              <StatusBadge tone="plan">4 models · 6.7 GB</StatusBadge>
-              {/* A REAL BUTTON, NOT A `DrawnButton`. Everything else on this
-                  lane is a drawing and stays one; navigation is the exception,
-                  because a door that does not open is the one inert control
-                  that costs the reader the thing it names. */}
-              <Button variant="ghost" icon={<Icon name="arrow" />} onClick={onManage}>
-                Manage
-              </Button>
-            </span>
-          }
-        />
-      </>
-    );
-  }
-
-  if (lane === "Self-hosted") {
-    return <SelfHostedRows runtime={runtime} />;
-  }
-
-  if (lane === "Enterprise") {
-    return (
-      <>
-        <ProviderPick
-          lane="Enterprise"
-          selected="AWS Bedrock"
-          label="Account"
-          hint="Each of the three authenticates differently, so picking one changes which fields exist below it."
-        />
-        <Row
-          label="Credentials"
-          hint="Access key, secret and region — or the ambient AWS credential chain when one is present on this machine."
-          control={
-            <span className="ws-rowflex">
-              <StatusBadge tone="plan">Not configured</StatusBadge>
-              <DrawnButton variant="ghost" icon={<Icon name="key" />}>
-                Configure
-              </DrawnButton>
-            </span>
-          }
-        />
-        <Row
-          label="Region"
-          control={
-            <DrawnSelect defaultValue="eu-central-1" aria-label="Region">
-              <option>eu-central-1</option>
-              <option>us-east-1</option>
-              <option>us-west-2</option>
-            </DrawnSelect>
-          }
-        />
-        <Row
-          label="Speech"
-          hint="Only Azure OpenAI transcribes among the three, so the listening jobs say so instead of offering an empty picker."
-          control={<StatusBadge tone="warning">Azure only</StatusBadge>}
-        />
-      </>
-    );
-  }
-
-  /* Cloud. The provider was a grid of tiles here, on the argument that picking
-     one is a recognition task — you know the mark before you have read the
-     word. That much held; the tiles were not what delivered it. The mark
-     travels with the row's control now, so recognition survives at a twelfth of
-     the surface, and capability moved from a caption under every option to a
-     sentence about the one that is actually selected. */
+/**
+ * THE ACCOUNTS CARD AS THE GALLERY DRAWS IT — one account, with the rows a real
+ * one carries (ADR 0223).
+ *
+ * **The gallery had the lane segment, the chip row and the credential rows, and
+ * all three moved or went**, so a drawing that kept them would be showing a
+ * screen this build no longer has. `port:diff` moves with it; that is the point
+ * of measuring it rather than a reason not to change the screen (ADR 0216 made
+ * the first such divergence here and recorded it the same way).
+ */
+function DrawnAccountCard() {
   return (
     <>
-      <ProviderPick lane="Cloud" selected="Groq" />
-      {/* THE ACCOUNT, BETWEEN THE VENDOR AND ITS KEY (ADR 0208) — the order the
-          questions come in, and the row every credential below is scoped to.
-          Only under a runtime: the gallery has no config and therefore no
-          accounts, and a picker over nothing is the false affordance this card
-          spent two records removing. */}
-      {runtime && <AccountRow lane="Cloud" runtime={runtime} />}
-      <CloudCredentialRows runtime={runtime} />
+      {/* THE SHAPE THE PRODUCT DRAWS, INCLUDING THE FOLD (ADR 0223, ADR 0224).
+          The header is a strip carrying a pick and a caret since the accounts
+          became foldable; a drawing that kept the old single-element header lost
+          the strip's padding to a class it does not have — measured as 18 style
+          differences on `port:diff models`, which is what that check is for. */}
+      <div className="ws-card ws-acct" data-current="" data-open="">
+        <span className="ws-acct-head">
+          <span className="ws-acct-pick">
+            <span className="ws-radio" aria-hidden />
+            <ProviderMark name="Groq" className="ws-acct-mark" fallback={<Icon name="cloud" />} />
+            <span className="ws-acct-name">
+              <b>Groq</b>
+            </span>
+          </span>
+          <StatusBadge tone="success">Key set</StatusBadge>
+          <span className="ws-ibtn ws-acct-fold" aria-hidden>
+            <Icon name="chevron" />
+          </span>
+        </span>
+        <CardRows>
+          <Row
+            label="API key"
+            hint="In the OS secret store. Never written to the config file."
+            control={
+              <span className="ws-rowflex">
+                <StatusBadge tone="success">Set</StatusBadge>
+                <DrawnButton variant="ghost" icon={<Icon name="key" />}>
+                  Replace
+                </DrawnButton>
+              </span>
+            }
+          />
+          <Row
+            label="Plan"
+            hint="Sets the largest upload, and with it the longest recording."
+            control={
+              <DrawnSelect defaultValue="Free — 25 MiB per request" aria-label="Plan">
+                <option>Free — 25 MiB per request</option>
+                <option>Developer — 100 MiB per request</option>
+              </DrawnSelect>
+            }
+          />
+          <Row layout="stack">
+            <span className="ws-rowflex">
+              <span className="ws-grow ws-row-hint">Billed by General writing.</span>
+            </span>
+          </Row>
+        </CardRows>
+      </div>
+      <Card>
+        <CardRows>
+          <Row
+            layout="stack"
+            label="Add an account"
+            hint="Pick who it is with, then name it. The key goes on its card."
+          >
+            <span className="ws-rowflex">
+              <DrawnButton variant="ghost" icon={<Icon name="plus" />}>
+                Add account
+              </DrawnButton>
+            </span>
+          </Row>
+        </CardRows>
+      </Card>
     </>
   );
 }
@@ -538,12 +506,24 @@ function LaneRows({
    the product keeps the rule ADR 0067 rule 1 states: a lane that is offered
    must be operable. Offering it is this step; that is why the lock comes off
    for this lane and stays on for the other two. */
-function SelfHostedRows({ runtime }: { runtime?: WorkspaceRuntime }) {
+function SelfHostedRows({
+  runtime,
+  account,
+  onSelect,
+}: {
+  runtime?: WorkspaceRuntime;
+  account?: Connection;
+  onSelect: (id: string) => void;
+}) {
   const wired = useWired();
   /* Two components rather than one with a conditional hook — the split
      `CeilingBadge` already makes, and for the same reason: the gallery asserts
      NO runtime state, so it must not reach for `provider_status` at all. */
-  return wired && runtime ? <WiredSelfHostedRows runtime={runtime} /> : <DrawnSelfHostedRows />;
+  return wired && runtime ? (
+    <WiredSelfHostedRows runtime={runtime} account={account} onSelect={onSelect} />
+  ) : (
+    <DrawnSelfHostedRows />
+  );
 }
 
 /** The drawing, unchanged since Leg 6 — what `port:diff` measures. */
@@ -585,14 +565,24 @@ function DrawnSelfHostedRows() {
   );
 }
 
-function WiredSelfHostedRows({ runtime }: { runtime: WorkspaceRuntime }) {
-  const { answers, refresh } = useContext(Wired);
+function WiredSelfHostedRows({
+  runtime,
+  account,
+  onSelect,
+}: {
+  runtime: WorkspaceRuntime;
   /* THE ACCOUNT THIS CARD IS ABOUT IS THIS LANE'S, AND IT USED TO BE THE
      PROFILE'S. The lane groups rather than following the profile (ADR 0212), so
      a machine dictating on Groq that opened `Your server` filled these rows from
      the Groq account: the token field wrote into Groq's slot, and the reachability
-     row asked about a server that account has never named. */
-  const account = accountForLane(runtime.config, "Self-hosted");
+     row asked about a server that account has never named.
+
+     **AND IT IS A CHOICE NOW RATHER THAN A DERIVATION** (B17): two servers are
+     two accounts, and which one these rows configure is the reader's to say. */
+  account?: Connection;
+  onSelect: (id: string) => void;
+}) {
+  const { answers, refresh } = useContext(Wired);
   const status = accountStatus(answers, account?.id);
   const endpoint = status?.self_hosted_endpoint ?? null;
   /* TWO SERVERS ARE TWO ACCOUNTS, and the token belongs to the one that names
@@ -614,12 +604,11 @@ function WiredSelfHostedRows({ runtime }: { runtime: WorkspaceRuntime }) {
 
   return (
     <>
-      {/* FIRST ON THIS LANE, because the URL and the token below are this
-          account's own fields rather than the machine's (ADR 0208): two servers
-          are two accounts, and reading the rows without knowing which one they
-          belong to is the question this row answers. */}
-      <AccountRow lane="Self-hosted" runtime={runtime} />
-      <ServerUrlRow runtime={runtime} endpoint={endpoint} />
+      {/* NO INVENTORY ROW HERE ANY MORE (ADR 0223). These rows sit INSIDE the
+          card of the account they configure, so *which of two servers is this*
+          is answered by the card's own header rather than by a picker one row
+          above them. */}
+      <ServerUrlRow runtime={runtime} account={account} endpoint={endpoint} />
       <ReachabilityRow connectionId={account?.id} ready={credential?.configured ?? false} />
       <ServerTokenRow connectionId={account?.id} credential={credential} refresh={refresh} />
       <ServerModelRow runtime={runtime} endpoint={endpoint} />
@@ -661,263 +650,416 @@ function useCommittedSetting(stored: string, write: (next: string) => void) {
 
   return { draft, setDraft, commit };
 }
+/**
+ * EVERY ACCOUNT THIS MACHINE HOLDS, EACH ONE A CARD THAT CARRIES ITS OWN
+ * SETTINGS (ADR 0223).
+ *
+ * **ADR 0208 made an account an object and this surface kept it in four
+ * pieces.** Its vendor was stated by a chip row at the top of the screen, its
+ * name sat in a list, its key and plan sat in rows BELOW that list, and which
+ * profile billed to it lived in a different section entirely. The owner read the
+ * shipped screen and reported all four as one complaint: *es ist sehr sehr
+ * verwirrend, es wird einem nicht klar gemacht, was was ist.*
+ *
+ * Three things follow from putting the object back together:
+ *
+ * 1. **The key is inside the account it belongs to.** It was a `Row` beside the
+ *    list rather than under an entry, so it read as one key for the machine —
+ *    the reader's own words: *als würde die für alle Accounts gelten*. The plan
+ *    is the same fact one row down, and the self-hosted URL and token are that
+ *    fact on the other lane.
+ * 2. **The lane is gone from this card.** It grouped the list, so a card headed
+ *    *what this machine holds* showed a quarter of it and the reader had to know
+ *    which quarter to look in. Every account is here; its lane is legible from
+ *    its mark and from the rows it carries. What CANNOT hold an account yet —
+ *    Local, Enterprise — is a note under the list rather than two dead segments
+ *    inside it.
+ * 3. **The pick is the assignment, and there is only one pick now.** There were
+ *    two selections on this screen: which account the key rows were open on, and
+ *    which account the profile bills to. The first exists only because the key
+ *    rows were outside the accounts; with every card carrying its own, it has
+ *    nothing left to answer. The radio writes `providers.default`, which is what
+ *    `ProfileAccountRow` did two sections away.
+ *
+ * **This reverses half of ADR 0220 and says so.** That record moved the
+ * assignment OUT of this card on the argument that *which account a profile
+ * bills to is the head of what runs what, not a select inside the card that
+ * lists what the machine holds*. The argument is sound and the drawing it
+ * produced was not: a reader cannot see what an account is FOR without it, and
+ * the job rows below still state what they follow.
+ */
+function AccountList({
+  runtime,
+  setup,
+  asked,
+  onManage,
+  onOpenProfiles,
+}: {
+  runtime: WorkspaceRuntime;
+  setup: LocalProviderSetupStatus | null;
+  asked: boolean;
+  onManage?: () => void;
+  onOpenProfiles?: () => void;
+}) {
+  const answers = useAnswers();
+  const accounts = resolveConnections(runtime.config);
+  const profile = resolveActiveTextProfile(runtime.config);
+  const billsTo = resolveProfileProviderSettings(profile).default;
+  const [adding, setAdding] = useState(false);
+  /* WHICH CARDS ARE OPEN, AND WHY THE ANSWER STARTS AS ONE OF THEM (ADR 0224).
+     An account card carries its own key, plan, endpoint and used-by line, so a
+     machine with four accounts opened onto four expanded cards and the reader's
+     own report was that the inventory had stopped being one — *irgendwann hat
+     man viele Accounts und man hat den Überblick nicht mehr*.
+
+     A SET RATHER THAN ONE ID, deliberately: an accordion would close the account
+     a reader is comparing against while they open the second one, and comparing
+     two keys is the whole reason to have two accounts on one vendor.
+
+     IT IS SCREEN STATE AND NOT A SETTING. Which card somebody left open is not a
+     fact about the machine, and writing it into the config would put a
+     disclosure into the file two runtimes read. Coming back to *the one you bill
+     to* is the honest resting state and it is the same one every time. */
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set([billsTo]));
+  const toggle = (id: string) =>
+    setOpenIds((open) => {
+      const next = new Set(open);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
+  /* THE POINTER THAT RESOLVES TO NOTHING STILL HAS A HOME (ADR 0209). A profile
+     can name an account this machine no longer holds, and nothing repairs it on
+     load. The way out is to pick one of the cards below, so the sentence sits
+     above them. */
+  const orphaned = !accounts.some((entry) => entry.id === billsTo);
+
+  /* BILLING HERE OPENS THIS CARD, and closes none. The press means *this profile
+     pays through this account*, and the rows that say what that account is are
+     the ones the reader is about to want. Closing its neighbour on the same
+     press would be an accordion, which is the behaviour the set above refuses. */
+  const bill = (id: string) => {
+    setOpenIds((open) => (open.has(id) ? open : new Set(open).add(id)));
+    runtime.patch(buildProfileProvidersPatch(runtime.config, { default: id }));
+  };
+
+  return (
+    <>
+      {orphaned && (
+        <Note icon="alert">
+          {profile.label} bills to an account this machine no longer holds. Pick one below.
+        </Note>
+      )}
+      {/* A RADIOGROUP, BECAUSE THE PICK IS ONE OF N AND WRITES A SETTING. That is
+          what separates it from the disclosure `ListItem`'s pick answers: this
+          one changes where jobs are billed, so it takes the grammar `LaneCard`
+          uses for a choice and not the one a list uses for *show me this one*. */}
+      <div role="radiogroup" aria-label={`${profile.label} bills to`} className="ws-stack ws-gap3">
+        {accounts.map((account) => (
+          <AccountCard
+            key={account.id}
+            account={account}
+            runtime={runtime}
+            answers={answers}
+            profileLabel={profile.label}
+            current={account.id === billsTo}
+            open={openIds.has(account.id)}
+            onBill={() => bill(account.id)}
+            onToggle={() => toggle(account.id)}
+          />
+        ))}
+      </div>
+
+      <Card>
+        <CardRows>
+          <Row
+            layout="stack"
+            label="Add an account"
+            hint="Pick who it is with, then name it. The key goes on its card."
+          >
+            {adding ? (
+              <AddAccountPanel
+                runtime={runtime}
+                answers={answers}
+                onDone={() => setAdding(false)}
+              />
+            ) : (
+              <span className="ws-rowflex">
+                <Button variant="ghost" icon={<Icon name="plus" />} onClick={() => setAdding(true)}>
+                  Add account
+                </Button>
+              </span>
+            )}
+          </Row>
+          {/* WHAT CANNOT HOLD AN ACCOUNT YET, under the list rather than inside
+              it. Two dead segments in a picker say *these are four of a kind*;
+              two rows under the accounts say what they are and why. */}
+          <LockedLanes setup={setup} asked={asked} onManage={onManage} />
+        </CardRows>
+      </Card>
+
+      {onOpenProfiles && (
+        <span className="ws-row-hint">
+          Each profile bills to its own account. <b>{profile.label}</b> is the one open.
+        </span>
+      )}
+    </>
+  );
+}
 
 /**
- * WHICH ACCOUNT THIS LANE IS REACHED WITH (ADR 0208).
+ * ONE ACCOUNT — who it is with, its key, what it costs, and who bills to it.
  *
- * **The row the whole step exists for.** A profile named a vendor until this
- * step, so an employer's Groq account and a private one were the same key in
- * the OS store and a profile switch moved neither the server nor who pays. The
- * account is an object now, the profile points at one, and this is where the
- * pointing happens.
+ * **The header is the radio.** The strip that names the account is the control,
+ * the way `.ws-lane-row` is, because the account IS the thing being chosen.
+ * Rename and Remove live in the foot rather than the header for the reason
+ * `ListItem`'s pick does: a row-wide button cannot hold the buttons that act on
+ * the row.
  *
- * **It sits under the vendor and above the credential**, because that is the
- * order the questions come in: what kind of connection, which vendor, whose
- * account, and only then the key that account holds. Every credential row below
- * it is scoped to what this row selects.
+ * **AND THE HEADER IS ALSO WHERE THE CARD FOLDS** (ADR 0224). Two controls sit
+ * on it and they answer different questions — *bill here* and *show me this
+ * one* — so they are two buttons side by side rather than one press meaning
+ * both. The pick is the whole name strip; the fold is a caret at the end of it,
+ * the same glyph `.ws-disc` uses, rotated the same way. A collapsed card still
+ * states the three facts that make an inventory an inventory: whose it is, what
+ * vendor it is with, and whether it holds a key.
  *
- * **Renaming toggles the select into a field**, which is the idiom the API key
- * row already uses two rows down: the resting state is what the drawing shows,
- * and the state the drawing has no picture of is borrowed from the surface that
- * does.
- *
- * **It names the profile it is writing** (ADR 0209). The select writes
- * `providers.default` on the ACTIVE profile and nothing said so, which left the
- * question *how do I give a profile an account* unanswerable on the one screen
- * that answers it — the answer being *make that profile active and pick here*,
- * which no reader can guess from an unlabelled row. The `ScopeTag` is the
- * sentence and the door.
- *
- * **It has a state for a pointer that resolves to nothing, because it produced
- * one** (ADR 0209). Removing the account the profile was on left this row with
- * no vendor: an empty select over an empty list, no rename, no remove, and an
- * *Add* that returned early on the vendor it could not name. `Remove` repoints
- * the active profile now, so the state is no longer reachable from here — but a
- * config that took the old path can still be carrying it (nothing repairs a
- * dangling default on load, and that is ADR 0208's rule rather than an
- * oversight), so the row states it and offers every account as the way out.
+ * **The rows in the middle are the ones that were under the list.**
+ * `CloudCredentialRows` and `SelfHostedRows` both already took the account they
+ * configure — that was ADR 0209's fix — so putting them inside it is a move and
+ * not a rewrite. What changes is that a reader can see whose key it is.
  */
-function AccountRow({ lane, runtime }: { lane: LaneName; runtime: WorkspaceRuntime }) {
+function AccountCard({
+  account,
+  runtime,
+  answers,
+  profileLabel,
+  current,
+  open,
+  onBill,
+  onToggle,
+}: {
+  account: Connection;
+  runtime: WorkspaceRuntime;
+  answers: RuntimeAnswers;
+  profileLabel: string;
+  current: boolean;
+  /** Its rows are drawn. Collapsed, the header alone stands (ADR 0224). */
+  open: boolean;
+  onBill: () => void;
+  onToggle: () => void;
+}) {
   const [renaming, setRenaming] = useState(false);
-  /* THE QUESTION THIS ROW OWES BEFORE IT DESTROYS A SECRET (ADR 0210, ADR 0082).
-     `Remove` acted on one press, and what it acted on grew: the credential goes
-     with the account now, and a key deleted from the OS store cannot be brought
-     back by anything this product can do. ADR 0195 left *deleting always asks*
-     for transcript rows because they are deleted in runs and a confirm on the
-     third one stops being read — an account is the opposite object, deleted
-     rarely, where the ask is read precisely because it is unusual. */
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const openProfiles = useOpenProfiles();
-  /* THE ACCOUNT THE SHOWN LANE HOLDS (ADR 0212). It was the profile's own, which
-     was the same thing while the lane WAS the profile's account read backwards;
-     the lane groups now, so a card showing `Cloud` while the profile dictates
-     through its own server must fill its rows from a Cloud account rather than
-     reporting a dangling pointer.
 
-     **AND THE LANE IS THE PROP, WHICH IT WAS NOT.** This read the literal
-     `"Cloud"` while `WiredSelfHostedRows` rendered it too, so the `Your server`
-     card carried the Cloud account's name: Rename renamed Groq, New created a
-     Groq account, and Remove deleted one — on the server card, with the server's
-     URL in the row underneath. No test saw it, because every self-hosted fixture
-     puts the profile on the server and the two reads then agree by accident. */
-  const active = accountForLane(runtime.config, lane);
-  const vendor = active?.provider ?? "";
-  const everyAccount = resolveConnections(runtime.config);
-  /* WHICH PROFILE THIS ROW IS WRITING, BY NAME (ADR 0209). The select writes
-     `providers.default` on the ACTIVE profile and said so nowhere, so *how do I
-     give a profile an account* had no answer on the screen that answers it: you
-     make the profile active and pick here. A `ScopeTag` is how every other
-     per-profile row on this screen states that, and it carries the door. */
-  const profile = resolveActiveTextProfile(runtime.config);
-
-  /* THE STATE A DANGLING POINTER LEAVES, AND THE WAY OUT OF IT (ADR 0209).
-     A profile can name an account this machine no longer holds — removing the
-     account it was on produced exactly that until this step, and nothing repairs
-     it on load, which is ADR 0208's rule rather than an oversight. With no active
-     account there is no vendor, so this row cannot scope itself to one: it offers
-     every account instead, which is the only list that can contain the answer. */
-  const accounts = active
-    ? everyAccount.filter((entry) => entry.provider === vendor)
-    : everyAccount;
-
-  const { draft, setDraft, commit } = useCommittedSetting(active?.label ?? "", (next) => {
-    if (!active || !next) return;
-    runtime.patch(buildConnectionsPatch(runtime.config, { ...active, label: next }));
+  const { draft, setDraft, commit } = useCommittedSetting(account.label, (next) => {
+    if (!next) return;
+    runtime.patch(buildConnectionsPatch(runtime.config, { ...account, label: next }));
   });
 
-  /* WHAT A DELETION COSTS, COUNTED BEFORE IT HAPPENS. Another profile whose
-     account is removed keeps naming it and goes inert — nothing repoints it,
-     because choosing who pays for somebody else is not this row's decision
-     (ADR 0208). So the number belongs on the control that does it. THIS profile
-     is repointed, because its reader is the one pressing the button (ADR 0209),
-     and the count says so by naming the others. */
-  const used = active ? profilesUsingConnection(runtime.config, active.id) : 0;
-  /* THE ACTIVE PROFILE COUNTS AS ONE OF THE OTHERS UNLESS IT IS ON THIS ACCOUNT.
-     This subtracted 1 unconditionally, which was right while the row could only
-     show the account the profile was on. The lane groups now, so the card is
-     regularly showing an account THIS profile does not use — and the sentence
-     then promised one fewer profile would break than actually would. */
-  const usesThis =
-    active !== undefined &&
-    resolveProfileProviderSettings(profile).default === active.id;
-  const others = Math.max(0, used - (usesThis ? 1 : 0));
-  const usedBy = active ? profileLabelsUsing(runtime.config, active.id) : [];
+  const lane = laneForProviderId(account.provider);
+  const vendor = drawnNameFor(account.provider) ?? account.provider;
+  const credential = credentialStateFor(account.id, "speech", answers);
+  const usedBy = profileLabelsUsing(runtime.config, account.id);
+  const others = Math.max(0, usedBy.length - (current ? 1 : 0));
+  /* A LIMIT ONLY. `connectionCapabilitySentence` answers for every state; the two
+     that say the vendor does everything are the ones a card does not need to
+     print, because the job rows below already run on it. */
+  const spoken = connectionCapabilitySentence(vendor, answers);
+  const capability = spoken && spoken !== "Speech and language." ? spoken : null;
 
-  /* THE CREDENTIAL GOES FIRST AND THE CONFIG SECOND (ADR 0210). ADR 0208's
-     migration MOVES a key rather than copying it, on the argument that a key
-     under a name nothing points at is a secret no surface can show and no
-     reader can clear; removing the account left exactly that state from the
-     other end, because `buildConnectionRemovalPatch` writes `connections` and
-     nothing else.
-
-     **The order is what makes a failure safe.** A config write that landed
-     while the keyring call failed would orphan the key with nothing left naming
-     it — the account id is the only handle onto it. So a store that does not
-     answer keeps the account, the row says so, and nothing was destroyed. */
   const removeAccount = async () => {
-    if (!active || busy) return;
+    if (busy) return;
     setBusy(true);
     setProblem(null);
+    /* THE CREDENTIAL GOES FIRST AND THE CONFIG SECOND (ADR 0210). A config write
+       that landed while the keyring call failed would orphan the key with nothing
+       left naming it — the account id is the only handle onto its entries. */
     try {
       await invoke("clear_connection_credentials", {
-        request: { provider: active.provider, connection: active.id },
+        request: { provider: account.provider, connection: account.id },
       });
     } catch (cause) {
       setProblem(sentenceFor(cause));
       setBusy(false);
       return;
     }
-    runtime.patch(buildConnectionRemovalPatch(runtime.config, active.id));
+    runtime.patch(buildConnectionRemovalPatch(runtime.config, account.id));
     setBusy(false);
     setAsking(false);
   };
 
-  const select = (
-    <Select
-      value={active?.id ?? ""}
-      onChange={(event) =>
-        runtime.patch(
-          buildProfileProvidersPatch(runtime.config, { default: event.target.value }),
-        )
-      }
-      aria-label="Account"
-    >
-      {/* THE PLACEHOLDER EXISTS ONLY WHERE THE STORED POINTER RESOLVES TO
-          NOTHING, and it is not selectable: a blank option a reader could pick
-          would be a control offering to unset what it cannot unset. */}
-      {!active && (
-        <option value="" disabled>
-          — pick an account —
-        </option>
-      )}
-      {accounts.map((entry) => (
-        <option key={entry.id} value={entry.id}>
-          {entry.label}
-        </option>
-      ))}
-    </Select>
-  );
-
   return (
-    <>
-    <Row
-      label="Account"
-      hint={
-        problem ??
-        (!active
-          ? `This lane holds no account on this machine yet. Add one to bill jobs on it.`
-          : /* THE USED-BY READ-OUT, DERIVED AND NEVER STORED (ADR 0123). An
-               account carrying a list of its users would be a second copy of a
-               pointer that lives on the profile, and the two would be able to
-               disagree. It is the sentence a reader needs before renaming or
-               removing one: rotating this key touches everything named here. */
-            `${usedBy.length ? `Used by ${namedFew(usedBy)}.` : "No profile names this account yet."} A profile carries its own account, so switching profiles switches who pays.`)
-      }
-      control={
-        <span className="ws-rowflex">
-          <ScopeTag profile={profile.label} onOpen={openProfiles} />
-          {renaming ? (
-            <Field
-              w="150px"
-              aria-label="Account name"
-              value={draft}
-              autoFocus
-              onChange={(event) => setDraft(event.target.value)}
-              onBlur={() => {
-                commit();
-                setRenaming(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
+    /* THE RAW CARD ELEMENT, because `Card` forwards no `data-*` to the DOM and
+       TypeScript does not check a hyphenated JSX attribute against a component's
+       props — so passing them there compiles and reaches nothing. This is the
+       markup `Card` renders when it carries no title, description or footer. */
+    <div
+      className="ws-card ws-acct"
+      data-account={account.id}
+      data-current={current ? "" : undefined}
+      data-open={open ? "" : undefined}
+    >
+      {/* THE HEADER CARRIES BOTH CONTROLS AND IS NEITHER OF THEM (ADR 0224). It
+          was the radio itself; a `<button>` cannot hold the fold that acts on
+          the same card, which is the rule `ListItem`'s pick states one component
+          over. The badge left the pick with it: whether a key is stored is a
+          status the card reports and not part of the choice being made. */}
+      <div className="ws-acct-head">
+        {/* THE PICK — one press says *bill this profile here*. It carries the
+            mark, because recognising a vendor is what a logo is for and the only
+            place this screen showed one was a chip row that could not be pressed
+            (ADR 0223). */}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={current}
+          className="ws-acct-pick"
+          onClick={onBill}
+          title={current ? `${profileLabel} already bills here` : `Bill ${profileLabel} to ${account.label}`}
+        >
+          <span className="ws-radio" aria-hidden />
+          <ProviderMark name={vendor} className="ws-acct-mark" fallback={<Icon name="cloud" />} />
+          <span className="ws-acct-name">
+            <b>{account.label}</b>
+            {/* **THE SECOND LINE, AND ON THE PICKED CARD IT ALSO CARRIES THE
+                PROFILE** (ADR 0226). Seven of the eight facts on an account card
+                are the machine's — name, vendor, key, plan, endpoint, rename,
+                remove. The eighth is the radio, and its owner was written
+                nowhere a reader looks: the profile's name lived in the button's
+                `title`, which is a tooltip.
+
+                **IT IS NOT IN THE HEADER STRIP, AND THAT WAS MEASURED.** The
+                first build put it beside the name and the real host reported
+                `nameClipped: true` — at the 345 px this strip runs to, six
+                things share one line and the name is the one that loses, so
+                `Groq` drew as a sliver next to an intact chip. The line under
+                the name is already a column that stacks and already holds the
+                other fact that qualifies this account.
+
+                **On the picked card only.** An unpicked card's radio says it in
+                its own tooltip — *Bill General writing to Employer* — and the
+                same word on four cards is furniture, not information. */}
+            {(vendor !== account.label || current) && (
+              <span className="ws-acct-vendor">
+                {vendor !== account.label && <span className="ws-acct-of">{vendor}</span>}
+                {current && (
+                  <span className="ws-acct-bills">
+                    <Icon name="profiles" />
+                    {profileLabel}
+                  </span>
+                )}
+              </span>
+            )}
+          </span>
+        </button>
+        <StatusBadge tone={credential === "set" ? "success" : credential === "missing" ? "warning" : "plan"}>
+          {credential === "set" ? "Key set" : credential === "missing" ? "No key yet" : "Key not read"}
+        </StatusBadge>
+        {/* THE FOLD, NAMED AFTER THE ACCOUNT IT FOLDS. Four cards on a screen
+            give four buttons called *Expand*, which is the ambiguity ADR 0222
+            rewrote five cases to remove one component over. */}
+        <IconButton
+          className="ws-acct-fold"
+          label={open ? `Collapse ${account.label}` : `Expand ${account.label}`}
+          icon={<Icon name="chevron" />}
+          aria-expanded={open}
+          aria-controls={`${account.id}-rows`}
+          onClick={onToggle}
+        />
+      </div>
+
+      {open && (
+      <CardRows id={`${account.id}-rows`}>
+        {/* **WHAT THIS ACCOUNT CAN RUN, ON THE ACCOUNT** (ADR 0223). The sentence
+            was the chip row's hint, so it described whichever vendor the row was
+            marking and vanished with it. It is a fact about one account's vendor,
+            and this is that account — stated only where the answer is a LIMIT,
+            because *speech and language* on the card of a vendor that does both
+            is furniture on a screen the reader already called too wordy. */}
+        {capability && (
+          <Row layout="stack">
+            <span className="ws-row-hint">{capability}</span>
+          </Row>
+        )}
+        {lane === "Self-hosted" ? (
+          <SelfHostedRows runtime={runtime} account={account} onSelect={() => undefined} />
+        ) : (
+          <CloudCredentialRows runtime={runtime} account={account} />
+        )}
+
+        <Row layout="stack">
+          <span className="ws-rowflex">
+            {renaming ? (
+              <Field
+                w="170px"
+                aria-label={`Rename ${account.label}`}
+                value={draft}
+                autoFocus
+                onChange={(event) => setDraft(event.target.value)}
+                onBlur={() => {
                   commit();
                   setRenaming(false);
-                }
-              }}
-            />
-          ) : (
-            select
-          )}
-          {!renaming && active && (
-            <Button variant="ghost" onClick={() => setRenaming(true)}>
-              Rename
-            </Button>
-          )}
-          {/* A NEW ACCOUNT IS AN ACCOUNT *WITH SOMEBODY*, so this needs a vendor
-              and there is none while the pointer dangles. It guarded that with an
-              early return, which is a button that looks live and does nothing —
-              the false affordance this card spent two records removing. The
-              select above is the repair; this appears again once it worked. */}
-          {vendor && (
-            <Button
-              variant="ghost"
-              icon={<Icon name="plus" />}
-              onClick={() => {
-                const { patch, connectionId } = buildNewConnectionPatch(runtime.config, vendor);
-                runtime.patch({
-                  ...patch,
-                  ...buildProfileProvidersPatch(runtime.config, { default: connectionId }),
-                });
-              }}
-            >
-              New
-            </Button>
-          )}
-          {active && accounts.length > 1 && (
-            <Button
-              variant="ghost"
-              icon={<Icon name="trash" />}
-              disabled={busy}
-              title={
-                others > 0
-                  ? `${profile.label} moves to another account with this vendor. ${others} other ${others === 1 ? "profile keeps naming this one and its jobs stop" : "profiles keep naming this one and their jobs stop"} until you point ${others === 1 ? "it" : "them"} somewhere else.`
-                  : `${profile.label} moves to another account with this vendor.`
-              }
-              onClick={() => {
-                setProblem(null);
-                setAsking(true);
-              }}
-            >
-              Remove
-            </Button>
-          )}
-        </span>
-      }
-    />
-      {/* The question opens under the row, with the account's name, its vendor
-          and its credential still on screen behind it — which is the evidence a
-          centred confirm covers up (ADR 0082). */}
-      {asking && active && (
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    commit();
+                    setRenaming(false);
+                  }
+                  if (event.key === "Escape") setRenaming(false);
+                }}
+              />
+            ) : (
+              <>
+                <span className="ws-grow ws-row-hint">
+                  {problem ??
+                    (usedBy.length
+                      ? `Billed by ${namedFew(usedBy)}.`
+                      : "No profile bills here yet.")}
+                </span>
+                <IconButton
+                  label={`Rename ${account.label}`}
+                  icon={<Icon name="type" />}
+                  onClick={() => setRenaming(true)}
+                />
+                <IconButton
+                  label={`Remove ${account.label}`}
+                  icon={<Icon name="trash" />}
+                  tone="danger"
+                  disabled={busy}
+                  /* WHAT THE DELETION COSTS, BEFORE IT HAPPENS (ADR 0209).
+                     `buildConnectionRemovalPatch` repoints THIS profile onto
+                     another account of the same vendor and leaves every other
+                     profile naming the one that is going, which then goes inert.
+                     The count says so by naming the others. */
+                  title={
+                    others > 0
+                      ? `${profileLabel} moves to another account. ${others} other ${others === 1 ? "profile keeps billing here and its jobs stop" : "profiles keep billing here and their jobs stop"}.`
+                      : `${profileLabel} moves to another account.`
+                  }
+                  onClick={() => {
+                    setProblem(null);
+                    setAsking(true);
+                  }}
+                />
+              </>
+            )}
+          </span>
+        </Row>
+      </CardRows>
+      )}
+
+      {asking && (
         <ConfirmPanel
-          /* THE OBJECT IS NAMED, because the label collides with the vendor's
-             name by default — a first account on Groq is called `Groq`, and
-             `Remove Groq?` reads as removing the vendor. */
-          question={`Remove the account “${active.label}”?`}
+          /* THE OBJECT IS NAMED, because the label collides with the vendor's own
+             by default: `Remove Groq?` reads as removing the vendor. */
+          question={`Remove the account “${account.label}”?`}
           detail={
             others > 0
-              ? `Its stored key is deleted from the OS secret store and cannot be put back. ${others} other ${others === 1 ? "profile keeps naming this account and its jobs stop" : "profiles keep naming this account and their jobs stop"}. ${profile.label} moves to another account with this vendor.`
-              : `Its stored key is deleted from the OS secret store and cannot be put back. ${profile.label} moves to another account with this vendor.`
+              ? `Its key is deleted from the OS secret store and cannot be put back. ${others} other ${others === 1 ? "profile bills here and its jobs stop" : "profiles bill here and their jobs stop"}.`
+              : "Its key is deleted from the OS secret store and cannot be put back."
           }
           confirmLabel="Remove account"
           onConfirm={() => void removeAccount()}
@@ -927,24 +1069,191 @@ function AccountRow({ lane, runtime }: { lane: LaneName; runtime: WorkspaceRunti
           }}
         />
       )}
-    </>
+    </div>
+  );
+}
+
+/**
+ * AN ACCOUNT IS AN ACCOUNT **WITH SOMEBODY**, SO CREATING ONE ASKS WHO (B17).
+ *
+ * **Both ways of creating one picked the vendor for you.** `+ New` on the old
+ * row used the shown account's vendor and `AddAccountRow` used a fixed
+ * `runtimeIdFor(LANES.Cloud.provider)` — so on Cloud the button always made a
+ * Groq account whatever the reader wanted, and the chip row above was the only
+ * route onto a second vendor. That is the duty ADR 0212 wanted the chip row to
+ * lose and could not give to anything else, because nothing else asked.
+ *
+ * **And it does not assign.** Adding an account is inventory work; deciding that
+ * a writing style should start billing through it is not, and doing both on one
+ * press is the conflation ADR 0212 closed at the lane level and left at the row
+ * level — `+ New` created an account AND repointed the active profile, while the
+ * row three components up already carried a docblock saying it must not.
+ *
+ * The vendor list is `selectableProviderNames`, which is the registry's answer
+ * rather than the drawing's: a vendor with no adapter cannot hold an account
+ * that could ever run a job, and offering it would be the false affordance
+ * ADR 0067 rule 1 is about.
+ */
+function AddAccountPanel({
+  runtime,
+  answers,
+  onDone,
+}: {
+  runtime: WorkspaceRuntime;
+  answers: RuntimeAnswers;
+  onDone: (created?: string) => void;
+}) {
+  /* **EVERY VENDOR THIS BUILD CAN OPERATE, ON EVERY LANE** (ADR 0223). It asked
+     per lane, because the card was grouped by one; with the grouping gone the
+     question is *who is this account with*, and the answer is not shorter on one
+     lane than another. `Your server` is in the list for the first time: it is a
+     lane that IS its own vendor, which is a reason to offer one option rather
+     than a reason to offer none — the reader still has to say that is what they
+     are making. */
+  const lanes = ["Cloud", "Self-hosted", "Local", "Enterprise"] as LaneName[];
+
+  /* **EVERY VENDOR THE DRAWING NAMES, NOT ONLY THE ONES THAT WORK** (ADR 0124).
+     A first draft of this panel listed the selectable ones alone, which hides the
+     answer to *why can I not make an Anthropic account* instead of giving it —
+     the chip row it replaced had this right, and losing it here would have made
+     the panel quieter and less honest at once. `ProviderChips` takes the full
+     list plus what may be picked plus a reason for each that may not. */
+  const drawn: { id: string; label: string }[] = lanes.flatMap((entry) => {
+    const here = PROVIDERS.filter((row) => row.lane === entry).map((row) => row.name);
+    if (here.length) {
+      return here.flatMap((name) => {
+        const id = runtimeIdFor(name);
+        return id ? [{ id, label: name }] : [];
+      });
+    }
+    /* A LANE THAT *IS* ITS OWN VENDOR carries no `PROVIDERS` row — `Your server`
+       and `Local` are a place rather than a company — so the lane stands in for
+       one, which is what makes them reachable here at all. */
+    const laneVendor = LANE_PROVIDER_IDS[entry];
+    return laneVendor
+      ? [{ id: laneVendor, label: drawnNameFor(laneVendor) ?? LANE_LABEL[entry] }]
+      : [];
+  });
+
+  const pickable = new Set(
+    lanes.flatMap((entry) => {
+      if (laneWithheld(entry)) return [];
+      const named = selectableProviderNames(entry, answers);
+      if (named.length) return named;
+      const laneVendor = LANE_PROVIDER_IDS[entry];
+      const registered =
+        Boolean(laneVendor) &&
+        Boolean(answers.registered?.some((row) => row.provider === laneVendor));
+      return registered ? [drawnNameFor(laneVendor as string) ?? LANE_LABEL[entry]] : [];
+    }),
+  );
+  const offered = drawn.filter((entry) => pickable.has(entry.label));
+
+  const [vendor, setVendor] = useState(offered[0]?.id ?? "");
+  const [label, setLabel] = useState("");
+  const chosen = offered.find((entry) => entry.id === vendor) ?? offered[0];
+  /* THE RUNTIME HAS NOT ANSWERED YET is not *this lane has no vendors*. Until it
+     has, the panel says so rather than offering an empty picker — the same split
+     `accountChoices` makes between a pending read and a measured absence. */
+  const pending = answers.registered === null;
+
+  return (
+    <div className="ws-stack ws-gap2">
+      {pending ? (
+        <span className="ws-row-hint">Reading which vendors this build can operate…</span>
+      ) : !chosen ? (
+        <span className="ws-row-hint">
+          This build has no adapter for any vendor yet, so there is nothing an account could run.
+        </span>
+      ) : (
+        <>
+          {/* **THE LOGOS ARE HERE, WHICH IS THE ONE PLACE A VENDOR IS CHOSEN**
+              (ADR 0223). They used to be on a chip row at the top of the screen
+              that set nothing, while the control that actually decides the
+              vendor was a text select — recognition on the inert thing and prose
+              on the live one, exactly backwards. */}
+          <ProviderChips
+            label="Who is this account with"
+            providers={drawn.map((entry) => entry.label)}
+            value={chosen.label}
+            onChange={(name) => {
+              const picked = offered.find((entry) => entry.label === name);
+              if (picked) setVendor(picked.id);
+            }}
+            custom={false}
+            fallbackIcon={<Icon name="cloud" />}
+            selectable={[...pickable]}
+            reasonFor={(name) => {
+              const row = PROVIDERS.find((entry) => entry.name === name);
+              const withheld = row ? laneWithheld(row.lane) : undefined;
+              return withheld ?? inertReasonFor(name, answers) ?? "This build has no adapter for it.";
+            }}
+          />
+          <span className="ws-rowflex">
+            <Field
+              w="170px"
+              aria-label="Account name"
+              placeholder={chosen.label}
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+            />
+          </span>
+          <span className="ws-row-hint">
+            Name it so you can tell two apart — Work and Personal on one vendor are two logins.
+            Empty takes {chosen.label}.
+          </span>
+          <span className="ws-rowflex">
+            <Button
+              variant="primary"
+              onClick={() => {
+                const { patch, connectionId } = buildNewConnectionPatch(runtime.config, chosen.id);
+                /* THE NAME RIDES WITH THE CREATION rather than being a second
+                   write after it. `patch` is a shallow merge over `connections`,
+                   so a rename posted separately would race the create it is
+                   renaming. */
+                const named = label.trim();
+                runtime.patch(
+                  named
+                    ? {
+                        ...patch,
+                        connections: (patch.connections ?? []).map((entry) =>
+                          entry.id === connectionId ? { ...entry, label: named } : entry,
+                        ),
+                      }
+                    : patch,
+                );
+                onDone(connectionId);
+              }}
+            >
+              Create account
+            </Button>
+            <Button variant="ghost" onClick={() => onDone()}>
+              Cancel
+            </Button>
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 
 function ServerUrlRow({
   runtime,
+  account,
   endpoint,
 }: {
   runtime: WorkspaceRuntime;
-  endpoint: SelfHostedEndpointStatus | null;
-}) {
   /* THE URL BELONGS TO THE ACCOUNT, NOT TO THE MACHINE (ADR 0208). ADR 0165 put
      it on `AppConfig` and said why: there was nowhere else for it to live. There
      is now, and it is the object that also owns the token — which is what makes
      *this server with that key* unrepresentable rather than merely discouraged.
-     **The account is this LANE's** (ADR 0212), because these rows only render on
-     it and the lane no longer follows the profile. */
-  const account = accountForLane(runtime.config, "Self-hosted");
+     **The account is the one the inventory is open on** (B17): it was derived
+     per lane, which was the same account for as long as the card could show only
+     one, and a machine with two servers would have edited the first one's URL
+     under the second one's name. */
+  account?: Connection;
+  endpoint: SelfHostedEndpointStatus | null;
+}) {
   const stored = account?.base_url ?? "";
   const { draft, setDraft, commit } = useCommittedSetting(stored, (next) => {
     if (!account) return;
@@ -1276,7 +1585,16 @@ function ServerModelRow({
  * show and it is a preview; the field opens empty, because a masked value that
  * looks editable invites somebody to append to a secret they cannot see.
  */
-function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
+function CloudCredentialRows({
+  runtime,
+  account,
+}: {
+  runtime?: WorkspaceRuntime;
+  /** The account the inventory is open on (B17). It was derived per lane, which
+   *  answered *which of two Groq accounts is this key for* with a rule the
+   *  reader could not see and could not change. */
+  account?: Connection;
+}) {
   const { answers, refresh, connection } = useContext(Wired);
   /* THE ACCOUNT THIS CARD CONFIGURES, WHICH IS THE LANE'S AND NOT THE PROFILE'S.
      It read `connectionId` off the context — the account the profile dictates on
@@ -1288,7 +1606,7 @@ function CloudCredentialRows({ runtime }: { runtime?: WorkspaceRuntime }) {
      own server on the next request, and the token that had been there was gone.
      Measured, not theorised. The runtime refuses the crossing now as well
      (`refuse_foreign_account`); this is the half that stops asking for it. */
-  const laneAccount = runtime ? accountForLane(runtime.config, "Cloud") : undefined;
+  const laneAccount = account;
   const connectionId = laneAccount?.id;
   /* NULL IS *NOT READ YET* AND AN EMPTY ARRAY IS *THIS LANE HAS NO PLANS*, and
      the two were one value until ADR 0167. `resolve_provider_tiers` answers `[]`
@@ -1684,6 +2002,7 @@ export function ProviderPick({
   label,
   hint,
   custom = true,
+  account,
 }: {
   lane: LaneName;
   selected: string;
@@ -1692,10 +2011,12 @@ export function ProviderPick({
   label?: string;
   hint?: ReactNode;
   custom?: boolean;
+  /** The account the inventory is open on, under a runtime. Its vendor is what
+   *  this row marks (B17). */
+  account?: Connection;
 }) {
   const wired = useWired();
   const answers = useAnswers();
-  const { connection, setConnection } = useContext(Wired);
   const here = PROVIDERS.filter((p) => p.lane === lane);
   const cur = here.find((p) => p.name === selected) ?? here[0];
   const [drawnValue, setDrawnValue] = useState(cur.name);
@@ -1705,10 +2026,32 @@ export function ProviderPick({
      read in the gallery is a screen that cannot be rendered without a runtime
      (ADR 0055). The Enterprise pick has no config home yet, so it keeps the
      drawing on both surfaces. */
-  const wiredHere = wired && lane === "Cloud" && Boolean(connection);
-  const value = wiredHere ? (connection as string) : drawnValue;
-  const setValue = wiredHere && setConnection ? setConnection : setDrawnValue;
+  /* THE VENDOR OF THE ACCOUNT THIS CARD CONFIGURES, AND IT WAS THE PROFILE'S.
+     This read `Wired.connection` — the vendor the active profile dictates on —
+     while every row beneath it has read `accountForLane` since ADR 0213. On a
+     profile pointed at `Your server` the two came apart in the way that says
+     nothing true: the chip row's value was `Your server`, which the Cloud list
+     does not contain, so NO chip drew as chosen and the capability sentence
+     described Groq, over an Account row and a key row showing the first Cloud
+     account. Same defect ADR 0209 removed one row down, still standing on the
+     row above it. */
+  const laneVendor = account ? drawnNameFor(account.provider) : undefined;
+  const wiredHere = wired && lane === "Cloud" && Boolean(laneVendor);
+  const value = wiredHere ? (laneVendor as string) : drawnValue;
   const chosen = here.find((p) => p.name === value) ?? cur;
+  /* **AND IT NO LONGER WRITES ANYTHING** (speech track B17).
+     Picking a chip used to point the ACTIVE PROFILE at an account with that
+     vendor, creating one where the machine held none — an assignment and a
+     creation on one press of a control that named neither, which is the
+     conflation ADR 0212 closed at the lane level and left here. Both halves have
+     somewhere honest to be now: [`AddAccountPanel`] creates an account and asks
+     for its vendor, and `ProfileAccountRow` at the head of *What runs what*
+     assigns one with the profile named.
+
+     So this row states rather than sets, under a runtime: it marks the vendor of
+     the account the inventory is open on, which is the fact its capability
+     sentence has always been about. The gallery keeps the picker, because there
+     the drawing is the whole point (ADR 0055) and `port:diff` measures it. */
 
   /* THE LINE ADR 0106 NAMES. Drawn, this reads `chosen.stt && chosen.llm` — the
      hand-maintained table answering *what can this vendor do here*, which is a
@@ -1732,7 +2075,11 @@ export function ProviderPick({
       <ProviderChips
         providers={here.map((p) => p.name)}
         value={value}
-        onChange={setValue}
+        /* A CHIP THAT SETS NOTHING IS NOT PRESSED, under a runtime. The vendor
+           of an account is decided when the account is created and never after:
+           re-pointing an existing account at another vendor would leave its
+           stored key addressed to a company that never issued it. */
+        onChange={wiredHere ? undefined : setDrawnValue}
         custom={custom}
         customIcon={<Icon name="settings" />}
         fallbackIcon={<Icon name="cloud" />}
@@ -1797,8 +2144,20 @@ function jobBadge(lane: LaneName, jobKey?: JobKey, fallback?: { model: string; m
  * the door to where it is set, which is what a scope tag is for — a disabled
  * control cannot carry a tooltip, and this one does not need to.
  *
- * The two that carry no tag are the machine's, in the same shape
- * `enhance_sub_mode` and `enhance_target` already have, and they are live.
+ * The two that carry no tag are the machine's, and they are live.
+ *
+ * **This sentence used to cite `enhance_sub_mode` and `enhance_target` as the
+ * shape these two follow, and that comparison was false in the direction that
+ * matters.** Those fields exist in `AppConfig` AND in the profile's work mode,
+ * and nothing ever wrote either; the two controls over them were an
+ * `InertSegment` and a `DrawnSelect` on the Prompt Enhance row, and Profiles had
+ * none. A comment naming an unwired pair as the precedent for a wired one is how
+ * the next reader concludes the pair is fine.
+ *
+ * **Those two controls are gone as of 2026-08-17** — the owner's ruling that a
+ * fixed setting nobody needs an opinion about should work rather than be
+ * offered. So these four rows are now the only per-job settings on this screen,
+ * and the language pair joining them is speech-track B18.
  *
  * They are live while roughly thirty-six controls around them are not, and that
  * is not an inconsistency: every other row here picks a model, which needs the
@@ -1909,6 +2268,165 @@ function addressFormValue(label: string): TranslateAddressForm {
   return match?.[0] ?? "as_dictated";
 }
 
+/**
+ * THE NAME THE ASSISTANT ANSWERS TO — a control that writes, and it was one that
+ * did not.
+ *
+ * **It shipped as a live `Field` with a drawn default and no writer anywhere in
+ * the tree.** Not a `DrawnField`: nothing disabled it, nothing carried a reason,
+ * and a reader could type into it and watch the value survive until the next
+ * render. `modes.agent_name` is read by the runtime on every dictation —
+ * `active_text_profile_agent_name`, which is also what decides when Auto routes
+ * one here — so this is ADR 0067 rule 1 broken on the row that looked most like
+ * it worked, and ADR 0020's failure class from the other end: a stored value with
+ * no way to set it.
+ *
+ * **It writes the active profile and says which**, the way every other
+ * per-profile control on this screen does (ADR 0209). The value is per profile
+ * already; what was missing was the door, not the storage.
+ *
+ * The gallery keeps the drawn literal, so `port:diff` does not move.
+ */
+function AgentNameRow() {
+  const runtime = useRuntime();
+  const openProfiles = useOpenProfiles();
+
+  return runtime ? <WiredAgentNameRow runtime={runtime} onOpen={openProfiles} /> : (
+    <Row
+      label="Name you address it by"
+      hint="Also decides when Auto routes a dictation here, in every mode."
+      control={
+        <Field defaultValue="WordScript" w="150px" aria-label="Name you address it by" />
+      }
+    />
+  );
+}
+
+function WiredAgentNameRow({
+  runtime,
+  onOpen,
+}: {
+  runtime: WorkspaceRuntime;
+  onOpen?: () => void;
+}) {
+  const profile = resolveActiveTextProfile(runtime.config);
+  const modes = resolveProfileModesSettings(profile);
+  /* Committed on blur and Enter rather than per keystroke, which is the idiom the
+     account name and the server URL on this screen already use: a name is typed in
+     one go and a write per character is an IPC round trip per character. */
+  const { draft, setDraft, commit } = useCommittedSetting(modes.agent_name, (next) => {
+    /* An empty name is not a name. The runtime falls back to the machine-wide
+       value when the profile's is blank, so clearing this reads as *use the
+       default* rather than as *the assistant has no name* — and writing the empty
+       string would be the reader's clear, which is a value they may want. */
+    runtime.patch(buildProfileModesPatch(runtime.config, { agent_name: next }));
+  });
+
+  return (
+    <Row
+      label="Name you address it by"
+      hint="Also decides when Auto routes a dictation here, in every mode."
+      control={
+        <span className="ws-rowflex">
+          <ScopeTag profile={profile.label} onOpen={onOpen} />
+          <Field
+            w="150px"
+            aria-label="Name you address it by"
+            value={draft}
+            placeholder="WordScript"
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commit();
+            }}
+          />
+        </span>
+      }
+    />
+  );
+}
+
+/**
+ * THE LANGUAGE A PROFILE IS HEARD IN, STATED (speech track B18, ADR 0068).
+ *
+ * Two rows that were a `DrawnSelect` over three literal options and an
+ * `InertToggle` — drawn on this screen, settable on none, over two fields the
+ * runtime has read all along. ADR 0068 decides which way that is repaired: a
+ * per-profile value is edited on Profiles and stated here with the tag that is
+ * the door to it, exactly as `Into` and `Keep the profile's words` are.
+ *
+ * The gallery keeps the drawing, because a screen with no runtime has no
+ * profile to state — which is also what keeps `port:diff`'s two other states
+ * measuring the same tree they did before.
+ */
+function LanguageRows({ onOpen }: { onOpen?: () => void }) {
+  const runtime = useRuntime();
+  if (!runtime) {
+    return (
+      <>
+        <Row
+          label="Language"
+          hint="Auto-detect reads it from the audio, per dictation."
+          control={
+            <span className="ws-rowflex">
+              <ScopeTag onOpen={onOpen} />
+              <DrawnSelect defaultValue="Auto-detect" aria-label="Language">
+                <option>Auto-detect</option>
+                <option>German</option>
+                <option>English</option>
+              </DrawnSelect>
+            </span>
+          }
+        />
+        <Row
+          label="Pin this language"
+          hint="Only affects whole passages in another script. Mixed sentences stay untouched."
+          control={<InertToggle label="Pin this language" />}
+        />
+      </>
+    );
+  }
+
+  const profile = resolveActiveTextProfile(runtime.config);
+  const speech = resolveProfileSpeechSettings(profile);
+  const named = TRANSLATE_LANGUAGES.find((language) => language.code === speech.language);
+  /* AN ID THIS BUILD HAS NO NAME FOR IS PRINTED RATHER THAN HIDDEN — the same
+     rule the model row follows (ADR 0215). The stored value is what the request
+     carries, so a surface that showed `Auto-detect` over a config holding `sv`
+     would be naming one language while the recogniser was told another. */
+  const language = speech.language ? (named?.label ?? speech.language) : "Auto-detect";
+
+  return (
+    <>
+      <Row
+        label="Language"
+        hint="Sent to the recognizer as a hint. Auto-detect reads it from the audio, per dictation."
+        control={
+          <span className="ws-rowflex">
+            <ScopeTag profile={profile.label} onOpen={onOpen} />
+            <StatusBadge tone="plan">{language}</StatusBadge>
+          </span>
+        }
+      />
+      <Row
+        label="Pin this language"
+        hint="Only affects whole passages in another script. Mixed sentences stay untouched, and it never discards text on its own — it lowers the corroboration the drift check needs from two signals to one."
+        control={
+          <span className="ws-rowflex">
+            <ScopeTag profile={profile.label} onOpen={onOpen} />
+            {/* THREE STATES AND NOT TWO. A toggle here would have to draw *off*
+                for both *not pinned* and *there is nothing to pin*, and on this
+                screen the second is what almost every profile is in. */}
+            <StatusBadge tone={speech.language_locked ? "success" : "plan"}>
+              {speech.language ? (speech.language_locked ? "Pinned" : "Not pinned") : "Nothing to pin"}
+            </StatusBadge>
+          </span>
+        }
+      />
+    </>
+  );
+}
+
 function LaneJobRow({
   lane,
   jobKey,
@@ -1982,10 +2500,13 @@ function JobBadge({
   const resolved = resolveJobProvider(profile, jobKey, resolveConnections(runtime.config));
   const local = resolved.provider === LOCAL_PROVIDER_ID;
   const role = cap === "stt" ? "speech" : "chat";
-  const offered = vendorModels(resolved.provider, role);
-  const named = resolved.model && (!offered.length || offered.includes(resolved.model))
-    ? resolved.model
-    : "";
+  /* THE RUNTIME'S OWN RULE, ASKED THROUGH THE ONE FUNCTION THAT SPELLS IT
+     (ADR 0211). This line held a second, stricter copy — *is the id in the
+     vendor's catalogue rows* — which refuses a typed override the request
+     actually carries (ADR 0115), so the collapsed row named the profile's default
+     over a job running on something else. Same defect the model select below had,
+     and the reason both now ask `namedModel`. */
+  const named = namedModel(resolved, role) ?? "";
   const model = named || roleDefaultModel(profile, jobKey, local) || connectionById(runtime.config, resolved.connection)?.model || "";
 
   return (
@@ -2191,14 +2712,12 @@ function listWords(words: string[]): string {
 
 function ModelsTab({
   lane,
-  onLane,
   runtime,
   setup,
   asked,
   onManage,
 }: {
   lane: LaneName;
-  onLane: (lane: LaneName) => void;
   runtime?: WorkspaceRuntime;
   /** What the runtime found on this disk, read once for the whole screen
    *  (B12). `null` after `asked` is the probe failing, not a runner missing. */
@@ -2215,18 +2734,15 @@ function ModelsTab({
      the gallery there is no runtime and therefore nowhere to go, so both are
      drawn only when a workspace handed one over. */
   const open = runtime?.open;
+  /* CALLED ONCE, HERE, AND IT WAS CALLED THREE TIMES INSIDE THE JSX BELOW. Three
+     `useOpenProfiles()` in the returned tree is legal only for as long as none of
+     them ever sits behind a condition — the rows they are on are already
+     conditional in every other respect, and the first `&&` placed in front of one
+     would change the hook order mid-render. One call at the top costs nothing and
+     removes the trap. */
+  const openProfiles = useOpenProfiles();
   return (
     <>
-      {/* WHICH PROFILE THIS SCREEN IS SETTING, ONCE AND AT THE TOP (ADR 0212).
-          The owner's question was *in welchem Profil wähle ich gerade was aus*,
-          and every answer this screen had was per row: a `ScopeTag` on the
-          controls that happened to carry one. The accounts and the models on it
-          belong to a profile, so the profile is named before any of them — and
-          the door is the switcher's, because which profile is ACTIVE is a
-          workspace-wide fact and a second control for it would be a second
-          answer to one question (ADR 0123). */}
-      {runtime && <ProfileScope runtime={runtime} />}
-
       {/* THE ACCOUNTS. This was `Connection`, singular, and it was the spine of
           the screen — which is what made a credential look like the thing a job
           runs on. It is an inventory now: what this machine holds, per lane, with
@@ -2236,85 +2752,32 @@ function ModelsTab({
           THE LANE IS FOUR AND NOT TWO. Cloud and Local were the two the surface
           had, which left self-hosted and enterprise with nowhere to live — and
           that homelessness is what produced the third screen. */}
+      {/* **AND THE HEAD SAYS WHOSE THEY ARE** (ADR 0226). It said *each one is a
+          separate login with its own key* — true and about the wrong axis. The
+          fact a reader needs before typing a key into one of these is that the
+          key is the machine's: every profile on it reads the same list, the same
+          keys and the same plans. */}
       <SectionHeader
         title="Accounts"
-        description="What this machine can bill jobs to. Which job runs on which is the list below."
+        description="On this machine. Every profile sees the same list."
       >
-        <Card>
-          <CardRows>
-            <Row
-              label="Lane"
-              /* ADR 0067 ASKED FOR THIS BADGE AND THIS SCREEN NEVER CARRIED IT
-                 (ADR 0161). The record's rule is *preview badge everywhere it
-                 is offered*, and the only surface that honoured it was the
-                 workspace status strip — while the screen that actually offers
-                 the lane said nothing on the row itself. Three of the four are
-                 drawn, so the tag follows the selection rather than naming one
-                 lane: what is true of `Local` here is true of the other two. */
-              /* AND `Your server` DROPPED OFF THIS TAG WITH THE LOCK (D1b).
-                 The rule is *mark what is unbuilt*, and this lane is built: it
-                 stores a URL, a token and a model id, and it transcribes. Its
-                 rows are a drawing in the GALLERY, exactly as `Cloud`'s
-                 credential rows are, and a tag on that basis would have to go
-                 on Cloud too. */
-              tag={
-                lane === "Cloud" || lane === "Self-hosted" ? undefined : (
-                  <PreviewTag
-                    title={`${LANE_LABEL[lane]} is drawn, not built. The rows below show the shape it will have; nothing on this lane runs a job yet.`}
-                  />
-                )
-              }
-              hint="How the accounts below are grouped. Which job runs on which is the list further down — a profile can run on several lanes at once."
-              control={
-                <SegmentControl
-                  options={(["Cloud", "Local", "Self-hosted", "Enterprise"] as LaneName[]).map(
-                    (value) => ({
-                      value,
-                      /* THE LABEL IS NOT THE IDENTIFIER (ADR 0160). `Self-hosted`
-                         is stored and `Your server` is read, because the word
-                         *server* had to mean one thing on this screen and the
-                         local runner had taken it. */
-                      label: LANE_LABEL[value],
-                      /* ADR 0065 and ADR 0067. **TWO LANES ARE LOCKED NOW AND
-                         IT WAS THREE** (D1b, ADR 0165). The rule never was
-                         *lock what is not Cloud*; it is ADR 0067 rule 1 — a
-                         lane that is OFFERED must be operable, because a
-                         control that accepts a click and then asks for
-                         something the screen cannot take is the worst false
-                         affordance there is. `Your server` can be operated as
-                         of this step: the rows above store a URL, an optional
-                         token and a model id, and the runtime transcribes with
-                         them. So it comes off the list, and the reversal is
-                         exactly what that rule said it would be — the commit
-                         that finishes a lane is the commit that offers it.
-
-                         `Local` is finished in the runtime and withheld by the
-                         product until ROADMAP Phase 5; `Enterprise` has no
-                         adapter. `LockedLanes` below carries both reasons,
-                         because a disabled `<button>` fires no mouse events and
-                         can therefore carry neither tooltip nor hint (B12,
-                         ADR 0163). */
-                      /* ONE LIST FOR WHY A LANE IS WITHHELD (ADR 0123). It was
-                         this condition and `LockedLanes`' two sentences, and the
-                         account picker on every job row needed the same fact —
-                         three copies of a product decision with a date on it. */
-                      disabled: Boolean(runtime) && Boolean(laneWithheld(value)),
-                    }),
-                  )}
-                  value={lane}
-                  onChange={onLane}
-                  aria-label="Lane"
-                />
-              }
-            />
-            <LaneRows lane={lane} runtime={runtime} onManage={onManage} />
-            {/* AFTER THE CONNECTION'S OWN ROWS, NOT BETWEEN THEM. The reader
-                came here to see the lane they are on; what they cannot pick is
-                the second question, and answering it first would put three
-                withheld lanes above their own API key. */}
-            {runtime && <LockedLanes setup={setup} asked={asked} onManage={onManage} />}
-          </CardRows>
-        </Card>
+        {runtime ? (
+          <AccountList
+            runtime={runtime}
+            setup={setup}
+            asked={asked}
+            onManage={onManage}
+            onOpenProfiles={openProfiles}
+          />
+        ) : (
+          /* THE DRAWING, WHICH IS NOW THE SAME SHAPE AS THE PRODUCT (ADR 0223).
+             The gallery had the lane segment, the chip row and the credential
+             rows; all three moved or went, so a gallery that kept them would be
+             showing a screen this build no longer has. `port:diff` moves with
+             it, deliberately and measured — the second such divergence on this
+             screen after ADR 0216's. */
+          <DrawnAccountCard />
+        )}
       </SectionHeader>
 
       {/* THE LIST. Every job that runs a model, in the order sound moves through
@@ -2328,9 +2791,26 @@ function ModelsTab({
           assistant's model on every dictation and configures nothing, and a cost
           paid on every dictation and named on no surface is exactly what this
           list exists to prevent. */}
+      {/* **AND THIS HALF IS THE PROFILE'S, SAID ONCE AND NOT HERE** (ADR 0226).
+          A `ScopeTag` stood here for one build. The lead already says *what each
+          job runs on belongs to `<profile>`* two blocks up, the sheet header
+          carries the switcher, and the picked card wears the name — so a tag on
+          this head was the fourth copy of one word, which is the noise the step
+          set out to remove rather than more of the answer. */}
       <SectionHeader title="What runs what" description="One row per job. Open one to change it.">
         <Card>
           <div className="ws-stack ws-gap4">
+            {/* WHICH ACCOUNT THIS PROFILE BILLS TO, AT THE HEAD OF THE LIST IT
+                GOVERNS (speech track B17, ADR 0212). It was a select inside the
+                Accounts card — the inventory of what the MACHINE holds — so the
+                one control that decides who pays lived in the one card that is
+                not about the profile. ADR 0212 split adding an account from
+                assigning one and the two were still drawn in the same row.
+
+                It leads the job list because that is what it is: every row below
+                follows it unless it carries an override of its own, which is
+                exactly the sentence a default owes. */}
+            {runtime && <ProfileAccountRow runtime={runtime} />}
             <div className="ws-grp">
               <label>Listening</label>
               <JobList>
@@ -2340,51 +2820,56 @@ function ModelsTab({
                   cap="stt"
                   name="Dictation"
                   what="Seconds of one voice, on the fastest path there is."
-                  hint="Follows the connection. A dictation is latency-bound, which is the one argument that decides this row."
+                  hint="Follows the account above. Speed decides this row — you are waiting on it."
                 >
-                  <Row
-                    label="Language"
-                    hint="Auto-detect reads it from the audio, per dictation."
-                    control={
-                      <span className="ws-rowflex">
-                        <ScopeTag onOpen={useOpenProfiles()} />
-                        <DrawnSelect defaultValue="Auto-detect" aria-label="Language">
-                          <option>Auto-detect</option>
-                          <option>German</option>
-                          <option>English</option>
-                        </DrawnSelect>
-                      </span>
-                    }
-                  />
-                  <Row
-                    label="Pin this language"
-                    hint="Only affects whole passages in another script. Mixed sentences stay untouched."
-                    control={<InertToggle label="Pin this language" />}
-                  />
+                  {/* STATED HERE, EDITED ON PROFILES (ADR 0068, speech track
+                      B18) — the pattern `Into` and `Keep the profile's words`
+                      have used since ADR 0068 ruled it, and the answer to a
+                      pair that was drawn on this screen and settable on none.
+
+                      **The runtime half was never the missing one.**
+                      `speech.language` and `speech.language_locked` reach the
+                      capture snapshot, the drift check and both cloud adapters
+                      as the language hint; what did not exist was any control
+                      at all, which is ADR 0020's failure class from the other
+                      end — not a control the runtime ignores, but a value the
+                      runtime reads that nothing can set.
+
+                      **`Pin this language` states rather than mirrors a
+                      disabled toggle**, because a toggle that is off can mean
+                      *not pinned* or *nothing to pin*, and on this screen the
+                      second is the ordinary case. */}
+                  <LanguageRows onOpen={openProfiles} />
                   <Row
                     label="Longest recording this lane accepts"
-                    hint="Follows from the account plan on the connection. The ceiling Profiles → Defaults sets a recording limit under."
+                    hint="Set by the account's plan. Profiles → Defaults can hold you to less."
                     control={
                       <span className="ws-rowflex">
                         <CeilingBadge />
-                        <ScopeTag profile="Limit in profile" onOpen={useOpenProfiles()} />
+                        <ScopeTag profile="Limit in profile" onOpen={openProfiles} />
                       </span>
                     }
                   />
-                  <Row
-                    label="Bias from the profile's words"
-                    hint="The active profile's terms steer the recognizer before the AI sees anything. The terms themselves live in the profile."
-                    control={
-                      <span className="ws-rowflex">
-                        <ScopeTag onOpen={useOpenProfiles()} />
-                        <InertSegment
-                          options={["Off", "Light", "Standard"]}
-                          active="Standard"
-                          label="Bias from the profile's words"
-                        />
-                      </span>
-                    }
-                  />
+                  {/* NO BIAS SEGMENT (ADR 0216). The prototype draws
+                      `Off | Light | Standard` here and the owner removed it on
+                      2026-08-17, on the rule that a fixed setting nobody needs
+                      an opinion about should work rather than be offered.
+
+                      **`bias_mode` is a live switch and not a decided
+                      question**, which is the opposite of what a first pass at
+                      this comment claimed: `core::transcription_hints` reads it
+                      for three behaviours — `Off` suppresses the cloud and local
+                      prompts entirely, `Conservative` sends the profile's hints,
+                      `Manual` substitutes a typed override. What is true is that
+                      **nothing has ever written it**, so every installation runs
+                      the `Conservative` default and this segment drew a three-way
+                      choice over a switch pinned to the middle. Removing it is a
+                      deletion rather than a `PreviewTag` because the owner ruled
+                      the choice unwanted, not merely unbuilt.
+
+                      The pin itself — an unwritten switch with two unreachable
+                      arms, and a health flag that guards one of them and can
+                      therefore never fire — is speech-track B21. */}
                 </LaneJobRow>
 
                 <LaneJobRow
@@ -2393,7 +2878,7 @@ function ModelsTab({
                   cap="stt"
                   name="Meetings"
                   what="An hour of several voices, with nothing waiting on the result."
-                  hint="A different workload from a dictation, so it is its own row rather than its own screen."
+                  hint="Long and many voices, so it can run somewhere else than a dictation does."
                 >
                   <Row
                     label="Speakers"
@@ -2402,12 +2887,12 @@ function ModelsTab({
                   />
                   <Row
                     label="Live transcript"
-                    hint="Text arrives while you are still talking, which is what makes the meeting HUD worth looking at during a call."
+                    hint="Text arrives while you are still talking."
                     control={<InertToggle label="Live transcript" on />}
                   />
                   <Row
                     label="What a meeting records"
-                    hint="Microphone, system audio and echo cancellation are a capture question, not a model one."
+                    hint="Microphone, system audio and echo cancellation are set in Notes & Meetings."
                     control={
                       <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
                         Notes & Meetings
@@ -2441,7 +2926,7 @@ function ModelsTab({
                   jobKey="cleanup"
                   name="Cleanup"
                   what="Removes filler sounds and fixes typos, grammar and punctuation. Stays close to your phrasing."
-                  hint="Cleanup runs inside the dictation, so this is the one job where latency decides the model."
+                  hint="Runs inside the dictation, so speed decides the model here."
                   extra={
                     <>
                       <Note>
@@ -2489,7 +2974,7 @@ function ModelsTab({
                   jobKey="translate"
                   name="Translate"
                   what="Renders the dictation in another language instead of tidying it."
-                  hint="Overridden: translation is where model quality shows first, and it is not on the fastest path."
+                  hint="Overridden: a better model shows here first, and nothing is waiting on it."
                 >
                   <TranslateJobSettings />
                 </LaneJobRow>
@@ -2499,32 +2984,19 @@ function ModelsTab({
                   jobKey="enhance"
                   name="Prompt Enhance"
                   what="Structures raw dictation into a well-formed prompt for an external AI tool."
-                >
-                  <Row
-                    label="Sub-mode"
-                    hint="Enhance polishes without bloat; Expand restructures fully."
-                    control={
-                      <InertSegment
-                        options={["Enhance", "Expand"]}
-                        active="Enhance"
-                        label="Sub-mode"
-                      />
-                    }
-                  />
-                  <Row
-                    label="Prompt target"
-                    hint="Optimizes prompt syntax for the chosen AI tool."
-                    control={
-                      <DrawnSelect defaultValue="Claude Code" aria-label="Prompt target">
-                        <option>General</option>
-                        <option>Claude Code</option>
-                        <option>Cursor</option>
-                        <option>ChatGPT</option>
-                        <option>Copilot</option>
-                      </DrawnSelect>
-                    }
-                  />
-                </LaneJobRow>
+                />
+                {/* NO SUB-MODE AND NO PROMPT TARGET. Both are drawn by the
+                    prototype and both were removed on 2026-08-17, on the owner's
+                    rule that a fixed setting the reader has no reason to hold an
+                    opinion about should work rather than be offered.
+
+                    `enhance_sub_mode` and `enhance_target` keep their defaults
+                    and their readers; what goes is the pair of controls over
+                    them, which nothing wrote — they were stored in TWO places
+                    (`AppConfig` and the profile's work mode) with no writer for
+                    either, and this file used to cite them as the precedent its
+                    two live Translate controls follow. The row now opens onto
+                    the account and model rows alone, like Cleanup and Rewrite. */}
 
                 {/* DRAFT AND ASK ARE ONE THING — ADR 0040. They were two: a
                     Draft mode with a model, and a notes/meetings/Ask model beside
@@ -2537,7 +3009,7 @@ function ModelsTab({
                   jobKey="assistant"
                   name="The assistant"
                   what="Draft in a dictation, the Ask window, and the actions on a note and in the meeting HUD. One model for all four."
-                  hint="Overridden: it is the one job that both writes from scratch and reads your material, and it is not latency-bound the way a cleanup is."
+                  hint="Overridden: it writes from scratch and reads your material, and nothing is waiting on it."
                   extra={
                     <Note
                       icon="agents"
@@ -2553,25 +3025,15 @@ function ModelsTab({
                     </Note>
                   }
                 >
-                  <Row
-                    label="Name you address it by"
-                    hint="Also decides when Auto routes a dictation here, in every mode."
-                    control={
-                      <Field
-                        defaultValue="WordScript"
-                        w="150px"
-                        aria-label="Name you address it by"
-                      />
-                    }
-                  />
+                  <AgentNameRow />
                   <Row
                     label="May read your notes and transcripts"
-                    hint="Read-only, bounded to the notes directory, and it cites what it used. This is what lets an instruction point at material instead of repeating it."
+                    hint="Read-only, inside the notes directory, and it cites what it used."
                     control={<InertToggle label="May read your notes and transcripts" on />}
                   />
                   <Row
                     label="When it looks"
-                    hint="On reference searches only when the dictation points at something. Always is right for Ask, wrong in a dictation."
+                    hint="Looks only when the dictation points at something. Always is right for Ask, wrong in a dictation."
                     control={
                       <InertSegment
                         options={["Never", "On reference", "Always"]}
@@ -2621,7 +3083,7 @@ function ModelsTab({
                     quietly attribute this row to Groq. */}
                 <Job
                   name="The desk's voice"
-                  what="How a coding agent's question reaches you out loud, and how your answer returns."
+                  what="How a coding agent asks you out loud, and how your answer gets back."
                   control={<JobModel mark={null} model={DESK_VOICE_PRESET} />}
                   rows={
                     <CardRows>
@@ -2642,7 +3104,7 @@ function ModelsTab({
                       />
                       <Row
                         label="Everything else about agents"
-                        hint="Targets, the answer budget, the notification and its sound are the agent surface, not a model setting."
+                        hint="Targets, the answer budget and the notification live on the Agents screen."
                         control={
                           <DrawnButton variant="ghost" icon={<Icon name="arrow" />}>
                             Agents

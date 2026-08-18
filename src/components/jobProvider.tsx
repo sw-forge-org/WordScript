@@ -21,7 +21,9 @@ import {
 import { LANE_LABEL, LANES, providerNames, type JobKey, type LaneName } from "@/screens/data";
 import {
   buildProfileProvidersPatch,
+  foreignModel,
   modelSlotForJob,
+  namedModel,
   resolveActiveTextProfile,
   resolveConfigJobProvider,
   resolveJobProvider,
@@ -48,7 +50,7 @@ import {
 import { useProviderSeam } from "@/hooks/useProviderSeam";
 import type { AppConfig } from "@/types/ipc";
 import { useUploadCapacity } from "@/hooks/useUploadCapacity";
-import { laneJobModels, vendorModels } from "@/lib/modelCatalogue";
+import { laneJobModels, vendorModels, type ModelRole } from "@/lib/modelCatalogue";
 import type { ProviderRole, UploadCapacity } from "@/types/providers";
 import type { WorkspaceRuntime } from "@/screens/props";
 
@@ -552,7 +554,7 @@ export function Follows({
     lane === "Cloud" || lane === "Enterprise" ? (
         <Row
           label="Provider"
-          hint={hint ?? "Follows the connection unless you change it here."}
+          hint={hint ?? "Follows the account above unless you change it here."}
           control={
             override ? (
               <span className="ws-rowflex">
@@ -591,7 +593,7 @@ export function Follows({
       ) : lane === "Local" ? (
         <Row
           label="Runs on"
-          hint="This machine. Which model is the only choice there is — there is no account behind it."
+          hint="This machine. There is no account behind it — only which model."
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="success">Local runtime</StatusBadge>
@@ -609,7 +611,7 @@ export function Follows({
            `port:diff` measures. */
         <Row
           label="Endpoint"
-          hint="The server set on the connection above. Every job on this lane posts to it."
+          hint="The server set on the account above. Every job on this lane posts to it."
           control={
             <span className="ws-mono ws-muted">
               {wiredServer.endpoint ? (wiredServer.endpoint.base_url ?? "Not set") : "Not read"}
@@ -619,7 +621,7 @@ export function Follows({
       ) : (
         <Row
           label="Endpoint"
-          hint="The server set on the connection above. Every job uses the same one; only the model id differs."
+          hint="The server set on the account above. Only the model id differs per job."
           control={<span className="ws-mono ws-muted">http://10.0.0.2:8080/v1</span>}
         />
       );
@@ -635,7 +637,7 @@ export function Follows({
            the honest row is the value with the door to where it is set. */
         <Row
           label="Model id"
-          hint="One per server, set on the connection above — your server publishes no list, so every job on this lane sends the same typed id."
+          hint="One per server, set on the account above. Your server publishes no list to pick from."
           control={
             <span className="ws-mono ws-muted">
               {wiredServer.endpoint ? (wiredServer.endpoint.model ?? "Not set") : "Not read"}
@@ -646,7 +648,17 @@ export function Follows({
         <Row
           label="Model id"
           hint="Not discoverable on every server, so it is typed rather than picked."
-          control={<DrawnField placeholder="llama-3.3-70b" w="190px" aria-label="Model id" />}
+          /* THE SAME PLACEHOLDER THE WIRED ROW SHOWS. It read `llama-3.3-70b`,
+             which is a cloud vendor's chat family — and after ADR 0214 a retired
+             one — printed as the example of a self-hosted id. `TypedModelRow`
+             above has spelled this lane's example since D1b; two examples for one
+             field is the drift ADR 0123 is about, in miniature.
+
+             Deliberately an id the catalogue does NOT carry: `modelCatalogue.test`
+             walks `src/` and fails on a catalogued id spelled outside the
+             catalogue, and it is right to — a placeholder naming a catalogued row
+             would be a model id living in two places. */
+          control={<DrawnField placeholder="faster-whisper-medium" w="190px" aria-label="Model id" />}
         />
       ) : (
         <Row
@@ -664,7 +676,7 @@ export function Follows({
       {override && (lane === "Cloud" || lane === "Enterprise") && (
         <Row
           label="API key"
-          hint="Its own, because this job is not on the connection above. Held in the OS secret store like every other."
+          hint="Its own, because this job is not on the account above. In the OS secret store like every other."
           control={
             <OverrideKeyBadge
               connectionId={
@@ -795,16 +807,29 @@ function JobAccountRows({
      runs on; the credential belongs to the account, so the row says what is true
      and points at the inventory that owns it. */
   const credential = local ? "set" : credentialStateFor(resolved.connection, role, answers);
-  const offered = vendorModels(resolved.provider, role === "speech" ? "speech" : "chat");
+  const modelRole: ModelRole = role === "speech" ? "speech" : "chat";
+  const offered = vendorModels(resolved.provider, modelRole);
   const roleDefault = roleDefaultModel(profile, jobKey, local);
-  /* WHAT THIS JOB WOULD RUN ON RIGHT NOW, and the two halves are not the same
-     question: `resolved.model` is what the profile stored, `effective` is what
-     the runtime would spend. They disagree exactly where a stored id belongs to
-     another vendor — a leftover from an account change — and the row has to be
-     able to say so rather than showing a value no request carries. */
-  const stale =
-    Boolean(resolved.model) && offered.length > 0 && !offered.includes(resolved.model);
-  const followsModel = !resolved.model || stale;
+  /* WHAT THIS JOB WOULD RUN ON RIGHT NOW, asked through the runtime's own rule
+     (ADR 0211, ADR 0115). `resolved.model` is what the profile stored; `sent` is
+     what `JobProvider::named_model` would actually put on the request. They
+     disagree in exactly one case — a stored id the catalogue attributes to
+     ANOTHER vendor, which is a leftover from an account change — and the row says
+     so rather than showing a value no request carries.
+
+     **This asked whether the id was in the vendor's catalogue rows, and that is a
+     different question with a worse answer.** An id the catalogue has never seen
+     is a typed override the runtime sends untouched, so refusing it here drew
+     *Follow the profile* over a row whose request carried the stored id. A
+     retirement produces exactly that state, which is how the rule came to be
+     wrong on both this row and the collapsed badge above it. */
+  const sent = namedModel(resolved, modelRole);
+  const foreign = foreignModel(resolved, modelRole);
+  const followsModel = sent === undefined;
+  /* AN ID THE VENDOR SERVES THAT THIS BUILD HAS NOT READ ABOUT still has to be
+     selectable, or the select would silently re-point a row the reader never
+     touched: a `value` matching no option renders as the first one. */
+  const options = sent && !offered.includes(sent) ? [sent, ...offered] : offered;
 
   return (
     <>
@@ -812,7 +837,7 @@ function JobAccountRows({
         label="Runs on"
         hint={
           hint ??
-          "Any account on this machine. The lane is how they are grouped, not a mode this screen is in."
+          "Any account on this machine, grouped by lane."
         }
         control={
           <span className="ws-rowflex">
@@ -880,7 +905,7 @@ function JobAccountRows({
            knows whether it is there. */
         <Row
           label="Model"
-          hint="The file this machine has. It comes with its decode settings, so it is chosen where it is installed."
+          hint="The file this machine has. Chosen where it is installed, with its decode settings."
           control={
             <span className="ws-rowflex">
               <StatusBadge tone="plan">{roleDefault || "base"}</StatusBadge>
@@ -910,18 +935,18 @@ function JobAccountRows({
         <Row
           label="Model"
           hint={
-            stale
-              ? `The model this row named is not one ${drawnNameFor(resolved.provider) ?? resolved.provider} serves, so the profile's ${modelSlotForJob(jobKey)} model runs instead. Pick one to change that.`
-              : `What this job runs on ${drawnNameFor(resolved.provider) ?? resolved.provider}. Following means the profile's ${modelSlotForJob(jobKey)} model.`
+            foreign
+              ? `That model belongs to another vendor, so the profile's ${modelSlotForJob(jobKey)} model runs instead. Pick one here to change it.`
+              : `What this job asks ${drawnNameFor(resolved.provider) ?? resolved.provider} for. Following takes the profile's ${modelSlotForJob(jobKey)} model.`
           }
           control={
             <DrawnSelect
-              value={followsModel ? "" : resolved.model}
+              value={followsModel ? "" : (sent as string)}
               aria-label="Model"
               onChange={(event) => setJobModel?.(jobKey, event.target.value || null)}
             >
               <option value="">{`Follow the profile · ${roleDefault}`}</option>
-              {offered.map((id) => (
+              {options.map((id) => (
                 <option key={id} value={id}>
                   {id}
                 </option>
@@ -956,7 +981,7 @@ function TypedModelRow({
          reader comes to believe they are one setting. Same question here as in
          the select beside it: what does this job run on. */
       label="Model"
-      hint="Your server publishes no list, so this is typed. Empty sends the id the server itself was given."
+      hint="Typed, because your server publishes no list. Empty sends the account's own id."
       control={
         <DrawnField
           key={`${jobKey}-${stored}`}
@@ -1196,7 +1221,7 @@ function JobProviderBody({
       <CardRows>
         <Row
           label="Where this runs"
-          hint={refusal ?? hint ?? "The connection, unless this job is set to something else below."}
+          hint={refusal ?? hint ?? "The account above, unless this job is set to something else."}
           control={
             <span className="ws-rowflex">
               <SelectMark name={runsOn} />

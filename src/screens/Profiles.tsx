@@ -61,6 +61,7 @@ import {
   resolveConfigJobProvider,
   resolveProfileCaptureSettings,
   resolveProfileModesSettings,
+  resolveProfileSpeechSettings,
   resolveTextProfileWorkMode,
   textRulesDocumentFromProfile,
 } from "@/lib/textProfiles";
@@ -73,6 +74,7 @@ import type {
   CommunicationStyleAnalysis,
   ProcessingMode,
   ProfileModesSettings,
+  ProfileSpeechSettings,
   TextProfile,
   TextProfileInsertBehavior,
   VocabularyHintEntry,
@@ -993,6 +995,14 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
 
   const work = profile ? resolveTextProfileWorkMode(profile) : null;
   const modes = profile ? resolveProfileModesSettings(profile) : null;
+  /* THE PROFILE'S SPEECH BLOCK, and the two fields on it that had no control
+     anywhere in the tree until B18 (ADR 0068). The runtime has read
+     `speech.language` and `speech.language_locked` since the capture snapshot
+     carried them — into `transform.rs`'s drift check and out as the language
+     hint on every cloud adapter — while AI Models drew a select with three
+     literal options and Profiles had nothing. A value the runtime reads that
+     nothing can set is ADR 0020's failure class arriving from the other end. */
+  const speech = profile ? resolveProfileSpeechSettings(profile) : null;
 
   /* What the two bounded style fields will actually cost the prompt. The two
      numbers the meters used to show were the field's own character count
@@ -1079,6 +1089,18 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
       }),
       kind,
     );
+
+  /* THE SAME SHAPE ONE BLOCK OVER, and it writes the profile the pane is
+     SHOWING. `buildProfileSpeechPatch` in `lib/textProfiles` writes the ACTIVE
+     profile, which is the right answer for AI Models and the wrong one here:
+     this screen edits whichever profile the reader selected, and a row that
+     silently wrote a different one is the defect ADR 0209 closed on the account
+     select. `write` is the seam that already knows which profile that is. */
+  const writeSpeech = (next: Partial<ProfileSpeechSettings>) =>
+    write((current) => ({
+      ...current,
+      speech: { ...resolveProfileSpeechSettings(current), ...next },
+    }));
 
   const listRows = useMemo(
     () =>
@@ -1381,6 +1403,70 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                               </option>
                             ))}
                           </Select>
+                        }
+                      />
+                      {/* THE LANGUAGE THIS PROFILE IS HEARD IN, WHICH NOTHING
+                          COULD SET (speech track B18).
+
+                          `speech.language` and `speech.language_locked` have
+                          reached the capture snapshot, the drift check and both
+                          cloud adapters as the language hint for some time; the
+                          only surface either appeared on was AI Models, as a
+                          `DrawnSelect` over three literal options with no
+                          writer, and Profiles had nothing. ADR 0068's ruling
+                          decides where the control goes: a per-profile value is
+                          EDITED here and STATED there, which is exactly what
+                          `Into` and `Keep this profile's words` below already
+                          do.
+
+                          Directly above the translate pair on purpose — heard
+                          in one language, written into another is one thought,
+                          and splitting the two halves across the card would
+                          make the second unreadable without the first.
+
+                          The list is `TRANSLATE_LANGUAGES` rather than a second
+                          copy of it (ADR 0123). It is what the product offers
+                          rather than what a recogniser can do — whisper takes
+                          far more — and the drawing this replaces offered
+                          three. */}
+                      <Row
+                        label="Dictation language"
+                        hint="Sent to the recognizer as a hint. Auto-detect reads it from the audio, per dictation."
+                        control={
+                          <Select
+                            value={speech?.language ?? ""}
+                            onChange={(event) => writeSpeech({ language: event.target.value })}
+                            aria-label="Dictation language"
+                          >
+                            {/* EMPTY IS A CHOICE AND NOT A BLANK. The adapters
+                                drop an empty hint, so this is *let the model
+                                decide* — the state every profile is in until
+                                somebody picks, and one a reader may want back. */}
+                            <option value="">Auto-detect</option>
+                            {TRANSLATE_LANGUAGES.map((language) => (
+                              <option key={language.code} value={language.code}>
+                                {language.label}
+                              </option>
+                            ))}
+                          </Select>
+                        }
+                      />
+                      <Row
+                        label="Pin this language"
+                        hint="Only affects whole passages in another script. Mixed sentences stay untouched, and this never discards text on its own — it lowers the corroboration the drift check needs from two signals to one."
+                        control={
+                          <Toggle
+                            checked={speech?.language_locked ?? false}
+                            onCheckedChange={(next) => writeSpeech({ language_locked: next })}
+                            /* Pinning nothing is not a state the runtime has:
+                               `hallucination_detect` lowers its threshold for
+                               the language the request CARRIED, and an
+                               auto-detected dictation carried none. The row
+                               says so by refusing rather than by accepting a
+                               value that would do nothing. */
+                            disabled={!speech?.language}
+                            aria-label="Pin this language"
+                          />
                         }
                       />
                       {/* The two rows that only exist for one mode, and only

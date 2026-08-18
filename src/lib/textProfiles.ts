@@ -59,7 +59,7 @@ export function connectionById(
 export function activeConnection(config: AppConfig): Connection | undefined {
   return connectionById(config, resolveConfigJobProvider(config, "dictation").connection);
 }
-import { runtimeDefault } from "./modelCatalogue";
+import { providerForModelId, runtimeDefault, type ModelRole } from "./modelCatalogue";
 
 function createProfileId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -327,6 +327,61 @@ export function resolveJobProvider(
   };
 }
 
+/**
+ * THE MODEL A JOB MAY ACTUALLY BE SENT — the mirror of
+ * `JobProvider::named_model` (ADR 0211), and the one place this rule is spelled
+ * on this side.
+ *
+ * **It was spelled twice and neither copy was the runtime's rule.** `JobBadge`
+ * and the job row's model select each asked *is this id in the vendor's catalogue
+ * rows*, which refuses an id the catalogue has never seen — and the runtime sends
+ * exactly that id, because ADR 0115 makes the catalogue a snapshot rather than a
+ * whitelist. So a stored override the catalogue does not carry drew as *Follow the
+ * profile* while the request carried it: the surface naming one model and the
+ * request carrying another (ADR 0067), which is the defect the model axis exists
+ * to end, arrived from the other direction.
+ *
+ * `undefined` means *fall back to the profile's slot for this role*, and it covers
+ * the two states the runtime folds together: nothing was named, or what was named
+ * belongs to another vendor. Only the second is a refusal, and
+ * [`foreignModel`] is how a surface tells them apart in order to say so.
+ */
+export function namedModel(
+  resolved: { provider: string; model: string },
+  role: ModelRole,
+): string | undefined {
+  const named = resolved.model.trim();
+  if (!named || !resolved.provider) return undefined;
+
+  const owner = providerForModelId(named, role);
+  return owner !== undefined && owner !== resolved.provider ? undefined : named;
+}
+
+/**
+ * WHETHER A STORED MODEL BELONGS TO SOMEBODY ELSE — the half of
+ * [`namedModel`]'s refusal a surface has a sentence for.
+ *
+ * True only where the catalogue attributes the id to a different vendor, which is
+ * a leftover from an account change and a thing the row can name. An id the
+ * catalogue simply does not carry is NOT this: it is a typed override, the request
+ * carries it, and reporting it as foreign would be the surface calling the
+ * runtime's own behaviour a fault.
+ *
+ * A job whose account is gone answers `false` rather than `true`: there is no
+ * vendor to be foreign TO, and that row already states the missing account
+ * (`Account gone`) rather than blaming the model it stored.
+ */
+export function foreignModel(
+  resolved: { provider: string; model: string },
+  role: ModelRole,
+): boolean {
+  const named = resolved.model.trim();
+  if (!named || !resolved.provider) return false;
+
+  const owner = providerForModelId(named, role);
+  return owner !== undefined && owner !== resolved.provider;
+}
+
 /** Which of the profile's three stored model slots a job falls back to when it
  *  names none of its own (ADR 0211). */
 export type ModelSlot = "speech" | "correction" | "agent";
@@ -469,14 +524,22 @@ export function describeTextProfileWorkMode(
   }`;
 }
 
-/** The profile shape this build writes, mirroring `config.rs`.
+/** The profile shape this build writes, mirroring
+ *  `core::config::TEXT_PROFILE_SCHEMA_VERSION`.
  *
  *  It read `2` until ADR 0112, because this file could honestly perform only
  *  the first of the runtime's four migrations and claiming a higher number
- *  would have told the runtime the later steps had run. There are no migrations
- *  left on either side, so a profile the UI creates is a current-shape profile
- *  and says so. */
-export const TEXT_PROFILE_SCHEMA_VERSION = 4;
+ *  would have told the runtime the later steps had run.
+ *
+ *  **It then read `4` while the runtime read `5`, and the comment saying why
+ *  had gone false.** ADR 0094's config half added the provider-axis migration
+ *  and moved the constant to 5; this side kept a number and a sentence — *there
+ *  are no migrations left on either side* — from the version before it. The cost
+ *  was latent rather than paid: a profile created here carries the axis already,
+ *  so `adopt_provider_axis` returns early and only the stamp moves. It stops
+ *  being latent at the next migration, which would run once over every profile
+ *  this file has ever written. The two numbers are one number. */
+export const TEXT_PROFILE_SCHEMA_VERSION = 5;
 
 export function cloneTextProfile(profile: TextProfile, overrides: Partial<TextProfile> = {}): TextProfile {
   return {

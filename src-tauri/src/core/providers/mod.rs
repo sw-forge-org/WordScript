@@ -1300,13 +1300,49 @@ fn refuse_foreign_account_in(
     )))
 }
 
+/// **A CREDENTIAL SCOPE IS AN ACCOUNT ID, AND THE EMPTY STRING IS NOT ONE**
+/// (ADR 0208, ADR 0209).
+///
+/// `credential_store::entry_user` formats `{scope}.{role}.{kind}`, so an unnamed
+/// scope produces the entry `.speech.api_key` — a name **no writing door can
+/// ever produce**, because a save carries the account the reader typed into.
+/// Reading it therefore answers *nothing stored* for a machine whose key is
+/// present, which is `Needs key` over a working connection.
+///
+/// **It is not hypothetical and it was not caught by a test.** The workspace
+/// status strip omitted the argument from the day ADR 0208's migration moved
+/// every key onto its account, so it reported `Needs key` on every machine, on
+/// every launch, with the connection card six rows away showing the key set.
+/// The surface fix is one argument; this is the reason a second surface cannot
+/// repeat it. It is refused rather than answered, because *no account was named*
+/// and *this account holds no key* are different facts and only one of them is
+/// the reader's to act on.
+///
+/// **A lane that stores no credential is exempt by construction**, not by a
+/// name: `credential_kinds()` is empty for `local`, which authenticates against
+/// nothing, and that is exactly the lane whose callers legitimately name no
+/// account.
+fn refuse_unscoped_credential_read(
+    entry: &'static registry::ProviderEntry,
+    connection: &str,
+) -> Result<(), ProviderCommandError> {
+    if !connection.trim().is_empty() || entry.provider.credential_kinds().is_empty() {
+        return Ok(());
+    }
+
+    Err(ProviderCommandError::invalid_request(format!(
+        "A status for '{}' has to name the account it is asked about. A credential is stored under the account, so an unnamed one reads a slot nothing writes and reports every key as missing.",
+        entry.id,
+    )))
+}
+
 #[tauri::command]
 pub fn provider_status(
     request: ProviderStatusRequest,
 ) -> Result<ProviderStatus, ProviderCommandError> {
-    let mut status = registry::resolve_entry(&request.provider)?
-        .provider
-        .status(&request)?;
+    let entry = registry::resolve_entry(&request.provider)?;
+    refuse_unscoped_credential_read(entry, &request.connection)?;
+    let mut status = entry.provider.status(&request)?;
     /* THE ONE PLACE THE ACCOUNT IS STAMPED (ADR 0209). Here rather than in each
        adapter, because the fact being reported is *which account was asked
        about* — which this function holds and an adapter can only copy. Five
@@ -1393,6 +1429,123 @@ pub fn rekey_connection_credentials(
     }
 
     Ok(moved)
+}
+
+/// What one vendor-scoped entry turned out to be, per `(role, kind)`.
+///
+/// Three answers rather than a count, because the three need different things
+/// from a reader and a number cannot tell them apart. Only the first is a
+/// repair; the other two are states that have to be SAID, since neither can be
+/// discovered from inside the product — that is the whole complaint against an
+/// orphan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CredentialAdoption {
+    /// Moved onto the one account this machine holds for that vendor.
+    Adopted {
+        provider: &'static str,
+        connection: String,
+        role: ProviderRole,
+        kind: CredentialKind,
+    },
+    /// Two or more accounts on the vendor, so the target is a guess. Refused:
+    /// picking one would put a key on an account it may not have been issued
+    /// for, which is the crossing [`refuse_foreign_account`] exists to prevent.
+    Ambiguous {
+        provider: &'static str,
+        accounts: usize,
+        role: ProviderRole,
+        kind: CredentialKind,
+    },
+    /// No account on that vendor at all, so there is nothing to move it onto.
+    /// Left where it is and named, because deleting a bearer token nobody asked
+    /// about is destroying a secret to tidy a name.
+    Stranded {
+        provider: &'static str,
+        role: ProviderRole,
+        kind: CredentialKind,
+    },
+}
+
+/// **ADOPTS EVERY CREDENTIAL STILL KEYED BY VENDOR ONTO THE ACCOUNT THAT OWNS
+/// IT** — the sweep ADR 0208's one-shot migration needed and did not have
+/// (speech track B20).
+///
+/// **Why the migration missed one, measured rather than guessed.**
+/// `adopt_connection_axis` builds its vendor list from the ids the PROFILES
+/// name, and `rekey_connection_credentials` then walks the connections that lift
+/// produced. A vendor a machine holds a credential for but no profile points at
+/// is in neither list. The reporting machine's own pre-migration snapshot
+/// (`config.backup-connection-axis-1786964429877.json`, 2026-08-17) has all six
+/// profiles on `groq` and `connections: null`, so the lift made exactly one
+/// connection and re-keyed groq alone — while `self_hosted.speech.api_key`,
+/// written the day before, had no account to be moved onto. The self-hosted
+/// account was created from the UI afterwards, and the migration is one-shot, so
+/// nothing ever looked at that entry again.
+///
+/// **So this is not a migration and must not be gated like one.** It is a sweep
+/// that runs while the machine still holds a vendor-scoped entry, which is what
+/// makes the late-created account the case it handles rather than the case it
+/// misses.
+///
+/// **The registry decides what to look for**, the same table
+/// [`rekey_connection_credentials`] walks: a vendor that stores no credential is
+/// skipped by construction, and an id no adapter claims could never have been a
+/// scope. The scope looked for is the canonical id alone, because
+/// `normalize_provider_value` answers with that and never with an alias, so an
+/// alias is not a name a scope was ever written under.
+pub fn adopt_vendor_scoped_credentials(
+    store: &impl credential_store::SecretStore,
+    connections: &[crate::core::config::Connection],
+) -> Result<Vec<CredentialAdoption>, keyring::Error> {
+    let mut outcomes = Vec::new();
+
+    for entry in registry::entries() {
+        if entry.provider.credential_kinds().is_empty() {
+            continue;
+        }
+
+        /* THE ACCOUNTS THIS MACHINE HOLDS FOR THE VENDOR, resolved through the
+           registry rather than compared as strings: a connection storing an
+           alias would otherwise look like a different vendor and the entry it
+           should have adopted would read as stranded. */
+        let accounts: Vec<&crate::core::config::Connection> = connections
+            .iter()
+            .filter(|connection| {
+                registry::resolve_entry(&connection.provider)
+                    .map(|resolved| resolved.id == entry.id)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        for role in entry.roles() {
+            for kind in entry.provider.credential_kinds() {
+                if credential_store::read_from(store, entry.id, role, *kind)?.is_none() {
+                    continue;
+                }
+
+                outcomes.push(match accounts.as_slice() {
+                    [] => CredentialAdoption::Stranded { provider: entry.id, role, kind: *kind },
+                    [only] => {
+                        credential_store::rekey(store, entry.id, &only.id, role, *kind)?;
+                        CredentialAdoption::Adopted {
+                            provider: entry.id,
+                            connection: only.id.clone(),
+                            role,
+                            kind: *kind,
+                        }
+                    }
+                    many => CredentialAdoption::Ambiguous {
+                        provider: entry.id,
+                        accounts: many.len(),
+                        role,
+                        kind: *kind,
+                    },
+                });
+            }
+        }
+    }
+
+    Ok(outcomes)
 }
 
 /// Forgets every credential one account holds, because the account is going
@@ -1680,6 +1833,165 @@ mod tests {
             0,
             "the local lane authenticates against nothing, so it carries nothing",
         );
+    }
+
+    /// One account on one vendor, which is the case the sweep repairs.
+    fn one_self_hosted_account() -> Vec<crate::core::config::Connection> {
+        vec![crate::core::config::Connection {
+            id: "connection-self_hosted".to_string(),
+            label: "Your server".to_string(),
+            provider: self_hosted::SELF_HOSTED_PROVIDER_ID.to_string(),
+            base_url: String::new(),
+            model: String::new(),
+            plan: String::new(),
+        }]
+    }
+
+    /// **THE ORPHAN THE ONE-SHOT MIGRATION COULD NOT SEE, MOVED** (B20).
+    ///
+    /// The reporting machine's snapshot has every profile on `groq` at the
+    /// moment `adopt_connection_axis` ran, so the lift made one connection and
+    /// re-keyed groq alone — while a `self_hosted` entry written the day before
+    /// sat under the vendor id with nothing pointing at it. The account was
+    /// created from the UI afterwards, which is why this is a sweep and not a
+    /// second migration.
+    #[test]
+    fn the_sweep_adopts_a_vendor_scoped_entry_onto_the_one_account_that_vendor_has() {
+        use credential_store::{MemorySecretStore, SecretStore, KEY_SERVICE};
+
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, "self_hosted.speech.api_key", "bearer-token")
+            .unwrap();
+
+        let outcomes = adopt_vendor_scoped_credentials(&store, &one_self_hosted_account()).unwrap();
+
+        assert_eq!(
+            outcomes,
+            vec![CredentialAdoption::Adopted {
+                provider: self_hosted::SELF_HOSTED_PROVIDER_ID,
+                connection: "connection-self_hosted".to_string(),
+                role: ProviderRole::Speech,
+                kind: CredentialKind::ApiKey,
+            }],
+        );
+        assert_eq!(
+            store.read(KEY_SERVICE, "connection-self_hosted.speech.api_key").unwrap(),
+            Some("bearer-token".to_string()),
+        );
+        /* MOVED, NOT COPIED — the property ADR 0208 states and the one this
+           whole finding is about. A sweep that copied would leave the orphan it
+           was written to end. */
+        assert_eq!(
+            store.read(KEY_SERVICE, "self_hosted.speech.api_key").unwrap(),
+            None,
+        );
+    }
+
+    /// **TWO ACCOUNTS ON ONE VENDOR MAKE THE TARGET A GUESS**, and a guess about
+    /// where a key goes is the crossing `refuse_foreign_account` exists to
+    /// refuse. It is reported and left, because the reader is the only one who
+    /// knows which server issued it.
+    #[test]
+    fn the_sweep_refuses_where_two_accounts_make_the_target_ambiguous() {
+        use credential_store::{MemorySecretStore, SecretStore, KEY_SERVICE};
+
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, "self_hosted.speech.api_key", "bearer-token")
+            .unwrap();
+
+        let mut accounts = one_self_hosted_account();
+        let mut second = accounts[0].clone();
+        second.id = "connection-self_hosted-2".to_string();
+        accounts.push(second);
+
+        let outcomes = adopt_vendor_scoped_credentials(&store, &accounts).unwrap();
+
+        assert_eq!(
+            outcomes,
+            vec![CredentialAdoption::Ambiguous {
+                provider: self_hosted::SELF_HOSTED_PROVIDER_ID,
+                accounts: 2,
+                role: ProviderRole::Speech,
+                kind: CredentialKind::ApiKey,
+            }],
+        );
+        assert_eq!(
+            store.read(KEY_SERVICE, "self_hosted.speech.api_key").unwrap(),
+            Some("bearer-token".to_string()),
+            "nothing was moved, so nothing was destroyed",
+        );
+    }
+
+    /// **NO ACCOUNT AT ALL IS SAID RATHER THAN TIDIED.** There is nothing to
+    /// move it onto, and deleting a bearer token nobody asked about is
+    /// destroying a secret to clean up a name. It is named in the log instead,
+    /// and the next launch after an account appears adopts it.
+    #[test]
+    fn the_sweep_names_an_entry_with_no_account_rather_than_deleting_it() {
+        use credential_store::{MemorySecretStore, SecretStore, KEY_SERVICE};
+
+        let store = MemorySecretStore::default();
+        store
+            .write(KEY_SERVICE, "self_hosted.speech.api_key", "bearer-token")
+            .unwrap();
+
+        let outcomes = adopt_vendor_scoped_credentials(&store, &[]).unwrap();
+
+        assert_eq!(
+            outcomes,
+            vec![CredentialAdoption::Stranded {
+                provider: self_hosted::SELF_HOSTED_PROVIDER_ID,
+                role: ProviderRole::Speech,
+                kind: CredentialKind::ApiKey,
+            }],
+        );
+        assert_eq!(
+            store.read(KEY_SERVICE, "self_hosted.speech.api_key").unwrap(),
+            Some("bearer-token".to_string()),
+        );
+    }
+
+    /// A machine that never carried one says nothing, which is every machine on
+    /// every launch after this lands. A sweep whose quiet case is noisy is one
+    /// that gets switched off.
+    #[test]
+    fn the_sweep_is_silent_on_a_machine_with_no_vendor_scoped_entry() {
+        use credential_store::MemorySecretStore;
+
+        let store = MemorySecretStore::default();
+
+        assert!(adopt_vendor_scoped_credentials(&store, &one_self_hosted_account())
+            .unwrap()
+            .is_empty());
+    }
+
+    /// **A STATUS HAS TO NAME THE ACCOUNT IT IS ASKED ABOUT** (ADR 0208).
+    ///
+    /// `entry_user` formats `{scope}.{role}.{kind}`, so an unnamed scope reads
+    /// `.speech.api_key` — an entry no writing door can produce and therefore
+    /// one every machine is missing. The workspace strip omitted the argument
+    /// from the day the migration moved the keys, so it reported `Needs key` on
+    /// every machine with the key present. The surface fix is one argument; this
+    /// is why a second surface cannot repeat it.
+    #[test]
+    fn a_status_for_a_credential_bearing_vendor_must_name_an_account() {
+        for entry in registry::entries() {
+            let refused = refuse_unscoped_credential_read(entry, "   ").is_err();
+
+            assert_eq!(
+                refused,
+                !entry.provider.credential_kinds().is_empty(),
+                "{} refuses an unnamed account exactly when it stores a credential",
+                entry.id,
+            );
+            assert!(
+                refuse_unscoped_credential_read(entry, "connection-default").is_ok(),
+                "{} accepts a named account",
+                entry.id,
+            );
+        }
     }
 
     /// **AN ACCOUNT REMOVED LEAVES NO ENTRY UNDER ITS SCOPE** (ADR 0210).

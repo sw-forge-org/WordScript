@@ -195,41 +195,55 @@ async function modelRowOf(job: string): Promise<HTMLElement> {
   return within(row as HTMLElement).getByLabelText("Model");
 }
 
+/** THE CARD ONE ACCOUNT OWNS. Every account carries its own key row, plan row
+ *  and actions since ADR 0223, so a query that does not name an account answers
+ *  about whichever card came first — the same ambiguity the reader had when the
+ *  key sat outside the accounts entirely. */
+const accountBlock = (id: string) =>
+  document.querySelector(`[data-account="${id}"]`) as HTMLElement;
+
+/** OPEN THE CARD, BECAUSE ONLY ONE OF THEM IS (ADR 0224). A machine with four
+ *  accounts opened onto four expanded cards and stopped being an inventory; the
+ *  one the profile bills to is open on arrival and the rest fold. A case about
+ *  a key row, a plan or a Remove button is a case about a card that has to be
+ *  opened first, which is what a reader does too. */
+async function openAccount(id: string): Promise<HTMLElement> {
+  await waitFor(() => expect(accountBlock(id)).toBeTruthy());
+  const card = accountBlock(id);
+  const fold = within(card).getByRole("button", { name: /^(Expand|Collapse) / });
+  if (fold.getAttribute("aria-expanded") !== "true") await userEvent.click(fold);
+  await waitFor(() => expect(accountBlock(id).hasAttribute("data-open")).toBe(true));
+  return accountBlock(id);
+}
+
 describe("AI Models, wired", () => {
-  it("keeps all four lanes drawn and lets the two operable ones be chosen", async () => {
+  /**
+   * **THE SEGMENT IS GONE AND THE RULE IT CARRIED IS NOT** (ADR 0223).
+   *
+   * This asked whether four lanes were drawn and two of them disabled. The
+   * Accounts card lists every account on every lane now, so there is nothing
+   * left to group and the two disabled options were two dead controls out of
+   * four — which is the report that produced ADR 0223: *die Klicks bewirken
+   * nichts, denkt der User*.
+   *
+   * ADR 0065's rule survives it whole and is what this case now measures: a lane
+   * that cannot hold an account is NAMED with its reason rather than deleted.
+   * `LockedLanes` is where that is said, and it says it once per lane because
+   * the two are withheld for different reasons (B12).
+   */
+  it("names each lane that cannot hold an account, with its own reason", async () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const lane = screen.getByRole("group", { name: "Lane" });
-    /* ADR 0065 part 1: no lane is deleted or moved. Asked by LABEL rather than
-       by identifier since ADR 0160 — `Self-hosted` is stored and `Your server`
-       is read, and what this case is about is what the user can reach.
+    /* ADR 0067. `local` IS a runtime provider, and the owner's answer was that
+       being real is not the same as being finished — so it is named here beside
+       a lane that has no adapter at all, and for a different reason. */
+    expect(await screen.findByText(/Phase 5/)).toBeInTheDocument();
+    expect(screen.getByText(/no adapter yet/i)).toBeInTheDocument();
 
-       **`Your server` JOINED CLOUD IN D1b** (ADR 0165). The rule was never
-       *only the integrated lane*, which is what this case used to be called; it
-       is ADR 0067 rule 1 — a lane that is offered must be operable. That lane
-       now stores a URL, an optional token and a model id, so it is offered.
-       The two that stay disabled stay for their own reasons, one per row on
-       `LockedLanes`. */
-    expect(within(lane).getByRole("button", { name: LANE_LABEL.Cloud })).not.toBeDisabled();
-    expect(
-      within(lane).getByRole("button", { name: LANE_LABEL["Self-hosted"] }),
-    ).not.toBeDisabled();
-    for (const lane_ of ["Local", "Enterprise"] as const) {
-      expect(
-        within(lane).getByRole("button", { name: LANE_LABEL[lane_] }),
-        lane_,
-      ).toBeDisabled();
-    }
-  });
-
-  it("treats Local exactly as it treats the two lanes the runtime has never carried", () => {
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
-
-    /* ADR 0067. `local` IS a runtime provider, and the owner's answer
-       was that being real is not the same as being finished. */
-    const lane = screen.getByRole("group", { name: "Lane" });
-    expect(within(lane).getByRole("button", { name: "Local" })).toBeDisabled();
-    expect(within(lane).getByRole("button", { name: "Enterprise" })).toBeDisabled();
+    /* AND NEITHER IS OFFERED AS A CONTROL ANY MORE. A lane that cannot hold an
+       account has nothing for the reader to press, which is what the segment
+       gave it twice. */
+    expect(screen.queryByRole("group", { name: "Lane" })).toBeNull();
   });
 
   /* AWAITED SINCE ADR 0124, and the wait is the change: which chip can be
@@ -237,24 +251,34 @@ describe("AI Models, wired", () => {
      so it arrives with the command rather than with the first paint. Until it
      does every chip is inert — a chip enabled before the runtime has said
      anything is the fake readiness this screen's own comment warns about. */
-  it("offers every drawn provider chip and accepts a click on one", async () => {
+  /**
+   * **THE CHIPS MOVED TO THE ONE PLACE A VENDOR IS CHOSEN** (ADR 0223), so this
+   * asks the Add panel rather than a row at the top of the screen.
+   *
+   * ADR 0124's rule is the one being kept and it is unchanged: every vendor the
+   * registry carries can be picked, and every drawn one without an adapter says
+   * why it cannot. What changed is that pressing a chip now DOES something —
+   * ADR 0220 had left this row stating a vendor and writing nothing, which the
+   * owner read as a dead control.
+   */
+  it("offers a chip for every vendor with an adapter, where the vendor is chosen", async () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const chips = screen.getByRole("radiogroup", { name: "Provider" });
+    await userEvent.click(await screen.findByRole("button", { name: "Add account" }));
+
+    const chips = await screen.findByRole("radiogroup", { name: "Who is this account with" });
     await waitFor(() =>
-      expect(within(chips).getByRole("radio", { name: /Groq/ })).not.toBeDisabled(),
+      expect(within(chips).getByRole("radio", { name: "Groq" })).not.toBeDisabled(),
     );
-    /* Both registered vendors are selectable and every drawn one without an
-       adapter is not — which is the sentence ADR 0124 wanted the chip row to
-       make, now that there is more than one of each. */
     await waitFor(() =>
-      expect(within(chips).getByRole("radio", { name: /OpenAI/ })).not.toBeDisabled(),
+      expect(within(chips).getByRole("radio", { name: "OpenAI" })).not.toBeDisabled(),
     );
-    const others = within(chips)
-      .getAllByRole("radio")
-      .filter((chip) => NO_ADAPTER.test(chip.textContent ?? ""));
-    expect(others.length).toBeGreaterThan(0);
-    for (const chip of others) expect(chip).toBeDisabled();
+    /* AND THE PRESS LANDS. A chip that sets nothing is what this row was before
+       and what the report was about. */
+    await userEvent.click(within(chips).getByRole("radio", { name: "OpenAI" }));
+    await waitFor(() =>
+      expect(within(chips).getByRole("radio", { name: "OpenAI" })).toBeChecked(),
+    );
   });
 
   it("reads the credential the runtime holds and shows its preview, never the key", async () => {
@@ -346,7 +370,14 @@ describe("AI Models, wired", () => {
     config.connections = [CLOUD_ACCOUNT, other];
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    await userEvent.selectOptions(await screen.findByLabelText("Account plan"), "dev");
+    /* THE PLAN IS THE CARD'S, so the select is reached through the card (ADR
+       0223). Two accounts on screen are two plan rows; before this they were one
+       row below a list, and which account it wrote to was a derivation. */
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    await userEvent.selectOptions(
+      within(accountBlock(CLOUD_ACCOUNT.id)).getByLabelText("Account plan"),
+      "dev",
+    );
     expect(patch).toHaveBeenCalledWith({
       connections: [{ ...CLOUD_ACCOUNT, plan: "dev" }, other],
     });
@@ -373,13 +404,54 @@ describe("AI Models, wired", () => {
     expect(screen.queryByText("~26 min")).not.toBeInTheDocument();
   });
 
-  it("leaves every job-row control drawn and inert, with the reason on it", async () => {
+  /**
+   * **THE LANGUAGE PAIR IS STATED HERE AND EDITED ON PROFILES** (speech track
+   * B18, ADR 0068).
+   *
+   * This case held the opposite and was right to: both rows were a drawing over
+   * two fields nothing could set, so *drawn and inert with the reason on it* was
+   * the honest report. What made it wrong is that the reason was the wrong one —
+   * `Not integrated yet` names a lane that has no adapter, and this lane has
+   * one: `speech.language` and `language_locked` reach the capture snapshot, the
+   * drift check and both cloud adapters. The value was reachable by the runtime
+   * and unreachable by the reader, which is ADR 0020's failure class from the
+   * other end and not an unbuilt lane.
+   *
+   * So the repair is not a control on this screen. ADR 0068 rules that a
+   * per-profile value is edited on Profiles and stated here with the tag that
+   * opens it — the shape `Into` and `Keep the profile's words` have used since,
+   * and the one the owner named.
+   */
+  it("states the profile's language instead of drawing a control nothing could set", async () => {
+    const config = createAppConfig();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.speech = { ...active.speech!, language: "de", language_locked: true };
+
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    /* NO CONTROL AT ALL, rather than a disabled one: the row is a reading now,
+       and a disabled select would still be claiming this is where it is set. */
+    await waitFor(() => expect(screen.queryByLabelText("Language")).not.toBeInTheDocument());
+    expect(screen.queryByLabelText("Pin this language")).not.toBeInTheDocument();
+
+    /* Scoped to the row rather than to the screen: `Into` offers `German` as an
+       option one card down, and a bare text query would pass on the drawing of
+       a different setting. */
+    const row = screen.getByText("Language").closest(".ws-row")!;
+    expect(within(row as HTMLElement).getByText("German")).toBeInTheDocument();
+    expect(screen.getByText("Pinned")).toBeInTheDocument();
+  });
+
+  /** And an unset language reads as the state it is rather than as a language:
+   *  every profile is here until somebody picks one, the adapters drop the hint,
+   *  and there is nothing for the pin to hold. */
+  it("says there is nothing to pin where no language was chosen", async () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const language = await screen.findByLabelText("Language");
-    expect(language).toBeDisabled();
-    expect(language).toHaveAttribute("title", expect.stringContaining("Not integrated yet"));
-    expect(screen.getByLabelText("Pin this language")).toBeDisabled();
+    expect(await screen.findByText("Auto-detect")).toBeInTheDocument();
+    expect(screen.getByText("Nothing to pin")).toBeInTheDocument();
   });
 
   /**
@@ -463,19 +535,23 @@ describe("AI Models, wired", () => {
   it("offers a chip for the vendors the registry carries and names why the rest cannot", async () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const chips = screen.getByRole("radiogroup", { name: "Provider" });
+    /* IN THE ADD PANEL, which is where a vendor is chosen since ADR 0223. The
+       rule is ADR 0124's and unchanged: the registry decides what can be picked
+       and the drawing names the rest with its reason. */
+    await userEvent.click(await screen.findByRole("button", { name: "Add account" }));
+    const chips = await screen.findByRole("radiogroup", { name: "Who is this account with" });
     await waitFor(() =>
-      expect(within(chips).getByRole("radio", { name: /Groq/ })).not.toBeDisabled(),
+      expect(within(chips).getByRole("radio", { name: "Groq" })).not.toBeDisabled(),
     );
 
     /* THE EXAMPLE MOVED BECAUSE THE REGISTRY DID. This named OpenAI until D1
        registered it, which is the case working rather than breaking: what the
        assertion means is *a vendor the drawing names and the registry does
        not*, and Anthropic is that vendor now. */
-    const anthropic = within(chips).getByRole("radio", { name: /Anthropic/ });
+    const anthropic = within(chips).getByRole("radio", { name: "Anthropic" });
     expect(anthropic).toBeDisabled();
     expect(anthropic).toHaveAttribute("title", expect.stringContaining("no adapter"));
-    expect(within(chips).getByRole("radio", { name: /OpenAI/ })).not.toBeDisabled();
+    expect(within(chips).getByRole("radio", { name: "OpenAI" })).not.toBeDisabled();
   });
 
   /* One read, not two. The credential row used to run its own `provider_status`
@@ -543,6 +619,45 @@ describe("AI Models, wired", () => {
   });
 
   /**
+   * **THE ASSISTANT'S NAME IS A CONTROL THAT WRITES, AND IT WAS ONE THAT DID
+   * NOT.**
+   *
+   * It shipped as a live `Field` with a drawn default and no writer anywhere in
+   * the tree — not a `DrawnField`, so nothing disabled it and nothing carried a
+   * reason: a reader could type into it and watch the value survive until the
+   * next render. The runtime reads `modes.agent_name` on every dictation
+   * (`active_text_profile_agent_name`), and it is also what decides when Auto
+   * routes one to the assistant, so this was a routing setting with a control
+   * that stored nothing.
+   */
+  it("writes the assistant's name to the active profile, and states which profile that is", async () => {
+    const config = createAppConfig();
+    config.text_profiles[0].modes = {
+      ...config.text_profiles[0].modes!,
+      agent_name: "WordScript",
+    };
+    const patch = vi.fn();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config, patch })} />);
+
+    const field = (await screen.findByLabelText("Name you address it by")) as HTMLInputElement;
+    expect(field).not.toBeDisabled();
+
+    await userEvent.clear(field);
+    await userEvent.type(field, "Scribe");
+    await userEvent.tab();
+
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const calls = patch.mock.calls;
+    const written = calls[calls.length - 1][0] as {
+      text_profiles?: { id: string; modes?: { agent_name?: string } }[];
+    };
+    expect(
+      written.text_profiles?.find((profile) => profile.id === config.active_text_profile_id)?.modes
+        ?.agent_name,
+    ).toBe("Scribe");
+  });
+
+  /**
    * ADR 0088. The row exists because a model call paid on every dictation was
    * named on no surface; it does not open because ADR 0077 resolves that model
    * through `chat_model_for_provider` and there is nothing to set.
@@ -583,37 +698,91 @@ describe("AI Models, choosing the connection", () => {
     return patch.text_profiles?.find((profile) => profile.id === id)?.providers;
   }
 
+  /** One account's block in the inventory (speech track B17).
+   *
+   *  **Two accounts on one vendor make every control in there ambiguous by
+   *  name** — two `Remove` buttons, two `Rename`s — and that is a fact about the
+   *  surface before it is a fact about its tests: an assertion that has to guess
+   *  which one it pressed is the same guess a reader makes. The block carries
+   *  the account id, so both stop guessing. */
+
   /** A second account on one vendor, which is the case the whole axis exists
    *  for: an employer's Groq key and a private one cannot both exist while the
-   *  credential is keyed by vendor (ADR 0208). */
-  it("creates a second account on one vendor and points the profile at it", async () => {
+   *  credential is keyed by vendor (ADR 0208).
+   *
+   *  **AND CREATING ONE ASKS WHO IT IS WITH** (B17). `+ New` used the shown
+   *  account's vendor, so it could only ever make a second account on the vendor
+   *  already on screen; the chip row above was the only route onto another one,
+   *  which is the duty ADR 0212 wanted it to lose. */
+  it("creates an account on a vendor the reader picks, with a name they gave it", async () => {
     const user = userEvent.setup();
     const patch = vi.fn();
     const config = createAppConfig();
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    await user.click(await screen.findByRole("button", { name: "New" }));
+    await user.click(await screen.findByRole("button", { name: "Add account" }));
+    /* THE VENDOR IS A CHIP AND NOT A `<Select>` (ADR 0223) — the logos moved to
+       the one control that decides the vendor, from a row that showed them and
+       could not be pressed. */
+    await user.click(
+      within(
+        await screen.findByRole("radiogroup", { name: "Who is this account with" }),
+      ).getByRole("radio", { name: "OpenAI" }),
+    );
+    await user.type(screen.getByLabelText("Account name"), "Personal");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
 
     const written = patch.mock.calls[0][0] as {
       connections?: { id: string; label: string; provider: string }[];
+      text_profiles?: unknown;
     };
     expect(written.connections).toEqual([
       CLOUD_ACCOUNT,
-      expect.objectContaining({ id: "connection-groq", provider: "groq", label: "Groq 2" }),
+      expect.objectContaining({ provider: "openai", label: "Personal" }),
     ]);
-    /* AND THE PROFILE MOVES WITH IT. An account nothing points at is an account
-       the reader cannot type a key into — the false affordance ADR 0067 forbids,
-       arriving as a row that stores somewhere nothing reads. */
-    expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
-      default: "connection-groq",
-      overrides: {}, models: {},
-    });
+    /* **AND IT DOES NOT ASSIGN** (ADR 0212). `+ New` created an account AND
+       repointed the active profile on one press, while the row beside it already
+       carried a docblock saying adding and assigning are two acts. **The rule
+       outlived the drawing that carried it**: assigning is the radio on each
+       account card since ADR 0223, and creating one still must not do it. */
+    expect(written.text_profiles).toBeUndefined();
   });
 
-  /** Switching the account is the profile's write, not a screen mode: the row
-   *  states which account pays and changing it changes what the profile
-   *  carries. */
-  it("points the profile at the account picked in the row", async () => {
+  /** An empty name takes the vendor's, because an account with no name is one
+   *  no sentence on this screen can refer to. */
+  it("names a new account after its vendor when the reader gave it none", async () => {
+    const user = userEvent.setup();
+    const patch = vi.fn();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config: createAppConfig() })} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add account" }));
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+
+    const written = patch.mock.calls[0][0] as { connections?: { label: string }[] };
+    expect(written.connections?.[1]?.label).toBeTruthy();
+  });
+
+  /**
+   * **WHICH ACCOUNT A PROFILE BILLS TO IS SET WHERE THE JOBS ARE** (B17,
+   * ADR 0212).
+   *
+   * It was a `Select` inside the `Account` row on the Accounts card — the card
+   * headed *what this machine can bill jobs to* — so the one control that
+   * decides who pays lived in the one card that is not about the profile.
+   * ADR 0212 split adding an account from assigning one and the split survived
+   * at the lane level and not at the row level.
+   */
+  /**
+   * **THE PICK IS THE ACCOUNT'S OWN CARD** (ADR 0223).
+   *
+   * It was a `<Select>` at the head of *What runs what*, two sections below the
+   * card that lists the accounts — ADR 0220 put it there deliberately, on the
+   * argument that the assignment governs the job rows rather than the inventory.
+   * The argument is sound and the drawing was not: the owner could not see what
+   * an account was FOR from the card that showed it. One radio per card writes
+   * the same field, and the row below states rather than sets.
+   */
+  it("bills the profile to the account whose card is pressed", async () => {
     const user = userEvent.setup();
     const patch = vi.fn();
     const config = createAppConfig();
@@ -623,12 +792,178 @@ describe("AI Models, choosing the connection", () => {
     ];
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    await user.selectOptions(await screen.findByLabelText("Account"), "connection-groq");
+    await waitFor(() => expect(accountBlock("connection-groq")).toBeTruthy());
+    await user.click(within(accountBlock("connection-groq")).getByRole("radio"));
 
     expect(axisOf(patch.mock.calls[0][0], config.active_text_profile_id)).toEqual({
       default: "connection-groq",
       overrides: {}, models: {},
     });
+  });
+
+  /** **EVERY ACCOUNT, NOT ONE LANE'S.** `providers.default` is a connection id
+   *  and a connection carries its own vendor, so *dictation on Cloud with the
+   *  assistant on your own server* is a state the config has accepted since
+   *  ADR 0094's axis met ADR 0208's object. A picker scoped to the shown lane
+   *  would make it storable and unpickable, which is the defect `accountChoices`
+   *  was written to end one row down. */
+  it("offers every account this machine holds, grouped by lane and vendor", async () => {
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      {
+        id: "connection-self_hosted",
+        label: "The office box",
+        provider: "self_hosted",
+        base_url: "http://10.0.0.2:8080/v1",
+        model: "",
+        plan: "",
+      },
+    ];
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    /* **THE CARDS ARE THE LIST** (ADR 0223). This read a `<Select>` grouped by
+       lane and vendor; grouping was what the select needed to make a flat list
+       of every account legible, and a card per account needs no grouping because
+       each one says who it is with on its own header. */
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    expect(accountBlock("connection-self_hosted")).toBeTruthy();
+    expect(screen.getAllByRole("radio")).toHaveLength(2);
+  });
+
+  /**
+   * **THE INVENTORY IS AN INVENTORY** (B17). The card is headed *what this
+   * machine can bill jobs to* and it rendered exactly one account — the one
+   * `accountForLane` derived, by a rule no reader could see. Measured in the
+   * native host at 625 CSS px, that one row was 171 px tall.
+   */
+  it("shows every account at once, with its vendor and its key state", async () => {
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" },
+    ];
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    expect(accountBlock("connection-groq")).toBeTruthy();
+    /* THE VENDOR ON EACH, EXCEPT WHERE IT IS THE NAME. Two accounts with
+       reader-given names are otherwise two words with nothing saying who either
+       one is with — and a first account is named after its vendor, so on that
+       one the badge would print `Groq Groq`. Found by rendering the card at
+       625 px and reading it, which is the ninth defect on this surface a green
+       suite did not hold. */
+    expect(within(accountBlock("connection-groq")).getByText("Groq")).toBeInTheDocument();
+    expect(within(accountBlock(CLOUD_ACCOUNT.id)).getAllByText("Groq")).toHaveLength(1);
+    /* And who uses it, derived and never stored (ADR 0123): rotating this key
+       touches everything named here. Inside the card, so each one has to be
+       opened — the used-by line is a fact about an account and not part of the
+       three the collapsed header states (ADR 0224). */
+    expect(
+      within(await openAccount(CLOUD_ACCOUNT.id)).getByText(/Billed by General writing/),
+    ).toBeInTheDocument();
+    expect(
+      within(await openAccount("connection-groq")).getByText("No profile bills here yet."),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * **THE SCREEN HAS TWO OWNERS AND SAYS SO THREE TIMES, EACH WHERE IT IS TRUE**
+   * (ADR 0226).
+   *
+   * `connections` is an `AppConfig` field, so an account's name, key, plan and
+   * endpoint are the MACHINE's and every profile reads the same ones. Exactly one
+   * control on that card is the profile's — the radio. The `Note` that used to
+   * stand above the cards claimed *the accounts and models below are this
+   * profile's*, which is false for the accounts, and it claimed it in two lines
+   * of prose over a screen the reader had already called too wordy.
+   *
+   * **The deletion is asserted rather than assumed**, because prose is the
+   * cheapest thing to put back: a screen that grows a second explanation of its
+   * own scope has undone this step whatever else it says.
+   */
+  it("names the machine, the profile, and the one control that crosses between them", async () => {
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" },
+    ];
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    const profile = "General writing";
+
+    // The lead names both owners, which is what the note used to do for one.
+    expect(screen.getByText(/Accounts belong to this machine/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/What each job runs on belongs to/),
+    ).toHaveTextContent(profile);
+
+    // The inventory says it is the machine's.
+    expect(screen.getByText(/Every profile sees the same list/)).toBeInTheDocument();
+
+    /* THE CHIP IS ON THE PICKED CARD AND ON NO OTHER. Both halves matter: the
+       first is the fact, the second is what keeps it from becoming furniture. */
+    expect(
+      within(accountBlock(CLOUD_ACCOUNT.id)).getByText(profile),
+    ).toBeInTheDocument();
+    expect(within(accountBlock("connection-groq")).queryByText(profile)).toBeNull();
+
+    /* AND THE NAME IS NOT REPEATED PAST THAT. The owner read the shipped screen
+       and struck two `ScopeTag`s off it — one on the *What runs what* head, one
+       in the `This profile bills to` row — as the third and fourth copies of one
+       word. A tag belongs on a control that WRITES the profile (ADR 0209); both
+       of those state, and the statement is already made above them. */
+    const jobs = screen.getByText("What runs what").closest(".ws-sec-head");
+    expect(within(jobs as HTMLElement).queryByText(profile)).toBeNull();
+    const bills = screen.getByText("This profile bills to").closest(".ws-row");
+    expect(within(bills as HTMLElement).queryByText(profile)).toBeNull();
+
+    /* THE NOTE IS GONE AND MAY NOT COME BACK. Its claim about the accounts was
+       the defect; its shape — a paragraph explaining the screen above it — was
+       the report that produced this step. */
+    expect(screen.queryByText(/the accounts and models below are this profile/i)).toBeNull();
+  });
+
+  /**
+   * **AN INVENTORY YOU CAN SEE THE WHOLE OF** (ADR 0224).
+   *
+   * The reader's report: *irgendwann hat man viele Accounts und man hat den
+   * Überblick nicht mehr*. Every card carries its own key, plan, endpoint and
+   * used-by line since ADR 0223, so four accounts opened onto four expanded
+   * cards — the defect ADR 0220 fixed at the list level, arrived at again from
+   * the other direction.
+   *
+   * WHAT A COLLAPSED CARD STILL SAYS is the assertion that matters: the three
+   * facts B17 asks to be visible at once — whose it is, what vendor it is with,
+   * and whether it holds a key — are the header's, and the header is what stays.
+   */
+  it("folds every account but the one this profile bills to", async () => {
+    const config = createAppConfig();
+    config.connections = [
+      CLOUD_ACCOUNT,
+      { ...CLOUD_ACCOUNT, id: "connection-groq", label: "Employer" },
+    ];
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    expect(accountBlock(CLOUD_ACCOUNT.id).hasAttribute("data-open")).toBe(true);
+    expect(accountBlock("connection-groq").hasAttribute("data-open")).toBe(false);
+
+    // The name, the vendor and the key state survive the fold.
+    const folded = within(accountBlock("connection-groq"));
+    expect(folded.getByText("Employer")).toBeInTheDocument();
+    expect(folded.getByText("Groq")).toBeInTheDocument();
+    expect(folded.getByText(/^Key (set|not read|missing)$|^No key yet$/)).toBeInTheDocument();
+
+    /* AND THE FOLD IS NOT THE PICK. Opening a card must not move which account
+       the profile bills to — they were one control before this step and the
+       whole point of the split is that they answer different questions. */
+    await openAccount("connection-groq");
+    expect(accountBlock(CLOUD_ACCOUNT.id).hasAttribute("data-open")).toBe(true);
+    expect(
+      within(accountBlock(CLOUD_ACCOUNT.id)).getByRole("radio"),
+    ).toHaveAttribute("aria-checked", "true");
   });
 
   /**
@@ -639,7 +974,7 @@ describe("AI Models, choosing the connection", () => {
    * stored under THAT account and cannot land on the other one. Both accounts
    * are Groq, which is the pair the vendor-keyed entry could not tell apart.
    */
-  it("saves a key under the account that is selected, not under the vendor", async () => {
+  it("saves a key under the account whose card it was typed on, not under the vendor", async () => {
     const user = userEvent.setup();
     const config = createAppConfig();
     config.connections = [
@@ -652,10 +987,14 @@ describe("AI Models, choosing the connection", () => {
     active.providers = { default: "connection-groq", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    const keyButtons = await screen.findAllByRole("button", { name: /Replace|Add/ });
-    await user.click(keyButtons.find((button) => !button.hasAttribute("disabled"))!);
-    await user.type(await screen.findByLabelText("API key"), "gsk_the_employers_key");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    /* **REACHED THROUGH THE CARD** (ADR 0223). There is no *selected* account
+       any more — every card carries its own key row, which is exactly why the
+       reader can no longer be wrong about whose key they are typing. */
+    await waitFor(() => expect(accountBlock("connection-groq")).toBeTruthy());
+    const card = () => within(accountBlock("connection-groq"));
+    await user.click(card().getByRole("button", { name: /^(Replace|Add)$/ }));
+    await user.type(card().getByLabelText("API key"), "gsk_the_employers_key");
+    await user.click(card().getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("save_provider_api_key", {
@@ -700,10 +1039,11 @@ describe("AI Models, choosing the connection", () => {
     });
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    const remove = await screen.findByRole("button", { name: "Remove" });
+    await waitFor(() => expect(accountBlock(employer.id)).toBeTruthy());
+    const remove = within(accountBlock(employer.id)).getByRole("button", { name: `Remove ${employer.label}` });
     expect(remove).toHaveAttribute(
       "title",
-      "General writing moves to another account with this vendor. 1 other profile keeps naming this one and its jobs stop until you point it somewhere else.",
+      "General writing moves to another account. 1 other profile keeps billing here and its jobs stop.",
     );
     await user.click(remove);
     /* THE PRESS OPENS THE QUESTION AND DESTROYS NOTHING (ADR 0210). */
@@ -746,12 +1086,13 @@ describe("AI Models, choosing the connection", () => {
     active.providers = { default: employer.id, overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(accountBlock(employer.id)).toBeTruthy());
+    await user.click(within(accountBlock(employer.id)).getByRole("button", { name: `Remove ${employer.label}` }));
     /* THE QUESTION NAMES WHAT GOES, and the key is the half that cannot be put
        back by anything this product can do. */
     expect(screen.getByText("Remove the account “Employer”?")).toBeInTheDocument();
     expect(
-      screen.getByText(/stored key is deleted from the OS secret store and cannot be put back/),
+      screen.getByText(/key is deleted from the OS secret store and cannot be put back/),
     ).toBeInTheDocument();
     expect(invoked).not.toHaveBeenCalledWith("clear_connection_credentials", expect.anything());
 
@@ -794,7 +1135,8 @@ describe("AI Models, choosing the connection", () => {
     });
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(accountBlock(employer.id)).toBeTruthy());
+    await user.click(within(accountBlock(employer.id)).getByRole("button", { name: `Remove ${employer.label}` }));
     await user.click(screen.getByRole("button", { name: "Remove account" }));
 
     expect(patch).not.toHaveBeenCalled();
@@ -814,10 +1156,10 @@ describe("AI Models, choosing the connection", () => {
     active.providers = { default: employer.id, overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch, config })} />);
 
-    expect(await screen.findByRole("button", { name: "Remove" })).toHaveAttribute(
-      "title",
-      "General writing moves to another account with this vendor.",
-    );
+    await waitFor(() => expect(accountBlock(employer.id)).toBeTruthy());
+    expect(
+      within(accountBlock(employer.id)).getByRole("button", { name: `Remove ${employer.label}` }),
+    ).toHaveAttribute("title", "General writing moves to another account.");
   });
 
   /**
@@ -871,15 +1213,50 @@ describe("AI Models, choosing the connection", () => {
     });
   });
 
-  /** The row writes the ACTIVE profile's pointer, and a row that writes a
-   *  profile has to name it — otherwise *how do I give a profile an account* has
-   *  no answer on the screen that answers it (ADR 0209). */
-  it("names the profile whose account it is setting", async () => {
+  /**
+   * **A `ScopeTag` BELONGS ON A CONTROL THAT WRITES THE PROFILE, AND THIS ROW
+   * STOPPED BEING ONE** (ADR 0226, correcting what this case asserted).
+   *
+   * It was written for ADR 0209's rule — a row that repoints a profile has to
+   * name it — and it kept asserting the tag after ADR 0223 turned the row into a
+   * statement and moved the write onto the account card's radio. So it was
+   * holding the surface to a rule the surface no longer falls under, and the
+   * cost showed up on the shipped screen: the owner counted the profile's name
+   * four times on one view and struck two of them, this row among them.
+   *
+   * **The rule itself is unchanged and still has cases** — every control inside
+   * a job row that writes the profile carries its tag. What went is a tag on a
+   * sentence.
+   */
+  it("states which account the profile bills to without a scope tag on the statement", async () => {
     const config = createAppConfig();
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    const row = (await screen.findByLabelText("Account")).closest(".ws-row");
-    expect(within(row as HTMLElement).getByRole("button", { name: /General writing/ })).toBeTruthy();
+    const row = (await screen.findByText("This profile bills to")).closest(".ws-row");
+    // The fact is still stated — the account it resolves to is what the row is for.
+    expect(within(row as HTMLElement).getByText("Groq")).toBeInTheDocument();
+    expect(
+      within(row as HTMLElement).queryByRole("button", { name: /General writing/ }),
+    ).toBeNull();
+  });
+
+  /** **AND NOTHING IN THE INVENTORY IS A CONTROL SCOPED TO A PROFILE**, which is
+   *  the same rule read backwards: the tag was on the old `Account` row because
+   *  the select under it repointed the profile.
+   *
+   *  **The picked card DOES name the profile since ADR 0226**, and that is not a
+   *  reversal — it is a statement about which pick is in force, not a tag on a
+   *  control, so it is a `<span>` and not the button this asserts the absence
+   *  of. Both halves are checked, because a case that only forbids would pass
+   *  just as well if the card said nothing at all. */
+  it("names the profile on the picked card without making it a scoped control", async () => {
+    const config = createAppConfig();
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    const card = within(accountBlock(CLOUD_ACCOUNT.id));
+    expect(card.getByText("General writing")).toBeInTheDocument();
+    expect(card.queryByRole("button", { name: /General writing/ })).toBeNull();
   });
 
   /**
@@ -910,7 +1287,12 @@ describe("AI Models, choosing the connection", () => {
 
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    const row = (await screen.findByText("API key")).closest(".ws-row");
+    /* SCOPED TO THE CARD, because every account carries its own key row now
+       (ADR 0223) and an unscoped query would answer about whichever card came
+       first. That the query HAD to be scoped is the change working: the reader
+       has the same problem when the key is not inside anything. */
+    await waitFor(() => expect(accountBlock(employer.id)).toBeTruthy());
+    const row = within(accountBlock(employer.id)).getByText("API key").closest(".ws-row");
     expect(row).not.toBeNull();
     await waitFor(() => expect(row).toHaveTextContent("Not read"));
     expect(row).not.toHaveTextContent("gsk_…4f2a");
@@ -949,39 +1331,53 @@ describe("AI Models, choosing the connection", () => {
       );
     }
 
-    /* And the card reports the account it is rendering. The profile is on the
-       employer's, which is on this lane, so that is the one the rows configure
-       (`accountForLane`) and the one the badge answers about. */
-    const row = (await screen.findByText("API key")).closest(".ws-row");
-    await waitFor(() => expect(row).toHaveTextContent("gsk_…4f2a"));
+    /* **AND EVERY CARD REPORTS ITS OWN** (ADR 0223). The key row used to be one
+       row below the list answering about whichever account a derivation picked;
+       both cards carry one now, so the assertion is per card and the reader's
+       question — *whose key is this* — has an answer on screen. */
+    for (const account of [CLOUD_ACCOUNT.id, employer.id]) {
+      const row = within(await openAccount(account)).getByText("API key").closest(".ws-row");
+      await waitFor(() => expect(row).toHaveTextContent("gsk_…4f2a"));
+    }
   });
 
-  it("writes the chosen connection onto the active profile", async () => {
-    const user = userEvent.setup();
+  /**
+   * **THE CHIP ROW STATES A VENDOR AND SETS NOTHING** (speech track B17).
+   *
+   * It used to do two things on one press of a control that named neither:
+   * create an account on the picked vendor where the machine held none, and
+   * repoint the ACTIVE PROFILE at it. That is the conflation ADR 0212 closed at
+   * the lane level and left here — and it made the vendor of an existing account
+   * look editable, which it is not: re-pointing an account at another vendor
+   * would leave its stored key addressed to a company that never issued it.
+   *
+   * Both halves have an honest home now. `Add account` creates one and asks for
+   * its vendor; `This profile bills to` assigns one and names the profile.
+   */
+  /**
+   * **THIS CASE'S SUBJECT IS RETIRED, AND ADR 0223 RETIRED IT ON PURPOSE.**
+   *
+   * ADR 0220 made the chip row state a vendor and write nothing, because picking
+   * a chip used to create an account AND repoint the profile on one press. That
+   * was the right cut and the wrong result: the owner pressed the chips and
+   * reported *die Klicks bewirken nichts, denkt der User* — a row of logos that
+   * accepts a click and does nothing is the false affordance ADR 0067 rule 1 is
+   * about, arrived at from the safe end.
+   *
+   * The chips moved to `AddAccountPanel`, where pressing one means something and
+   * still does not assign. What replaces this case is the pair above it: the
+   * chips write in the Add panel, and the account card's radio is the only thing
+   * that repoints a profile.
+   *
+   * The half worth keeping is the one below — nothing on this screen writes the
+   * config until the reader asks it to.
+   */
+  it("writes nothing to the config on open", async () => {
     const patch = vi.fn();
-    const runtime = createWorkspaceRuntime({ active: true, patch });
-    render(<ModelsScreen runtime={runtime} />);
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
 
-    const chips = screen.getByRole("radiogroup", { name: "Provider" });
-    await waitFor(() =>
-      expect(within(chips).getByRole("radio", { name: /OpenAI/ })).not.toBeDisabled(),
-    );
-    await user.click(within(chips).getByRole("radio", { name: /OpenAI/ }));
-
-    expect(patch).toHaveBeenCalledTimes(1);
-    /* THE ACCOUNT'S id, and the account itself, in one patch (ADR 0208). The
-       axis named a vendor until this step; it names an account now, and picking
-       a vendor this machine holds none on creates one rather than pointing the
-       profile at nothing. */
-    const written = patch.mock.calls[0][0] as { connections?: { id: string; provider: string }[] };
-    expect(written.connections).toEqual([
-      CLOUD_ACCOUNT,
-      expect.objectContaining({ id: "connection-openai", provider: "openai" }),
-    ]);
-    expect(axisOf(patch.mock.calls[0][0], runtime.config.active_text_profile_id)).toEqual({
-      default: "connection-openai",
-      overrides: {}, models: {},
-    });
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("saves a key to the vendor the connection names and never to Groq", async () => {
@@ -1004,15 +1400,15 @@ describe("AI Models, choosing the connection", () => {
     active.providers = { default: "connection-openai", overrides: {}, models: {} };
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    /* Several rows draw a Replace button — every overriding job row has one —
-       and exactly one of them is live: the connection's. The drawn ones are
-       disabled by `InertBecause`, which is what picks it out here. */
-    const keyButtons = await screen.findAllByRole("button", { name: /Replace|Add/ });
-    const live = keyButtons.find((button) => !(button as HTMLButtonElement).disabled);
-    expect(live, "the connection's key button is the live one").toBeDefined();
-    await user.click(live as HTMLElement);
-    await user.type(screen.getByLabelText(/API key/i), "sk-proj-abcdefghijklmnop");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    /* **THROUGH THE OPENAI CARD**, which is the whole of ADR 0223: the key row is
+       inside the account it belongs to, so *which vendor's entry does this
+       write* is answered by where the reader typed rather than by a search for
+       the one live button on the screen. */
+    await waitFor(() => expect(accountBlock("connection-openai")).toBeTruthy());
+    const card = () => within(accountBlock("connection-openai"));
+    await user.click(card().getByRole("button", { name: /^(Replace|Add)$/ }));
+    await user.type(card().getByLabelText(/API key/i), "sk-proj-abcdefghijklmnop");
+    await user.click(card().getByRole("button", { name: "Save" }));
 
     /* THE BUG THIS CASE EXISTS FOR: writing an OpenAI key into Groq's
        secret-store entry, which is one literal away and silent. */
@@ -1072,9 +1468,16 @@ describe("AI Models, choosing the connection", () => {
     });
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    expect(await screen.findByText("Standard — 25 MiB per request")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Account plan")).not.toBeInTheDocument();
-    expect(screen.queryByText("Developer — 100 MiB per request")).not.toBeInTheDocument();
+    /* ON THE OPENAI CARD, which is the account the profile bills to. Both cards
+       carry a plan row now (ADR 0223), so the assertion names the one whose
+       vendor publishes a single ceiling — the subject of this case. */
+    await waitFor(() => expect(accountBlock("connection-openai")).toBeTruthy());
+    const card = () => within(accountBlock("connection-openai"));
+    await waitFor(() =>
+      expect(card().getByText("Standard — 25 MiB per request")).toBeInTheDocument(),
+    );
+    expect(card().queryByLabelText("Account plan")).not.toBeInTheDocument();
+    expect(card().queryByText("Developer — 100 MiB per request")).not.toBeInTheDocument();
   });
 
   /**
@@ -1185,7 +1588,11 @@ describe("AI Models, choosing the connection", () => {
     });
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    expect(await screen.findByText("No plans")).toBeInTheDocument();
+    /* THE PROFILE POINTS AT AN ACCOUNT THIS MACHINE DOES NOT HOLD, so no card
+       opens on arrival — which is the honest resting state for an orphaned
+       pointer (ADR 0224) and means the plan row has to be opened for. */
+    const card = within(await openAccount("connection-default"));
+    expect(card.getByText("No plans")).toBeInTheDocument();
     expect(screen.queryByText("No speech")).not.toBeInTheDocument();
   });
 
@@ -1970,18 +2377,19 @@ describe("On this machine, at scale", () => {
 });
 
 describe("AI Models, in the gallery", () => {
-  it("is the drawing, with every lane selectable and nothing read", () => {
+  /** **THE DRAWING IS AN ACCOUNT CARD NOW** (ADR 0223), not a lane segment over
+   *  a chip row over a credential block. What the gallery is for is unchanged —
+   *  it shows the shape and reads nothing (ADR 0055) — so the case keeps its
+   *  second half word for word and moves its first onto the card. */
+  it("is the drawing: one account card, and nothing read", () => {
     render(<ModelsScreen />);
 
-    const lane = screen.getByRole("group", { name: "Lane" });
-    for (const lane_ of ["Cloud", "Local", "Self-hosted", "Enterprise"] as const) {
-      expect(
-        within(lane).getByRole("button", { name: LANE_LABEL[lane_] }),
-        lane_,
-      ).not.toBeDisabled();
-    }
+    expect(document.querySelector(".ws-acct")).toBeTruthy();
     expect(screen.getAllByText("Set").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Account plan")).not.toBeDisabled();
+    expect(screen.getByLabelText("Plan")).not.toBeDisabled();
+    /* AND NO LANE SEGMENT, which is the half of this case that retired: the
+       reader pressed those four and two of them did nothing. */
+    expect(screen.queryByRole("group", { name: "Lane" })).toBeNull();
     expect(invoked).not.toHaveBeenCalled();
   });
 
@@ -2054,12 +2462,16 @@ describe("On this machine, and what a server is", () => {
     await userEvent.click(screen.getByRole("tab", { name: "On this machine" }));
   }
 
-  it("reads the lane as Your server and still stores it as Self-hosted", () => {
-    render(<ModelsScreen />);
+  /** ADR 0160's rule outlived the segment that carried it (ADR 0223): the reader
+   *  sees `Your server` and the config stores `Self-hosted`. The chips in the Add
+   *  panel are where a reader meets that lane by name now. */
+  it("reads the lane as Your server and still stores it as Self-hosted", async () => {
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    const lane = screen.getByRole("group", { name: "Lane" });
-    expect(within(lane).getByRole("button", { name: "Your server" })).toBeInTheDocument();
-    expect(within(lane).queryByRole("button", { name: "Self-hosted" })).toBeNull();
+    await userEvent.click(await screen.findByRole("button", { name: "Add account" }));
+    const chips = await screen.findByRole("radiogroup", { name: "Who is this account with" });
+    expect(within(chips).getByRole("radio", { name: "Your server" })).toBeInTheDocument();
+    expect(within(chips).queryByRole("radio", { name: /^Self-hosted/ })).toBeNull();
     /* The identifier did not move: `Cloud`, `Local` and `Enterprise` are keys in
        the shared catalogue, and this is a label. */
     expect(LANE_LABEL["Self-hosted"]).toBe("Your server");
@@ -2181,16 +2593,15 @@ describe("On this machine, and what a server is", () => {
 
     const gpuClaim = /no CUDA, ROCm or Metal device/;
 
-    for (const lane of ["Cloud", "Local", "Your server", "Enterprise"]) {
-      await userEvent.click(screen.getByRole("button", { name: lane }));
-      expect(screen.queryByText(gpuClaim), lane).toBeNull();
-    }
+    /* THE WHOLE TAB AT ONCE, because there are no lanes to walk since ADR 0223 —
+       every account is on one page, which makes the sweep stronger than the four
+       it replaced rather than weaker. */
+    expect(screen.queryByText(gpuClaim)).toBeNull();
 
     /* **AND THE LANE NO LONGER HAS THE BADGE AT ALL** (ADR 0162): acceleration
        is a property of the machine, so it is stated once, on the tab that owns
        the machine. The duplicate here is what let ADR 0161's fix be applied
        to one copy and miss the other. */
-    await userEvent.click(screen.getByRole("button", { name: "Local" }));
     expect(screen.queryByText("CPU only")).toBeNull();
 
     await openMachineTab();
@@ -2212,35 +2623,35 @@ describe("On this machine, and what a server is", () => {
    * and the reviewer has to say which one it is and why the tab does not own
    * it.
    */
-  it("keeps the Local lane to the three rows that are about the connection", async () => {
+  /**
+   * **ADR 0162's FINDING IS NOW STRUCTURAL RATHER THAN GUARDED** (ADR 0223).
+   *
+   * That record cut the Local lane from five rows to three, because four of the
+   * five restated what the machine tab owns — and its own note said the cost was
+   * measured rather than argued: the fix had to be applied twice, and the second
+   * application was found by a screenshot after the first was green.
+   *
+   * Local holds no account, so it has no card, so there is nothing left to
+   * duplicate. This case keeps the half that can still fail: the Accounts
+   * section says nothing about which program runs or what is on the disk.
+   */
+  it("says nothing about the machine's runners in the Accounts section", async () => {
     render(<ModelsScreen />);
-    await userEvent.click(screen.getByRole("button", { name: "Local" }));
 
-    const connection = screen.getByText("Accounts").closest("section") as HTMLElement;
-    const labels = Array.from(connection.querySelectorAll(".ws-row-text > b")).map((node) =>
-      /* The lane row's own `PreviewTag` rides inside the label, so the tag text
-         comes off before the label is compared. */
-      (node.textContent ?? "").replace(/Preview$/, ""),
-    );
-
-    expect(labels).toEqual(["Lane", "Language runner", "Credential", "Installed models"]);
-
-    /* **AND NO CONTROL IS DUPLICATED EITHER**, which the row count alone does
-       not catch: `Bundled | Yours` survived the first cut inside the surviving
-       `Language runner` row while the count already read three. Which program
-       runs belongs to the tab that lists the runners. */
-    expect(within(connection).queryByRole("group", { name: "Language runner" })).toBeNull();
-    expect(within(connection).queryByRole("button", { name: "Bundled" })).toBeNull();
+    const accounts = screen.getByText("Accounts").closest("section") as HTMLElement;
+    expect(within(accounts).queryByRole("group", { name: "Language runner" })).toBeNull();
+    expect(within(accounts).queryByRole("button", { name: "Bundled" })).toBeNull();
+    expect(within(accounts).queryByText("Installed models")).toBeNull();
   });
 
-  it("opens the machine tab from the lane's Manage button", async () => {
-    render(<ModelsScreen />);
-    await userEvent.click(screen.getByRole("button", { name: "Local" }));
+  it("opens the machine tab from the withheld lane's Manage button", async () => {
 
     /* Drawn since Leg 6 with no handler: the lane named a total it could not
-       reach. Everything else on this lane stays a drawing; a door is the one
-       inert control that costs the reader the thing it names. */
-    await userEvent.click(screen.getByRole("button", { name: "Manage" }));
+       reach. **The door outlived the lane row it was on** — since ADR 0223 the
+       Local lane has no card at all and `LockedLanes` carries the button, which
+       is the one place left that names what is on this disk. */
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Manage" }));
 
     expect(screen.getByText("Runners on this machine")).toBeInTheDocument();
     expect(screen.queryByText("Accounts")).toBeNull();
@@ -2257,28 +2668,25 @@ describe("On this machine, and what a server is", () => {
     const hints = () =>
       Array.from(document.querySelectorAll(".ws-row-hint")).map((n) => n.textContent ?? "");
 
-    await userEvent.click(screen.getByRole("button", { name: "Local" }));
+    /* **THE GALLERY DRAWS ONE CLOUD ACCOUNT** (ADR 0223), and nothing about it
+       is a server. The word belongs to the `Your server` lane and to nothing on
+       this machine, which is ADR 0160's rule and the whole of this case. */
     expect(hints().filter((h) => /\bservers?\b/i.test(h))).toEqual([]);
-
-    await userEvent.click(screen.getByRole("button", { name: "Your server" }));
-    expect(hints().filter((h) => /\bservers?\b/i.test(h)).length).toBeGreaterThan(0);
   });
 
-  it("badges a drawn lane on the screen that offers it, which ADR 0067 asked for", async () => {
-    render(<ModelsScreen />);
+  /** **THE BADGE FOLLOWED THE LANE OFF THE CARD** (ADR 0223). It was measured on
+   *  the Lane row, which no longer exists; `LockedLanes` is where a withheld lane
+   *  is named now, and ADR 0067's rule — mark what is offered and unbuilt — is
+   *  carried by the row that does the naming. */
+  it("badges each withheld lane where it is named, which ADR 0067 asked for", async () => {
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* Measured on the Lane row itself rather than on the section: the Local
-       lane's own `Acceleration` row carries a second tag, so a section-wide
-       count would pass for the wrong reason. */
-    const laneRow = () => screen.getByText("Lane").closest(".ws-row") as HTMLElement;
+    const local = (await screen.findByText(/Phase 5/)).closest(".ws-row") as HTMLElement;
+    expect(within(local).getByText("Preview")).toBeInTheDocument();
 
-    expect(within(laneRow()).queryByText("Preview")).toBeNull();
-
-    await userEvent.click(screen.getByRole("button", { name: "Local" }));
-    expect(within(laneRow()).getByText("Preview")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Cloud" }));
-    expect(within(laneRow()).queryByText("Preview")).toBeNull();
+    /* And the two lanes a reader CAN make an account on carry none: a badge on
+       an operable lane is the false warning the rule's other half forbids. */
+    expect(within(accountBlock(CLOUD_ACCOUNT.id)).queryByText("Preview")).toBeNull();
   });
 
   it("puts the folder list under the card whose files it describes", async () => {
@@ -2390,10 +2798,13 @@ describe("A lane that is locked says why", () => {
     expect(within(row).getByText(/the product, not the setup/)).toBeInTheDocument();
     expect(within(row).getByText(/acceleration probe/)).toBeInTheDocument();
 
-    /* AND THE LOCK STILL HOLDS. Stating the reason is not offering the lane —
-       removing `disabled` is ADR 0067's reversal and is not this step. */
-    const lane = screen.getByRole("group", { name: "Lane" });
-    expect(within(lane).getByRole("button", { name: LANE_LABEL.Local })).toBeDisabled();
+    /* AND THE LANE IS STILL NOT OFFERED. Stating the reason is not offering it —
+       ADR 0067's reversal is the commit that FINISHES the lane. With the segment
+       gone (ADR 0223) *not offered* means there is no account for it and no
+       control that pretends there could be, which is a stronger form of the same
+       rule than a greyed-out button. */
+    expect(screen.queryByRole("group", { name: "Lane" })).toBeNull();
+    expect(within(row).getByText(/Phase 5/)).toBeInTheDocument();
   });
 
   it("counts what is installed rather than saying setup is needed about all of it", async () => {
@@ -2468,18 +2879,11 @@ describe("A lane that is locked says why", () => {
     expect(screen.queryByText("No configuration")).toBeNull();
     expect(screen.queryByText(/Neither has an adapter/)).toBeNull();
 
-    /* AND THE LANE IS OFFERED, which is the other half of the same fact. The
-       row existed because ADR 0067 rule 1 forbids offering a lane that cannot
-       be operated; removing the row and leaving the lock would grey a lane out
-       for no stated reason at all, which is the silence B12 closed. */
-    const lane = screen.getByRole("group", { name: "Lane" });
-    expect(
-      within(lane).getByRole("button", { name: LANE_LABEL["Self-hosted"] }),
-    ).not.toBeDisabled();
-
-    /* The other two are untouched and still carry their own reasons. */
-    expect(within(lane).getByRole("button", { name: LANE_LABEL.Local })).toBeDisabled();
-    expect(within(lane).getByRole("button", { name: LANE_LABEL.Enterprise })).toBeDisabled();
+    /* AND THE LANE IS OFFERED, which is the other half of the same fact — a
+       reader can make a `Your server` account, which is what having no withheld
+       row for it means since ADR 0223 removed the segment that carried the lock.
+       The other two still carry their own reasons, one row each. */
+    expect(await screen.findByText(/Phase 5/)).toBeInTheDocument();
     await rowSaying(NO_ADAPTER_ROW);
   });
 
@@ -2619,25 +3023,31 @@ describe("Your server, configured", () => {
    * action, and it still does not assign: pointing a writing style at an account
    * is the `Account` row's decision and that row carries the profile's name.
    */
-  it("shows a lane without writing anything, and adds an account without assigning it", async () => {
+  it("opens without writing anything, and adds an account without assigning it", async () => {
     const patch = vi.fn();
     withEndpoint(ENDPOINT);
     const runtime = createWorkspaceRuntime({ active: true, patch });
     render(<ModelsScreen runtime={runtime} />);
 
-    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
     expect(patch).not.toHaveBeenCalled();
 
-    /* This machine holds no account on that lane, so the rows below cannot be
-       filled from another one's — they say so and offer the way on. */
-    const add = await screen.findByRole("button", { name: "Add account" });
-    await userEvent.click(add);
+    /* **THE WAY ON ASKS WHO THE ACCOUNT IS WITH** (B17), and since ADR 0223 it
+       asks with the logos rather than with a text select — the recognition
+       affordance moved onto the control that decides, from a row that showed it
+       and could not be pressed. Creating one still must not assign. */
+    await userEvent.click(await screen.findByRole("button", { name: "Add account" }));
+    const chips = await screen.findByRole("radiogroup", { name: "Who is this account with" });
+    await userEvent.click(within(chips).getByRole("radio", { name: "Your server" }));
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     const written = patch.mock.calls[0][0] as {
       connections?: { id: string; provider: string }[];
       text_profiles?: unknown;
     };
     expect(written.connections?.some((entry) => entry.provider === "self_hosted")).toBe(true);
+    /* **AND IT DID NOT ASSIGN.** The rule outlived every drawing that has carried
+       it: `+ New` did both on one press (ADR 0212), the chip row did both before
+       that, and the radio on each card is what assigns now. */
     expect(written.text_profiles).toBeUndefined();
   });
 
@@ -2786,7 +3196,12 @@ describe("Your server, configured", () => {
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config: serverConfig() })} />);
 
     expect(await screen.findByText("a-se...oken")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+    /* THE TOKEN'S REMOVE, NOT THE ACCOUNT'S. The inventory gives every account
+       its own Remove (B17), so the row that clears a credential and the row that
+       destroys the account it belongs to are two buttons with one name — which
+       is why the token's is reached through its own row rather than by name. */
+    const tokenRow = (screen.getByText("a-se...oken").closest(".ws-row")) as HTMLElement;
+    await userEvent.click(within(tokenRow).getByRole("button", { name: "Remove" }));
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("clear_provider_api_key", {
@@ -2829,15 +3244,18 @@ describe("Your server, configured", () => {
 
   it("keeps the drawing in the gallery and asks the runtime nothing", async () => {
     render(<ModelsScreen />);
-    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
 
-    /* The gallery is what `port:diff` measures, so the drawn rows stay exactly
-       as Leg 6 drew them — including `Model ids are typed`, which the wired
-       card replaces with a field, and the drawn URL's own literal, which is the
-       value the harness compares against the prototype. */
-    expect(screen.getByText("Model ids are typed")).toBeInTheDocument();
-    expect(screen.getByLabelText("URL")).toHaveValue("http://10.0.0.2:8080/v1");
-    expect(screen.getByText("Answering")).toBeInTheDocument();
+    /* **THE GALLERY DRAWS ONE CLOUD ACCOUNT NOW** (ADR 0223). It drew a lane
+       segment over a chip row over a credential block, and all three moved or
+       went; a drawing that kept them would be showing a screen this build no
+       longer has, which is the one thing a gallery must never do (ADR 0055).
+       `port:diff` moves with it, deliberately and measured.
+
+       What this case is FOR is unchanged and is the line below: the drawing
+       reads nothing. */
+    expect(document.querySelector(".ws-acct")).toBeTruthy();
+    expect(screen.getAllByText("API key").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("URL")).toBeNull();
     expect(invoked).not.toHaveBeenCalled();
   });
 });
@@ -2919,20 +3337,88 @@ describe("A card shows the lane's account and not the profile's", () => {
 
   /** The account row read the literal `"Cloud"` while the self-hosted card
    *  rendered it, so `Your server` named the Groq account — and Rename, New and
-   *  Remove all acted on Groq, from a card showing the server's URL. */
-  it("names this lane's account on the row that renames and removes it", async () => {
+   *  Remove all acted on Groq, from a card showing the server's URL.
+   *
+   *  **The inventory holds the same rule** (B17): it lists what the SHOWN lane
+   *  holds, so a Cloud account cannot appear under `Your server` and the Rename
+   *  and Remove beside each entry can only ever act on that entry. */
+  /**
+   * **THE OLD GUARD IS NOW STRUCTURAL** (ADR 0223). This asked that a Cloud
+   * account could not appear under `Your server` — the defect where the account
+   * row read a literal lane while the card rendered another, so Rename and
+   * Remove acted on Groq from a card showing the server's URL. There is no lane
+   * view to cross any more: every account is on one page, and the rows that
+   * configure one live inside that one's card.
+   *
+   * So the case keeps what can still fail — an account's actions name and reach
+   * that account — and asserts the reverse of what it used to: both accounts are
+   * there, whatever lane they are on.
+   */
+  it("shows every account whatever its lane, with rename and remove on each", async () => {
     render(
       <ModelsScreen
         runtime={createWorkspaceRuntime({ active: true, config: cloudProfileWithAServer() })}
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
+    await waitFor(() => expect(accountBlock(SERVER_ACCOUNT.id)).toBeTruthy());
+    expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy();
 
-    const account = (await screen.findByLabelText("Account")) as HTMLSelectElement;
-    expect(account.value).toBe(SERVER_ACCOUNT.id);
-    expect([...account.options].map((option) => option.text)).toContain(SERVER_ACCOUNT.label);
-    expect([...account.options].map((option) => option.text)).not.toContain(CLOUD_ACCOUNT.label);
+    const block = await openAccount(SERVER_ACCOUNT.id);
+    expect(within(block).getByRole("button", { name: `Rename ${SERVER_ACCOUNT.label}` })).toBeTruthy();
+    expect(within(block).getByRole("button", { name: `Remove ${SERVER_ACCOUNT.label}` })).toBeTruthy();
+    /* AND THE SERVER'S OWN ROWS ARE IN THE SERVER'S CARD — the URL cannot be
+       read off a card headed with another account's name. */
+    expect(within(block).getByLabelText("URL")).toBeTruthy();
+    expect(within(await openAccount(CLOUD_ACCOUNT.id)).queryByLabelText("URL")).toBeNull();
+  });
+
+  /**
+   * **THE INVENTORY IS THE PRODUCT'S LIST AND NOT A STACK OF ITS OWN** (ADR 0222).
+   *
+   * B17 gave the card its list and built the row out of `ws-stack ws-gap2`, so
+   * the separation between two accounts was a gap with the same value as the gap
+   * INSIDE one — the owner read the card and could not tell where an account
+   * ended. `.ws-list-item` is the hairline-separated row every other list on the
+   * machine uses, and this holds the card to it.
+   *
+   * **The picked account is marked by ground and `aria-pressed`, not by a filled
+   * button.** A primary button is the weight of the strongest action on a screen;
+   * spending it on *these rows are about this one* made an account read as a call
+   * to action while its neighbour read as prose. `aria-pressed` is the half a
+   * border cannot give a screen reader, and it was the one thing the old drawing
+   * got right — so it is asserted rather than assumed.
+   */
+  /**
+   * **ADR 0222 MADE THE ACCOUNT A LIST ROW AND ADR 0223 MADE IT A CARD**, one day
+   * apart, and the second is not a reversal of the first: 0222 fixed a drawing
+   * that had no separators and a filled primary button for the pick, and 0223
+   * moved the account's own settings INSIDE it, which a list row has nowhere to
+   * put. What survives whole is the half 0222 argued hardest for — the pick is
+   * marked, not filled — so that is what this case keeps.
+   */
+  it("draws each account as a card, and marks the picked one without filling it", async () => {
+    render(
+      <ModelsScreen
+        runtime={createWorkspaceRuntime({ active: true, config: cloudProfileWithAServer() })}
+      />,
+    );
+
+    await waitFor(() => expect(accountBlock(CLOUD_ACCOUNT.id)).toBeTruthy());
+    const block = accountBlock(CLOUD_ACCOUNT.id);
+    expect(block.className, "an account is a card").toContain("ws-acct");
+
+    const pick = within(block).getByRole("radio");
+    /* The pick is its own button since ADR 0224 — the header strip around it
+       also holds the fold, and a button cannot hold the button beside it. */
+    expect(pick.className).toContain("ws-acct-pick");
+    expect(pick.className).not.toContain("ws-btn");
+    expect(pick).toHaveAttribute("aria-checked", "true");
+    expect(block).toHaveAttribute("data-current");
+
+    /* AND THE ACCOUNT'S OWN SETTINGS ARE IN IT, which is the whole of ADR 0223:
+       the key read as one key for the machine while it sat beside the list. */
+    expect(within(await openAccount(CLOUD_ACCOUNT.id)).getByText("API key")).toBeTruthy();
   });
 
   /**
@@ -2953,8 +3439,11 @@ describe("A card shows the lane's account and not the profile's", () => {
 
     render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
 
-    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL.Cloud }));
-    await userEvent.click((await screen.findAllByRole("button", { name: /Replace|Add/ }))[0]);
+    /* THE CLOUD CARD IS THE FOLDED ONE HERE, because the profile bills to the
+       server (ADR 0224). Opening it is what the reader does and it is what makes
+       the query below name one card rather than the first one drawn. */
+    const cloud = within(await openAccount(CLOUD_ACCOUNT.id));
+    await userEvent.click(cloud.getByRole("button", { name: /^(Replace|Add)$/ }));
     await userEvent.type(await screen.findByLabelText("API key"), "gsk_typed_for_groq");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -2969,6 +3458,43 @@ describe("A card shows the lane's account and not the profile's", () => {
     );
   });
 
+  /**
+   * **THE CHIP ROW IS ABOUT THE SAME ACCOUNT AS EVERY ROW UNDER IT.**
+   *
+   * It read `Wired.connection` — the vendor the PROFILE dictates on — while the
+   * rows beneath it moved to `accountForLane` with ADR 0213. With the profile on
+   * the server the value was `Your server`, a name the Cloud list does not carry,
+   * so no chip drew as chosen and the capability sentence fell back to describing
+   * Groq — over an Account row and a key row that were showing the Groq account
+   * all along. The row said nothing true about anything.
+   */
+  it("marks the vendor of the account this card configures, not the profile's", async () => {
+    const config = cloudProfileWithAServer();
+    const active = config.text_profiles.find(
+      (profile) => profile.id === config.active_text_profile_id,
+    )!;
+    active.providers = { default: SERVER_ACCOUNT.id, overrides: {}, models: {} };
+
+    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true, config })} />);
+
+
+    /* **THE MARK IS ON THE CARD AND THE CHECK FOLLOWS THE PROFILE** (ADR 0223).
+       This asked a chip row at the top of the screen, which marked the vendor of
+       whichever account a derivation had opened — the defect ADR 0209 closed one
+       row down and this record removed the row for. The card of the account the
+       profile bills to is the one that is checked, and every other card carries
+       its own vendor's mark whether or not anything bills to it. */
+    await waitFor(() => expect(accountBlock(SERVER_ACCOUNT.id)).toBeTruthy());
+    expect(within(accountBlock(SERVER_ACCOUNT.id)).getByRole("radio")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(within(accountBlock(CLOUD_ACCOUNT.id)).getByRole("radio")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  });
+
   /** And the reachability probe asks about the server the card is showing, not
    *  about whatever account the profile happens to be on. */
   it("probes this lane's server", async () => {
@@ -2978,8 +3504,8 @@ describe("A card shows the lane's account and not the profile's", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: LANE_LABEL["Self-hosted"] }));
-    await userEvent.click(await screen.findByRole("button", { name: "Test" }));
+    const server = within(await openAccount(SERVER_ACCOUNT.id));
+    await userEvent.click(server.getByRole("button", { name: "Test" }));
 
     await waitFor(() =>
       expect(invoked).toHaveBeenCalledWith("validate_provider_api_key", {

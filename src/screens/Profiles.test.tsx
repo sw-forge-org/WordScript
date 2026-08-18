@@ -877,6 +877,56 @@ describe("Profiles, wired", () => {
     expect(afterToggle.text_profiles[0].modes.translate_keep_profile_words).toBe(false);
   });
 
+  /**
+   * **THE LANGUAGE A PROFILE DICTATES IN IS SETTABLE** (speech track B18).
+   *
+   * `speech.language` and `speech.language_locked` have reached the capture
+   * snapshot, the drift check and both cloud adapters for some time, and the
+   * only surface either appeared on was AI Models — as a `DrawnSelect` over
+   * three literal options with no writer. A value the runtime reads that nothing
+   * can set is ADR 0020's failure class arriving from the other end, and ADR
+   * 0068 says where the control goes: the profile owns it, so the profile edits
+   * it and AI Models states it.
+   */
+  it("writes the dictation language into the profile the pane is showing", async () => {
+    const patch = vi.fn();
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: config(), patch })} />);
+
+    await userEvent.selectOptions(await screen.findByLabelText("Dictation language"), "de");
+
+    const written = patch.mock.calls[0][0];
+    expect(written.text_profiles[0].speech.language).toBe("de");
+    /* And nothing else on the block moved: `write` rebuilds the profile, so a
+       row that spread the wrong object would reset every model slot beside it. */
+    expect(written.text_profiles[0].speech.correction_model).toBe(
+      config().text_profiles[0].speech!.correction_model,
+    );
+  });
+
+  /**
+   * **PINNING NOTHING IS NOT A STATE THE RUNTIME HAS.**
+   * `hallucination_detect` lowers its corroboration threshold for the language
+   * the request CARRIED, and an auto-detected dictation carried none — so the
+   * toggle refuses rather than storing a value that would do nothing. It is the
+   * same rule ADR 0067 rule 1 states: a control that is offered must act.
+   */
+  it("refuses the pin until a language was chosen, and takes it after", async () => {
+    const patch = vi.fn();
+    const pinned = config();
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: pinned, patch })} />);
+
+    expect(await screen.findByLabelText("Pin this language")).toBeDisabled();
+
+    pinned.text_profiles[0].speech = { ...pinned.text_profiles[0].speech!, language: "de" };
+    cleanup();
+    render(<ProfilesScreen runtime={createWorkspaceRuntime({ active: true, config: pinned, patch })} />);
+
+    const pin = await screen.findByLabelText("Pin this language");
+    expect(pin).not.toBeDisabled();
+    await userEvent.click(pin);
+    expect(patch.mock.calls[0][0].text_profiles[0].speech.language_locked).toBe(true);
+  });
+
   it("shows what the prompt costs rather than what was typed into the field", async () => {
     /* The whole point of the command. What is in the field normalizes down —
        the whitespace collapses and the repeated line goes — and the runtime is

@@ -1273,6 +1273,721 @@ column the settings sheet is designed at against the 569 px this machine renders
 account leaves in the OS store — that is **B14b** above, and it should land
 before this step touches the same file.
 
+### B16. The surface asks the runtime's question about a stored model — **done 2026-08-17, ADR 0215**
+
+**Added and closed 2026-08-17**, out of a review of the twenty-five commits
+behind this screen. It is filed as a step rather than folded into B15 because it
+is a correction of B15 that B15's own tests could not have caught: they held the
+surface against itself.
+
+What it found is that **the model guard was spelled twice on this side and
+neither copy was the runtime's rule**. `JobBadge` and the job row's model select
+each asked *is this id among the vendor's catalogue rows*; `named_model` asks
+*does the catalogue attribute this id to a DIFFERENT vendor*. The gap between
+those two questions is exactly the case ADR 0115 exists for — a typed override,
+or a vendor release newer than this build's read-date — and in that gap the row
+drew *Follow the profile* while the request carried the stored id.
+
+**A retirement is what turned it from latent into general.** ADR 0214 removed
+three Groq ids from the catalogue the same day, and a retired id is by
+construction one the catalogue no longer carries: every config storing one
+crossed from *catalogued* into the gap in a single data change. That commit's
+record names the runtime half — *a config that already stores a retired id keeps
+sending it* — and not this half, that the surface had also stopped being able to
+show it.
+
+- **Landed** — `namedModel` and `foreignModel` in `src/lib/textProfiles.ts`,
+  mirroring `JobProvider::named_model`; `providerForModelId` in
+  `modelCatalogue.ts`, mirroring `core::model_catalogue`'s. Both call sites ask
+  through them. The select prepends a stored id the offered list does not carry,
+  because a `<select>` whose value matches no option renders as the first one —
+  a row carrying a typed override would have re-pointed itself on the next
+  unrelated change.
+- **Three more things travelled**, all found in the same read and all of the
+  same class — a control that claims something the runtime does not do:
+  - **The assistant's name was a live `Field` with no writer anywhere in the
+    tree.** Not a `DrawnField`: nothing disabled it, nothing carried a reason,
+    and a reader could type into it. `modes.agent_name` is read on every
+    dictation and is what decides when Auto routes one to the assistant, so it
+    was a routing setting with a control that stored nothing — ADR 0067 rule 1
+    broken on the row that looked most like it worked. It writes the active
+    profile now and carries the `ScopeTag` naming it, the way every other
+    per-profile control on this screen does (ADR 0209).
+  - **`ProviderPick` read the profile's vendor while every row under it read the
+    lane's account** (ADR 0213). With the profile on `Your server` the chip row's
+    value was a name the Cloud list does not contain, so no chip drew as chosen
+    and the capability sentence described Groq — over an Account row and a key
+    row showing the Groq account. Same defect ADR 0209 removed one row down,
+    still standing on the row above it. It also writes the active profile and
+    never said so; it carries the `ScopeTag` now too.
+  - **`TEXT_PROFILE_SCHEMA_VERSION` read 4 on this side and 5 in the runtime**,
+    under a comment — *there are no migrations left on either side* — that went
+    false with ADR 0094. Latent rather than paid, because a profile written here
+    carries the axis and `adopt_provider_axis` returns early; it stops being
+    latent at the next migration, which would run once over every profile this
+    file has ever written.
+- **`port:diff` moved by zero**, measured against `git stash` back to back:
+  `models` `29 | 287 | 33` and `models#1` `262 | 30 | 17` on both sides. **And
+  that baseline is not the one B15 recorded.** `models` stood at `28 | 257 | 24`
+  and moved to `29 | 287 | 33` in `8d4e837` — the catalogue commit, which
+  changed the model names the gallery draws and measured its test counts rather
+  than the port. Recorded here because a count that moved without being named is
+  the thing this track keeps saying is the difference between a baseline and a
+  guess.
+- **+8 frontend (866 across 52 files), no Rust moved.** Six of the eight are the
+  mirrored rule; three of those six fail against the rule they replace, proven by
+  restoring it. The other two are the name that writes and the chip row that
+  reads its own account, each proven by restoring the defect.
+
+**What it deliberately did not do is repair a stored id.** The owner ruled the
+same day that local configuration is disposable and a rescue path is not worth
+its cost; this machine's own config — one retired id in fourteen places, which is
+why History had stopped naming transcripts — was corrected by hand instead. The
+runtime keeps sending what it is told to send (ADR 0115); what changed is that
+the surface stops hiding it.
+
+### B17. The account inventory is an inventory (ADR 0212's own last mile) — **done 2026-08-18, ADR 0220**
+
+**Added 2026-08-17** from the owner reading the finished B15 screen: the account
+row is right about what it owns and wrong about how it shows it.
+
+**The seam is already built and this is a drawing step.** `accountChoices`
+returns every account grouped lane → provider → account with `operable` and a
+reason per row; `profileLabelsUsing` and `profilesUsingConnection` derive the
+used-by sentence; `buildNewConnectionPatch` creates one. Nothing here needs a new
+answer from the runtime.
+
+- **Requires** — nothing. B15 and B16 are both closed.
+- **Touches** — frontend only. `AccountRow` in `Models.tsx` becomes a list rather
+  than a row; `AddAccountRow` gains the vendor question; the assignment moves.
+- **What is wrong with the row today**, and it is four things rather than one:
+  - **It is unreadable at the width it is read at.** The owner's words on
+    2026-08-17: *die Breakpoints sind absoluter Bullshit, man kann hier nichts
+    lesen*. The hints on this card are the longest running text on the surface —
+    the used-by sentence, the deletion warning, the *no profile names this
+    account yet* fallback — and they wrap into a column the row shares with a
+    `ScopeTag`, a select and up to three buttons. **`docs/DESIGN_SYSTEM.md` and
+    ADR 0092 own the column budget and this card is where it is exceeded**; the
+    step measures the real wrapped text at 625 px rather than reasoning about it,
+    because that is the width this workspace renders at — a display-scale fact
+    about the reporting machine rather than a preference, and permanently under
+    the 760 px the settings sheet is designed at.
+  - **Seven controls in one `ws-rowflex`** — a `ScopeTag`, a select, Rename, New,
+    Remove and two badges — at the 625 CSS px this workspace actually renders at.
+    One account at a time is visible, and which one is a derivation
+    (`accountForLane`) rather than a choice the reader made.
+  - **`+ New account` picks no vendor.** On Cloud it is a fixed
+    `runtimeIdFor(LANES.Cloud.provider)`, so the button always creates a Groq
+    account whatever the reader wanted. Name and vendor belong in the panel that
+    creates one — which is also what would let the chip row above stop being the
+    only way onto a second vendor.
+  - **The assignment sits in the inventory.** Which account a profile bills to is
+    the head of *What runs what*, not a select inside the card that lists what
+    the machine holds. ADR 0212 split adding an account from assigning one; the
+    two are still drawn in the same row.
+- **The rule it is measured against** is ADR 0212's own: the card is what this
+  machine holds, the list below is what runs where. A control that does both is
+  the conflation the record closed at the lane level and left at the row level.
+- **Validates** — `npm test`, `npm run build`, `port:diff` on `models` and
+  `models#1` against the baseline B16 restated, **and by looking, in the native
+  host at 625 px**: three accounts on two vendors, one of them keyless, with a
+  profile on the second. Every earlier defect on this card survived a green
+  suite and was found by rendering it.
+- **Done when** — every account this machine holds is visible at once with its
+  vendor, its key state and who uses it; creating one asks for a name and a
+  vendor before it exists; and assigning one to a profile happens where the jobs
+  are, with the profile named.
+
+**Not this step.** The model axis (B15, B16), the lane lock (B12), and the
+credential rows themselves — they are correct per account since ADR 0213 and
+this step moves them without changing what they ask.
+
+**Landed 2026-08-18 (ADR 0220), and the brief's own diagnosis needed correcting
+first.** Two things it asserted are not what the screen does:
+
+- **It counted seven controls in the `ws-rowflex` "and two badges".** There are
+  five — a `ScopeTag`, a select, Rename, New, Remove — and no badge; Rename
+  replaces the select, so the worst case is five and the resting case is four.
+  The two badges it counted belong to `AddAccountRow`, a different component that
+  renders only when the lane holds no account at all.
+- **It said the row is unreadable because the breakpoints do not fire, and they
+  do.** Measured in the native host: at a 625 px window the settings sheet's
+  `ws-column` is **379 px**, not the workspace column's 569 — so the 460 px tier
+  is active and every row is already stacked. What produces the 171 px row is
+  five controls carrying 489 px of intrinsic width wrapping inside a 313 px
+  column under a three-line hint. **Stacking is the right answer to a narrow
+  column and the wrong answer to five controls**, which is why this step is a
+  restructure and the tier is untouched.
+
+And the `+ New account` fault was on the wrong button. `AddAccountRow`'s fixed
+`runtimeIdFor(LANES.Cloud.provider)` is real but nearly unreachable; the button
+normally on screen is `AccountRow`'s **`New`**, whose vendor is the shown
+account's — so it too could never reach a second vendor, and it **also assigned**,
+which the other one's own docblock forbids.
+
+- **Landed** — `AccountInventory`, `AccountEntry` and `AddAccountPanel` in
+  `Models.tsx`; `accountsOnLane` in `providerSeam.ts`; `ProfileAccountRow` at the
+  head of *What runs what*; `ProviderPick` states a vendor and writes nothing;
+  `CloudCredentialRows`, `WiredSelfHostedRows` and `ServerUrlRow` take the chosen
+  account rather than deriving one.
+- **`port:diff` did not move** — `models` `65 | 281 | 33`, `models#1`
+  `262 | 30 | 17`. Nothing in the inventory renders without a runtime, so the
+  gallery tree is untouched. **The brief expected this movement to need
+  explaining**; that it did not happen is the more useful fact, and it
+  generalises to any step that rebuilds a wired surface without touching its
+  drawn branch.
+- **+8 frontend (874), fifteen cases rewritten rather than deleted**, every rule
+  they held kept. No Rust moved.
+- **Read at 625 px after the suite was green, and the reading found one more**:
+  the vendor badge drew `Groq Groq` on the account almost every machine has,
+  because a first account is named after its vendor.
+
+### B18. The dictation language is a control (ADR 0068's pattern, applied to the value that has none) — **done 2026-08-18, ADR 0219**
+
+**Added 2026-08-17.** The owner asked for the drawn Language row under Dictation
+to be wired and judged that the value belongs to the profile. **It already does,
+and so does its reader** — what is missing is only the control.
+
+- **The runtime half is complete and has been for some time.**
+  `ProfileSpeechSettings::language` and `language_locked` are carried into the
+  capture snapshot (`capture.rs`), read by the drift check (`transform.rs`), and
+  sent as the language hint by both cloud adapters (`groq.rs`, `openai.rs`). No
+  Rust is needed to make the value work.
+- **There is no control for it anywhere.** `AI Models` draws a `DrawnSelect` with
+  three literal options; `Profiles` has none. It is ADR 0020's failure class from
+  the other end — not a control the runtime ignores, but a value the runtime
+  reads that nothing can set.
+- **Requires** — nothing.
+- **Touches** — frontend only. A row on `Profiles` that writes
+  `buildProfileSpeechPatch({ language, language_locked })`, and the two drawn
+  rows on `AI Models` becoming statements with a `ScopeTag` and a door — the
+  pattern `Into` and `Keep the profile's words` already use, which is the one the
+  owner named.
+- **One thing must land with it and is the reason this is not two lines of
+  wiring.** `history.rs` writes `optional_non_empty(&app_config.language)` into
+  the record at four sites — the **machine-wide** field — while the capture sends
+  the **profile's**. Both are empty on every machine today, so they agree by
+  accident. The moment this step gives the profile's field a control, every
+  record names a language its request did not carry: **the defect ADR 0203 closed
+  for the model, rebuilt for the language, by the step that makes the value
+  reachable.** Either the record reads the same resolver the capture does, or the
+  machine-wide field goes. That is the decision this step owes before it draws
+  anything.
+- **Validates** — `cargo test` and `npm test`; a Rust case that a record's
+  language is the one the request carried, made to fail first against today's
+  read; `port:diff` on `models` — this one WILL move, because two drawn rows
+  become statements, and the record says what moved rather than treating it as
+  damage.
+- **Done when** — the language a profile dictates in can be set, is sent, and is
+  the one the record names.
+
+**Not this step.** The recognised-language readout on Home (the Home activity
+track's Stage B owes it, and it measures the text rather than reading this
+field — ADR 0180), and `language_locked`'s effect on the drift check, which is
+already decided and unchanged.
+
+**Landed 2026-08-18 (ADR 0219). The owner ruled the machine-wide field out.**
+`AppConfig::language` had no writer in either runtime and two readers that both
+wanted the profile's answer, so keeping the two in step would have been a second
+answer to one question maintained by hand — B22's shape, one field over. It is
+removed; `active_text_profile_speech_language` is what `history.rs`'s four sites
+read. A stored `"language"` key is ignored on read and gone on the next save, and
+nothing could ever have set it to anything but empty.
+
+- **Landed** — the control pair on `Profiles` → Defaults, written through that
+  screen's own `write` seam so it edits the profile the pane is SHOWING rather
+  than the active one; the two AI Models rows became statements with a
+  `ScopeTag`; `AppConfig::language` and its TypeScript mirror are gone.
+- **`port:diff` did NOT move**, which this step's own text expected it to. The
+  statements render only under a runtime and the gallery keeps the drawn select
+  and toggle, so the measured tree is unchanged at `65 | 281 | 33`.
+- **+4 frontend (870), +2 Rust.** One frontend case is a rewrite: *leaves every
+  job-row control drawn and inert, with the reason on it* was right when written
+  and wrong in its reason — `Not integrated yet` names a lane with no adapter,
+  and this lane has one.
+- **Two smaller rulings**, both in the ADR: an empty language is *Auto-detect*
+  and a choice rather than a blank, and the pin is refused until a language was
+  chosen, because `hallucination_detect` lowers its threshold for the language
+  the request CARRIED and an auto-detected dictation carried none.
+
+### B19. Three settings nobody needs an opinion about leave the job list — **done 2026-08-17, ADR 0216**
+
+**Added and closed 2026-08-17**, out of the owner reading the job list and asking
+where four drawn settings are actually set. **The answer for all four was
+nowhere**, and for two of them the code asserted otherwise.
+
+| Row | On AI Models | On Profiles | Was settable | Outcome |
+| --- | --- | --- | --- | --- |
+| `Into`, `Keep the profile's words` | stated + `ScopeTag` | **edited** | yes | **kept — this is the pattern** |
+| Language, `Pin this language` | drawn select + toggle | absent | no | **kept, wiring is B18** |
+| `Bias from the profile's words` | `InertSegment`, fixed on *Standard* | a readout only | no | **removed** |
+| Prompt Enhance `Sub-mode` | `InertSegment` | absent | no | **removed** |
+| Prompt Enhance `Prompt target` | `DrawnSelect` | absent | no | **removed** |
+
+**The first draft of this step was to wire all four, and the owner ruled the
+opposite for three of them**: *"Alles andere braucht man gar nicht erst zu sehen,
+weil das feste Einstellungen sind, die den User gar nicht interessieren, sondern
+einfach funktionieren sollen."* ADR 0216 is that ruling and its limit — ADR 0161
+governs a control that is *unbuilt* and therefore owed; a control whose intent is
+*withdrawn* is removed instead, because a `PreviewTag` on it would promise
+something nobody has decided to build.
+
+- **The bias segment offered a choice two records had already taken.** ADR 0033
+  and ADR 0035 rule that every vocabulary term reaches every transform stage
+  unconditionally and that slot allocation is the runtime's — decided against
+  exactly the intuition an `Off | Light | Standard` control invites. `bias_mode`
+  has no writer anywhere and `Profiles.tsx`'s own `FLAG_KINDS` comment already
+  said so.
+- **`enhance_sub_mode` and `enhance_target` are stored in two places with no
+  writer for either**, and `Models.tsx` cited that pair as the precedent its two
+  live Translate controls follow. The citation is corrected; the controls are
+  gone; the fields keep their defaults and their readers.
+- **`port:diff` `models` `29 | 287 | 33` → `65 | 281 | 33`**, 736 nodes to 700.
+  The prototype draws all three rows, so this is a deliberate structural
+  divergence and the first on this screen that is neither a port defect nor an
+  addition. `models#1` unmoved at `262 | 30 | 17`.
+- **No test moved — 866 before and after — and that is a finding.** Three drawn
+  controls left a screen carrying 95 cases and nothing noticed. Inert controls
+  are held by `port:diff` alone, which measures the gallery rather than the
+  product; ADR 0159's gap for grown state applies to removed state too.
+
+**Two things it deliberately did not fix, and both are steps of their own** —
+**B21** and **B22** below, filed rather than left in this record, because a
+consequence noted in a closed step is a consequence nobody reads.
+
+**One of them corrects this step's own first draft.** The record initially said
+the bias segment offered *a choice two records had already taken*, and that
+removing it left `bias_policy_weak` one step worse. Reading
+`core::transcription_hints` and `core::text_rules` afterwards showed both claims
+wrong: `bias_mode` is a live three-way switch that nothing writes, and the flag
+guarding its `Off` arm could never fire either before or after. The corrected
+version is in ADR 0216 and the whole subject is B21.
+
+### B21. A switch nothing writes, two arms nobody can reach, and a flag that guards one of them
+
+**Added 2026-08-17** as B19's first open consequence, filed as a step because a
+consequence noted in a closed record is a consequence nobody reads.
+
+**`bias_mode` is a live switch with a real effect and no writer.**
+`core::transcription_hints` branches on it three ways:
+
+| Value | What the runtime does |
+| --- | --- |
+| `Conservative` (**the default, and what every installation runs**) | the profile's hints go to the recognizer |
+| `Off` | **no cloud prompt and no local prompt at all** — `build_cloud_prompt` and `build_local_prompt` both return `None` |
+| `Manual` | `manual_bias.stt_hints_override` replaces the profile's hints |
+
+Nothing in the product writes the field, and nothing writes `ManualBias`'s three
+sub-fields either. So two of the three arms and one whole struct are **reachable
+only from tests**.
+
+**And the profile health flag on top of it can never fire.**
+`detect_bias_policy_weak` returns early unless `bias_mode == Off`, which no
+installation reaches. Its hint reads *"Re-enable Conservative or Manual bias"* —
+an instruction naming a control that does not exist, for a state that cannot be
+entered, on a flag that cannot be raised. `Profiles.tsx`'s `FLAG_KINDS` comment
+already records half of this (*"`bias_mode` has no control anywhere in the
+product"*) and files the flag against Defaults because of it.
+
+- **The decision this step owes.** Either the switch gets a writer, or the pin
+  becomes the behaviour: `Conservative` inlined, the two unreachable arms and
+  `ManualBias` deleted, and `bias_policy_weak` retired with them. **The owner's
+  standing ruling points at the second** — *feste Einstellungen, die einfach
+  funktionieren sollen* (ADR 0216) — but deleting a runtime branch is not the
+  same act as deleting a drawn control, and the record has to say which it is
+  doing and what it costs. `regression_corpus` and `transcription_hints`' own
+  cases exercise the arms; **a test that is the only reader of a branch is not a
+  reason to keep the branch**, and saying so is part of this step.
+- **Requires** — nothing. B19 removed the drawing that made the switch look
+  settable; this is about the switch.
+- **Touches** — `core::config` (`BiasMode`, `ManualBias`,
+  `TextProfileWorkMode`), `core::transcription_hints`, `core::text_rules`
+  (`detect_bias_policy_weak`, `ProfileHealthFlag::BiasPolicyWeak`),
+  `Profiles.tsx`'s `FLAG_KINDS` and the health surface that renders it. **A
+  config field leaving is a schema question**: ADR 0112's licence applies and the
+  owner has restated it three times, so the clean cut is priced rather than a
+  compatibility read.
+- **Validates** — `cargo test`, `npm test`. **The count will fall if the arms go**
+  and the record says by how much and which cases went, because a deleted branch
+  takes its cases with it and a falling count is otherwise indistinguishable from
+  a deletion nobody meant.
+- **Done when** — no branch in `transcription_hints` is reachable only from a
+  test, and no health flag guards a state the product cannot enter.
+
+### B22. Two fields, two homes, no writer
+
+**Added 2026-08-17** as B19's second open consequence.
+
+`enhance_sub_mode` and `enhance_target` exist **twice**: on `AppConfig`
+(`config.rs:546`, `config.rs:1497`) and on the profile's `TextProfileWorkMode`,
+which `active_text_profile_work_mode` resolves. Nothing writes either copy. B19
+removed the two controls that appeared to — an `InertSegment` and a
+`DrawnSelect` — so the fields now have no writer and no drawing.
+
+- **The question is which home is right, and it is not obvious.** Prompt Enhance
+  is a mode a profile runs in, which argues for the profile; the target is *which
+  external tool the prompt is for*, which is arguably about the machine's
+  workflow rather than the writing style. **Answer it before deleting either
+  copy**, because the wrong deletion is the one that has to be undone with a
+  migration.
+- **It is not urgent and it is not free to leave.** Two fields that can disagree
+  and neither of which is written is dormant now; it becomes a live defect the
+  first time anything writes one of them, which is exactly what a future
+  Prompt Enhance step would do.
+- **Requires** — nothing.
+- **Touches** — `core::config`, and whichever resolver reads the surviving copy.
+  No surface, unless the answer is that one of them should be settable after all,
+  in which case ADR 0216's test applies first: is this a setting anyone needs an
+  opinion about?
+- **Validates** — `cargo test`. A case that the resolved value comes from the
+  surviving home, made to fail first against the one being removed.
+- **Done when** — the pair has one home, or the two are documented as answering
+  different questions and each names its own reader.
+
+### B20. The orphaned credential ADR 0208 was written to prevent — **done 2026-08-18, ADR 0218**
+
+**Added 2026-08-17**, found while diagnosing an unrelated report by listing the
+OS secret store on the reporting machine. Three entries existed:
+
+```
+connection-default.chat.api_key      created 2026-08-17 11:00
+connection-default.speech.api_key    created 2026-08-17 11:00
+self_hosted.speech.api_key           created 2026-08-16 13:11
+```
+
+**The third is keyed by VENDOR id, not by account id.** ADR 0208 moved the
+credential scope from the vendor to the account and `rekey` **moves** rather
+than copies, precisely so that no key is left under a name nothing points at —
+the record's own words: *a key left behind is one no surface can show and no
+reader can clear*. The two Groq entries were moved on the 17th; the self-hosted
+one, written on the 16th, was not.
+
+- **It is a security finding and not only an untidiness.** A bearer token sits in
+  the OS secret store that the account row cannot display, `Remove` cannot delete
+  (it clears `connection-self_hosted.*`), and no reader can discover without
+  `secret-tool`. Whatever server it authenticates against, revoking it in the
+  product is impossible.
+- **The entry on the reporting machine is gone as of 2026-08-17**, deleted with
+  `secret-tool clear` on the owner's instruction — *"dann muss der API Key
+  gelöscht werden, wir wollen nicht an Legacy lokalen Daten festhalten"*. The
+  store now holds `connection-default.chat.api_key` and
+  `connection-default.speech.api_key` and nothing else. **That is the symptom
+  cleared, not the step closed**: the code path that produced an orphan is
+  untouched, and the next machine to carry a pre-ADR-0208 self-hosted credential
+  reproduces it exactly.
+- **Requires** — nothing. **Do not begin by looking for the orphan**: it was
+  deleted, so the reproduction is a fixture, not this disk.
+- **Touches** — `core::config`'s connection migration and
+  `core::providers::credential_store`. The question to answer first is **why it
+  was missed**: whether the migration ran before that connection existed, or
+  whether it walks only the vendors it finds accounts for and self-hosted was not
+  among them. The fix follows the answer; a sweep that adopts a vendor-scoped
+  entry onto the account of that vendor is the likely shape, and it must refuse
+  where two accounts on one vendor make the target ambiguous.
+- **Validates** — `cargo test` against `MemorySecretStore` with an entry under a
+  vendor scope and one account, two accounts, and none — three different correct
+  answers. **And on this machine by listing the store before and after.**
+- **Done when** — no entry in the store is keyed by anything but an account id,
+  or one is and the surface can show and clear it.
+
+**Landed 2026-08-18 (ADR 0218), and the question this step owed is answered by
+this machine's own backup file.** `config.backup-connection-axis-1786964429877.json`
+(2026-08-17 13:00) carries `connections: null` and **all six profiles on `groq`**
+— so `adopt_connection_axis`, which builds its vendor list from the ids the
+PROFILES name, produced exactly one connection, and `rekey_connection_credentials`
+re-keyed groq alone. The `self_hosted` entry written the day before had no account
+to move onto. `connection-self_hosted` was created from the UI afterwards and the
+migration is one-shot, so nothing looked again. **The second of the step's two
+candidate causes, evidenced rather than guessed.**
+
+- **Landed** — `providers::adopt_vendor_scoped_credentials`, run once per process
+  on the load path and **not gated on the migration**: the account that would
+  have received this entry was created a day after the lift, so a sweep tied to
+  the lift misses it for the same reason the lift did.
+- **Three outcomes, not a count** — adopted onto the one account of that vendor;
+  refused where two make the target ambiguous; named where there is none. **It
+  does not delete a stranded entry**: the owner's disposability ruling is about
+  data this product wrote and can see, not a token that may still authenticate
+  against a server it cannot name. The runtime log names it and the next launch
+  after an account appears adopts it.
+- **The same gap had a second consequence nobody had recorded**, fixed with it:
+  `migrated_self_hosted_base_url` and `_model` were taken off the config and then
+  spent only where a profile named the lane, so a machine that typed a server URL
+  and went on dictating in the cloud lost it silently. The lift now keeps a
+  server nobody selected, invents none where the machine held none, and repoints
+  no profile.
+- **+7 Rust (957), two made to fail first**, no frontend moved. The reproduction
+  is a fixture and not this disk — the entry was deleted before the work started,
+  so nothing here was verified against the machine that produced it, and the ADR
+  says so rather than glossing it.
+
+### B23. The workspace strip asks about a vendor where the scope is an account — **done 2026-08-18, ADR 0217**
+
+**Added and closed 2026-08-18**, out of reading the B17 brief's *one open report,
+unreproduced* against the code instead of trying to reproduce it. The report was
+the workspace status strip reading **`Needs key`** with the key present and the
+connection card six rows away showing it.
+
+**It reproduces on every machine, on every launch, and has since ADR 0208.**
+`WorkspaceWindow.tsx` derives the account four lines above the call and omits it
+from `useProvider`, whose fourth parameter defaults to `""`. `entry_user` formats
+`{scope}.{role}.{kind}`, so the runtime read `.speech.api_key` — an entry no
+writing door can produce and therefore one no machine has. The brief listed the
+right hypothesis (*the strip is asking about a different connection*) and stopped
+one step short of it, then spent a paragraph on a deleted `self_hosted` entry the
+strip never read.
+
+- **Landed** — the account id passed on; `refuse_unscoped_credential_read` in
+  `provider_status`, which refuses exactly where the provider registers a
+  credential kind and the connection is blank. The local lane is exempt by
+  construction, not by name: `credential_kinds()` is empty for it.
+- **The suite could not have caught it.** The `useProvider` double took one
+  argument and ignored the rest, so a caller that dropped the scope got the
+  vendor's answer from the mock and an empty keyring entry from the runtime. That
+  double's docblock records the previous repair of this exact shape and went one
+  argument short of it. **A seam double kinder than the seam turns green cases
+  into no evidence.**
+- **+1 frontend, +1 Rust, both made to fail first.** The frontend case clears the
+  vendor-keyed default from the mock deliberately: with it in place the case
+  passes against the defect it exists to hold.
+- **Not in any brief.** Filed as a step so the finding has an owner rather than
+  living in a commit message.
+
+### B24. The title budget is spent on thinking, and the inventory is not the product's list — **done 2026-08-18, ADR 0221 and ADR 0222**
+
+**Added and closed 2026-08-18** out of the owner's report on the review of the
+whole uncommitted tree: *die Titelgeneration funktioniert nicht bei History.
+Written und [Heard] kann man unterscheiden, aber Titel nicht* — and, separately,
+*die UI von AI Models und Accounts muss ein bisschen schön gemacht werden. Die
+Breakpoints sind nicht so schön anzusehen und nicht so intuitiv zu bedienen.*
+
+**The title half is ADR 0214's own last mile.** That record answered this same
+report a day earlier and its fix was right about the cause and measured against
+the wrong model: it read `gpt-oss-20b` — the CLEANUP model — against the title's
+48-token budget, while the title rides the ASSISTANT's job (ADR 0087) and that
+runs `gpt-oss-120b`. At `low`, 120b spends 38 of those 48 thinking. The reply
+comes back cut after its language line with `finish_reason: length`, `HTTP 200`
+on the wire and `title: null` in the record. **The second symptom is the same
+defect from the far end**: `titleOf` falls back to the written text, so with
+every record untitled the Title segment renders what Written does.
+
+- **Landed** — `completion_budget` and `text_from` in `openai_compatible`: a
+  reasoning model's thinking is charged on top of the caller's answer budget, and
+  a completion that ran out of budget is refused rather than delivered half
+  written. The whole derivation and the live measurements are in ADR 0221.
+- **Two more callers were under the same edge and neither was reported**:
+  `agent`'s classifier asks for 10 tokens, so Auto has not routed to the
+  assistant since the retirement, and `transform`'s correction floors at 40. Both
+  found by reading the budgets against the measurement rather than from a report.
+- **The 124 records already written stay untitled.** A title is made at delivery
+  and nothing re-opens a record to name one.
+
+**The UI half is B17's own last mile, and the breakpoints are not what is
+wrong** — which B17 had already measured and said. B17 fixed *one account was
+visible* and built the replacement out of `ws-stack ws-gap2`, so the inventory
+got its list and the list got a grammar nothing else on the machine uses. What
+that costs, read off the owner's own screenshot:
+
+- **No rule between two accounts**, because the gap inside an entry is the gap
+  between two of them — Groq and OpenAI run together.
+- **A filled primary button for the picked account**, which is the weight of the
+  single strongest action on a screen. An account read as a call to action while
+  its unpicked neighbour read as prose, so two accounts looked like two different
+  kinds of object.
+- **Three stacked lines per account**, two of them chrome, with Rename and Remove
+  as labelled ghost buttons permanently on show.
+
+- **Landed** — `AccountEntry` is a `ListItem` in a `ListRows`: the same row
+  History, Profiles, Targets, Notes and Uploads use. Hairline, inset, name over
+  meta, badges in the fixed right-hand column, Rename and Remove as `IconButton`s.
+  The three facts B17 asks to be visible at once are exactly its title, meta and
+  badge slots. `ListItem` gains an optional pick — the title becomes the button,
+  which is what the old row's own comment argued for and drew at the wrong
+  weight. Ground plus `aria-pressed` marks it; no edge bar.
+- **Three things the first draft got wrong, found by rendering the card at 379 px
+  rather than by reasoning about it**, and each one is why the render was worth
+  doing:
+  1. **`--accent-soft` across a whole row is a slab.** It is the badge tint —
+     16% of the accent — and a row of it came out LOUDER than the filled primary
+     button it was replacing, reading as a warning band. The system's own answer
+     to the same question is `.ws-lane-row[aria-checked="true"]`, which tints a
+     30 px tile and not the row. There is no tile here, so the accent moved onto
+     the name and the ground dropped to 5%.
+  2. **The used-by sentence was the `preview` slot and must not be.** A preview
+     truncates, which is right for one line of a transcript whose record is a
+     click away and wrong for *who uses this account* read immediately before
+     Remove. Given `white-space: normal` inside the text column it wrapped to
+     five lines, because the fixed 108 px badge column and the actions leave that
+     column about 170 px. So `ListItem` gains a **`foot`**: a full-width line
+     under the row, beneath the badge and the actions rather than beside them.
+     Two lines at this width.
+  3. **A list nested in a stacked `Row` pays `--pad-card` twice** — `.ws-row`
+     line 225 and `.ws-list-item` line 4086 both spend it, and `Row` renders a
+     stacked child directly under `.ws-row`. `.ws-grp` states the identical rule
+     one container over (line 2858) for the identical reason. **This one is
+     derived from the two rules rather than measured**: the isolated harness
+     parses `shell.css` incompletely and reported no `.ws-row` padding at all, so
+     it is not evidence either way. It is the one thing in this step still owed a
+     reading in the native host.
+- **The accessible names are account-scoped now**, which the replaced row's
+  docblock had asked for in writing and not done: `Rename Employer` rather than a
+  second button called `Rename`. Five cases named the ambiguous button and were
+  rewritten rather than deleted.
+- **`port:diff` did not move** — `models` measures `65 | 281 | 33`, exactly B19's
+  recorded triple, because nothing in the inventory renders without a runtime.
+  `ledger`, the screen most full of `.ws-list-item`, measures **`style 0`**, which
+  is the evidence the new rules reach nothing that existed.
+- **+2 frontend (876), +3 Rust (962).** The Rust three are the headroom against
+  the budget the title actually sends, the two exemptions, and a truncated
+  payload refused where a finished one is not. The frontend two are the list
+  drawing and — unrelated to either half, found while reading B16's repair —
+  **a guard binding `TEXT_PROFILE_SCHEMA_VERSION` across the two runtimes**. B16
+  corrected that number from 4 to 5 and wrote *the two numbers are one number* in
+  a comment; a comment is not a guard, and the drift it describes had gone
+  unnoticed across two records. Proved to fail on the drift before it landed.
+
+### B25. An account is one object on screen — **done 2026-08-18, ADR 0223**
+
+**Added and closed 2026-08-18** from the owner's reading of the shipped screen:
+the provider chips do nothing when clicked, adding an account shows no logos
+while the logos that are shown cannot be picked, the API key reads as one key for
+the whole machine, *This profile bills to* is in another section, and changing a
+provider low on the screen moves the logo card at the top.
+
+**All seven verified against the code, and they are one defect.** ADR 0208 made
+an account an object; the surface kept it in four pieces. The derivation, the
+reversal of half of ADR 0220 and half of ADR 0222, and what is still owed are in
+ADR 0223.
+
+- **Landed** — `AccountList` + `AccountCard`: every account is one card carrying
+  its own key, plan, URL and token, with a `role="radio"` header that writes
+  `providers.default`. `CloudCredentialRows` and `SelfHostedRows` moved inside it
+  and were not rewritten — ADR 0209 had already given both the account they
+  configure, which is why a change this large is mostly deletion. The lane
+  segment and the inert chip row are gone; `lane` is derived from the account the
+  profile bills to; the chips moved into `AddAccountPanel` where pressing one
+  means something.
+- **Three traps paid for and recorded so they are not paid for twice**: `Card`
+  forwards no `data-*` and TypeScript does not check a hyphenated JSX attribute
+  against a component's props, so `<Card data-account>` compiles and reaches
+  nothing; a stack inside a card pays `--pad-card` twice unless it is named in
+  the guard; and `.ws-radio::after` was keyed to `.ws-lane-row` alone, so **both**
+  radios drew empty until the card was rendered and looked at.
+- **Thirty-three cases moved, three retired by name, none deleted silently.**
+  Frontend 876 → 875, and the one net loss is a retirement (ADR 0162's Local-lane
+  row count, which is now impossible rather than guarded). `cargo test` untouched
+  at 962.
+- **`port:diff` moved on purpose**: `models` `65 | 281 | 33` → `178 | 276 | 33`,
+  the second deliberate divergence from the prototype on this screen after
+  ADR 0216's. `models#1` and `ledger` unmoved.
+- **Still owed, and it is the half of the report this step did not finish**: the
+  copy sweep over *What runs what*. The owner's test is their own sentence —
+  *die Sätze sind viel zu lang, viel zu umständlich* — and only the account
+  card's strings were cut. **Closed by B26.**
+
+### B26. An account folds, and a naming call that fails says so — **done 2026-08-18, ADR 0224 and ADR 0225**
+
+**Added and closed 2026-08-18** out of a review of the whole uncommitted tree and
+of B25's handover, on the owner's report: *fixe bitte den Punkt, dass
+Titelgeneration immer noch nicht funktioniert für History Items* and *dass man
+einzelne Accounts ein und aus klappen kann. Die Funktion fehlt, weil irgendwann
+hat man viele Accounts und man hat den Überblick nicht mehr.* It also carries
+both items B25's handover left open, so that file is deleted with this step.
+
+**The title half is a report against a runtime that is already correct**, and
+saying so is most of the finding. ADR 0221's headroom works: four naming calls
+since it landed, four titles, and the last three records in `history.json` are
+named. What the owner is reading is the 134 records written before it, which
+nothing re-opens — and asked, the owner ruled them out: *die sind egal, wir
+wollen nicht an dev legacy scheitern*. **No backfill is built and none is owed.**
+
+- **What IS wrong is that the call could not be diagnosed at all.** On this
+  machine at 01:09 a 1438-character dictation completed with a cleanup logged, an
+  insert logged, a session logged and nothing between them — `Err` before the
+  adapter's own start line, so the title came back empty and the product said
+  nothing anywhere. *Never fails loudly* had been built as *never says anything*.
+  `describe` states skipped, FAILED and done now, one line per dictation, with
+  the account named because that is the field that has been wrong twice
+  (ADR 0225).
+- **And the same read found ADR 0215's rule missing one field over.** That record
+  made a job's own model refuse an id the catalogue attributes to another vendor;
+  `speech.model`, the profile-wide default underneath it, was refused nothing.
+  Measured: five dictations on the OpenAI account sent a Groq id,
+  `openai::resolve_model` swapped it for `whisper-1` and logged the swap — and
+  `history.rs` reads the same function, so all five records name
+  `whisper-large-v3-turbo`. **A record naming a model no request carried**, which
+  is ADR 0203's rule broken on the model the way B18 had just repaired it on the
+  language. **+1 Rust (963)**, made to fail against the defect first.
+- **The fold is ADR 0223's own cost**, measured on the owner's three accounts in
+  the real app at 625 px: every card open is **1217 px** of account list; only
+  the billed one open is **434 px**, and a folded account is 44 px carrying the
+  three facts B17 asked for. The header stops being the radio and becomes a strip
+  carrying the pick and the fold, because a button cannot hold the button beside
+  it. **+1 frontend (876)**; seven cases reached into a card that now folds and
+  all seven open it first through one helper rather than being deleted.
+- **B25's insets are settled by measuring the REAL app**, which the isolated
+  harness could not do. `.ws-acct-head` pays `--pad-card` once and its rows sit
+  at the same offset as every row in a card that was never in doubt — the
+  exemption is right. `.ws-row > .ws-list > .ws-list-item` **matches nothing**
+  and is removed: ADR 0223 took its only subject away one day after ADR 0222
+  wrote it, and every `ListRows` in the product is a direct child of its card.
+- **The copy sweep is done** — 22 strings across *What runs what*, on the
+  handover's own rule: lead with the control's answer, drop the second clause,
+  keep the derivation the reader needs once. Three of them also stopped saying
+  *the connection* about an object called an account since ADR 0208.
+- **`port:diff` moved and the move is attributed rather than assumed**, by
+  putting the long copy back and re-measuring: `models` reads `182 | 276 | 33`
+  with it and **`182 | 294 | 49`** with the sweep, so text +16 and style +18 are
+  the sweep's alone and every one of the 18 is a wrapped height a shorter
+  sentence changed. The structural `178 → 182` is the drawn card's two new spans.
+  `models#1` `262 | 30 | 17` and `ledger` `style 0` do not move.
+
+### B27. The screen has two owners and says so where each is true — **done 2026-08-18, ADR 0226**
+
+**Added and closed 2026-08-18** from the owner reading the shipped screen with
+the profile chip and the scope note circled: *hier checkt der User nicht ganz auf
+den ersten Blick, dass das Ganze profilagnostisch ist, und die aktuelle
+UI-Umsetzung ist UX-technisch Bullshit.*
+
+**They are right about the fact, and the fact is the finding.** `connections` is
+a top-level `AppConfig` field, so an account's name, key, plan and endpoint are
+the MACHINE's — every profile reads the same ones. Seven of the eight facts on an
+account card are machine-wide; the eighth is the radio, and its owner lived in a
+`title` tooltip. The note above the cards claimed *the accounts and models below
+are this profile's*, which is true of the models and false of the accounts.
+
+- **Landed** — the note is deleted; the lead names both owners, the Accounts head
+  says *on this machine*, and the picked card wears the profile whose pick it is.
+  **The owner then struck two `ScopeTag`s off the result** — one added on the
+  *What runs what* head, one standing in `This profile bills to` — as the third
+  and fourth copies of one name on one view. A tag belongs on a control that
+  WRITES the profile (ADR 0209); both of those state. No
+  control moved: ADR 0212's inventory/assignment split, ADR 0223's pick-on-the-
+  card and ADR 0123's single switcher all stand. **This step takes a paragraph
+  away and names owners.**
+- **The chip's first placement was wrong and the host said so.** In the header
+  strip beside the name, the real app at 625 px measured `nameClipped: true` —
+  six things on a 345 px line and the name loses, so `Groq` drew as a sliver
+  beside an intact chip. The docblock shipped with it claimed *it shrinks before
+  the name does* and the code did the opposite. It sits on the line under the
+  name now, beside the vendor: `nameClipped: false` on all three accounts with a
+  17-character profile name.
+- **`port:diff` moves by three and the tool names them**: `models`
+  `182 | 294 | 49` → **`182 | 297 | 49`** and `models#1` `262 | 30 | 17` →
+  **`262 | 33 | 17`** — the same three nodes on both tabs (`view-top`,
+  `view-head`, its `p`), because the lead wraps to two lines where the
+  prototype's is one. Text does not move: the gallery has no runtime and takes
+  the plain-string fallback. `ledger` `style 0`, unmoved.
+- **+1 frontend (877)**, made to fail against the defect first. It asserts the
+  note's deletion as well as the three statements, because prose is the cheapest
+  thing to put back.
+
+**Three larger rebuilds were priced and refused**, all for one reason: the radio
+is a per-profile WRITE on a machine-wide object, so moving the accounts to their
+own screen or behind a *This machine* tab relocates the scope mismatch instead of
+removing it — and cuts the one relationship the screen exists to show. The third,
+correcting the note's wording, answers none of the report.
+
 ## Stage C — capture
 
 **Independent of A, B and D.** It can run concurrently with the whole provider
@@ -2160,6 +2875,16 @@ Speaking row, so it is flagged rather than assumed.
 | B14a | **done** 2026-08-17 — the owner ran B14's row within the hour and found four surface faults; ADR 0209 closed all four the same day. A status now names the account it answered about (it was keyed by vendor alone AND asked about the first account, so a second account showed the first's key); a deletion repoints the profile that ordered it and no other; an override naming a deleted account stays named instead of being dropped onto the default, which was a repoint by deletion and disagreed with the TypeScript resolver that never pruned; and the row names the profile it writes. Eight mutations, eight proven. `port:diff` `models` unmoved at `28 \| 248 \| 20` |
 | B14b | **done** 2026-08-17 — the removal clears every credential the account's vendor registers, walking the registry the way the migration does, and it runs BEFORE the config write because the account id is the only handle onto its entries. **The step's one real question was wrong**: the account deletion never carried ADR 0195's undo notice — that hook belongs to the transcript rows — so there was no window to wait for, and the honest answer was ADR 0082's *deleting always asks*, which is written for exactly this object. ADR 0210. +3 Rust cases against `MemorySecretStore`, +2 frontend, `port:diff` `models` unmoved at `28 \| 248 \| 20` |
 | B15 | **done** 2026-08-17 — the model axis and the task-first screen, in two records. **ADR 0211**: a model is stored on the same key as the account (`providers.models`, per `JobKey`), because a model id is only meaningful for a vendor and the vendor is per job — the coarseness was not only per job but per vendor, and OpenAI's adapter was silently substituting its own default for a Groq id while the surface named the Groq one. Two exceptions stated: the local recogniser is a file, and `Connection.model` is half a server's address. **ADR 0212**: the job row picks any account grouped lane → provider → account, the lane writes nothing, adding an account is split from assigning it, the card is `Accounts` with a derived used-by read-out, and a job row states its key without editing it. The owner handed both decisions back for the most sustainable shape rather than the most literal one. Rendering it found three defects green tests had not, the loudest being a collapsed row that summarised an OpenAI job as Groq's model. `port:diff` `models` `28 \| 248 \| 20` → `28 \| 257 \| 24` (structural unmoved, copy moved), `models#1` `262 \| 30 \| 16` → `262 \| 30 \| 17`. +6 Rust cases, +8 frontend |
+| B16 | **done** 2026-08-17 — added and closed the same day out of a review of the twenty-five commits behind this screen (ADR 0215). **The model guard was spelled twice on this side and neither copy was the runtime's rule**: both asked *is this id among the vendor's catalogue rows*, where `named_model` asks *does the catalogue attribute it to a DIFFERENT vendor* — and the gap between those two questions is the case ADR 0115 exists for, in which the row drew *Follow the profile* while the request carried the stored id. **ADR 0214's retirement turned it from latent into general the same day**, because a retired id is by construction one the catalogue no longer carries. Three more controls of the same class travelled: the assistant's name was a live `Field` with no writer anywhere in the tree (`modes.agent_name` is read on every dictation and decides Auto's routing); `ProviderPick` read the profile's vendor while every row beneath it read the lane's account, which is ADR 0209's defect one row higher; and `TEXT_PROFILE_SCHEMA_VERSION` read 4 here against the runtime's 5 under a comment that went false with ADR 0094. **+8 frontend (866), no Rust.** `port:diff` moved by zero, measured against `git stash` back to back — **and the baseline is not B15's**: `models` went `28 \| 257 \| 24` → `29 \| 287 \| 33` in `8d4e837`, the catalogue commit, which measured its test counts and not the port. **It deliberately repairs no stored id**: the owner ruled local configuration disposable, and this machine's own config — one retired id in fourteen places, which is why History had stopped naming transcripts — was corrected by hand |
+| B17 | **done** 2026-08-18 — ADR 0220. The Accounts card lists every account the lane holds, each with its vendor, its key state, who uses it and its own Rename and Remove; the credential rows follow the one the reader picked instead of `accountForLane`'s derivation; creating one asks for a vendor and a name and does **not** assign; assigning is `This profile bills to` at the head of *What runs what*, with the profile named; the chip row states a vendor and writes nothing. **The brief's diagnosis needed correcting first**: it counted seven controls and two badges where there are five and none, and it said the breakpoints do not fire when they do — the settings sheet's column is **379 px** at a 625 px window, so every row is already stacked, and what makes the row 171 px tall is five controls carrying 489 px of intrinsic width wrapping inside a 313 px column. Stacking is the right answer to a narrow column and the wrong answer to five controls, so the tier is untouched. **`port:diff` did not move** — nothing in the inventory renders without a runtime. +8 frontend (874), fifteen cases rewritten rather than deleted. Read at 625 px afterwards and the reading found one more: the vendor badge drew `Groq Groq` on the account almost every machine has |
+| B18 | **done** 2026-08-18 — ADR 0219. The pair is edited on Profiles and stated on AI Models with a `ScopeTag`, which is ADR 0068's ruling and the shape `Into` and `Keep the profile's words` already use. **The owner's answer to the step's one open decision was to remove the machine-wide field**: `AppConfig::language` had no writer in either runtime and two readers that both wanted the profile's, so `history.rs`'s four sites read `active_text_profile_speech_language` and the field is gone rather than kept in step by hand. An empty language is *Auto-detect* and a choice rather than a blank; the pin is refused until a language was chosen, because the drift check lowers its threshold for the language the request CARRIED. **`port:diff` did NOT move**, which this step expected it to — the statements render only under a runtime and the gallery keeps the drawing. +4 frontend (870), +2 Rust |
+| B19 | **done** 2026-08-17 — added and closed the same day from the owner asking where four drawn settings are actually set. **The answer for all four was nowhere.** The first draft was to wire all four and **the owner ruled the opposite for three**: the bias segment and Prompt Enhance's sub-mode and target are fixed settings nobody needs an opinion about, so they are **removed** rather than marked (ADR 0216, which is ADR 0161's limit — that rule governs *unbuilt*, this governs *withdrawn*). The bias segment offered a choice ADR 0033 and ADR 0035 had already taken; `enhance_sub_mode` and `enhance_target` were stored in `AppConfig` **and** the profile's work mode with no writer for either, and `Models.tsx` cited that pair as the precedent its two live Translate controls follow. `port:diff` `models` `29 \| 287 \| 33` → `65 \| 281 \| 33` (736 → 700 nodes), the first deliberate structural divergence from the prototype on this screen; `models#1` unmoved. **No test moved — 866 before and after — and that is a finding**: inert controls are held by `port:diff` alone, which measures the gallery rather than the product. Two things deliberately left: `bias_policy_weak` still fires on a field with no control, and the duplicate `enhance_*` storage outlives the controls that never wrote it |
+| B21 | **not started** — added 2026-08-17 as B19's first open consequence. **`bias_mode` is a live switch with no writer**: `transcription_hints` branches three ways on it — `Off` suppresses the cloud AND local prompt entirely, `Conservative` sends the profile's hints, `Manual` substitutes a typed override — and nothing in the product writes it or `ManualBias`'s three sub-fields, so two arms and one struct are reachable only from tests. **The health flag on top can never fire**: `detect_bias_policy_weak` returns early unless the mode is `Off`, and its hint tells the reader to re-enable a mode through a control that does not exist. Either the switch gets a writer or the pin becomes the behaviour; the owner's standing ruling points at the second, and deleting a runtime branch is a different act from deleting a drawn control |
+| B22 | **not started** — added 2026-08-17 as B19's second open consequence. `enhance_sub_mode` and `enhance_target` exist on `AppConfig` **and** on the profile's work mode, with no writer for either since B19 removed the two controls that appeared to be ones. Dormant now, a live defect the first time anything writes one copy. Answer which home is right before deleting either — the wrong deletion is the one undone with a migration |
+| B20 | **done** 2026-08-18 — ADR 0218. **The step's one question is answered by this machine's own backup file**: `config.backup-connection-axis-1786964429877.json` has `connections: null` and all six profiles on `groq` at the moment the lift ran, so it made one connection and re-keyed groq alone while the `self_hosted` entry written the day before had no account to move onto — the self-hosted account was created from the UI afterwards, and the migration is one-shot. `adopt_vendor_scoped_credentials` sweeps on every launch instead, with three outcomes rather than a count: adopted onto the one account of that vendor, refused where two make the target ambiguous, named where there is none. **It does not delete a stranded entry** — the disposability ruling is about data this product wrote and can see, not a token that may still authenticate against a server it cannot name. **The same gap had a second consequence nobody had recorded**, fixed with it: the lift dropped a machine's self-hosted URL whenever no profile named the lane. +7 Rust (957), two made to fail first |
+| B23 | **done** 2026-08-18 — ADR 0217, added and closed the same day out of reading B17's *one open report, unreproduced* against the code. **The workspace status strip has read `Needs key` on every machine on every launch since ADR 0208's migration**: `WorkspaceWindow.tsx` derives the account four lines above the call and omits it from `useProvider`, whose fourth parameter defaults to `""` — so the runtime read the entry `.speech.api_key`, a name no writing door can produce. Same defect ADR 0209 closed on the Models card, on the one surface that is never scrolled away. **The suite could not have caught it**: the `useProvider` double took one argument and ignored the rest, so a caller that dropped the scope got the vendor's answer from the mock and an empty keyring entry from the runtime. `refuse_unscoped_credential_read` is why a second surface cannot repeat it. +1 frontend, +1 Rust, both made to fail first |
+| B24 | **done** 2026-08-18 — ADR 0221 and ADR 0222, added and closed the same day out of the owner's report on the review of the whole tree. **ADR 0214 answered this exact report a day earlier and measured the wrong model**: it read `gpt-oss-20b`, the CLEANUP model, against `transcript_store::describe`'s 48-token budget, while the title rides the ASSISTANT's job (ADR 0087) and that runs `gpt-oss-120b` — which at `low` spends 38 of those 48 thinking and comes back cut after its language line, `HTTP 200` on the wire and `title: null` in the record. A budget is now what the ANSWER may cost and the thinking is charged on top of it, and a completion that ran out is refused rather than delivered half written. **Two more callers were under the same edge and neither was reported**: `agent`'s classifier asks for 10 tokens, so Auto had stopped routing to the assistant, and `transform`'s correction floors at 40. **The UI half is B17's own last mile and the tier is still not what is wrong**: B17 built the inventory's list out of `ws-stack ws-gap2`, giving it a grammar nothing else on the machine uses — no rule between two accounts, a filled primary button for the picked one, three stacked lines each. It is a `ListItem` in a `ListRows` now, the row History and Profiles use, with the title as the pick and ground rather than an edge bar marking it. **`port:diff` did not move** — `models` at `65 \| 281 \| 33`, B19's triple, and `ledger` at `style 0`. +2 frontend (876), +3 Rust (962); one of the two frontend cases is unrelated to both halves and binds `TEXT_PROFILE_SCHEMA_VERSION` across the runtimes, which B16 had corrected by hand and held with a comment |
+| B25 | **done** 2026-08-18 — ADR 0223, added and closed the same day from the owner reading the shipped screen. **ADR 0208 made an account an object and the surface kept it in four pieces**: its vendor in a chip row at the top that `onChange={undefined}` had made inert, its name in a list, its key and plan in `Row`s BESIDE that list — so the key read as one key for the machine — and who bills to it in another `SectionHeader`. Every account is one card now, carrying its own key, plan, URL and token, with a radio header that writes `providers.default`; the lane segment and the chip row are gone and the chips moved to `AddAccountPanel`, which is the one place a vendor is chosen. **It reverses half of ADR 0220 and half of ADR 0222 and says so in both directions.** `CloudCredentialRows` and `SelfHostedRows` moved rather than being rewritten, because ADR 0209 had already given both the account they configure. **`port:diff` moved on purpose** — `models` `65 \| 281 \| 33` → `178 \| 276 \| 33`, the second deliberate divergence after ADR 0216's. 33 cases moved and 3 retired by name; frontend 876 → 875, Rust untouched at 962. **The copy sweep over *What runs what* is owed** and is the half of the report this step did not finish |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |

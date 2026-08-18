@@ -1,7 +1,7 @@
 # Kick-off — a profile carries its whole connection (speech track, B14)
 
 Paste this into a fresh session. It is orientation only: **the brief is
-[`speech-track-plan.md`](speech-track-plan.md) § B14** and this page does not
+[`speech-track-plan.md`](../tracks/speech-track-plan.md) § B14** and this page does not
 restate it (ADR 0123).
 
 Work in
@@ -29,7 +29,7 @@ account with it. **That is the step.**
 
 ## Read before you touch anything
 
-1. **[`speech-track-plan.md`](speech-track-plan.md) § B14** — the brief: the
+1. **[`speech-track-plan.md`](../tracks/speech-track-plan.md) § B14** — the brief: the
    inventory of what is machine-wide, **what must not move and why**, the two
    candidate shapes, and what validates the step.
 2. **ADR 0094** (the axis and its argument), **ADR 0207** (the same decision one

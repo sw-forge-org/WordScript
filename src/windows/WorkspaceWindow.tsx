@@ -176,11 +176,23 @@ export default function WorkspaceWindow() {
      window, not by the suite. `connectionProvider` falls back to the default so
      the sentences below have a name, and passing that name to the hook meant a
      `groq` keyring read on every launch whose answer was discarded the moment
-     the config arrived. `null` is the seam's `pending` in one argument. */
+     the config arrived. `null` is the seam's `pending` in one argument.
+
+     **AND IT ASKS ABOUT THE ACCOUNT, WHICH IT DID NOT** (ADR 0208, ADR 0209).
+     The fourth argument is the credential's scope and this call omitted it, so
+     `useProvider` sent its `""` default and the runtime read the entry named
+     `.speech.api_key` — a scope no writer can produce and every machine is
+     therefore missing. ADR 0208's migration MOVES a key onto the account, so
+     from the commit that landed it this strip has read `Needs key` on every
+     machine, always, with the key present and the connection card showing it.
+     Same defect ADR 0209 closed on the Models card, one surface over: a
+     credential asked for by vendor when the vendor stopped being the scope.
+     The account is derived four lines up and was simply not passed on. */
   const { status: providerStatus, lastError: providerError } = useProvider(
     providerSource ? connectionProvider : null,
     selectedModel,
     selectedCleanupModel,
+    connectionAccount?.id ?? "",
   );
 
   /* Deep links from outside this window — today the overlay's auto-stop tab,

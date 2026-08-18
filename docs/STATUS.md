@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-17
+Status: 2026-08-18
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -49,7 +49,11 @@ Status: 2026-08-17
   kinds point at three tabs, so it opens the flags themselves: one row per flag
   with its sentence and the door to the tab holding its cause — Context,
   Replacements, or **Defaults** for `bias_policy_weak`, whose only settable half
-  is the processing mode. Each row acknowledges, through a per-profile set the
+  is the processing mode. **That flag cannot currently fire at all** and the
+  reason is speech-track B21: `detect_bias_policy_weak` returns early unless
+  `bias_mode` is `Off`, and nothing in the product writes `bias_mode`, so every
+  installation sits on the `Conservative` default. Its hint tells the reader to
+  re-enable a mode through a control that does not exist. Each row acknowledges, through a per-profile set the
   runtime has read since before the port and nothing had written since Leg 3
   deleted `PromptsTab.tsx`; the flag carries the resulting `level` as its tone.
   An acknowledged flag stays in the list and in the count, because it is still
@@ -199,6 +203,140 @@ Status: 2026-08-17
   server's id is half its address. **The reachable variety is two lanes**: `Local`
   is withheld until Phase 5 and `self_hosted` serves speech and not chat, so the
   picker offers those accounts and refuses them with the reason.
+- **A job row names the model its request will carry, including one this build
+  has never read about** (ADR 0215, 2026-08-17). The surface asks
+  `JobProvider::named_model`'s own question through one mirrored function rather
+  than the stricter *is this id in the vendor's catalogue rows*, which it asked in
+  two places: an id the catalogue has never seen is a typed override the runtime
+  sends untouched (ADR 0115), and drawing *Follow the profile* over it named one
+  model while the request carried another. **A vendor retirement puts every stored
+  id into that state at once** — ADR 0214 removed three the same day — and a
+  stored id the offered list does not carry is now shown in the select rather than
+  silently replaced by it. **A stored id is still not repaired on load**: the
+  catalogue is a snapshot and not a whitelist, so what the config names is what
+  goes on the wire.
+- **The name the assistant answers to is settable** (ADR 0215, 2026-08-17). It
+  was a live field with no writer anywhere in the tree, over a value the runtime
+  reads on every dictation and uses to decide when Auto routes one to the
+  assistant. It writes the active profile and names which. **The dictation
+  language is the same shape and still has no control** — `speech.language` and
+  `language_locked` reach the capture, the drift check and both cloud adapters,
+  and nothing can set either; speech-track B18 owns it.
+- **The job list carries four per-job settings and no more** (ADR 0216,
+  2026-08-17). `Into` and `Keep the profile's words` are edited on Profiles and
+  stated here with a `ScopeTag`; the language and its pin joined them on
+  2026-08-18 (ADR 0219). **Three others were removed rather than wired**: the transcription
+  bias segment, and Prompt Enhance's sub-mode and target. **This is the limit of
+  ADR 0161** — that record keeps an *unbuilt* control visible because it is owed,
+  and a control whose intent is *withdrawn* is not. It is also the first
+  deliberate structural divergence from the prototype on this screen, which
+  `port:diff` records as 36 of the 65 structural differences on `models`.
+  **What the removal did not change is open as two steps**: `bias_mode` is a live
+  three-way switch nothing writes, with two arms reachable only from tests
+  (B21), and the `enhance_*` pair still occupies two homes with no writer for
+  either (B22).
+- **The language a profile dictates in can be set** (ADR 0219, 2026-08-18). It is
+  edited on Profiles → Defaults and stated on AI Models with a `ScopeTag` — ADR
+  0068's ruling, and the shape `Into` and `Keep the profile's words` already use.
+  The runtime half needed nothing: `speech.language` and `language_locked` have
+  reached the capture snapshot, the drift check and both cloud adapters all
+  along. **The machine-wide `AppConfig::language` is gone rather than kept in
+  step**: it had no writer in either runtime, and `history.rs` read it at four
+  sites while the capture sent the profile's — so the step that made the value
+  reachable was the step that would have made every record name a language its
+  request did not carry. An empty language is *Auto-detect* and a choice; the pin
+  is refused until a language is chosen, because the drift check lowers its
+  threshold for the language the request carried.
+- **The Accounts card lists every account the machine holds on the shown lane**
+  (ADR 0220, 2026-08-18), each with its vendor, its key state, who uses it, and
+  its own rename and remove. The credential rows follow the account the reader
+  picked rather than a derivation; **creating one asks for a vendor and a name
+  and does not assign**; **assigning one is `This profile bills to`** at the head
+  of *What runs what*, with the profile named. The vendor chip row states and no
+  longer writes. Before this it was one row, 171 px tall at the width this
+  workspace renders, showing one account out of however many the machine held.
+  **Each account is one card carrying its own key, plan, URL and token** since
+  2026-08-18 (ADR 0223), with a radio header that decides which account the
+  active profile bills to. The lane segment and the inert provider-chip row are
+  gone with it: the chips set nothing under a runtime and moved when a selection
+  further down the screen changed, and the segment grouped the list so the card
+  showed a quarter of what the machine holds with two of its four options
+  disabled. Every account is on one page; `LockedLanes` names what cannot hold one
+  yet. Adding an account is where the vendor logos are, because that is the one
+  place a vendor is chosen. **This reverses half of ADR 0220 and half of
+  ADR 0222** — the assignment is back on the card and the account is a card
+  rather than a list row — and ADR 0223 carries both reversals with their reasons.
+  Before it (ADR 0222): the list ADR 0220 built was a bare stack, so the space between two
+  accounts equalled the space inside one and the picked account wore a filled
+  primary button. It is a hairline-separated `ListItem` now — name over vendor,
+  key state in the badge column, rename and remove as icons — with the name as
+  the pick and ground marking it. Rename and remove name their account, so two
+  accounts on one vendor no longer offer two identically named buttons.
+  **Each card folds since 2026-08-18** (ADR 0224): the account the profile bills
+  to is open on arrival and the rest are one 44 px line carrying the vendor's
+  mark, the name and the key state. Measured on a three-account machine at the
+  625 CSS px this workspace renders at, the list went from 1217 px to 434 px. The
+  header stopped being the radio and became a strip carrying the pick and the
+  fold, because a row-wide button cannot hold the button beside it. Opening a
+  card closes none, and the fold never changes which account is billed.
+- **AI Models names its two owners where each is true** (ADR 0226, 2026-08-18).
+  `connections` is an `AppConfig` field, so an account's name, key, plan and
+  endpoint are the MACHINE's and every profile reads the same ones — seven of the
+  eight facts on an account card. The eighth is the radio, whose owner lived in a
+  tooltip. The `Note` above the cards claimed *the accounts and models below are
+  this profile's*, false for the accounts and a paragraph besides; it is deleted.
+  The lead names both owners, the Accounts head says *on this machine*, and the
+  picked card wears the profile whose pick it is. **Two `ScopeTag`s came off with
+  it** — the *What runs what* head and `This profile bills to` — because a tag
+  belongs on a control that WRITES the profile (ADR 0209) and both of those state;
+  four copies of one name on one view was the noise the step set out to remove. **The chip's first placement was measured
+  wrong in the host** — beside the name it clipped the account name at 345 px — so
+  it sits on the line under it. `port:diff models` `182 | 297 | 49`; the three new
+  style diffs are the lead wrapping to two lines, named by the tool.
+- **The job list under it says what a control does before it says why**
+  (ADR 0224, 2026-08-18): twenty-two sentences across *What runs what* were cut
+  to lead with the control's own answer, on the owner's report that the screen
+  reads as too long to work out as a new user. `port:diff models` moves to
+  `182 | 294 | 49` for it, attributed by re-measuring with the long copy back.
+- **A transcript is named by the model again** (ADR 0221, 2026-08-18), and with
+  it History's Title / Written / Heard segment reads three different things.
+  Groq's replacement chat models all reason and `max_tokens` caps thinking and
+  answer together, so the title's 48-token budget was spent on thinking and the
+  reply arrived cut, under `HTTP 200`. **Every record between 2026-08-17 11:45
+  and this fix is filed with its first words instead of a title, and stays that
+  way** — a title is made at delivery. A reasoning model's thinking is now
+  charged on top of the caller's budget, and a completion that ran out of budget
+  is refused rather than delivered half written. **Two silent casualties went
+  with it**: Auto had stopped routing to the assistant, whose intent classifier
+  asks for ten tokens, and a short dictation's cleanup ran out before it started.
+  **And the call says so in the runtime log now** (ADR 0225, 2026-08-18) —
+  skipped, failed with its reason and the account, or made with the title it got.
+  It had no evidence anywhere, which is why the same symptom was diagnosed three
+  times; nothing changes on screen, because a filename is not worth a banner.
+- **A dictation no longer sends one vendor's speech model to another**
+  (ADR 0225, 2026-08-18). ADR 0215 made a job's OWN model refuse an id the
+  catalogue attributes to another vendor and left the profile-wide default under
+  it unchecked, so a profile whose account moved kept sending the first vendor's
+  id — the vendor substituted its own, and the History record stored the id that
+  was never sent. Five records on this machine name `whisper-large-v3-turbo` for
+  requests that ran `whisper-1`. A record now leaves the model out where the
+  adapter picked it.
+- **The workspace status strip reads the key of the account the profile names**
+  (ADR 0217, 2026-08-18). It asked with no account at all, so the runtime read a
+  credential scope nothing writes — meaning **it reported `Needs key` on every
+  machine, on every launch, from the day ADR 0208 moved the keys onto accounts**,
+  with the key present and the connection card showing it. `provider_status` now
+  refuses an unscoped read for any vendor that stores a credential, so a second
+  surface cannot repeat it.
+- **No credential is left keyed by a vendor** (ADR 0218, 2026-08-18). ADR 0208's
+  migration re-keyed only the vendors its lift produced connections for, and the
+  lift builds that list from the ids the profiles name — so a vendor a machine
+  held a key for but no profile pointed at kept a token no surface could show and
+  no reader could clear. A sweep runs on every launch and adopts such an entry
+  onto the one account of that vendor; it refuses where two make the target
+  ambiguous and names one where there is no account, rather than deleting a
+  secret to tidy a name. **The same gap dropped a machine's self-hosted URL** when
+  no profile named the lane, and that is fixed with it.
 - **A control the runtime cannot answer for is drawn and inert rather than
   deleted** (ADR 0065, ADR 0067): **two of four provider lanes since 2026-08-16
   and it was three** — `Your server` is typed into and picked like any other

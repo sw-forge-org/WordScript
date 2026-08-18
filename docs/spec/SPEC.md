@@ -1,6 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-17 (the account row's four
+Status: created 2026-07-24, last drift check 2026-08-18 (the record's
+provenance clause: **a record names what the request carried** -- `provider`,
+`model` and `language` are resolved through the pipeline's own functions and are
+absent rather than invented where the adapter chose, which closed a case where a
+profile-wide speech model belonging to another vendor was substituted on the wire
+and stored as if sent (ADR 0225); before it the account row's four
 corrections, which read the provider and credential clauses: **a status names the
 account it answered about** and a deletion repoints only the profile that ordered
 it (ADR 0209); the connection axis before it,
@@ -908,7 +913,12 @@ no account. Entities:
   no transcript -- the timeout case, where the audio is the only surviving
   artifact (ADR 0039) -- and it re-runs `effective_mode` rather than the cleanup
   transform, through the one dispatch the native pipeline also uses
-  (`mode_router::apply_mode_transform`, ADR 0075).
+  (`mode_router::apply_mode_transform`, ADR 0075). **`provider`, `model` and
+  `language` name what the REQUEST carried and never what was merely stored**
+  (ADR 0203): each is resolved through the one function the pipeline also calls,
+  and each is absent rather than invented where the adapter chose -- a role
+  default the catalogue attributes to another vendor is neither sent nor
+  recorded (ADR 0225), and an empty language means auto-detect.
 - **CaptureBudget** (`capture_budget.rs`): the resolved recording limits. A
   failure that could survive a second attempt keeps its capture in the temp
   directory until the retry or the seven-day / twenty-file sweep; every other

@@ -168,6 +168,20 @@ pub struct TranscriptNaming {
 /// title this" from "the model titled it badly" — the fallback belongs at the
 /// one place that builds the filename. The language answers `None` on the same
 /// terms, and `core::language_detect` is what stands behind it.
+///
+/// **AND IT SAYS SO IN THE RUNTIME LOG, EVERY TIME** (speech track B26,
+/// ADR 0225). *Never fails loudly* was read as *never says anything*, and this
+/// call is the one place in the pipeline where a total failure left no trace
+/// anywhere: no line, no record field, no surface. What that cost is on the
+/// reporting machine's own log — on 2026-08-18 at 01:09 a dictation of 1438
+/// characters completed with a cleanup call logged, an insert logged, a session
+/// logged, and NOTHING between them, because `create_chat_completion` returned
+/// `Err` before the adapter's own start line. The title came back empty and the
+/// machine had no way to say why. The reader is never shown this and must not
+/// be — a filename is not worth a banner — but a diagnosis that has been paid
+/// for twice (ADR 0214, ADR 0221) is worth a line.
+///
+/// It is one line per dictation on a log that already carries a dozen.
 pub async fn describe(
     text: &str,
     job: &super::providers::JobProvider,
@@ -175,6 +189,16 @@ pub async fn describe(
 ) -> TranscriptNaming {
     let trimmed = text.trim();
     if trimmed.is_empty() || model.trim().is_empty() {
+        /* SKIPPED IS NOT FAILED, and the two were one silence. An empty text has
+           nothing to name; an empty model is a job whose vendor resolved to
+           nothing, which is a configuration state and not a call that went
+           wrong. */
+        runtime_log::record(format!(
+            "[WordScript] Transcript naming skipped reason={} provider={} connection={}",
+            if trimmed.is_empty() { "no_text" } else { "no_model" },
+            job.provider,
+            job.connection,
+        ));
         return TranscriptNaming::default();
     }
 
@@ -206,10 +230,40 @@ pub async fn describe(
         max_retries: Some(0),
     };
 
-    let Ok(reply) = super::providers::create_chat_completion(request).await else {
-        return TranscriptNaming::default();
+    let reply = match super::providers::create_chat_completion(request).await {
+        Ok(reply) => reply,
+        Err(error) => {
+            /* THE FAILURE THAT HAD NO EVIDENCE. A credential the account does not
+               hold, a vendor with no adapter, a timeout, a budget that ran out —
+               every one of them arrives here and every one of them used to be
+               indistinguishable from *the model answered nothing*. The account is
+               named because that is the field that has been wrong twice. */
+            runtime_log::record(format!(
+                "[WordScript] Transcript naming FAILED provider={} connection={} model={model} kind={:?} error={}",
+                job.provider, job.connection, error.kind, error.message,
+            ));
+            return TranscriptNaming::default();
+        }
     };
-    parse_naming(&reply)
+
+    let naming = parse_naming(&reply);
+    /* AND A REPLY THAT PARSED TO NOTHING IS ITS OWN STATE. `title_len=0` on a
+       successful call is what ADR 0221's defect looked like from here — the
+       model answered, the answer was a language line and nothing else — and it
+       is the one shape that a `FAILED` line would have hidden.
+
+       THE LENGTH AND NOT THE TITLE. A title is a six-word summary of what
+       somebody dictated, and every other line on this log reports a length, an
+       id or a duration and never the text — a log is what gets attached to a
+       bug report. The length separates the three states this line exists to
+       tell apart, which is all it is for. The language code is a
+       classification, not content, and the record already carries it. */
+    runtime_log::record(format!(
+        "[WordScript] Transcript naming done model={model} title_len={} language={:?}",
+        naming.title.as_deref().map(str::len).unwrap_or(0),
+        naming.language,
+    ));
+    naming
 }
 
 /// Read the two lines back, in either order.

@@ -1508,6 +1508,30 @@ that is what a record is for (ADR 0123: one list per fact).
   A status is read per account, and a credential may never cross into another vendor's account.
 - [0214](0214-a-reasoning-model-is-told-how-much-to-think-and-the-catalogue-is-where-that-is-written.md):
   A reasoning model is told how much to think, and the catalogue is where that is written.
+- [0215](0215-the-surface-asks-the-runtimes-own-question-about-a-stored-model-and-a-retirement-is-what-made-the-difference-visible.md):
+  The surface asks the runtime's own question about a stored model, and a retirement is what made the difference visible.
+- [0216](0216-a-setting-nobody-needs-an-opinion-about-is-removed-rather-than-marked-and-that-is-the-limit-of-the-sketch-is-the-deliverable.md):
+  A setting nobody needs an opinion about is removed rather than marked, and that is the limit of *the sketch is the deliverable*.
+- [0217](0217-a-credential-scope-is-an-account-id-and-the-empty-string-is-not-one.md):
+  A credential scope is an account id, and the empty string is not one.
+- [0218](0218-an-orphaned-credential-is-adopted-by-a-sweep-because-the-migration-enumerated-who-was-selected-rather-than-what-was-held.md):
+  An orphaned credential is adopted by a sweep, because the migration enumerated who was *selected* rather than what was *held*.
+- [0219](0219-the-language-a-profile-dictates-in-is-settable-and-the-machine-wide-copy-goes-rather-than-being-kept-in-step.md):
+  The language a profile dictates in is settable, and the machine-wide copy goes rather than being kept in step.
+- [0220](0220-the-account-inventory-is-a-list-creating-one-asks-who-it-is-with-and-assigning-one-happens-where-the-jobs-are.md):
+  The account inventory is a list, creating one asks who it is with, and assigning one happens where the jobs are.
+- [0221](0221-a-token-budget-is-what-the-answer-may-cost-and-the-thinking-is-charged-on-top-of-it.md):
+  A token budget is what the answer may cost, and the thinking is charged on top of it.
+- [0222](0222-the-account-inventory-is-drawn-with-the-products-own-list-row-and-the-name-is-the-pick.md):
+  The account inventory is drawn with the product's own list row, and the name is the pick.
+- [0223](0223-an-account-is-one-object-on-screen-so-its-key-its-plan-and-who-bills-to-it-are-on-its-own-card.md):
+  An account is one object on screen, so its key, its plan and who bills to it are on its own card.
+- [0224](0224-an-account-folds-and-the-header-that-was-the-control-becomes-a-strip-that-carries-two.md):
+  An account folds, and the header that was the control becomes a strip that carries two.
+- [0225](0225-a-naming-call-that-fails-says-so-and-a-role-default-may-not-name-another-vendors-model.md):
+  A naming call that fails says so, and a role default may not name another vendor's model.
+- [0226](0226-the-accounts-are-the-machines-and-the-screen-says-so-where-it-is-true-instead-of-in-a-paragraph.md):
+  The accounts are the machine's, and the screen says so where it is true instead of in a paragraph.
 
 ## Resolved: the number 0011 was used twice
 
