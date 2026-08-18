@@ -16,12 +16,31 @@ status change. Resolved bugs remain as references for the same failure class.
   its own hold mid-fade — found by measurement on 2026-07-30. That run also
   disproved a stalled-leave hypothesis and showed the `[ov-*]` trace itself had
   been the unreliable part (rAF flush in a window where rAF is paused; now a
-  microtask). The screenshot's exact stacking is still not reproduced. The mode
+  microtask). **The screenshot's stacking is now reproduced, measured and fixed
+  (2026-08-18, ADR 0227): a capture started while a result surface is still
+  shown produced TWO competing native reveals, because the Rust trigger path
+  bypassed the reveal coalescer. First cause in that file found by measurement
+  rather than by reading.** The mode
   axis stays open — the same failure was reported as absent in `Auto` and present in the
   other five processing modes; the mode is most likely a visibility modifier,
   and it is to be measured before anything is changed. The separate accepted
   mode-cycling residual is recorded in the
   [accepted-state hand-off](../archive/handoffs/overlay-mode-cycling-accepted.md).
+- [auto-paste-reports-success-without-inserting.md](auto-paste-reports-success-without-inserting.md):
+  on a hybrid XWayland session the only paste driver is XTEST, which exits 0
+  whether or not anything receives the key event. Nine consecutive `auto_paste`
+  runs recorded `pasted: true` with no fallback reason while inserting nothing,
+  because the focused window was a native Wayland client and the X server had no
+  focused client at all. The chain now probes the X focus and refuses with a
+  stated reason (2026-08-18, ADR 0227). Still open: there is no paste mechanism
+  on that lane that can reach a native Wayland window.
+- [shortcuts-die-and-cannot-be-re-registered.md](shortcuts-die-and-cannot-be-re-registered.md):
+  the capture key stops arriving and no setting change rebuilds it, because the
+  idempotency guard compares the state the process kept rather than the grabs
+  the OS holds. The only path that could force a real registration was the
+  hotkey recorder. The self-heal is restored by bounding the guard to the
+  startup burst it exists for (2026-08-18); **why the grabs die is not
+  diagnosed** and predates that change.
 - [insert-behavior-reverts.md](insert-behavior-reverts.md): the delivery mode
   switching itself back to clipboard-only. Two mechanisms found and fixed
   (`92ce7f5` 2026-07-03, ADR 0019 2026-07-29); the second was a normalized

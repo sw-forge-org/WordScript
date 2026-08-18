@@ -4,7 +4,187 @@ Status: **Resolved for the activation modes (2026-07-29). S0-S8 implemented. D11
 is closed: hold to talk delivers and acts on both edges; the real defect was its
 threshold semantics, corrected under ADR 0013 — see [Second physical result
 (2026-07-29)](#second-physical-result-2026-07-29-hold-to-talk-acts-on-both-edges)
-below. One open item remains: the physical half of the S0 measurement.**
+below. The hold ceiling was resolved 2026-08-18 by making it the same ceiling
+every other mode obeys, and **2026-08-18 (Leg 1) closed the telling half and the
+click-abort**. One open item: the physical half of the S0 measurement.**
+
+## Resolved 2026-08-18: the hold ceiling now follows the card, like every other mode
+
+Reported by the owner as "a recording just ended by itself after two minutes, I
+had not released the key, I did nothing". Measured the same day from the trigger
+log, and it is NOT a lost event:
+
+```
++417.5  shortcut  state=pressed              hold_provisional_start
++417.9  hold_arm  hold_session=3             committed
++537.9  hold_watchdog after_seconds=120      (was logged as release_missing)
++542.4  shortcut  state=released             ignored_release_without_press
+```
+
+Twice in one session, the same shape both times: the release arrived ~4 s AFTER
+the watchdog had already stopped the session. The key was still down and the
+owner was still speaking. `arm_hold_watchdog` fired exactly as designed at
+`DEFAULT_HOLD_WATCHDOG_SECONDS = 120`.
+
+Three separate problems sit on top of that correct behaviour:
+
+1. **The outcome was named after a defect that had not occurred.**
+   `release_missing` asserts a lost event; what the watchdog actually knows is
+   that the hold reached its ceiling. Corrected to `hold_limit_reached`
+   (ADR 0227). The old name cost one investigation a wrong starting hypothesis.
+
+2. **The user is not told.** The watchdog calls `stop_session` like any ordinary
+   release, so the dictation simply ends and is delivered. Nothing on the
+   overlay, in the history record or anywhere else says the ceiling was the
+   reason — which is exactly why it was reported as inexplicable.
+
+3. **The ceiling could not be changed.** `hold_watchdog_seconds` exists in the
+   config schema (`core/config.rs`, clamped to 3600) and in the IPC types
+   (`src/types/ipc.ts`), but appears on no settings screen — so the 120 s default
+   was in practice a hard cap on a single dictation, and a hidden one.
+
+**Fixed (owner decision, 2026-08-18):** the hold ceiling is the same ceiling
+every other activation mode obeys — Profiles → **"When a recording stops"** →
+Maximum length (`max_recording_seconds`, 720 s by default, per profile). Tap and
+double-tap already used it; hold had a second number with its own default and no
+control, which is a second list for one fact (ADR 0123) and the shorter of the
+two was the invisible one.
+
+`hold_watchdog_seconds == 0` keeps its meaning and switches the watchdog off
+entirely; any other value now follows the card. The watchdog keeps its actual
+purpose — ending a hold whose release never arrives — it just stops imposing a
+ceiling nobody could see or set.
+
+**Point 2 closed 2026-08-18 (Leg 1).** Both ceiling paths — the capture
+monitor's maximum length and the hold watchdog — now announce themselves with
+the same sentence on the authoritative `wordscript-event` channel, and the
+reason travels on the session to the history record
+(`TranscriptionHistoryEntry.capture_stop_reason`). History's raw panel states it
+ahead of the capture-gap note, because a record that ends mid-sentence is
+explained by the ceiling before it is explained by anything about the audio.
+
+The overlay does NOT carry it: the result pill is 480x60 with `min == max`, and
+widening it is out of scope by the product decision in
+[`overlay-ghosting.md`](overlay-ghosting.md). The owner chose the history
+record over lifting that.
+
+## Resolved 2026-08-18 (Leg 1): the click that ended a dictation was a menu, not a lost key
+
+The suspicion this leg opened with was a **synthetic `KeyRelease`** — on X11 the
+core key path is focus-dependent and the server can fabricate a release for every
+key it believes to be down. The vendored crate handles that path and the XInput2
+raw device path side by side, and nothing downstream could tell them apart.
+
+**Step 1 made them distinguishable.** `GlobalHotKeyEvent` carries `origin`
+(`Grab` | `RawDevice`); the trigger log prints `origin=grab` / `origin=raw` on
+every shortcut event:
+
+```
+[trigger] event=shortcut id=60 binding=capture state=released origin=raw
+```
+
+**Step 2 disproved the hypothesis.** Owner session, **44 shortcut events, 44
+`origin=raw`, 0 `origin=grab`.** Not one release came from the fabricable path.
+
+What the owner's reproduction found instead:
+
+- **Left-click no longer aborts. Right-click still does.**
+- **Only on a WordScript window** — right- or left-clicking any foreign window
+  does neither.
+- **The menu outlives the overlay.** Right-clicking the overlay leaves the GTK
+  popup on screen after the pill is gone, and **no new capture can start until it
+  is dismissed.**
+
+WordScript hides its overlay rather than closing it, so WebKitGTK's context-menu
+popup survives its surface and keeps a keyboard grab over an invisible window.
+Fixed by removing the native context menu from every window and replacing it with
+a DOM menu where there is room ([ADR 0230](../decisions/0230-the-native-context-menu-is-a-keyboard-grab-so-it-is-gone-from-every-window.md)).
+
+**What this does NOT claim.** Whether the grab is what ends the dictation is not
+separated from the alternatives; the measured facts are the 44/44 and the input
+being held until the menu is dismissed. The fix does not depend on the
+difference — it removes the menu, and with it the grab.
+
+## Open 2026-08-18 (Leg 1 part 2): opening a window mid-hold, and the hold that turns into a toggle
+
+Two owner reports from the shipped build, and the code says they are **one
+mechanism seen twice**. Both need one reproduction; neither is guessed at.
+
+> *"When I open a window while I am in hold mode, the transcription is ended. And
+> when I close it again, or at irregular intervals, hold switches to some other
+> mode — I can lift my finger and keep speaking, and to end it I only have to
+> press Shift once more."*
+
+**Nothing in the app ends a session on focus loss.** Verified in both halves:
+there is no focus or blur handler on either side that touches the session. So both
+reports must arrive through the trigger, and Leg 1's `origin` field is what
+separates the two cases:
+
+| What the log shows | What happened |
+| --- | --- |
+| `state=released origin=grab` then `decision=hold_stop` | the X server fabricated the release when the grab broke |
+| `state=released origin=raw` then `decision=hold_stop` | the device really delivered a release |
+| **no release line at all** | the release was lost or withheld |
+
+**The third is why hold starts behaving like toggle, and the state machine is
+doing what it says.** After a lost release, `hold_phase` stays `Committed`. The
+next press hits `state.hotkey_active || state.hold_phase != HoldPhase::Idle` and
+is *ignored* (`decision=ignored_already_active`); that press's own **release**
+then finds `hold_in_flight` true and stops the session. One more press to end it,
+with the finger already lifted — which is the report exactly.
+
+**The lost half is established, not assumed.** Leg 1 measured it directly on this
+machine: two holds where the release arrived **4.5 s and 4.2 s after** the
+watchdog had already stopped the session, key still down. A release that can
+arrive four seconds late is a release that can be withheld while another client
+holds the keyboard.
+
+**Deliberately no new instrument.** Today's log already separates all three rows
+of that table, and adding a field on a hypothesis is what Leg 1's own lesson
+forbids. **The reproduction:** open a window mid-hold, then read whether a release
+line appears at all and what its `origin` says.
+
+## Not reproducible 2026-08-18 (Leg 1 part 2): the reported 3-minute ceiling under Insert at cursor
+
+The owner reported the hold watchdog still cutting a session at about three
+minutes under *Insert at cursor* but not under *Clipboard only*, and asked whether
+the "When a recording stops" card governs all three activation modes and both
+delivery modes.
+
+**It governs all of them, and that is now pinned.** `start_native_capture` builds
+its snapshot from `NativeCaptureConfig::load_from_disk()` — the active profile's
+resolved capture block — on every capture, and that snapshot carries no
+activation-mode and no delivery-mode axis for either number to vary on. Held by
+`the_capture_ceiling_comes_from_the_active_profile_not_the_machine`.
+
+**No evidence of the abort exists on this machine:**
+
+- `capture_stop_reason` is `null` on **all 369** history records, so no recorded
+  session was ended by either ceiling path;
+- the only `hold_watchdog` events in any log are the **two** Leg 1 already
+  measured, both `after_seconds=120` and both from before its fix;
+- the durations do not establish a wall. `direct_paste` reaches 160.5 s over
+  n=65 against a `clipboard_only` base rate of 6.2% above 160 s — about 4
+  expected, 1 observed, p≈0.08. Suggestive, not significant; its p90 is simply
+  lower (103 s against 128 s).
+
+**The delivery-mode correlation is a profile correlation.** The only `auto_paste`
+profile on this machine is `curated-founder-ops`, and every other profile is
+`clipboard_only` — different profiles with different capture cards (1200 s /
+50 s silence against 720 s / 30 s). Mode and ceiling move together in the data
+without one causing the other.
+
+**Found while checking it: `configure_native_capture` configures nothing.** It
+writes both ceilings and the device into `NativeCaptureState::config`, which has
+no reader — `status()` exposes neither ceiling, a running capture carries its own
+snapshot, and `start_native_capture` overwrites the field from disk. The frontend
+sends the machine-wide `AppConfig` pair, so it looks like the configuration path
+and reaches no decision. **Removed 2026-08-18** on the owner's call, together
+with the field, the request type and the frontend's call
+([ADR 0232](../decisions/0232-a-command-that-configures-nothing-is-removed-and-the-capture-ceiling-keeps-one-source.md));
+the profile's capture block stays the single source of both ceilings and
+`the_capture_ceiling_comes_from_the_active_profile_not_the_machine` keeps it
+under test.
 
 ## Current State (2026-07-25)
 

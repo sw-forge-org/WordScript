@@ -20,8 +20,8 @@ answer is written, not after.
 | Linux X11 | Preview | usable product path with a smaller stability promise |
 | Linux Wayland hybrid (X11+Wayland with xdotool) | Preview-lite | `xdotool type` (fake input over XWayland) directly, else clipboard + manual paste |
 | Linux Wayland pure (no X11 display) | Experimental | auto-paste disabled, clipboard-only + manual paste; avoids the Wayland portal prompt "Control input devices" |
-| KDE Plasma 6 (Wayland, with xdg-desktop-portal-kde) | Preview-lite | one-time RemoteDesktop portal grant over the session bus; then direct auto-paste without repeated dialog. Always-on-top for overlay via KWin script (`packaging/kwin-wordscript-overlay/`) |
-| GNOME Mutter (Wayland) | Preview-lite | same path as KDE Plasma 6 via the `org.gnome.Shell` RemoteDesktop portal |
+| KDE Plasma 6 (Wayland, with xdg-desktop-portal-kde) | Preview-lite | in practice the hybrid row above: the RemoteDesktop session is created but **never used to paste** (see the correction below). Always-on-top for overlay via KWin script (`packaging/kwin-wordscript-overlay/`) |
+| GNOME Mutter (Wayland) | Preview-lite | same as KDE Plasma 6, with the same correction |
 | Hyprland / Sway / KDE Plasma 5 | Experimental | no persistent RemoteDesktop portal grant available; auto-paste stays clipboard-only |
 
 **Caveat on the two Tier 1 rows.** Development happens on Linux, and the shortcut
@@ -90,6 +90,16 @@ mechanism to fall back to, and the run delivers to the clipboard instead. The
 only genuinely independent path would be libei (enigo's `libei_tokio` feature),
 which is not compiled in -- see [ROADMAP.md](ROADMAP.md).
 
+**A refused grant is the benign case.** It produces an error, so the clipboard
+fallback runs and the history records it. The damaging case is the opposite one:
+the grant is ACCEPTED and the event lands nowhere, because on a hybrid session a
+native Wayland window can hold the focus while the X server has no focused client
+at all. `xdotool` exits 0 -- the request was sent -- and before 2026-08-18 the run
+was recorded as `pasted: true` with no fallback reason. The chain now probes the
+X focus before attempting anything and refuses with a stated reason instead
+(ADR 0227). It does not make auto-paste work on that lane; it makes the failure
+visible.
+
 Overlay on Linux: XWayland default (`GDK_BACKEND=x11`) with
 `WORDSCRIPT_NATIVE_WAYLAND=1` opt-in for native Wayland. Always-on-top on
 KDE Plasma 6 via KWin script (`packaging/kwin-wordscript-overlay/`),
@@ -142,9 +152,19 @@ RemoteDesktop session over the session bus on the first
 3. `Start` without URI
 
 The restore token is persisted under `$XDG_RUNTIME_DIR/wordscript/remote-desktop.token`
-(mode `0600`) and reused for the next session. The "Control input devices"
-dialog then appears **only once per user** and subsequent auto-paste
-attempts run without further prompt.
+(mode `0600`) and reused for the next session.
+
+> **Correction, 2026-08-18.** The paragraph that used to follow here said the
+> "Control input devices" dialog appears only once and subsequent auto-paste runs
+> without further prompt. **No auto-paste has ever gone through this session.**
+> The portal session is created on the first `native_insertion_status` call and
+> its handle feeds the diagnostics panel; `paste_driver_execution_chain` never
+> consults it. On any session with a `DISPLAY` — which includes every KDE Plasma 6
+> Wayland session running XWayland — the chain is `[Xdotool]` and returns, so the
+> portal is never reached. This section therefore describes a session that exists
+> but does no work. Turning it into a real paste driver is the open candidate in
+> [ROADMAP.md](ROADMAP.md); the measured consequence of it being absent is in
+> [known-issues/auto-paste-reports-success-without-inserting.md](known-issues/auto-paste-reports-success-without-inserting.md).
 
 Prerequisites:
 

@@ -1,15 +1,17 @@
 # Bug: Overlay Ghosting and State Bleeding
 
-Status: **Compositor cause resolved (2026-07-08); the `auto_paste` unmount gap
-reopened and was closed again (2026-07-29, ADR 0018). Reported again on a build
-that already contained that fix. Three further re-entry points into the same gap
-class have been closed (ADR 0019), the third one — the edit surface leaving its
-own hold mid-fade — found by measurement on 2026-07-30. The instrumented run also
+Status: **The stacking is REPRODUCED and its cause measured and fixed
+(2026-08-18, ADR 0227): two competing native reveals when a capture starts while
+a result surface is still shown. That is the first cause in this file found by
+measurement rather than by reading, and the first that explains the screenshot.
+History: compositor cause resolved (2026-07-08); the `auto_paste` unmount gap
+reopened and was closed again (2026-07-29, ADR 0018); three further re-entry
+points into the same gap class closed (ADR 0019), the third — the edit surface
+leaving its own hold mid-fade — found by measurement on 2026-07-30. That run also
 DISPROVED a stalled-leave hypothesis and showed the trace itself had been the
-unreliable part. The screenshot's exact stacking is still not reproduced, and the
-mode axis is still open. The target-language chip ghosts on a language change
-with a fixed-width chip (2026-08-10), which is the first case here that cannot
-be explained by pill width.**
+unreliable part. Still open: the mode axis, and the target-language chip ghosting
+on a language change with a fixed-width chip (2026-08-10), which cannot be
+explained by pill width.**
 
 First reported: Phase 2 follow-up after extended real-world use
 Affected area: Linux WebKitGTK overlay surface transitions
@@ -321,12 +323,158 @@ change, and does `pillW` move at all between the two frames? A repaint with a
 static `pillW` is the cleanest evidence in this file that the failure is not
 about width.
 
+## Addendum 2026-08-18: reproduced, measured, and the cause was a second reveal
+
+The owner supplied the recipe the file had been missing since 2026-07-30:
+delivery `auto_paste`, activation `hold`, and **a new capture started while the
+result surface was still on screen** — i.e. inside `result_actions_timeout_s`
+(9 s by default). Screenshot shows a wider pill surviving behind the narrow
+recording pill, visible at both rounded ends.
+
+Instrumented run: `VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1`, 4498 trace lines,
+`#n` contiguous (no lost writes; the three out-of-order numbers are write
+interleaving, not gaps).
+
+**The two directions differ, and only one of them is broken:**
+
+| Transition | When | `[ov-reveal]` |
+| --- | --- | --- |
+| `compact -> result_actions` | a dictation ends | **1** |
+| `result_actions -> compact` | **a capture starts while the result is shown** | **2** |
+
+Four occurrences of each, no exceptions. The two reveals carry competing
+geometry — the multi-`set_size` cascade this file has been chasing since RC1/RC3:
+
+```
+#2633 [ov-sched]  flush surface=compact
+#2634 [ov-reveal] req=[480,60]  outer=[480,61]
+#2635 [ov-reveal] req=[480,61]  outer=[480,60]
+```
+
+In the first occurrence the reveal (`#122`) was logged **before** the frontend's
+own flush (`#121`). A frontend-only cause cannot produce that ordering, which is
+what identified the second source.
+
+**The cause:** `apply_trigger_effect::StartCapture` called
+`reveal_overlay_window` (direct), bypassing the coalescer, while React
+concurrently called `sync_overlay_window_visibility` →
+`reveal_overlay_window_coalesced`. Both reach `reveal_overlay_window_impl`, each
+does its own `OVERLAY_FLAT_REVEAL_TICK.fetch_add`, and the 1px oscillation that
+is supposed to force exactly one backing-store reallocation instead produced two
+`set_size` calls with different heights.
+
+**Why the direct path was believed safe**, in its own words:
+
+> the frontend's reveal for `recording_started` only fires in the REACTION
+> render, so there is no same-frame competition here
+
+True when the overlay was **idle** before the trigger: React is not yet active,
+so its reveal genuinely lands a frame later — which is why an ordinary dictation
+from rest never showed this. Not true when a result surface is still shown:
+React is already active, the `result_actions -> compact` swap re-runs both
+reveal-requesting layout effects in the same commit, and they flush on a
+microtask — the same frame as the trigger.
+
+**Fixed** by routing the trigger path through the coalescer (ADR 0227). The tick
+invariant is a property of the CALL GRAPH, not of the statics, so it is now
+enforced against the call graph: `every_reveal_route_goes_through_the_coalescer`
+reads the production half of `lib.rs` and fails if any caller outside
+`reveal_overlay_window_coalesced` reaches the impl. The statics-level test that
+existed could not see this class of regression, and the argument that
+reintroduced it was a plausible one — which is why the guard is textual.
+
+**What this does NOT close:** the mode axis and the 2026-08-10 language-chip
+case above. Both are content-change repaints within a single surface; this
+finding is about two reveals racing across a surface swap.
+
+## Addendum 2026-08-18 (Leg 1): the settle window holds where it was aimed, and once it did not
+
+Re-measured on the owner's session after the fix, with
+`VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1`. **17 flushes, 17 reveals.**
+
+**The case ADR 0227 was written for is clean.** Every
+`result_actions -> compact` swap inside the result timeout produced exactly ONE
+`[ov-reveal]` — the transition that used to produce two with competing heights.
+The owner reports no ghosting.
+
+**One double remains, once, at the first surface change after app start:**
+
+```
+#14 [ov-sched] flush surface=compact          t=...328059
+#20 [ov-sched] flush surface=compact          t=...328083   (13 ms later)
+#21 [ov-reveal] req=[480,60]  outer=[440,60]
+#22 [ov-reveal] req=[480,61]  outer=[440,60]
+```
+
+Two `set_size` calls, the 60/61 pair, 13 ms apart — inside
+`OVERLAY_REVEAL_SETTLE_MS`. Both flushes name `compact`, and the pill's epoch
+changed `recording -> processing` between them.
+
+**The leading explanation is that the two impl calls carried DIFFERENT
+`OverlaySurface` values**, which `is_duplicate_flat_reveal` correctly does not
+treat as a duplicate — and which the trace cannot show, because every flat
+surface is 480x60 and the payload carries only geometry. If that is right, the
+settle window is the wrong SHAPE rather than the wrong idea: it keys on surface
+identity where the invariant is *one `set_size` per frame*.
+
+**That is a hypothesis, not a measurement, and this file's own history is the
+reason to say so.** It becomes a measurement the moment `[ov-reveal]` logs its
+surface — one field. Recorded rather than acted on: no ghosting was observed,
+and this file's rule is that a residual is measured and written down, not bought
+back cosmetically.
+
+## Addendum 2026-08-18 (Leg 1 part 2): the field went in and refuted the hypothesis on the first app start
+
+`[ov-reveal]` now carries its surface on both halves of the trace — the
+`eprintln!` and the `ov-reveal-debug` payload — so the frontend copy in
+`/tmp/kilo/overlay-diag.log` is a stamped, surface-bearing line. Nothing else
+was changed, and the pair the addendum above describes appeared on the first
+start of the rebuilt host:
+
+```
+[1787071014134] #13 [ov-sched] flush surface=compact w=- h=- t=1787071014132
+[1787071014140] #14 [ov-reveal] {"req":[480,60],"outer":[440,60],"surface":"Compact"}
+[1787071014248] #15 [ov-reveal] {"req":[480,61],"outer":[480,60],"surface":"Compact"}
+```
+
+**Three things are now measured, and the leading explanation is not one of
+them.**
+
+1. **Both reveals name `Compact`.** They did *not* carry different
+   `OverlaySurface` values. The settle window keys on surface identity and the
+   surfaces are identical, so the hypothesis above is refuted for this
+   occurrence.
+2. **They are 108 ms apart**, not 13. `OVERLAY_REVEAL_SETTLE_MS` is 30, so
+   `is_duplicate_flat_reveal` is not failing — the pair is out of its range
+   entirely. The settle window is neither the wrong shape nor the wrong idea
+   here; it is not in play.
+3. **Only ONE `[ov-sched] flush` precedes the pair.** `#13` produced `#14`; `#15`
+   has no scheduler line before it at all. So the second reveal did not come
+   from the frontend serializer — it entered from a native route, and the
+   coalescer is intact because these are two frames, not two calls in one.
+   `#14` reports `outer=[440,60]` (the startup width) and `#15` reports
+   `outer=[480,60]`, so the first is the reveal that widens the window and the
+   second is a later, unnecessary repeat of a surface that did not change.
+
+**What this does not settle.** The occurrence recorded above had TWO flushes
+13 ms apart; this one has one flush and a 108 ms gap. They are the same 60/61
+pair at the same moment — the first surface change after app start — and they
+may still be two different mechanisms. Nothing here shows the two-flush case
+again.
+
+**The question moved rather than closing.** It is no longer *is the settle
+window the wrong shape*; it is *why does a native route reveal an unchanged
+surface 108 ms after the frontend already did*. Still not acted on, for the
+reason stated above: no ghosting was observed, and this file's rule holds.
+
 ## Regression Checks
 
 - Recording -> processing -> result actions -> edit/error -> idle has no visual
   overlap.
 - Starting a new recording during the leave transition does not expose the
   prior state.
+- Starting a new recording while a result surface is still shown produces
+  exactly ONE `[ov-reveal]`, not two with competing heights (ADR 0227).
 - Pill size and visual hierarchy remain stable.
 - The native completion sync does not end the session on its own: the compact
   processing surface keeps the pill until the authoritative transcription

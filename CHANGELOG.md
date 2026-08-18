@@ -53,6 +53,137 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the two delivery switches could not be used
+
+- **Both switches from ADR 0231 shipped inoperable, and now work.** Clicking
+  either one did nothing: the screen read the stored value through a resolver
+  that dropped it, so the control was permanently off, and every unrelated edit
+  to the same profile block erased whatever had been stored. The runtime half was
+  right the whole time. The Delivery screen's sentence follows the switch now
+  too, because it read the same resolver.
+- **A hold that turns into a toggle, and a recording ended by opening a window,
+  are recorded rather than fixed.** Both are the same lost key release, both need
+  one reproduction, and the log already separates the three possible causes — see
+  `docs/known-issues/capture-shortcut-recording.md`.
+- **The reported 3-minute ceiling under "Copy and insert at cursor" could not be
+  reproduced.** The "When a recording stops" card governs every activation mode
+  and both delivery modes — that is now held by a test — and no recorded session
+  in the whole history was ended by a ceiling. What looked like a delivery-mode
+  difference is a profile difference: the two modes are on different profiles with
+  different cards.
+
+### Changed — four things that were written to hold a fact and could not
+
+- **A shortcut that stops arriving can now say so.** The Linux hotkey backend
+  polled the X server in a way that discarded the error case, so a broken
+  connection left it spinning silently forever — no key events, no report, and
+  the app still believing its shortcuts were registered. It ends with a stated
+  reason instead. This does not explain why the grabs die; it makes the failure
+  visible.
+- **Every shortcut registration now says what the standing one delivered** —
+  its age and its event counters — so "the grabs have been dead for some
+  unbounded time" becomes a number in the log.
+- **The overlay reveal trace names its surface.** One field, and it refuted the
+  explanation it was built to test: the residual double reveal at app start is
+  two reveals of the *same* surface 108 ms apart, not two surfaces racing.
+- **`devtools` is a real build feature.** It was named at two compile-time gates
+  and declared nowhere, so the gate could never open. Two dead compiler warnings
+  and, beside them, a test that had never run for want of its attribute and
+  another that was being counted twice.
+
+### Removed — a command that configured nothing (ADR 0232)
+
+- **`configure_native_capture` is gone, and nothing changes for you.** It looked
+  like the path that set the recording ceilings and the microphone, and it set
+  nothing: the field it wrote had no reader, and every recording builds its own
+  snapshot from the active profile's "When a recording stops" card. That card was
+  already the only thing deciding — on all three activation modes and both
+  delivery modes — so the seam is one command lighter and the behaviour is
+  identical. Found while chasing the reported three-minute abort.
+
+### Added — one delivery switch per mode (ADR 0231)
+
+- **"Copy to clipboard only" can put the text on your clipboard right away.**
+  Until now the mode named after the clipboard was the slower of the two to
+  reach it: the transcript was held in the preview and only written when you
+  clicked, or ten seconds later. The new **Copy immediately** switch writes it
+  as soon as it exists, with the preview still offering the edit — and
+  confirming an edit writes the corrected text over it.
+- **"Copy and insert at cursor" can leave the text on your clipboard.** It
+  pastes and then puts your previous clipboard back, which is right when the
+  clipboard was only the transport and wrong when you wanted the transcript
+  too. The new **Keep it on the clipboard** switch skips the restore.
+- Both live per profile, beside Delivery, each drawn only under the mode it
+  belongs to. **Both default to what that mode has always done**, so no existing
+  profile changes behaviour, and the Delivery screen's sentence now follows the
+  switch instead of promising "then restores your clipboard" in every case.
+
+### Fixed — right-click no longer ends your dictation, and the OS menu is gone (ADR 0230)
+
+- **Right-clicking a WordScript window while holding the capture key ended the
+  dictation, and the menu it opened outlived the overlay.** WordScript hides its
+  overlay rather than closing it, so WebKitGTK's context menu stayed on screen
+  after the pill was gone and held the keyboard until it was dismissed — no new
+  recording could start in the meantime.
+  - The native context menu is now suppressed in every window, in every build,
+    and a WordScript menu (Cut, Copy, Paste, Select all) takes its place in text
+    fields. It is drawn inside the page, so it holds nothing and disappears with
+    its window. **Inspect Element is no longer one right-click away in a release
+    build**, which is what the owner asked for; a dev build keeps it on
+    `Ctrl`+right-click.
+  - The overlay gets the suppression without a menu of its own: its window is
+    exactly pill-sized, so a menu drawn in it would be cut off. `Ctrl+V` there
+    is unchanged.
+- **A dictation stopped by the recording ceiling now says so.** It used to be
+  delivered, filed and displayed exactly like one you ended yourself, with the
+  only trace in a log that rotates — which is why it was reported as
+  inexplicable. Both ceiling paths now record the reason on the transcript, and
+  History states it on the record.
+- **The trigger log names which OS event path a shortcut came from**
+  (`origin=grab` / `origin=raw`). Added to answer whether the click-abort was a
+  key release the X server fabricated on focus loss. It was not: 44 of 44
+  releases came from the physical device stream.
+
+### Fixed — the overlay stops stacking, and auto-paste stops claiming it worked (ADR 0227)
+
+- **Starting a dictation while the last result is still on screen no longer
+  stacks two overlays.** The recording pill was painting on top of the previous
+  pill's retained raster. Two native reveals were racing: the Rust capture
+  trigger revealed the window directly while the frontend revealed it through
+  the coalescer, and each one nudged the window height independently, so the
+  single repaint that clears the old pixels became two competing ones. Measured
+  with the overlay render trace — every such transition produced two reveals
+  with heights 60 and 61, every ordinary end-of-dictation produced one.
+- **"Copy and insert at cursor" no longer takes your transcript back when the
+  paste may not have arrived.** On a Wayland session it puts the text on the
+  clipboard, presses Ctrl+V, and then restores whatever was on your clipboard
+  before — so a paste that silently went nowhere left you with neither. When
+  nothing can confirm the paste arrived, the transcript now stays on the
+  clipboard instead.
+  - Nothing in the app can tell whether a keystroke reached another application,
+    and this release does not pretend otherwise. An earlier attempt in this
+    cycle refused to paste at all in that situation; that was wrong — the paste
+    does sometimes land — and it was withdrawn the same day. See ADR 0229.
+- **Holding the key no longer cuts your dictation off after two minutes.** Tap
+  and double-tap have always used the maximum length on the "When a recording
+  stops" card — twelve minutes by default. Holding used a second, hidden number
+  set to two, with no control anywhere. All three modes now follow the card.
+  Measured twice on one afternoon: a dictation stopped mid-sentence at exactly
+  120 seconds with the key still held.
+- **A hold that does end at the ceiling no longer reports itself as a lost
+  keystroke.** The watchdog logged `release_missing`, which asserts a defect;
+  the key was still down and the release arrived four seconds later. It now logs
+  `hold_limit_reached`.
+- **A shortcut that stops working can be brought back by changing a setting
+  again.** When the capture key stopped arriving, every attempt to re-register
+  it was skipped as redundant — the check compared what the app remembered, not
+  what the system actually held, so a registration that had died still looked
+  current. The only way back was a hidden one: open and close the hotkey
+  recorder. The check now applies only to the burst of duplicate calls at
+  startup that it was written for. **Why the shortcut stops arriving in the first
+  place is still unknown** and is recorded in
+  `docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md`.
+
 ### Changed — AI Models says what belongs to the machine and what belongs to your profile (ADR 0226)
 
 - **The accounts are the machine's.** Their names, keys, plans and server

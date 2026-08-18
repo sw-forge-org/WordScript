@@ -1532,6 +1532,18 @@ that is what a record is for (ADR 0123: one list per fact).
   A naming call that fails says so, and a role default may not name another vendor's model.
 - [0226](0226-the-accounts-are-the-machines-and-the-screen-says-so-where-it-is-true-instead-of-in-a-paragraph.md):
   The accounts are the machine's, and the screen says so where it is true instead of in a paragraph.
+- [0227](0227-every-route-into-a-native-reveal-goes-through-the-coalescer-and-a-driver-that-cannot-reach-its-target-says-so.md):
+  Every route into a native reveal goes through the coalescer, and a driver that cannot reach its target says so.
+- [0228](0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md):
+  The second paste driver is the RemoteDesktop portal, and the focus probe is what sequences it.
+- [0229](0229-an-unconfirmable-paste-is-still-attempted-and-what-it-costs-is-the-clipboard-restore.md):
+  An unconfirmable paste is still attempted, and what it costs is the clipboard restore.
+- [0230](0230-the-native-context-menu-is-a-keyboard-grab-so-it-is-gone-from-every-window.md):
+  The native context menu is a keyboard grab, so it is gone from every window.
+- [0231](0231-each-delivery-mode-gets-one-switch-and-off-is-what-that-mode-always-did.md):
+  Each delivery mode gets one switch, and off is what that mode always did.
+- [0232](0232-a-command-that-configures-nothing-is-removed-and-the-capture-ceiling-keeps-one-source.md):
+  A command that configures nothing is removed, and the capture ceiling keeps one source.
 
 ## Resolved: the number 0011 was used twice
 

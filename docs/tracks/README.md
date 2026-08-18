@@ -31,6 +31,35 @@ contents of the directory.
   false in it. Not updated by later work. **Its H1 still reads *Kick-off*,
   because it was one when it was written and a record is not retconned** — the
   classification is this line and the dated addendum at its head, not the title.
+- [`insert-delivery.md`](insert-delivery.md) — opened 2026-08-18 out of one owner
+  report: insert at cursor does nothing on a Wayland session, intermittently.
+  The last step of a dictation was the only one with no way to tell whether it
+  worked, and it reported success for nine consecutive runs that inserted
+  nothing. Step 1 (the honest fallback) is done; the track is the missing paste
+  lane, and its next session starts on the `busctl` blocker in `core/portal.rs`.
+- [`open-fixes-leg1.md`](open-fixes-leg1.md) — **Leg 1's record**, closed
+  2026-08-18. Four items and one the measurement opened. Its finding travels:
+  the click that ended a dictation was not a synthetic key release but
+  WebKitGTK's context menu holding the keyboard over a hidden overlay, so the
+  native menu is gone from every window. Also carries what was deliberately not
+  done, including two owner requests declined against the code.
+- [`open-fixes-leg1-part2.md`](open-fixes-leg1-part2.md) — **Leg 1 part 2's
+  record**, closed 2026-08-18. Leg 1's two leftovers, the shortcut diagnosis, and
+  four owner reports from the shipped build. Its lesson is the shape of the items
+  rather than any one of them: six were *a thing written to hold a fact that could
+  not hold it* — a `cfg` gate on an undeclared feature, a test with no `#[test]`,
+  an attribute counted twice, a command whose only field has no reader, a resolver
+  that dropped the fields it was read for, and an event loop that spun silently on
+  a dead X connection. Four were found by reading the file the report pointed at
+  rather than by reproducing the report. **Two findings travel**: the ADR 0231
+  delivery switches shipped inoperable while their tests stayed green, because the
+  tests asserted on the write and the defect was on the read; and the overlay's
+  one-field reveal instrument refuted the hypothesis Leg 1 wrote it for on the
+  first app start.
+- [`insert-delivery-kickoff.md`](insert-delivery-kickoff.md) — **Leg 2**, the
+  RemoteDesktop paste driver, alone in its own session because it is the large
+  one. Leg 1 and its part 2 are closed, so this is the page a fresh session starts
+  on.
 - [`runtime-ownership.md`](runtime-ownership.md) — opened 2026-08-13 as
   *measurement integrity*, renamed and re-scoped the same day. `CLAUDE.md` gives
   the runtime trigger, capture, transform, **insert** and recovery; it does not
