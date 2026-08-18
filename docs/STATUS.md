@@ -101,9 +101,17 @@ Status: 2026-08-18
   at the row. Context's rail carries the same gesture, drawn only.
 - **Every transcript is a Markdown file** under `~/WordScript/transcripts`
   (ADR 0074), written at the moment its record is, with the frontmatter §11.23
-  specifies. `history.json` stays the index and carries the path; Delete, Clear
-  and the retention sweep take the file with the entry, and the runtime removes
-  only paths an entry named. The filename is a title the chat model writes
+  specifies. `history.json` stays the index and carries the path; Delete and
+  Clear take the file with the entry, and the runtime removes only paths an entry
+  named. **The retention sweep no longer does** (ADR 0237, 2026-08-19): the
+  index is capped at a thousand records so a list stays fast — about five days
+  of writing at the reporting machine's rate — and that cap is not a lifetime
+  anybody chose for the reader's own files, so the archive is kept until it is
+  deleted. Its consequence is stated rather than hidden: a file whose entry has
+  been pruned is an orphan no History row can reach, so `Transcript files` on
+  Privacy & Data states how many files and how many bytes are on the machine and
+  carries the one door that removes them — a walk bounded by the store's own
+  naming shape, so a file the reader wrote in that folder survives it. The filename is a title the chat model writes
   (ADR 0077), falling back to the first words when no model answers — on every
   processing mode including Verbatim, which the owner ruled deliberate on
   2026-08-11 (ADR 0087). Since 2026-08-11 the frontmatter is complete: the last

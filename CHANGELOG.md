@@ -127,6 +127,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when* — except where it would land beside its neighbour, which printed
   `10 Aug17 Aug` as a single run of characters.
 
+### Changed — your transcript files stopped sharing the index's lifetime
+
+- **Retention no longer deletes your Markdown files.** Every dictation is also a
+  file in `~/WordScript/transcripts`, and until now the sweep that dropped a
+  record from History deleted it. The index is capped at a thousand records so a
+  list stays fast — on the reporting machine that is about five days of writing —
+  and that cap was quietly the lifetime of the archive too. It is not a rule
+  anybody chose for files, so the prune stopped applying it (ADR 0237).
+- **Deleting still deletes.** Removing one record, clearing the history and the
+  new purge all take the file with them. Only the automatic age-and-count sweep
+  changed; wanting the writing gone is a separate intention with its own doors.
+- **`Transcript files` is now its own card on Privacy & Data**, with the rule and
+  the reading beside it: how many files are on this machine and what they weigh.
+  It has to be read rather than assumed, because once an index entry is pruned
+  nothing knows its file's path — that file has no row in History, and this count
+  is the only place the product says it is there.
+- **And a `Delete now` beside it, which is the only way back out.** It walks the
+  folder, which nothing else in the runtime is allowed to do, so it is bounded by
+  the store's own naming shape: `<YYYY>/<MM>/<DD-HHMM>-<slug>.md` and nothing
+  else. A file you wrote, renamed or dropped into that folder yourself survives,
+  and the row says so.
+- **The retention hint no longer claims the files.** It read *older dictations
+  are deleted with their transcript files*, which was true and is what this
+  change reverses.
+
 ### Changed — turnaround is read by band, and by what caused it
 
 - **Five bands instead of a 25 ms histogram.** On a real record of 346 runs the

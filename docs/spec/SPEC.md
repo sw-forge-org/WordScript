@@ -840,7 +840,16 @@ no account. Entities:
   including Verbatim, which is deliberate (ADR 0087).
   Written from `record_entry_with_work_mode`, which is the one place a history
   record comes into existence, so no path can skip it. **The runtime creates a
-  file once, never edits one, and deletes only paths a history entry named.**
+  file once, never edits one, and deletes only paths a history entry named** --
+  with the one exception ADR 0237 names, `purge_transcript_archive`, which walks
+  the store's own layout behind a button on Privacy & Data.
+  **The archive is its own collection with its own lifetime (ADR 0237).** The
+  index retention (`history_limit`, `history_retention_days`) drops entries and
+  leaves their files where they are; an intentional delete -- one record, the
+  whole history, or the purge -- still takes the file. So a file whose entry has
+  been pruned is an orphan by design: History cannot list, reveal or retry it,
+  and the count on Privacy & Data (`transcript_store_status`, which reports
+  `files` and `bytes`) is the only surface that states it exists.
 - **AppConfig** (`config.rs`): persisted app config. Holds global settings,
   the text-profile collection, active mirrors for profile-bound settings,
   provider selection, seven mode shortcuts (picker plus six direct modes),

@@ -901,6 +901,71 @@ labels, the parked dots and the five band names were confirmed rather than
 assumed. The harness is fifty lines and it is the third session in a row where
 looking at the page was the only thing that could have found the defect.
 
+## The record — Stage F, 2026-08-19
+
+Same session as Stage E, continued past midnight. Durable form is
+[ADR 0237](../decisions/0237-the-transcripts-are-their-own-collection-so-the-index-retention-stops-taking-them-and-the-archive-gets-a-reading-and-a-door.md).
+
+**Suite: 942 → 945 frontend cases over 56 files, and 992 → 997 Rust cases.** Two
+of each are this stage's; the other track in the tree landed the rest while the
+session ran — three Rust cases in `trigger.rs` and one frontend case in
+`Hotkeys.test.tsx`, both verified against `HEAD` rather than assumed from the
+totals. `npm run build` clean. `npx tsc --noEmit` reports one error in
+`src/test/shortcutRuntime.ts`, which is that track's in-flight edit and not this
+one's — every file this stage touched is clean.
+
+### A question about one list turned out to be about the files
+
+E2's cause list reads `history.json`, not the ledger, and the owner asked how
+far back that reaches. The arithmetic is the finding: **417 entries in 51 hours
+is about 196 dictations a day**, and `HISTORY_CEILING` is 1000, so the index
+holds roughly **five days**. The account's `history_retention_days` stood at 7 —
+a leftover ADR 0185 recorded and did not change — but at this rate the ceiling
+binds long before the age does, so the seven days were never the operative rule.
+
+Then the second half of the question, which is the one that mattered: *what
+happens to the Markdown files?* They went with the entry. A cap chosen so a list
+stays fast was deleting the reader's writing after five days, and nothing on any
+screen said so — the only place the coupling appeared at all was a retention
+hint reading *older dictations are deleted with their transcript files*.
+
+### Four repairs were offered and the biggest one was chosen
+
+Raise the ceiling, fix the local retention value, bound the index by bytes, or
+decouple the files. The answer was the fourth, in the owner's words *Markdowns
+vom Index entkoppeln*. This is the same shape as the 2026-08-17 reading in the
+traps below: offered a range of fixes, the owner takes the structural one.
+
+**What that does not do was said before it was built, and it still stands.** The
+cause list reaches five days either way — the index is what it reads, and the
+ceiling is unchanged. Decoupling saves the transcripts, not the reach.
+
+### Two collections, two rules, and one of them needed a door it never had before
+
+The decoupling creates a file nothing can reach: once the entry is pruned no
+code holds the path, so History has no row, no Reveal and no Retry for it. That
+is the whole reason `purge_transcript_archive` exists and the reason it is
+allowed to walk a directory that ADR 0074 explicitly forbade walking. The
+permission is the shape check — a four-digit year, a two-digit month,
+`<DD-HHMM>-<slug>.md` — and it was tested against the reader's plausible
+contents rather than against the store's: a note, a `.txt`, a file loose at the
+root, a nested folder that is not a year. **All 406 files in the real archive
+match the shape**, which is what makes the check safe to rely on.
+
+The card is the `Audio from a failed dictation` card's shape reused, and it had
+to be: three collections had already answered `Kept for` in the same words, so a
+fourth that phrased it differently would have read as a different kind of rule.
+Rendering it over the dev server against the real numbers gave
+`406 files · 281 KB` with no overflow at 625 CSS px.
+
+### One test had to be inverted, and that is the record of the reversal
+
+`retention_takes_the_pruned_records_files_with_them` asserted exactly what this
+stage stopped doing. It is now
+`retention_drops_the_entry_and_leaves_its_file_alone`, and it asserts both
+halves — the file survives AND the entry is gone — because the first alone would
+pass if the prune had simply stopped running.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -993,6 +1058,28 @@ fourth produced. Durable form is
 | **E3 · done** | **The record stores the language it was counted as.** `TranscriptionHistoryEntry.spoken_language`, additive and `#[serde(default)]`, decided once in `record_entry_with_work_mode` and read by both the ledger write and `seed_from_history`. The label becomes `Not named`, because *too short* was one of two reasons and the other one was a rebuild losing the model's answer | A ledger rebuilt from history keeps the naming call's verdict for every record written after this, and the two reasons are no longer spelled as one |
 | **E4 · done** | **The decimal gap is four columns with the mark in the middle two.** Seven of the ten glyphs reach their last column in the mark's rows, so the three-column build was clean behind `1` and one shape behind `3` | The mark cannot touch a glyph whichever digits stand either side of it, asserted over all 100 pairs |
 | **E5 · done** | **The view dots leave the screen inside a metric.** Disabling them was the first answer and the owner read the pair still sitting there as an offer; `visibility` holds the row's space so the chart above does not lift | Nothing on an open metric view offers a switch it will not perform, and the block does not move when one opens |
+
+### Stage F — the archive stopped sharing the index's lifetime
+
+Opened 2026-08-19 out of E2, in the same session. The cause list reads history
+rather than the ledger, so the owner asked how far back history reaches — and
+from there, what happens to the Markdown files when it does not reach. Durable
+form is
+[ADR 0237](../decisions/0237-the-transcripts-are-their-own-collection-so-the-index-retention-stops-taking-them-and-the-archive-gets-a-reading-and-a-door.md).
+**This is privacy work, not Home's**, and it is recorded here only because it
+came out of an E2 reading and the session was already in the tree.
+
+| Step | What | Done means |
+|---|---|---|
+| **F1 · done** | **The index prune leaves the files.** `prune_entries_for_runtime` stopped calling `remove_transcript_files`; the three intentional deletes keep it. Reverses one rule of ADR 0074 and keeps the rest | An entry that ages out is gone from History and its Markdown file is still on disk, asserted directly |
+| **F2 · done** | **`transcript_store_status` counts and sizes the archive.** `files` and `bytes`, from a walk bounded by the store's own layout — a four-digit year, a two-digit month, `<DD-HHMM>-<slug>.md` | A screen can state how many transcript files this machine holds without guessing, and a file the reader added is not in the number |
+| **F3 · done** | **`purge_transcript_archive` is the door.** The one call in the runtime allowed to walk the directory, bounded by the same shape check, pruning the month and year directories it emptied | The orphaned files a prune leaves behind can be removed from inside the app, and a file the reader wrote in that folder survives the purge |
+| **F4 · done** | **`Transcript files` is a card on Privacy & Data.** Rule, reading, and a `Delete now` that appears only when there is something to delete — the `Audio from a failed dictation` card's shape, applied to the fourth collection. The retention hint above it stopped claiming the files | The screen answers *what is on this machine* for the archive as well as for the parked audio, and no row on it states a rule that is no longer true |
+
+**What this does NOT fix, and the owner was told so before it was built:** the
+cause list still reaches about five days, because `HISTORY_CEILING` is unchanged
+at 1000 and history is what it reads. Raising the ceiling was offered as one of
+four repairs and is not the one that was chosen; it stays open.
 
 ## Traps
 
@@ -1097,20 +1184,20 @@ absence — a streak, a gap, a "you haven't dictated since" — has to pass thro
 
 ## The prompt for the next session
 
-**Stage A, Stage C, Stage D and Stage E are all closed** — A1 to A11, C1 to C11,
-D1 to D4 and E1 to E5 are landed, C12 stays withdrawn. Read the record sections
-above before anything else, in particular the A3/A4/A5 one, *What the readings
-actually measure*, the Stage C one, the Stage D one and the Stage E one: all five
-carry findings that are not in the tree's own comments.
+**Stage A, Stage C, Stage D, Stage E and Stage F are all closed** — A1 to A11,
+C1 to C11, D1 to D4, E1 to E5 and F1 to F4 are landed, C12 stays withdrawn. Read
+the record sections above before anything else, in particular the A3/A4/A5 one,
+*What the readings actually measure*, the Stage C one, the Stage D one and the
+Stage E one: all five carry findings that are not in the tree's own comments.
 
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
 run `git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0237 is the next free ADR number unless the tree
+paths. Never `git add -A`. **0238 is the next free ADR number unless the tree
 says otherwise — grep, and grep again immediately before you write the file.**
 Stage D cited 0234 twelve times in source and lost the number to another track
-while the session was running; Stage E wrote 0236's file first and scattered the
-citations after, which is what that trap actually asks for.
+while the session was running; Stage E and Stage F both wrote the ADR file first
+and scattered the citations after, which is what that trap actually asks for.
 
 ### There is no open stage. What is left is Stage B, and it is not yours to start
 
@@ -1196,8 +1283,10 @@ still has to say, and every one of them is a PROPOSAL rather than a task.
 
 **Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
 Rust moved. Quote the counts as a delta against the baselines you measure at the
-start. Baselines at the close of Stage E: **942 frontend cases over 56 files**
-and **992 Rust cases**. Run `npm audit` if anything lands in `package.json`; the
+start. Baselines at the close of Stage F: **945 frontend cases over 56 files**
+and **997 Rust cases** — three of the five new Rust cases and one of the three
+new frontend cases are another track's, landed in the tree during this session,
+so measure your own start rather than trusting these. Run `npm audit` if anything lands in `package.json`; the
 intent is that nothing does.
 
 **Before you stop**, write your record into this page above the sequence, update
