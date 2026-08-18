@@ -28,6 +28,17 @@ const DEFAULT_HOLD_WATCHDOG_SECONDS: u64 = 120;
 /// exists for. Past it, a repeat is a deliberate act and must be allowed to
 /// actually re-register — see the guard in `register_native_shortcuts`.
 const IDEMPOTENT_SKIP_WINDOW_MS: u128 = 10_000;
+
+/// How often the delivery watch states what the standing registration has
+/// delivered. Long, because it is a background fact and not an alarm.
+const DELIVERY_WATCH_INTERVAL_SECONDS: u64 = 300;
+
+/// How long a registration may stand with nothing arriving on any binding
+/// before the watch says so. Not a verdict — a quiet hour at the keyboard looks
+/// exactly like this — but the interval in which the grabs may already have been
+/// dead was previously unbounded, and that is what made the 2026-08-18 report
+/// unanswerable.
+const DELIVERY_QUIET_THRESHOLD_MS: u64 = 30 * 60 * 1_000;
 const DEFAULT_DOUBLE_TAP_WINDOW_MS: u64 = 400;
 
 /// Permanent structured logging for the trigger lane (T11). Every shortcut
@@ -360,6 +371,44 @@ pub struct NativeTriggerStatus {
     /// frontend show runtime truth instead of assuming registration succeeded.
     #[serde(default)]
     pub registered_mode_hotkeys: Vec<ModeHotkeyStatus>,
+    /// Liveness of the delivery machinery under the bindings. See
+    /// [`DeliveryHealth`].
+    pub delivery: DeliveryHealth,
+}
+
+/// Whether the machinery under the bindings is still capable of delivering an
+/// event at all.
+///
+/// Every counter the app keeps counts events that ARRIVED, so zero of them says
+/// nothing on its own: an untouched keyboard and a dead backend produce the same
+/// zero. These are the facts only the backend's own event loop knows, and they
+/// are what separates the two.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryHealth {
+    /// When the backend's event loop last completed an iteration, and how long
+    /// ago that was. `None` means it has never beaten.
+    pub heartbeat_ms: Option<u64>,
+    pub heartbeat_age_ms: Option<u64>,
+    /// Set once the loop has stopped. After this no key event can arrive again
+    /// for the life of the process, whatever `registered` says on every binding.
+    pub stopped_reason: Option<String>,
+    /// Releases the backend had to emit itself because the OS never delivered
+    /// them. A rising count is the event stream dropping releases — the
+    /// condition that used to leave a binding permanently silent.
+    pub stranded_releases: u64,
+    /// How long the registration currently in force has stood.
+    pub registration_age_ms: Option<u64>,
+    /// Events on all bindings since that registration, split by the path they
+    /// arrived on.
+    pub events_since_registration: u64,
+    pub grab_events: u64,
+    pub raw_events: u64,
+    /// The registration has stood past [`DELIVERY_QUIET_THRESHOLD_MS`] with
+    /// nothing arriving. A FACT about this session, not a diagnosis: a quiet
+    /// hour looks identical. It is meaningful next to the heartbeat, which says
+    /// whether anything was listening.
+    pub quiet: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -391,6 +440,21 @@ pub struct BindingInfo {
     pub releases: u64,
     pub last_press_ms: Option<u64>,
     pub last_release_ms: Option<u64>,
+    /// Events that arrived on the passive-grab path, and on the XInput2 raw
+    /// device path, counted apart.
+    ///
+    /// The two paths fail independently: a grab is focus- and grab-dependent,
+    /// raw events are device-level and see whatever the X server sees. Which one
+    /// went quiet is the difference between "another client took the
+    /// combination" and "XWayland stopped receiving keyboard input at all", and
+    /// a single total cannot tell them apart. Measured on the reporting
+    /// machine: 376 raw against 8 grab, so the capture binding lives entirely on
+    /// the raw path and the record's first suspect — a competing grab on
+    /// `Shift` — cannot be what happened.
+    #[serde(default)]
+    pub grab_events: u64,
+    #[serde(default)]
+    pub raw_events: u64,
 }
 
 impl BindingInfo {
@@ -406,6 +470,8 @@ impl BindingInfo {
             releases: 0,
             last_press_ms: None,
             last_release_ms: None,
+            grab_events: 0,
+            raw_events: 0,
         }
     }
 }
@@ -636,6 +702,37 @@ impl NativeTriggerState {
                     display: display.clone(),
                 })
                 .collect(),
+            delivery: self.delivery_health(Instant::now()),
+        }
+    }
+
+    /// Reads the backend's own liveness and pairs it with what this
+    /// registration has delivered.
+    fn delivery_health(&self, now: Instant) -> DeliveryHealth {
+        let grab_events: u64 = self.bindings.iter().map(|binding| binding.grab_events).sum();
+        let raw_events: u64 = self.bindings.iter().map(|binding| binding.raw_events).sum();
+        let events_since_registration = grab_events + raw_events;
+
+        let registration_age_ms = self
+            .last_real_registration_at
+            .map(|at| now.duration_since(at).as_millis().min(u128::from(u64::MAX)) as u64);
+
+        let heartbeat_ms = global_hotkey::event_loop_heartbeat_ms();
+        let heartbeat_age_ms = heartbeat_ms.map(|beat| now_ms().saturating_sub(beat));
+
+        DeliveryHealth {
+            heartbeat_ms,
+            heartbeat_age_ms,
+            stopped_reason: global_hotkey::event_loop_stop_reason(),
+            stranded_releases: global_hotkey::event_loop_stranded_releases(),
+            registration_age_ms,
+            events_since_registration,
+            grab_events,
+            raw_events,
+            quiet: events_since_registration == 0
+                && registration_age_ms
+                    .map(|age| age >= DELIVERY_QUIET_THRESHOLD_MS)
+                    .unwrap_or(false),
         }
     }
 
@@ -1177,7 +1274,7 @@ pub fn handle_global_shortcut_event<R: Runtime>(
     // Log and count every event that reaches us — including the ones we then
     // drop — so "the key never arrived", "the shortcut is not registered" and
     // "the event was ignored" stop being indistinguishable (D12).
-    record_binding_observation(&mut state, &label, event.state);
+    record_binding_observation(&mut state, &label, event.state, event.origin);
     log_trigger(
         "shortcut",
         &[
@@ -1581,13 +1678,22 @@ fn tap_intent_decision(intent: TapShortcutIntent) -> &'static str {
 /// press/release ratio is the evidence that decides whether hold to talk can
 /// work in this session — on Linux a passive X11 grab may deliver a press but
 /// never the matching release depending on which client holds focus (D11).
-fn record_binding_observation(state: &mut NativeTriggerState, label: &str, event: ShortcutState) {
+fn record_binding_observation(
+    state: &mut NativeTriggerState,
+    label: &str,
+    event: ShortcutState,
+    origin: HotKeyEventOrigin,
+) {
     let now = now_ms();
     if let Some(binding) = state
         .bindings
         .iter_mut()
         .find(|binding| binding.label == label)
     {
+        match origin {
+            HotKeyEventOrigin::Grab => binding.grab_events += 1,
+            HotKeyEventOrigin::RawDevice => binding.raw_events += 1,
+        }
         match event {
             ShortcutState::Pressed => {
                 binding.presses += 1;
@@ -1617,6 +1723,76 @@ fn registration_is_within_startup_window(
     last_real_registration_at
         .map(|at| now.duration_since(at).as_millis() < IDEMPOTENT_SKIP_WINDOW_MS)
         .unwrap_or(false)
+}
+
+/// The delivery watch, as one line.
+///
+/// Pure so the wording is testable without an `AppHandle`, and deliberately
+/// flat: a reader greps one line and has the whole picture — is anything
+/// listening, for how long, and what came through which path.
+fn describe_delivery_health(health: &DeliveryHealth) -> String {
+    let heartbeat = match (&health.stopped_reason, health.heartbeat_age_ms) {
+        (Some(reason), _) => format!("loop=stopped reason=\"{reason}\""),
+        (None, Some(age)) => format!("loop=alive beat_age_ms={age}"),
+        (None, None) => "loop=never_beat".to_string(),
+    };
+
+    format!(
+        "{heartbeat} registration_age_ms={} events={} grab={} raw={} stranded_releases={} quiet={}",
+        health
+            .registration_age_ms
+            .map(|age| age.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        health.events_since_registration,
+        health.grab_events,
+        health.raw_events,
+        health.stranded_releases,
+        health.quiet,
+    )
+}
+
+/// Says every [`DELIVERY_WATCH_INTERVAL_SECONDS`] whether the shortcut lane is
+/// still capable of delivering, and what it has delivered.
+///
+/// The 2026-08-18 report had sixteen registration attempts and not one line
+/// stating how long the grabs had stood or whether anything was still listening
+/// — so the failure could only be reconstructed backwards from an absence. A
+/// registration decision now carries that (`register_standing`), but a decision
+/// only happens when someone changes a setting; the failure itself makes no
+/// noise at all. This runs whether or not anyone touches anything.
+pub fn start_delivery_watch<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut announced_stop = false;
+        loop {
+            tokio::time::sleep(Duration::from_secs(DELIVERY_WATCH_INTERVAL_SECONDS)).await;
+
+            let Some(trigger_state) = app.try_state::<Mutex<NativeTriggerState>>() else {
+                continue;
+            };
+            let Ok(state) = trigger_state.lock() else {
+                continue;
+            };
+            let health = state.delivery_health(Instant::now());
+            drop(state);
+
+            log_trigger("delivery_watch", &[("detail", describe_delivery_health(&health))]);
+
+            // The loop's death is stated once, loudly, and separately: it is the
+            // one entry here that is a verdict rather than a count. After it, no
+            // key event can arrive again for the life of the process, and every
+            // `registered` flag in the app is lying.
+            if health.stopped_reason.is_some() && !announced_stop {
+                announced_stop = true;
+                if let Some(reason) = &health.stopped_reason {
+                    super::runtime_log::record(format!(
+                        "[WordScript] Hotkey delivery has stopped and cannot recover in this \
+                         process: {reason}"
+                    ));
+                }
+            }
+        }
+    });
 }
 
 /// What the registration currently in force has delivered, as one field on every
@@ -3101,9 +3277,9 @@ mod tests {
             .bindings
             .push(BindingInfo::new("capture", "capture", "Ctrl+F9", "Ctrl + F9"));
 
-        record_binding_observation(&mut state, "capture", ShortcutState::Pressed);
-        record_binding_observation(&mut state, "capture", ShortcutState::Pressed);
-        record_binding_observation(&mut state, "capture", ShortcutState::Released);
+        record_binding_observation(&mut state, "capture", ShortcutState::Pressed, HotKeyEventOrigin::RawDevice);
+        record_binding_observation(&mut state, "capture", ShortcutState::Pressed, HotKeyEventOrigin::RawDevice);
+        record_binding_observation(&mut state, "capture", ShortcutState::Released, HotKeyEventOrigin::RawDevice);
 
         let binding = &state.bindings[0];
         assert_eq!(binding.presses, 2);
@@ -3115,7 +3291,7 @@ mod tests {
     #[test]
     fn observations_for_an_unknown_binding_are_dropped_without_panicking() {
         let mut state = NativeTriggerState::default();
-        record_binding_observation(&mut state, "unbound", ShortcutState::Pressed);
+        record_binding_observation(&mut state, "unbound", ShortcutState::Pressed, HotKeyEventOrigin::RawDevice);
         assert!(state.bindings.is_empty());
     }
 
@@ -3253,6 +3429,97 @@ mod tests {
             !registration_is_within_startup_window(None, now),
             "nothing registered yet means nothing to protect"
         );
+    }
+
+    /// The watch that runs whether or not anyone touches a setting.
+    ///
+    /// `register_standing` only speaks when a registration decision happens, and
+    /// the failure it exists for makes no noise at all — the 2026-08-18 report
+    /// is an absence of lines, not a line. These cases pin what the periodic
+    /// line says, because a reader greps it and gets one shot at the picture.
+    #[test]
+    fn the_delivery_watch_states_liveness_before_it_states_counts() {
+        let alive = DeliveryHealth {
+            heartbeat_ms: Some(1_787_090_000_000),
+            heartbeat_age_ms: Some(12),
+            stopped_reason: None,
+            stranded_releases: 0,
+            registration_age_ms: Some(903),
+            events_since_registration: 44,
+            grab_events: 0,
+            raw_events: 44,
+            quiet: false,
+        };
+
+        assert_eq!(
+            describe_delivery_health(&alive),
+            "loop=alive beat_age_ms=12 registration_age_ms=903 events=44 grab=0 raw=44 \
+             stranded_releases=0 quiet=false"
+                .replace("             ", " ")
+                .replace("  ", " ")
+        );
+    }
+
+    /// A stopped loop outranks every count, because after it no key event can
+    /// arrive again and every `registered` flag in the app is lying. It is the
+    /// one entry in this line that is a verdict rather than a fact.
+    #[test]
+    fn a_stopped_event_loop_is_stated_instead_of_a_beat() {
+        let dead = DeliveryHealth {
+            heartbeat_ms: Some(1_787_090_000_000),
+            heartbeat_age_ms: Some(600_000),
+            stopped_reason: Some("x11 connection lost while polling".to_string()),
+            stranded_releases: 3,
+            registration_age_ms: Some(1_800_000),
+            events_since_registration: 0,
+            grab_events: 0,
+            raw_events: 0,
+            quiet: true,
+        };
+
+        let line = describe_delivery_health(&dead);
+        assert!(line.starts_with("loop=stopped reason="), "{line}");
+        assert!(line.contains("x11 connection lost while polling"), "{line}");
+        assert!(line.contains("stranded_releases=3"), "{line}");
+        assert!(line.contains("quiet=true"), "{line}");
+    }
+
+    /// `quiet` is a fact about this session, never a diagnosis: an untouched
+    /// keyboard produces exactly the same zero. It says only that the window in
+    /// which the grabs could already have been dead has grown past the
+    /// threshold — which is the thing the report could not bound.
+    #[test]
+    fn quiet_needs_both_a_long_standing_registration_and_nothing_arriving() {
+        let now = Instant::now();
+        let mut state = NativeTriggerState::default();
+        state.bindings = vec![BindingInfo::new("capture", "capture", "Shift", "Shift")];
+
+        state.last_real_registration_at = None;
+        assert!(
+            !state.delivery_health(now).quiet,
+            "nothing has been registered, so there is no window to be quiet in"
+        );
+
+        state.last_real_registration_at = now.checked_sub(Duration::from_millis(5_000));
+        assert!(
+            !state.delivery_health(now).quiet,
+            "a registration seconds old has had no chance to deliver anything"
+        );
+
+        state.last_real_registration_at =
+            now.checked_sub(Duration::from_millis(DELIVERY_QUIET_THRESHOLD_MS + 1_000));
+        assert!(state.delivery_health(now).quiet);
+
+        record_binding_observation(
+            &mut state,
+            "capture",
+            ShortcutState::Pressed,
+            HotKeyEventOrigin::RawDevice,
+        );
+        let health = state.delivery_health(now);
+        assert!(!health.quiet, "one arriving event answers the question");
+        assert_eq!(health.raw_events, 1);
+        assert_eq!(health.grab_events, 0);
     }
 
     /// The instrument mechanism 2 of the same record asks for: a registration

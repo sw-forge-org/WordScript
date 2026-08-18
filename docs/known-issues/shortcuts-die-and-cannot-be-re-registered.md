@@ -1,9 +1,11 @@
 # Bug: the capture shortcut stops arriving, and nothing in the app can rebuild it
 
-Status: **Half fixed (2026-08-18). The self-heal is restored — the idempotency
-guard no longer blocks a later re-registration. WHY the grabs stop delivering is
-NOT diagnosed, and this record exists mostly to make the next occurrence
-measurable.**
+Status: **Diagnosed and fixed (2026-08-19). Mechanism 2 was a fourth candidate
+none of the three named: the observation path accumulated modifier state that a
+dropped release stranded permanently, and nothing but a process restart could
+clear it. It no longer keeps that state. See the addendum at the foot; the
+candidate list above is kept as written, including the suspect that turned out
+to be impossible on this machine.**
 
 First reported: 2026-08-18, by the owner mid-session ("I can't start any
 recording at all, no matter which setting I change")
@@ -158,3 +160,72 @@ nobody pressed looks like. Pinned by
 - [pause-abort-interrupted-chord.md](pause-abort-interrupted-chord.md): a
   different modifier-only defect on the same backend
 - [ADR 0014](../decisions/0014-every-modifier-only-binding-is-decided-at-the-release-edge.md)
+
+## Addendum 2026-08-19: mechanism 2 is diagnosed, and it was not on the list
+
+**Candidate 1 was impossible here, and the instrument built the day before said
+so.** The record's first suspect is a competing passive grab on `Shift`. There is
+no grab on `Shift`: `register_hotkey` routes a modifier-only binding to the
+XInput2 observer instead (`platform_impl/x11/mod.rs:173`, and the patch note at
+the top of that file says why a grab on a bare modifier is not an option). The
+`origin` field added on 2026-08-18 measures the same thing from the other side —
+376 `origin=raw` against 8 `origin=grab` in this machine's log. Capture and abort
+live entirely on the raw path.
+
+**What actually happens.** `Observer::held` was a `Vec<Keycode>` that a raw press
+pushed to and only a matching raw release removed from. Nothing else ever wrote
+it — not `register`, not `unregister`, not suspend/resume, not the hotkey
+recorder — and `GlobalHotKeyManager::new()` runs once per process, so it lived as
+long as the app.
+
+Raw releases go missing here. In the current log, six capture presses have no
+release before the next press. The clearest one:
+
+```
++148.952  event=shortcut id=60 binding=capture state=pressed
++149.402  event=hold_arm hold_session=1 outcome=committed
++156.572  event=unregister ... / event=register ...      <- full cycle, 11 bindings
++174.633  event=shortcut id=60 binding=capture state=pressed
+```
+
+No `state=released` anywhere between them. The second press was only possible
+because the re-registration reset `HotKeyState.pressed`; the hold committed at
++149.402 was never ended by a release. The cause is the session shape rather than
+the app — KWin can take the keyboard exclusively (task switcher, a global
+shortcut, the lock screen) and XWayland then never sees the key come back up.
+
+One stranded modifier keycode makes `held_mask_excluding` non-empty **forever**,
+and the observation path fires only when `state.mods == held_mask`. So a bare
+`Shift` capture matches nothing again for the life of the process: no event, no
+error, `registered` still true everywhere. That is this record's symptom exactly,
+including the part that made it feel unfixable — **re-registration does not clear
+`held`**, so the self-heal restored on 2026-08-18 by bounding the idempotency
+guard could never have reached this fault. That fix is still right; it repairs a
+different one of the two stuck states.
+
+Two stuck states, and they are worth keeping apart:
+
+| Stuck | What it kills | Cleared by |
+| --- | --- | --- |
+| `HotKeyState.pressed` (the binding's own release was lost) | that binding | any unregister/register cycle — so a settings change did recover it, after the guard fix |
+| `Observer::held` (any other modifier's release was lost) | every bare-modifier binding | nothing short of a process restart |
+
+**The fix removes the state rather than repairing it.** The observation path now
+reads the X server's own key bitmap (`QueryKeymap`) per decision, and a
+reconciliation pass emits the `Released` the stream owed once the server says the
+key is up — which also ends the hold a lost release would otherwise leave
+running. ADR 0238.
+
+**Delivery now reports itself.** The event loop beats, names its own death where
+a caller can read it, and counts the releases it had to emit. A watch states all
+of it every five minutes, split by `grab` against `raw`; on Hotkeys a stopped
+loop reads *Not delivering* rather than *Registered*, with the restart as the
+stated next action. ADR 0239.
+
+### What is deliberately not fixed
+
+`modifier_only.rs` — the platform-neutral port the **Windows** backend uses —
+accumulates a `held` list the same way and carries the same defect. Closing it
+means having the adapter supply Windows' own key-state truth
+(`GetAsyncKeyState`), and none of that can be validated on this machine. It is
+written down here rather than half-changed.

@@ -3,13 +3,16 @@
 // SPDX-License-Identifier: MIT
 
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use keyboard_types::{Code, Modifiers};
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xinput;
-use x11rb::protocol::xproto::{ConnectionExt, GrabMode, KeyButMask, Keycode, ModMask, Window};
+use x11rb::protocol::xproto::{
+    ConnectionExt, GrabMode, KeyButMask, Keycode, ModMask, Window,
+};
 use x11rb::protocol::{xkb, ErrorKind, Event};
 use x11rb::rust_connection::RustConnection;
 use xkeysym::RawKeysym;
@@ -57,11 +60,13 @@ impl GlobalHotKeyManager {
         let (thread_tx, thread_rx) = unbounded();
         std::thread::spawn(|| {
             if let Err(err) = events_processor(thread_rx) {
-                // stderr as well as tracing: the `tracing` feature is not enabled
-                // in this tree, so the only report this thread's death had was
-                // compiled out. A backend that stops delivering key events while
-                // every caller still reads "registered" is the failure shape of
-                // docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md.
+                // Recorded where a caller can read it, as well as printed. stderr
+                // is not the app's log and nothing in-process could poll it; a
+                // backend that stops delivering key events while every caller
+                // still reads "registered" is the failure shape of
+                // docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md,
+                // and it has to be answerable by asking rather than by grepping.
+                crate::note_event_loop_stopped(err.clone());
                 eprintln!("[global-hotkey] x11 event thread ended: {err}");
                 #[cfg(feature = "tracing")]
                 tracing::error!("{}", err);
@@ -291,6 +296,120 @@ pub(crate) fn is_modifier_code(code: Code) -> bool {
         .any(|(modifier, _)| *modifier == code)
 }
 
+/// How often the pressed states are reconciled against the server while at
+/// least one of them says a key is down. Only a lost release makes them
+/// disagree, so this is a repair interval, not a poll: it decides how long a
+/// stranded hold runs before it is ended, not how fast a key is noticed.
+const RECONCILE_INTERVAL: Duration = Duration::from_millis(250);
+
+/// The server's own answer to *which keys are physically down right now*, from
+/// `QueryKeymap`: one bit per keycode.
+///
+/// The observation path used to accumulate this from the raw event stream
+/// instead, in a `held` list that only a matching raw release ever removed from.
+/// That stream drops events -- measured on the reporting machine, six capture
+/// presses in one log with no release before the next -- and every dropped
+/// release stranded a modifier in that list **forever**. Nothing cleared it:
+/// not `register`, not `unregister`, not suspend/resume, not the hotkey
+/// recorder, and the manager is built once per process, so only a restart did.
+/// One stranded modifier makes `state.mods == held_mask` false for every later
+/// press of a bare-modifier trigger, and the trigger is then silent for good
+/// while the app still reads *registered* -- which is the failure recorded in
+/// `docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md`.
+///
+/// Asking the server instead of accumulating does not repair that state; it
+/// removes it. There is nothing left to drift.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct KeyState {
+    keys: [u8; 32],
+}
+
+impl KeyState {
+    fn is_down(&self, keycode: Keycode) -> bool {
+        let index = usize::from(keycode);
+        self.keys
+            .get(index / 8)
+            .map(|byte| byte & (1 << (index % 8)) != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(test)]
+    fn with_down(down: &[Keycode]) -> Self {
+        let mut keys = [0u8; 32];
+        for keycode in down {
+            let index = usize::from(*keycode);
+            keys[index / 8] |= 1 << (index % 8);
+        }
+        Self { keys }
+    }
+}
+
+/// Asks the server which keys are down.
+///
+/// A failure here is a connection failure -- the request carries no arguments
+/// that can be wrong -- so it is reported the same way polling reports one, by
+/// ending the thread with a stated reason rather than by guessing a key state.
+/// Guessing would be worse than stopping: an empty state reads as *no modifier
+/// held*, which fires triggers nobody pressed.
+fn query_key_state(conn: &RustConnection) -> Result<KeyState, String> {
+    let reply = conn
+        .query_keymap()
+        .map_err(|err| format!("unable to ask the x11 server which keys are down: {err}"))?
+        .reply()
+        .map_err(|err| format!("x11 server did not answer which keys are down: {err}"))?;
+
+    Ok(KeyState { keys: reply.keys })
+}
+
+/// Emits the `Released` the event stream owed and never delivered.
+///
+/// A lost release leaves `pressed` true, and `!state.pressed` then rejects every
+/// later press of that binding: dead until something unregisters and
+/// re-registers it. Measured in the reporting machine's log -- a capture press
+/// at +148.952 with a hold committed, no release ever, and the next press 25 s
+/// later only possible because a re-registration had reset the flag in between.
+/// The consumer is owed that release too: the hold it started otherwise runs
+/// until a timeout.
+///
+/// Reports the count so the caller can say it happened.
+fn release_stranded_states(
+    hotkeys: &mut BTreeMap<Keycode, Vec<HotKeyState>>,
+    keys: &KeyState,
+    origin: HotKeyEventOrigin,
+) -> usize {
+    let mut released = 0;
+
+    for (keycode, entry) in hotkeys.iter_mut() {
+        if keys.is_down(*keycode) {
+            continue;
+        }
+        for state in entry {
+            if !state.pressed {
+                continue;
+            }
+            GlobalHotKeyEvent::send(GlobalHotKeyEvent {
+                id: state.id,
+                state: crate::HotKeyState::Released,
+                interrupted: state.interrupted,
+                origin,
+            });
+            state.pressed = false;
+            state.interrupted = false;
+            released += 1;
+        }
+    }
+
+    released
+}
+
+/// Whether any binding currently believes its key is down. Reconciling costs a
+/// server round trip, and there is nothing to reconcile while nothing is held.
+fn any_state_pressed(hotkeys: &BTreeMap<Keycode, Vec<HotKeyState>>) -> bool {
+    hotkeys
+        .values()
+        .any(|entry| entry.iter().any(|state| state.pressed))
+}
+
 /// Non-consuming observation of the modifier keys through XInput2 raw events.
 struct Observer {
     /// `None` until XInput2 has been negotiated; `Some(false)` when the server
@@ -300,10 +419,6 @@ struct Observer {
     /// Modifier keycode -> the mask bit it contributes. Built once from the
     /// server's keyboard mapping.
     modifier_keycodes: BTreeMap<Keycode, ModMask>,
-    /// Which modifier keycodes are currently down. Tracked as keycodes rather
-    /// than as a mask so releasing one of a pair (left Ctrl while right Ctrl is
-    /// still down) does not clear the bit prematurely.
-    held: Vec<Keycode>,
     /// Registered observed hotkeys, keyed by the keycode of their main key.
     hotkeys: BTreeMap<Keycode, Vec<HotKeyState>>,
 }
@@ -313,7 +428,6 @@ impl Observer {
         Self {
             available: false,
             modifier_keycodes: BTreeMap::new(),
-            held: Vec::new(),
             hotkeys: BTreeMap::new(),
         }
     }
@@ -357,13 +471,16 @@ impl Observer {
     /// The modifier mask currently held, ignoring one keycode. Used to compare
     /// against a hotkey's own modifier set: the key that just went down is the
     /// main key, not one of its modifiers.
-    fn held_mask_excluding(&self, excluded: Keycode) -> ModMask {
+    ///
+    /// Reads the server's key state rather than a list of its own. See
+    /// [`KeyState`] for what the list cost.
+    fn held_mask_excluding(&self, keys: &KeyState, excluded: Keycode) -> ModMask {
         let mut mask = ModMask::default();
-        for keycode in &self.held {
+        for (keycode, bit) in &self.modifier_keycodes {
             if *keycode == excluded {
                 continue;
             }
-            if let Some(bit) = self.modifier_keycodes.get(keycode) {
+            if keys.is_down(*keycode) {
                 mask |= *bit;
             }
         }
@@ -403,13 +520,22 @@ impl Observer {
 
     /// A raw key press. Returns nothing and emits at most one `Pressed` per
     /// registered hotkey whose modifier set is exactly what is held.
-    fn on_raw_press(&mut self, keycode: Keycode) {
-        let is_modifier = self.modifier_keycodes.contains_key(&keycode);
-        let held_mask = self.held_mask_excluding(keycode);
+    /// Whether deciding this press needs the server's key state.
+    ///
+    /// Raw events arrive for EVERY key on the system, and only a press of a key
+    /// something is registered on can fire anything — so only that press is
+    /// worth a round trip. Without this, ordinary typing paid one `QueryKeymap`
+    /// per character to compute a mask nothing then read.
+    fn needs_key_state(&self, keycode: Keycode) -> bool {
+        self.hotkeys.contains_key(&keycode)
+    }
 
-        if is_modifier && !self.held.contains(&keycode) {
-            self.held.push(keycode);
-        }
+    /// `keys` is the server's answer for a keycode [`Observer::needs_key_state`]
+    /// asked about, and `None` for every other key. `None` therefore cannot
+    /// suppress a trigger: no hotkey is registered on that keycode. The pairing
+    /// below makes that structural rather than a rule to remember.
+    fn on_raw_press(&mut self, keycode: Keycode, keys: Option<&KeyState>) {
+        let is_modifier = self.modifier_keycodes.contains_key(&keycode);
 
         // A key that is not a tracked modifier is discarded as key material, but
         // the fact that *something* was pressed is kept: it interrupts every
@@ -441,7 +567,8 @@ impl Observer {
             }
         }
 
-        if let Some(entry) = self.hotkeys.get_mut(&keycode) {
+        let held_mask = keys.map(|keys| self.held_mask_excluding(keys, keycode));
+        if let (Some(held_mask), Some(entry)) = (held_mask, self.hotkeys.get_mut(&keycode)) {
             for state in entry {
                 if state.mods == held_mask && !state.pressed {
                     state.pressed = true;
@@ -458,9 +585,7 @@ impl Observer {
     }
 
     fn on_raw_release(&mut self, keycode: Keycode) {
-        if self.modifier_keycodes.contains_key(&keycode) {
-            self.held.retain(|held| *held != keycode);
-        } else {
+        if !self.modifier_keycodes.contains_key(&keycode) {
             return;
         }
 
@@ -515,6 +640,8 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
 
     // X11 sends masks for Lock keys as well, and we only care about the 4 below
     let full_mask = KeyButMask::CONTROL | KeyButMask::SHIFT | KeyButMask::MOD4 | KeyButMask::MOD1;
+
+    let mut last_reconcile = Instant::now();
 
     loop {
         // `while let Ok(Some(event))` swallowed the Err arm: a broken X
@@ -580,7 +707,13 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
                     }
                 }
                 Event::XinputRawKeyPress(event) => {
-                    observer.on_raw_press(event.detail as Keycode);
+                    let keycode = event.detail as Keycode;
+                    let keys = if observer.needs_key_state(keycode) {
+                        Some(query_key_state(&conn)?)
+                    } else {
+                        None
+                    };
+                    observer.on_raw_press(keycode, keys.as_ref());
                 }
                 Event::XinputRawKeyRelease(event) => {
                     observer.on_raw_release(event.detail as Keycode);
@@ -632,6 +765,33 @@ fn events_processor(thread_rx: Receiver<ThreadMessage>) -> Result<(), String> {
                 ThreadMessage::DropThread => {
                     return Ok(());
                 }
+            }
+        }
+
+        // The thread is alive and polling. Nothing else in the process could
+        // say so: when this loop stopped delivering, every registration state in
+        // the app still read *registered*, and the only report of a dead loop
+        // was its own last words. A beat is the difference between "no key was
+        // pressed" and "nobody is listening", which no event count can tell
+        // apart on its own.
+        crate::beat_event_loop();
+
+        // Reconcile only while something is held, and only every
+        // RECONCILE_INTERVAL: a lost release is the sole way the flags and the
+        // server can disagree, and it is rare.
+        if last_reconcile.elapsed() >= RECONCILE_INTERVAL
+            && (any_state_pressed(&hotkeys) || any_state_pressed(&observer.hotkeys))
+        {
+            last_reconcile = Instant::now();
+            let keys = query_key_state(&conn)?;
+            let stranded = release_stranded_states(&mut hotkeys, &keys, HotKeyEventOrigin::Grab)
+                + release_stranded_states(
+                    &mut observer.hotkeys,
+                    &keys,
+                    HotKeyEventOrigin::RawDevice,
+                );
+            if stranded > 0 {
+                crate::note_stranded_releases(stranded);
             }
         }
 
@@ -793,4 +953,141 @@ fn keysym_to_keycode(conn: &RustConnection, keysym: RawKeysym) -> Result<Option<
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SHIFT_L: Keycode = 50;
+    const CONTROL_L: Keycode = 37;
+    const ALT_L: Keycode = 64;
+
+    fn observer_with(hotkey_keycode: Keycode, mods: ModMask) -> Observer {
+        let mut observer = Observer::new();
+        observer.available = true;
+        observer.modifier_keycodes.insert(SHIFT_L, ModMask::SHIFT);
+        observer.modifier_keycodes.insert(CONTROL_L, ModMask::CONTROL);
+        observer.modifier_keycodes.insert(ALT_L, ModMask::M1);
+        observer.hotkeys.insert(
+            hotkey_keycode,
+            vec![HotKeyState {
+                id: 60,
+                mods,
+                pressed: false,
+                interrupted: false,
+            }],
+        );
+        observer
+    }
+
+    #[test]
+    fn key_state_reads_one_bit_per_keycode() {
+        let keys = KeyState::with_down(&[SHIFT_L, ALT_L]);
+
+        assert!(keys.is_down(SHIFT_L));
+        assert!(keys.is_down(ALT_L));
+        assert!(!keys.is_down(CONTROL_L));
+        assert!(!keys.is_down(0));
+        assert!(!keys.is_down(255));
+    }
+
+    #[test]
+    fn the_key_that_just_went_down_is_not_one_of_its_own_modifiers() {
+        let observer = observer_with(SHIFT_L, ModMask::default());
+        let keys = KeyState::with_down(&[SHIFT_L]);
+
+        assert_eq!(
+            observer.held_mask_excluding(&keys, SHIFT_L),
+            ModMask::default()
+        );
+    }
+
+    /// The bug this file's `KeyState` exists for.
+    ///
+    /// `Alt` went down and its release was lost -- the compositor took the
+    /// keyboard and XWayland never saw the key come back up. The old code kept a
+    /// `held` list that only a matching release removed from, so `Alt` stayed in
+    /// it for the life of the process and bare `Shift` never matched again.
+    /// Asking the server, the mask is empty, because the key is up.
+    #[test]
+    fn a_modifier_whose_release_was_lost_is_not_reported_as_held() {
+        let observer = observer_with(SHIFT_L, ModMask::default());
+        let keys = KeyState::with_down(&[SHIFT_L]);
+
+        assert_eq!(
+            observer.held_mask_excluding(&keys, SHIFT_L),
+            ModMask::default(),
+            "the server says Alt is up, so it is up"
+        );
+
+        let really_held = KeyState::with_down(&[SHIFT_L, ALT_L]);
+        assert_eq!(
+            observer.held_mask_excluding(&really_held, SHIFT_L),
+            ModMask::M1,
+            "a modifier that IS down still masks the trigger"
+        );
+    }
+
+    #[test]
+    fn a_press_fires_while_no_other_modifier_is_down() {
+        let mut observer = observer_with(SHIFT_L, ModMask::default());
+
+        observer.on_raw_press(SHIFT_L, Some(&KeyState::with_down(&[SHIFT_L])));
+
+        assert!(observer.hotkeys[&SHIFT_L][0].pressed);
+    }
+
+    #[test]
+    fn a_press_does_not_fire_while_another_modifier_is_down() {
+        let mut observer = observer_with(SHIFT_L, ModMask::default());
+
+        observer.on_raw_press(SHIFT_L, Some(&KeyState::with_down(&[SHIFT_L, CONTROL_L])));
+
+        assert!(!observer.hotkeys[&SHIFT_L][0].pressed);
+    }
+
+    #[test]
+    fn a_lost_release_is_emitted_once_the_server_says_the_key_is_up() {
+        let mut observer = observer_with(SHIFT_L, ModMask::default());
+        observer.on_raw_press(SHIFT_L, Some(&KeyState::with_down(&[SHIFT_L])));
+        assert!(observer.hotkeys[&SHIFT_L][0].pressed);
+
+        let released = release_stranded_states(
+            &mut observer.hotkeys,
+            &KeyState::default(),
+            HotKeyEventOrigin::RawDevice,
+        );
+
+        assert_eq!(released, 1);
+        assert!(!observer.hotkeys[&SHIFT_L][0].pressed);
+
+        // And the binding works again, which is the whole point: before this,
+        // `!state.pressed` rejected every later press for the life of the
+        // process unless something re-registered it.
+        observer.on_raw_press(SHIFT_L, Some(&KeyState::with_down(&[SHIFT_L])));
+        assert!(observer.hotkeys[&SHIFT_L][0].pressed);
+    }
+
+    #[test]
+    fn a_key_that_is_still_down_is_left_alone() {
+        let mut observer = observer_with(SHIFT_L, ModMask::default());
+        observer.on_raw_press(SHIFT_L, Some(&KeyState::with_down(&[SHIFT_L])));
+
+        let released = release_stranded_states(
+            &mut observer.hotkeys,
+            &KeyState::with_down(&[SHIFT_L]),
+            HotKeyEventOrigin::RawDevice,
+        );
+
+        assert_eq!(released, 0);
+        assert!(observer.hotkeys[&SHIFT_L][0].pressed);
+    }
+
+    #[test]
+    fn nothing_to_reconcile_while_nothing_is_held() {
+        let observer = observer_with(SHIFT_L, ModMask::default());
+
+        assert!(!any_state_pressed(&observer.hotkeys));
+    }
 }

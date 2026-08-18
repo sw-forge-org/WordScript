@@ -172,11 +172,28 @@ function activationHint(
  *  yet, which is not the same as "not registered" and does not claim to be —
  *  and neither is an answer about the value this slot held a moment ago, which
  *  is why the binding has to be FOR the stored value to count as one. */
-function badgeFor(binding: ShortcutBindingInfo | undefined, stored: string) {
+/** `Registered` is a claim about the OS accepting the binding, and until the
+ *  backend's event loop stopped being able to report its own death that claim
+ *  was the only thing this badge could say. It outlived the truth: the recorded
+ *  failure is a session where every slot read `Registered` and not one key event
+ *  could ever arrive again.
+ *
+ *  So a stopped loop outranks the per-binding answer. It is not a per-slot
+ *  fact — nothing is delivering, for any slot — but this badge is where a user
+ *  looks, and a screen that keeps saying `Registered` at them is the fake
+ *  readiness the runtime rules forbid. */
+function badgeFor(
+  binding: ShortcutBindingInfo | undefined,
+  stored: string,
+  delivering: boolean,
+) {
   const value = stored.trim();
   if (!value) return { tone: "neutral" as const, text: "Disabled" };
   if (!binding || binding.configured.trim() !== value) {
     return { tone: "neutral" as const, text: "Not checked" };
+  }
+  if (binding.registered && !delivering) {
+    return { tone: "danger" as const, text: "Not delivering" };
   }
   if (binding.registered) return { tone: "success" as const, text: "Registered" };
   return { tone: "danger" as const, text: "Not registered" };
@@ -252,6 +269,16 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
     refresh();
   };
 
+  /* The one thing on this screen that no per-binding answer can carry: the
+     backend's event loop has stopped, so nothing can fire in this session no
+     matter what each slot says about itself. It is not recoverable in process —
+     every grab lived on the connection that died — so the hint states the only
+     action that helps rather than describing the fault. */
+  const deliveryStopped = status?.delivery?.stoppedReason
+    ? "Shortcuts stopped arriving in this session. Restart WordScript to rebuild them."
+    : null;
+  const delivering = !deliveryStopped;
+
   const captureBinding = bindingFor("capture");
   const triggerLabel = comboFromBinding(captureBinding, config.hotkey) ?? "The trigger";
   const activationCapability = capabilities?.activation_modes.find(
@@ -296,12 +323,12 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
             {CAPTURE_SLOTS.map((slot) => {
               const binding = bindingFor(slot.binding);
               const stored = readField(config, slot.field);
-              const badge = badgeFor(binding, stored);
+              const badge = badgeFor(binding, stored, delivering);
               return (
                 <Row
                   key={slot.field}
                   label={slot.label}
-                  hint={binding?.error ?? slot.hint}
+                  hint={deliveryStopped ?? binding?.error ?? slot.hint}
                   control={
                     <span className="ws-rowflex">
                       <StatusBadge tone={badge.tone}>{badge.text}</StatusBadge>

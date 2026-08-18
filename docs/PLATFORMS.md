@@ -239,9 +239,34 @@ hint in `paste_disabled_reason`.
 
 ## Linux -- global shortcut reality
 
-Global shortcuts on Linux are X11 passive grabs taken through the vendored
-`global-hotkey` crate. Since WordScript runs on XWayland by default
-(`GDK_BACKEND=x11`), that path also applies inside a Wayland session.
+Global shortcuts on Linux come through the vendored `global-hotkey` crate on
+**two paths**, and which one a binding uses is decided by its main key. Since
+WordScript runs on XWayland by default (`GDK_BACKEND=x11`), both apply inside a
+Wayland session.
+
+| Main key | Path | Why |
+| --- | --- | --- |
+| An ordinary key (`F9`, `Space`, a digit) | X11 passive `grab_key` on the root window | The combination is consumed and delivered to the grab owner, which is what a shortcut wants |
+| A modifier (`Shift`, `Alt`, `Super`) | XInput2 **raw device events**, observed and not grabbed | A grab on a bare `Shift` would stop `Shift` typing capitals desktop-wide, and no activation mode can change that |
+
+The split matters when something goes quiet, because the two fail
+independently: a grab is focus- and grab-dependent, raw events are device-level
+and see whatever the X server sees. Every shortcut event in the runtime log
+carries `origin=grab` or `origin=raw` for exactly that reason. On the reporting
+machine, whose capture key is a bare `Shift`, the ratio is 376 raw to 8 grab —
+which is what showed that a competing grab on `Shift` could not be the cause of
+a failure blamed on one, since there is no grab on `Shift` to compete for.
+
+**Raw events can be lost, and losing one used to be permanent.** The compositor
+can take the keyboard exclusively — the task switcher, a global shortcut, the
+lock screen — and XWayland then never sees the key come back up. The observation
+path used to accumulate the modifier state from that stream, so a single lost
+release stranded a modifier for the life of the process and silenced every
+bare-modifier trigger, with `registered` still true everywhere and no
+re-registration able to clear it. It reads the X server's key bitmap per
+decision now, and emits the release the stream owed
+(ADR [0238](decisions/0238-the-observed-modifier-state-is-read-from-the-x-server-because-a-list-the-app-keeps-cannot-survive-a-dropped-release.md),
+[`shortcuts-die-and-cannot-be-re-registered.md`](known-issues/shortcuts-die-and-cannot-be-re-registered.md)).
 
 Consequences a user can hit:
 
@@ -268,6 +293,15 @@ Consequences a user can hit:
   [0013](decisions/0013-hold-to-talk-is-strictly-momentary.md)), so a platform
   that delivers presses but no releases strands a session rather than producing
   a stream of one-press recordings.
+
+- **A registered binding is not necessarily a delivering one.** `registered` is
+  a claim about the OS having accepted the binding, and it stays true after the
+  backend can no longer deliver anything at all. The event loop therefore beats,
+  names its own death, and counts the releases it had to emit itself; a delivery
+  watch states all of it in the runtime log every five minutes, and Hotkeys reads
+  *Not delivering* rather than *Registered* once the loop has stopped, with the
+  restart as the stated next action (ADR
+  [0239](decisions/0239-a-registered-binding-is-not-a-delivering-one-so-the-loop-beats-and-the-screen-stops-saying-registered.md)).
 
 `shortcut_platform` reports the detected compositor, session type, backend and
 the keys the desktop swallows; Settings -> Capture renders it above the shortcut

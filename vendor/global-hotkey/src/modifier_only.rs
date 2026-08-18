@@ -53,6 +53,20 @@ struct Registration {
     interrupted: bool,
 }
 
+/// KNOWN DEFECT, carried over from the x11 original and NOT fixed here.
+///
+/// `held` is accumulated from the event stream and only a matching release ever
+/// removes from it. A stream that drops a release therefore strands a modifier
+/// in it permanently, and every bare-modifier trigger then compares against a
+/// mask that can never be empty again -- silently, for the life of the process.
+/// x11 hit exactly that and no longer keeps the list: it reads the server's key
+/// bitmap instead (ADR 0238, and
+/// `docs/known-issues/shortcuts-die-and-cannot-be-re-registered.md`).
+///
+/// The same cure needs the adapter to supply the platform's key-state truth --
+/// `GetAsyncKeyState` on Windows -- and that cannot be validated from the
+/// machine this was found on, so it is stated rather than guessed at.
+///
 /// Tracks which modifiers are physically held and decides, per raw event, which
 /// registered modifier-only shortcuts start, end, or are spoiled by another key.
 #[derive(Debug, Default)]

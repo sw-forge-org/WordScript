@@ -39,8 +39,14 @@ status change. Resolved bugs remain as references for the same failure class.
   idempotency guard compares the state the process kept rather than the grabs
   the OS holds. The only path that could force a real registration was the
   hotkey recorder. The self-heal is restored by bounding the guard to the
-  startup burst it exists for (2026-08-18); **why the grabs die is not
-  diagnosed** and predates that change.
+  startup burst it exists for (2026-08-18). **Diagnosed and fixed 2026-08-19**
+  (ADR 0238, ADR 0239): the observation path accumulated modifier state from a
+  raw event stream that drops releases here, and one stranded modifier silenced
+  every bare-modifier trigger for the life of the process — which no
+  re-registration could clear. It reads the X server's key bitmap now, and the
+  event loop beats, names its own death and reports what each path delivered.
+  Open: the same accumulation in `modifier_only.rs`, which the Windows backend
+  uses.
 - [insert-behavior-reverts.md](insert-behavior-reverts.md): the delivery mode
   switching itself back to clipboard-only. Two mechanisms found and fixed
   (`92ce7f5` 2026-07-03, ADR 0019 2026-07-29); the second was a normalized

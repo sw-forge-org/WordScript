@@ -3152,6 +3152,8 @@ pub fn run() {
             core::sound::init();
             core::sound::play_startup(&initial_config);
 
+            core::trigger::start_delivery_watch(app.handle());
+
             let trigger_state = app.state::<Mutex<NativeTriggerState>>();
             if let Err(error) = core::trigger::register_native_shortcuts(
                 app.handle(),

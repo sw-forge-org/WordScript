@@ -53,6 +53,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The capture shortcut stops arriving, and this is why.** A modifier-only
+  binding is observed through XInput2 raw events rather than grabbed, and the
+  backend tracked the modifier state itself in a list only a matching raw
+  release ever removed from. Raw releases go missing on a KDE Plasma 6 Wayland
+  session — measured here, six capture presses in one log with no release before
+  the next, one of them a hold committed and never ended — and one stranded
+  modifier made the comparison the trigger depends on unsatisfiable **forever**.
+  No event, no error, `registered` still true on every slot, and nothing but a
+  process restart could clear it: re-registration does not touch that list,
+  which is why the self-heal restored the day before could never have reached
+  this fault. The path reads the X server's own key bitmap now, so the state
+  that could drift no longer exists, and a reconciliation pass emits the release
+  the stream owed — which also ends the hold a lost release used to leave
+  running (ADR 0238).
+- **A binding that cannot deliver stops calling itself registered.** The
+  backend's event loop beats, names its own death where a caller can read it
+  rather than only on stderr, and counts the releases it had to emit itself. A
+  watch states all of it every five minutes, split by the path each event
+  arrived on — `grab` against `raw`, which is what ruled out the leading suspect
+  in the first place. On Hotkeys a stopped loop reads *Not delivering* with the
+  restart as the stated next action (ADR 0239).
+
 ### Added — every metric on Home opens its own view
 
 - **Press a metric and it opens up.** Each of the four tiles is now a button

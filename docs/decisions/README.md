@@ -1552,6 +1552,10 @@ that is what a record is for (ADR 0123: one list per fact).
   A metric opens its own view of the home block, and it draws only what its record can carry.
 - [0236](0236-a-turnaround-is-read-by-band-and-by-cause-the-language-is-stored-on-the-record-and-a-control-that-will-not-act-is-not-shown.md):
   A turnaround is read by band and by cause, the language is stored on the record, and a control that will not act is not shown.
+- [0238](0238-the-observed-modifier-state-is-read-from-the-x-server-because-a-list-the-app-keeps-cannot-survive-a-dropped-release.md):
+  The observed modifier state is read from the X server, because a list the app keeps cannot survive a dropped release.
+- [0239](0239-a-registered-binding-is-not-a-delivering-one-so-the-loop-beats-and-the-screen-stops-saying-registered.md):
+  A registered binding is not a delivering one, so the loop beats and the screen stops saying *Registered*.
 
 ## Resolved: the number 0011 was used twice
 

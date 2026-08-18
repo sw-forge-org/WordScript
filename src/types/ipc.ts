@@ -691,6 +691,36 @@ export interface ShortcutBindingInfo {
   releases:        number;
   last_press_ms:   number | null;
   last_release_ms: number | null;
+  /** Events counted apart by the OS path they arrived on. The passive grab and
+   *  the XInput2 raw device path fail independently, and which one went quiet
+   *  is the difference between a competing grab and XWayland losing the
+   *  keyboard entirely. */
+  grab_events:     number;
+  raw_events:      number;
+}
+
+/// Mirrors `core::trigger::DeliveryHealth` — whether the machinery under the
+/// bindings can still deliver anything.
+///
+/// Every other counter counts events that ARRIVED, so zero of them proves
+/// nothing: an untouched keyboard and a dead backend look identical. These are
+/// the facts only the backend's event loop knows.
+export interface ShortcutDeliveryHealth {
+  heartbeatMs:             number | null;
+  heartbeatAgeMs:          number | null;
+  /** Set once the loop has stopped. After this no shortcut can ever fire again
+   *  in this process, whatever `registered` says on each binding. */
+  stoppedReason:           string | null;
+  /** Releases the backend had to emit itself because the OS never delivered
+   *  them. A rising count is the event stream dropping releases. */
+  strandedReleases:        number;
+  registrationAgeMs:       number | null;
+  eventsSinceRegistration: number;
+  grabEvents:              number;
+  rawEvents:               number;
+  /** The registration has stood a long time with nothing arriving. A fact, not
+   *  a diagnosis — a quiet hour looks the same. */
+  quiet:                   boolean;
 }
 
 /// Mirrors `core::trigger::NativeTriggerStatus`.
@@ -714,6 +744,7 @@ export interface NativeTriggerStatus {
   hold_watchdog_seconds:    number;
   double_tap_window_ms:     number;
   registered_mode_hotkeys:  Array<{ label: string; display: string }>;
+  delivery:                 ShortcutDeliveryHealth;
 }
 
 export type BackendEvent =

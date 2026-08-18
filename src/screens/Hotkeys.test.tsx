@@ -89,6 +89,17 @@ const TRIGGER_STATUS = {
   hold_watchdog_seconds: 120,
   double_tap_window_ms: 380,
   registered_mode_hotkeys: [],
+  delivery: {
+    heartbeatMs: 1_787_090_000_000,
+    heartbeatAgeMs: 9,
+    stoppedReason: null,
+    strandedReleases: 0,
+    registrationAgeMs: 12_000,
+    eventsSinceRegistration: 6,
+    grabEvents: 0,
+    rawEvents: 6,
+    quiet: false,
+  },
 };
 
 const PLATFORM = {
@@ -323,5 +334,40 @@ describe("Hotkeys", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear the Dictate shortcut" }));
     /* Empty is the runtime's own "disabled" (T7), not a revert to a default. */
     expect(patch).toHaveBeenCalledWith({ hotkey: "" });
+  });
+
+  it("stops calling a binding registered once nothing can be delivered", async () => {
+    /* The recorded failure is a session in which every slot read `Registered`
+       and no key event could ever arrive again: the backend's X connection had
+       died, and nothing in the process could observe that. The per-binding
+       answer is still true — the OS did accept the grab — which is exactly why
+       it cannot be the last word here. */
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "native_trigger_status") {
+        return {
+          ...TRIGGER_STATUS,
+          delivery: {
+            ...TRIGGER_STATUS.delivery,
+            stoppedReason: "x11 connection lost while polling for hotkey events",
+          },
+        };
+      }
+      if (command === "shortcut_platform") return PLATFORM;
+      if (command === "shortcut_capabilities") return CAPABILITIES;
+      if (command === "validate_shortcut") {
+        return { ok: true, disabled: false, canonical: "Ctrl+Super", display: "Ctrl + Super", modifier_only: false, reason: null };
+      }
+      return null;
+    });
+
+    render(<HotkeysScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findAllByText("Not delivering")).not.toHaveLength(0);
+    expect(screen.queryByText("Registered")).not.toBeInTheDocument();
+    /* The next action, not a description of the fault: every grab lived on the
+       connection that died, so nothing in this process can rebuild them. */
+    expect(
+      screen.getAllByText(/Restart WordScript to rebuild them/i).length,
+    ).toBeGreaterThan(0);
   });
 });

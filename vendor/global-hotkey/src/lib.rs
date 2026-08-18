@@ -4,6 +4,7 @@
 
 #![allow(clippy::uninlined_format_args)]
 
+
 //! global_hotkey lets you register Global HotKeys for Desktop Applications.
 //!
 //! ## Platforms-supported:
@@ -49,6 +50,10 @@
 //! - Windows
 //! - macOS
 //! - Linux (X11 Only)
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use once_cell::sync::{Lazy, OnceCell};
@@ -129,6 +134,68 @@ type GlobalHotKeyEventHandler = Box<dyn Fn(GlobalHotKeyEvent) + Send + Sync + 's
 static GLOBAL_HOTKEY_CHANNEL: Lazy<(Sender<GlobalHotKeyEvent>, GlobalHotKeyEventReceiver)> =
     Lazy::new(unbounded);
 static GLOBAL_HOTKEY_EVENT_HANDLER: OnceCell<Option<GlobalHotKeyEventHandler>> = OnceCell::new();
+
+/// WordScript patch: liveness and repair reporting for the backend's event loop.
+///
+/// A hotkey backend that stops delivering is indistinguishable, from the
+/// outside, from a keyboard nobody touched. Every count the consumer can keep is
+/// a count of events that arrived, so zero of them proves nothing. These three
+/// are what the loop itself knows and no caller can infer.
+static EVENT_LOOP_HEARTBEAT_MS: AtomicU64 = AtomicU64::new(0);
+static EVENT_LOOP_STRANDED_RELEASES: AtomicU64 = AtomicU64::new(0);
+static EVENT_LOOP_STOP_REASON: Mutex<Option<String>> = Mutex::new(None);
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|since| since.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Records that the backend's event loop completed an iteration. Called from the
+/// loop itself; platforms without one never beat, and report `None`.
+#[allow(dead_code)]
+pub(crate) fn beat_event_loop() {
+    EVENT_LOOP_HEARTBEAT_MS.store(now_ms(), Ordering::Relaxed);
+}
+
+/// Records that the loop emitted releases the OS never delivered. See the X11
+/// backend's `release_stranded_states`.
+#[allow(dead_code)]
+pub(crate) fn note_stranded_releases(count: usize) {
+    EVENT_LOOP_STRANDED_RELEASES.fetch_add(count as u64, Ordering::Relaxed);
+}
+
+/// Records why the loop stopped. After this, no key event can ever arrive again.
+#[allow(dead_code)]
+pub(crate) fn note_event_loop_stopped(reason: String) {
+    if let Ok(mut slot) = EVENT_LOOP_STOP_REASON.lock() {
+        *slot = Some(reason);
+    }
+}
+
+/// When the backend's event loop last completed an iteration, as milliseconds
+/// since the Unix epoch. `None` means it has never beaten: either the platform
+/// has no such loop, or it died before its first iteration.
+pub fn event_loop_heartbeat_ms() -> Option<u64> {
+    match EVENT_LOOP_HEARTBEAT_MS.load(Ordering::Relaxed) {
+        0 => None,
+        beat => Some(beat),
+    }
+}
+
+/// How many releases the backend has had to emit itself because the OS never
+/// delivered them. A rising count is the event stream dropping releases.
+pub fn event_loop_stranded_releases() -> u64 {
+    EVENT_LOOP_STRANDED_RELEASES.load(Ordering::Relaxed)
+}
+
+/// Why the backend's event loop stopped, if it has. `Some` means no further
+/// hotkey event can arrive for the life of the process, whatever the
+/// registration state says.
+pub fn event_loop_stop_reason() -> Option<String> {
+    EVENT_LOOP_STOP_REASON.lock().ok().and_then(|slot| slot.clone())
+}
 
 impl GlobalHotKeyEvent {
     /// Returns the id of the associated [`HotKey`].
