@@ -1227,10 +1227,10 @@ Additional rules:
   re-asked. **Measured 2026-08-18 on KDE Plasma 6:** twelve app starts with the
   stored token and nothing pressed, `Start` returning in 7-20 ms and no
   dialog -- KWin honours `ExplicitlyRevoked`, so the grant is one grant and not
-  one per run. Still owed: a dictation ending while an **XWayland** window holds
-  the focus, to see `active_driver=xdotool` in `history.json` after the grant;
-  the probe and the driver command are measured for that lane, the dictation is
-  not
+  one per run. Both lanes are measured from real dictations: the portal into
+  native Wayland windows in 9 ms and 2 ms, and `xdotool` into an XWayland window
+  in 31 ms with the clipboard restore running afterwards, which only a
+  confirmable delivery allows
 - Linux Wayland overlay click-through to apps beneath the overlay is not
   solvable with current tooling (needs Tauri layer-shell support or a
   compositor-specific protocol path); drag, button-click and clipping are

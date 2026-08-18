@@ -177,10 +177,10 @@ per paste.
 app restart on KDE Plasma 6. Twelve starts with the stored token and nothing
 pressed, `Start` returning in 7-20 ms and the token coming back unrotated every
 time -- milliseconds is a compositor honouring `ExplicitlyRevoked`, where a
-dialog somebody had to read would have been seconds. The remaining gap is the
-other lane: no dictation has ended in an **XWayland** window since the grant, so
-`active_driver=xdotool` after a grant exists is reasoned rather than recorded.
-The probe and the driver command are measured for it; see
+dialog somebody had to read would have been seconds. The other lane is measured too: a
+dictation ending in an **XWayland** window chose `xdotool` (31 ms) with a grant
+in place, and its clipboard restore ran -- which only a confirmable delivery
+allows. So both halves of the sequencing are recorded rather than reasoned; see
 [`../tracks/insert-delivery.md`](../tracks/insert-delivery.md).
 
 ## Related

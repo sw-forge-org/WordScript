@@ -155,7 +155,7 @@ library.
 | 4 | `NativeInsertDriver::RemoteDesktopPortal` over a persistent connection, `Ctrl+V` via `NotifyKeyboardKeysym` | **done** 2026-08-18, `core/portal_session.rs` |
 | 5 | Move the restore token out of `$XDG_RUNTIME_DIR` | **done** 2026-08-18, `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json`, `0600` |
 | 6 | Wire it into the chain behind the probe, one driver per run | **done** 2026-08-18, `PasteLane` + ADR 0228's table, with tests per row |
-| 7 | Verify in the native host against a native Wayland window and an XWayland window | **measured except one dictation** -- two portal pastes into native Wayland windows (9 ms, 2 ms), twelve restarts with no dialog, and the XWayland probe and driver command both measured. What is owed is a dictation ending in an XWayland window, which needs the owner. See below |
+| 7 | Verify in the native host against a native Wayland window and an XWayland window | **done** 2026-08-18 -- both windows, both drivers, from real dictations: the portal into native Wayland in 9 ms and 2 ms, `xdotool` into XWayland in 31 ms, and twelve restarts with no dialog. See below |
 | 8 | Consider `ConnectToEIS`/libei as the injection call, now cheap | **considered, deferred** 2026-08-18. See below |
 
 ### What step 4-6 landed, and the two bugs they had to clear first
@@ -191,7 +191,7 @@ the delivery mode is not changed behind the user's back. Both answers are writte
 into [ADR 0228](../decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md),
 now Accepted.
 
-### Step 7: what is measured, and the one dictation that is owed
+### Step 7: what is measured, and it is all of it
 
 **Measured on the reporting machine, 2026-08-18, app running from `main`:**
 
@@ -282,13 +282,40 @@ put the clipboard into that XWayland window, read back out of its buffer. So the
 probe answers correctly for a foreign X window, correctly refuses our own, and
 the driver delivers where it says it does.
 
-What is NOT measured is a **dictation** ending while an XWayland window holds the
-focus, which is the only way `active_driver=xdotool` gets written into
-`history.json` after the grant. It needs the owner and it is one sentence: focus
-an XWayland window, dictate, read the newest `history.json` row. An agent must
-not do this half unattended -- the hotkey can be injected, but the microphone
-would then record whatever is in the room and send it to a provider, which is
-not a measurement anybody asked for.
+**And the dictation into an XWayland window landed on 2026-08-18 at 23:43:53**,
+run by the owner, which is the row that closes this step:
+
+```
+[WordScript] Native insert clipboard strategy=wl-copy auto_paste=true
+[WordScript] Native insert paste strategy=xdotool elapsed_ms=31
+[WordScript] Native insert clipboard strategy=wl-copy auto_paste=false   (+217 ms)
+[WordScript] Native insert state core done insert_mode=DirectPaste pasted=true
+```
+
+`history.json`: `active_driver: xdotool`, `insert_mode: direct_paste`,
+`pasted: true`, **`clipboard_restore: scheduled`**. Read together those say more
+than the driver name. The probe answered `Reachable`, so the chain chose the old
+lane where the old lane works -- and the clipboard restore ran 180 ms later,
+which happens only when delivery is confirmable. The Kate window carried its
+unsaved-changes marker afterwards, so the text is in the buffer rather than
+merely sent.
+
+**The setup is worth writing down, because the first attempt measured the wrong
+thing.** Four dictations went into a `kate` window that looked like the target and
+was not: KDE editors are single-instance, so `QT_QPA_PLATFORM=xcb kate <file>`
+hands the file to the already running Wayland instance over D-Bus and exits, and
+the environment variable never reaches a process. Those four runs chose the portal
+and were right to -- a native Wayland window really did hold the focus. The
+command that produces a genuine X client is
+`QT_QPA_PLATFORM=xcb kate --new <file>`, and the check that it worked is that the
+window appears in `xdotool search --onlyvisible --name .` -- where, on this
+machine, the only other entries are WordScript's own two windows.
+
+**Nothing in the log said which way the probe answered**, which is why the first
+attempt had to be diagnosed from outside the app. `Native insert paste
+strategy=` names the driver, and the driver implies the probe, but only to a
+reader who knows the table. If this lane is ever measured again, one line naming
+the probe result and the chosen chain would make the run explain itself.
 
 Read the log with `grep -i portal ~/.config/WordScript/logs/wordscript-runtime.log`,
 and `history.json` sorted by `created_at_ms` -- **the file is not in time order**.
@@ -333,8 +360,8 @@ the process runs, so it is answered once. The effect is not subtle: the Rust
 suite went from 41 s to 5.2 s, which means the old code spawned that binary
 several hundred times in one `cargo test`.
 
-`cargo test` 990, `npm test` and `npm run build` green. Steps 3 and 4 above are
-unchanged by this pass and still owed.
+`cargo test` 990, `npm test` and `npm run build` green. Steps 3 and 4 were still
+owed when this pass ended; both are measured further up now.
 
 ### The second review pass, and where the portal's waiting was being paid
 
