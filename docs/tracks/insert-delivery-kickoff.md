@@ -1,5 +1,39 @@
 # Kick-off — Leg 2: the RemoteDesktop paste driver
 
+## State at handoff (2026-08-18, evening)
+
+Everything Leg 1 and its part 2 produced is **committed on `main` and not
+pushed** — three commits: the trigger instruments and the vendored X11 fix, the
+delivery code (switches, coalescer, context menu, the ADR 0232 removal), and the
+documentation stage. The tree is clean. Ask before pushing.
+
+**Nothing in Leg 2's scope has been touched.** `core/portal.rs` still spawns
+`busctl`; the blocker below is exactly as written.
+
+**Three things are owed, none of them yours to guess at:**
+
+1. **Two owner reproductions**, both with the instrument already in place and a
+   reading key written down: a window opened mid-hold
+   ([`../known-issues/capture-shortcut-recording.md`](../known-issues/capture-shortcut-recording.md))
+   and a dictation carried past three minutes
+   (same file, and item 6 of [`open-fixes-leg1-part2.md`](open-fixes-leg1-part2.md)).
+   Until one of them runs, neither report has a cause — do not build a fix for
+   either.
+2. **ADR 0228 is still `Proposed`**, with the two questions below unanswered.
+3. **The overlay double reveal at app start** stays open and measured, not
+   fixed: same surface twice, 108 ms apart, one flush, so it entered from a
+   native route. [`../known-issues/overlay-ghosting.md`](../known-issues/overlay-ghosting.md)
+   carries the numbers.
+
+**Two facts worth having before you read a log on this machine.** Sort
+`history.json` by `created_at_ms` before believing its tail — the file is not
+in time order, and reading `[-3:]` produced a wrong statement about the current
+delivery behaviour in the session that closed part 2. Sorted, the eight most
+recent runs on 2026-08-18 all record `insert_behavior=auto_paste`,
+`insert_mode=direct_paste`, `pasted=true`, driver `xdotool`. And `cargo check
+--tests` reports nine warnings that are all present at `HEAD` and belong to
+other code — they are not this track's and not a regression.
+
 **Leg 1 closed 2026-08-18** ([`open-fixes-leg1.md`](open-fixes-leg1.md)), so
 this leg is clear to start. It is the large one and is deliberately alone in its
 own session.
