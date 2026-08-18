@@ -206,17 +206,36 @@ answers, the grant state is read, and **no dialog appeared** -- the restore path
 returns without touching the portal when there is no token. `npm test` (927),
 `cargo test` (985) and `npm run build` are green.
 
-**What is owed, and it needs the owner because it needs a human answering a
-dialog:**
+**Steps 1 and 2 are measured, on the reporting machine, 2026-08-18:**
 
-1. Press **Grant access** in Delivery & Insert once. The "Control input devices"
-   dialog should appear exactly once.
-2. Dictate into a **native Wayland window** (a KDE app, or anything not running
-   under XWayland) with a profile whose delivery is *Copy and insert at cursor*.
-   Expect `active_driver=remote_desktop_portal`, `insert_mode=direct_paste`, and
-   the previous clipboard restored afterwards.
+```
+[WordScript] Portal Start returned restore_token_sent=false elapsed_ms=8827
+[WordScript] Portal session started devices=Keyboard restore_token_sent=false
+    restore_token_stored=true restore_token_rotated=true start_elapsed_ms=8827
+[WordScript] Portal grant requested phase=Granted session_active=true elapsed_ms=9012
+[WordScript] Portal paste delivered elapsed_ms=9
+[WordScript] Native insert paste strategy=RemoteDesktop portal elapsed_ms=9
+[WordScript] Native insert state core done insert_mode=DirectPaste pasted=true
+```
+
+Read in order: the dialog appeared (8827 ms is a human reading it, and
+`restore_token_sent=false` says correctly that there was nothing yet to restore
+from), KDE returned a keyboard device and a token, and the token is on disk at
+`~/.local/state/wordscript/remote-desktop-grant.json`, mode `0600`. Two
+dictations then delivered through the portal in 9 ms and 2 ms. The chain only
+reaches this driver when the focus probe answers `Unreachable`, so both landed in
+a native Wayland window -- the case XTEST provably cannot serve.
+
+**And the clipboard restore withheld since ADR 0229 came back on that lane.**
+Six `Native insert delivery unconfirmed: no foreign X window held the focus`
+lines precede the grant. After it, zero: the same machine, the same windows, and
+a paste whose delivery is now a D-Bus call that returned `Ok`.
+
+**What is still owed, both needing the owner:**
+
 3. Dictate into an **XWayland window** and expect `active_driver=xdotool` --
-   the probe must still choose the old lane where the old lane works.
+   the probe must still choose the old lane where the old lane works. Every
+   portal paste so far went to a native window, so this direction is untested.
 4. **Restart the app** and press nothing. Expect
    `Portal grant restore phase=Granted session_active=true` in the log, and no
    dialog. **This is the measurement the whole driver rests on**, and it is the
@@ -272,8 +291,18 @@ which is why the suite was green with them in.
    subprocess into three. Removed, and `portal_is_possible()` is now answered
    once per run rather than on every settings poll.
 
-`cargo test` 989, `npm test` and `npm run build` green. The four measurements
-above are unchanged by this pass and still owed.
+A fifth, found chasing "the whole app feels slow": **`detect_compositor()` was
+spawning `plasmashell --version` on every call.** ~95 ms measured here, to load a
+Qt binary that prints a string. It sits under `detect_portal_capabilities()` AND
+under the portal thread's status read, so one `native_insertion_status` paid it
+twice -- and that command is issued every time the workspace palette opens and
+every time the Delivery screen mounts. A session's compositor cannot change while
+the process runs, so it is answered once. The effect is not subtle: the Rust
+suite went from 41 s to 5.2 s, which means the old code spawned that binary
+several hundred times in one `cargo test`.
+
+`cargo test` 990, `npm test` and `npm run build` green. Steps 3 and 4 above are
+unchanged by this pass and still owed.
 
 ### Step 8: considered, and deliberately not taken
 

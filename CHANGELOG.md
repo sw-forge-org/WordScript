@@ -188,6 +188,17 @@ session thread and what the screen is allowed to say about it.
   description is answered once per run instead of on every settings poll — none
   of its three answers can change without the desktop session being replaced.
 
+### Fixed — the compositor was asked for with a subprocess, every time
+
+`detect_compositor()` spawned `plasmashell --version` on every call — ~95 ms to
+load a Qt binary that prints a string. It sits under `detect_portal_capabilities()`
+and under the portal session thread's status read, so a single
+`native_insertion_status` paid for it twice, and that command runs every time the
+workspace palette opens and every time Delivery & Insert mounts. A session's
+compositor cannot change while the process runs, so it is now answered once. The
+Rust test suite dropped from 41 s to 5.2 s on the same machine, which is how many
+times the old code was spawning it.
+
 ### Changed — the restore measurement is logged as two numbers instead of one
 
 `Start` now logs its own elapsed time and whether a stored token was sent with

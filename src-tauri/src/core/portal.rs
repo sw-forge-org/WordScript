@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -111,7 +112,27 @@ impl PortalCapabilities {
     }
 }
 
+/// The compositor this session runs under, decided once per process.
+///
+/// WHY IT IS PAID ONCE. `read_plasma_version()` spawns `plasmashell --version`
+/// -- a Qt/KDE binary loaded to print a string, measured at ~95 ms on the
+/// reporting machine. This function sits under `detect_portal_capabilities()`
+/// AND under the portal thread's status read, so a single
+/// `native_insertion_status` call spawned it twice: ~190 ms of subprocess on a
+/// command the workspace palette issues every time it opens, and the Delivery
+/// screen on every mount.
+///
+/// A session's compositor cannot change while this process runs -- the
+/// compositor going away takes the app with it -- so the answer is a constant
+/// and is treated as one.
 pub fn detect_compositor() -> CompositorKind {
+    static COMPOSITOR: OnceLock<CompositorKind> = OnceLock::new();
+    *COMPOSITOR.get_or_init(detect_compositor_uncached)
+}
+
+/// The detection itself, kept separate so a test can put an environment in
+/// front of it without racing a cache another test may already have filled.
+fn detect_compositor_uncached() -> CompositorKind {
     if cfg!(not(target_os = "linux")) {
         return CompositorKind::Unknown;
     }
@@ -575,6 +596,21 @@ mod tests {
         );
     }
 
+    /// THE COMPOSITOR IS ASKED FOR ONCE, AND THE DETECTION IS STILL TESTABLE.
+    /// `detect_compositor()` caches, because answering it costs a
+    /// `plasmashell --version` spawn (~95 ms) and one status read used to pay
+    /// that twice. The cache must not swallow the detection logic: a test that
+    /// sets an environment has to reach the function that reads it.
+    #[test]
+    fn the_cached_compositor_is_the_one_the_detection_returns() {
+        assert_eq!(detect_compositor(), detect_compositor_uncached());
+        assert_eq!(
+            detect_compositor(),
+            detect_compositor(),
+            "a cached answer that changed between reads would not be a cache"
+        );
+    }
+
     /// A PASTE THAT FAILED IS NOT A PERMISSION THAT FAILED. Both used to be
     /// `StartFailed`, so a granted session that would not type told the reader
     /// "RemoteDesktop portal Start failed" and pointed them at the one control
@@ -652,7 +688,7 @@ mod tests {
             std::env::set_var("XDG_CURRENT_DESKTOP", "KDE");
             std::env::set_var("XDG_SESSION_DESKTOP", "KDE");
         }
-        let detected = detect_compositor();
+        let detected = detect_compositor_uncached();
         unsafe {
             match restore.0 {
                 Some(value) => std::env::set_var("XDG_CURRENT_DESKTOP", value),
