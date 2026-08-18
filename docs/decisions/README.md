@@ -1544,8 +1544,12 @@ that is what a record is for (ADR 0123: one list per fact).
   Each delivery mode gets one switch, and off is what that mode always did.
 - [0232](0232-a-command-that-configures-nothing-is-removed-and-the-capture-ceiling-keeps-one-source.md):
   A command that configures nothing is removed, and the capture ceiling keeps one source.
+- [0233](0233-a-window-that-has-not-filled-says-how-full-it-is-and-a-figure-that-outgrows-its-unit-changes-unit.md):
+  A window that has not filled says how full it is, and a figure that outgrows its unit changes unit.
 - [0234](0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md):
   The input permission is asked for once, in Settings, and a desktop that cannot be named no longer closes the path.
+- [0235](0235-a-metric-opens-its-own-view-of-the-home-block-and-it-draws-only-what-its-record-can-carry.md):
+  A metric opens its own view of the home block, and it draws only what its record can carry.
 
 ## Resolved: the number 0011 was used twice
 

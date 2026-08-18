@@ -53,6 +53,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — every metric on Home opens its own view
+
+- **Press a metric and it opens up.** Each of the four tiles is now a button
+  onto a third view of the home block, beside the counters and the calendar.
+  Pressing the background or the dots still swaps those two; while a detail is
+  open the swap layer is not rendered at all, so nothing changes behind what you
+  are reading (ADR 0235).
+- **Days, weeks, months and years — and a grain is only offered once the record
+  reaches three of it.** A `Years` tab holding one bar teaches nothing and costs
+  a press to find out, so the tabs appear as the ledger grows into them, the same
+  way the calendar's year picker fills. The view opens on weeks where weeks
+  exist.
+- **Each metric draws what its own record can carry, and says so when that is not
+  a history.** Time saved and words per minute fold over any span, because the
+  day rows carry their fields. Turnaround and languages exist only as all-time
+  figures — there is no per-period turnaround anywhere in the file — so those two
+  draw the spread and the shares, with one line saying which they are. What moves
+  the turnaround is the model and the lane, so a change there shows up as a
+  second hump before it shows up in the median.
+- **A sum is drawn as a bar and a rate as a line**, and a rate that did not move
+  is drawn flat: fourteen weeks at an identical speaking rate differ by the last
+  bit of a double, and a line that scaled to *that* range turned floating-point
+  noise into a mountain range.
+
+### Changed — time saved says which span it means, and changes unit before it runs out of room
+
+- **A three-day-old record no longer says "last 4 weeks".** The foot ramps —
+  `today`, then `last N days`, then `last 4 weeks` once there are twenty-eight
+  days of record to fold. The window itself stays rolling: a counter that
+  restarted every four weeks would read highest on day 27 and nothing on day 28,
+  through no change in how much you dictated (ADR 0233).
+- **Minutes become hours at 180, and hours become days at 72.** `4820 minutes`
+  is a number nobody has a feel for, and it was two heavy weeks away. Above
+  minutes the figure carries one decimal, drawn as the point the matrix counter
+  already knows how to draw.
+- **The ramp counts from the ledger's first day, not from the install date.** On
+  a machine installed four months before the activity record existed, the install
+  date would have claimed a full window over three days of data.
+
+### Fixed — the week starts on Monday
+
+- **The calendar's rows and the new week buckets both start on Monday**, patched
+  in the vendored heat map as well as in both callers. A chart whose weeks began
+  on Sunday under a grid whose rows began on Monday would have put one dictation
+  in two different weeks on one screen.
+- **A tick label no longer collides with the one before it.** The final column of
+  a chart is always labelled — the right edge is where you look to ask *up to
+  when* — except where it would land beside its neighbour, which printed
+  `10 Aug17 Aug` as a single run of characters.
+
 ### Added — a paste that can say whether it arrived
 
 - **Insert at cursor reaches native Wayland windows for the first time.**

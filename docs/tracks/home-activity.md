@@ -715,6 +715,98 @@ dot pitch is identical, the grid track has the room, and the tile is centred in
 it. If a second tile ever takes a decimal, the row's four tracks are still
 `1fr` each and nothing has to move.
 
+## The record — Stage D, 2026-08-18
+
+Fifth session. One owner reading of the running Home screen opened it, and every
+item in it is frontend: **no Rust, no ledger field, no migration.** Durable form
+is
+[ADR 0233](../decisions/0233-a-window-that-has-not-filled-says-how-full-it-is-and-a-figure-that-outgrows-its-unit-changes-unit.md)
+and
+[ADR 0235](../decisions/0235-a-metric-opens-its-own-view-of-the-home-block-and-it-draws-only-what-its-record-can-carry.md);
+what is here is what the next session needs.
+
+**Suite: 898 → 935 over 53 → 56 files.** Three new files (`series.test.ts` 10,
+`MetricDetail.test.tsx` 5, `MetricChart.test.tsx` 8) and fifteen cases added to
+three existing ones, one rewritten in place because the behaviour it asserted
+deliberately changed. `npx tsc --noEmit` and `npm run build` clean. **Rust was
+not touched and `cargo test` was not run** — nothing under `src-tauri/` moved, so
+there was nothing for it to prove. No dev host was running and no capture
+measurement was in flight.
+
+### The reading that opened it, and the second defect inside it
+
+> Diese Funktion gibt es hier erst seit drei Tagen. Dementsprechend haben die
+> letzten vier Wochen bei mir nur 200 Minuten erspart.
+
+The complaint is the label. **The defect the complaint contains but does not
+name is the unit**: the same tile has no ceiling, and `DigitCounter` reserves
+four positions, so a heavy month would have widened the tile and handed the
+reader `4820 minutes`. The owner named both thresholds — 180 minutes, then 72
+hours — and both are about the unit a person has a feel for rather than about
+the width of the box. **The ladder is deliberately earlier than the mechanical
+limit** (ADR 0233).
+
+**`installed_on` is not the ramp's basis, and it looked like it should be.** On
+the reporting machine it says `2026-04-01` while the first day row says
+`2026-08-16` — the install predates the ledger by four months. A ramp on
+`installed_on` would have reported a full four-week window on a three-day record
+and reproduced the exact defect it was written to fix. `ledgerFirstDay` reads
+`started_on` and falls back to the earliest row.
+
+### The four metrics do not have the same record behind them, and two of them have no history at all
+
+This is the finding that shaped the whole detail view. Day rows carry `saved_*`
+and `spoken_words`/`speech_seconds`, so **time saved and words per minute fold
+over any span**. They carry no turnaround and no language: those exist only as
+all-time histograms and an all-time map. **There is no per-period turnaround
+anywhere in the file**, and a `Months` tab over it would have to invent one.
+
+So those two draw what they do have — the spread with its median column marked,
+the shares per language — and say in one line that it is a spread rather than a
+history. **Which is the more useful sentence anyway**: what moves the turnaround
+is the model and the lane, so a change there shows up as a second hump before it
+shows up in the median.
+
+### Five defects the suite could not see, and one browser page that found all of them
+
+The four views were rendered in a throwaway Vite page against a synthetic
+ninety-day ledger — the same technique as measuring geometry in a browser, one
+step up: not *is this the right width* but *is this chart a lie*. Every one of
+these was green in Vitest and wrong on the screen.
+
+1. **Bars 110 px wide at four columns.** A flex row divides its width; nobody
+   asked what four columns of a twenty-eight-column chart look like. Capped at
+   26 px and centred.
+2. **The rate drawn as bars from nought was four identical blocks.** A sum is a
+   bar and a rate is a line, and this is a correctness rule rather than a taste
+   — bars from zero hid the only thing the reader came for.
+3. **The line rendered as a 16 px squiggle in the corner.** `.ws-win svg` sets
+   every SVG in the window to the icon size, and being an unlayered presentation
+   hint it beats the stylesheet. **The calendar's pinned weekday column documents
+   this exact trap and solves it the same way** — an inline `style`. It was
+   walked into anyway, one file over.
+4. **A flat rate drawn as a mountain range.** Fourteen weeks at an identical rate
+   folded to `156.00000000000003` against `155.99999999999997`; a line that pads
+   a range of `1e-14` turns the last bit of a double into three distinct levels.
+   A range under half a percent of the reading is now no range at all.
+5. **`10 Aug17 Aug` as one run of characters.** The final tick was always drawn,
+   and at fourteen columns it lands one column after the stepped one before it.
+   A colliding label is worse than a missing one — the neighbour was legible
+   until it arrived.
+
+**And one that was not a defect but a bad default**: the view opened on the
+coarsest grain offered, which put ninety days of record onto four monthly
+columns. It opens on weeks now, or the finest grain there is.
+
+### The ADR number was taken while the session was running
+
+This track wrote twelve citations to **ADR 0234** into source and tests before
+the file was written; the insert-delivery track landed *its* 0234 in the
+meantime, and every one of them had to be renumbered to 0235. The tree's own
+rule already says grep before you number, and the grep was done — at the start.
+**Grep again immediately before writing the file**, or cite nothing until it
+exists.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -781,6 +873,18 @@ must open on what is real — and it lives in
 [`v1-release.md`](v1-release.md) as that track's Stage A. What touches this track
 is one row of it: the `Meetings and uploads · Preview` line in the day tooltip
 keeps its wording and starts reading a registry.
+
+**Stage D — the owner brief of 2026-08-18.** One reading of the running block,
+four items, all of them frontend. Nothing here is blocked and nothing rebuilds a
+decision: the window stays rolling, the two views stay two views and the third
+one is opened from a tile rather than from a third dot.
+
+| Step | What | Done means |
+|---|---|---|
+| **D1 · done** | **The four-week label on a three-day record**, and the unit that had no ceiling — [ADR 0233](../decisions/0233-a-window-that-has-not-filled-says-how-full-it-is-and-a-figure-that-outgrows-its-unit-changes-unit.md). The window stays rolling; the ramp was chosen over restarting the counter every four weeks on decision 7's own argument, because a tumbling counter reads highest on day 27 and nothing on day 28 | The foot says `today`, `last N days` or `last 4 weeks` according to what the ledger can speak for, and the ramp's basis is `started_on` rather than `installed_on` |
+| **D2 · done** | **The unit ladder**, owner's thresholds: minutes under 180, hours to 72 h, days above, one decimal drawn in the matrix (ADR 0191) | `4820 minutes` is impossible; the tile reads `4.6 hours` and the detail view spells its facts through the same function |
+| **D3 · done** | **A metric opens its own view of the block** — [ADR 0235](../decisions/0235-a-metric-opens-its-own-view-of-the-home-block-and-it-draws-only-what-its-record-can-carry.md). The tile is a button and its click stops propagating; the background and the dots keep the counters/calendar swap; while a detail is open the hit layer is not rendered at all. Day/week/month/year, a grain offered only once the record reaches three buckets of it | Each of the four metrics opens a view that draws what its own record can carry — a series for the two that have one, a spread and a share table for the two that do not, each saying which it is |
+| **D4 · done** | **The week starts on Monday**, in the calendar grid and in the week buckets, patched in the vendored heat map as well as in both callers | One dictation cannot land in two different weeks on one screen |
 
 ## Traps
 
@@ -885,16 +989,19 @@ absence — a streak, a gap, a "you haven't dictated since" — has to pass thro
 
 ## The prompt for the next session
 
-**Stage A and Stage C are both closed** — A1 to A11 and C1 to C11 are landed,
-C12 stays withdrawn. Read the record sections above before anything else, in
-particular the A3/A4/A5 one, *What the readings actually measure*, and the Stage
-C one: all three carry findings that are not in the tree's own comments.
+**Stage A, Stage C and Stage D are all closed** — A1 to A11, C1 to C11 and D1 to
+D4 are landed, C12 stays withdrawn. Read the record sections above before
+anything else, in particular the A3/A4/A5 one, *What the readings actually
+measure*, the Stage C one and the Stage D one: all four carry findings that are
+not in the tree's own comments.
 
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
 run `git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0198 is the next free ADR number unless the tree
-says otherwise — grep, do not trust this line.**
+paths. Never `git add -A`. **0236 is the next free ADR number unless the tree
+says otherwise — grep, and grep again immediately before you write the file.**
+Stage D cited 0234 twelve times in source and lost the number to another track
+while the session was running.
 
 ### There is no open stage. What is left is Stage B, and it is not yours to start
 
@@ -910,11 +1017,11 @@ the thing this track spent Stage A making impossible.
 | **B4** | Meetings and uploads as calendar origins — [`context-objects.md`](context-objects.md). The tooltip already holds their line, unwired and tagged |
 
 **So a session opening this page should probably not be a home-activity
-session.** If the owner brings new readings, they open a Stage D and this page is
-where it goes. If they do not, the three live questions below are what this track
+session.** If the owner brings new readings, they open a Stage E and this page is
+where it goes. If they do not, the four live questions below are what this track
 still has to say, and every one of them is a PROPOSAL rather than a task.
 
-### Three things to raise, and none of them is a row yet
+### Four things to raise, and none of them is a row yet
 
 1. **`Words per minute` is throughput, not articulation — and this is the one
    that has been open longest.** ADR 0177 fixed the numerator and the
@@ -925,20 +1032,26 @@ still has to say, and every one of them is a PROPOSAL rather than a task.
    arrives — a release, an anniversary, a day the reader names themselves — the
    legend's one word stops being enough and the hover becomes the only place a
    name is readable. **That is the point at which markers need a list rather than
-   two constants**, and it is worth noticing before somebody adds a third one to
-   `activityMarkers` by hand.
+   two constants.**
 3. **The undo window is one row deep and says so** (ADR 0195). If multi-selection
    ever lands on History, the confirm is not optional — an undo window is right
    for one row and wrong for thirty, and C12 was withdrawn rather than deleted so
    that this decision is findable rather than re-derived.
-
+4. **Turnaround and languages will still have no history in a year.** Stage D
+   drew what the record can carry and said so in one line each, which is honest
+   and is not the same as satisfying. Giving either one a series means a new day-
+   row field, which means the ledger's shape, `raise_to`, the backup merge and a
+   migration — **a Stage B-sized decision that belongs to whoever owns the
+   ledger, not to a chart.** Do not add the field to make a tab appear.
 
 ### Rules that still have teeth here
 
 1. **Never render a number the runtime did not produce.** A drawn reading carries
    `PreviewTag` and shows no figure at all (ADR 0161).
 2. **`unlit` and `not drawn` are different claims**, and so are `0` and `unknown`.
-   Anything that draws absence goes through `activityWindow`.
+   Anything that draws absence goes through `activityWindow`. A chart column has
+   the same two states: `empty` is not a zero, and a week with no dictation has
+   no speaking rate at all.
 3. **A dev host may be running.** Check `pgrep -af "tauri dev"`. Do not write
    `vite.config.ts` while one is up, and batch anything under `src-tauri/` into
    one pass — say out loud that a rebuild is coming before you do it.
@@ -946,7 +1059,10 @@ still has to say, and every one of them is a PROPOSAL rather than a task.
    `wc -l ~/.config/WordScript/logs/wordscript-runtime.log` before and after and
    report both; no heavy builds, `cargo test` included, during one.
 5. **Measure geometry in a browser, do not read `shell.css` and believe it.**
-   Stage A's corrected trap is three separate ways that goes wrong.
+   Stage A's corrected trap is three separate ways that goes wrong, and **Stage D
+   is the same rule one step up: render the chart and look at it.** Five defects
+   were green in Vitest and wrong on the screen, including a line drawn at 16 px
+   by `.ws-win svg` — the trap the calendar's own file documents.
 6. **A matrix glyph is graded by looking at it at its real size.** Stage C's own
    trap, and it cost two rounds: the arithmetic was right both times.
 7. **The owner does not want every change tested.** Said in as many words on
@@ -955,9 +1071,10 @@ still has to say, and every one of them is a PROPOSAL rather than a task.
 
 **Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
 Rust moved. Quote the counts as a delta against the baselines you measure at the
-start. Baselines at the close of this session: **806 frontend cases over 50
-files, 917 Rust cases.** Run `npm audit` if anything lands in `package.json`; the intent is
-that nothing does.
+start. Baselines at the close of this session: **935 frontend cases over 56
+files**; the Rust suite was not run because nothing under `src-tauri/` moved, so
+its last measured figure is Stage C's 917. Run `npm audit` if anything lands in
+`package.json`; the intent is that nothing does.
 
 **Before you stop**, write your record into this page above the sequence, update
 the rows you closed, write the next ADR in the track's range, and write the next

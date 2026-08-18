@@ -129,16 +129,19 @@ Status: 2026-08-18
   nothing summed from it can be lifetime-scoped. Words per minute is the MEDIAN
   run's rate (an aggregate is dragged down by long dictations, a mean up by short
   hallucinated ones); Turnaround is the median wait from speaking to text and is
-  the one figure that answers to a model or lane change; Time saved stays on four
-  weeks. `Apps` was retired rather than deferred — the target application is only
-  resolved on a direct paste, and a clipboard delivery has none.
+  the one figure that answers to a model or lane change; Time saved is a rolling
+  four-week window whose foot says how much of that window the record can
+  actually fill (ADR 0233, 2026-08-18). `Apps` was retired rather than deferred
+  — the target application is only resolved on a direct paste, and a clipboard
+  delivery has none.
 - **Every figure on that row is measured the way its label reads** (ADR 0177
   through ADR 0181, 2026-08-16). **Words per minute is a SPEAKING rate**: spoken
   words (the raw transcript, before any mode transform) over speech seconds — the
   recorded window less every gap of half a second or more, measured in the audio
   callback. Gaps shorter than that are the spaces between words and stay in.
   **Time saved** divides words and seconds that came from the same runs, excludes
-  the modes that generate their own text, and measures against
+  the modes that generate their own text, reads in minutes below 180, hours to 72
+  of them and days above (ADR 0233), and measures against
   `config.typing_baseline_wpm` (default 40, set in Privacy & Data) — it swings the
   figure threefold across the range a real writer types at, so it may not be a
   constant. **Turnaround** starts when the capture stops rather than when the
@@ -154,11 +157,18 @@ Status: 2026-08-18
   does not touch it and neither does deleting a transcript — the one door is
   *Reset activity statistics* in Privacy & Data, and a reset ledger never seeds
   itself back from whatever history still holds.
-- **Home's opening block carries a calendar or the counters, and the choice
-  survives a restart** (ADR 0172, ADR 0173, 2026-08-16). Twenty-six weeks of dictation as
+- **Home's opening block carries a calendar, the counters, or one metric opened
+  up, and the choice of the first two survives a restart** (ADR 0172, ADR 0173,
+  2026-08-16; third view ADR 0235, 2026-08-18). Twenty-six weeks of dictation as
   circles on the matrix ramp, one per day, with the day's composition on hover;
-  clicking the block swaps the two views (`AppConfig.home_activity_calendar`,
-  additive, no settings row). **The display only spans days the history file can
+  clicking the block or its dots swaps those two views
+  (`AppConfig.home_activity_calendar`, additive, no settings row), while pressing
+  a tile opens that metric's own view — day, week, month or year, with a grain
+  offered only once the ledger reaches three buckets of it. Time saved and words
+  per minute have a real series there; turnaround and languages exist only as
+  all-time figures, so they draw their spread and their shares and say so rather
+  than inventing a history. That view is not persisted: the block opens on the
+  remembered one of the two. **The display only spans days the history file can
   vouch for** — pruning by age and by count both narrow it, a saturated file
   cannot speak for any day before its own oldest record, and the line under the
   grid names which bound bit. Days outside it are blank rather than unlit,
