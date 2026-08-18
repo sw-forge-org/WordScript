@@ -574,8 +574,24 @@ instruction, and a rewrite unrelated to its input is refused rather than shown.
 
 ## Candidate - A second paste mechanism on Wayland (libei)
 
-**Status:** candidate, not scheduled. Needs the decision gate below before it
-becomes scope.
+**Status: superseded 2026-08-18 — the second mechanism shipped, and it is the
+RemoteDesktop portal rather than libei.** `NativeInsertDriver::RemoteDesktopPortal`
+delivers Ctrl+V through `NotifyKeyboardKeysym` on a persistent `ashpd`
+connection; the driver, its sequencing and the grant flow are
+[ADR 0228](decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md)
+and [ADR 0234](decisions/0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md),
+and the work is in [tracks/insert-delivery.md](tracks/insert-delivery.md).
+`ConnectToEIS`/libei was considered as the injection call and deferred: it needs
+`reis` and an ei event loop against a keysym call that is two D-Bus messages and
+already works.
+
+**The decision gate below is still open, and is now the last thing this rests
+on.** It was written as "measure before writing code"; the code was written first
+because the owner chose to build the whole driver in one pass, so it is now
+"measure before trusting it". Everything else about this section is kept as the
+record of what was believed beforehand — including the paragraph below that
+turned out to be right about `busctl` and wrong about nothing else being in the
+way.
 
 **The honest motivation.** Not "auto-paste is unreliable on the maintainer's
 machine". That was measured on 2026-07-30 and does not hold: 37 real `xdotool`
@@ -622,7 +638,7 @@ transport produces a usable input path.
   entry — for pure Wayland as the only entry, for hybrid behind `Xdotool`.
 - `docs/PLATFORMS.md` compositor matrix updated with what actually works.
 
-**Decision gate — measure before writing code:** confirm on KDE Plasma 6 that a
+**Decision gate — still unmeasured:** confirm on KDE Plasma 6 that a
 restored RemoteDesktop session injects input **without a prompt per paste**.
 Prompt-per-paste is precisely why `wtype` and `ydotool` were rejected, and libei
 inherits that risk if the restore token does not do its job. If the prompt

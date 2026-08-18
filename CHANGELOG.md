@@ -53,6 +53,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a paste that can say whether it arrived
+
+- **Insert at cursor reaches native Wayland windows for the first time.**
+  `NativeInsertDriver::RemoteDesktopPortal` sends Ctrl+V as four
+  `NotifyKeyboardKeysym` calls on an `org.freedesktop.portal.RemoteDesktop`
+  session held open by a persistent in-process D-Bus connection. Unlike every
+  other Linux paste driver, its delivery is a call that returns a result rather
+  than a keystroke into an X server that answers "sent" whether or not anybody
+  was listening — so on that lane the previous clipboard contents can be restored
+  again, which has been withheld since ADR 0229 whenever delivery could not be
+  confirmed (ADR 0228).
+- **The permission is asked for once, by a button, and never during a
+  dictation.** "Grant access" in Delivery & Insert is the only thing in the
+  product that can raise the desktop's "Control input devices" dialog; the paste
+  path has no route to the call that prompts, and a test asserts the absence of
+  that route rather than trusting the comment. A run without the permission goes
+  to the clipboard and names the button. Saying no is remembered — nothing asks
+  again until "Ask again" is pressed — and the delivery mode is never changed
+  behind the user's back (ADR 0234).
+- **The grant survives a reboot.** It is stored in
+  `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json`, mode `0600` in a `0700`
+  directory, and asked of the portal as `PersistMode::ExplicitlyRevoked`. The
+  previous location was `$XDG_RUNTIME_DIR`, which the system clears on reboot —
+  that would have turned "one grant ever" into "one grant per boot".
+- **One driver per run, decided before any of them launches.** The focus probe
+  picks `xdotool` when a real X client holds the focus and the portal when a
+  native Wayland window does; they are never tried one after the other, because
+  each fake-input attempt on Linux is its own privilege prompt. An undetermined
+  probe stays on `xdotool` rather than spending the grant on a guess.
+
+### Fixed — a desktop that could not be named closed the whole path
+
+- **A KDE Plasma 6 session was classified as an unknown compositor, silently.**
+  `detect_compositor()` searched the desktop environment variables for
+  `"plasma"`; a KDE session answers `KDE`, so the portal path was ruled out
+  before it began — and the early return that ruled it out had no log line, which
+  is why 6539 runtime-log lines contained not one portal line. `plasmashell
+  --version`, which would have got it right, sat behind the branch that never
+  ran.
+- **The portal interface probe could never have found the interface.** It
+  searched `busctl --user list` for `org.freedesktop.portal.remotedesktop`. That
+  command lists bus *names*; RemoteDesktop is an *interface* on the single name
+  `org.freedesktop.portal.Desktop`. It now reads the interface's `version`
+  property, which answers `u 2` on the machine where the old check answered
+  nothing. The diagnostics panel had been reporting the interface as unreachable
+  on a session where it responds.
+- **The `busctl` portal session is gone rather than repaired.** It created a
+  session on a connection that died with the process, sent no `persist_mode`, and
+  wrote back the restore token it had loaded instead of the one the portal
+  returned — so every grant obtained through it was a fresh grant. Reading
+  `native_insertion_status` no longer creates anything; it reports a session that
+  actually exists.
+
 ### Fixed — the two delivery switches could not be used
 
 - **Both switches from ADR 0231 shipped inoperable, and now work.** Clicking

@@ -785,14 +785,20 @@ WordScript models platform limits explicitly:
 - Linux X11 is Preview.
 - Linux Wayland is compositor-specific: KDE Plasma 6 and GNOME Mutter reach
   direct auto-paste via a one-time `xdg-desktop-portal` RemoteDesktop grant
-  (status `Preview-lite`); hybrid X11+Wayland sessions stay on `xdotool type`
-  over XWayland, classify the KDE Plasma portal prompt and fall back to
-  clipboard-only on detection; pure Wayland sessions (no `DISPLAY`) stay
-  clipboard-only because `wtype`/`ydotool`/`enigo` would still trigger the
-  "Control input devices" dialog; Hyprland, Sway and KDE Plasma 5 have no
-  stable portal grant and stay experimental. Overlay on Linux: XWayland
-  default with native-Wayland opt-in; always-on-top on KDE Plasma 6 via KWin
-  script (`packaging/kwin-wordscript-overlay/`).
+  (status `Preview-lite`), which since 2026-08-18 is a real paste driver rather
+  than a described one — `core/portal_session.rs` holds the session open on a
+  persistent D-Bus connection, and the grant is requested by a button in
+  Delivery & Insert and never by a dictation (ADR 0228, ADR 0234). Which driver
+  a run uses is decided by the focus probe before any driver launches, one per
+  run: `xdotool` over XWayland when a real X client holds the focus, the portal
+  when a native Wayland window does. Without the grant, hybrid X11+Wayland
+  sessions stay on `xdotool`, classify the KDE Plasma portal prompt and fall
+  back to clipboard-only on detection, and pure Wayland sessions (no `DISPLAY`)
+  stay clipboard-only — `wtype`/`ydotool`/`enigo` are out because they would
+  trigger the "Control input devices" dialog per paste. Hyprland, Sway and KDE
+  Plasma 5 have no stable portal grant and stay experimental. Overlay on Linux:
+  XWayland default with native-Wayland opt-in; always-on-top on KDE Plasma 6 via
+  KWin script (`packaging/kwin-wordscript-overlay/`).
 
 This is not marketing language but part of the insert and support model.
 

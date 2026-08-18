@@ -20,8 +20,8 @@ answer is written, not after.
 | Linux X11 | Preview | usable product path with a smaller stability promise |
 | Linux Wayland hybrid (X11+Wayland with xdotool) | Preview-lite | `xdotool type` (fake input over XWayland) directly, else clipboard + manual paste |
 | Linux Wayland pure (no X11 display) | Experimental | auto-paste disabled, clipboard-only + manual paste; avoids the Wayland portal prompt "Control input devices" |
-| KDE Plasma 6 (Wayland, with xdg-desktop-portal-kde) | Preview-lite | in practice the hybrid row above: the RemoteDesktop session is created but **never used to paste** (see the correction below). Always-on-top for overlay via KWin script (`packaging/kwin-wordscript-overlay/`) |
-| GNOME Mutter (Wayland) | Preview-lite | same as KDE Plasma 6, with the same correction |
+| KDE Plasma 6 (Wayland, with xdg-desktop-portal-kde) | Preview-lite | `xdotool` for XWayland windows; **RemoteDesktop portal** for native Wayland ones, after a one-time permission granted in Delivery & Insert. Always-on-top for overlay via KWin script (`packaging/kwin-wordscript-overlay/`) |
+| GNOME Mutter (Wayland) | Preview-lite | same as KDE Plasma 6 |
 | Hyprland / Sway / KDE Plasma 5 | Experimental | no persistent RemoteDesktop portal grant available; auto-paste stays clipboard-only |
 
 **Caveat on the two Tier 1 rows.** Development happens on Linux, and the shortcut
@@ -141,39 +141,90 @@ available and the next concrete step.
 
 ### Linux Wayland -- RemoteDesktop portal on KDE Plasma 6 / GNOME Mutter
 
-On compositors with a stable RemoteDesktop portal interface (KDE Plasma 6
-with `xdg-desktop-portal-kde`, GNOME Mutter), WordScript requests a
-RemoteDesktop session over the session bus on the first
-`native_insertion_status` call:
+**Since 2026-08-18 this is a paste driver.** The section below used to describe a
+session that existed and did no work; that correction is kept at the end,
+because the shape of the mistake matters more than the fact that it is fixed.
+
+On compositors with a RemoteDesktop portal interface (KDE Plasma 6 with
+`xdg-desktop-portal-kde`, GNOME Mutter), `NativeInsertDriver::RemoteDesktopPortal`
+delivers Ctrl+V as four `NotifyKeyboardKeysym` calls on a session held open by a
+persistent `ashpd` connection (`core/portal_session.rs`, one dedicated thread for
+the app's lifetime). It is the only Linux mechanism that reaches a **native
+Wayland window**, and the only one whose delivery is a call with a result rather
+than a keystroke into the void.
+
+**The permission is asked for once, by a button, and never during a dictation.**
+"Grant access" in Delivery & Insert is the only caller of `Start`, which is the
+call that raises the desktop's "Control input devices" dialog. A run without a
+grant delivers to the clipboard and names the button. A refusal is remembered:
+nothing asks again until somebody presses "Ask again". See
+[ADR 0234](decisions/0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md).
+
+The sequence, on that one press:
 
 1. `org.freedesktop.portal.Desktop` / `org.freedesktop.portal.RemoteDesktop`
    `CreateSession`
-2. `SelectDevices` for Keyboard + Pointer (device types `1` and `2`)
-3. `Start` without URI
+2. `SelectDevices` for Keyboard, with `persist_mode = ExplicitlyRevoked` and any
+   stored restore token
+3. `Start` without a window identifier -- the dialog appears here, once
+4. the `restore_token` from the response is written to
+   `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json` (mode `0600`, in a
+   `0700` directory) and restored at the next app start
 
-The restore token is persisted under `$XDG_RUNTIME_DIR/wordscript/remote-desktop.token`
-(mode `0600`) and reused for the next session.
+The token deliberately does **not** live under `$XDG_RUNTIME_DIR`, which is
+cleared on reboot: that would turn "one grant ever" into "one grant per boot".
 
-> **Correction, 2026-08-18.** The paragraph that used to follow here said the
-> "Control input devices" dialog appears only once and subsequent auto-paste runs
-> without further prompt. **No auto-paste has ever gone through this session.**
-> The portal session is created on the first `native_insertion_status` call and
-> its handle feeds the diagnostics panel; `paste_driver_execution_chain` never
-> consults it. On any session with a `DISPLAY` — which includes every KDE Plasma 6
-> Wayland session running XWayland — the chain is `[Xdotool]` and returns, so the
-> portal is never reached. This section therefore describes a session that exists
-> but does no work. Turning it into a real paste driver is the open candidate in
-> [ROADMAP.md](ROADMAP.md); the measured consequence of it being absent is in
-> [known-issues/auto-paste-reports-success-without-inserting.md](known-issues/auto-paste-reports-success-without-inserting.md).
+**Which driver a run uses is decided before any driver launches**, because each
+fake-input attempt on Linux is its own privilege prompt:
+
+| Focus probe | Driver | Prompt |
+| --- | --- | --- |
+| `Reachable` -- a real X client holds the focus | `xdotool` | none |
+| `Unreachable` -- a native Wayland window holds the focus | RemoteDesktop portal | none, the grant is already held |
+| `Unknown` | `xdotool`, then clipboard fallback | none |
+
+`Unknown` stays on `xdotool` on purpose: an undetermined probe is not evidence
+that XTEST has no target (see [ADR 0229](decisions/0229-an-unconfirmable-paste-is-still-attempted-and-what-it-costs-is-the-clipboard-restore.md)).
+Without a grant the table collapses to `[xdotool]` for every row, which is
+exactly the behaviour every machine had before this driver existed.
+
+A portal paste that returns `Ok` counts as **confirmed delivery**, so the
+previous clipboard contents are restored afterwards -- on the one lane where
+XTEST could never say whether anything arrived.
 
 Prerequisites:
 
 - `xdg-desktop-portal` as a daemon in the user session bus
 - `xdg-desktop-portal-kde` (KDE Plasma 6) or `xdg-desktop-portal-gnome` (GNOME)
-- `busctl` from `systemd` (called by Tauri via `Command::new`) as the IPC helper
+- `busctl` from `systemd` for the capability probe only; the session itself
+  speaks D-Bus in-process through `ashpd`
 
 If the portal daemon or interface is unreachable, the status reports
 `PortalSessionUnavailable` with the concrete `PortalError::label()`.
+
+> **Correction, 2026-08-18 (first).** The paragraph that used to be here said the
+> "Control input devices" dialog appears only once and subsequent auto-paste runs
+> without further prompt. **No auto-paste had ever gone through that session.**
+> It was created on the first `native_insertion_status` call, its handle fed the
+> diagnostics panel, and `paste_driver_execution_chain` never consulted it. On any
+> session with a `DISPLAY` the chain was `[Xdotool]` and returned.
+>
+> **Correction, 2026-08-18 (second).** That session could not have worked even if
+> the chain had consulted it, and on this machine it was never created at all:
+>
+> - a RemoteDesktop session belongs to the D-Bus connection that created it, and
+>   it was created by spawning `busctl` -- one connection per call, destroyed on
+>   exit;
+> - `detect_compositor()` looked for `"plasma"` in `XDG_CURRENT_DESKTOP`, which on
+>   a KDE session reads `KDE`, so KDE Plasma 6 was classified `Other` and the
+>   portal path was closed before it began -- silently, because that early return
+>   had no log line;
+> - `detect_portal_capabilities()` looked for the interface name in
+>   `busctl --user list`, which lists **bus names** -- `RemoteDesktop` is an
+>   interface on `org.freedesktop.portal.Desktop` and cannot appear there.
+>
+> All three are fixed; the measured consequence of the driver being absent is in
+> [known-issues/auto-paste-reports-success-without-inserting.md](known-issues/auto-paste-reports-success-without-inserting.md).
 
 ### Linux Wayland -- Hyprland, Sway, KDE Plasma 5
 

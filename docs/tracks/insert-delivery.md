@@ -94,6 +94,13 @@ That is what the rest of this track is for — and it is the strongest argument 
 the portal driver, whose delivery is a call with a result rather than a keystroke
 into the void.
 
+> **Since 2026-08-18 that is no longer true on one lane.** A paste through
+> `NativeInsertDriver::RemoteDesktopPortal` is a D-Bus call that returns, so a
+> run against a native Wayland window can now say whether the text arrived — and
+> the clipboard restore, withheld since ADR 0229 whenever delivery could not be
+> confirmed, runs again on exactly that lane. The XWayland lane is unchanged:
+> `xdotool` still cannot tell, and still does not claim to.
+
 ## The driver landscape, and why most of it is closed
 
 | Candidate | Standing | Why |
@@ -145,11 +152,92 @@ library.
 | 1 | Stop losing the transcript when a paste cannot be confirmed | **done** 2026-08-18, ADR 0227 → **corrected by ADR 0229** |
 | 2 | Correct `PLATFORMS.md`, which described the portal path as shipped behaviour | **done** 2026-08-18 |
 | 3 | Decide the dependency and the grant flow | **decided** 2026-08-18: `ashpd`. Grant flow still open, see below |
-| 4 | `NativeInsertDriver::RemoteDesktopPortal` over a persistent connection, `Ctrl+V` via `NotifyKeyboardKeysym` | open |
-| 5 | Move the restore token out of `$XDG_RUNTIME_DIR` | open |
-| 6 | Wire it into the chain behind the probe, one driver per run | open |
-| 7 | Verify in the native host against a native Wayland window and an XWayland window | open |
-| 8 | Consider `ConnectToEIS`/libei as the injection call, now cheap | open |
+| 4 | `NativeInsertDriver::RemoteDesktopPortal` over a persistent connection, `Ctrl+V` via `NotifyKeyboardKeysym` | **done** 2026-08-18, `core/portal_session.rs` |
+| 5 | Move the restore token out of `$XDG_RUNTIME_DIR` | **done** 2026-08-18, `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json`, `0600` |
+| 6 | Wire it into the chain behind the probe, one driver per run | **done** 2026-08-18, `PasteLane` + ADR 0228's table, with tests per row |
+| 7 | Verify in the native host against a native Wayland window and an XWayland window | **half done** -- the runtime half is measured, the two pastes are owed. See below |
+| 8 | Consider `ConnectToEIS`/libei as the injection call, now cheap | **considered, deferred** 2026-08-18. See below |
+
+### What step 4-6 landed, and the two bugs they had to clear first
+
+The driver was not the hard part. **The portal path was closed twice over on the
+reporting machine, and neither closure said a word** -- which is why the log
+carried no portal line at all rather than a failure:
+
+1. `detect_compositor()` searched for `"plasma"`; this machine answers `KDE` for
+   both desktop variables, so a Plasma 6 session was classified `Other`,
+   `supports_remote_desktop_portal()` was false, and the caller returned without
+   logging. `plasmashell 6.7.0` sat behind the branch that never ran.
+2. `detect_portal_capabilities()` looked for the interface in
+   `busctl --user list`, which lists **bus names**. `RemoteDesktop` is an
+   interface on `org.freedesktop.portal.Desktop`; `busctl --user list | grep -ci
+   remotedesktop` is `0` on every machine, while
+   `get-property ... RemoteDesktop version` answers `u 2`.
+
+Both are the same failure: a probe answering "no" for a reason unrelated to the
+question. Both are fixed, and the startup path now logs the case where it does
+nothing. Recorded in [ADR 0234](../decisions/0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md).
+
+The `busctl` session creation (`request_remote_desktop_session`, `busctl_call`)
+is **removed**, not repaired: it sent no `persist_mode` and never read the
+`restore_token` out of `Start`, so any grant it obtained was a fresh one every
+time. That is a sufficient mechanism for the owner's memory of being asked "every
+damn time", though the version they remember is months old and unprovable from
+the surviving log.
+
+The grant flow the owner settled: **one button in Delivery & Insert, and no
+dictation ever raises the dialog.** A refusal is remembered rather than re-asked;
+the delivery mode is not changed behind the user's back. Both answers are written
+into [ADR 0228](../decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md),
+now Accepted.
+
+### Step 7: what is measured, and the two pastes that are owed
+
+**Measured on the reporting machine, 2026-08-18, app running from `main`:**
+
+```
+[WordScript] Portal grant restore phase=NotGranted session_active=false
+    elapsed_ms=115 detail=Insert at cursor has no input-device permission on
+    this desktop yet. Grant it once in Delivery & Insert; ...
+```
+
+That line is the whole first half: the compositor is named, the interface
+answers, the grant state is read, and **no dialog appeared** -- the restore path
+returns without touching the portal when there is no token. `npm test` (927),
+`cargo test` (985) and `npm run build` are green.
+
+**What is owed, and it needs the owner because it needs a human answering a
+dialog:**
+
+1. Press **Grant access** in Delivery & Insert once. The "Control input devices"
+   dialog should appear exactly once.
+2. Dictate into a **native Wayland window** (a KDE app, or anything not running
+   under XWayland) with a profile whose delivery is *Copy and insert at cursor*.
+   Expect `active_driver=remote_desktop_portal`, `insert_mode=direct_paste`, and
+   the previous clipboard restored afterwards.
+3. Dictate into an **XWayland window** and expect `active_driver=xdotool` --
+   the probe must still choose the old lane where the old lane works.
+4. **Restart the app** and press nothing. Expect
+   `Portal grant restore phase=Granted session_active=true` in the log, and no
+   dialog. **This is the measurement the whole driver rests on**, and it is the
+   one thing here that is the compositor's behaviour rather than ours: if KWin
+   re-prompts despite `ExplicitlyRevoked` and a stored token, the driver is worth
+   less than it looks and ADR 0228 needs revising rather than shipping. The
+   `Start` call's elapsed time is logged, so a dialog shows up as seconds where
+   milliseconds belong.
+
+Read the log with `grep -i portal ~/.config/WordScript/logs/wordscript-runtime.log`,
+and `history.json` sorted by `created_at_ms` -- **the file is not in time order**.
+
+### Step 8: considered, and deliberately not taken
+
+`ConnectToEIS` is present here (RemoteDesktop version 2), and ADR 0228 is right
+that it is the better long-term path. It is still not worth doing now: it means a
+`reis` dependency and an ei event loop against a keysym call that is two D-Bus
+messages and already delivers. Its own argument for deferral holds -- the call
+site can be replaced later without moving the driver's position in the chain.
+Revisit it if `NotifyKeyboardKeysym` turns out to drop keys under load, which
+nothing so far suggests.
 
 ### Step 5 is not cosmetic
 
@@ -176,7 +264,8 @@ mode `0600`.
 | [`auto-paste-reports-success-without-inserting.md`](../known-issues/auto-paste-reports-success-without-inserting.md) | false success closed; the missing lane is this track |
 | [`insert-behavior-reverts.md`](../known-issues/insert-behavior-reverts.md) | separate bug, easily confused with this one — that is the config side, this is the runtime side |
 | [`ADR 0227`](../decisions/0227-every-route-into-a-native-reveal-goes-through-the-coalescer-and-a-driver-that-cannot-reach-its-target-says-so.md) | accepted |
-| [`ADR 0228`](../decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md) | **proposed** — the draft this track implements |
+| [`ADR 0228`](../decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md) | **accepted** 2026-08-18, with both open questions answered |
+| [`ADR 0234`](../decisions/0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md) | accepted — the grant flow, and the two detection bugs that hid this path |
 
 ## What this track deliberately does not do
 

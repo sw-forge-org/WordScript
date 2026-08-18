@@ -1544,6 +1544,8 @@ that is what a record is for (ADR 0123: one list per fact).
   Each delivery mode gets one switch, and off is what that mode always did.
 - [0232](0232-a-command-that-configures-nothing-is-removed-and-the-capture-ceiling-keeps-one-source.md):
   A command that configures nothing is removed, and the capture ceiling keeps one source.
+- [0234](0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md):
+  The input permission is asked for once, in Settings, and a desktop that cannot be named no longer closes the path.
 
 ## Resolved: the number 0011 was used twice
 

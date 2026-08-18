@@ -1,7 +1,7 @@
 # 0228 - The second paste driver is the RemoteDesktop portal, and the focus probe is what sequences it
 
 Date: 2026-08-18
-Status: **Proposed — draft for review, nothing implemented**
+Status: **Accepted 2026-08-18.** Implemented the same day; the two open questions below were answered by the owner and are recorded under *Answers*. The grant flow they settled has its own record in [ADR 0234](0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md).
 
 ## Context
 
@@ -126,6 +126,88 @@ environment, and it is the layer where a fallback buys something.
 2. If the portal grant is refused or revoked, does `auto_paste` fall back to the
    clipboard silently (with the stated reason, as now), or does it turn the
    delivery mode off and say so?
+
+## Answers, 2026-08-18
+
+**1. Up front in Settings, and nowhere else.** The owner's words were "either
+properly once in the settings or not at all", against a memory of an early
+WordScript that asked "every damn time". Lazy was rejected on that ground, and
+the rule is stronger than the question asked for: no run may raise the dialog at
+all, not as a first attempt and not as a retry. The two calls that can raise one
+are the Settings button and the startup restore of an existing grant. See ADR
+0234 for how that is enforced rather than intended.
+
+The same answer raised a premise worth correcting rather than accepting: *"we are
+on other drivers later anyway that do not need this."* There are none. Step 8's
+`ConnectToEIS`/libei runs through **this same portal session and this same
+grant** — it is a different transport, not a different permission. `wtype` and
+`ydotool` were rejected for prompting per paste, `enigo` is XTEST through another
+binding, `kdotool` cannot inject input, and AT-SPI is off on the reporting
+machine. "Not at all" would therefore have meant: native Wayland windows stay
+clipboard-only permanently. The owner chose to build it.
+
+**2. A refusal is remembered, not re-asked.** The delivery mode stays as the
+profile set it and the run falls back to the clipboard with its reason — but
+after a refusal WordScript does not ask again on its own. The Settings row stays
+and its button reads "Ask again", which is the only route back. Turning the mode
+off was rejected: a setting that changes itself is a second thing to notice on
+top of the failure, and the mode is still correct for XWayland windows on the
+same machine.
+
+## What the draft assumed and the code found
+
+Two things were measured while implementing this, both of which the draft had
+taken for granted.
+
+**The portal path was unreachable on the reporting machine before any of this.**
+`detect_compositor()` searched `XDG_CURRENT_DESKTOP` and `XDG_SESSION_DESKTOP`
+for `"plasma"`; that machine answers `KDE` for both, so a KDE Plasma 6 desktop
+was classified `Other`, `supports_remote_desktop_portal()` was false, and
+`ensure_portal_session` returned early **without logging**. Not one portal line
+appears in 6539 runtime-log lines. Corrected in ADR 0234.
+
+**The `busctl` session could only ever have prompted every time.**
+`request_remote_desktop_session` sent no `persist_mode` (so the portal default,
+`DoNot`, applied) and never read the `restore_token` out of the `Start` response
+— it wrote back the token it had loaded, which stores nothing. A grant obtained
+that way is a fresh grant on every session by construction. That is a plausible
+mechanism for the owner's memory of being asked repeatedly, though the version
+they remember is months old and cannot be confirmed from the surviving log. The
+function is removed rather than fixed: the live session now belongs to
+`core/portal_session.rs`, and `busctl` keeps only the capability probing it was
+adequate for.
+
+## What landed, against the decision
+
+- `NativeInsertDriver::RemoteDesktopPortal`, injecting Ctrl+V as four
+  `NotifyKeyboardKeysym` calls (`XK_Control_L`, `XK_v`) on a session held open by
+  a persistent `ashpd` connection on its own thread — decision 1.
+- `PasteLane` carries the probe result and the session's liveness into
+  `paste_driver_execution_chain`, which returns **exactly one driver** on every
+  Wayland lane. `Unknown` deliberately stays on `xdotool` rather than spending
+  the portal on a guess, which is ADR 0229's finding kept intact — decision 2.
+- The grant record moved to `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json`,
+  mode `0600` in a `0700` directory, with `PersistMode::ExplicitlyRevoked` asked
+  of the portal — decision 3.
+- A portal paste that returns `Ok` counts as **confirmed delivery**, so the
+  clipboard restore runs on the one lane where XTEST could never say so. That
+  was not in the draft; it is the first case since ADR 0229 where the answer is
+  a fact rather than a doubt.
+
+**Not implemented, and not silently:** `ConnectToEIS` (step 8) stays deferred.
+The interface is present here at version 2, but using it means a `reis`
+dependency and an ei event loop, against a keysym call that is two D-Bus
+messages and already works. The ADR's own reasoning — "can replace the call site
+later without changing the driver's position in the chain" — still holds, so
+there is nothing to gain by doing it now.
+
+**Still unverified, and the reason the next step is a measurement:** that a
+restored session actually suppresses the dialog on KDE Plasma 6. Everything here
+asks the portal for a persistent grant and stores what it hands back; whether
+KWin honours it across a restart is its behaviour, not ours, and the owner's
+history says do not assume. The runtime log records the elapsed time of the
+`Start` call, so a dialog that appears anyway is visible as seconds where
+milliseconds belong.
 
 ## References
 

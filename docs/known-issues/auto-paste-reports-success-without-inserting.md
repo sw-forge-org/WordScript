@@ -129,12 +129,29 @@ which feeds the fake IO a **succeeding** xdotool because that is what the real
 one does, and asserts both that the paste still ran and that nothing was
 scheduled to overwrite the transcript.
 
-## Still open: nothing can confirm a paste
+## Closed on one lane, 2026-08-18: a paste that can confirm itself
 
-There is one paste mechanism on this lane, it reaches a Wayland window only
-through KWin's XTEST forwarding, and it is unreliable in a way nothing in the
-process can observe. The portal driver is the candidate precisely because its
-delivery is a D-Bus call with a result rather than a keystroke into the void.
+`NativeInsertDriver::RemoteDesktopPortal` shipped the same day this was written
+up. On a Wayland session where a **native Wayland window** holds the focus, the
+paste is now a `NotifyKeyboardKeysym` call that returns a result, so the run
+knows whether the compositor took the keys -- and the clipboard restore, withheld
+whenever delivery could not be confirmed, runs again there.
+
+**The XWayland lane is unchanged and still cannot confirm anything.** `xdotool`
+exits 0 whether or not a client was listening, so a run that lands there still
+leaves the transcript on the clipboard rather than restoring over it. That half
+of this issue stays open, and it stays open on purpose: ADR 0229 established that
+an unconfirmable paste is still worth attempting, and nothing here changes that.
+
+Two things gated the fix and are worth keeping, because they explain why the
+portal looked absent on a machine that has it: `detect_compositor()` classified
+this KDE Plasma 6 desktop as `Other` (it looked for `"plasma"` in a variable that
+reads `KDE`), and the interface probe grepped `busctl --user list` for an
+interface name that can only be a bus name. Both returned "no" for reasons
+unrelated to the question, and the compositor one returned it in silence. See
+[ADR 0234](../decisions/0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md).
+
+### The landscape this was chosen out of
 
 Ruled out by product decision or by the platform:
 
@@ -149,19 +166,24 @@ Ruled out by product decision or by the platform:
   `false` and `QT_ACCESSIBILITY` is unset here, so it would work only for
   applications that happen to have accessibility enabled.
 
-The candidate, agreed with the owner on 2026-08-18 and present on this machine:
-`org.freedesktop.portal.RemoteDesktop` **v2**, offering `NotifyKeyboardKeysym`,
-`NotifyKeyboardKeycode` and `ConnectToEIS` (libei), with
+The mechanism chosen, agreed with the owner on 2026-08-18 and present on this
+machine: `org.freedesktop.portal.RemoteDesktop` **v2**, offering
+`NotifyKeyboardKeysym`, `NotifyKeyboardKeycode` and `ConnectToEIS` (libei), with
 `AvailableDeviceTypes=7`. Its `restore_token` is what distinguishes it from
 `wtype`/`ydotool`: one grant, then a restored session injects without a prompt
-per paste. `core/portal.rs` already builds the session, `ROADMAP.md` carries it
-as a candidate, and `PLATFORMS.md:23` already *describes* it as the KDE Plasma 6
-path -- but no code reaches it, because the chain ends at `[Xdotool]` and
-returns. That documentation drift is part of the same finding.
+per paste.
+
+**Still to be measured:** that the restored grant really does suppress the dialog
+across an app restart on KDE Plasma 6. WordScript asks for
+`PersistMode::ExplicitlyRevoked` and stores what the portal returns; honouring it
+is KWin's behaviour, not ours. The `Start` call's elapsed time is in the runtime
+log, so a dialog that appears anyway reads as seconds where milliseconds belong.
 
 ## Related
 
 - [ADR 0227](../decisions/0227-every-route-into-a-native-reveal-goes-through-the-coalescer-and-a-driver-that-cannot-reach-its-target-says-so.md)
+- [ADR 0228](../decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md): the driver that closes the Wayland half of this
+- [ADR 0234](../decisions/0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md): the grant flow, and the two probes that hid the path
 - [insert-behavior-reverts.md](insert-behavior-reverts.md): the config-side bug this is easily confused with
 - [PLATFORMS.md](../PLATFORMS.md): the Linux Wayland lane
 - [ROADMAP.md](../ROADMAP.md): the libei / RemoteDesktop candidate

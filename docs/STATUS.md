@@ -1193,13 +1193,17 @@ Additional rules:
   direct auto-paste via a one-time xdg-desktop-portal RemoteDesktop grant;
   Hyprland, Sway and KDE Plasma 5 stay experimental without a stable portal
   path
-- Linux Wayland auto-paste behavior per compositor: KDE Plasma 6 and GNOME
-  Mutter request a RemoteDesktop portal session via `busctl`, persist the
-  restore token under `$XDG_RUNTIME_DIR/wordscript/remote-desktop.token` and
-  reuse it so the "Control input devices" dialog appears only once; pure
-  Wayland sessions without an active XWayland bridge stay clipboard-only;
-  hybrid sessions use `xdotool type`, classify stderr at runtime and
-  degrade to clipboard-only on a detected portal prompt
+- Linux Wayland auto-paste behavior per compositor (2026-08-18): on KDE Plasma 6
+  and GNOME Mutter a **one-time** input permission, granted by a button in
+  Delivery & Insert and never by a dictation, opens a persistent RemoteDesktop
+  portal session; the restore token lives under
+  `$XDG_STATE_HOME/wordscript/remote-desktop-grant.json` (`0600`) so it survives
+  a reboot. The focus probe then picks exactly one driver per run -- `xdotool`
+  for XWayland windows, the portal for native Wayland ones -- and never tries
+  both. Without the grant every lane behaves as it did before: `xdotool` where it
+  applies, clipboard-only otherwise. A refusal is remembered rather than
+  re-asked. **Not yet measured:** whether the restored grant suppresses the
+  dialog across an app restart on KDE Plasma 6
 - Linux Wayland overlay click-through to apps beneath the overlay is not
   solvable with current tooling (needs Tauri layer-shell support or a
   compositor-specific protocol path); drag, button-click and clipping are
