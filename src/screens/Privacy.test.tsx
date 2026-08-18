@@ -32,14 +32,26 @@ function inRow(label: string) {
   return within(row as HTMLElement);
 }
 
-/** Since ADR 0185 the three collections answer the same question in the same
- *  words — `Kept for` — so a row query alone is ambiguous by design and the
- *  card is what disambiguates it, for the test as for the reader. */
+/** Since ADR 0185 the collections answer the same question in the same words —
+ *  `Kept for` — so a row query alone is ambiguous by design and the card is
+ *  what disambiguates it, for the test as for the reader. */
 function inCard(title: string) {
   const card = screen.getByText(title).closest(".ws-card");
   if (!card) throw new Error(`No card titled ${title}`);
   return within(card as HTMLElement);
 }
+
+/** A row inside a named card, which `On this machine now` needs since ADR 0237:
+ *  two collections now state a reading under that label, and neither of them is
+ *  the other's. */
+function inCardRow(card: string, label: string) {
+  const row = inCard(card).getByText(label).closest(".ws-row");
+  if (!row) throw new Error(`No row labelled ${label} in ${card}`);
+  return within(row as HTMLElement);
+}
+
+const parkedRow = () => inCardRow("Audio from a failed dictation", "On this machine now");
+const archiveRow = () => inCardRow("Transcript files", "On this machine now");
 
 /**
  * Privacy & Data is still in the gallery, so its fidelity is still measured in
@@ -167,11 +179,11 @@ describe("Privacy & Data, wired", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await waitFor(() => {
-      expect(inRow("On this machine now").getByText("Nothing kept")).toBeTruthy();
+      expect(parkedRow().getByText("Nothing kept")).toBeTruthy();
     });
     /* A button that would delete nothing is the fake affordance rule 7
        forbids. */
-    expect(inRow("On this machine now").queryByRole("button", { name: "Delete now" })).toBeNull();
+    expect(parkedRow().queryByRole("button", { name: "Delete now" })).toBeNull();
   });
 
   it("counts what a failure left behind and deletes it on request", async () => {
@@ -201,36 +213,93 @@ describe("Privacy & Data, wired", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await waitFor(() => {
-      expect(inRow("On this machine now").getByText("3 files · 4.2 MB · oldest 2 days old")).toBeTruthy();
+      expect(parkedRow().getByText("3 files · 4.2 MB · oldest 2 days old")).toBeTruthy();
     });
 
-    await userEvent.click(inRow("On this machine now").getByRole("button", { name: "Delete now" }));
+    await userEvent.click(parkedRow().getByRole("button", { name: "Delete now" }));
 
     expect(invoked).toHaveBeenCalledWith("discard_retained_captures");
     /* The row redraws from the answer rather than from an assumption about what
        the command did, and it names the cost: the retry the file was kept for
        is gone with it. */
     await waitFor(() => {
-      expect(inRow("On this machine now").getByText("Nothing kept")).toBeTruthy();
+      expect(parkedRow().getByText("Nothing kept")).toBeTruthy();
     });
     expect(
       screen.getByText(/can no longer be retried from its audio/),
     ).toBeTruthy();
   });
 
-  it("claims nothing about the disk when the runtime does not answer", async () => {
+  /**
+   * ADR 0237. The archive stopped sharing the index's rule, so it needs the
+   * same two things the card above has — and the reading matters more here,
+   * because a file whose entry the retention already dropped has no row in
+   * History at all. This count is the only place it is admitted to.
+   */
+  it("counts the transcript archive apart from the index and purges it on request", async () => {
     invoked.mockImplementation(async (command) => {
-      if (command === "retained_capture_status") throw new Error("no such folder");
+      if (command === "transcript_store_status") {
+        return { root: "/home/me/WordScript/transcripts", exists: true, files: 394, bytes: 812_000 };
+      }
+      if (command === "purge_transcript_archive") {
+        return { root: "/home/me/WordScript/transcripts", exists: true, files: 0, bytes: 0 };
+      }
       return undefined;
     });
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await waitFor(() => {
-      expect(inRow("On this machine now").getByText("Not read")).toBeTruthy();
+      expect(archiveRow().getByText("394 files · 812 KB")).toBeTruthy();
+    });
+    /* The rule the card states is the one that changed: the age picker above no
+       longer reaches these. */
+    expect(
+      inCard("Transcript files").getByText(/the age rule above no longer does/),
+    ).toBeTruthy();
+
+    await userEvent.click(archiveRow().getByRole("button", { name: "Delete now" }));
+
+    expect(invoked).toHaveBeenCalledWith("purge_transcript_archive");
+    await waitFor(() => {
+      expect(archiveRow().getByText("Nothing stored")).toBeTruthy();
+    });
+    /* And it says what it did NOT delete, because the command walks a folder
+       the reader also keeps their own files in. */
+    expect(screen.getByText(/added to that folder yourself were left/)).toBeTruthy();
+  });
+
+  it("draws no purge door onto an empty archive", async () => {
+    invoked.mockImplementation(async (command) =>
+      command === "transcript_store_status"
+        ? { root: "/home/me/WordScript/transcripts", exists: false, files: 0, bytes: 0 }
+        : undefined,
+    );
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await waitFor(() => {
+      expect(archiveRow().getByText("Nothing stored")).toBeTruthy();
+    });
+    expect(archiveRow().queryByRole("button", { name: "Delete now" })).toBeNull();
+  });
+
+  it("claims nothing about the disk when the runtime does not answer", async () => {
+    invoked.mockImplementation(async (command) => {
+      if (command === "retained_capture_status") throw new Error("no such folder");
+      if (command === "transcript_store_status") throw new Error("no such folder");
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await waitFor(() => {
+      expect(parkedRow().getByText("Not read")).toBeTruthy();
     });
     /* Not `Nothing kept`: a status the screen could not read is not a statement
        that the folder is empty. */
-    expect(inRow("On this machine now").queryByText("Nothing kept")).toBeNull();
+    expect(parkedRow().queryByText("Nothing kept")).toBeNull();
+    /* And the same for the archive, which fails the same way for the same
+       reason (ADR 0237). */
+    expect(archiveRow().getByText("Not read")).toBeTruthy();
+    expect(archiveRow().queryByText("Nothing stored")).toBeNull();
   });
 
   /**
@@ -402,7 +471,7 @@ describe("Privacy & Data · which collection, and who reads it", () => {
 
     expect(
       inCard("Dictation history").getByText(
-        "Older dictations are deleted with their transcript files. Nothing else prunes them.",
+        "This drops the record from History. Your transcript files are kept — they have their own rule below.",
       ),
     ).toBeInTheDocument();
     expect(

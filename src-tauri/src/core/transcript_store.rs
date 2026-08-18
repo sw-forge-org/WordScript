@@ -15,6 +15,14 @@
 //! `transcript_path` on a history entry, never by walking the directory. A
 //! sweep that read the folder would eventually delete a file the reader put
 //! there or renamed, and this folder is theirs.
+//!
+//! **Except at one door, and it is a door somebody opens (ADR 0237).** The
+//! index retention no longer takes the files with it, so a file whose entry has
+//! aged out is unreachable from every path above — no entry names it, and
+//! nothing could ever remove it. `purge_transcript_archive` is the one call
+//! that walks, and it is bounded by shape instead of by an entry: only
+//! `<YYYY>/<MM>/<DD-HHMM>-<slug>.md`, only under the root, and only because a
+//! person pressed a button that says what it will delete.
 
 use std::path::{Path, PathBuf};
 
@@ -509,17 +517,123 @@ pub fn remove_transcript(path: &str) {
     }
 }
 
+/// A run of exactly `length` ASCII digits, which is what the dated tree's two
+/// directory levels are and nothing else in the folder may be.
+fn is_digit_run(name: &str, length: usize) -> bool {
+    name.len() == length && name.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Whether a file name is one this store wrote: `<DD>-<HHMM>-<slug>.md`.
+///
+/// The collision suffix needs no case of its own — `-2` lands inside the slug
+/// part, which is only ever checked for being non-empty. What this rejects is
+/// everything else a reader may keep in the same folder: a note they wrote, an
+/// export, a renamed transcript, anything without the dated stem.
+fn is_store_transcript_name(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".md") else {
+        return false;
+    };
+    let mut parts = stem.splitn(3, '-');
+    let (Some(day), Some(minute), Some(slug)) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    is_digit_run(day, 2) && is_digit_run(minute, 4) && !slug.is_empty()
+}
+
+/// Every file under `root` that this store's own layout accounts for.
+///
+/// TWO LEVELS AND NO DEEPER, AND BOTH ARE CHECKED. The walk descends a
+/// four-digit year into a two-digit month and reads files there; a directory
+/// that is not a year, a file sitting loose at the root, a nested folder of the
+/// reader's own — none of them are visited, let alone counted. The shape is the
+/// permission: this function is what both the reading on Privacy & Data and the
+/// purge behind it are allowed to see.
+///
+/// Takes the root rather than resolving it, so a test can point it at a
+/// directory of its own instead of at the one every other test in the process
+/// shares.
+fn store_transcript_files(root: &Path) -> Vec<(PathBuf, u64)> {
+    let Ok(years) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+
+    let mut files: Vec<(PathBuf, u64)> = Vec::new();
+    for year in years.flatten() {
+        if !is_digit_run(&year.file_name().to_string_lossy(), 4) {
+            continue;
+        }
+        let Ok(months) = std::fs::read_dir(year.path()) else {
+            continue;
+        };
+        for month in months.flatten() {
+            if !is_digit_run(&month.file_name().to_string_lossy(), 2) {
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(month.path()) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                if !is_store_transcript_name(&entry.file_name().to_string_lossy()) {
+                    continue;
+                }
+                let Ok(metadata) = entry.metadata() else {
+                    continue;
+                };
+                if !metadata.is_file() {
+                    continue;
+                }
+                files.push((entry.path(), metadata.len()));
+            }
+        }
+    }
+
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+/// Drop the month and year directories the purge emptied.
+///
+/// `remove_dir` refuses a directory with anything left in it, which is the
+/// whole check: a month that still holds a file the reader put there keeps its
+/// month, and its year with it.
+fn prune_empty_store_directories(root: &Path) {
+    let Ok(years) = std::fs::read_dir(root) else {
+        return;
+    };
+    for year in years.flatten() {
+        if !is_digit_run(&year.file_name().to_string_lossy(), 4) {
+            continue;
+        }
+        if let Ok(months) = std::fs::read_dir(year.path()) {
+            for month in months.flatten() {
+                if is_digit_run(&month.file_name().to_string_lossy(), 2) {
+                    let _ = std::fs::remove_dir(month.path());
+                }
+            }
+        }
+        let _ = std::fs::remove_dir(year.path());
+    }
+}
+
 /// Where the transcripts are, for a surface that states it.
 ///
 /// The root is answered whether or not it exists yet: History's foot names the
 /// folder its records go to, and a machine that has not dictated anything since
 /// ADR 0074 has no folder — the sentence is still true about where the next one
 /// lands.
+///
+/// IT ALSO COUNTS, SINCE ADR 0237. The index retention stopped taking the files
+/// with it, so how many are on the machine is no longer derivable from anything
+/// a screen already knows — the archive can be larger than the index by any
+/// amount, and a rule with no reading beside it is half an answer.
 #[tauri::command]
 pub fn transcript_store_status() -> TranscriptStoreStatus {
     let root = transcripts_dir();
+    let files = store_transcript_files(&root);
     TranscriptStoreStatus {
         exists: root.is_dir(),
+        files: files.len(),
+        bytes: files.iter().map(|(_, bytes)| *bytes).sum(),
         root: root.to_string_lossy().to_string(),
     }
 }
@@ -528,6 +642,47 @@ pub fn transcript_store_status() -> TranscriptStoreStatus {
 pub struct TranscriptStoreStatus {
     pub root: String,
     pub exists: bool,
+    /// How many files the store's own layout accounts for. Not "every file in
+    /// the folder": a reader's own notes are none of this count's business, and
+    /// counting them would make the purge button beside it read as a threat to
+    /// them.
+    pub files: usize,
+    pub bytes: u64,
+}
+
+/// Delete the whole archive now, and answer with what is left (ADR 0237).
+///
+/// THE ONLY WAY BACK OUT OF A FOLDER THAT IS NOW KEPT FOREVER. Every other
+/// delete path in this product is driven by a history entry, and since the
+/// retention prune stopped taking files an entry may be gone while its file is
+/// not. Those orphans have no row, no Reveal and no Retry; without this they
+/// would be deletable only in a file manager.
+///
+/// It walks, which nothing else here is allowed to do, and the shape check is
+/// what makes that acceptable — see `store_transcript_files`. A file the reader
+/// wrote or renamed inside the same folder survives, and so does the folder it
+/// sits in.
+#[tauri::command]
+pub fn purge_transcript_archive() -> Result<TranscriptStoreStatus, String> {
+    let root = transcripts_dir();
+    let files = store_transcript_files(&root);
+
+    let mut removed = 0usize;
+    let mut bytes = 0u64;
+    for (path, size) in &files {
+        if std::fs::remove_file(path).is_ok() {
+            removed += 1;
+            bytes += size;
+        }
+    }
+    prune_empty_store_directories(&root);
+
+    runtime_log::record(format!(
+        "[WordScript] Transcript archive purged on request removed={removed} of={} bytes={bytes}",
+        files.len(),
+    ));
+
+    Ok(transcript_store_status())
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -686,6 +841,59 @@ mod tests {
         let written = write_transcript(&awkward).expect("a path");
         assert!(written.contains("rebuild-freigabe"));
         remove_transcript(&written);
+    }
+
+    /// ADR 0237. The walk is the purge's permission, so what it refuses is the
+    /// part worth a test: everything in this tree but the two real transcripts
+    /// is something a reader could plausibly have put there.
+    #[test]
+    fn the_walk_sees_the_store_layout_and_nothing_else() {
+        let root = std::env::temp_dir().join(format!(
+            "wordscript-archive-walk-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let month = root.join("2026").join("08");
+        std::fs::create_dir_all(&month).expect("a month");
+
+        std::fs::write(month.join("18-1204-ein-titel.md"), "aaa").expect("a transcript");
+        std::fs::write(month.join("18-1204-ein-titel-2.md"), "bb").expect("a collision");
+        /* Everything below is the reader's. */
+        std::fs::write(month.join("meine-notizen.md"), "x").expect("a note");
+        std::fs::write(month.join("18-1204-ein-titel.txt"), "x").expect("not markdown");
+        std::fs::write(root.join("README.md"), "x").expect("loose at the root");
+        std::fs::create_dir_all(root.join("archiv").join("08")).expect("not a year");
+        std::fs::write(root.join("archiv").join("08").join("18-1204-x.md"), "x").expect("nested");
+
+        let seen = store_transcript_files(&root);
+        assert_eq!(seen.len(), 2, "only the two the store wrote");
+        assert_eq!(seen.iter().map(|(_, bytes)| *bytes).sum::<u64>(), 5);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The empty-directory prune leaves a month the reader still has something
+    /// in, which is the same rule one level up from the walk itself.
+    #[test]
+    fn emptied_months_go_and_an_occupied_one_stays() {
+        let root = std::env::temp_dir().join(format!(
+            "wordscript-archive-prune-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let emptied = root.join("2026").join("07");
+        let occupied = root.join("2026").join("08");
+        std::fs::create_dir_all(&emptied).expect("a month");
+        std::fs::create_dir_all(&occupied).expect("a month");
+        std::fs::write(occupied.join("meine-notizen.md"), "x").expect("a note");
+
+        prune_empty_store_directories(&root);
+
+        assert!(!emptied.exists(), "an emptied month goes");
+        assert!(occupied.exists(), "a month with the reader's own file stays");
+        assert!(root.join("2026").exists(), "and so does the year holding it");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

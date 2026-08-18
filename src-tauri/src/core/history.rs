@@ -1628,21 +1628,35 @@ fn resolve_retry_mode(entry: &TranscriptionHistoryEntry, app_config: &AppConfig)
     }
 }
 
-/// Prune, and take the pruned records' files with them.
+/// Prune the index, and LEAVE THE FILES WHERE THEY ARE (ADR 0237).
 ///
-/// Retention is a promise Privacy & Data prints as two numbers, and it was only
-/// ever true of the index. Since ADR 0074 a record is also a file, so the sweep
-/// that drops the entry removes the file the entry named — in the same call,
-/// because a retention rule that holds for one of the two stores is worse than
-/// none: it reads as a guarantee and is not one.
+/// ADR 0074 had this call take the pruned records' files with it, on the
+/// reasoning that a retention rule true of one of two stores is worse than
+/// none. That argument is right about a rule a screen prints and wrong about
+/// which stores it governs: the index is a surface — what History lists, what
+/// the cause list groups, what a filter reaches — and the archive is the
+/// reader's writing, in a folder in their home directory, in a format made to
+/// outlive this product. `history_limit` is pinned at a thousand so a list
+/// stays fast, which on the reporting machine is about five days of dictation;
+/// it has no business deleting a year of somebody's transcripts on the way past.
+///
+/// So this is housekeeping and it acts like it, the same cut ADR 0176 made for
+/// the activity ledger. Wanting the writing gone is a separate intention and
+/// has separate doors: deleting a record, clearing the history, and the purge
+/// on Privacy & Data all still remove files.
+///
+/// THE COST IS THE ORPHAN, AND IT IS DELIBERATE. Once the entry is gone nothing
+/// knows the path any more, so the file is unreachable from every entry-driven
+/// path in the runtime. `purge_transcript_archive` is the answer to that and
+/// the reason it may walk the directory at all.
 fn prune_entries_for_runtime(entries: &mut VecDeque<TranscriptionHistoryEntry>) {
     let (history_limit, history_retention_days) = runtime_history_policy();
-    let dropped = prune_entries(entries, history_limit, history_retention_days, now_ms());
-    remove_transcript_files(&dropped);
+    prune_entries(entries, history_limit, history_retention_days, now_ms());
 }
 
 /// The files of records that are going away, and nothing else. Never a
-/// directory walk (ADR 0074).
+/// directory walk (ADR 0074) — with the single exception ADR 0237 names, which
+/// lives in `transcript_store` behind a button rather than here.
 fn remove_transcript_files(entries: &[TranscriptionHistoryEntry]) {
     for entry in entries {
         if let Some(path) = entry.transcript_path.as_deref() {
@@ -2799,10 +2813,13 @@ mod tests {
         }
     }
 
-    /// Retention is printed on Privacy & Data as a promise about everything the
-    /// product keeps. Before ADR 0074 it was only ever true of the index.
+    /// ADR 0237 reverses what this test used to assert. The index prune is
+    /// housekeeping over a list with a thousand-record ceiling; the file is the
+    /// reader's writing and outlives it. Every intentional delete still takes
+    /// the file — the two tests above this one are those, and they are the
+    /// reason this one is a decision rather than an oversight.
     #[test]
-    fn retention_takes_the_pruned_records_files_with_them() {
+    fn retention_drops_the_entry_and_leaves_its_file_alone() {
         let _guard = test_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -2823,7 +2840,19 @@ mod tests {
             })
             .collect();
 
-        assert!(!PathBuf::from(&dropped).exists(), "retention left a file behind");
+        assert!(
+            PathBuf::from(&dropped).exists(),
+            "the index prune deleted a transcript the reader still owns",
+        );
+        /* And the entry itself is gone, or the test would prove nothing about
+           the prune having run at all. */
+        let indexed = load_history_entries();
+        assert!(
+            !indexed.iter().any(|entry| entry.id == first.id),
+            "the pruned entry survived in the index",
+        );
+
+        super::super::transcript_store::remove_transcript(&dropped);
         for path in kept {
             assert!(PathBuf::from(&path).exists());
             super::super::transcript_store::remove_transcript(&path);

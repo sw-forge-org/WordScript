@@ -60,6 +60,13 @@ export interface RetainedCaptureStatus {
 export interface TranscriptStoreStatus {
   root: string;
   exists: boolean;
+  /** How many files the store's own layout accounts for, and how many bytes
+   *  they are (ADR 0237). Since the index retention stopped taking the files
+   *  with it, the archive can be arbitrarily larger than the index and nothing
+   *  a screen already holds could tell you by how much. Files the reader put in
+   *  the same folder are not counted — the purge would not touch them either. */
+  files: number;
+  bytes: number;
 }
 
 export interface TranscriptionHistoryEntry {

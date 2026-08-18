@@ -3240,6 +3240,7 @@ pub fn run() {
             core::activity_ledger::reset_activity_ledger,
             core::history::transcription_history_storage_status,
             core::transcript_store::transcript_store_status,
+            core::transcript_store::purge_transcript_archive,
             core::backup::export_full_backup,
             core::backup::import_full_backup,
             core::backup::reset_all_settings,

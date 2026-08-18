@@ -21,7 +21,7 @@ import {
   textProfileFromRulesDocument,
   textRulesDocumentFromProfile,
 } from "@/lib/textProfiles";
-import type { RetainedCaptureStatus } from "@/types/history";
+import type { RetainedCaptureStatus, TranscriptStoreStatus } from "@/types/history";
 import type { TextRulesAnalysis, TextRulesDocument } from "@/types/textRules";
 import type { WiredScreenProps } from "./props";
 
@@ -66,6 +66,18 @@ import type { WiredScreenProps } from "./props";
  * thing this product holds, so the card states what the rule ALLOWS and, since
  * ADR 0185, what is actually parked: `retained_capture_status` counts it and
  * `discard_retained_captures` is the one door that shortens the seven days.
+ *
+ * THE FOURTH IS THE TRANSCRIPT ARCHIVE, AND IT ONLY BECAME ONE WHEN IT STOPPED
+ * SHARING A RULE (ADR 0237). Since ADR 0074 every dictation is also a Markdown
+ * file in the reader's home directory, and the index retention deleted it: a
+ * thousand-record ceiling chosen so a list stays fast was quietly the lifetime
+ * of somebody's writing — about five days of it on the reporting machine. The
+ * prune no longer touches the files, so the archive is kept until it is
+ * deleted, and that rule needs the same two things the audio card has: a
+ * reading (`transcript_store_status` counts and sizes it) and a door
+ * (`purge_transcript_archive`). The door is not optional here. Once an index
+ * entry is pruned nothing knows the file's path, so History cannot reach it and
+ * this card is the only place the product admits it exists.
  *
  * WHAT MAY READ IT IS ITS OWN SECTION, and it exists because the question was
  * asked of the retention rows and they could not answer it. If the dictation
@@ -240,10 +252,14 @@ const RETENTIONS: { value: number; label: string }[] = [
   { value: 0, label: "No age limit" },
 ];
 
-/** A parked recording's size, in the decimal units the rest of the product
- *  states file sizes in (`formatModelSize`'s reasoning, one order down: these
- *  are megabytes of WAV, not gigabytes of model). */
-function formatCaptureSize(bytes: number): string {
+/** What a collection of files on this machine weighs, in the decimal units the
+ *  rest of the product states file sizes in (`formatModelSize`'s reasoning, one
+ *  or two orders down: these are megabytes of WAV and kilobytes of Markdown,
+ *  not gigabytes of model).
+ *
+ *  The `Math.max(1, …)` floor is why nothing calls this with a zero: a
+ *  collection with nothing in it gets a sentence, not `1 KB`. */
+function formatStoredSize(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1000))} KB`;
 }
@@ -285,6 +301,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
     | "rules-import"
     | "activity"
     | "captures"
+    | "archive"
     | null
   >(null);
   const [exported, setExported] = useState<string | null>(null);
@@ -317,6 +334,28 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
     if (!runtime.active) return;
     void readCaptures();
   }, [runtime.active, readCaptures]);
+
+  /* WHAT THE ARCHIVE HOLDS, FOR THE SAME REASON AND WITH THE SAME `null`
+     (ADR 0237). The count is the only place the product admits an orphaned file
+     exists — one whose index entry the retention already dropped — so it may
+     never be guessed at. A status this row could not read states the rule and
+     no reading. */
+  const [archive, setArchive] = useState<TranscriptStoreStatus | null>(null);
+  const [archiveNote, setArchiveNote] = useState<string | null>(null);
+
+  const readArchive = useCallback(async () => {
+    try {
+      const answer = await invoke<TranscriptStoreStatus>("transcript_store_status");
+      setArchive(typeof answer?.files === "number" ? answer : null);
+    } catch {
+      setArchive(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!runtime.active) return;
+    void readArchive();
+  }, [runtime.active, readArchive]);
 
   /* WHICH PROFILE THE EXPORT MEANS. It opens on the active one because that is
      the profile the reader is currently being written by, and it is a local
@@ -368,6 +407,27 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
       setCapturesNote("Deleted. A failed dictation can no longer be retried from its audio.");
     } catch (cause) {
       setCapturesNote(String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /* THE DOOR ONTO A FOLDER NOTHING ELSE CAN REACH (ADR 0237). Deleting a record
+     in History takes its file; the retention sweep no longer does. So a file
+     whose entry has aged out has no row to delete and no path anybody holds,
+     and this is the only call in the product that will remove it. It walks the
+     directory, which is why the runtime bounds it by the store's own naming
+     shape rather than by "every .md in there". */
+  const purgeArchive = async () => {
+    setBusy("archive");
+    try {
+      const answer = await invoke<TranscriptStoreStatus>("purge_transcript_archive");
+      setArchive(typeof answer?.files === "number" ? answer : null);
+      setArchiveNote(
+        "Deleted. Files you added to that folder yourself were left where they are.",
+      );
+    } catch (cause) {
+      setArchiveNote(String(cause));
     } finally {
       setBusy(null);
     }
@@ -530,7 +590,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
 
       <SectionHeader
         title="How long things are kept"
-        description="Three collections, each under its own rule, and only the first one is yours to set."
+        description="Four collections, each under its own rule, and only the first one is yours to set."
       >
         <Card
           title="Dictation history"
@@ -542,8 +602,13 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
               /* THE ONE RULE, AND ITS HINT NO LONGER HAS TO EXPLAIN A SECOND
                  ONE. It used to read "whichever binds first: this age, or the
                  cap above" — a sentence that only exists because the screen
-                 offered two rules over one list (ADR 0185). */
-              hint="Older dictations are deleted with their transcript files. Nothing else prunes them."
+                 offered two rules over one list (ADR 0185).
+
+                 AND IT NO LONGER CLAIMS THE FILES. Until ADR 0237 it read
+                 "older dictations are deleted with their transcript files",
+                 which was true and is the thing that record reversed: this rule
+                 governs the index, and the card below governs the writing. */
+              hint="This drops the record from History. Your transcript files are kept — they have their own rule below."
               control={
                 <Select
                     value={String(runtime.config.history_retention_days)}
@@ -578,6 +643,69 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
               hint="Beyond this the oldest drops out, whatever the rule above says. It bounds the index, not your privacy — a thousand transcripts is a few hundred kilobytes of text."
               control={
                 <StatusBadge tone="plan">Newest {runtime.config.history_limit}</StatusBadge>
+              }
+            />
+          </CardRows>
+        </Card>
+
+        {/* THE WRITING, WHICH IS NOT THE INDEX (ADR 0237). Every dictation is
+            also a Markdown file in the reader's own home directory, and until
+            this record the card above deleted it — the thousand-record ceiling
+            that keeps a list fast was the lifetime of a year's transcripts. The
+            two stores answer different questions, so they get different rules
+            and different cards. */}
+        <Card
+          title="Transcript files"
+          description="A Markdown file per dictation, in a folder you own. Written for you to keep, not for the app to read back."
+        >
+          <CardRows>
+            <Row
+              label="Kept for"
+              /* No picker, and deliberately not a second one: two durations
+                 over two stores would rebuild the two-controls defect ADR 0185
+                 removed, one store further out. The folder is the reader's and
+                 the only rule is the door below. */
+              hint="Nothing prunes them. Deleting a record in History still takes its file; the age rule above no longer does."
+              control={<StatusBadge tone="plan">Until you delete them</StatusBadge>}
+            />
+            {/* THE READING IS NOT OPTIONAL HERE, unlike on the card below where
+                it is merely better. Once a record ages out of the index nothing
+                holds its file's path any more — no row, no Reveal, no Retry —
+                so this count is the only place the product admits those files
+                exist at all. */}
+            <Row
+              label="On this machine now"
+              hint={
+                archiveNote ??
+                (archive === null
+                  ? "Read from the folder they are written to."
+                  : archive.files === 0
+                    ? `Nothing is stored. The next dictation writes one to ${archive.root}.`
+                    : `In ${archive.root}. Deleting them removes your copy of every dictation, including the ones History no longer lists. Files you put in that folder yourself are left alone.`)
+              }
+              control={
+                <span className="ws-rowflex">
+                  {archive === null ? (
+                    <StatusBadge tone="neutral">Not read</StatusBadge>
+                  ) : archive.files === 0 ? (
+                    <StatusBadge tone="success">Nothing stored</StatusBadge>
+                  ) : (
+                    <StatusBadge tone="plan">
+                      {archive.files} file{archive.files === 1 ? "" : "s"} ·{" "}
+                      {formatStoredSize(archive.bytes)}
+                    </StatusBadge>
+                  )}
+                  {archive !== null && archive.files > 0 && (
+                    <Button
+                      variant="danger"
+                      busy={busy === "archive"}
+                      disabled={busy !== null}
+                      onClick={() => void purgeArchive()}
+                    >
+                      Delete now
+                    </Button>
+                  )}
+                </span>
               }
             />
           </CardRows>
@@ -633,7 +761,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                   ) : (
                     <StatusBadge tone="warning">
                       {captures.count} file{captures.count === 1 ? "" : "s"} ·{" "}
-                      {formatCaptureSize(captures.bytes)}
+                      {formatStoredSize(captures.bytes)}
                       {captures.oldest_age_ms === null
                         ? ""
                         : ` · oldest ${formatCaptureAge(captures.oldest_age_ms)}`}
@@ -666,9 +794,9 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                 exactly what `PreviewTag` marks (rule 7, ADR 0161). "Pruning"
                 also went: it named the mechanism where the reader asks about
                 the outcome. */}
-            {/* THE SAME QUESTION IN THE SAME WORDS, ONCE PER CARD. Three
+            {/* THE SAME QUESTION IN THE SAME WORDS, ONCE PER CARD. Four
                 collections each answer `Kept for`, so the screen reads as one
-                question asked three times rather than three rules that happen
+                question asked four times rather than four rules that happen
                 to be nearby — and the answers differ in the badge, which is
                 where a difference belongs. */}
             <Row
