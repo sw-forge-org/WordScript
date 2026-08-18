@@ -201,8 +201,10 @@ decision and not this pass's to take.
   user made is not the runtime's to edit.
 - **Reports 5 and 6's fixes.** Both wait on one reproduction each, now that the
   instruments are in. Neither is guessed at.
-- **Leg 2.** Untouched. Its brief is still
-  [`insert-delivery-kickoff.md`](insert-delivery-kickoff.md).
+- **Leg 2.** Untouched at the time. It has since been built, measured and closed;
+  its brief is spent and archived as
+  [`../archive/insert-delivery-kickoff.md`](../archive/insert-delivery-kickoff.md),
+  and the track itself is [`insert-delivery.md`](insert-delivery.md).
 
 ## Left for whoever picks this up
 

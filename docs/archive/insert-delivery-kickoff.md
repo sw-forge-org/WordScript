@@ -1,8 +1,25 @@
 # Kick-off — after Leg 2: one measurement, then this track closes
 
+**Spent 2026-08-18.** The four steps below all ran that night, and the track
+closed on them: the grant was pressed once, two dictations delivered through the
+portal into native Wayland windows (9 ms, 2 ms), one dictation into an XWayland
+window chose `xdotool` (31 ms), and twelve restarts restored the session in
+7-20 ms with no dialog. The answer to its own decisive question -- step 4 -- is
+**milliseconds**, so KWin honours `ExplicitlyRevoked` and ADR 0228 stands as
+written rather than needing revision. The measurements themselves are in
+[`../tracks/insert-delivery.md`](../tracks/insert-delivery.md) § Step 7; this
+page is kept for the shape of the ask and for its two standing warnings, which
+are written down nowhere else.
+
+Its step 3 also has a trap it could not have known about: a KDE editor is
+single-instance, so `QT_QPA_PLATFORM=xcb kate <file>` hands the file to the
+running **Wayland** instance and never applies. Four dictations were measured
+against a window that was not an XWayland window at all. `--new` is what forces a
+real X client, and `xdotool search --onlyvisible --name .` is what proves it.
+
 ## State at handoff (2026-08-18, night)
 
-**Leg 2 is built.** Steps 4–8 of [`insert-delivery.md`](insert-delivery.md) are
+**Leg 2 is built.** Steps 4–8 of [`insert-delivery.md`](../tracks/insert-delivery.md) are
 done or deliberately deferred, on `main`, **not pushed**. `cargo test` 985,
 `npm test` 927, `npm run build` green. The nine `cargo check` warnings are all
 present at `HEAD` and belong to other code.
@@ -47,7 +64,7 @@ Reading key: `grep -i portal ~/.config/WordScript/logs/wordscript-runtime.log`.
 - **Two owner reproductions**, instrument in place, reading key in
   [`../known-issues/capture-shortcut-recording.md`](../known-issues/capture-shortcut-recording.md):
   a window opened mid-hold, and a dictation carried past three minutes (also
-  item 6 of [`open-fixes-leg1-part2.md`](open-fixes-leg1-part2.md)). **Do not
+  item 6 of [`open-fixes-leg1-part2.md`](../tracks/open-fixes-leg1-part2.md)). **Do not
   build a fix for either until one of them has run.**
 - **The overlay double reveal at app start** stays open and measured, not fixed:
   same surface twice, 108 ms apart, one flush, so it entered from a native route.
@@ -71,4 +88,5 @@ supported a conclusion the owner's "it worked sometimes" contradicted, and the
 owner was right: KWin forwards XTEST from Xwayland into the compositor. Ask
 before concluding that something cannot happen.
 
-**Replace this file when the measurement has run and the track closes.**
+**Replace this file when the measurement has run and the track closes.** --
+which is what happened; see the note at the top.

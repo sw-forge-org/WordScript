@@ -63,6 +63,21 @@ here, in three files that split by *kind of document* rather than by leg:
   filed as *unreproduced* was reproducible on every machine and became B23
   (ADR 0217). B15's brief is the example of a brief wrong about the tree; this is
   the example of a brief wrong about its own arithmetic.
+- [`insert-delivery-kickoff.md`](insert-delivery-kickoff.md) — the spent
+  **kick-off page** for the insert-delivery track's Leg 2, whose four steps all
+  ran on 2026-08-18 and closed the track (ADR 0228 confirmed rather than revised,
+  ADR 0234). **Kept for two standing warnings and one trap.** The warnings: *a
+  probe that answers "no" is not a fact about the machine* — this leg lost hours
+  to two silent ones, a compositor check searching for `"plasma"` in variables
+  that read `KDE` and an interface check grepping a list of bus names for an
+  interface name; and *a complete measurement is not a complete model*, which is
+  ADR 0227's decision 2 being withdrawn within hours (→ ADR 0229) because a
+  complete enumeration of the session's X windows supported a conclusion the
+  owner's experience contradicted. The trap is in its own step 3: a KDE editor is
+  single-instance, so `QT_QPA_PLATFORM=xcb kate <file>` hands the file to the
+  running Wayland instance and the variable never applies — four dictations were
+  measured against a window that was not an XWayland window at all before anyone
+  noticed.
 
 ## Closed tracks and spent plans
 
