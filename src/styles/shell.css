@@ -3736,8 +3736,12 @@
      each column — a reader pointing at the figure still got nothing, and the
      tooltips read as broken (ADR 0186). The whole tile takes it now, and the
      swap moved onto the body's own click for it. */
+  /* `.ws-metric` IS THE WHOLE THIRD VIEW (ADR 0235), so one entry covers its
+     chart, its grain control and its way back. It is safe to hand the pointer to
+     all of it because the swap layer is not drawn at all while a metric is
+     open — there is nothing underneath for a stray click to reach. */
   .ws-home-switch-body
-    :is(.ws-cal-cell, .ws-cal-scroll, .ws-cal-period, .ws-cal-step, .ws-tile) {
+    :is(.ws-cal-cell, .ws-cal-scroll, .ws-cal-period, .ws-cal-step, .ws-tile, .ws-metric) {
     pointer-events: auto;
   }
   /* The counter view holds nothing with its own answer to a click, so the body
@@ -3831,6 +3835,159 @@
   /* No reading is a dark display, and it is deliberately not a lit zero: a zero
      states that the runtime counted none, and nothing here counted. */
   .ws-counter[data-unlit] { opacity: 0.5; }
+
+  /* A TILE THAT OPENS ITS OWN VIEW IS A BUTTON (ADR 0235), and a button brings a
+     border, a background, a font and a middle alignment that the read-out never
+     had. Every one of them is taken back off here: the counter row may not
+     change shape because one of its tiles became pressable. */
+  button.ws-tile {
+    appearance: none;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    padding: var(--s2);
+    margin: calc(var(--s2) * -1);
+    border-radius: var(--r-small);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+  button.ws-tile:hover { background: var(--bg-inset); }
+  button.ws-tile:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+  /* ═══ ONE METRIC, OPENED UP ═══════════════════════════════════════════════
+     The third view of the home block. It is laid out on the same centred column
+     the other two are, because the three are one object in three states and a
+     reader who swaps between them should see the content stay put. */
+  .ws-metric { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+  .ws-metric-head { display: flex; align-items: center; }
+  /* THE WAY BACK CARRIES THE METRIC'S NAME, so the head is a title and a control
+     at once rather than a chevron beside a heading. */
+  .ws-metric-back {
+    display: inline-flex; align-items: center; gap: var(--s2);
+    padding: var(--s1) var(--s2);
+    margin-left: calc(var(--s2) * -1);
+    border: 0; background: none; cursor: pointer;
+    border-radius: var(--r-small);
+    color: var(--fg);
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-label);
+  }
+  .ws-metric-back:hover { background: var(--bg-inset); }
+  .ws-metric-back:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .ws-metric-grain { align-self: center; }
+
+  /* THE CHART. A row of bars whose heights are percentages of the tallest — CSS
+     rather than SVG, because the width is the container's and the geometry is
+     not the point here the way it is on the matrix and the heat map. */
+  .ws-chart { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+  .ws-chart-plot {
+    position: relative;
+    display: flex; align-items: stretch; gap: 3px;
+    height: 118px;
+    min-width: 0;
+  }
+  .ws-chart-col {
+    position: relative;
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+    flex: 1 1 0; min-width: 0;
+  }
+  /* A BAR HAS A CEILING ON ITS WIDTH AND FOUR OF THEM PROVED WHY. At four
+     monthly columns across the block each bar came out 110 px wide, which reads
+     as a stack of blocks rather than as a chart — the eye takes a wide rectangle
+     for a panel and a narrow one for a measurement. Capped and centred, four
+     columns and twenty-eight columns are the same drawing at two densities. */
+  .ws-chart-bar {
+    display: block;
+    width: 100%;
+    max-width: 26px;
+    min-height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--accent);
+    opacity: 0.55;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  /* AN EMPTY COLUMN IS THE UNLIT GROUND AND NOT A SHORT BAR — the calendar's own
+     rule, one display over: nothing is not a reading of none. */
+  .ws-chart-bar[data-empty] { height: 3px; background: var(--fg-muted); opacity: 0.3; }
+  .ws-chart-bar[data-on], .ws-chart-bar[data-marked] { opacity: 1; }
+
+  /* THE LINE VARIANT. The stroke is one stretched SVG across the whole plot and
+     the points are ordinary elements in the columns, because a circle in a
+     viewBox stretched to 560 x 118 is an ellipse. */
+  .ws-chart-line {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .ws-chart-line polyline {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.75;
+  }
+  .ws-chart-dot {
+    position: absolute;
+    width: 5px; height: 5px;
+    margin-bottom: -2.5px;
+    border-radius: var(--r-round);
+    background: var(--accent);
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  .ws-chart-dot[data-on] { transform: scale(1.8); }
+  /* THE PLOT KEEPS A FLOOR UNDER A LINE. Without it the lowest point sits on the
+     bottom edge of nothing and the chart has no ground to be read against. */
+  .ws-chart-plot[data-line] { border-bottom: 1px solid var(--border); }
+
+  /* THE LABEL OVERFLOWS ITS COLUMN ON PURPOSE. A column is twenty pixels wide at
+     twenty-eight of them and `0.5` does not fit in twenty pixels; clipped, the
+     axis read as a row of half-digits. Only every nth column carries a label, so
+     what it overflows into is empty. */
+  .ws-chart-tick {
+    margin-top: 4px;
+    overflow: visible;
+    text-align: center;
+    white-space: nowrap;
+    font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  /* THE READ-OUT HOLDS ITS LINE WHETHER OR NOT ANYTHING IS UNDER THE CURSOR. A
+     line that appears on hover moves everything under it every time the pointer
+     crosses the chart. */
+  .ws-chart-read {
+    min-height: 1.4em;
+    margin: 0;
+    text-align: center;
+    font-size: var(--t-micro);
+    color: var(--fg-dim);
+  }
+
+  /* THE FACTS UNDER THE CHART — what the chart cannot say because it is not a
+     series: the lifetime figure, the best bucket, the assumption in the
+     divisor. */
+  .ws-metric-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s3);
+    margin: 0;
+    text-align: center;
+  }
+  .ws-metric-facts dt {
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-metric-facts dd { margin: 0; font-size: var(--t-body); color: var(--fg); }
+  .ws-metric-note {
+    margin: 0;
+    text-align: center;
+    max-width: 52ch;
+    align-self: center;
+    font-size: var(--t-micro);
+    color: var(--fg-muted);
+    line-height: 1.5;
+  }
 
   /* ═══ THE ACTIVITY CALENDAR ═══════════════════════════════════════════════
      THE HEAT MAP'S OWN `width`/`height` ATTRIBUTES DO NOT SURVIVE `.ws-win svg`,

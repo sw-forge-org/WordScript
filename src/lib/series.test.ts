@@ -1,0 +1,179 @@
+import { describe, expect, it } from "vitest";
+import type { ActivityLedger, LedgerDay } from "./activity";
+import {
+  bestPoint,
+  bucketQuantile,
+  distributionBars,
+  offeredPeriods,
+  periodStart,
+  rateSeries,
+  savedAllTime,
+  savedSeries,
+} from "./series";
+
+/**
+ * WHAT A BUCKETED SERIES CAN GET WRONG, AND IT IS NEVER THE ARITHMETIC. It is
+ * the edges: which bucket a day falls in, which buckets exist at all, and
+ * whether a bucket with nothing in it is a zero or an absence. All three are
+ * assertions here, because all three are invisible on a chart that looks fine.
+ */
+
+/** 2026-08-12, a Wednesday, at noon. Its week begins Monday the 10th. */
+const NOW = new Date(2026, 7, 12, 12, 0).getTime();
+const DAY = 24 * 60 * 60 * 1000;
+
+function iso(daysBack: number): string {
+  const date = new Date(NOW - daysBack * DAY);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+function row(overrides: Partial<LedgerDay> = {}): LedgerDay {
+  return {
+    dictations: 1,
+    words: 100,
+    spoken_words: 100,
+    recorded_seconds: 60,
+    speech_seconds: 60,
+    timed: 1,
+    voiced: 1,
+    saved_runs: 1,
+    saved_words: 100,
+    saved_seconds: 60,
+    longest_seconds: 60,
+    ...overrides,
+  };
+}
+
+function ledger(
+  days: Record<string, LedgerDay>,
+  extra: Partial<ActivityLedger> = {},
+): ActivityLedger {
+  return {
+    started_on: Object.keys(days).sort()[0] ?? null,
+    days,
+    ...extra,
+  };
+}
+
+describe("which bucket a day falls in", () => {
+  /* THE WEEK STARTS ON MONDAY (ADR 0235), the same as the grid above it. A chart
+     and a calendar on one screen that disagree about a week is a reader counting
+     columns twice. */
+  it("opens a week on Monday and a month on the first", () => {
+    expect(periodStart(new Date(2026, 7, 12), "week").getDate()).toBe(10);
+    expect(periodStart(new Date(2026, 7, 9), "week").getDate()).toBe(3);
+    expect(periodStart(new Date(2026, 7, 12), "month").getDate()).toBe(1);
+    expect(periodStart(new Date(2026, 7, 12), "year").getMonth()).toBe(0);
+  });
+
+  it("folds every day of one week into one column", () => {
+    const source = ledger({
+      [iso(0)]: row({ saved_words: 400, saved_seconds: 120 }),
+      [iso(1)]: row({ saved_words: 400, saved_seconds: 120 }),
+    });
+    const weeks = savedSeries(source, "week", 40, NOW);
+
+    expect(weeks).toHaveLength(1);
+    /* 800 words at 40 wpm is twenty minutes of typing, less the four spent
+       saying them. */
+    expect(weeks[0].value).toBeCloseTo(16, 6);
+    expect(weeks[0].runs).toBe(2);
+    expect(weeks[0].full).toContain("week of 10 Aug");
+  });
+});
+
+describe("what the series may draw at all", () => {
+  /* ADR 0172's rule, one display over: a bucket the record cannot speak for is
+     not drawn. The series therefore begins at the first day the rows reach, not
+     at the window's edge — an empty column before the record began would assert
+     that nothing was dictated in a week the file never held. */
+  it("begins where the record begins and ends at today", () => {
+    const days = savedSeries(ledger({ [iso(2)]: row() }), "day", 40, NOW);
+    expect(days).toHaveLength(3);
+    expect(days[days.length - 1].label).toBe("12");
+  });
+
+  it("starts after a retirement rather than over it", () => {
+    const source = ledger({ [iso(2)]: row() }, {
+      started_on: iso(400),
+      retired_through: iso(4),
+    });
+    /* Four days back is retired, so the first drawable day is three back. */
+    expect(savedSeries(source, "day", 40, NOW)).toHaveLength(4);
+  });
+
+  /* THE GRAIN IS OFFERED WHERE THE RECORD CAN FILL IT (ADR 0183's rule again). A
+     `Years` tab holding one bar teaches nothing and costs a press to find out. */
+  it("offers only the grains the record reaches over", () => {
+    expect(offeredPeriods(ledger({ [iso(2)]: row() }), NOW)).toEqual(["day"]);
+    expect(offeredPeriods(ledger({ [iso(20)]: row() }), NOW)).toEqual(["day", "week"]);
+    expect(offeredPeriods(ledger({ [iso(80)]: row() }), NOW)).toEqual(["day", "week", "month"]);
+    expect(offeredPeriods(null, NOW)).toEqual([]);
+  });
+});
+
+describe("a bucket with nothing in it", () => {
+  /* THE TWO CLAIMS DIFFER AND THE CHART DRAWS THEM DIFFERENTLY. A day with no
+     dictation saved no time, which is a reading; the same day has no speaking
+     rate at all, and nought words a minute is a thing nobody has ever done. */
+  it("saved nothing, and had no rate whatsoever", () => {
+    const source = ledger({
+      [iso(2)]: row({ saved_words: 400, saved_seconds: 120, spoken_words: 400, speech_seconds: 120 }),
+    });
+
+    const saved = savedSeries(source, "day", 40, NOW);
+    expect(saved[0].empty).toBe(false);
+    expect(saved[2].empty).toBe(true);
+    expect(saved[2].value).toBe(0);
+
+    const rate = rateSeries(source, "day", NOW);
+    expect(rate[0].value).toBeCloseTo(200, 6);
+    expect(rate[2].empty).toBe(true);
+
+    /* And the best column skips the empty ones rather than reading one as a
+       tie. */
+    expect(bestPoint(saved)!.key).toBe(saved[0].key);
+  });
+});
+
+describe("the all-time figures the tile deliberately does not carry", () => {
+  it("counts the retired days into the lifetime total", () => {
+    const source = ledger({ [iso(0)]: row({ saved_words: 400, saved_seconds: 120 }) }, {
+      retired: row({ saved_words: 4000, saved_seconds: 1200 }),
+    });
+    /* 4,400 words at 40 wpm is 110 minutes, less the 22 spent saying them. */
+    expect(savedAllTime(source, 40)).toBeCloseTo(88, 6);
+  });
+
+  it("has no lifetime figure where nothing was ever credited", () => {
+    expect(savedAllTime(ledger({ [iso(0)]: row({ saved_runs: 0, saved_words: 0 }) }))).toBeNull();
+  });
+});
+
+describe("a histogram, re-binned for a chart", () => {
+  /* A DISTRIBUTION DRAWN FROM ZERO IS NINE TENTHS EMPTY AIR. The span is taken
+     from the buckets that actually hold a run. */
+  it("spans the runs and not the array", () => {
+    const buckets = new Array<number>(400).fill(0);
+    buckets[80] = 3;
+    buckets[86] = 5;
+    const bars = distributionBars(buckets, 1, 24);
+
+    expect(bars[0].from).toBe(80);
+    expect(bars.reduce((sum, bar) => sum + bar.count, 0)).toBe(8);
+    expect(distributionBars(new Array<number>(400).fill(0), 1)).toEqual([]);
+  });
+
+  /* THE QUANTILE READS THE SAME AXIS THE MEDIAN DOES, which is the failure ADR
+     0181 recorded: a histogram written at one bucket width and read at another
+     reported 17 where the truth was 88. */
+  it("reads a quantile at its bucket's lower edge", () => {
+    const buckets = new Array<number>(400).fill(0);
+    for (let index = 0; index < 10; index += 1) buckets[index * 2] = 1;
+    expect(bucketQuantile(buckets, 25, 0.5)).toBe(10 * 25);
+    expect(bucketQuantile(buckets, 25, 0.9)).toBe(18 * 25);
+    expect(bucketQuantile(undefined, 25, 0.5)).toBeNull();
+  });
+});

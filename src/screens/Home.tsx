@@ -13,6 +13,7 @@ import {
   IconButton,
   Keycaps,
   ListRows,
+  MetricDetail,
   Owed,
   OwedList,
   PreviewTag,
@@ -20,6 +21,7 @@ import {
   StatTile,
   TranscriptRow,
   UndoNotice,
+  type MetricKey,
 } from "@/components/shell";
 import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
 import { useUndoableDelete } from "@/hooks/useUndoableDelete";
@@ -28,6 +30,8 @@ import {
   SAVED_WINDOW_DAYS,
   TYPING_BASELINE_WPM,
   activityMarkers,
+  durationFigure,
+  languageLabel,
   ledgerBuckets,
   ledgerLanguages,
   ledgerPauseShare,
@@ -37,8 +41,8 @@ import {
   ledgerMedianWpm,
   ledgerTotals,
   ledgerYears,
+  savedWindowSpan,
 } from "@/lib/activity";
-import { TRANSLATE_LANGUAGES } from "@/types/ipc";
 import { useActivityLedger } from "@/hooks/useActivityLedger";
 import { relativeTime } from "@/lib/format";
 import { readTriggerStatus } from "@/lib/shortcuts";
@@ -120,27 +124,6 @@ function rateTitle(measured: boolean, pauseShare: number | null): string {
   )} % of your microphone time was pauses, and is left out.`;
 }
 
-/** The English name for a measured language code.
- *
- *  THE DETECTOR REACHES PAST WHAT THIS PRODUCT TRANSLATES BETWEEN — seventy
- *  languages against Translate's eight — so a table of the eight would leave a
- *  Swedish dictation labelled `SV`. `Intl.DisplayNames` already knows every code
- *  either side can produce and is in both engines this runs in, which is why
- *  there is no third language list in this repository.
- *
- *  A code it does not know comes back unchanged, and then the code itself is the
- *  label: naming a language wrongly is worse than showing its code. */
-function languageLabel(code: string): string {
-  try {
-    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(code);
-    if (name && name.toLowerCase() !== code.toLowerCase()) return name;
-  } catch {
-    /* An invalid tag throws rather than answering. Fall through. */
-  }
-  return (
-    TRANSLATE_LANGUAGES.find((language) => language.code === code)?.label ?? code.toUpperCase()
-  );
-}
 
 /** The line under the languages figure: the one you mostly dictate in, and how
  *  much of the record it is.
@@ -196,6 +179,27 @@ function languageFoot(
   );
 }
 
+/** WHAT THE FOUR-WEEK FIGURE IS A FIGURE OF, in the words the foot uses
+ *  (ADR 0233).
+ *
+ *  THE WINDOW NEVER MOVES AND THE LABEL DOES. `ledgerTimeSaved` sums the last
+ *  twenty-eight days whatever the record holds, which was always true and was
+ *  never the claim a reader took from `last 4 weeks`: on a three-day-old ledger
+ *  the figure is a three-day figure, and reading it as a monthly rate overstates
+ *  it by an order of magnitude. Naming the span the record reaches over costs
+ *  one line of arithmetic and is the whole correction.
+ *
+ *  IT RAMPS AND THEN IT STOPS. Once the record is twenty-eight days old the span
+ *  IS the window and the label settles on `last 4 weeks` for good — including
+ *  after a three-week holiday, where the window is genuinely four weeks with
+ *  little in it. The span is what the record can speak for, not what was
+ *  dictated. */
+function savedSpanLabel(span: number | null): string {
+  if (span === null || span >= SAVED_WINDOW_DAYS) return "last 4 weeks";
+  if (span <= 1) return "today";
+  return `last ${span} days`;
+}
+
 function heroCopy(mode: string): { title: string; description: string } {
   if (mode === "hold") {
     return {
@@ -244,6 +248,11 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
   const [openRaw, setOpenRaw] = useState<string | null>(null);
   const [trigger, setTrigger] = useState<string | null>(null);
   const [effectiveMode, setEffectiveMode] = useState<ProcessingMode | null>(null);
+  /* WHICH METRIC IS OPEN, AND IT IS NOT ON DISK (ADR 0235). The counters/calendar
+     choice persists because it is a preference about what this block IS; a
+     drill-down is a place the reader went, and a window that reopens three
+     screens deep into a chart nobody asked for again is furniture. */
+  const [metric, setMetric] = useState<MetricKey | null>(null);
   const { entries, remove, retry, reveal, acknowledgeFallback } = useTranscriptionHistory(
     Boolean(runtime?.active),
   );
@@ -312,6 +321,14 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      config, and the tooltip names it. */
   const baseline = runtime?.config.typing_baseline_wpm ?? TYPING_BASELINE_WPM;
   const saved = ledgerTimeSaved(ledger, Date.now(), baseline);
+  /* THE UNIT CLIMBS WITH THE FIGURE (ADR 0233). Four weeks of heavy dictation is
+     a four-digit count of minutes, which the counter would draw honestly and
+     nobody could read. */
+  const savedFigure = durationFigure(saved?.value ?? null);
+  /* AND THE FOOT NAMES THE SPAN THE RECORD REACHES OVER RATHER THAN THE WINDOW
+     THE SUM IS TAKEN IN. Both are true; only one of them is what the reader
+     takes the number for. */
+  const savedSpan = savedWindowSpan(ledger);
   const pauseShare = ledgerPauseShare(ledger);
   const languages = ledgerLanguages(ledger);
   /* THE GATE IS THE RECORD, NOT ANY ONE TILE (ADR 0171, corrected by ADR 0177).
@@ -507,13 +524,36 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
              is made and survives a restart. */
           <HomeSwitch
             calendar={calendar}
-            onToggle={() => runtime?.patch({ home_activity_calendar: !calendar })}
+            /* A METRIC IS OPEN, SO THE BACKGROUND SWAPS NOTHING (ADR 0235). The
+               dots keep working and they close the detail on the way, which is
+               what makes them a way out as well as a way across. */
+            detail={metric !== null}
+            onToggle={() => {
+              setMetric(null);
+              runtime?.patch({ home_activity_calendar: !calendar });
+            }}
             /* The dots name a view rather than flipping to the other one, so
                they write the value they name — pressing the one you are on is
-               then a no-op rather than a bounce (ADR 0184). */
-            onSelect={(next) => runtime?.patch({ home_activity_calendar: next })}
+               then a no-op rather than a bounce (ADR 0184). Pressing `Counters`
+               out of a detail is the one case where that no-op still does
+               something: it closes the detail. */
+            onSelect={(next) => {
+              setMetric(null);
+              runtime?.patch({ home_activity_calendar: next });
+            }}
           >
-            {calendar ? (
+            {metric ? (
+              /* THE THIRD VIEW OF THE SAME BLOCK. Not a sheet and not a dialog:
+                 the calendar already established that this block holds more than
+                 one view, and a panel over the window would put a chart on top of
+                 the counter it was opened from. */
+              <MetricDetail
+                metric={metric}
+                ledger={ledger}
+                baseline={baseline}
+                onBack={() => setMetric(null)}
+              />
+            ) : calendar ? (
               /* THE YEARS AND THE START DATE COME FROM THE LEDGER (ADR 0183),
                  because the calendar may only offer a period the record can
                  speak for: a pruned year would draw as a grid of unlit circles,
@@ -540,6 +580,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                     a plausible wrong number, which is worse than a missing one. */}
                 <StatTile
                   label="Words per minute"
+                  onOpen={() => setMetric("rate")}
                   value={wpm ? wpm.value : null}
                   ariaLabel={
                     wpm
@@ -557,11 +598,19 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                     and generated text is not among them. */}
                 <StatTile
                   label="Time saved"
-                  value={saved ? saved.value : null}
+                  onOpen={() => setMetric("saved")}
+                  value={saved && savedFigure ? savedFigure.value : null}
+                  decimals={savedFigure?.decimals ?? 0}
                   ariaLabel={
-                    saved
-                      ? `About ${Math.round(saved.value)} minutes saved in the last four weeks`
-                      : "No reading for the last four weeks"
+                    saved && savedFigure
+                      ? `About ${savedFigure.value.toFixed(savedFigure.decimals)} ${
+                          savedFigure.unit
+                        } saved ${
+                          savedSpanLabel(savedSpan) === "today"
+                            ? "today"
+                            : `in the ${savedSpanLabel(savedSpan)}`
+                        }`
+                      : `No reading for the ${savedSpanLabel(savedSpan)}`
                   }
                   /* THE BASELINE IS UNDER THE FIGURE, NOT IN THE HOVER
                      (ADR 0182). It is not context about the reading — it IS the
@@ -572,17 +621,17 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                      rather than a longer first one: the scope and the comparison
                      are two claims, and a tile is 150 px wide. */
                   foot={
-                    saved ? (
+                    saved && savedFigure ? (
                       <>
-                        {"≈ minutes · last 4 weeks"}
+                        {`≈ ${savedFigure.unit} · ${savedSpanLabel(savedSpan)}`}
                         <br />
                         {`vs ${baseline} wpm typing`}
                       </>
                     ) : (
-                      "nothing yet · last 4 weeks"
+                      `nothing yet · ${savedSpanLabel(savedSpan)}`
                     )
                   }
-                  title="Your dictated words as typing time, less the time you spent dictating them. Nothing here has ever watched you type — set the baseline in Privacy & Data."
+                  title="Your dictated words as typing time, less the time you spent dictating them. Nothing here has ever watched you type — set the baseline in Privacy & Data. Press for the history."
                 />
                 {/* THE ONE TILE THAT ANSWERS TO A SETTING. `Apps` stood here
                     and could not work: the target application is only resolved
@@ -603,6 +652,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                     positions stay four. */}
                 <StatTile
                   label="Turnaround"
+                  onOpen={() => setMetric("turnaround")}
                   value={turnaround === null ? null : turnaround / 1000}
                   decimals={1}
                   ariaLabel={
@@ -621,6 +671,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                     Reading the delivered text works on every lane and offline. */}
                 <StatTile
                   label="Languages"
+                  onOpen={() => setMetric("languages")}
                   value={languages.length > 0 ? languages.length : null}
                   ariaLabel={
                     languages.length > 0

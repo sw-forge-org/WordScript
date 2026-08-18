@@ -53,10 +53,17 @@ export function addDays(date: Date, days: number) {
   return nextDate
 }
 
+/* WORDSCRIPT: THE WEEK STARTS ON MONDAY (ADR 0235). Upstream subtracts
+   `getDay()` outright, which is a Sunday-first grid — GitHub's convention and
+   not this reader's. `(getDay() + 6) % 7` is the same subtraction rotated by
+   one: Monday 0, Sunday 6. Everything downstream is a walk of seven-day columns
+   from whatever this returns, so the rotation moves the whole grid and nothing
+   else. The weekday labels beside it are rotated to match in
+   `ActivityCalendar`. */
 export function getStartOfWeek(date: Date) {
   const startDate = new Date(date.getTime())
   startDate.setHours(0, 0, 0, 0)
-  startDate.setDate(startDate.getDate() - startDate.getDay())
+  startDate.setDate(startDate.getDate() - ((startDate.getDay() + 6) % 7))
   return startDate
 }
 
@@ -476,7 +483,7 @@ export function HeatMap(props: HeatMapProps) {
 
   /* Upstream's normalisation, kept: a grid whose first column starts mid-week
      puts the same weekday on different rows in different renders. The caller
-     may hand over any date; the display always begins on a Sunday. */
+     may hand over any date; the display always begins on a Monday. */
   const initStartDate = useMemo(
     () => (isValidDate(startDate) ? getStartOfWeek(startDate) : getStartOfWeek(new Date())),
     [startDate],

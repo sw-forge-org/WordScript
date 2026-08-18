@@ -100,11 +100,17 @@ export function HomeDisplay({ children }: { children: ReactNode }) {
  */
 export function HomeSwitch({
   calendar,
+  detail,
   onToggle,
   onSelect,
   children,
 }: {
   calendar: boolean;
+  /** A metric is open (ADR 0235). The block still holds the dots, and it holds
+   *  NOTHING that swaps on a background click: a reader who opened a detail did
+   *  not ask to be taken to the calendar by pointing at the white space around
+   *  the chart. The way back is the control in the detail's own head. */
+  detail?: boolean;
   onToggle: () => void;
   /** Pick a view outright rather than flipping to the other one. The dots call
    *  it; the block's own hit area still toggles. */
@@ -124,12 +130,14 @@ export function HomeSwitch({
             on top of the day panel the reader actually asked for. The label
             stays: a screen reader still needs to be told what pressing this
             does, and nothing else on the layer says it. */}
-        <button
-          type="button"
-          className="ws-home-switch-hit"
-          onClick={onToggle}
-          aria-label={calendar ? "Show the counters" : "Show the activity calendar"}
-        />
+        {!detail && (
+          <button
+            type="button"
+            className="ws-home-switch-hit"
+            onClick={onToggle}
+            aria-label={calendar ? "Show the counters" : "Show the activity calendar"}
+          />
+        )}
         {/* Painted over the hit area and transparent to the pointer. The
             stylesheet gives pointer events back to the few things inside that
             have their own answer to a click — the calendar's cells, its
@@ -146,8 +154,8 @@ export function HomeSwitch({
             exact defect ADR 0183 took the wrapping `<button>` apart to fix. */}
         <div
           className="ws-home-switch-body"
-          data-swaps={calendar ? undefined : ""}
-          onClick={calendar ? undefined : onToggle}
+          data-swaps={calendar || detail ? undefined : ""}
+          onClick={calendar || detail ? undefined : onToggle}
         >
           {children}
         </div>
@@ -220,6 +228,10 @@ interface StatTileProps {
    *  the thing they are asking about — got nothing, and reported the tooltips as
    *  broken. The whole tile is the object; the whole tile explains itself. */
   title?: string;
+  /** Opens this metric's own view of the block (ADR 0235). A tile with one is a
+   *  `<button>`; a tile without one stays the `<div>` it always was, because a
+   *  control that does nothing is worse than a read-out that says so. */
+  onOpen?: () => void;
 }
 
 export function StatTile({
@@ -230,16 +242,43 @@ export function StatTile({
   ariaLabel,
   foot,
   title,
+  onOpen,
 }: StatTileProps) {
-  return (
-    <div className="ws-tile" title={title}>
+  const body = (
+    <>
       <span className="ws-tile-label">
         {label}
         {tag}
       </span>
       <DigitCounter value={value} decimals={decimals} ariaLabel={ariaLabel} />
       <span className="ws-tile-foot">{foot}</span>
-    </div>
+    </>
+  );
+
+  if (!onOpen) return <div className="ws-tile" title={title}>{body}</div>;
+
+  /* NO `aria-label` ON THE BUTTON, and that is deliberate. One would REPLACE the
+     name computed from the contents, and the contents are where the counter's
+     own reading is announced — a tile that says "Time saved, open the detail"
+     and not what it reads is a worse object for a screen reader than a verbose
+     one.
+
+     THE CLICK STOPS HERE. The layer behind the counter view swaps to the
+     calendar on anything that reaches it (ADR 0183), and it has to keep doing
+     that for the background; a tile that opens its own view may not also change
+     the view underneath it on the way. */
+  return (
+    <button
+      type="button"
+      className="ws-tile"
+      title={title}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+    >
+      {body}
+    </button>
   );
 }
 

@@ -129,12 +129,30 @@ describe("the calendar's box", () => {
 
   it("draws every day in the span, so a quiet stretch is grey rather than absent", () => {
     const { container } = draw();
-    /* Four days of the current week are still ahead, and the heat map does not
-       draw the future. Everything else in the year has a circle. */
-    expect(container.querySelectorAll("circle.ws-cal-cell").length).toBe(
-      33 * 7 - (6 - NOW.getDay()),
-    );
+    /* The rest of the current week is still ahead, and the heat map does not
+       draw the future. Everything else in the year has a circle.
+
+       THE ROW INDEX IS MONDAY-BASED (ADR 0235). `getDay()` counts from Sunday
+       and the grid no longer does, so a Wednesday is row 2 rather than row 3 and
+       four days of its week are ahead rather than three. The count moved by one
+       when the week start did, which is exactly what this case is for. */
+    const ahead = 6 - ((NOW.getDay() + 6) % 7);
+    expect(container.querySelectorAll("circle.ws-cal-cell").length).toBe(33 * 7 - ahead);
     expect(container.querySelectorAll("[data-outside]")).toHaveLength(0);
+  });
+
+  /* THE WEEK STARTS ON MONDAY, AND IT IS CHECKED ON THE CELLS RATHER THAN ON THE
+     LABELS (ADR 0235). A label list rotated without the grid — or the other way
+     round — names every row wrongly by one and looks entirely correct until
+     somebody counts, so the assertion is the date of the first cell drawn. */
+  it("opens each column on a Monday", () => {
+    const { container } = draw();
+    const first = container.querySelector("circle.ws-cal-cell")!;
+    const [year, month, day] = first
+      .getAttribute("data-date")!
+      .split("/")
+      .map(Number);
+    expect(new Date(year, month - 1, day).getDay()).toBe(1);
   });
 });
 
@@ -463,13 +481,13 @@ describe("the weekday gutter", () => {
     expect(column.getAttribute("width")).toBe(String(WEEK_LABEL_PAD));
     expect(column.getAttribute("height")).toBe(String(GRID_HEIGHT));
 
-    /* Monday is the second row, and the label sits on that row's CENTRE line:
-       20 px of month labels, one pitch down, half a cell, and three and a half
-       pixels for the baseline of a 10 px label. Measured in the browser at
+    /* Monday is the FIRST row since ADR 0235, and the label sits on that row's
+       CENTRE line: 20 px of month labels, no pitch, half a cell, and three and a
+       half pixels for the baseline of a 10 px label. Measured in the browser at
        upstream's own offset, the labels stood two pixels low — invisible in a
        gutter inside the drawing and obvious once they are pinned beside it. */
     const monday = [...column.querySelectorAll("text")].find((node) => node.textContent === "Mon")!;
-    expect(monday.getAttribute("y")).toBe(String(20 + COLUMN_PITCH + CELL_SIZE / 2 + 3.5));
+    expect(monday.getAttribute("y")).toBe(String(20 + CELL_SIZE / 2 + 3.5));
   });
 });
 

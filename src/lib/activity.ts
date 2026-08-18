@@ -20,6 +20,8 @@
  * SECONDS, so `timed` and `total` differ and every rate says which it used.
  */
 
+import { TRANSLATE_LANGUAGES } from "@/types/ipc";
+
 /** The typing speed `ledgerTimeSaved` measures against when the config names no
  *  other — the runtime's `default_typing_baseline_wpm`.
  *
@@ -47,6 +49,57 @@ export const TYPING_BASELINE_WPM = 40;
 export const SAVED_WINDOW_DAYS = 28;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** THE UNITS A SAVED DURATION MAY BE READ IN (ADR 0233).
+ *
+ *  THE FIGURE OUTGROWS ITS UNIT LONG BEFORE IT OUTGROWS THE COUNTER. Four weeks
+ *  of the owner's own dictation come to roughly 3,700 minutes, and `3700` is a
+ *  true number in a unit nobody can hold — the same defect ADR 0191 fixed on
+ *  turnaround, where `2400` was a true figure in milliseconds. The counter would
+ *  not have lied about it: `RESERVED_POSITIONS` widens the frame rather than
+ *  dropping a digit. It would simply have stopped being readable.
+ *
+ *  SO THE UNIT CLIMBS AND THE NUMBER STAYS SMALL. Three hours is where a person
+ *  stops counting in minutes, and three days is where they stop counting in
+ *  hours; both thresholds are the owner's. One decimal place above minutes,
+ *  because `3` hours where the truth is 3.4 throws away a fifth of the reading,
+ *  and the counter has drawn a decimal point since ADR 0191. */
+export type DurationUnit = "minutes" | "hours" | "days";
+
+export interface DurationFigure {
+  value: number;
+  /** What the counter is to draw it with — 0 in minutes, 1 above. */
+  decimals: number;
+  unit: DurationUnit;
+}
+
+/** Minutes at which the reading changes to hours. */
+export const HOURS_FROM_MINUTES = 180;
+/** Hours at which it changes to days. */
+export const DAYS_FROM_HOURS = 72;
+
+/**
+ * A count of minutes as the figure and unit it should be read in.
+ *
+ * THE THRESHOLD IS TESTED AGAINST THE ROUNDED VALUE AND NOT THE RAW ONE.
+ * Otherwise 179.7 minutes draws as `180 minutes` — a reading that is both past
+ * the boundary and on the wrong side of it, which is the sort of off-by-one a
+ * reader notices exactly once and never trusts again.
+ */
+export function durationFigure(
+  minutes: number | null | undefined,
+): DurationFigure | null {
+  if (minutes === null || minutes === undefined || !Number.isFinite(minutes)) return null;
+  const held = Math.max(0, minutes);
+  if (Math.round(held) < HOURS_FROM_MINUTES) {
+    return { value: held, decimals: 0, unit: "minutes" };
+  }
+  const hours = held / 60;
+  if (Math.round(hours * 10) / 10 < DAYS_FROM_HOURS) {
+    return { value: hours, decimals: 1, unit: "hours" };
+  }
+  return { value: hours / 24, decimals: 1, unit: "days" };
+}
 
 /**
  * A figure, and the two counts that say what it is a figure OF.
@@ -528,6 +581,85 @@ export function ledgerTimeSaved(
   };
 }
 
+/** A `YYYY-MM-DD` as local midnight, or `null` where it will not parse. */
+export function ledgerDayMs(iso: string | null | undefined): number | null {
+  const [year, month, day] = (iso ?? "").split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day).getTime();
+}
+
+/**
+ * THE FIRST DAY THIS RECORD KNOWS ABOUT — `started_on`, or the earliest day row
+ * where the file predates that field.
+ *
+ * NOT `installed_on`, and the difference is the whole reason this exists. The
+ * install marker is what the reader installed WordScript on; on the machine this
+ * was written against it says April while the ledger's first row is 16 August,
+ * because the ledger itself is younger than the installation. A window measured
+ * against the install date would therefore claim four weeks of record where
+ * there are three days of it.
+ */
+export function ledgerFirstDay(ledger: ActivityLedger | null): number | null {
+  const started = ledgerDayMs(ledger?.started_on);
+  if (started !== null) return started;
+
+  let earliest: number | null = null;
+  for (const [key, row] of Object.entries(ledger?.days ?? {})) {
+    if (!row || row.dictations <= 0) continue;
+    const at = ledgerDayMs(key);
+    if (at === null) continue;
+    if (earliest === null || at < earliest) earliest = at;
+  }
+  return earliest;
+}
+
+/**
+ * THE FIRST DAY THE ROWS THEMSELVES CAN SPEAK FOR, which is later than
+ * `ledgerFirstDay` on a file old enough to have retired something.
+ *
+ * A retired day leaves the file and its figures go into `retired` (ADR 0176), so
+ * everything before `retired_through` is a total and no longer a day. Anything
+ * that draws a day, a week or a month has to start here, or it draws an empty
+ * bucket over a period the record simply no longer holds — the same false claim
+ * ADR 0172 keeps the calendar's unlit cells away from.
+ */
+export function ledgerSpeaksFrom(ledger: ActivityLedger | null): number | null {
+  const first = ledgerFirstDay(ledger);
+  const retired = ledgerDayMs(ledger?.retired_through);
+  if (retired === null) return first;
+  const after = retired + DAY_MS;
+  return first === null ? after : Math.max(first, after);
+}
+
+/**
+ * HOW MANY DAYS OF THE FOUR-WEEK WINDOW THE RECORD ACTUALLY REACHES OVER
+ * (ADR 0233).
+ *
+ * THE WINDOW WAS ALWAYS TRUE AND THE LABEL WAS ALWAYS `last 4 weeks`, and on a
+ * three-day-old record those are two different claims. The figure was right —
+ * 203 minutes really were saved in the last four weeks — but a reader takes it
+ * for a four-week rate and it is a three-day one. Naming the span the record can
+ * speak for costs nothing and is the whole fix; the window itself does not move.
+ *
+ * A ROLLING WINDOW AND NOT A TUMBLING ONE, which was the alternative and is
+ * worse: a counter that restarts every twenty-eight days falls to nothing on the
+ * boundary, and decision 7 of this track is that no tile may sit at zero for
+ * long. It also makes two readings a month apart incomparable, which is the one
+ * thing a figure like this is for.
+ */
+export function savedWindowSpan(
+  ledger: ActivityLedger | null,
+  now = Date.now(),
+): number | null {
+  const first = ledgerFirstDay(ledger);
+  if (first === null) return null;
+  /* ROUNDED RATHER THAN FLOORED, over local midnights: a span across a
+     daylight-saving boundary is 24 h ± 1 h long, and a floor drops the last day
+     twice a year. */
+  const days = Math.round((startOfDay(now).getTime() - first) / DAY_MS) + 1;
+  return Math.min(SAVED_WINDOW_DAYS, Math.max(1, days));
+}
+
 /**
  * EVERY FIGURE THE LEDGER HOLDS, INCLUDING THE DAYS THAT HAVE AGED OUT OF IT.
  *
@@ -606,6 +738,28 @@ export function ledgerLanguages(
     .filter(([code, count]) => code.trim().length > 0 && count > 0)
     .map(([code, count]) => ({ code, count }))
     .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code));
+}
+
+/** The English name for a measured language code.
+ *
+ *  THE DETECTOR REACHES PAST WHAT THIS PRODUCT TRANSLATES BETWEEN — seventy
+ *  languages against Translate's eight — so a table of the eight would leave a
+ *  Swedish dictation labelled `SV`. `Intl.DisplayNames` already knows every code
+ *  either side can produce and is in both engines this runs in, which is why
+ *  there is no third language list in this repository.
+ *
+ *  A code it does not know comes back unchanged, and then the code itself is the
+ *  label: naming a language wrongly is worse than showing its code. */
+export function languageLabel(code: string): string {
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(code);
+    if (name && name.toLowerCase() !== code.toLowerCase()) return name;
+  } catch {
+    /* An invalid tag throws rather than answering. Fall through. */
+  }
+  return (
+    TRANSLATE_LANGUAGES.find((language) => language.code === code)?.label ?? code.toUpperCase()
+  );
 }
 
 /**

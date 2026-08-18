@@ -63,8 +63,14 @@ export const CELL_SPACE = 3;
 /** Monday, Wednesday and Friday, which is GitHub's three and for GitHub's
  *  reason: seven labels on a fifteen-pixel pitch collide into a grey smear, and
  *  three are enough to count the other rows from. Upstream's `LabelsWeek` skips
- *  a falsy entry, so the four blanks are the gaps. */
-export const WEEK_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
+ *  a falsy entry, so the four blanks are the gaps.
+ *
+ *  THE ROW ORDER IS THE WEEK'S ORDER AND THE WEEK STARTS ON MONDAY (ADR 0235).
+ *  This list was `["", "Mon", ...]` while row 0 was Sunday; it is the labels'
+ *  job to name the rows the grid actually draws, so moving the grid moves
+ *  these. Getting only one of the two is a calendar that names every row
+ *  wrongly by one, which reads as correct until somebody counts. */
+export const WEEK_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
 
 /** The gutter upstream reserves once `weekLabels` is truthy. It is upstream's own
  *  number and the labels are laid out against it, so it is quoted rather than
@@ -202,10 +208,14 @@ export function readableStart(iso: string): string {
   return `${day} ${MONTHS[month - 1]} ${year}`;
 }
 
+/** Monday, and it has to agree with the vendored heat map's own
+ *  `getStartOfWeek` (ADR 0235): this decides how many columns are drawn and that
+ *  decides where each day lands. Two different week starts on one grid is a
+ *  column count that disagrees with the cells it is counting. */
 function startOfWeek(at: Date): Date {
   const start = new Date(at.getTime());
   start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - start.getDay());
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
   return start;
 }
 
@@ -416,7 +426,7 @@ export function ActivityCalendar({
     const again = requestAnimationFrame(pin);
     return () => cancelAnimationFrame(again);
     /* `columns` is in here because the same year can change width — the current
-       one grows by a column every Sunday. */
+       one grows by a column every Monday. */
   }, [year, columns]);
 
   useLayoutEffect(

@@ -112,6 +112,10 @@ export { ProviderMark, ProviderSprite, ProviderChips, brandSymbolId } from "./Pr
 
 /* ── The workspace grammar — Leg 2b ── */
 export { HomeOpen, HeroInvoke, HeroFacts, HomeDisplay, HomeSwitch, StatTile } from "./HomeHero";
+export { MetricDetail, METRIC_TITLES, spellDuration } from "./MetricDetail";
+export type { MetricKey } from "./MetricDetail";
+export { MetricChart } from "./MetricChart";
+export type { ChartBar } from "./MetricChart";
 export { ListRows, ListItem, RawPanel, AnswerPanel, Reorder } from "./ListItem";
 export type { ListItemBadge, ListItemState, RawTranscript } from "./ListItem";
 export { EditorPanel, ConfirmPanel, FlagPanel } from "./EditorPanel";

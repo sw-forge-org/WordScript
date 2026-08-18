@@ -15,6 +15,9 @@ import {
   ledgerMedianWpm,
   ledgerTopLanguageShare,
   ledgerTotals,
+  durationFigure,
+  ledgerSpeaksFrom,
+  savedWindowSpan,
   type ActivityLedger,
   type LedgerDay,
 } from "./activity";
@@ -458,5 +461,88 @@ describe("the languages, measured on the text (ADR 0180)", () => {
   it("has no share to give where nothing was measured", () => {
     expect(ledgerTopLanguageShare([])).toBeNull();
     expect(ledgerTopLanguageShare([{ code: "de", count: 0 }])).toBeNull();
+  });
+});
+
+/**
+ * THE LADDER, AND IT IS TESTED AT ITS EDGES BECAUSE THAT IS WHERE A UNIT CHANGE
+ * CAN SILENTLY BE WRONG BY A FACTOR OF SIXTY (ADR 0233).
+ */
+describe("what unit a saved duration is read in", () => {
+  it("stays in minutes until they stop being something a reader can hold", () => {
+    expect(durationFigure(0)).toEqual({ value: 0, decimals: 0, unit: "minutes" });
+    expect(durationFigure(179)).toEqual({ value: 179, decimals: 0, unit: "minutes" });
+  });
+
+  it("climbs to hours at three of them, and to days at three of those", () => {
+    expect(durationFigure(180)).toEqual({ value: 3, decimals: 1, unit: "hours" });
+    const hours = durationFigure(203.4)!;
+    expect(hours.unit).toBe("hours");
+    expect(hours.value).toBeCloseTo(3.39, 2);
+
+    const days = durationFigure(72 * 60)!;
+    expect(days).toEqual({ value: 3, decimals: 1, unit: "days" });
+  });
+
+  /* THE THRESHOLD IS TESTED AGAINST THE ROUNDED VALUE, or 179.7 minutes draws as
+     `180 minutes` — a reading past its own boundary, which is the sort of
+     off-by-one a reader notices once and never trusts again. */
+  it("decides on the figure it is about to draw, not on the raw one", () => {
+    expect(durationFigure(179.7)!.unit).toBe("hours");
+    expect(durationFigure(71.97 * 60)!.unit).toBe("days");
+  });
+
+  it("has no reading for what is not a number", () => {
+    expect(durationFigure(null)).toBeNull();
+    expect(durationFigure(Number.NaN)).toBeNull();
+    expect(durationFigure(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+/**
+ * THE SPAN THE FOUR-WEEK FIGURE CAN SPEAK FOR (ADR 0233) — the defect that
+ * opened this: a three-day-old record labelled `last 4 weeks`.
+ */
+describe("how far back the saved window actually reaches", () => {
+  it("counts the days since the record began, today included", () => {
+    expect(savedWindowSpan(ledger({ [key(2)]: row() }), NOW)).toBe(3);
+    expect(savedWindowSpan(ledger({ [key(0)]: row() }), NOW)).toBe(1);
+  });
+
+  it("settles at the window and never grows past it", () => {
+    expect(savedWindowSpan(ledger({ [key(200)]: row() }), NOW)).toBe(SAVED_WINDOW_DAYS);
+    expect(savedWindowSpan(ledger({ [key(SAVED_WINDOW_DAYS - 1)]: row() }), NOW)).toBe(
+      SAVED_WINDOW_DAYS,
+    );
+  });
+
+  /* NOT THE INSTALL DATE, and the machine this was written against is the
+     argument: `installed_on` says April while the first ledger row is 16 August,
+     because the ledger is younger than the installation. Reading the span off
+     the install date would claim four weeks of record where there are three days
+     of it. */
+  it("reads the first row and not the day WordScript was installed", () => {
+    const source = ledger({ [key(1)]: row() }, [], [], undefined, {
+      installed_on: "2026-04-01",
+    });
+    expect(savedWindowSpan(source, NOW)).toBe(2);
+  });
+
+  it("has no span at all where the record has no beginning", () => {
+    expect(savedWindowSpan(null, NOW)).toBeNull();
+    expect(savedWindowSpan(ledger({}, [], [], undefined, { started_on: null }), NOW)).toBeNull();
+  });
+
+  /* A RETIRED DAY IS A FIGURE AND NO LONGER A DAY (ADR 0176), so anything that
+     draws a bucket has to start after the retirement — the window's own label
+     does not, because the sum still holds every credited word. */
+  it("starts a drawable series after the last retired day", () => {
+    const source = ledger({ [key(2)]: row() }, [], [], key(400), {
+      retired_through: key(10),
+    });
+    expect(ledgerSpeaksFrom(source)).toBe(new Date(NOW - 9 * 24 * 60 * 60 * 1000).setHours(0, 0, 0, 0));
+    /* And the label still counts from the true beginning, which is what makes it
+       say `last 4 weeks` on a record older than the window. */
+    expect(savedWindowSpan(source, NOW)).toBe(SAVED_WINDOW_DAYS);
   });
 });

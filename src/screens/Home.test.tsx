@@ -434,18 +434,58 @@ describe("Home · the display", () => {
     render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     /* 400 words at the 40 wpm baseline is 10 minutes of typing; they were said
-       in two. The `≈` is on the tile because the baseline was never measured. */
-    expect(
-      await screen.findByLabelText("About 8 minutes saved in the last four weeks"),
-    ).toBeInTheDocument();
+       in two. The `≈` is on the tile because the baseline was never measured.
+
+       AND THE SPAN IS ONE DAY, SO THE FOOT SAYS SO (ADR 0233). This record was
+       written today; the window is still four weeks wide and the record reaches
+       over exactly one of its days, which are two different claims and only one
+       of them is what a reader takes the figure for. */
+    expect(await screen.findByLabelText("About 8 minutes saved today")).toBeInTheDocument();
     const tile = screen.getByText("Time saved").closest(".ws-tile") as HTMLElement;
-    expect(tile).toHaveTextContent("≈ minutes · last 4 weeks");
+    expect(tile).toHaveTextContent("≈ minutes · today");
     /* ADR 0182: the baseline is UNDER the figure and not behind a hover. It is
        not context about this reading — it is the divisor, and the same four
        weeks read 43 minutes at 40 wpm and 15 at 60. */
     expect(tile).toHaveTextContent("vs 40 wpm typing");
     /* ADR 0186 moved the hover onto the tile; what it may not say is unchanged. */
     expect(tile.getAttribute("title")).not.toMatch(/40 wpm/);
+  });
+
+  /**
+   * THE RAMP (ADR 0233). The complaint that opened this: a three-day-old record
+   * reporting `last 4 weeks`, which is true of the window and false of what the
+   * reader takes from it. The label counts the days the record reaches over and
+   * settles on the window once it gets there — it does NOT reset the sum, which
+   * was the alternative and would drop the counter to nothing every 28 days.
+   */
+  it("names the days the record reaches over while it is younger than the window", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    mockRuntimeHistory([
+      timedEntry(400, 120, { id: "a", created_at_ms: Date.now() - 2 * day }),
+      timedEntry(400, 120, { id: "b", created_at_ms: Date.now() }),
+    ]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const tile = (await screen.findByText("Time saved")).closest(".ws-tile") as HTMLElement;
+    expect(tile).toHaveTextContent("≈ minutes · last 3 days");
+    expect(tile).not.toHaveTextContent("last 4 weeks");
+  });
+
+  /**
+   * THE UNIT CLIMBS BEFORE THE COUNTER RUNS OUT OF ROOM (ADR 0233). Four weeks of
+   * the owner's own dictation is a four-digit count of minutes — a number the
+   * counter would draw honestly and nobody could read. The tile is the wiring
+   * check; the ladder's own thresholds are tested in `lib/activity`.
+   */
+  it("reads in hours once minutes stop being something a reader can hold", async () => {
+    /* 8,000 words at the 40 wpm baseline is 200 minutes of typing, less the two
+       spent dictating them. */
+    mockRuntimeHistory([timedEntry(8000, 120)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(await screen.findByLabelText("About 3.3 hours saved today")).toBeInTheDocument();
+    const tile = screen.getByText("Time saved").closest(".ws-tile") as HTMLElement;
+    expect(tile).toHaveTextContent("≈ hours · today");
   });
 
   it("STATES AN EMPTY WINDOW WHILE THE ALL-TIME RATE SURVIVES IT", async () => {
@@ -457,7 +497,10 @@ describe("Home · the display", () => {
        rate is all-time and reads two hundred months later; time saved is four
        weeks and has nothing in it, which is a dark display rather than a zero. */
     expect(await screen.findByLabelText("200 words per minute")).toBeInTheDocument();
-    expect(screen.getByLabelText("No reading for the last four weeks")).toBeInTheDocument();
+    /* The span settled at the window two hundred days ago, so this is the one
+       reading where `last 4 weeks` is the whole truth: four weeks of record with
+       nothing in them (ADR 0233). */
+    expect(screen.getByLabelText("No reading for the last 4 weeks")).toBeInTheDocument();
     expect(screen.getByText("nothing yet · last 4 weeks")).toBeInTheDocument();
   });
 
@@ -777,20 +820,56 @@ describe("Home · the two views of the opening block", () => {
   });
 
   /**
-   * THE OTHER HALF OF ADR 0186, and the reason the tooltip could not simply be
-   * moved. A tile that takes the pointer is a tile a click no longer falls
-   * through to the hit area behind — and the tiles are most of the counter
-   * view, so the block would have quietly stopped swapping from the place it is
-   * mostly pressed.
+   * THE TILE'S CLICK CHANGED HANDS (ADR 0235). It used to fall through to the
+   * swap layer, which was ADR 0186's correction; a tile now opens its own view
+   * of the block, and the swap keeps everything else — the margins, the foot,
+   * the space around the grid — plus the dots, which were made the real control
+   * for this in ADR 0184.
+   *
+   * BOTH HALVES ARE ONE CASE ON PURPOSE. The failure this guards against is a
+   * tile that opens the detail AND swaps the view on the way, which is what a
+   * bubbling click does and what it did in the first build of this.
    */
-  it("still swaps the view when a counter tile itself is clicked", async () => {
+  it("opens the metric from its tile without swapping the view underneath", async () => {
     const patch = vi.fn();
     mockRuntimeHistory([timedEntry(100, 60)]);
     render(<HomeScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
 
     const tile = (await screen.findByText("Turnaround")).closest(".ws-tile") as HTMLElement;
     await userEvent.click(tile);
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Turnaround/ })).toBeInTheDocument();
+    expect(document.querySelector(".ws-home-display")).toBeNull();
+  });
+
+  /* THE BACKGROUND IS STILL THE SWAP, which is the half of decision 9 the detail
+     view had to leave standing. */
+  it("still swaps the view from the space around the counters", async () => {
+    const patch = vi.fn();
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    const { container } = render(
+      <HomeScreen runtime={createWorkspaceRuntime({ active: true, patch })} />,
+    );
+
+    await screen.findByText("Turnaround");
+    await userEvent.click(container.querySelector(".ws-home-switch-body") as HTMLElement);
     expect(patch).toHaveBeenCalledWith({ home_activity_calendar: true });
+  });
+
+  /* AND THE WAY BACK IS A CONTROL, because the background is not one here: a
+     click on the white space beside a chart would otherwise take the reader to
+     the calendar, which is not where they were. */
+  it("comes back from a metric to the counters", async () => {
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const tile = (await screen.findByText("Languages")).closest(".ws-tile") as HTMLElement;
+    await userEvent.click(tile);
+    await userEvent.click(screen.getByRole("button", { name: /Languages/ }));
+
+    expect(document.querySelector(".ws-home-display")).not.toBeNull();
+    expect(document.querySelector(".ws-metric")).toBeNull();
   });
 
   /**
