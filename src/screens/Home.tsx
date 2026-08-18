@@ -550,6 +550,14 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
               <MetricDetail
                 metric={metric}
                 ledger={ledger}
+                /* THE RECORDS, FOR THE ONE READING THE LEDGER CANNOT PRODUCE.
+                   Everything else on this block is all-time and comes from the
+                   ledger for the reason two comments above; the turnaround view
+                   also answers WHICH MODEL each wait came from, and the ledger's
+                   histogram carries no model. These are the same `entries` the
+                   screen already holds — pruned, which the block says where it
+                   shows them (ADR 0236). */
+                records={entries}
                 baseline={baseline}
                 onBack={() => setMetric(null)}
               />

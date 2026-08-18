@@ -60,23 +60,41 @@ export const DIGIT_SPACING_COLS = 1;
  * AND THE MARK DOES NOT TOUCH THE DIGIT AFTER IT. Reported on the running app
  * with the two-column version: the point and the first decimal digit merged into
  * one shape, which is the same failure one step smaller — a mark that runs into
- * its neighbour is a mark the eye reads as part of the neighbour. So the gap is
- * three columns and the point takes the first two of them, leaving one clear
- * column between the point and the digit it qualifies. It stays hard against the
- * digit on its LEFT, which is where a decimal point belongs: it says *this
- * number continues*, and it says it about the integer part.
+ * its neighbour is a mark the eye reads as part of the neighbour.
  *
- * IT COSTS TWO COLUMNS OF WIDTH AND NOTHING ELSE. The four reserved positions
- * stay four, the dot pitch is unchanged, and the tile is two columns wider than
- * its three neighbours inside a grid track that has the room. A counter nobody
- * can read correctly is not worth twelve pixels.
+ * NOR THE DIGIT BEFORE IT, AND THAT HALF WAS DECIDED WRONG TWICE (ADR 0236). The
+ * three-column build left the point hard against the digit on its LEFT and
+ * argued that this is where a decimal point belongs: it says *this number
+ * continues*, and it says it about the integer part. Typography, and the wrong
+ * subject — a printed point sits beside a glyph whose bounding box has side
+ * bearings, and these have none. **The glyphs decide, and seven of the ten reach
+ * their last column in the rows the point occupies.** `0`, `2`, `3`, `5`, `6`,
+ * `8` and `9` all light column four in one of the bottom two rows; `1`, `4` and
+ * `7` do not. So `1.3` was clean and `3.4` was one shape, on the same display,
+ * with the same code — which is exactly what the owner reported: the turnaround
+ * tile right, the time-saved tile wrong.
+ *
+ * A GAP THE GLYPHS CANNOT REACH INTO, ON BOTH SIDES. Four columns: one clear,
+ * the two-column mark, one clear. It is the only arrangement that does not
+ * depend on which digits happen to stand either side of the point, and *it does
+ * not depend on the data* is the whole property a counter needs.
+ *
+ * IT COSTS THREE COLUMNS OF WIDTH AND NOTHING ELSE. The four reserved positions
+ * stay four, the dot pitch is unchanged, and the tile is three columns wider
+ * than its three neighbours inside a grid track that has the room. A counter
+ * nobody can read correctly is not worth eighteen pixels.
  */
-export const DECIMAL_GAP_COLS = 3;
+export const DECIMAL_GAP_COLS = 4;
 
-/** How much of that gap the mark itself takes, measured from the digit on its
- *  left. The remainder is the clear column that keeps it off the digit on its
- *  right — see `DECIMAL_GAP_COLS`. */
+/** How much of that gap the mark itself takes. The column before it and the
+ *  column after it stay clear, because a glyph's ink runs to its own last column
+ *  and the mark may not be adjacent to either neighbour — see
+ *  `DECIMAL_GAP_COLS`. */
 export const DECIMAL_POINT_COLS = 2;
+
+/** How far into the gap the mark starts: one clear column after the integer
+ *  digit's last column. */
+export const DECIMAL_POINT_INSET = 1;
 /** Decision 5 of the home activity track: every counter holds four. */
 export const RESERVED_POSITIONS = 4;
 
@@ -164,7 +182,7 @@ export function counterFrame(
      space the frame already holds. See `DECIMAL_GAP_COLS` for why one cell in an
      ordinary gap was unreadable. */
   if (pointAfter >= 0) {
-    const column = starts[pointAfter] + DIGIT_COLS;
+    const column = starts[pointAfter] + DIGIT_COLS + DECIMAL_POINT_INSET;
     for (let row = DIGIT_ROWS - 2; row < DIGIT_ROWS; row += 1) {
       for (let col = column; col < column + DECIMAL_POINT_COLS; col += 1) {
         if (col < cols) frame[row][col] = 1;

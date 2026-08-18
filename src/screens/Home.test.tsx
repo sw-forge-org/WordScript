@@ -857,6 +857,38 @@ describe("Home · the two views of the opening block", () => {
     expect(patch).toHaveBeenCalledWith({ home_activity_calendar: true });
   });
 
+  /* AND NEITHER IS THE DOT, WHICH IS THE HALF THE FIRST BUILD LEFT OPEN
+     (ADR 0236). The background stopped swapping under an open metric and the
+     dots did not, so the one control still standing took the reader from a chart
+     straight to the calendar — a jump out of a view they had drilled into, with
+     nothing saying what happened to it. Disabling them was then the SECOND half
+     left open: the owner reported the pair still sitting under the chart as an
+     offer, because a lit dot with an unlit twin reads as a choice however inert
+     it is. So they go — off the screen and out of the accessibility tree, with
+     their space held, because this row is the last thing on the block. */
+  it("takes its view dots off the screen inside a metric, without moving it", async () => {
+    const patch = vi.fn();
+    mockRuntimeHistory([timedEntry(100, 60)]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true, patch })} />);
+
+    const tile = (await screen.findByText("Turnaround")).closest(".ws-tile") as HTMLElement;
+    await userEvent.click(tile);
+
+    expect(screen.queryByRole("button", { name: "Activity calendar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Counters" })).toBeNull();
+
+    /* Still in the document, and still holding its height — hidden is not
+       unmounted, or the chart above would jump by the row's height. */
+    const dots = document.querySelector(".ws-home-dots") as HTMLElement;
+    expect(dots).not.toBeNull();
+    expect(dots.hasAttribute("data-parked")).toBe(true);
+    expect(dots.querySelectorAll("button:disabled")).toHaveLength(2);
+
+    /* And the view behind is where it was: nothing reached the patch. */
+    expect(patch).not.toHaveBeenCalled();
+    expect(document.querySelector(".ws-metric")).not.toBeNull();
+  });
+
   /* AND THE WAY BACK IS A CONTROL, because the background is not one here: a
      click on the white space beside a chart would otherwise take the reader to
      the calendar, which is not where they were. */

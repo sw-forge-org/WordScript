@@ -32,6 +32,7 @@ import {
   type ActivityLedger,
   type LedgerDay,
 } from "./activity";
+import type { TranscriptionHistoryEntry } from "@/types/history";
 
 /** The four grains a series may be read at. Days for *this week*, years for
  *  *this product* — and everything in between, which is what the owner asked
@@ -323,56 +324,182 @@ export function rateSeries(
   );
 }
 
-/** One column of a histogram. */
-export interface DistributionBar {
+export interface BandBar {
   key: string;
+  /** Under the axis: `<1s`, `1-2s`, `>5s`. */
   label: string;
+  /** Spelled out, for the read-out line. */
+  spoken: string;
   from: number;
-  to: number;
+  /** `null` is the open band at the top — everything above `from`. */
+  to: number | null;
   count: number;
+  /** Of every run in the histogram, 0 to 1. */
+  share: number;
 }
 
 /**
- * A FIXED-WIDTH HISTOGRAM RE-BINNED TO SOMETHING A CHART CAN DRAW.
+ * THE EDGES A WAIT IS READ AT, IN MILLISECONDS, AND THERE ARE THREE SETS OF THEM
+ * BECAUSE A LOCAL MODEL AND A COLD CLOUD LANE ARE NOT THE SAME DISPLAY.
  *
- * The runtime keeps four hundred one-wpm buckets and a wall of 25 ms ones; a
- * chart has room for roughly two dozen columns. The span is taken from the
- * lowest and highest bucket that actually holds a run — a histogram drawn from
- * zero is nine tenths empty air, and the shape the reader came for is squashed
- * into the last inch of it.
+ * Each set is five bands: four closed ones and everything above the last edge.
  */
-export function distributionBars(
+const BAND_EDGES: number[][] = [
+  [250, 500, 1000, 2000],
+  [1000, 2000, 3000, 5000],
+  [2000, 5000, 10_000, 20_000],
+];
+
+/** `0.25`, `1`, `10` — a band edge as few characters as it can be said in. */
+function spellSeconds(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds >= 10) return String(Math.round(seconds));
+  if (Number.isInteger(seconds)) return String(seconds);
+  return String(Number(seconds.toFixed(2)));
+}
+
+/**
+ * THE WAIT AS FIVE NAMED BANDS RATHER THAN AS ITS OWN HISTOGRAM.
+ *
+ * **THE FINE HISTOGRAM WAS UNREADABLE AND THE OWNER SAID SO**, and the record
+ * backs them up: 25 ms buckets re-binned to twenty-four columns put this
+ * machine's 346 runs into 400 ms columns of which ELEVEN HELD NOTHING, with a
+ * single run at 9.9 s stretching the axis over the whole empty right half. What
+ * the reader was offered was `4.5 to 4.9 seconds - 3 dictations` beside the same
+ * sentence reading zero. Neither is a question anybody has.
+ *
+ * *Under a second, half the time* is. So the columns are bands a person can hold
+ * — under one second, one to two, and so on — each carrying its share, and the
+ * top one is open so the tail is one column instead of eleven empty ones.
+ *
+ * **THE SET OF EDGES FOLLOWS THE MACHINE, not the other way round.** A local
+ * model answering in 300 ms would put every run in the first band of the
+ * ordinary set, which is one bar and no information; the fast set splits exactly
+ * that range. The choice is made on the ninth decile, so it follows where the
+ * runs actually are and not where the slowest one is.
+ *
+ * **A BAND WITH NOTHING IN IT IS STILL DRAWN — unless nothing above it is
+ * either.** An empty band between two full ones is a real fact about the wait
+ * (nothing ever took that long), while a run of empty bands off the top is only
+ * the axis being longer than the record (ADR 0172).
+ */
+export function turnaroundBands(
   buckets: number[] | undefined,
   width: number,
-  bins = 24,
-): DistributionBar[] {
+): BandBar[] {
   const counts = buckets ?? [];
-  let lowest = -1;
-  let highest = -1;
-  for (let index = 0; index < counts.length; index += 1) {
-    if ((counts[index] ?? 0) <= 0) continue;
-    if (lowest < 0) lowest = index;
-    highest = index;
-  }
-  if (lowest < 0) return [];
+  const runs = counts.reduce((sum, count) => sum + count, 0);
+  if (runs === 0) return [];
 
-  const span = highest - lowest + 1;
-  const per = Math.max(1, Math.ceil(span / bins));
-  const bars: DistributionBar[] = [];
-  for (let start = lowest; start <= highest; start += per) {
+  const p90 = bucketQuantile(counts, width, 0.9) ?? 0;
+  const edges =
+    BAND_EDGES.find((set) => p90 < set[set.length - 1]) ?? BAND_EDGES[BAND_EDGES.length - 1];
+
+  const bounds: Array<[number, number | null]> = edges.map((edge, index) => [
+    index === 0 ? 0 : edges[index - 1],
+    edge,
+  ]);
+  bounds.push([edges[edges.length - 1], null]);
+
+  const bars: BandBar[] = bounds.map(([from, to]) => {
     let count = 0;
-    for (let index = start; index < start + per && index < counts.length; index += 1) {
-      count += counts[index] ?? 0;
+    for (let index = 0; index < counts.length; index += 1) {
+      const at = index * width;
+      if (at >= from && (to === null || at < to)) count += counts[index] ?? 0;
     }
-    bars.push({
-      key: String(start),
-      label: String(Math.round(start * width)),
-      from: start * width,
-      to: (start + per) * width,
+    return {
+      key: String(from),
+      label:
+        to === null
+          ? `>${spellSeconds(from)}s`
+          : from === 0
+            ? `<${spellSeconds(to)}s`
+            : `${spellSeconds(from)}-${spellSeconds(to)}s`,
+      spoken:
+        to === null
+          ? `over ${spellSeconds(from)} seconds`
+          : from === 0
+            ? `under ${spellSeconds(to)} seconds`
+            : `${spellSeconds(from)} to ${spellSeconds(to)} seconds`,
+      from,
+      to,
       count,
-    });
+      share: count / runs,
+    };
+  });
+
+  /* The trailing empties go and the interior ones stay — see the block above. */
+  let last = bars.length - 1;
+  while (last > 0 && bars[last].count === 0) last -= 1;
+  return bars.slice(0, last + 1);
+}
+
+export interface CauseRow {
+  key: string;
+  /** The model as the record spells it, or the provider where a record kept no
+   *  model name. Never prettified: this is an id the reader can look up. */
+  model: string;
+  provider: string;
+  runs: number;
+  /** Milliseconds, the exact middle of this group's own waits — not read off
+   *  the ledger's 25 ms buckets, because the records carry the real numbers. */
+  median: number;
+}
+
+/**
+ * WHAT THE WAIT CAME FROM, PER MODEL, OFF THE RECORDS THEMSELVES.
+ *
+ * **THE LEDGER CANNOT ANSWER THIS AND WILL NOT LEARN TO.** Its histogram is
+ * counts per 25 ms and nothing else — no model, no provider, no profile — so
+ * *what causes it* has exactly one source in this product: the history records,
+ * each of which carries `provider`, `model` and its own `turnaround_ms`.
+ *
+ * **WHICH MAKES THIS THE ONE READING ON THE BLOCK THAT IS NOT ALL-TIME**, and
+ * the caller has to say so. History is pruned by age and by count; the ledger is
+ * not. The two figures WILL disagree — on the reporting machine the histogram
+ * holds 346 timed runs and the records 347 — and a reader who is not told why is
+ * looking at a defect.
+ *
+ * A RETRY IS NOT A RUN. It re-times a transform over words already spoken, and
+ * counting it would credit the model twice for one dictation — the same rule the
+ * ledger applies at its own funnel.
+ *
+ * Sorted by how much of the record each group is, not by how slow it is. The
+ * slowest row is often one run: this machine's whole tail above five seconds is
+ * a SINGLE dictation on a second vendor, and sorting by median would have put
+ * that one run at the top as though it were the finding.
+ */
+export function turnaroundCauses(
+  records: TranscriptionHistoryEntry[] | null | undefined,
+): CauseRow[] {
+  const groups = new Map<string, { model: string; provider: string; waits: number[] }>();
+  for (const record of records ?? []) {
+    if (record.retry_of) continue;
+    const wait = record.turnaround_ms;
+    if (wait === null || wait === undefined || !Number.isFinite(wait) || wait < 0) continue;
+    const provider = (record.provider ?? "").trim();
+    const model = (record.model ?? "").trim() || provider;
+    if (!model) continue;
+    const key = `${provider} / ${model}`;
+    const group = groups.get(key) ?? { model, provider, waits: [] };
+    group.waits.push(wait);
+    groups.set(key, group);
   }
-  return bars;
+
+  return [...groups.entries()]
+    .map(([key, group]) => {
+      const waits = [...group.waits].sort((left, right) => left - right);
+      const middle = Math.floor(waits.length / 2);
+      return {
+        key,
+        model: group.model,
+        provider: group.provider,
+        runs: waits.length,
+        median:
+          waits.length % 2 === 1 ? waits[middle] : (waits[middle - 1] + waits[middle]) / 2,
+      };
+    })
+    .sort((left, right) => right.runs - left.runs || right.median - left.median);
 }
 
 /**

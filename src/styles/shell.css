@@ -3779,6 +3779,15 @@
   }
   .ws-home-dots button:hover i { opacity: 0.7; }
   .ws-home-dots button:hover i[data-on] { opacity: 1; }
+  /* UNDER AN OPEN METRIC THEY LEAVE THE SCREEN AND KEEP THEIR SPACE (ADR 0236).
+     `visibility` rather than `display`, because this row is the last thing on
+     the block: removing it would lift the metric being read by its own height
+     on a swap that never happened. The affordance rules stay under it for the
+     one frame between the two states. */
+  .ws-home-dots[data-parked] { visibility: hidden; }
+  .ws-home-dots button:disabled { cursor: default; }
+  .ws-home-dots button:disabled:hover i { opacity: 0.35; }
+  .ws-home-dots button:disabled:hover i[data-on] { opacity: 1; }
   .ws-home-dots button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
   .ws-home-dots i {
     width: 5px; height: 5px;
@@ -3979,6 +3988,48 @@
     color: var(--fg-muted);
   }
   .ws-metric-facts dd { margin: 0; font-size: var(--t-body); color: var(--fg); }
+  /* WHERE THE WAIT CAME FROM (ADR 0236). Three columns on one row per model:
+     the name, how much of the record it is, and its own middle wait. A table
+     element would be the semantic answer and is the wrong one here — three
+     fields with no header row and no sorting is a list, and `<table>` would put
+     a scroll container inside a block that already has one at the chart. */
+  .ws-metric-causes { display: flex; flex-direction: column; gap: var(--s2); }
+  .ws-metric-causes-head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3);
+    margin: 0;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-metric-causes ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  .ws-metric-causes li {
+    display: grid;
+    /* The name takes what is left; the two figures are fixed so the decimal
+       points line up down the column and can be read without moving the eye. */
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: baseline;
+    gap: var(--s3);
+    padding: var(--s2) 0;
+    border-top: 1px solid var(--border);
+    font-size: var(--t-small);
+  }
+  .ws-metric-cause-name {
+    display: flex; align-items: baseline; gap: var(--s2);
+    min-width: 0;
+    color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ws-metric-cause-name em {
+    font-style: normal; font-size: var(--t-micro); color: var(--fg-muted);
+  }
+  .ws-metric-cause-runs { color: var(--fg-muted); font-size: var(--t-micro); }
+  .ws-metric-cause-wait {
+    min-width: 5ch; text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  .ws-metric-causes-rest {
+    margin: 0; font-size: var(--t-micro); color: var(--fg-muted);
+  }
   .ws-metric-note {
     margin: 0;
     text-align: center;

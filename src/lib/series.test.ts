@@ -3,7 +3,7 @@ import type { ActivityLedger, LedgerDay } from "./activity";
 import {
   bestPoint,
   bucketQuantile,
-  distributionBars,
+  turnaroundBands,
   offeredPeriods,
   periodStart,
   rateSeries,
@@ -152,18 +152,46 @@ describe("the all-time figures the tile deliberately does not carry", () => {
   });
 });
 
-describe("a histogram, re-binned for a chart", () => {
-  /* A DISTRIBUTION DRAWN FROM ZERO IS NINE TENTHS EMPTY AIR. The span is taken
-     from the buckets that actually hold a run. */
-  it("spans the runs and not the array", () => {
+describe("the wait, as bands and as a quantile", () => {
+  /* THE FINE HISTOGRAM IS GONE FROM THE SCREEN AND THE BANDS REPLACED IT, so
+     what is asserted here is what the owner's complaint was about: the shape a
+     reader is handed, not the re-binning that produced eleven empty columns. */
+  it("puts every run in a band and the shares add up", () => {
     const buckets = new Array<number>(400).fill(0);
-    buckets[80] = 3;
-    buckets[86] = 5;
-    const bars = distributionBars(buckets, 1, 24);
+    buckets[20] = 6; // 500 ms
+    buckets[60] = 3; // 1500 ms
+    const bars = turnaroundBands(buckets, 25);
 
-    expect(bars[0].from).toBe(80);
-    expect(bars.reduce((sum, bar) => sum + bar.count, 0)).toBe(8);
-    expect(distributionBars(new Array<number>(400).fill(0), 1)).toEqual([]);
+    expect(bars.reduce((sum, bar) => sum + bar.count, 0)).toBe(9);
+    expect(bars.reduce((sum, bar) => sum + bar.share, 0)).toBeCloseTo(1, 6);
+    expect(turnaroundBands(new Array<number>(400).fill(0), 25)).toEqual([]);
+  });
+
+  it("drops the empty bands off the top and keeps the ones under a full one", () => {
+    /* Nothing ever took longer than 1.6 s, so the open band above is the axis
+       being longer than the record and goes. The two empty bands BELOW the runs
+       stay: *nothing was ever that fast* is a fact about the wait, and dropping
+       them would slide the whole shape to the left edge (ADR 0172). */
+    const buckets = new Array<number>(400).fill(0);
+    buckets[20] = 5; // 0.5 s
+    buckets[64] = 2; // 1.6 s
+    const bars = turnaroundBands(buckets, 25);
+
+    expect(bars.map((bar) => bar.label)).toEqual(["<0.25s", "0.25-0.5s", "0.5-1s", "1-2s"]);
+    expect(bars.map((bar) => bar.count)).toEqual([0, 0, 5, 2]);
+  });
+
+  it("follows the machine: a local model that answers in a blink gets finer bands", () => {
+    /* Every run under 300 ms lands in the ordinary set's first band, which is
+       one bar and no information. The fast set splits exactly that range. */
+    const quick = new Array<number>(400).fill(0);
+    quick[4] = 10; // 100 ms
+    quick[12] = 4; // 300 ms
+    expect(turnaroundBands(quick, 25).map((bar) => bar.label)).toEqual(["<0.25s", "0.25-0.5s"]);
+
+    const slow = new Array<number>(400).fill(0);
+    slow[280] = 5; // 7 s
+    expect(turnaroundBands(slow, 25)[0].label).toBe("<2s");
   });
 
   /* THE QUANTILE READS THE SAME AXIS THE MEDIAN DOES, which is the failure ADR

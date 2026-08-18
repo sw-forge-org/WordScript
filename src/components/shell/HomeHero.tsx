@@ -106,10 +106,13 @@ export function HomeSwitch({
   children,
 }: {
   calendar: boolean;
-  /** A metric is open (ADR 0235). The block still holds the dots, and it holds
-   *  NOTHING that swaps on a background click: a reader who opened a detail did
-   *  not ask to be taken to the calendar by pointing at the white space around
-   *  the chart. The way back is the control in the detail's own head. */
+  /** A metric is open (ADR 0235). Then NOTHING on this block changes the view:
+   *  no background click, and the dots are shown but cannot be pressed (ADR
+   *  0236). A reader who opened a detail did not ask to be taken to the calendar
+   *  by pointing at the white space around the chart, and jumping there from
+   *  inside a metric leaves them somewhere they never asked for with no idea
+   *  what happened to the chart. The way back is the control in the detail's own
+   *  head, and it is the only one. */
   detail?: boolean;
   onToggle: () => void;
   /** Pick a view outright rather than flipping to the other one. The dots call
@@ -178,10 +181,30 @@ export function HomeSwitch({
           calendar` with the current one pressed — which is what a group of two
           alternatives is — and the hit area keeps `Show the …`, because that is
           a swap rather than a choice. */}
-      <span className="ws-home-dots" role="group" aria-label="Which view">
+      {/* AND UNDER AN OPEN METRIC THEY GO AWAY WITHOUT LEAVING (ADR 0236).
+          Disabling them was the first answer and it was half of one: the owner
+          read the pair still sitting under an open chart as an offer, because a
+          dot with an unlit twin beside it looks like a choice however inert it
+          is. "Mechanically off, visually still there" is a control lying about
+          what it can do.
+
+          Hidden rather than unmounted, because the row is the last thing on the
+          block and removing it would lift the metric under the cursor by its
+          height on a swap nobody made. `visibility` holds the space, `disabled`
+          keeps them out of the tab order, and `aria-hidden` keeps the reader
+          who cannot see them from being offered what the reader who can see
+          them is not. */}
+      <span
+        className="ws-home-dots"
+        role="group"
+        aria-label="Which view"
+        data-parked={detail ? "" : undefined}
+        aria-hidden={detail || undefined}
+      >
         <button
           type="button"
           onClick={() => select(false)}
+          disabled={detail}
           aria-label="Counters"
           title="Counters"
           aria-pressed={!calendar}
@@ -191,6 +214,7 @@ export function HomeSwitch({
         <button
           type="button"
           onClick={() => select(true)}
+          disabled={detail}
           aria-label="Activity calendar"
           title="Activity calendar"
           aria-pressed={calendar}

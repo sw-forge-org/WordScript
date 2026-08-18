@@ -71,6 +71,17 @@ export interface TranscriptionHistoryEntry {
   provider: string;
   model: string | null;
   language: string | null;
+  /** What the record was actually counted as speaking, which `language` above is
+   *  not (ADR 0236): that one is the configured hint, usually left on Auto, and
+   *  ADR 0180 forbids counting it. This is the verdict the runtime reached when
+   *  the record was written — the naming model's answer where the mode kept the
+   *  spoken language, the offline detector's otherwise — and it is stored so a
+   *  rebuilt activity ledger can read it instead of re-measuring without the
+   *  model.
+   *
+   *  `null` on records older than the field, on the paths that produced no text,
+   *  and on a run neither instrument would name. */
+  spoken_language?: string | null;
   active_profile: string | null;
   work_mode: TextProfileWorkMode | null;
   /** What actually ran, which `work_mode.processing_mode` is not: the work mode

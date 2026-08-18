@@ -50,6 +50,28 @@ pub struct TranscriptionHistoryEntry {
     pub provider: String,
     pub model: Option<String>,
     pub language: Option<String>,
+    /// WHAT THE RECORD WAS ACTUALLY COUNTED AS SPEAKING, which the `language`
+    /// above is not (ADR 0236). That one is the configured hint — a dropdown,
+    /// usually left on Auto — and ADR 0180 already forbids counting it. This is
+    /// the verdict `contributed_language` reached when the record was written:
+    /// the naming model's answer where the mode kept the spoken language and
+    /// there was enough text to name, and the offline detector's otherwise.
+    ///
+    /// IT IS STORED BECAUSE THE LEDGER CAN BE REBUILT AND THE NAMING CALL
+    /// CANNOT. `activity_ledger::seed_from_history` re-folds the surviving
+    /// records whenever the ledger file is missing or has been reset, and it
+    /// cannot reach a call that happened weeks ago — so it re-measured with the
+    /// offline detector alone, and every record under that detector's floor fell
+    /// out of the language count on the way through. On 2026-08-18 the owner
+    /// read the consequence off the tile: 91 of 447 dictations in no language
+    /// bucket, on a machine whose runtime log carried a language for 74 of its
+    /// 75 naming calls. The answer had existed every time; nothing kept it.
+    ///
+    /// `None` on records written before the field, on the paths that produced no
+    /// text, and on a run neither instrument would name — which is a refusal
+    /// rather than a gap (ADR 0180).
+    #[serde(default)]
+    pub spoken_language: Option<String>,
     pub active_profile: Option<String>,
     #[serde(default)]
     pub work_mode: Option<TextProfileWorkMode>,
@@ -537,12 +559,23 @@ pub fn record_entry(
     record_entry_with_work_mode(request, None, None)
 }
 
+/// The same funnel with the naming call's answer in hand, which is the only way
+/// to exercise the half of `spoken_language` no detector can reach.
+#[cfg(test)]
+pub fn record_entry_named(
+    request: RecordHistoryEntryRequest,
+    named_language: Option<String>,
+) -> Result<TranscriptionHistoryEntry, String> {
+    record_entry_with_work_mode(request, None, named_language)
+}
+
 /// `named_language` IS A PARAMETER AND NOT A REQUEST FIELD (ADR 0188), because
-/// it is not a property of the record: nothing stores it, the entry has no field
-/// for it, and it exists only long enough to reach the ledger contribution this
-/// funnel writes on its way out. Putting it on the request would have added a
-/// line to eighteen literal constructions to carry a value seventeen of them
-/// have no opinion about.
+/// it is not a property of the record: it is one instrument's opinion, arriving
+/// beside the title from the same call, and what the record keeps is the verdict
+/// the two instruments reach together — `spoken_language`, decided below and
+/// stored (ADR 0236) — rather than this input to it. Putting it on the request
+/// would have added a line to eighteen literal constructions to carry a value
+/// seventeen of them have no opinion about.
 fn record_entry_with_work_mode(
     request: RecordHistoryEntryRequest,
     work_mode: Option<TextProfileWorkMode>,
@@ -595,6 +628,42 @@ fn record_entry_with_work_mode(
         },
     );
 
+    /* THE LANGUAGE IS DECIDED HERE, ONCE, AND THE RECORD KEEPS IT (ADR 0236).
+       It used to be decided inside the ledger block at the foot of this function
+       and thrown away with it, which left a rebuilt ledger nothing to read and
+       forced it to re-measure with the offline detector alone. Deciding it
+       before the record exists — on the same text, through the same function —
+       means the record carries the answer and the rebuild reads it.
+
+       MEASURED ON THE TEXT THAT WAS SPOKEN (ADR 0188), never read off
+       `request.language`, which is the configured hint (ADR 0180) and would
+       count how often a dropdown was changed. The delivered text is the wrong
+       one in three modes: Translate delivers the language you asked for, Agent
+       and Prompt Enhance whatever the model wrote in. The raw transcript is what
+       was SAID, and it falls back to the delivered text only where the record
+       kept no raw one.
+
+       A RETRY IS MEASURED TOO AND STILL NOT COUNTED. The field says what this
+       record's text is in, which is a fact about the record; whether it reaches
+       the ledger is the separate question the block at the foot answers. */
+    let spoken_language = {
+        let delivered = request
+            .transformed_transcript
+            .as_deref()
+            .or(request.raw_transcript.as_deref())
+            .unwrap_or_default();
+        contributed_language(
+            named_language,
+            request
+                .raw_transcript
+                .as_deref()
+                .map(str::trim)
+                .filter(|raw| !raw.is_empty())
+                .unwrap_or(delivered),
+            request.effective_mode.as_ref(),
+        )
+    };
+
     let entry = TranscriptionHistoryEntry {
         id,
         created_at_ms,
@@ -604,6 +673,7 @@ fn record_entry_with_work_mode(
         provider: request.provider,
         model: request.model,
         language: request.language,
+        spoken_language,
         active_profile: request.active_profile,
         work_mode,
         effective_mode: request.effective_mode,
@@ -680,26 +750,13 @@ fn record_entry_with_work_mode(
             speech_seconds: entry.speech_seconds,
             turnaround_ms: entry.turnaround_ms,
             credited: mode_credits_typing(entry.effective_mode.as_ref()),
-            /* MEASURED ON THE TEXT, NEVER READ OFF `entry.language` (ADR 0180),
-               which is the configured hint and would count how often a dropdown
-               was changed.
-
-               AND ON THE TEXT THAT WAS SPOKEN (ADR 0188). The delivered text is
-               the wrong one in three modes: Translate delivers the language you
-               asked for, Agent and Prompt Enhance whatever the model wrote in.
-               The raw transcript is what you SAID, which is what the tile
-               claims to count; it falls back to the delivered text only where
-               the record kept no raw one. */
-            language: contributed_language(
-                named_language,
-                entry
-                    .raw_transcript
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|raw| !raw.is_empty())
-                    .unwrap_or(delivered),
-                entry.effective_mode.as_ref(),
-            ),
+            /* THE VERDICT THE RECORD ALREADY CARRIES, not a second reading of
+               the same text (ADR 0236). It was decided at the top of this
+               function — against `entry.language`, which is the configured hint
+               (ADR 0180), and against the delivered text, which is the wrong
+               text in three modes (ADR 0188). Reaching for either again here
+               would be a second place to decide it differently. */
+            language: entry.spoken_language.clone(),
         }) {
             super::runtime_log::record(format!(
                 "[WordScript] Activity ledger write failed error={error}"
@@ -1828,6 +1885,48 @@ mod tests {
         );
     }
 
+    /// ADR 0236. The naming call happens once and the record has to keep its
+    /// answer, because the ledger it feeds is rebuilt from these records
+    /// whenever the file is reset or lost — and a rebuild cannot make the call
+    /// again. A run over the naming floor and under the trigram one is exactly
+    /// the run that used to disappear on the way through.
+    #[test]
+    fn the_record_keeps_the_language_it_was_counted_as() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("spoken-language");
+
+        let entry = record_entry_named(completed_request("Hi there"), Some("EN ".to_string()))
+            .expect("history entry");
+
+        /* Trimmed and lowercased on the way in, and stored BESIDE the configured
+           hint rather than instead of it: the two are different facts and the
+           record states both. */
+        assert_eq!(entry.spoken_language.as_deref(), Some("en"));
+        assert_eq!(entry.language.as_deref(), Some("de"));
+
+        /* And without the field this run is in no bucket at all, which is what
+           every rebuild used to do to it: the same text through the same
+           function with no model answer to pass refuses, because three words are
+           under the trigram floor. */
+        assert_eq!(
+            contributed_language(None, "Hi there uh", Some(&ProcessingMode::Cleanup)),
+            None,
+        );
+
+        let read_back = transcription_history_entries(None)
+            .expect("history entries")
+            .into_iter()
+            .find(|item| item.id == entry.id)
+            .expect("the entry we just wrote");
+        assert_eq!(read_back.spoken_language.as_deref(), Some("en"));
+
+        if let Some(path) = read_back.transcript_path.as_deref() {
+            super::super::transcript_store::remove_transcript(path);
+        }
+    }
+
     /// The three modes whose output is not the reader's own language. The tile
     /// asks which languages you DICTATE in, and the naming call was shown the
     /// file it was naming — so its answer is discarded and the spoken text is
@@ -2233,6 +2332,7 @@ mod tests {
                 provider: "groq".to_string(),
                 model: None,
                 language: None,
+                spoken_language: None,
                 active_profile: None,
                 work_mode: None,
                 effective_mode: None,
@@ -2274,6 +2374,7 @@ mod tests {
                 provider: "groq".to_string(),
                 model: None,
                 language: None,
+                spoken_language: None,
                 active_profile: None,
                 work_mode: None,
                 effective_mode: None,
@@ -2315,6 +2416,7 @@ mod tests {
                 provider: "groq".to_string(),
                 model: None,
                 language: None,
+                spoken_language: None,
                 active_profile: None,
                 work_mode: None,
                 effective_mode: None,
@@ -2903,6 +3005,7 @@ mod tests {
             provider: "groq".to_string(),
             model: None,
             language: None,
+            spoken_language: None,
             active_profile: None,
             work_mode: Some(TextProfileWorkMode {
                 processing_mode: stored,

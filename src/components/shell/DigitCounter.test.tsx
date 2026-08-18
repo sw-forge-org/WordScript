@@ -114,3 +114,49 @@ describe("the digit counter", () => {
     expect(counter.style.getPropertyValue("--counter-w")).toBe("136px");
   });
 });
+
+describe("the decimal point", () => {
+  /* THE GAP AROUND THE MARK IS THE WHOLE POINT OF THE MARK (ADR 0191, ADR 0236),
+     and it was got wrong twice in opposite directions: hard against the digit on
+     its right first, then hard against the digit on its LEFT, which was reported
+     from the running app as `3.4` reading like one shape while `1.3` was clean.
+     Same code, different glyphs — seven of the ten light their last column in
+     the two rows the mark occupies. So the assertion is not about a width: it is
+     that NO LIT CELL OF THE MARK EVER TOUCHES A LIT CELL OF A DIGIT, whichever
+     digits happen to stand either side of it. */
+  function markColumns(frame: number[][]): number[] {
+    const rows = frame.length;
+    const lit = new Set<number>();
+    for (let col = 0; col < frame[0].length; col += 1) {
+      /* The mark is the only thing in the frame lit in the bottom two rows and
+         dark in every row above them. */
+      const bottom = frame[rows - 1][col] === 1 && frame[rows - 2][col] === 1;
+      const above = frame.slice(0, rows - 2).some((row) => row[col] === 1);
+      if (bottom && !above) lit.add(col);
+    }
+    return [...lit].sort((left, right) => left - right);
+  }
+
+  it("never touches the digit before it or the digit after it, for any pair of digits", () => {
+    for (let whole = 0; whole <= 9; whole += 1) {
+      for (let part = 0; part <= 9; part += 1) {
+        const frame = counterFrame(whole + part / 10, RESERVED_POSITIONS, 1);
+        const mark = markColumns(frame);
+        expect({ whole, part, width: mark.length }).toEqual({ whole, part, width: 2 });
+
+        const before = mark[0] - 1;
+        const after = mark[mark.length - 1] + 1;
+        const touching = frame.some((row) => row[before] === 1 || row[after] === 1);
+        expect({ whole, part, touching }).toEqual({ whole, part, touching: false });
+      }
+    }
+  });
+
+  it("costs width and keeps the four reserved positions", () => {
+    /* A whole-number counter and a one-decimal one hold the same four digits;
+       the decimal one is wider by the gap and by nothing else. */
+    const plain = counterFrame(1234, RESERVED_POSITIONS, 0)[0].length;
+    const pointed = counterFrame(123.4, RESERVED_POSITIONS, 1)[0].length;
+    expect(pointed - plain).toBe(3);
+  });
+});

@@ -619,7 +619,9 @@ pub struct SeedRecord {
     pub turnaround_ms: Option<u64>,
     /// Whether this record's mode may be credited against a typing baseline.
     pub credited: bool,
-    /// The language measured on the delivered text, not the configured one.
+    /// The language this record was credited with — read off the record where
+    /// it kept one (ADR 0236), re-measured from its text where it predates the
+    /// field. Never the configured one (ADR 0180).
     pub language: Option<String>,
 }
 
@@ -833,22 +835,34 @@ pub fn read_activity_ledger() -> Result<ActivityLedger, String> {
                         .map(|integrity| integrity.recorded_seconds),
                     turnaround_ms: entry.turnaround_ms,
                     credited: super::history::mode_credits_typing(entry.effective_mode.as_ref()),
-                    /* THE SPOKEN TEXT AND THE SAME RULE THE LIVE PATH USES
-                       (ADR 0188), through the same function — a second place
-                       deciding what a record's language is would be a second
-                       place to decide it differently. The seed has no model
-                       answer to pass: nothing stores one, so a rebuilt ledger
-                       re-measures with the offline detector alone. */
-                    language: super::history::contributed_language(
-                        None,
-                        entry
-                            .raw_transcript
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|raw| !raw.is_empty())
-                            .unwrap_or(delivered),
-                        entry.effective_mode.as_ref(),
-                    ),
+                    /* THE ANSWER THE RECORD KEPT (ADR 0236), which is the only
+                       way a rebuild can be as good as the live path was. The
+                       naming model saw this dictation once, weeks ago; the seed
+                       cannot ask it again, and for records that stored nothing
+                       it never could.
+
+                       THE FALLBACK IS THE SAME FUNCTION THE LIVE PATH CALLS, on
+                       the spoken text and with no model answer to pass
+                       (ADR 0188) — a second place deciding what a record's
+                       language is would be a second place to decide it
+                       differently. It is also exactly the gap that made the
+                       field necessary: the offline detector refuses under eight
+                       words, so before ADR 0236 every rebuild silently dropped
+                       the short runs out of the count. Records older than the
+                       field still lose them; nothing can recover an answer that
+                       was never written down. */
+                    language: entry.spoken_language.clone().or_else(|| {
+                        super::history::contributed_language(
+                            None,
+                            entry
+                                .raw_transcript
+                                .as_deref()
+                                .map(str::trim)
+                                .filter(|raw| !raw.is_empty())
+                                .unwrap_or(delivered),
+                            entry.effective_mode.as_ref(),
+                        )
+                    }),
                 }
             })
             .collect();

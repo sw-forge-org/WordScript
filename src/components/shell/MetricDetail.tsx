@@ -14,7 +14,8 @@ import {
 import {
   bestPoint,
   bucketQuantile,
-  distributionBars,
+  turnaroundBands,
+  turnaroundCauses,
   offeredPeriods,
   PERIOD_LABELS,
   rateSeries,
@@ -23,7 +24,9 @@ import {
   type Period,
   type SeriesPoint,
 } from "@/lib/series";
+import { CATALOGUE } from "@/lib/modelCatalogue";
 import { Icon } from "./Icon";
+import type { TranscriptionHistoryEntry } from "@/types/history";
 import { MetricChart, type ChartBar } from "./MetricChart";
 import { SegmentControl } from "./SegmentControl";
 
@@ -249,17 +252,103 @@ function RateDetail({
   );
 }
 
-function TurnaroundDetail({ ledger }: { ledger: ActivityLedger | null }) {
+/**
+ * WHERE THE WAIT CAME FROM — the one thing on this view that answers *why*.
+ *
+ * The owner's argument, and it is the right one: a spread tells you the wait is
+ * two seconds and leaves you there. **The reason anybody opens turnaround is to
+ * find out what is making it that.** The record can answer it per model, and the
+ * answer on this machine is worth the block on its own — one dictation on a
+ * second vendor took 5.8 s and is the whole tail the bands above end in.
+ *
+ * IT COVERS LESS THAN EVERY FIGURE ABOVE IT AND SAYS SO IN ITS OWN HEAD. The
+ * histogram is all-time; these are the records still on the machine, which
+ * pruning by age and by count keeps shorter. Two numbers that must differ, with
+ * the reason written where they meet (ADR 0172).
+ */
+/**
+ * A VENDOR'S WRITTEN NAME, and the raw id where the catalogue has never heard
+ * of it.
+ *
+ * `providerLabel` throws on an unknown id, which is right where a lane is being
+ * configured and wrong here: this reads ids off records that are already on
+ * disk, including ones written by a build that named its providers differently.
+ * A row that cannot be spelled prettily is still a row worth showing.
+ */
+function vendorName(id: string): string {
+  return CATALOGUE.providers.find((entry) => entry.id === id)?.label ?? id;
+}
+
+function Causes({ records }: { records?: TranscriptionHistoryEntry[] }) {
+  const rows = useMemo(() => turnaroundCauses(records), [records]);
+  /* NOTHING WHILE IT IS LOADING, AND NOTHING WHERE THERE IS NOTHING. `undefined`
+     is the read that has not come back yet; an empty list is a machine whose
+     remaining records carry no wait. Neither is a table with no rows. */
+  if (records === undefined) return null;
+  const timed = rows.reduce((sum, row) => sum + row.runs, 0);
+  if (timed === 0) return null;
+
+  return (
+    <div className="ws-metric-causes">
+      <p className="ws-metric-causes-head">
+        <span>Which model heard it</span>
+        <span>{timed} records still on this machine</span>
+      </p>
+      <ul>
+        {rows.slice(0, 5).map((row) => (
+          <li key={row.key}>
+            {/* `via` IS THE WHOLE FIX, AND IT COST A WORD. The first build set
+                the vendor beside the model with nothing between them, and the
+                owner read `whisper-large-v3-turbo openai` and asked whether that
+                was the model's author, the profile, or the vendor. It is the
+                vendor — the same recogniser is served by more than one, at
+                different speeds, which is exactly the comparison this list is
+                for — and an unlabelled second word could be any of the three. */}
+            <span className="ws-metric-cause-name">
+              {row.model}
+              {row.provider && row.provider !== row.model ? (
+                <em>via {vendorName(row.provider)}</em>
+              ) : null}
+            </span>
+            <span className="ws-metric-cause-runs">
+              {row.runs} {row.runs === 1 ? "run" : "runs"}
+            </span>
+            <span className="ws-metric-cause-wait">{(row.median / 1000).toFixed(1)} s</span>
+          </li>
+        ))}
+      </ul>
+      {rows.length > 5 ? (
+        <p className="ws-metric-causes-rest">and {rows.length - 5} more</p>
+      ) : null}
+    </div>
+  );
+}
+
+function TurnaroundDetail({
+  ledger,
+  records,
+}: {
+  ledger: ActivityLedger | null;
+  records?: TranscriptionHistoryEntry[];
+}) {
   const median = ledgerMedianTurnaround(ledger);
   const p90 = bucketQuantile(ledger?.turnaround_buckets, TURNAROUND_BUCKET_MS, 0.9);
   const runs = (ledger?.turnaround_buckets ?? []).reduce((sum, count) => sum + count, 0);
-  const bars = distributionBars(ledger?.turnaround_buckets, TURNAROUND_BUCKET_MS).map(
-    (bar) => ({
-      key: bar.key,
-      label: (bar.from / 1000).toFixed(1),
-      value: bar.count,
-      marked: median !== null && median >= bar.from && median < bar.to,
-      hint: `${(bar.from / 1000).toFixed(1)} to ${(bar.to / 1000).toFixed(1)} s · ${bar.count} dictations`,
+  /* FIVE BANDS, NOT A HISTOGRAM, AND THE OWNER IS WHY. The fine one drew this
+     machine's 346 runs as twenty-four columns of which eleven were empty, and
+     the read-out under the cursor said `4.5 to 4.9 seconds · 3 dictations` — a
+     sentence with no question behind it. A band carries its share, which is the
+     thing a wait is actually read for: *under a second, half the time*. */
+  const bars = turnaroundBands(ledger?.turnaround_buckets, TURNAROUND_BUCKET_MS).map(
+    (band) => ({
+      key: band.key,
+      label: band.label,
+      value: band.count,
+      marked:
+        median !== null && median >= band.from && (band.to === null || median < band.to),
+      hint: `${band.count} ${band.count === 1 ? "dictation" : "dictations"} came back ${
+        band.spoken
+      } · ${Math.round(band.share * 100)} %`,
     }),
   );
 
@@ -281,11 +370,19 @@ function TurnaroundDetail({ ledger }: { ledger: ActivityLedger | null }) {
           { label: "Runs timed", value: String(runs) },
         ]}
       />
-      {/* NO HISTORY, AND THE REASON IS THE RECORD RATHER THAN THE SCREEN. */}
+      <Causes records={records} />
+      {/* NO HISTORY, AND THE REASON IS THE RECORD RATHER THAN THE SCREEN — plus
+          the one thing the list above cannot say for itself (ADR 0182). The
+          clock stops when the TEXT exists, so a mode that rewrites what you said
+          has a second model inside the same wait, and the record names only the
+          one that heard you. The row is still where the wait is charged; it is
+          not always where all of it was spent. */}
       <p className="ws-metric-note">
-        The record keeps this one as a spread rather than a history — a day row
-        holds no wait. What moves it is the model and the lane, so a change there
-        shows up as a second hump before it shows up in the median.
+        The ledger keeps this one as a spread rather than a history — a day row
+        holds no wait — so the list above reads the records themselves, which
+        pruning keeps shorter than the spread. The wait runs from you stopping to
+        the text being ready, so where a mode rewrote the text a second model is
+        inside it that the record does not name.
       </p>
     </>
   );
@@ -323,15 +420,22 @@ function LanguagesDetail({ ledger }: { ledger: ActivityLedger | null }) {
           },
           { label: "Named", value: `${measured} of ${dictations}` },
           {
-            label: "Too short to name",
+            /* NOT `Too short to name`, WHICH NAMED A REASON THE RECORD CANNOT
+               VOUCH FOR. Some of these runs were short. Others are the ones the
+               ledger was folded from before it existed, where nothing had asked
+               a model and the offline detector's eight-word floor decided alone.
+               The count is one number covering two causes, so it states the
+               fact and the note carries both (ADR 0161, ADR 0236). */
+            label: "Not named",
             value: String(Math.max(0, dictations - measured)),
           },
         ]}
       />
       <p className="ws-metric-note">
-        Measured on the text that came back, never on your language setting. A
-        dictation under about eight words is counted in no language at all, which
-        is what the second figure is doing there.
+        Measured on the text you spoke, never on your language setting. A run
+        goes unnamed where it was too short to read a language off — and where
+        the ledger was folded from records that never stored one, which is every
+        dictation from before it started counting. Nothing goes back over them.
       </p>
     </>
   );
@@ -340,6 +444,7 @@ function LanguagesDetail({ ledger }: { ledger: ActivityLedger | null }) {
 export function MetricDetail({
   metric,
   ledger,
+  records,
   baseline,
   onBack,
   /** The moment the series ends at. A prop for the same reason the calendar has
@@ -349,6 +454,11 @@ export function MetricDetail({
 }: {
   metric: MetricKey;
   ledger: ActivityLedger | null;
+  /** The history records, for the one reading the ledger cannot produce: which
+   *  model each wait came from. `undefined` until the read comes back, and the
+   *  block that uses it draws nothing until then — it is the only prop on this
+   *  view that is not all-time, so only the view that needs it is given it. */
+  records?: TranscriptionHistoryEntry[];
   baseline: number;
   onBack: () => void;
   now?: number;
@@ -397,7 +507,7 @@ export function MetricDetail({
           now={now}
         />
       )}
-      {metric === "turnaround" && <TurnaroundDetail ledger={ledger} />}
+      {metric === "turnaround" && <TurnaroundDetail ledger={ledger} records={records} />}
       {metric === "languages" && <LanguagesDetail ledger={ledger} />}
     </div>
   );
