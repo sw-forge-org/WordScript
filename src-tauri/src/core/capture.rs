@@ -588,8 +588,14 @@ impl NativeCaptureStopReason {
     }
 }
 
+/// The capture runtime's own state: the counter and the running capture, and
+/// deliberately no configured snapshot beside them. `start_native_capture`
+/// builds one per capture from `NativeCaptureConfig::load_from_disk()` — the
+/// ACTIVE PROFILE's resolved capture block — so a field holding an earlier one
+/// could only ever disagree with it. The command that wrote such a field
+/// configured nothing and was removed for that reason (ADR 0232).
+#[derive(Default)]
 pub struct NativeCaptureState {
-    config: NativeCaptureConfig,
     counter: u64,
     active: Option<ActiveCapture>,
 }
@@ -1142,22 +1148,7 @@ impl LevelEmitSummary {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ConfigureNativeCaptureRequest {
-    pub audio_device: String,
-    pub max_recording_seconds: u64,
-    pub silence_timeout_seconds: u64,
-}
-
 impl NativeCaptureState {
-    pub fn load(config: NativeCaptureConfig) -> Self {
-        Self {
-            config,
-            counter: 0,
-            active: None,
-        }
-    }
-
     pub fn is_recording(&self) -> bool {
         self.active.is_some()
     }
@@ -1203,13 +1194,6 @@ impl NativeCaptureState {
             }
         }
     }
-
-    fn configure(&mut self, request: ConfigureNativeCaptureRequest) -> NativeCaptureStatus {
-        self.config.audio_device = request.audio_device;
-        self.config.max_recording_seconds = request.max_recording_seconds;
-        self.config.silence_timeout_seconds = request.silence_timeout_seconds;
-        self.status()
-    }
 }
 
 #[tauri::command]
@@ -1228,15 +1212,6 @@ pub fn current_status_for_app<R: Runtime>(
         .ok_or_else(|| "Native capture state is not available.".to_string())?;
     let state = state.lock().map_err(|error| error.to_string())?;
     Ok(state.status())
-}
-
-#[tauri::command]
-pub fn configure_native_capture(
-    request: ConfigureNativeCaptureRequest,
-    state: State<'_, Mutex<NativeCaptureState>>,
-) -> Result<NativeCaptureStatus, String> {
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    Ok(state.configure(request))
 }
 
 #[tauri::command]
@@ -1461,7 +1436,6 @@ pub fn start_native_capture<R: Runtime + 'static>(
         .map_err(|error| format!("Could not start native capture stream: {error}"))?;
 
     state.counter += 1;
-    state.config = config.clone();
     state.active = Some(ActiveCapture {
         id: format!("capture-{}", state.counter),
         config,
@@ -2677,7 +2651,7 @@ fn classify_capture_stream_error(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::config::{ProfileSpeechSettings, TextProfile};
+    use super::super::config::{ProfileCaptureSettings, ProfileSpeechSettings, TextProfile};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     /// A profile whose whole axis sits on the local runtime.
@@ -4342,6 +4316,49 @@ mod tests {
     /// shape: it is what any profile that sets a speech model at all produces,
     /// and it is the shape the owner's own machine was in for all 50 records
     /// the defect was found on.
+    /// **WHICH LIST THE CEILING COMES FROM.** The owner reported a recording cut
+    /// off "at about three minutes" under Insert at cursor and not under
+    /// Clipboard only, and asked whether the "When a recording stops" card
+    /// governs every activation mode and both delivery modes.
+    ///
+    /// It does, and this pins why: the capture's snapshot is built from the
+    /// ACTIVE PROFILE's resolved capture block, and it carries no activation-mode
+    /// or delivery-mode axis for either number to vary on. The machine-wide
+    /// `AppConfig` fields of the same name reached no decision at all, and the
+    /// command that sent them was removed once that was measured (ADR 0232).
+    /// Held here so that a future change which makes the machine-wide pair
+    /// authoritative again fails a test instead of a dictation.
+    #[test]
+    fn the_capture_ceiling_comes_from_the_active_profile_not_the_machine() {
+        let config = AppConfig {
+            // The machine-wide pair, deliberately different from the profile's.
+            max_recording_seconds: 720,
+            silence_timeout_seconds: 30,
+            active_text_profile_id: "founder-ops".to_string(),
+            text_profiles: vec![TextProfile {
+                id: "founder-ops".to_string(),
+                capture: Some(ProfileCaptureSettings {
+                    max_recording_seconds: 1_200,
+                    silence_timeout_seconds: 50,
+                    ..ProfileCaptureSettings::default()
+                }),
+                ..TextProfile::default()
+            }],
+            ..AppConfig::default()
+        };
+
+        let snapshot = NativeCaptureConfig::from_app_config(config);
+
+        assert_eq!(
+            snapshot.max_recording_seconds, 1_200,
+            "the card the owner edits is the profile's, and it is the one a capture runs on"
+        );
+        assert_eq!(
+            snapshot.silence_timeout_seconds, 50,
+            "the silence auto-stop follows the same card, not the machine-wide copy"
+        );
+    }
+
     fn config_with_a_profile_of_its_own(speech: ProfileSpeechSettings) -> AppConfig {
         AppConfig {
             model: "whisper-large-v3".to_string(),

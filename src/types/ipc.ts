@@ -82,6 +82,16 @@ export interface TextProfileWorkMode {
   target?:                  PromptTarget | null;
   bias_mode?:               BiasMode;
   manual_bias?:             ManualBias;
+  /** `auto_paste` only: leave the transcript on the system clipboard instead of
+   *  putting the previous contents back after the paste. Off is the behaviour
+   *  the Delivery screen has always described. Answered `false` by the runtime
+   *  under any other mode — the switch belongs to the mode it is drawn under. */
+  keep_on_clipboard?:       boolean;
+  /** `clipboard_only` only: write the transcript to the system clipboard as soon
+   *  as it exists rather than when the preview commits. Off is today's behaviour
+   *  and the reason the mode named after the clipboard was the slower of the two
+   *  to reach it. The commit writes again, so an edit replaces the early text. */
+  clipboard_immediately?:   boolean;
 }
 
 export interface WorkspaceContext {
@@ -709,7 +719,15 @@ export interface NativeTriggerStatus {
 export type BackendEvent =
   | { event: "ready";            version: string; config: AppConfig }
   | { event: "recording_started" }
-  | { event: "recording_stopped" }
+  | {
+      event: "recording_stopped";
+      /** Why the recording ended, when it did NOT end because the user ended
+       *  it. Present on the two ceiling paths (the capture monitor's maximum
+       *  length and the hold watchdog, which since 2026-08-18 are the same
+       *  ceiling) and on the stream-error autostop; absent on an ordinary stop,
+       *  where the user already knows the reason -- they are the reason. */
+      reason?: string;
+    }
   | { event: "processing" }
   | ({ event: "preview_ready" } & RuntimeResultEvent)
   | ({ event: "transcription" } & RuntimeResultEvent)
@@ -784,6 +802,13 @@ export interface RuntimeState {
    *  surface has something to offer a retry from. */
   errorAudioRetained: boolean;
   recordingStartMs:  number | null;   // Date.now() when recording started
+  /** Why the CURRENT session's recording ended, when the user was not the one
+   *  who ended it -- today only the recording ceiling and the stream-error
+   *  autostop. Null on every ordinary stop. Set from the authoritative
+   *  `recording_stopped`, which is the only channel that carries a reason, and
+   *  cleared when the next recording starts. It exists so a dictation that was
+   *  cut off can say so instead of being delivered like any other. */
+  stopReason:        string | null;
   /** Whether a processing preview was staged for the current session. One
    *  decision surface per delivery mode: a session that stopped on the preview
    *  (clipboard_only) has already had the user's decision and must not show a

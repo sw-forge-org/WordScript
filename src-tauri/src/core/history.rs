@@ -162,6 +162,18 @@ pub struct TranscriptionHistoryEntry {
     /// could see going wrong.
     #[serde(default)]
     pub speech_seconds: Option<f64>,
+    /// Why the recording behind this record ended, when the user was not the one
+    /// who ended it -- today the recording ceiling and the stream-error autostop.
+    ///
+    /// `None` on every ordinary dictation, which is most of them: the user
+    /// released the key and already knows why it stopped. It exists because the
+    /// opposite case was indistinguishable from an ordinary one. A dictation cut
+    /// off mid-sentence at the ceiling was delivered, filed and displayed exactly
+    /// like a finished one, and the only record of the ceiling was a line in a
+    /// log that rotates -- which is why it was reported as inexplicable
+    /// (2026-08-18).
+    #[serde(default)]
+    pub capture_stop_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +224,9 @@ pub struct RecordHistoryEntryRequest {
     /// The recorded window with the thinking pauses removed (ADR 0177), from
     /// that same capture and absent in the same places.
     pub speech_seconds: Option<f64>,
+    /// Why the recording ended, when the user did not end it. `None` on every
+    /// ordinary stop and on every path with no recording of its own.
+    pub capture_stop_reason: Option<String>,
 }
 
 /// The three things a CAPTURE knows about itself, carried as one.
@@ -230,6 +245,8 @@ pub struct CaptureFacts {
     pub input_level: Option<InputLevelSummary>,
     /// The recorded window minus the thinking pauses (ADR 0177).
     pub speech_seconds: Option<f64>,
+    /// Why the recording ended, for the paths where the user did not end it.
+    pub stop_reason: Option<String>,
 }
 
 impl CaptureFacts {
@@ -617,6 +634,7 @@ fn record_entry_with_work_mode(
         turnaround_ms: request.turnaround_ms,
         input_level: request.input_level,
         speech_seconds: request.speech_seconds,
+        capture_stop_reason: request.capture_stop_reason,
     };
 
     store.entries.push_front(entry.clone());
@@ -1036,6 +1054,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 turnaround_ms: None,
                 input_level: None,
                 speech_seconds: None,
+                capture_stop_reason: None,
             },
             Some(app_config.resolved_active_text_profile_work_mode()),
             // Nothing was transformed, so nothing was named.
@@ -1191,6 +1210,7 @@ pub fn history_entry_from_insert_result(
             capture_integrity: capture.integrity,
             input_level: capture.input_level,
             speech_seconds: capture.speech_seconds,
+            capture_stop_reason: capture.stop_reason.clone(),
             /* THE CALLER'S CLOCK, WHICH THIS DROPPED ON THE FLOOR. It arrived
                as an argument and was written as `None`, so every record on the
                product's main path reported no turnaround at all and the
@@ -1251,6 +1271,7 @@ pub fn record_insert_failure(
             capture_integrity: capture.integrity,
             input_level: capture.input_level,
             speech_seconds: capture.speech_seconds,
+            capture_stop_reason: capture.stop_reason.clone(),
             /* No turnaround on this path and that is not an oversight: the text
                never reached the reader, so there is no wait that ended. */
             turnaround_ms: None,
@@ -1314,6 +1335,7 @@ pub fn record_transcription_failure(
             capture_integrity: capture.integrity,
             input_level: capture.input_level,
             speech_seconds: capture.speech_seconds,
+            capture_stop_reason: capture.stop_reason.clone(),
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
@@ -1371,6 +1393,7 @@ pub fn record_empty_result(
             capture_integrity: capture.integrity,
             input_level: capture.input_level,
             speech_seconds: capture.speech_seconds,
+            capture_stop_reason: capture.stop_reason.clone(),
             turnaround_ms: None,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
@@ -1881,6 +1904,7 @@ mod tests {
                 turnaround_ms: None,
                 input_level: None,
                 speech_seconds: None,
+                capture_stop_reason: None,
             })
             .expect("record history entry");
         }
@@ -1938,6 +1962,7 @@ mod tests {
             turnaround_ms: None,
             input_level: None,
             speech_seconds: None,
+            capture_stop_reason: None,
         })
         .expect("first history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -1974,6 +1999,7 @@ mod tests {
             turnaround_ms: None,
             input_level: None,
             speech_seconds: None,
+            capture_stop_reason: None,
         })
         .expect("second history entry");
 
@@ -2028,6 +2054,7 @@ mod tests {
             turnaround_ms: None,
             input_level: None,
             speech_seconds: None,
+            capture_stop_reason: None,
         })
         .expect("groq history entry");
 
@@ -2065,6 +2092,7 @@ mod tests {
             turnaround_ms: None,
             input_level: None,
             speech_seconds: None,
+            capture_stop_reason: None,
         })
         .expect("local runtime history entry");
 
@@ -2130,6 +2158,7 @@ mod tests {
             turnaround_ms: None,
             input_level: None,
             speech_seconds: None,
+            capture_stop_reason: None,
         })
         .expect("first export history entry");
         record_entry(RecordHistoryEntryRequest {
@@ -2166,6 +2195,7 @@ mod tests {
             turnaround_ms: None,
             input_level: None,
             speech_seconds: None,
+            capture_stop_reason: None,
         })
         .expect("second export history entry");
 
@@ -2194,6 +2224,7 @@ mod tests {
         let cutoff_reference = 10 * MS_PER_DAY;
         let mut entries = VecDeque::from(vec![
             TranscriptionHistoryEntry {
+                capture_stop_reason: None,
                 id: "old".to_string(),
                 created_at_ms: cutoff_reference.saturating_sub(8 * MS_PER_DAY),
                 status: TranscriptionHistoryStatus::Completed,
@@ -2234,6 +2265,7 @@ mod tests {
                 turnaround_ms: None,
             },
             TranscriptionHistoryEntry {
+                capture_stop_reason: None,
                 id: "fresh-a".to_string(),
                 created_at_ms: cutoff_reference.saturating_sub(MS_PER_DAY),
                 status: TranscriptionHistoryStatus::Completed,
@@ -2274,6 +2306,7 @@ mod tests {
                 turnaround_ms: None,
             },
             TranscriptionHistoryEntry {
+                capture_stop_reason: None,
                 id: "fresh-b".to_string(),
                 created_at_ms: cutoff_reference,
                 status: TranscriptionHistoryStatus::Completed,
@@ -2455,6 +2488,7 @@ mod tests {
             turnaround_ms: None,
             input_level: None,
             speech_seconds: None,
+            capture_stop_reason: None,
         }
     }
 
@@ -2860,6 +2894,7 @@ mod tests {
         stored: ProcessingMode,
     ) -> TranscriptionHistoryEntry {
         TranscriptionHistoryEntry {
+            capture_stop_reason: None,
             id: "history-1-0".to_string(),
             created_at_ms: 1,
             status: TranscriptionHistoryStatus::Completed,

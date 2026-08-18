@@ -135,4 +135,13 @@ export interface TranscriptionHistoryEntry {
   /** Milliseconds from the capture stopping to the text existing (ADR 0181).
    *  `null` wherever that clock never ran. */
   turnaround_ms?: number | null;
+  /** Why the recording behind this record ended, when the user was not the one
+   *  who ended it — today the recording ceiling and the stream-error autostop.
+   *
+   *  `null` on every ordinary dictation, which is most of them: the user let go
+   *  of the key and already knows why it stopped. It exists because the opposite
+   *  case was indistinguishable from an ordinary one — a dictation cut off
+   *  mid-sentence at the ceiling was filed and displayed exactly like a finished
+   *  one, which is why it was reported as inexplicable (2026-08-18). */
+  capture_stop_reason?: string | null;
 }

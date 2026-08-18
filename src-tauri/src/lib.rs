@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime};
 pub mod core;
 mod v1_slice;
 
-use crate::core::capture::{NativeCaptureConfig, NativeCaptureState};
+use crate::core::capture::NativeCaptureState;
 use crate::core::input_monitor::InputMonitorState;
 use crate::core::config::{AppConfig, OverlayAnchor, OverlayPositionMode};
 use crate::core::insertion::{NativeInsertionConfig, NativeInsertionState};
@@ -97,6 +97,32 @@ static OVERLAY_WINDOW_SHOWN: AtomicBool = AtomicBool::new(false);
 // ONE `set_size` per frame with ONE height instead of 2–3 competing heights.
 static OVERLAY_PENDING_REVEAL: Mutex<Option<(OverlaySurface, Option<f64>, Option<f64>)>> = Mutex::new(None);
 static OVERLAY_REVEAL_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
+// The last flat reveal that actually resized, as (surface, when).
+//
+// `OVERLAY_REVEAL_SCHEDULED` collapses reveals that arrive in the SAME
+// scheduler tick, which is all the 0-ms `tokio::time::sleep` in
+// `reveal_overlay_window_coalesced` yields for -- microseconds, not a time
+// window. Two reveals a few MILLISECONDS apart therefore each get their own
+// flush, their own `OVERLAY_FLAT_REVEAL_TICK.fetch_add`, and two `set_size`
+// calls with opposing heights (60 vs 61) that WebKitGTK applies asynchronously.
+// That is the ghosting cascade, and routing the trigger through the coalescer
+// (ADR 0227) did not close it: measured 2026-08-18 after that change, one
+// `[ov-sched] flush` was still followed by TWO `[ov-reveal]` lines 11 ms apart.
+//
+// The second of those reveals is redundant by construction. Nothing changed
+// between them -- no `[ov-repaint]`, no new schedule, same surface -- so the
+// repaint the first one forced is the repaint the second one would force
+// again, except that its opposing height turns one reallocation into two.
+// Within `OVERLAY_REVEAL_SETTLE_MS` a repeat of the SAME surface therefore
+// skips the oscillation and the resize, and does everything else unchanged.
+static OVERLAY_LAST_FLAT_REVEAL: Mutex<Option<(OverlaySurface, std::time::Instant)>> =
+    Mutex::new(None);
+
+// One frame at 60 Hz is ~16 ms; the observed duplicate gaps were 5-11 ms. This
+// covers a duplicate without reaching into deliberate back-to-back surface
+// changes, whose fastest real source is a human keypress.
+const OVERLAY_REVEAL_SETTLE_MS: u128 = 30;
 
 // ── Opacity gate against the black map frame ────────────────────────────────
 // Every session start runs park→reveal, and every reveal ends in `show()` —
@@ -733,6 +759,25 @@ fn schedule_overlay_fade_in<R: Runtime>(_app: &AppHandle<R>) {}
 // wrapper: both ensure only ONE `set_size` per frame, so the oscillation
 // produces exactly one height per frame instead of 2–3 competing heights that
 // WebKitGTK applies out of order.
+/// Whether this flat reveal repeats one that just happened.
+///
+/// Pure so the rule can be tested without an `AppHandle`. Only a repeat of the
+/// SAME surface counts: a genuine surface change within the window still gets
+/// its oscillation, because that change is what the repaint exists for. See
+/// `OVERLAY_LAST_FLAT_REVEAL` for why the duplicate has to be suppressed at all.
+fn is_duplicate_flat_reveal(
+    surface: OverlaySurface,
+    now: std::time::Instant,
+    last: Option<(OverlaySurface, std::time::Instant)>,
+) -> bool {
+    matches!(
+        last,
+        Some((previous_surface, at))
+            if previous_surface == surface
+                && now.duration_since(at).as_millis() < OVERLAY_REVEAL_SETTLE_MS
+    )
+}
+
 fn reveal_overlay_window_impl<R: Runtime>(
     app: &AppHandle<R>,
     surface: OverlaySurface,
@@ -768,7 +813,26 @@ fn reveal_overlay_window_impl<R: Runtime>(
         // `set_size` per frame, so the oscillation produces exactly one height
         // per frame instead of 2–3 competing heights.
         let is_flat = !matches!(surface, OverlaySurface::EditMode);
-        if is_flat {
+
+        // Is this the second reveal of the same surface within the settle
+        // window? Then the oscillation has already run for this visual state
+        // and running it again only produces a competing height. See
+        // OVERLAY_LAST_FLAT_REVEAL.
+        let duplicate_reveal = if is_flat {
+            let now = std::time::Instant::now();
+            let mut last = OVERLAY_LAST_FLAT_REVEAL
+                .lock()
+                .expect("OVERLAY_LAST_FLAT_REVEAL poisoned");
+            let duplicate = is_duplicate_flat_reveal(surface, now, *last);
+            if !duplicate {
+                *last = Some((surface, now));
+            }
+            duplicate
+        } else {
+            false
+        };
+
+        if is_flat && !duplicate_reveal {
             let tick = OVERLAY_FLAT_REVEAL_TICK.fetch_add(1, Ordering::Relaxed);
             window_height = default_height + f64::from(tick & 1);
         }
@@ -778,8 +842,18 @@ fn reveal_overlay_window_impl<R: Runtime>(
         // matches the current outer_size. Without this, `size_changed` could
         // report false (oscillated height == outer_size) → set_size skipped →
         // no reallocation → ghosting. Edit-mode keeps the outer_size check.
-        let force_set_size = is_flat;
-        let size_changed = if force_set_size {
+        // A duplicate keeps the window exactly where the previous reveal left
+        // it: no forced resize, and the outer_size check below then reports no
+        // change, so no `set_size` is issued at all.
+        let force_set_size = is_flat && !duplicate_reveal;
+        let size_changed = if duplicate_reveal {
+            // Not merely "unforced": actively suppressed. `window_height` fell
+            // back to `default_height` when the oscillation was skipped, so the
+            // outer_size comparison below would see the PREVIOUS reveal's
+            // oscillated height and resize back to the default -- reintroducing
+            // exactly the competing set_size this suppression exists to remove.
+            false
+        } else if force_set_size {
             true
         } else {
             window
@@ -825,12 +899,23 @@ fn reveal_overlay_window_impl<R: Runtime>(
                 let inner = window
                     .inner_size()
                     .map(|s| (s.width as f64 / scale, s.height as f64 / scale));
+                // The SURFACE, on both halves of the trace. Without it the
+                // payload is geometry only, and every flat surface is 480x60 --
+                // so the one double reveal left after ADR 0227 (the 60/61 pair
+                // 13 ms apart at the first surface change after app start,
+                // recorded in docs/known-issues/overlay-ghosting.md) cannot be
+                // told from a genuine surface change, which
+                // `is_duplicate_flat_reveal` correctly does not suppress. The
+                // leading explanation there is that the two impl calls carried
+                // DIFFERENT surfaces; this field is what decides it, and it
+                // decides it either way rather than confirming the guess.
                 eprintln!(
-                    "[ov-reveal] req=({window_width:.0},{window_height:.0}) scale={scale:.2} outer={outer:?} inner={inner:?}"
+                    "[ov-reveal] surface={surface:?} req=({window_width:.0},{window_height:.0}) scale={scale:.2} outer={outer:?} inner={inner:?}"
                 );
                 let _ = app.emit(
                     "ov-reveal-debug",
                     serde_json::json!({
+                        "surface": format!("{surface:?}"),
                         "req": [window_width as i32, window_height as i32],
                         "outer": outer.ok().map(|(w, h)| [w as i32, h as i32]),
                         "inner": inner.ok().map(|(w, h)| [w as i32, h as i32]),
@@ -920,16 +1005,44 @@ fn reveal_overlay_window_impl<R: Runtime>(
     }
 }
 
-// Direct (synchronous) reveal entry point. Used by the Rust StartCapture
-// trigger, where the frontend's reaction-render reveal fires on a later frame
-// and there is no same-frame competition to coalesce.
-fn reveal_overlay_window<R: Runtime>(
+// Reveal entry point for the Rust StartCapture trigger.
+//
+// This used to call `reveal_overlay_window_impl` directly, on the assumption
+// that "the frontend's reaction-render reveal fires on a later frame, so there
+// is no same-frame competition to coalesce". That assumption holds only when
+// the overlay was IDLE before the trigger: React is not yet active, so its own
+// reveal genuinely lands a frame later.
+//
+// It does NOT hold when a session starts while a result surface is still on
+// screen. There the overlay is already active, the `result_actions -> compact`
+// surface swap re-runs the per-surface size layoutEffect and the
+// pillVisualEpoch repaint layoutEffect in the SAME commit, and both flush on a
+// microtask — i.e. in the same frame as this trigger. Two entry points then
+// reached `reveal_overlay_window_impl`, each doing its own
+// `OVERLAY_FLAT_REVEAL_TICK.fetch_add`, which is exactly the multi-`set_size`
+// cascade with competing heights (60 vs 61) that the coalescing exists to
+// prevent — and which WebKitGTK renders as the new pill stacked on the old
+// one's retained raster.
+//
+// Measured 2026-08-18 (`VITE_WORDSCRIPT_OVERLAY_RENDER_TRACE=1`, 4498 trace
+// lines): every `compact -> result_actions` transition produced exactly ONE
+// `[ov-reveal]`, and every `result_actions -> compact` transition — i.e. a new
+// capture started while the result was still shown — produced TWO, with
+// `req=[480,60]` and `req=[480,61]` back to back. In one case the reveal was
+// logged BEFORE the frontend's own `[ov-sched] flush`, which is only possible
+// from a second, independent source. See docs/known-issues/overlay-ghosting.md.
+//
+// Routing this through the coalescer makes the tick invariant ("only ONE
+// fetch_add per frame") hold for the trigger path too. The added latency is the
+// coalescer's 0-ms tokio yield, which is the same one every frontend reveal
+// already pays.
+fn reveal_overlay_window<R: Runtime + 'static>(
     app: &AppHandle<R>,
     surface: OverlaySurface,
     height_override: Option<f64>,
     width_override: Option<f64>,
 ) {
-    reveal_overlay_window_impl(app, surface, height_override, width_override);
+    reveal_overlay_window_coalesced(app, surface, height_override, width_override);
 }
 
 // Coalesced reveal entry point for `sync_overlay_window_visibility`. Writes
@@ -1509,6 +1622,7 @@ fn stop_native_capture_after_stream_error<R: Runtime + 'static>(
         ));
         return;
     };
+    core::sessions::note_capture_stop_reason(app, reason.message());
     let _ = app.emit(
         "wordscript-event",
         serde_json::json!({
@@ -1576,6 +1690,7 @@ fn spawn_native_capture_monitor<R: Runtime + 'static>(app: AppHandle<R>, capture
                         );
                         return;
                     };
+                    core::sessions::note_capture_stop_reason(&app, reason.message());
                     let _ = app.emit(
                         "wordscript-event",
                         serde_json::json!({
@@ -1677,6 +1792,9 @@ fn handle_audio_ready<R: Runtime + 'static>(
         integrity: capture_integrity,
         input_level,
         speech_seconds: (payload.speech_seconds > 0.0).then_some(payload.speech_seconds),
+        // Taken rather than read: the reason belongs to exactly one record, and
+        // a leftover would attribute the next dictation's ending to this one's.
+        stop_reason: core::sessions::take_capture_stop_reason(&app),
     };
     /* WHERE THE WAIT ACTUALLY BEGAN (ADR 0181). `pipeline_started_at` starts
        when the audio file already exists — after the buffer was drained,
@@ -2083,6 +2201,45 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                     session_id,
                                     pipeline_started_at.elapsed().as_millis(),
                                 ));
+                                /* THE MODE NAMED AFTER THE CLIPBOARD REACHES IT
+                                   LAST, unless the profile says otherwise. The
+                                   preview is a decision surface (ADR 0011a) and
+                                   the write used to wait for the decision, so a
+                                   finished dictation was not on the system
+                                   clipboard until a click — or, unnoticed, ten
+                                   seconds later. The switch separates the two:
+                                   reachable now, still editable.
+
+                                   The commit writes AGAIN, so an edit replaces
+                                   this text; for the length of the edit the
+                                   clipboard holds the unedited version, which is
+                                   the price of it being there at all.
+
+                                   Blocking: wl-copy plus its verify can take up
+                                   to 800 ms, and this runs on the async runtime.
+                                   A failure is logged and dropped — the preview
+                                   still commits, so the transcript is not lost,
+                                   only early. */
+                                if app_config.active_text_profile_clipboard_immediately() {
+                                    let text_for_clipboard = preview.text.clone();
+                                    match tauri::async_runtime::spawn_blocking(move || {
+                                        core::insertion::write_clipboard_with_system_chain(
+                                            &text_for_clipboard,
+                                        )
+                                    })
+                                    .await
+                                    {
+                                        Ok(Ok(driver)) => core::runtime_log::record(format!(
+                                            "[WordScript] Preview clipboard written early session_id={session_id} driver={driver:?}"
+                                        )),
+                                        Ok(Err(error)) => core::runtime_log::record(format!(
+                                            "[WordScript] Preview clipboard early write failed session_id={session_id}: {error}"
+                                        )),
+                                        Err(error) => core::runtime_log::record(format!(
+                                            "[WordScript] Preview clipboard early write panicked session_id={session_id}: {error}"
+                                        )),
+                                    }
+                                }
                                 let _ = app.emit(
                                     "wordscript-event",
                                     serde_json::json!({
@@ -2897,9 +3054,7 @@ pub fn run() {
         .manage(Mutex::new(NativeTriggerState::new(
             NativeTriggerConfig::load_from_disk(),
         )))
-        .manage(Mutex::new(NativeCaptureState::load(
-            NativeCaptureConfig::load_from_disk(),
-        )))
+        .manage(Mutex::new(NativeCaptureState::default()))
         .manage(Mutex::new(InputMonitorState::default()))
         .manage(Mutex::new(NativeInsertionState::load(
             NativeInsertionConfig::load_from_disk(),
@@ -3056,7 +3211,6 @@ pub fn run() {
             core::trigger::pause_native_trigger,
             core::trigger::resume_native_trigger,
             core::capture::native_capture_status,
-            core::capture::configure_native_capture,
             core::capture::list_native_input_devices,
             core::capture::toggle_native_capture_mute,
             core::capture::toggle_native_capture_pause,
@@ -3109,6 +3263,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::capture::NativeCaptureConfig;
 
     #[test]
     fn runtime_transcription_timeout_stays_interactive() {
@@ -3620,5 +3775,147 @@ mod tests {
             let mut pending = OVERLAY_PENDING_REVEAL.lock().expect("OVERLAY_PENDING_REVEAL poisoned");
             *pending = None;
         }
+    }
+
+    /// Routing the trigger through the coalescer (ADR 0227) was necessary and
+    /// NOT sufficient, which the next measurement showed: `OVERLAY_REVEAL_SCHEDULED`
+    /// only collapses reveals landing in the same scheduler tick, and the 0-ms
+    /// `tokio::time::sleep` behind it yields microseconds, not a time window.
+    /// Measured 2026-08-18 on a build containing that fix: one `[ov-sched] flush`
+    /// followed by TWO `[ov-reveal]` lines 11 ms apart, `req=[480,61]` then
+    /// `req=[480,60]` — two reallocations with opposing heights, which is the
+    /// ghosting cascade itself.
+    ///
+    /// The settle window closes that. These cases pin its two edges: a repeat of
+    /// the same surface is suppressed, and a genuine surface change is not.
+    #[test]
+    fn a_repeated_flat_reveal_within_the_settle_window_is_a_duplicate() {
+        use std::time::{Duration, Instant};
+
+        let now = Instant::now();
+        let just_now = now
+            .checked_sub(Duration::from_millis(11))
+            .expect("instant arithmetic");
+        let a_while_ago = now
+            .checked_sub(Duration::from_millis(OVERLAY_REVEAL_SETTLE_MS as u64 + 20))
+            .expect("instant arithmetic");
+
+        // The measured shape: same surface, 11 ms apart.
+        assert!(
+            is_duplicate_flat_reveal(OverlaySurface::Compact, now, Some((OverlaySurface::Compact, just_now))),
+            "a second reveal of the same surface 11 ms later is the duplicate that produced the competing heights"
+        );
+
+        // A real surface change inside the window still oscillates: that
+        // repaint is the whole reason the oscillation exists.
+        assert!(
+            !is_duplicate_flat_reveal(
+                OverlaySurface::ProcessingPreview,
+                now,
+                Some((OverlaySurface::Compact, just_now))
+            ),
+            "a surface CHANGE must never be suppressed, however close it lands"
+        );
+
+        // Outside the window the same surface is a new visual event again.
+        assert!(
+            !is_duplicate_flat_reveal(OverlaySurface::Compact, now, Some((OverlaySurface::Compact, a_while_ago))),
+            "past the settle window the same surface must oscillate again"
+        );
+
+        // First reveal of the process.
+        assert!(
+            !is_duplicate_flat_reveal(OverlaySurface::Compact, now, None),
+            "with no previous reveal there is nothing to duplicate"
+        );
+    }
+
+    /// The tick invariant the test above asserts ("only ONE fetch_add per
+    /// frame") is a property of the CALL GRAPH, not of the statics: it holds
+    /// only while every route into `reveal_overlay_window_impl` goes through
+    /// the coalescer. It was broken once, and by an argument rather than an
+    /// oversight — the trigger path was documented as not needing coalescing
+    /// because "the frontend's reveal fires in the REACTION render, so there is
+    /// no same-frame competition". That is true only when the overlay was IDLE
+    /// before the trigger. When a capture starts while a result surface is
+    /// still shown, React is already active and its layoutEffects flush on a
+    /// microtask in the same frame, so two entry points reached `_impl` and
+    /// produced two `set_size` calls with competing heights — measured
+    /// 2026-08-18, see `reveal_overlay_window` and
+    /// docs/known-issues/overlay-ghosting.md.
+    ///
+    /// A statics-level test cannot see that, so this one reads the call graph
+    /// out of the source (the same `CARGO_MANIFEST_DIR` approach
+    /// `core::regression_corpus` uses for its fixtures) and fails if a second
+    /// direct route is ever reintroduced.
+    #[test]
+    fn every_reveal_route_goes_through_the_coalescer() {
+        let file = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+        )
+        .expect("lib.rs is readable");
+        // Only the production half: this test module names the symbol in its
+        // own assertions, and matching those would make it fail on itself.
+        let source = file
+            .split_once("\n#[cfg(test)]")
+            .map(|(production, _)| production)
+            .unwrap_or(file.as_str())
+            .to_string();
+
+        // Bodies that are ALLOWED to call `reveal_overlay_window_impl`: the
+        // coalescer's flush task, and nothing else.
+        let allowed_callers = ["reveal_overlay_window_coalesced"];
+
+        let mut offenders = Vec::new();
+        for (index, line) in source.lines().enumerate() {
+            let trimmed = line.trim_start();
+            // Skip the definition itself, comments and doc lines.
+            if trimmed.starts_with("//") || trimmed.starts_with("fn reveal_overlay_window_impl") {
+                continue;
+            }
+            if !trimmed.contains("reveal_overlay_window_impl(") {
+                continue;
+            }
+            // Find the enclosing `fn` by scanning backwards for the nearest
+            // top-level function signature.
+            let enclosing = source
+                .lines()
+                .take(index)
+                .filter(|candidate| {
+                    candidate.starts_with("fn ")
+                        || candidate.starts_with("pub fn ")
+                        || candidate.starts_with("pub(crate) fn ")
+                })
+                .last()
+                .unwrap_or("<none>");
+            if !allowed_callers
+                .iter()
+                .any(|allowed| enclosing.contains(allowed))
+            {
+                offenders.push(format!("line {}: called from `{}`", index + 1, enclosing.trim()));
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "`reveal_overlay_window_impl` must only be reached through the coalescer, \
+             otherwise two same-frame reveals each bump OVERLAY_FLAT_REVEAL_TICK and \
+             emit competing set_size heights (the overlay ghosting cascade). Offenders: {offenders:?}"
+        );
+
+        // And the trigger entry point specifically must delegate to the
+        // coalescer rather than call the impl.
+        let trigger_entry = source
+            .split("fn reveal_overlay_window<")
+            .nth(1)
+            .expect("`reveal_overlay_window` entry point exists");
+        let trigger_body = trigger_entry
+            .split_once('}')
+            .map(|(body, _)| body)
+            .unwrap_or(trigger_entry);
+        assert!(
+            trigger_body.contains("reveal_overlay_window_coalesced("),
+            "the Rust StartCapture trigger must reveal through the coalescer"
+        );
     }
 }

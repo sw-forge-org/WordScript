@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ProfilesScreen } from "./Profiles";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
+import { resolveTextProfileWorkMode } from "@/lib/textProfiles";
 import type { AppConfig } from "@/types/ipc";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -240,6 +241,54 @@ describe("Profiles, wired", () => {
       "ydotool",
     ]);
     expect(patchText).not.toHaveBeenCalled();
+  });
+
+  /* One switch per delivery mode, each drawn only under its own mode. The pair
+     exists because neither mode did the plain thing: `auto_paste` put the
+     previous clipboard back, and `clipboard_only` -- the mode named after the
+     clipboard -- did not reach it until the preview closed. */
+  it("offers the keep switch under insert-at-cursor and the copy switch under clipboard-only", async () => {
+    const patch = vi.fn();
+    const withDelivery = (behavior: "auto_paste" | "clipboard_only"): AppConfig => {
+      const base = config();
+      const profile = base.text_profiles[0];
+      // `work_mode` is optional on the profile type, and spreading an optional
+      // widens every field it carries — so the factory's value is named rather
+      // than spread out of thin air.
+      const work = resolveTextProfileWorkMode(profile);
+      return {
+        ...base,
+        text_profiles: [{ ...profile, work_mode: { ...work, insert_behavior: behavior } }],
+      };
+    };
+
+    const pasting = render(
+      <ProfilesScreen
+        runtime={createWorkspaceRuntime({ active: true, config: withDelivery("auto_paste"), patch })}
+      />,
+    );
+    expect(screen.getByLabelText("Keep it on the clipboard")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Copy immediately")).toBeNull();
+
+    await userEvent.click(screen.getByLabelText("Keep it on the clipboard"));
+    expect(patch.mock.calls[0][0].text_profiles[0].work_mode.keep_on_clipboard).toBe(true);
+    pasting.unmount();
+
+    patch.mockClear();
+    render(
+      <ProfilesScreen
+        runtime={createWorkspaceRuntime({
+          active: true,
+          config: withDelivery("clipboard_only"),
+          patch,
+        })}
+      />,
+    );
+    expect(screen.getByLabelText("Copy immediately")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Keep it on the clipboard")).toBeNull();
+
+    await userEvent.click(screen.getByLabelText("Copy immediately"));
+    expect(patch.mock.calls[0][0].text_profiles[0].work_mode.clipboard_immediately).toBe(true);
   });
 
   it("states the runtime's ceiling and headroom, not the drawing's 13:39", async () => {

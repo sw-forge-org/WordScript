@@ -150,8 +150,20 @@ function normalizeTextProfileRecoveryBehavior(value?: string | null): TextProfil
   }
 }
 
+/* Spread FIRST, then normalize the three fields that have a normalizer. The
+   enumeration this replaced listed six of the ten fields `TextProfileWorkMode`
+   carries and silently dropped the other four -- `bias_mode`, `manual_bias`,
+   `keep_on_clipboard` and `clipboard_immediately`. Every one of them is optional
+   on the type, so omitting them was not a type error, and the resolver is BOTH
+   the read for a control's `checked` and the base of every `work_mode` write:
+   the two ADR 0231 switches could therefore neither be turned on (the controlled
+   value read false forever) nor survive an unrelated edit to the same block.
+   Carrying the object and correcting the fields that need it means a field added
+   to the type arrives here by construction rather than by being remembered.
+   The Rust mirror is `normalize_text_profile_work_mode` in `core/config.rs`. */
 function cloneTextProfileWorkMode(workMode?: Partial<TextProfileWorkMode> | null): TextProfileWorkMode {
   return {
+    ...(workMode ?? {}),
     rewrite_style: normalizeTextProfileRewriteStyle(workMode?.rewrite_style),
     insert_behavior: normalizeTextProfileInsertBehavior(workMode?.insert_behavior),
     recovery_behavior: normalizeTextProfileRecoveryBehavior(workMode?.recovery_behavior),

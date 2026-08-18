@@ -220,6 +220,9 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
        the runtime writes since ADR 0074. Absent on a record with no text. */
     path: entry.transcript_path ?? undefined,
     note:
+      // Ahead of the gap note: a record that ends mid-sentence is explained by
+      // the ceiling before it is explained by anything about the audio.
+      stoppedByRuntimeNote(entry) ??
       captureGapNote(entry) ??
       entry.transform_warning ??
       (identical
@@ -332,6 +335,23 @@ export function captureGapNote(entry: TranscriptionHistoryEntry): string | undef
     `${Math.round(integrity.wall_seconds)} s it ran. ${missing} % of the audio was never ` +
     `captured, so the text is of what was recorded, not of what was said.`
   );
+}
+
+/**
+ * The sentence a record puts on itself when the USER did not end the recording.
+ *
+ * The runtime already knows this and used to keep it to a log that rotates, so a
+ * dictation the ceiling cut off mid-sentence read exactly like one the speaker
+ * finished. That is the whole complaint this note answers: not that the ceiling
+ * exists, but that nothing said it had been reached.
+ *
+ * Nothing on an ordinary stop — the reader released the key and is the reason.
+ */
+export function stoppedByRuntimeNote(
+  entry: TranscriptionHistoryEntry
+): string | undefined {
+  const reason = entry.capture_stop_reason?.trim();
+  return reason ? `WordScript ended this recording: ${reason}` : undefined;
 }
 
 /** Which of a record's three readings the row titles carry (ADR 0070, 0078). */

@@ -139,6 +139,11 @@ impl PasteDisableReason {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeInsertionConfig {
     pub auto_paste: bool,
+    /// Leave the transcript on the clipboard instead of restoring the previous
+    /// contents after the paste. The profile's switch, resolved by the caller;
+    /// read only on the `auto_paste` path, which is the only one that restores.
+    #[serde(default)]
+    pub keep_on_clipboard: bool,
     pub paste_delay_ms: u64,
     pub xdotool_type_max_chars: usize,
 }
@@ -147,6 +152,7 @@ impl Default for NativeInsertionConfig {
     fn default() -> Self {
         Self {
             auto_paste: true,
+            keep_on_clipboard: false,
             paste_delay_ms: 220,
             xdotool_type_max_chars: 800,
         }
@@ -167,6 +173,7 @@ impl NativeInsertionConfig {
         }
         let app_config = AppConfig::load_from_disk();
         config.auto_paste = app_config.active_text_profile_auto_paste();
+        config.keep_on_clipboard = app_config.active_text_profile_keep_on_clipboard();
         config
     }
 }
@@ -222,6 +229,17 @@ pub enum NativeClipboardRestoreStatus {
     NotAttempted,
     Scheduled,
     SkippedNoPreviousClipboard,
+    /// The paste ran, but nothing could confirm it arrived, so the transcript
+    /// was left on the clipboard instead of being replaced by the previous
+    /// contents. See `XtestTargetProbe`.
+    SkippedDeliveryUnverified,
+    /// The profile asked for the transcript to stay on the clipboard, so the
+    /// previous contents were deliberately not put back. Distinct from
+    /// `SkippedDeliveryUnverified`, which is the same outcome reached because
+    /// nothing could confirm the paste — one is a setting, the other a doubt,
+    /// and a record that conflated them would make the setting look like a
+    /// failure.
+    SkippedKeptOnClipboard,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,6 +353,37 @@ pub struct NativeInsertionState {
     portal_session: Option<Result<PortalSessionHandle, PortalError>>,
 }
 
+/// Whether an XTEST paste can reach anything at all in this session.
+///
+/// Every Linux paste driver that survives the chain on a hybrid XWayland
+/// session drives input through the X11 XTEST extension -- `xdotool` directly,
+/// and `enigo` through its default `x11rb` backend (see PLATFORMS.md). XTEST
+/// delivers to whatever the X server considers focused. On a Wayland session
+/// with XWayland alongside, a NATIVE Wayland window holding the focus means the
+/// X server has no focused client at all, and the key event is delivered
+/// nowhere -- while `xdotool` still exits 0, because the request was
+/// successfully SENT.
+///
+/// That gap is what made `auto_paste` report success for runs that inserted
+/// nothing: measured 2026-08-18, nine `auto_paste` runs in `history.json` all
+/// carried `insert_mode: direct_paste`, `pasted: true`, `fallback_reason: null`,
+/// while `xdotool getactivewindow getwindowname` returned an empty name for
+/// window `0x200000`. PLATFORMS.md described the adjacent case correctly -- a
+/// compositor that REFUSES the XTEST grant produces an error and falls back --
+/// but a grant that is accepted and lands nowhere produced no error to fall
+/// back from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum XtestTargetProbe {
+    /// A real X client holds the focus, so an XTEST key event has a recipient.
+    Reachable,
+    /// No X client holds the focus. On a hybrid session that means the focused
+    /// window is a native Wayland client, which cannot receive XTEST.
+    Unreachable,
+    /// Could not be determined. The caller attempts the paste rather than
+    /// refusing it: an undetermined probe is not evidence of a missing target.
+    Unknown,
+}
+
 pub(crate) trait InsertIo {
     fn write_clipboard_with_driver(
         &mut self,
@@ -346,6 +395,12 @@ pub(crate) trait InsertIo {
     fn type_with_driver(&mut self, driver: NativeInsertDriver, text: &str) -> Result<(), String>;
     fn schedule_clipboard_restore(&mut self, text: Option<String>, delay_ms: u64);
     fn wait_before_paste(&mut self, delay_ms: u64);
+    /// Asked once per run, immediately before the XTEST paste chain, and only
+    /// on a hybrid XWayland session. The default is `Unknown` so a test IO that
+    /// does not model the X focus keeps its previous behaviour.
+    fn probe_xtest_target(&mut self) -> XtestTargetProbe {
+        XtestTargetProbe::Unknown
+    }
 }
 
 struct SystemInsertIo;
@@ -396,6 +451,10 @@ impl InsertIo for SystemInsertIo {
 
     fn wait_before_paste(&mut self, delay_ms: u64) {
         thread::sleep(Duration::from_millis(delay_ms));
+    }
+
+    fn probe_xtest_target(&mut self) -> XtestTargetProbe {
+        probe_xtest_target_with_xdotool()
     }
 }
 
@@ -718,12 +777,49 @@ pub(crate) fn execute_insert_request_with_io(
         NativeInsertMode::ClipboardOnly
     } else {
         paste_attempted = true;
+
+        // Whether an XTEST paste can be expected to land. This does NOT gate the
+        // paste: an earlier version refused outright when no foreign X window
+        // held the focus, and the owner's experience contradicted the theory --
+        // auto-paste had worked intermittently against native Wayland windows.
+        // It can: KWin forwards XTEST fake input from Xwayland into the
+        // compositor, so the absence of a focused X client does not prove the
+        // keystroke goes nowhere. It only means nothing here can confirm that it
+        // went somewhere.
+        //
+        // What that uncertainty must not cost is the transcript.
+        // `schedule_clipboard_restore` puts the PREVIOUS contents back a moment
+        // after the paste, so on a run that did not actually insert, the user is
+        // left with neither the paste nor the text. When delivery cannot be
+        // confirmed, the transcript stays on the clipboard.
+        let delivery_confirmable = !(platform.is_wayland && platform.has_x11_display)
+            || io.probe_xtest_target() != XtestTargetProbe::Unreachable;
+
         io.wait_before_paste(config.paste_delay_ms);
         match run_paste_driver_chain(&platform, io) {
             Ok(driver) => {
                 pasted = true;
                 active_driver = driver;
-                if previous_clipboard_text.is_some() {
+                if config.keep_on_clipboard {
+                    // Asked for, not inferred. The paste is an additional
+                    // delivery here rather than a transport that tidies up after
+                    // itself, so there is nothing to put back.
+                    runtime_log::record(
+                        "[WordScript] Native insert clipboard kept by profile setting: the \
+                         transcript stays on the clipboard instead of the previous contents \
+                         being restored"
+                            .to_string(),
+                    );
+                    clipboard_restore = NativeClipboardRestoreStatus::SkippedKeptOnClipboard;
+                } else if !delivery_confirmable {
+                    runtime_log::record(
+                        "[WordScript] Native insert delivery unconfirmed: no foreign X window held \
+                         the focus, so the transcript stays on the clipboard instead of being \
+                         restored away"
+                            .to_string(),
+                    );
+                    clipboard_restore = NativeClipboardRestoreStatus::SkippedDeliveryUnverified;
+                } else if previous_clipboard_text.is_some() {
                     io.schedule_clipboard_restore(
                         previous_clipboard_text,
                         CLIPBOARD_RESTORE_DELAY_MS,
@@ -925,7 +1021,13 @@ pub(crate) fn detect_portal_capabilities_for_status() -> PortalCapabilities {
     detect_portal_capabilities()
 }
 
-fn write_clipboard_with_system_chain(text: &str) -> Result<NativeInsertDriver, String> {
+/// Puts `text` on the system clipboard through the platform's driver chain and
+/// nothing else — no paste, no scratchpad, no record.
+///
+/// `pub(crate)` for the `clipboard_only` immediate write: that path needs the
+/// text reachable while the preview is still open, which is a clipboard write on
+/// its own rather than a delivery.
+pub(crate) fn write_clipboard_with_system_chain(text: &str) -> Result<NativeInsertDriver, String> {
     let mut io = SystemInsertIo;
     run_clipboard_driver_chain(&detect_insert_platform_context(false), text, &mut io)
 }
@@ -979,6 +1081,7 @@ fn run_paste_driver_chain(
     if execution_chain.is_empty() {
         return Err(no_available_paste_driver_reason(platform));
     }
+
 
     for driver in execution_chain {
         match io.paste_with_driver(driver) {
@@ -1146,6 +1249,85 @@ fn paste_with_command(program: &str, args: &[&str], restore_wayland: bool) -> Re
     } else {
         Err(format!("{program} paste failed: {stderr}"))
     }
+}
+
+/// Ask the X server whether it has a focused client with a real window name.
+///
+/// `xdotool getactivewindow` reads `_NET_ACTIVE_WINDOW` from the root window.
+/// On a hybrid XWayland session where a native Wayland window holds the focus,
+/// KWin leaves that property pointing at a placeholder with no `WM_NAME`
+/// (measured: id `0x200000`, empty name), and `getactivewindow` can also fail
+/// outright. Either shape means an XTEST key event has no recipient.
+///
+/// A non-empty name is the only positive evidence, and anything that prevents
+/// the probe from running at all reports `Unknown` rather than `Unreachable`:
+/// refusing a paste on a probe that did not work would trade a silent failure
+/// for a silent refusal.
+fn probe_xtest_target_with_xdotool() -> XtestTargetProbe {
+    let output = Command::new("xdotool")
+        .args(["getactivewindow", "getwindowname"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    let Ok(output) = output else {
+        return XtestTargetProbe::Unknown;
+    };
+
+    if !output.status.success() {
+        // `getactivewindow` exits non-zero when there is no active window at
+        // all, which is exactly the native-Wayland-focus case.
+        return XtestTargetProbe::Unreachable;
+    }
+
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() {
+        return XtestTargetProbe::Unreachable;
+    }
+
+    // A named X window is not automatically a usable target: OUR OWN windows are
+    // X clients too. Measured 2026-08-18 on the reporting machine, the complete
+    // list of visible X clients was:
+    //
+    //     "wordscript", "Wordscript" :: WordScript
+    //     "wordscript", "Wordscript" :: WordScript - Settings
+    //
+    // Every other application in that session -- editor, browser, terminal --
+    // was a native Wayland client. So on a hybrid session the overlay and the
+    // settings window can be the only things `getactivewindow` ever returns, and
+    // treating that as reachable would send the paste into WordScript itself
+    // rather than into whatever the user was writing in.
+    if active_x_window_belongs_to_this_process() {
+        return XtestTargetProbe::Unreachable;
+    }
+
+    XtestTargetProbe::Reachable
+}
+
+/// Whether the focused X window is one of ours.
+///
+/// `getwindowpid` reads `_NET_WM_PID`, which not every client sets. A window
+/// that does not answer is treated as somebody else's: the question being asked
+/// is "is this definitely us", and an unanswered probe is not a yes.
+fn active_x_window_belongs_to_this_process() -> bool {
+    let Ok(output) = Command::new("xdotool")
+        .args(["getactivewindow", "getwindowpid"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u32>()
+        .map(|pid| pid == std::process::id())
+        .unwrap_or(false)
 }
 
 fn type_with_xdotool(text: &str) -> Result<(), String> {
@@ -1939,6 +2121,9 @@ mod tests {
         clipboard_drivers: Vec<NativeInsertDriver>,
         paste_drivers: Vec<NativeInsertDriver>,
         type_drivers: Vec<NativeInsertDriver>,
+        /// `Unknown` in every pre-existing test, which is what keeps them on
+        /// their previous behaviour: the probe only refuses on `Unreachable`.
+        xtest_target: XtestTargetProbe,
     }
 
     impl FakeInsertIo {
@@ -1959,6 +2144,7 @@ mod tests {
                 clipboard_drivers: Vec::new(),
                 paste_drivers: Vec::new(),
                 type_drivers: Vec::new(),
+                xtest_target: XtestTargetProbe::Unknown,
             }
         }
     }
@@ -2008,12 +2194,62 @@ mod tests {
         fn wait_before_paste(&mut self, delay_ms: u64) {
             self.waits.push(delay_ms);
         }
+
+        fn probe_xtest_target(&mut self) -> XtestTargetProbe {
+            self.xtest_target
+        }
     }
 
     #[test]
     fn adds_trailing_space_after_terminal_punctuation() {
         assert_eq!(format_text_for_insert("Hello."), "Hello. ");
         assert_eq!(format_text_for_insert("Hello"), "Hello");
+    }
+
+    #[test]
+    fn a_profile_that_keeps_the_clipboard_never_schedules_a_restore() {
+        // The switch's whole content: the transcript stays. `direct_paste()`
+        // seeds a previous clipboard, so without the setting this run would
+        // schedule a restore -- which is what makes the empty vector an
+        // assertion rather than an accident of the fixture.
+        let mut io = FakeInsertIo::direct_paste();
+        let result = execute_insert_request_with_io(
+            NativeInsertRequest {
+                text: "Hello world".to_string(),
+                source: Some("test".to_string()),
+                corrected: Some(false),
+                auto_paste: Some(true),
+            },
+            &NativeInsertionConfig {
+                keep_on_clipboard: true,
+                auto_paste: true,
+                paste_delay_ms: 5,
+                xdotool_type_max_chars: 800,
+            },
+            1,
+            NativeInsertPlatformContext {
+                auto_paste: true,
+                is_wayland: false,
+                has_x11_display: false,
+                has_wl_copy: false,
+                has_xdotool: false,
+                has_wtype: false,
+                has_ydotool: false,
+                try_xdotool_type_first: false,
+            },
+            &mut io,
+            None,
+        );
+
+        assert!(result.ok);
+        assert_eq!(result.insert_mode, NativeInsertMode::DirectPaste);
+        assert!(io.scheduled_restores.is_empty());
+        // A setting, not a doubt: conflating the two would make the switch read
+        // as a delivery that could not be confirmed.
+        assert_eq!(
+            result.clipboard_restore,
+            NativeClipboardRestoreStatus::SkippedKeptOnClipboard
+        );
     }
 
     #[test]
@@ -2027,6 +2263,7 @@ mod tests {
                 auto_paste: Some(true),
             },
             &NativeInsertionConfig {
+                keep_on_clipboard: false,
                 auto_paste: true,
                 paste_delay_ms: 5,
                 xdotool_type_max_chars: 800,
@@ -2066,6 +2303,141 @@ mod tests {
         );
     }
 
+    /// The hybrid XWayland lane has exactly one paste mechanism, XTEST, and it
+    /// exits 0 whether or not anything receives the key event. An earlier
+    /// version of this probe REFUSED the paste when no foreign X window held the
+    /// focus. That was wrong, and the owner's experience is what showed it:
+    /// auto-paste had worked intermittently against native Wayland windows,
+    /// because KWin forwards XTEST fake input from Xwayland into the compositor.
+    /// Refusing turned "unreliable" into "never".
+    ///
+    /// What the probe is for now is narrower and defensible: when delivery
+    /// cannot be confirmed, do not let `schedule_clipboard_restore` take the
+    /// transcript away a moment later. The paste still runs; the text survives
+    /// either way.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn an_unconfirmable_delivery_keeps_the_transcript_on_the_clipboard() {
+        let mut clipboard_results = HashMap::new();
+        clipboard_results.insert(NativeInsertDriver::WlCopy, Ok(()));
+        let mut paste_results = HashMap::new();
+        paste_results.insert(NativeInsertDriver::Xdotool, Ok(()));
+
+        let mut io = FakeInsertIo {
+            clipboard_results,
+            clipboard_read: Some("Previous clipboard".to_string()),
+            paste_results,
+            scheduled_restores: Vec::new(),
+            waits: Vec::new(),
+            clipboard_texts: Vec::new(),
+            clipboard_drivers: Vec::new(),
+            paste_drivers: Vec::new(),
+            type_drivers: Vec::new(),
+            xdotool_type_results: HashMap::new(),
+            xtest_target: XtestTargetProbe::Unreachable,
+        };
+
+        let result = execute_insert_request_with_io(
+            NativeInsertRequest {
+                text: "Hello world".to_string(),
+                source: Some("test".to_string()),
+                corrected: Some(false),
+                auto_paste: Some(true),
+            },
+            &NativeInsertionConfig {
+                keep_on_clipboard: false,
+                auto_paste: true,
+                paste_delay_ms: 0,
+                xdotool_type_max_chars: 800,
+            },
+            1,
+            NativeInsertPlatformContext {
+                auto_paste: true,
+                is_wayland: true,
+                has_x11_display: true,
+                has_wl_copy: true,
+                has_xdotool: true,
+                has_wtype: false,
+                has_ydotool: false,
+                try_xdotool_type_first: false,
+            },
+            &mut io,
+            None,
+        );
+
+        assert_eq!(
+            io.paste_drivers,
+            vec![NativeInsertDriver::Xdotool],
+            "the paste must still be attempted -- it can land, we just cannot confirm it"
+        );
+        assert_eq!(
+            result.clipboard_restore,
+            NativeClipboardRestoreStatus::SkippedDeliveryUnverified,
+            "an unconfirmable delivery must not have the transcript restored away"
+        );
+        assert!(
+            io.scheduled_restores.is_empty(),
+            "nothing may be scheduled to overwrite the transcript"
+        );
+    }
+
+    /// The counterpart: `Unknown` is not evidence of a missing target, so it
+    /// behaves exactly like a confirmable delivery -- paste, and restore the
+    /// previous clipboard as usual.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn an_undetermined_xtest_probe_still_attempts_the_paste() {
+        let mut clipboard_results = HashMap::new();
+        clipboard_results.insert(NativeInsertDriver::WlCopy, Ok(()));
+        let mut paste_results = HashMap::new();
+        paste_results.insert(NativeInsertDriver::Xdotool, Ok(()));
+
+        let mut io = FakeInsertIo {
+            clipboard_results,
+            clipboard_read: None,
+            paste_results,
+            scheduled_restores: Vec::new(),
+            waits: Vec::new(),
+            clipboard_texts: Vec::new(),
+            clipboard_drivers: Vec::new(),
+            paste_drivers: Vec::new(),
+            type_drivers: Vec::new(),
+            xdotool_type_results: HashMap::new(),
+            xtest_target: XtestTargetProbe::Unknown,
+        };
+
+        let result = execute_insert_request_with_io(
+            NativeInsertRequest {
+                text: "Hello world".to_string(),
+                source: Some("test".to_string()),
+                corrected: Some(false),
+                auto_paste: Some(true),
+            },
+            &NativeInsertionConfig {
+                keep_on_clipboard: false,
+                auto_paste: true,
+                paste_delay_ms: 0,
+                xdotool_type_max_chars: 800,
+            },
+            1,
+            NativeInsertPlatformContext {
+                auto_paste: true,
+                is_wayland: true,
+                has_x11_display: true,
+                has_wl_copy: true,
+                has_xdotool: true,
+                has_wtype: false,
+                has_ydotool: false,
+                try_xdotool_type_first: false,
+            },
+            &mut io,
+            None,
+        );
+
+        assert_eq!(result.insert_mode, NativeInsertMode::DirectPaste);
+        assert_eq!(io.paste_drivers, vec![NativeInsertDriver::Xdotool]);
+    }
+
     #[test]
     #[cfg(target_os = "linux")]
     fn clipboard_fallback_surfaces_auto_paste_failure() {
@@ -2096,6 +2468,7 @@ mod tests {
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
             xdotool_type_results: HashMap::new(),
+            xtest_target: XtestTargetProbe::Unknown,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2105,6 +2478,7 @@ mod tests {
                 auto_paste: Some(true),
             },
             &NativeInsertionConfig {
+                keep_on_clipboard: false,
                 auto_paste: true,
                 paste_delay_ms: 0,
                 xdotool_type_max_chars: 800,
@@ -2173,6 +2547,7 @@ mod tests {
             clipboard_drivers: Vec::new(),
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
+            xtest_target: XtestTargetProbe::Unknown,
         };
         let mut portal_prompt = None;
         let result = execute_insert_request_with_io(
@@ -2223,6 +2598,7 @@ mod tests {
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
             xdotool_type_results: HashMap::new(),
+            xtest_target: XtestTargetProbe::Unknown,
         };
 
         let result = execute_insert_request_with_io(
@@ -2233,6 +2609,7 @@ mod tests {
                 auto_paste: Some(true),
             },
             &NativeInsertionConfig {
+                keep_on_clipboard: false,
                 auto_paste: true,
                 paste_delay_ms: 0,
                 xdotool_type_max_chars: 800,
@@ -2355,6 +2732,7 @@ mod tests {
             clipboard_drivers: Vec::new(),
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
+            xtest_target: XtestTargetProbe::Unknown,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2364,6 +2742,7 @@ mod tests {
                 auto_paste: Some(true),
             },
             &NativeInsertionConfig {
+                keep_on_clipboard: false,
                 auto_paste: true,
                 paste_delay_ms: 0,
                 xdotool_type_max_chars: 800,
@@ -2413,6 +2792,7 @@ mod tests {
             clipboard_drivers: Vec::new(),
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
+            xtest_target: XtestTargetProbe::Unknown,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2422,6 +2802,7 @@ mod tests {
                 auto_paste: Some(true),
             },
             &NativeInsertionConfig {
+                keep_on_clipboard: false,
                 auto_paste: true,
                 paste_delay_ms: 0,
                 xdotool_type_max_chars: 800,
@@ -2473,6 +2854,7 @@ mod tests {
             clipboard_drivers: Vec::new(),
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
+            xtest_target: XtestTargetProbe::Unknown,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2482,6 +2864,7 @@ mod tests {
                 auto_paste: Some(true),
             },
             &NativeInsertionConfig {
+                keep_on_clipboard: false,
                 auto_paste: true,
                 paste_delay_ms: 0,
                 xdotool_type_max_chars: 800,
@@ -2523,6 +2906,7 @@ mod tests {
             clipboard_drivers: Vec::new(),
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
+            xtest_target: XtestTargetProbe::Unknown,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2532,6 +2916,7 @@ mod tests {
                 auto_paste: Some(false),
             },
             &NativeInsertionConfig {
+                keep_on_clipboard: false,
                 auto_paste: false,
                 paste_delay_ms: 0,
                 xdotool_type_max_chars: 800,

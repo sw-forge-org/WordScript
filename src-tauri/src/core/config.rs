@@ -550,6 +550,27 @@ pub struct TextProfileWorkMode {
     pub bias_mode: BiasMode,
     #[serde(default)]
     pub manual_bias: ManualBias,
+    /// `auto_paste` only: leave the transcript on the system clipboard instead
+    /// of putting the previous contents back after the paste.
+    ///
+    /// Off is the behaviour the Delivery screen has always described — paste at
+    /// the cursor, then restore. On makes the paste an *additional* delivery
+    /// rather than a transport that cleans up after itself. Neither is the
+    /// default for the other mode's switch: they are two independent answers to
+    /// the same question asked of two different modes.
+    #[serde(default)]
+    pub keep_on_clipboard: bool,
+    /// `clipboard_only` only: write the transcript to the system clipboard as
+    /// soon as it exists, rather than when the preview commits.
+    ///
+    /// Off is today's behaviour and the reason the mode named after the
+    /// clipboard was the slower of the two to reach it: the preview is a
+    /// decision surface (ADR 0011a) and the write waited for the decision. On
+    /// separates the two — the text is reachable at once and the preview still
+    /// offers the edit. The commit writes AGAIN, so an edited text replaces the
+    /// one that went out early.
+    #[serde(default)]
+    pub clipboard_immediately: bool,
 }
 
 impl Default for TextProfileWorkMode {
@@ -563,6 +584,10 @@ impl Default for TextProfileWorkMode {
             target: None,
             bias_mode: BiasMode::default(),
             manual_bias: ManualBias::default(),
+            // Both off: every existing profile keeps exactly the behaviour it
+            // had, and a config written before these existed deserialises to it.
+            keep_on_clipboard: false,
+            clipboard_immediately: false,
         }
     }
 }
@@ -602,6 +627,19 @@ impl TextProfileWorkMode {
 
     pub(crate) fn effective_auto_paste(&self) -> bool {
         self.effective_insert_behavior() == "auto_paste"
+    }
+
+    /// Whether an `auto_paste` run leaves the transcript on the clipboard.
+    /// Meaningless in any other mode, and answered `false` there rather than
+    /// read: the switch belongs to the mode it is drawn under.
+    pub(crate) fn effective_keep_on_clipboard(&self) -> bool {
+        self.effective_auto_paste() && self.normalized().keep_on_clipboard
+    }
+
+    /// Whether a `clipboard_only` run writes the clipboard as soon as the
+    /// transcript exists. Same rule as above, the other way round.
+    pub(crate) fn effective_clipboard_immediately(&self) -> bool {
+        !self.effective_auto_paste() && self.normalized().clipboard_immediately
     }
 
     pub(crate) fn effective_recovery_behavior(&self) -> String {
@@ -1916,6 +1954,11 @@ impl AppConfig {
             target: work_mode.target.clone(),
             bias_mode: work_mode.bias_mode.clone(),
             manual_bias: work_mode.manual_bias.clone(),
+            // Resolved, not copied: each switch belongs to one delivery mode and
+            // reads false under the other, so a profile that changed mode does
+            // not report a switch that mode never offers.
+            keep_on_clipboard: work_mode.effective_keep_on_clipboard(),
+            clipboard_immediately: work_mode.effective_clipboard_immediately(),
         }
     }
 
@@ -1931,6 +1974,16 @@ impl AppConfig {
     pub(crate) fn active_text_profile_auto_paste(&self) -> bool {
         self.active_text_profile_work_mode()
             .effective_auto_paste()
+    }
+
+    pub(crate) fn active_text_profile_keep_on_clipboard(&self) -> bool {
+        self.active_text_profile_work_mode()
+            .effective_keep_on_clipboard()
+    }
+
+    pub(crate) fn active_text_profile_clipboard_immediately(&self) -> bool {
+        self.active_text_profile_work_mode()
+            .effective_clipboard_immediately()
     }
 
     /// The agent name for the active profile, falling back to the global value
@@ -3235,6 +3288,11 @@ fn normalize_text_profile_work_mode(value: &TextProfileWorkMode) -> TextProfileW
         target: value.target.clone(),
         bias_mode: normalize_bias_mode(&value.bias_mode),
         manual_bias: normalize_manual_bias(&value.manual_bias),
+        // Carried through normalization rather than resolved: this function
+        // cleans a STORED value, and a switch the current mode does not offer is
+        // still the answer to give back when the profile returns to that mode.
+        keep_on_clipboard: value.keep_on_clipboard,
+        clipboard_immediately: value.clipboard_immediately,
     }
 }
 
@@ -3340,6 +3398,47 @@ mod tests {
     /// the payload: every write, export and event goes through it, so a field
     /// added later that does hold a credential must be scrubbed here rather
     /// than reach a file the user can read.
+    /// Each delivery switch belongs to ONE mode and answers false under the
+    /// other. Without that, a profile that had "keep it on the clipboard" on and
+    /// then switched to clipboard-only would carry a setting into a mode that
+    /// never restores anything -- a switch reporting an effect it cannot have.
+    #[test]
+    fn a_delivery_switch_is_only_answered_under_the_mode_that_offers_it() {
+        let keep_under_auto_paste = TextProfileWorkMode {
+            insert_behavior: "auto_paste".to_string(),
+            keep_on_clipboard: true,
+            clipboard_immediately: true,
+            ..TextProfileWorkMode::default()
+        };
+        assert!(keep_under_auto_paste.effective_keep_on_clipboard());
+        assert!(!keep_under_auto_paste.effective_clipboard_immediately());
+
+        let same_switches_under_clipboard_only = TextProfileWorkMode {
+            insert_behavior: "clipboard_only".to_string(),
+            ..keep_under_auto_paste
+        };
+        assert!(!same_switches_under_clipboard_only.effective_keep_on_clipboard());
+        assert!(same_switches_under_clipboard_only.effective_clipboard_immediately());
+    }
+
+    /// Both off is today's behaviour, and a config written before the switches
+    /// existed has to deserialise to exactly it -- an existing profile does not
+    /// silently change how it delivers because the runtime learned two settings.
+    #[test]
+    fn a_profile_from_before_the_switches_keeps_the_behaviour_it_had() {
+        let stored = serde_json::json!({
+            "rewrite_style": "clean",
+            "insert_behavior": "auto_paste",
+            "recovery_behavior": "standard",
+        });
+        let work_mode: TextProfileWorkMode =
+            serde_json::from_value(stored).expect("deserialize a pre-switch work mode");
+
+        assert!(!work_mode.keep_on_clipboard);
+        assert!(!work_mode.clipboard_immediately);
+        assert!(!work_mode.effective_keep_on_clipboard());
+    }
+
     #[test]
     fn disk_config_payload_never_carries_a_credential_field() {
         let serialized = serde_json::to_string(&AppConfig::default().without_secrets())

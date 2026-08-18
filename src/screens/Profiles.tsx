@@ -1548,6 +1548,51 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                           />
                         }
                       />
+                      {/* One switch per delivery mode, each drawn only under the
+                          mode it belongs to. Neither adds a third behaviour:
+                          each picks between the two reasonable ones, and off is
+                          what that mode has always done. */}
+                      {work?.insert_behavior === "clipboard_only" ? (
+                        <Row
+                          label="Copy immediately"
+                          hint="Puts the transcript on the clipboard as soon as it exists, instead of waiting for the preview to close. The preview still offers the edit, and confirming writes the edited text over it."
+                          control={
+                            <Toggle
+                              aria-label="Copy immediately"
+                              checked={Boolean(work?.clipboard_immediately)}
+                              onCheckedChange={(next: boolean) =>
+                                write((current) => ({
+                                  ...current,
+                                  work_mode: {
+                                    ...resolveTextProfileWorkMode(current),
+                                    clipboard_immediately: next,
+                                  },
+                                }))
+                              }
+                            />
+                          }
+                        />
+                      ) : (
+                        <Row
+                          label="Keep it on the clipboard"
+                          hint="Leaves the transcript on the clipboard after pasting, instead of putting your previous clipboard back."
+                          control={
+                            <Toggle
+                              aria-label="Keep it on the clipboard"
+                              checked={Boolean(work?.keep_on_clipboard)}
+                              onCheckedChange={(next: boolean) =>
+                                write((current) => ({
+                                  ...current,
+                                  work_mode: {
+                                    ...resolveTextProfileWorkMode(current),
+                                    keep_on_clipboard: next,
+                                  },
+                                }))
+                              }
+                            />
+                          }
+                        />
+                      )}
                       <Row
                         label="Workspace context"
                         hint="Tells the AI which app you are writing into. Never adds content."

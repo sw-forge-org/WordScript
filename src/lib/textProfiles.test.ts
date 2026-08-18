@@ -271,3 +271,56 @@ describe("the profile schema version (ADR 0112, ADR 0123)", () => {
     expect(Number(declared![1])).toBe(TEXT_PROFILE_SCHEMA_VERSION);
   });
 });
+
+/**
+ * THE WORK MODE RESOLVER CARRIES EVERY FIELD THE RUNTIME STORES.
+ *
+ * `resolveTextProfileWorkMode` is both the READ behind a control's `checked` and
+ * the base of every `work_mode` write on Profiles. While it enumerated its
+ * fields it listed six of the runtime's ten and dropped `bias_mode`,
+ * `manual_bias`, `keep_on_clipboard` and `clipboard_immediately` -- all four
+ * optional on the type, so nothing complained. The ADR 0231 switches were
+ * therefore inoperable in the shipped app (a controlled value that read false
+ * forever) while `Profiles.test` stayed green, because that test asserts on the
+ * PATCH, where the write literal supplies the field being toggled.
+ *
+ * Held against the Rust source rather than against a list here, for the same
+ * reason the schema-version case above is: the runtime owns the field set, and a
+ * field added there is exactly the case a hand-kept mirror loses.
+ */
+describe("the work mode resolver (ADR 0231)", () => {
+  const rustWorkModeFields = (): string[] => {
+    const rust = readFileSync(join("src-tauri", "src", "core", "config.rs"), "utf8");
+    const start = rust.indexOf("pub struct TextProfileWorkMode {");
+    expect(start, "core::config must declare TextProfileWorkMode").toBeGreaterThan(-1);
+    const body = rust.slice(start, rust.indexOf("\n}\n", start));
+    return [...body.matchAll(/^\s{4}pub (\w+):/gm)].map((match) => match[1]);
+  };
+
+  it("keeps every field core::config::TextProfileWorkMode declares", () => {
+    const fields = rustWorkModeFields();
+    expect(fields.length).toBeGreaterThanOrEqual(10);
+
+    const stored = Object.fromEntries(fields.map((field) => [field, "carried"]));
+    const resolved = resolveTextProfileWorkMode({
+      work_mode: stored as never,
+    });
+
+    expect(Object.keys(resolved).sort()).toEqual([...fields].sort());
+  });
+
+  it("round-trips both delivery switches so a mode change does not erase the answer", () => {
+    const resolved = resolveTextProfileWorkMode({
+      work_mode: {
+        rewrite_style: "polished",
+        insert_behavior: "auto_paste",
+        recovery_behavior: "standard",
+        keep_on_clipboard: true,
+        clipboard_immediately: true,
+      },
+    });
+
+    expect(resolved.keep_on_clipboard).toBe(true);
+    expect(resolved.clipboard_immediately).toBe(true);
+  });
+});

@@ -2,7 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { HistoryScreen, badgesFor, historyTime, rawOf } from "./History";
+import {
+  HistoryScreen,
+  badgesFor,
+  historyTime,
+  rawOf,
+  stoppedByRuntimeNote,
+} from "./History";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 import type { TranscriptionHistoryEntry } from "@/types/history";
 
@@ -554,6 +560,40 @@ describe("the pages, the folder and the rule", () => {
        one of the four workspace views, and `open` refuses an id neither list
        knows — so `{ view: "privacy" }` was a press that went nowhere. */
     expect(open).toHaveBeenCalledWith({ section: "privacy" });
+  });
+});
+
+describe("why a recording ended", () => {
+  it("says so when the runtime ended it, not the speaker", () => {
+    // The complaint this answers was never that the ceiling exists. It was that
+    // a dictation cut off mid-sentence was filed exactly like a finished one.
+    expect(
+      stoppedByRuntimeNote(
+        entry({ capture_stop_reason: "Max recording duration reached." })
+      )
+    ).toBe("WordScript ended this recording: Max recording duration reached.");
+  });
+
+  it("stays silent on an ordinary stop, where the speaker is the reason", () => {
+    expect(stoppedByRuntimeNote(entry())).toBeUndefined();
+    expect(stoppedByRuntimeNote(entry({ capture_stop_reason: "  " }))).toBeUndefined();
+  });
+
+  it("outranks the capture-gap note on a record that has both", () => {
+    // A record that ends mid-sentence is explained by the ceiling before it is
+    // explained by anything about the audio, so the ordering is the assertion.
+    const both = entry({
+      capture_stop_reason: "Max recording duration reached.",
+      capture_integrity: {
+        wall_seconds: 60,
+        recorded_seconds: 30,
+        missing_ratio: 0.5,
+        verdict: "short",
+      },
+    });
+    expect(rawOf(both).note).toBe(
+      "WordScript ended this recording: Max recording duration reached."
+    );
   });
 });
 

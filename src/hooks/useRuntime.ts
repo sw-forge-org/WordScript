@@ -25,7 +25,7 @@ type Action =
   | { type: "READY"; config: AppConfig }
   | { type: "RESTORE"; snapshot: NativeSessionSnapshot }
   | { type: "RECORDING_STARTED" }
-  | { type: "RECORDING_STOPPED" }
+  | { type: "RECORDING_STOPPED"; reason?: string }
   | { type: "PROCESSING" }
   | { type: "PREVIEW_READY"; result: RuntimeTranscriptionResult }
   | { type: "TRANSCRIPTION"; result: RuntimeTranscriptionResult; preserveExisting?: boolean }
@@ -47,6 +47,7 @@ const initial: RuntimeState = {
   error: null,
   errorAudioRetained: false,
   recordingStartMs: null,
+  stopReason: null,
   previewStaged: false,
   resultSurfaceOpen: false,
   nativeSyncMirror: null,
@@ -192,12 +193,21 @@ function reducer(state: RuntimeState, action: Action): RuntimeState {
         lastResult: null,
         error: null,
         recordingStartMs: Date.now(),
+        stopReason: null,
         previewStaged: false,
         resultSurfaceOpen: false,
         nativeSyncMirror: null,
       };
     case "RECORDING_STOPPED":
-      return { ...state, paused: false, recordingStartMs: null };
+      // A reasonless stop must not erase a reason: every stop is announced
+      // twice -- once on the native mirror channel, which never carries one,
+      // and once authoritatively. Either can arrive first.
+      return {
+        ...state,
+        paused: false,
+        recordingStartMs: null,
+        stopReason: action.reason ?? state.stopReason,
+      };
     case "PROCESSING":
       return {
         ...state,
@@ -391,16 +401,6 @@ export function useRuntime() {
     lastResultRef.current = state.lastResult;
   }, [state.config, state.lastResult]);
 
-  const configureNativeCapture = useCallback((config: AppConfig) => {
-    invoke("configure_native_capture", {
-      request: {
-        audio_device: config.audio_device,
-        max_recording_seconds: config.max_recording_seconds,
-        silence_timeout_seconds: config.silence_timeout_seconds,
-      },
-    }).catch((error) => console.error("configure_native_capture failed:", error));
-  }, []);
-
   const syncNativeRuntime = useCallback((config: AppConfig) => {
     invoke("configure_native_trigger", {
       request: {
@@ -410,8 +410,7 @@ export function useRuntime() {
         activation_mode: config.activation_mode,
       },
     }).catch((error) => console.error("configure_native_trigger failed:", error));
-    configureNativeCapture(config);
-  }, [configureNativeCapture]);
+  }, []);
 
   useEffect(() => {
     // The native completion sync no longer ends the session (see
@@ -445,7 +444,7 @@ export function useRuntime() {
           dispatch({ type: "RECORDING_STARTED" });
           break;
         case "recording_stopped":
-          dispatch({ type: "RECORDING_STOPPED" });
+          dispatch({ type: "RECORDING_STOPPED", reason: payload.reason });
           break;
         case "processing":
           cancelNativeSyncFallback();

@@ -205,6 +205,16 @@ pub struct NativeSessionState {
     last_error: Option<String>,
     pending_preview: Option<PendingTranscriptionPreview>,
     preview_counter: u64,
+    /// Why THIS session's recording ended, when the user was not the one who
+    /// ended it -- today the recording ceiling and the stream-error autostop.
+    ///
+    /// It lives on the session rather than on the capture because the two paths
+    /// that set it stand on opposite sides of the capture: the monitor stops the
+    /// capture and knows the reason, and the hold watchdog stops the SESSION and
+    /// the capture never learns why. The pipeline reads it once, on its way to
+    /// the history record, so a dictation that was cut off can say so instead of
+    /// being filed like any other. Cleared when the next capture starts.
+    stop_reason: Option<String>,
 }
 
 impl NativeSessionState {
@@ -411,6 +421,7 @@ impl NativeSessionState {
         self.completed_at_ms = None;
         self.last_error = None;
         self.pending_preview = None;
+        self.stop_reason = None;
         self.active_session = Some(ActiveSession {
             id: format!("native-{}", self.counter),
             trigger,
@@ -1033,6 +1044,24 @@ pub fn start_from_native<R: Runtime>(
     Ok(status)
 }
 
+/// Records why the current session's recording ended, for the paths where the
+/// user did not end it. Silently does nothing when there is no session state --
+/// the reason is an explanation, and losing one must never cost a stop.
+pub fn note_capture_stop_reason<R: Runtime>(app: &AppHandle<R>, reason: &str) {
+    if let Some(state) = app.try_state::<Mutex<NativeSessionState>>() {
+        if let Ok(mut state) = state.lock() {
+            state.stop_reason = Some(reason.to_string());
+        }
+    }
+}
+
+/// Reads the reason out and clears it, so it is attached to exactly one record.
+pub fn take_capture_stop_reason<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let state = app.try_state::<Mutex<NativeSessionState>>()?;
+    let mut state = state.lock().ok()?;
+    state.stop_reason.take()
+}
+
 pub fn fail_from_native_error<R: Runtime>(app: &AppHandle<R>, message: &str) {
     if let Some(state) = app.try_state::<Mutex<NativeSessionState>>() {
         if let Ok(mut state) = state.lock() {
@@ -1519,6 +1548,19 @@ mod tests {
             Some(second_commit_at),
             "the staging that is actually pending must keep its own deadline"
         );
+    }
+
+    #[test]
+    fn a_new_capture_never_inherits_the_previous_one_s_stop_reason() {
+        // The reason explains ONE recording. Left standing, the next dictation
+        // would file itself as having been cut off at a ceiling it never
+        // reached — a wrong explanation being worse than none.
+        let mut state = NativeSessionState::default();
+        state.stop_reason = Some("Max recording duration reached.".to_string());
+
+        state.start_capture("hotkey").unwrap();
+
+        assert_eq!(state.stop_reason, None);
     }
 
     #[test]

@@ -146,6 +146,7 @@ export function createRuntimeState(overrides: Partial<RuntimeState> = {}): Runti
     error: null,
     errorAudioRetained: false,
     recordingStartMs: null,
+    stopReason: null,
     previewStaged: false,
     resultSurfaceOpen: false,
     nativeSyncMirror: null,

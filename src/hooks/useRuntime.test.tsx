@@ -85,7 +85,6 @@ describe("useRuntime", () => {
           return Promise.resolve(snapshot);
         case "configure_native_trigger":
         case "configure_native_insertion":
-        case "configure_native_capture":
           return Promise.resolve(null);
         default:
           throw new Error(`Unexpected invoke command: ${command}`);

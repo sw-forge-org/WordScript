@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import EditingContextMenu from "./components/EditingContextMenu";
 import RebuildLabWindow from "./windows/RebuildLabWindow";
 import WorkspaceWindow from "./windows/WorkspaceWindow";
 
@@ -33,6 +34,7 @@ export default function App() {
   return (
     <>
       <GalleryDoor />
+      <EditingContextMenu />
       <Routes>
         <Route path="/overlay" element={<Suspense fallback={null}><OverlayWindow /></Suspense>} />
         <Route path="/rebuild-lab" element={<RebuildLabWindow />} />

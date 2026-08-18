@@ -126,6 +126,17 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
   const workMode = resolveTextProfileWorkMode(resolveActiveTextProfile(config));
   const profileLabel = resolveActiveTextProfile(config).label;
   const clipboardOnly = workMode.insert_behavior === "clipboard_only";
+  /* This row is the one place the product states its delivery behaviour in
+     words, and both switches change that behaviour. It said "then restores your
+     clipboard" unconditionally, which stops being true the moment the profile
+     asks to keep it -- a promise the runtime would no longer keep. */
+  const deliveryHint = clipboardOnly
+    ? workMode.clipboard_immediately
+      ? "Puts the transcript on the clipboard as soon as it exists and leaves it to you to paste."
+      : "Puts the transcript on the clipboard when the preview closes, and leaves it to you to paste."
+    : workMode.keep_on_clipboard
+      ? "Pastes at the cursor and leaves the transcript on your clipboard."
+      : "Pastes at the cursor, then restores your clipboard.";
 
   const chain = platform?.driver_chain ?? [];
   const excluded = new Set(
@@ -153,11 +164,7 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
           <CardRows>
             <Row
               label={`${profileLabel} delivers`}
-              hint={
-                clipboardOnly
-                  ? "Puts the transcript on the clipboard and leaves it to you to paste."
-                  : "Pastes at the cursor, then restores your clipboard."
-              }
+              hint={deliveryHint}
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="accent">
