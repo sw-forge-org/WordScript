@@ -17,6 +17,7 @@ pub mod model_catalogue;
 pub mod model_install;
 pub mod paths;
 pub mod portal;
+pub mod portal_session;
 pub mod profile_context;
 pub mod prompt_enhance;
 pub mod providers;

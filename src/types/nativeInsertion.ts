@@ -1,9 +1,26 @@
 export type NativeInsertMode = "direct_paste" | "clipboard_only" | "clipboard_fallback" | "scratchpad_fallback";
-export type NativeInsertDriver = "wl_copy" | "arboard" | "xdotool" | "wdotool_type" | "wtype" | "ydotool" | "enigo" | "scratchpad";
+export type NativeInsertDriver =
+  | "wl_copy"
+  | "arboard"
+  | "xdotool"
+  | "xdotool_type"
+  | "remote_desktop_portal"
+  | "wtype"
+  | "ydotool"
+  | "enigo"
+  | "scratchpad";
 export type NativeSupportTier = "tier1" | "preview" | "experimental";
 export type NativeInsertReadiness = "ready" | "recovery_only";
 export type NativeInsertRecoveryAction = "none" | "manual_paste" | "use_scratchpad";
-export type NativeClipboardRestoreStatus = "not_attempted" | "scheduled" | "skipped_no_previous_clipboard";
+export type NativeClipboardRestoreStatus =
+  | "not_attempted"
+  | "scheduled"
+  | "skipped_no_previous_clipboard"
+  /* The paste ran and nothing could confirm it arrived, so the transcript stayed
+     on the clipboard rather than being restored away (ADR 0229). */
+  | "skipped_delivery_unverified"
+  /* The profile asked for the transcript to stay. A setting, not a doubt. */
+  | "skipped_kept_on_clipboard";
 
 export type CompositorKind =
   | "unknown"
@@ -85,7 +102,7 @@ export interface NativeInsertionStatus {
   scratchpad_path: string;
   platform: NativeInsertionPlatformStatus;
   last_portal_prompt?: LastPortalPrompt | null;
-  portal_session?: PortalSessionSummary | null;
+  portal_grant?: PortalGrantStatus | null;
 }
 
 export interface LastPortalPrompt {
@@ -95,10 +112,23 @@ export interface LastPortalPrompt {
   stderr_excerpt: string;
 }
 
-export interface PortalSessionSummary {
-  active: boolean;
+/** Where the one-time input permission stands (ADR 0228, ADR 0234). */
+export type PortalGrantPhase =
+  | "unsupported"
+  | "not_granted"
+  | "granted"
+  | "refused"
+  | "failed";
+
+export interface PortalGrantStatus {
+  phase: PortalGrantPhase;
+  /** Whether a paste could go through the portal at this instant. */
+  session_active: boolean;
+  /** Whether the grant action has anything to do. */
+  can_request: boolean;
   compositor: string;
-  error: string | null;
+  detail: string;
+  refused_at_ms: number | null;
 }
 
 export interface NativeInsertResult {

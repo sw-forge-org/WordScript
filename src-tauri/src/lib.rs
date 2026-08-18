@@ -3065,6 +3065,14 @@ pub fn run() {
             // audio for it.
             core::capture::prune_retained_captures();
 
+            // The RemoteDesktop input grant from an earlier run, restored here
+            // and nowhere else. This is the whole reason a dictation never
+            // meets a permission dialog: the one call that can raise one runs
+            // at startup, on its own thread, and only when a token from a
+            // previous grant is on disk. A run with no session falls back to
+            // the clipboard and says so. See ADR 0228 and ADR 0234.
+            core::portal_session::restore_grant_in_background();
+
             // ── System tray ───────────────────────────────────────────────
             let title = MenuItem::with_id(app, "title", "WordScript", false, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
@@ -3221,6 +3229,7 @@ pub fn run() {
             core::input_monitor::stop_input_monitor,
             core::input_monitor::input_monitor_status,
             core::insertion::native_insertion_status,
+            core::insertion::request_portal_input_grant,
             core::insertion::insert_text_native,
             core::insertion::restore_last_transcript,
             core::insertion::clear_native_scratchpad,

@@ -39,6 +39,25 @@ export function useNativeInsertion() {
     }
   }, [refresh]);
 
+  /* THE ONLY CALLER OF THE ONE COMMAND THAT MAY RAISE A PERMISSION DIALOG.
+     It is wired to a button and to nothing else -- not to mount, not to a
+     retry, not to a failed insert. The runtime enforces the same rule on its
+     side (ADR 0234); this keeps the UI from being the one that breaks it. */
+  const requestPortalGrant = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const next = await invoke<NativeInsertionStatus>("request_portal_input_grant");
+      setStatus(next);
+      setError(null);
+      return next;
+    } catch (cause) {
+      setError(String(cause));
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const clearScratchpad = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -67,5 +86,6 @@ export function useNativeInsertion() {
     refresh,
     restoreLastTranscript,
     clearScratchpad,
+    requestPortalGrant,
   };
 }

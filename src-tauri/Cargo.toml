@@ -84,6 +84,23 @@ chrono      = { version = "0.4", default-features = false, features = ["clock", 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 
+# The persistent D-Bus connection the RemoteDesktop paste driver needs (ADR
+# 0228). A portal session is owned by the connection that created it, so the
+# previous `busctl`-per-call plumbing could never hold one: each invocation was
+# its own connection and the session died with the process. `ashpd` wraps
+# `zbus` and models session lifetime, restore tokens and persist mode directly.
+#
+# It is one layer over `zbus`, not an alternative to it — taking both would be
+# a duplication, not a fallback. The zbus it pulls (5.13) is the one already in
+# this tree via tauri-plugin-opener and -single-instance, so no second D-Bus
+# stack appears. `tokio` is ashpd's default feature and is named here anyway,
+# because zbus picks its reactor from it and the wrong one deadlocks silently.
+# `screencast` is not optional here despite nothing screen-casting: ashpd's
+# `remote_desktop` module types `SelectedDevices::streams()` as
+# `screencast::Stream`, so the crate does not compile with one without the
+# other. No screen-cast portal call is made.
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "remote_desktop", "screencast"] }
+
 # `statvfs`, for the one thing ADR 0122 asks up front: whether the model fits
 # before the first byte is requested. Unix only, and the Windows equivalent is
 # deliberately absent rather than written blind — `available_bytes` answers

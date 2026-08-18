@@ -133,7 +133,16 @@ pub fn detect_compositor() -> CompositorKind {
     if std::env::var_os("SWAYSOCK").is_some() {
         return CompositorKind::Sway;
     }
-    if combined.contains("plasma") {
+    // `XDG_CURRENT_DESKTOP` on a KDE session is the string "KDE", not "plasma"
+    // — measured on the reporting machine 2026-08-18, where both it and
+    // `XDG_SESSION_DESKTOP` read `KDE` while `plasmashell --version` answered
+    // 6.7.0. Matching only "plasma" therefore fell through to the
+    // `WAYLAND_DISPLAY` arm and classified a KDE Plasma 6 desktop as
+    // `Other`, which made `supports_remote_desktop_portal()` false and closed
+    // the whole portal path before it could be tried. Nothing said so: the
+    // caller returns early WITHOUT logging on an unsupported compositor, so
+    // 6539 runtime-log lines carried not one portal line. See ADR 0234.
+    if combined.contains("plasma") || combined.contains("kde") {
         let plasma_version = read_plasma_version();
         return match plasma_version {
             Some(version) if version >= 6 => CompositorKind::KdePlasma6,
@@ -183,6 +192,53 @@ fn command_in_path(program: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a portal interface is actually there, by reading its `version`.
+///
+/// This replaced a scan of `busctl --user list` for the string
+/// "org.freedesktop.portal.remotedesktop", which could never match: that
+/// command lists **bus names**, and RemoteDesktop is an **interface** on the
+/// single name `org.freedesktop.portal.Desktop`. Measured on the reporting
+/// machine 2026-08-18, `busctl --user list` contains no occurrence of
+/// "remotedesktop" at all, while
+///
+/// ```text
+/// busctl --user get-property org.freedesktop.portal.Desktop \
+///     /org/freedesktop/portal/desktop \
+///     org.freedesktop.portal.RemoteDesktop version   ->  u 2
+/// ```
+///
+/// So `has_remote_desktop_portal` was false on every machine, which closed the
+/// portal path a second time over and made `diagnose_blockers()` report the
+/// interface as unreachable on a session where it answers. Same failure shape
+/// as the compositor detection above: a probe that says "no" for a reason that
+/// has nothing to do with what it was asked. See ADR 0234.
+fn portal_interface_version(interface: &str) -> Option<u32> {
+    let output = Command::new("busctl")
+        .args([
+            "--user",
+            "get-property",
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            interface,
+            "version",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_busctl_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// `busctl get-property` prints the D-Bus type and then the value: `u 2`.
+fn parse_busctl_version(stdout: &str) -> Option<u32> {
+    let mut fields = stdout.split_whitespace();
+    if fields.next()? != "u" {
+        return None;
+    }
+    fields.next()?.parse::<u32>().ok()
+}
+
 pub fn detect_portal_capabilities() -> PortalCapabilities {
     let mut capabilities = PortalCapabilities::default();
     capabilities.compositor = detect_compositor();
@@ -204,27 +260,19 @@ pub fn detect_portal_capabilities() -> PortalCapabilities {
     }
 
     if command_in_path("busctl") {
-        if let Ok(output) = Command::new("busctl")
-            .args(["--user", "list"])
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
-                if stdout.contains("org.freedesktop.portal.remotedesktop") {
-                    capabilities.has_remote_desktop_portal = true;
-                }
-                if stdout.contains("inputcapture") {
-                    capabilities.has_input_capture_portal = true;
-                }
-            }
-        }
+        capabilities.has_remote_desktop_portal =
+            portal_interface_version("org.freedesktop.portal.RemoteDesktop").is_some();
+        capabilities.has_input_capture_portal =
+            portal_interface_version("org.freedesktop.portal.InputCapture").is_some();
     } else if capabilities.has_xdg_desktop_portal_daemon {
         capabilities.has_remote_desktop_portal = capabilities.compositor.supports_remote_desktop_portal();
     }
 
-    capabilities.last_session_active = std::env::var_os("WORDSCRIPT_REMOTE_DESKTOP_TOKEN_PATH")
-        .map(|value| !value.is_empty())
-        .unwrap_or(false);
+    // Whether a grant from an earlier run is on disk to restore. This read an
+    // env var (`WORDSCRIPT_REMOTE_DESKTOP_TOKEN_PATH`) that nothing in the tree
+    // ever set, so the field was permanently false and the diagnostics panel
+    // permanently said "no session".
+    capabilities.last_session_active = load_portal_grant_record().has_token();
 
     capabilities
 }
@@ -282,7 +330,11 @@ pub enum PortalError {
     Unsupported,
     NoSessionBus,
     NoPortalInterface,
-    BusctlMissing,
+    /// The user closed the compositor's permission dialog without granting it.
+    /// Distinct from every other variant: nothing is broken, somebody said no,
+    /// and the correct response is to stop asking rather than to retry.
+    Refused,
+    NoGrant,
     CreateSessionFailed(String),
     SelectDevicesFailed(String),
     StartFailed(String),
@@ -295,7 +347,8 @@ impl PortalError {
             Self::Unsupported => "The active Wayland compositor does not expose a stable RemoteDesktop portal grant.".to_string(),
             Self::NoSessionBus => "Could not connect to the user session D-Bus. Check that DBUS_SESSION_BUS_ADDRESS is set.".to_string(),
             Self::NoPortalInterface => "org.freedesktop.portal.RemoteDesktop is not reachable on the session bus. Install xdg-desktop-portal and the matching portal backend (xdg-desktop-portal-kde / -gnome).".to_string(),
-            Self::BusctlMissing => "The 'busctl' CLI is required to request a RemoteDesktop portal session; install systemd or dbus tools.".to_string(),
+            Self::Refused => "The desktop refused the input-device permission. Insert at cursor stays on the clipboard until you grant it again in Delivery & Insert.".to_string(),
+            Self::NoGrant => "Insert at cursor has no input-device permission on this desktop yet. Grant it once in Delivery & Insert; WordScript never raises that dialog during a dictation.".to_string(),
             Self::CreateSessionFailed(detail) => format!("RemoteDesktop portal CreateSession failed: {detail}"),
             Self::SelectDevicesFailed(detail) => format!("RemoteDesktop portal SelectDevices failed: {detail}"),
             Self::StartFailed(detail) => format!("RemoteDesktop portal Start failed: {detail}"),
@@ -304,153 +357,95 @@ impl PortalError {
     }
 }
 
-pub fn portal_token_path() -> std::path::PathBuf {
-    if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-        let mut path = std::path::PathBuf::from(runtime_dir);
-        path.push("wordscript");
-        path.push("remote-desktop.token");
-        return path;
+/// Where a granted RemoteDesktop session is remembered between app runs.
+///
+/// This used to be `$XDG_RUNTIME_DIR`, which the system clears on reboot. That
+/// turned "one grant ever" into "one grant per boot" -- close enough to the
+/// per-paste prompt the owner rejected that it would have undone the reason
+/// this driver was chosen at all (ADR 0228, item 3). `$XDG_STATE_HOME` is the
+/// directory for state that should survive a restart but is not configuration,
+/// which is exactly what a restore token is.
+pub fn portal_state_dir() -> std::path::PathBuf {
+    if let Some(state_home) = std::env::var_os("XDG_STATE_HOME") {
+        let state_home = std::path::PathBuf::from(state_home);
+        if state_home.is_absolute() {
+            return state_home.join("wordscript");
+        }
     }
-    let mut path = std::env::temp_dir();
-    path.push("wordscript-remote-desktop.token");
-    path
+    if let Some(home) = std::env::var_os("HOME") {
+        return std::path::PathBuf::from(home)
+            .join(".local")
+            .join("state")
+            .join("wordscript");
+    }
+    std::env::temp_dir().join("wordscript")
 }
 
-pub fn load_persisted_restore_token() -> Option<String> {
-    let raw = std::fs::read_to_string(portal_token_path()).ok()?;
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    Some(trimmed.to_string())
+pub fn portal_grant_path() -> std::path::PathBuf {
+    portal_state_dir().join("remote-desktop-grant.json")
 }
 
-pub fn store_restore_token(token: &str) -> Result<(), PortalError> {
-    let path = portal_token_path();
+/// What this machine remembers about the one grant the portal driver needs.
+///
+/// Two fields, because a missing token and a refused grant are different
+/// answers to "should WordScript ask". A missing token means nobody has been
+/// asked yet; a refusal means somebody said no, and the answer to that is to
+/// stop asking until they come back and press the button themselves.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortalGrantRecord {
+    #[serde(default)]
+    pub restore_token: Option<String>,
+    #[serde(default)]
+    pub refused_at_ms: Option<u64>,
+}
+
+impl PortalGrantRecord {
+    pub fn has_token(&self) -> bool {
+        self.restore_token
+            .as_deref()
+            .map(|token| !token.trim().is_empty())
+            .unwrap_or(false)
+    }
+}
+
+pub fn load_portal_grant_record() -> PortalGrantRecord {
+    let Ok(raw) = std::fs::read_to_string(portal_grant_path()) else {
+        return PortalGrantRecord::default();
+    };
+    serde_json::from_str::<PortalGrantRecord>(&raw).unwrap_or_default()
+}
+
+/// Writes the grant record `0600` in a `0700` directory.
+///
+/// A restore token is not a password, but it is a capability: anything that can
+/// read it can ask the portal to restore an input-injection session that this
+/// user already approved. It is written with the same care as a credential.
+pub fn store_portal_grant_record(record: &PortalGrantRecord) -> Result<(), PortalError> {
+    let path = portal_grant_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| PortalError::TokenStoreFailed(error.to_string()))?;
+        restrict_permissions(parent, 0o700);
     }
-    std::fs::write(&path, token).map_err(|error| PortalError::TokenStoreFailed(error.to_string()))?;
+    let raw = serde_json::to_string_pretty(record)
+        .map_err(|error| PortalError::TokenStoreFailed(error.to_string()))?;
+    std::fs::write(&path, raw)
+        .map_err(|error| PortalError::TokenStoreFailed(error.to_string()))?;
+    restrict_permissions(&path, 0o600);
     Ok(())
 }
 
-#[allow(dead_code)]
-pub fn clear_persisted_restore_token() {
-    let _ = std::fs::remove_file(portal_token_path());
+#[cfg(unix)]
+fn restrict_permissions(path: &std::path::Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
 }
 
-pub fn busctl_call(
-    method: &str,
-    interface: &str,
-    body_args: &[&str],
-) -> Result<String, PortalError> {
-    if !command_in_path("busctl") {
-        return Err(PortalError::BusctlMissing);
-    }
-    let mut command = std::process::Command::new("busctl");
-    command
-        .arg("--user")
-        .arg("call")
-        .arg("org.freedesktop.portal.Desktop")
-        .arg("/org/freedesktop/portal/desktop")
-        .arg(interface)
-        .arg(method);
-    for arg in body_args {
-        command.arg(arg);
-    }
-    let output = command
-        .output()
-        .map_err(|error| PortalError::CreateSessionFailed(error.to_string()))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(match method {
-            "CreateSession" => PortalError::CreateSessionFailed(stderr),
-            "SelectDevices" => PortalError::SelectDevicesFailed(stderr),
-            "Start" => PortalError::StartFailed(stderr),
-            _ => PortalError::CreateSessionFailed(stderr),
-        });
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
+#[cfg(not(unix))]
+fn restrict_permissions(_path: &std::path::Path, _mode: u32) {}
 
-pub fn request_remote_desktop_session(
-    capabilities: &PortalCapabilities,
-) -> Result<PortalSessionHandle, PortalError> {
-    if !capabilities.compositor.supports_remote_desktop_portal() {
-        return Err(PortalError::Unsupported);
-    }
-    if !capabilities.has_remote_desktop_portal {
-        return Err(PortalError::NoPortalInterface);
-    }
-    if !command_in_path("busctl") {
-        return Err(PortalError::BusctlMissing);
-    }
-
-    let handle_token = format!("wordscript-{}", super::sessions::now_ms());
-    let restore_token = load_persisted_restore_token();
-    let session_call_result = busctl_call(
-        "CreateSession",
-        "org.freedesktop.portal.RemoteDesktop",
-        &[
-            "a{sv}",
-            "1",
-            "handle_token",
-            "s",
-            &handle_token,
-            "session_handle_token",
-            "s",
-            &handle_token,
-        ],
-    )?;
-
-    if !command_in_path("busctl") {
-        return Err(PortalError::BusctlMissing);
-    }
-    let _select_output = busctl_call(
-        "SelectDevices",
-        "org.freedesktop.portal.RemoteDesktop",
-        &[
-            "o",
-            "session",
-            "a(u)",
-            "1",
-            "1",
-            "a{sv}",
-            "1",
-            "handle_token",
-            "s",
-            &format!("wordscript-select-{handle_token}"),
-        ],
-    )?;
-
-    let _start_output = busctl_call(
-        "Start",
-        "org.freedesktop.portal.RemoteDesktop",
-        &[
-            "o",
-            "session",
-            "s",
-            "",
-            "a{sv}",
-            "1",
-            "handle_token",
-            "s",
-            &format!("wordscript-start-{handle_token}"),
-        ],
-    )?;
-
-    if let Some(token) = restore_token.clone() {
-        let _ = store_restore_token(&token);
-    }
-
-    Ok(PortalSessionHandle {
-        session_handle: session_call_result,
-        restore_token,
-        device_types: vec![1, 2],
-        compositor: capabilities.compositor,
-        created_at_ms: super::sessions::now_ms(),
-    })
+pub fn clear_portal_grant_record() {
+    let _ = std::fs::remove_file(portal_grant_path());
 }
 
 #[cfg(test)]
@@ -549,42 +544,115 @@ mod tests {
     }
 
     #[test]
-    fn request_remote_desktop_session_rejects_unsupported_compositor() {
-        let capabilities = PortalCapabilities {
-            compositor: CompositorKind::Hyprland,
-            has_xdg_desktop_portal_daemon: true,
-            has_remote_desktop_portal: true,
-            ..PortalCapabilities::default()
-        };
-        let result = request_remote_desktop_session(&capabilities);
-        assert_eq!(result.err(), Some(PortalError::Unsupported));
-    }
-
-    #[test]
-    fn request_remote_desktop_session_rejects_missing_portal_interface() {
-        let capabilities = PortalCapabilities {
-            compositor: CompositorKind::KdePlasma6,
-            has_xdg_desktop_portal_daemon: true,
-            has_remote_desktop_portal: false,
-            ..PortalCapabilities::default()
-        };
-        let result = request_remote_desktop_session(&capabilities);
-        assert_eq!(result.err(), Some(PortalError::NoPortalInterface));
-    }
-
-    #[test]
     fn portal_error_label_summarises_cause_for_user() {
         assert!(PortalError::Unsupported.label().contains("compositor"));
         assert!(PortalError::NoPortalInterface.label().contains("xdg-desktop-portal"));
-        assert!(PortalError::BusctlMissing.label().contains("busctl"));
+    }
+
+    /// A refusal and a missing grant are different sentences, because they ask
+    /// the reader for different things: one says "you said no, press the button
+    /// if you changed your mind", the other says "nobody has been asked yet".
+    /// They were one message until the owner chose to have a refusal remembered
+    /// rather than re-asked (ADR 0228, answer 2).
+    #[test]
+    fn a_refusal_and_a_missing_grant_do_not_read_the_same() {
+        let refused = PortalError::Refused.label();
+        let missing = PortalError::NoGrant.label();
+        assert_ne!(refused, missing);
+        assert!(refused.contains("refused"), "{refused}");
+        assert!(
+            missing.contains("Grant it once"),
+            "a missing grant names the action that fixes it: {missing}"
+        );
+    }
+
+    /// Step 5 of the insert-delivery track, and not cosmetic: `$XDG_RUNTIME_DIR`
+    /// is cleared on reboot, which turns the one grant this driver exists for
+    /// into one grant per boot.
+    #[test]
+    fn the_grant_outlives_a_reboot_because_it_is_not_in_the_runtime_dir() {
+        let path = portal_grant_path().to_string_lossy().to_string();
+        assert!(path.contains("wordscript"), "{path}");
+        assert!(path.ends_with("remote-desktop-grant.json"), "{path}");
+        if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+            let runtime_dir = runtime_dir.to_string_lossy().to_string();
+            if !runtime_dir.is_empty() {
+                assert!(
+                    !path.starts_with(&runtime_dir),
+                    "the grant must survive a reboot, so it cannot live under {runtime_dir}"
+                );
+            }
+        }
+    }
+
+    /// The shape `busctl get-property` prints, and nothing else read as a
+    /// version. A parser that accepted the type letter as a number would report
+    /// every interface as present, which is the failure this replaced running
+    /// the other way.
+    #[test]
+    fn a_portal_version_is_read_from_the_value_and_not_the_type() {
+        assert_eq!(parse_busctl_version("u 2\n"), Some(2));
+        assert_eq!(parse_busctl_version("u 1"), Some(1));
+        assert_eq!(parse_busctl_version(""), None);
+        assert_eq!(parse_busctl_version("u"), None);
+        assert_eq!(parse_busctl_version("s \"2\""), None);
+        assert_eq!(parse_busctl_version("2"), None);
     }
 
     #[test]
-    fn portal_token_path_uses_xdg_runtime_dir() {
-        let path = portal_token_path().to_string_lossy().to_string();
-        if std::env::var_os("XDG_RUNTIME_DIR").is_some() {
-            assert!(path.contains("wordscript"));
-            assert!(path.ends_with("remote-desktop.token"));
+    fn a_blank_token_does_not_count_as_a_grant() {
+        assert!(!PortalGrantRecord::default().has_token());
+        assert!(!PortalGrantRecord {
+            restore_token: Some("   ".to_string()),
+            refused_at_ms: None,
+        }
+        .has_token());
+        assert!(PortalGrantRecord {
+            restore_token: Some("token-1".to_string()),
+            refused_at_ms: None,
+        }
+        .has_token());
+    }
+
+    /// The reporting machine answers `KDE` for both desktop variables and has
+    /// no "plasma" anywhere in its environment, so a detector that only looked
+    /// for "plasma" called a KDE Plasma 6 session `Other` and closed the portal
+    /// path before it started. See ADR 0234.
+    #[test]
+    fn a_kde_session_is_not_an_unknown_compositor() {
+        let restore = (
+            std::env::var_os("XDG_CURRENT_DESKTOP"),
+            std::env::var_os("XDG_SESSION_DESKTOP"),
+        );
+        // SAFETY: single-threaded test process for these two variables; both are
+        // put back before the test returns.
+        unsafe {
+            std::env::set_var("XDG_CURRENT_DESKTOP", "KDE");
+            std::env::set_var("XDG_SESSION_DESKTOP", "KDE");
+        }
+        let detected = detect_compositor();
+        unsafe {
+            match restore.0 {
+                Some(value) => std::env::set_var("XDG_CURRENT_DESKTOP", value),
+                None => std::env::remove_var("XDG_CURRENT_DESKTOP"),
+            }
+            match restore.1 {
+                Some(value) => std::env::set_var("XDG_SESSION_DESKTOP", value),
+                None => std::env::remove_var("XDG_SESSION_DESKTOP"),
+            }
+        }
+
+        if cfg!(target_os = "linux")
+            && std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none()
+            && std::env::var_os("SWAYSOCK").is_none()
+        {
+            assert!(
+                matches!(
+                    detected,
+                    CompositorKind::KdePlasma6 | CompositorKind::KdePlasma5
+                ),
+                "XDG_CURRENT_DESKTOP=KDE is a Plasma session, got {detected:?}"
+            );
         }
     }
 }

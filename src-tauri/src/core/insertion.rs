@@ -17,9 +17,9 @@ use super::config::AppConfig;
 use super::paths::{config_file_path, scratchpad_file_path};
 use super::portal::{
     detect_portal_capabilities, detect_portal_prompt_from_stderr, portal_prompt_signal_label,
-    request_remote_desktop_session, CompositorKind, PortalCapabilities, PortalError,
-    PortalPromptSignal, PortalSessionHandle,
+    CompositorKind, PortalCapabilities, PortalPromptSignal,
 };
+use super::portal_session::{self, PortalGrantPhase, PortalGrantStatus};
 use super::runtime_log;
 use super::sessions::now_ms;
 
@@ -41,6 +41,11 @@ pub enum NativeInsertDriver {
     Arboard,
     XdotoolType,
     Xdotool,
+    /// Ctrl+V through `org.freedesktop.portal.RemoteDesktop` on a session the
+    /// user granted once. The only Linux paste driver whose delivery is a call
+    /// with a result rather than a keystroke into the void, and the only one
+    /// that reaches a native Wayland window (ADR 0228).
+    RemoteDesktopPortal,
     Wtype,
     Ydotool,
     Enigo,
@@ -54,6 +59,7 @@ impl NativeInsertDriver {
             Self::Arboard => "arboard clipboard",
             Self::XdotoolType => "xdotool type",
             Self::Xdotool => "xdotool",
+            Self::RemoteDesktopPortal => "RemoteDesktop portal",
             Self::Wtype => "wtype",
             Self::Ydotool => "ydotool",
             Self::Enigo => "enigo",
@@ -64,7 +70,12 @@ impl NativeInsertDriver {
     fn role(self) -> &'static str {
         match self {
             Self::WlCopy | Self::Arboard => "clipboard",
-            Self::XdotoolType | Self::Xdotool | Self::Wtype | Self::Ydotool | Self::Enigo => "paste",
+            Self::XdotoolType
+            | Self::Xdotool
+            | Self::RemoteDesktopPortal
+            | Self::Wtype
+            | Self::Ydotool
+            | Self::Enigo => "paste",
             Self::Scratchpad => "recovery",
         }
     }
@@ -324,15 +335,11 @@ pub struct NativeInsertionStatus {
     pub platform: NativeInsertionPlatformStatus,
     #[serde(default)]
     pub last_portal_prompt: Option<LastPortalPrompt>,
+    /// The one-time input permission this machine's Wayland lane needs, and
+    /// whether it is held right now. `None` off Linux and on desktops with no
+    /// RemoteDesktop portal, where there is nothing to grant.
     #[serde(default)]
-    pub portal_session: Option<PortalSessionSummary>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct PortalSessionSummary {
-    pub active: bool,
-    pub compositor: String,
-    pub error: Option<String>,
+    pub portal_grant: Option<PortalGrantStatus>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -349,8 +356,6 @@ pub struct NativeInsertionState {
     entries: Vec<ScratchpadEntry>,
     last_transcript: Option<ScratchpadEntry>,
     last_portal_prompt: Option<LastPortalPrompt>,
-    portal_session_attempted: bool,
-    portal_session: Option<Result<PortalSessionHandle, PortalError>>,
 }
 
 /// Whether an XTEST paste can reach anything at all in this session.
@@ -401,6 +406,15 @@ pub(crate) trait InsertIo {
     fn probe_xtest_target(&mut self) -> XtestTargetProbe {
         XtestTargetProbe::Unknown
     }
+
+    /// Whether a granted RemoteDesktop session is live and could carry the
+    /// paste. Asked once per run, at the same moment as the probe, because the
+    /// two answers together decide WHICH single driver runs -- never which one
+    /// runs first. The default is `false`, so every pre-existing test keeps the
+    /// chain it was written against.
+    fn portal_session_is_live(&mut self) -> bool {
+        false
+    }
 }
 
 struct SystemInsertIo;
@@ -426,6 +440,9 @@ impl InsertIo for SystemInsertIo {
         match driver {
             NativeInsertDriver::Xdotool => {
                 paste_with_command("xdotool", &["key", "--clearmodifiers", "ctrl+v"], false)
+            }
+            NativeInsertDriver::RemoteDesktopPortal => {
+                portal_session::paste_ctrl_v().map_err(|error| error.label())
             }
             NativeInsertDriver::Wtype => {
                 paste_with_command("wtype", &["-M", "ctrl", "-k", "v", "-m", "ctrl"], true)
@@ -456,6 +473,10 @@ impl InsertIo for SystemInsertIo {
     fn probe_xtest_target(&mut self) -> XtestTargetProbe {
         probe_xtest_target_with_xdotool()
     }
+
+    fn portal_session_is_live(&mut self) -> bool {
+        portal_session::session_is_live()
+    }
 }
 
 impl NativeInsertionState {
@@ -467,28 +488,17 @@ impl NativeInsertionState {
             entries,
             last_transcript,
             last_portal_prompt: None,
-            portal_session_attempted: false,
-            portal_session: None,
         }
     }
 
     fn status(&mut self) -> NativeInsertionStatus {
-        if cfg!(target_os = "linux") {
-            let capabilities = detect_portal_capabilities_for_status();
-            self.ensure_portal_session(&capabilities);
-        }
-        let portal_session = self.portal_session.as_ref().map(|result| match result {
-            Ok(handle) => PortalSessionSummary {
-                active: true,
-                compositor: handle.compositor.label().to_string(),
-                error: None,
-            },
-            Err(error) => PortalSessionSummary {
-                active: false,
-                compositor: error.label(),
-                error: Some(error.label()),
-            },
-        });
+        // Reading the status no longer CREATES anything. It used to call
+        // `request_remote_desktop_session`, which asked the portal for a real
+        // session over `busctl` just so a diagnostics row could say "active" --
+        // a session that died with the `busctl` process before the panel had
+        // finished rendering it. The live session now belongs to
+        // `portal_session`, and this only reports what is already true.
+        let portal_grant = portal_grant_for_status();
         NativeInsertionStatus {
             config: self.config.clone(),
             last_transcript: self.last_transcript.clone(),
@@ -496,7 +506,7 @@ impl NativeInsertionState {
             scratchpad_path: scratchpad_file_path().to_string_lossy().to_string(),
             platform: platform_status(self.config.auto_paste),
             last_portal_prompt: self.last_portal_prompt.clone(),
-            portal_session,
+            portal_grant,
         }
     }
 
@@ -509,32 +519,8 @@ impl NativeInsertionState {
         self.entries.clear();
         self.last_transcript = None;
         self.last_portal_prompt = None;
-        self.portal_session_attempted = false;
-        self.portal_session = None;
         let _ = save_scratchpad_entries(&self.entries);
         self.status()
-    }
-
-    fn ensure_portal_session(&mut self, capabilities: &PortalCapabilities) {
-        if self.portal_session_attempted {
-            return;
-        }
-        self.portal_session_attempted = true;
-        if !capabilities.compositor.supports_remote_desktop_portal() {
-            return;
-        }
-        if !capabilities.has_remote_desktop_portal {
-            self.portal_session = Some(Err(PortalError::NoPortalInterface));
-            runtime_log::record(
-                "[WordScript] Portal session skipped: RemoteDesktop interface is not reachable on the session bus.".to_string(),
-            );
-            return;
-        }
-        runtime_log::record(format!(
-            "[WordScript] Requesting RemoteDesktop portal session for compositor={}",
-            capabilities.compositor.label(),
-        ));
-        self.portal_session = Some(request_remote_desktop_session(capabilities));
     }
 
     fn insert(&mut self, request: NativeInsertRequest) -> NativeInsertResult {
@@ -577,6 +563,20 @@ impl NativeInsertionState {
 
         result
     }
+}
+
+/// The grant state a status read reports, or `None` where there is nothing to
+/// grant. `None` and "not granted" are different answers and the screen draws
+/// them differently: one has no action, the other has one button.
+fn portal_grant_for_status() -> Option<PortalGrantStatus> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let status = portal_session::grant_status();
+    if status.phase == PortalGrantPhase::Unsupported {
+        return None;
+    }
+    Some(status)
 }
 
 #[tauri::command]
@@ -636,6 +636,34 @@ pub fn restore_last_transcript(
         auto_paste: None,
     });
     Ok(result)
+}
+
+/// The one place in the product that may raise the compositor's input
+/// permission dialog.
+///
+/// It is a button in Delivery & Insert and nothing else -- not a startup step,
+/// not the first dictation, not a retry after a failed paste. The owner's
+/// standing objection is to being asked repeatedly, and the answer that survives
+/// that objection is that WordScript asks exactly when it is asked to (ADR
+/// 0228, answer 1; ADR 0234).
+///
+/// Async and off the main thread because the call waits for a person to read a
+/// dialog: on the main thread that is a frozen webview for as long as they take.
+#[tauri::command]
+pub async fn request_portal_input_grant(app: AppHandle) -> Result<NativeInsertionStatus, String> {
+    let granted = tauri::async_runtime::spawn_blocking(portal_session::request_grant)
+        .await
+        .map_err(|error| format!("Portal grant task panicked: {error}"))?;
+    runtime_log::record(format!(
+        "[WordScript] Portal grant action finished phase={:?} session_active={}",
+        granted.phase, granted.session_active,
+    ));
+
+    let state = app
+        .try_state::<Mutex<NativeInsertionState>>()
+        .ok_or_else(|| "Native insertion state is not available.".to_string())?;
+    let mut state = state.lock().map_err(|error| error.to_string())?;
+    Ok(state.status())
 }
 
 #[tauri::command]
@@ -792,14 +820,39 @@ pub(crate) fn execute_insert_request_with_io(
         // after the paste, so on a run that did not actually insert, the user is
         // left with neither the paste nor the text. When delivery cannot be
         // confirmed, the transcript stays on the clipboard.
-        let delivery_confirmable = !(platform.is_wayland && platform.has_x11_display)
-            || io.probe_xtest_target() != XtestTargetProbe::Unreachable;
+        //
+        // The probe is asked ONCE, here, and its answer does two jobs: it
+        // decides which single driver the lane uses (`PasteLane`), and it
+        // decides whether the clipboard may be restored afterwards. Asking twice
+        // could give two answers -- the focus can move between them -- and a run
+        // that chose its driver on one answer and its restore on another would
+        // be reasoning about two different moments.
+        let xtest_target = if platform.is_wayland && platform.has_x11_display {
+            io.probe_xtest_target()
+        } else {
+            XtestTargetProbe::Unknown
+        };
+        let lane = PasteLane {
+            xtest_target,
+            portal_session_live: platform.is_wayland && io.portal_session_is_live(),
+        };
+        let xtest_delivery_confirmable = !(platform.is_wayland && platform.has_x11_display)
+            || xtest_target != XtestTargetProbe::Unreachable;
 
         io.wait_before_paste(config.paste_delay_ms);
-        match run_paste_driver_chain(&platform, io) {
+        match run_paste_driver_chain(&platform, lane, io) {
             Ok(driver) => {
                 pasted = true;
                 active_driver = driver;
+                // A portal paste is a D-Bus call that returned Ok, which is the
+                // compositor that owns the focused window saying it took the
+                // keys. That is the confirmation this whole track exists for,
+                // and it makes the clipboard safe to restore on exactly the
+                // lane where XTEST could never say so.
+                let delivery_confirmable = matches!(
+                    driver,
+                    NativeInsertDriver::RemoteDesktopPortal
+                ) || xtest_delivery_confirmable;
                 if config.keep_on_clipboard {
                     // Asked for, not inferred. The paste is an additional
                     // delivery here rather than a transport that tidies up after
@@ -832,7 +885,7 @@ pub(crate) fn execute_insert_request_with_io(
             }
             Err(cause) => {
                 if let Some(signal) = detect_portal_prompt_from_stderr(&cause) {
-                    let driver = paste_driver_execution_chain(&platform)
+                    let driver = paste_driver_execution_chain(&platform, lane)
                         .into_iter()
                         .next()
                         .unwrap_or(NativeInsertDriver::Scratchpad);
@@ -1071,12 +1124,13 @@ fn run_clipboard_driver_chain(
 
 fn run_paste_driver_chain(
     platform: &NativeInsertPlatformContext,
+    lane: PasteLane,
     io: &mut impl InsertIo,
 ) -> Result<NativeInsertDriver, String> {
     let mut errors = Vec::new();
     let mut first_portal_signal: Option<PortalPromptSignal> = None;
     let started_at = Instant::now();
-    let execution_chain = paste_driver_execution_chain(platform);
+    let execution_chain = paste_driver_execution_chain(platform, lane);
 
     if execution_chain.is_empty() {
         return Err(no_available_paste_driver_reason(platform));
@@ -1139,34 +1193,88 @@ fn clipboard_driver_execution_chain(
     chain
 }
 
-fn paste_driver_execution_chain(platform: &NativeInsertPlatformContext) -> Vec<NativeInsertDriver> {
+/// What this run knows about where the paste would land, decided once and
+/// before any driver is launched.
+///
+/// SEQUENCING IS A REQUIREMENT, NOT AN OPTIMISATION (owner, 2026-08-18). Each
+/// fake-input attempt on Linux is its own privilege prompt, which is why
+/// `wtype` and `ydotool` were rejected outright. So the drivers on a Wayland
+/// lane are never tried one after another: this pair of answers picks the
+/// single one that applies, and if it fails the run goes to the clipboard
+/// rather than to a second driver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PasteLane {
+    pub xtest_target: XtestTargetProbe,
+    pub portal_session_live: bool,
+}
+
+impl PasteLane {
+    /// What a caller that is describing the machine rather than delivering a
+    /// transcript knows: the portal's state, which is a fact, and nothing about
+    /// the focus, which is not knowable until a dictation actually ends.
+    fn described(portal_session_live: bool) -> Self {
+        Self {
+            xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live,
+        }
+    }
+}
+
+/// The single driver this run may use, as a one-element list on every Linux
+/// Wayland lane.
+///
+/// The table is ADR 0228's, and it reads in exactly one direction:
+///
+/// | Probe          | Driver                | Prompt            |
+/// | -------------- | --------------------- | ----------------- |
+/// | `Reachable`    | `xdotool`             | none              |
+/// | `Unreachable`  | RemoteDesktop portal  | none, it is granted already |
+/// | `Unknown`      | `xdotool`, then clipboard | none          |
+///
+/// `Unknown` stays on `xdotool` deliberately: an undetermined probe is not
+/// evidence that XTEST has no target (KWin forwards XTEST from Xwayland into
+/// the compositor, which is what ADR 0229 was written about), and spending the
+/// portal on a guess would be spending the one driver that can confirm itself.
+fn paste_driver_execution_chain(
+    platform: &NativeInsertPlatformContext,
+    lane: PasteLane,
+) -> Vec<NativeInsertDriver> {
     if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
         return vec![NativeInsertDriver::Enigo];
     }
 
-    let mut chain = Vec::new();
+    if platform.is_wayland {
+        // A native Wayland window holds the focus and the grant exists: this is
+        // the one case XTEST provably cannot serve and the portal can.
+        if lane.portal_session_live && lane.xtest_target == XtestTargetProbe::Unreachable {
+            return vec![NativeInsertDriver::RemoteDesktopPortal];
+        }
 
+        if platform.has_x11_display && platform.has_xdotool {
+            return vec![NativeInsertDriver::Xdotool];
+        }
+
+        // Pure Wayland: there is no XTEST lane at all here, so the portal is
+        // not a second attempt after anything -- it is the only mechanism.
+        if lane.portal_session_live {
+            return vec![NativeInsertDriver::RemoteDesktopPortal];
+        }
+
+        if platform.has_x11_display {
+            // Hybrid X11/Wayland without xdotool: wtype/ydotool stay out to
+            // avoid compositor fake-input privilege prompts.
+            return vec![NativeInsertDriver::Enigo];
+        }
+
+        // Pure Wayland with no grant: clipboard-only is the safe default and
+        // the user pastes manually.
+        return Vec::new();
+    }
+
+    let mut chain = Vec::new();
     if platform.has_x11_display && platform.has_xdotool {
         chain.push(NativeInsertDriver::Xdotool);
-        if platform.is_wayland {
-            return chain;
-        }
     }
-
-    if platform.is_wayland {
-        if platform.has_x11_display {
-            // Hybrid X11/Wayland: wtype/ydotool are intentionally skipped here
-            // to avoid compositor fake-input privilege prompts after xdotool
-            // already handled the paste above.
-            chain.push(NativeInsertDriver::Enigo);
-        } else {
-            // Pure Wayland: do not use wtype/ydotool to avoid compositor
-            // privilege prompts (e.g. KDE "Remote Control" dialog).
-            // Clipboard-only is the safe default; user can paste manually.
-        }
-        return chain;
-    }
-
     chain.push(NativeInsertDriver::Enigo);
     chain
 }
@@ -1177,7 +1285,7 @@ fn no_available_paste_driver_reason(platform: &NativeInsertPlatformContext) -> S
             return "No usable paste driver available: xdotool is missing in PATH for the active XWayland lane.".to_string();
         }
 
-        return "Auto-paste is not available on pure Wayland sessions to avoid compositor privilege prompts. Paste manually from the clipboard.".to_string();
+        return "Auto-paste has no driver on this Wayland session yet. Grant the one-time input permission in Delivery & Insert, or paste manually from the clipboard.".to_string();
     }
 
     if cfg!(target_os = "linux") {
@@ -1551,9 +1659,16 @@ fn platform_status(auto_paste: bool) -> NativeInsertionPlatformStatus {
 fn platform_status_from_context(
     platform: NativeInsertPlatformContext,
 ) -> NativeInsertionPlatformStatus {
-    let active_driver = preferred_active_driver(&platform);
-    let driver_chain = build_driver_chain(&platform, active_driver);
-    let (readiness, readiness_message) = platform_readiness(&platform);
+    // A status read describes the machine; it does not deliver anything. So it
+    // asks the portal whether a session is live -- a fact that holds until
+    // somebody revokes it -- and does NOT run the focus probe, whose answer is
+    // about a moment that has not happened yet. `Unknown` here is the truth:
+    // where the next dictation will land is not knowable while a settings
+    // screen is open, and the probe costs two process spawns per poll.
+    let lane = PasteLane::described(portal_session::session_is_live());
+    let active_driver = preferred_active_driver(&platform, lane);
+    let driver_chain = build_driver_chain(&platform, active_driver, lane);
+    let (readiness, readiness_message) = platform_readiness(&platform, lane);
     let portal_capabilities = if cfg!(target_os = "linux") {
         Some(detect_portal_capabilities_for_status())
     } else {
@@ -1641,7 +1756,7 @@ fn platform_status_from_context(
                     "Experimental path on {}: WordScript writes through {}, then tries {} before falling back to clipboard and scratchpad recovery.",
                     compositor_label,
                     preferred_clipboard_driver(&platform).label(),
-                    preferred_paste_driver_label(&platform),
+                    preferred_paste_driver_label(&platform, lane),
                 )
             } else {
                 format!(
@@ -1675,7 +1790,7 @@ fn platform_status_from_context(
                 format!(
                     "Preview path: WordScript writes through {}, then prefers {} for direct paste on X11 before falling back to clipboard and scratchpad recovery.",
                     preferred_clipboard_driver(&platform).label(),
-                    preferred_paste_driver_label(&platform),
+                    preferred_paste_driver_label(&platform, lane),
                 )
             } else {
                 "Preview path with manual paste: WordScript writes to the clipboard and keeps a scratchpad recovery copy.".to_string()
@@ -1773,7 +1888,10 @@ fn wayland_caveats(
     caveats
 }
 
-fn platform_readiness(platform: &NativeInsertPlatformContext) -> (NativeInsertReadiness, String) {
+fn platform_readiness(
+    platform: &NativeInsertPlatformContext,
+    lane: PasteLane,
+) -> (NativeInsertReadiness, String) {
     if cfg!(target_os = "windows") {
         return if platform.auto_paste {
             (
@@ -1815,18 +1933,31 @@ fn platform_readiness(platform: &NativeInsertPlatformContext) -> (NativeInsertRe
             );
         }
 
+        if lane.portal_session_live {
+            return (
+                NativeInsertReadiness::Ready,
+                if platform.has_x11_display && platform.has_xdotool {
+                    "Both lanes are covered: xdotool for XWayland windows, and the granted input permission for native Wayland ones."
+                        .to_string()
+                } else {
+                    "The one-time input permission is granted, so WordScript can insert into native Wayland windows."
+                        .to_string()
+                },
+            );
+        }
+
         if platform.has_x11_display && platform.has_xdotool {
             return (
                 NativeInsertReadiness::Ready,
-                "XWayland and xdotool are available, so WordScript can attempt direct paste before recovery fallback."
+                "XWayland and xdotool are available, so WordScript can attempt direct paste before recovery fallback. Native Wayland windows need the one-time input permission below."
                     .to_string(),
             );
         }
 
-        // Pure Wayland: auto-paste is disabled to avoid compositor privilege prompts
+        // Pure Wayland with no grant: nothing here can inject a keystroke.
         return (
             NativeInsertReadiness::RecoveryOnly,
-            "Clipboard and scratchpad recovery are ready now. Auto-paste is not available on pure Wayland to avoid compositor privilege prompts. Paste manually from the clipboard.".to_string(),
+            "Clipboard and scratchpad recovery are ready now. Insert at cursor needs the one-time input permission on this Wayland session; until it is granted, paste manually from the clipboard.".to_string(),
         );
     }
 
@@ -1853,9 +1984,12 @@ fn platform_readiness(platform: &NativeInsertPlatformContext) -> (NativeInsertRe
     )
 }
 
-fn preferred_active_driver(platform: &NativeInsertPlatformContext) -> NativeInsertDriver {
+fn preferred_active_driver(
+    platform: &NativeInsertPlatformContext,
+    lane: PasteLane,
+) -> NativeInsertDriver {
     if platform.auto_paste {
-        if let Some(driver) = paste_driver_execution_chain(platform)
+        if let Some(driver) = paste_driver_execution_chain(platform, lane)
             .into_iter()
             .find(|driver| !platform.is_wayland || !matches!(driver, NativeInsertDriver::Enigo))
         {
@@ -1880,8 +2014,11 @@ fn preferred_clipboard_driver(platform: &NativeInsertPlatformContext) -> NativeI
         .unwrap_or(NativeInsertDriver::Scratchpad)
 }
 
-fn preferred_paste_driver_label(platform: &NativeInsertPlatformContext) -> &'static str {
-    paste_driver_execution_chain(platform)
+fn preferred_paste_driver_label(
+    platform: &NativeInsertPlatformContext,
+    lane: PasteLane,
+) -> &'static str {
+    paste_driver_execution_chain(platform, lane)
         .into_iter()
         .next()
         .unwrap_or(NativeInsertDriver::Scratchpad)
@@ -1918,6 +2055,7 @@ fn wayland_prerequisite_message(platform: &NativeInsertPlatformContext) -> Strin
 fn build_driver_chain(
     platform: &NativeInsertPlatformContext,
     active_driver: NativeInsertDriver,
+    lane: PasteLane,
 ) -> Vec<NativeInsertDriverStatus> {
     if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
         return vec![
@@ -1972,6 +2110,18 @@ fn build_driver_chain(
                     "DISPLAY is present but xdotool is missing in PATH."
                 } else {
                     "XWayland is not active, so xdotool is not part of this Wayland lane."
+                },
+            ),
+            driver_status(
+                NativeInsertDriver::RemoteDesktopPortal,
+                lane.portal_session_live,
+                active_driver,
+                if lane.portal_session_live {
+                    "Granted: takes the paste whenever a native Wayland window holds the focus, which is where xdotool cannot reach."
+                } else if portal_session::portal_is_possible() {
+                    "Available on this desktop but not granted yet. It is the only driver that reaches a native Wayland window; grant it once above."
+                } else {
+                    "This desktop has no RemoteDesktop portal, so there is no grant to give."
                 },
             ),
             driver_status(
@@ -2090,6 +2240,202 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    /// The lane a hybrid XWayland session is on, with `xdotool` present.
+    #[cfg(target_os = "linux")]
+    fn hybrid_wayland_context() -> NativeInsertPlatformContext {
+        NativeInsertPlatformContext {
+            auto_paste: true,
+            is_wayland: true,
+            has_x11_display: true,
+            has_wl_copy: true,
+            has_xdotool: true,
+            has_wtype: false,
+            has_ydotool: false,
+            try_xdotool_type_first: false,
+        }
+    }
+
+    /// ADR 0228's table, read straight. The rule the owner set is that a run
+    /// gets ONE driver -- each fake-input attempt is its own privilege prompt,
+    /// which is why `wtype`/`ydotool` were rejected -- so every row here also
+    /// asserts the length. A chain of two on this lane is the bug, even if both
+    /// entries are individually correct.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn the_probe_picks_one_driver_and_never_stacks_two() {
+        let platform = hybrid_wayland_context();
+
+        let unreachable = paste_driver_execution_chain(
+            &platform,
+            PasteLane {
+                xtest_target: XtestTargetProbe::Unreachable,
+                portal_session_live: true,
+            },
+        );
+        assert_eq!(
+            unreachable,
+            vec![NativeInsertDriver::RemoteDesktopPortal],
+            "a native Wayland window holds the focus: only the portal can reach it"
+        );
+
+        let reachable = paste_driver_execution_chain(
+            &platform,
+            PasteLane {
+                xtest_target: XtestTargetProbe::Reachable,
+                portal_session_live: true,
+            },
+        );
+        assert_eq!(
+            reachable,
+            vec![NativeInsertDriver::Xdotool],
+            "a real X client holds the focus: xdotool is prompt-free and correct"
+        );
+
+        let unknown = paste_driver_execution_chain(
+            &platform,
+            PasteLane {
+                xtest_target: XtestTargetProbe::Unknown,
+                portal_session_live: true,
+            },
+        );
+        assert_eq!(
+            unknown,
+            vec![NativeInsertDriver::Xdotool],
+            "an undetermined probe is not evidence of a missing target (ADR 0229), so the run does not spend the portal on a guess"
+        );
+    }
+
+    /// Without a grant the hybrid lane is exactly what it was before this leg.
+    /// Worth stating, because the portal arriving must not quietly change the
+    /// behaviour of every machine that never grants it.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn an_ungranted_machine_keeps_the_chain_it_had() {
+        let platform = hybrid_wayland_context();
+        for probe in [
+            XtestTargetProbe::Reachable,
+            XtestTargetProbe::Unreachable,
+            XtestTargetProbe::Unknown,
+        ] {
+            assert_eq!(
+                paste_driver_execution_chain(
+                    &platform,
+                    PasteLane {
+                        xtest_target: probe,
+                        portal_session_live: false,
+                    },
+                ),
+                vec![NativeInsertDriver::Xdotool],
+                "{probe:?} without a grant stays on xdotool"
+            );
+        }
+    }
+
+    /// A pure Wayland session has no XTEST lane at all, so the portal is not a
+    /// second attempt after anything -- it is the only mechanism there is. And
+    /// without it the chain is empty rather than hopeful.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn pure_wayland_gains_a_driver_only_from_the_grant() {
+        let platform = NativeInsertPlatformContext {
+            auto_paste: true,
+            is_wayland: true,
+            has_x11_display: false,
+            has_wl_copy: true,
+            has_xdotool: false,
+            has_wtype: true,
+            has_ydotool: true,
+            try_xdotool_type_first: false,
+        };
+
+        assert_eq!(
+            paste_driver_execution_chain(
+                &platform,
+                PasteLane {
+                    xtest_target: XtestTargetProbe::Unknown,
+                    portal_session_live: true,
+                },
+            ),
+            vec![NativeInsertDriver::RemoteDesktopPortal],
+        );
+
+        assert!(
+            paste_driver_execution_chain(
+                &platform,
+                PasteLane {
+                    xtest_target: XtestTargetProbe::Unknown,
+                    portal_session_live: false,
+                },
+            )
+            .is_empty(),
+            "wtype and ydotool are installed here and stay out anyway: they were rejected on prompt grounds, not on availability"
+        );
+    }
+
+    /// The end of the thesis this track opened with. A portal paste is a D-Bus
+    /// call that returned Ok, so the delivery IS confirmed -- and the clipboard
+    /// may be restored on the very lane where XTEST could never say so. The
+    /// same run through xdotool leaves the transcript on the clipboard.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_portal_paste_is_confirmed_so_the_clipboard_comes_back() {
+        let mut clipboard_results = HashMap::new();
+        clipboard_results.insert(NativeInsertDriver::WlCopy, Ok(()));
+        let mut paste_results = HashMap::new();
+        paste_results.insert(NativeInsertDriver::RemoteDesktopPortal, Ok(()));
+
+        let mut io = FakeInsertIo {
+            clipboard_results,
+            clipboard_read: Some("Previous clipboard".to_string()),
+            paste_results,
+            scheduled_restores: Vec::new(),
+            waits: Vec::new(),
+            clipboard_texts: Vec::new(),
+            clipboard_drivers: Vec::new(),
+            paste_drivers: Vec::new(),
+            type_drivers: Vec::new(),
+            xdotool_type_results: HashMap::new(),
+            xtest_target: XtestTargetProbe::Unreachable,
+            portal_session_live: true,
+        };
+
+        let result = execute_insert_request_with_io(
+            NativeInsertRequest {
+                text: "Portal delivery".to_string(),
+                source: None,
+                corrected: None,
+                auto_paste: Some(true),
+            },
+            &NativeInsertionConfig {
+                keep_on_clipboard: false,
+                auto_paste: true,
+                paste_delay_ms: 0,
+                xdotool_type_max_chars: 800,
+            },
+            1,
+            hybrid_wayland_context(),
+            &mut io,
+            None,
+        );
+
+        assert!(result.pasted);
+        assert_eq!(
+            result.active_driver,
+            NativeInsertDriver::RemoteDesktopPortal
+        );
+        assert_eq!(result.insert_mode, NativeInsertMode::DirectPaste);
+        assert_eq!(
+            io.paste_drivers,
+            vec![NativeInsertDriver::RemoteDesktopPortal],
+            "one driver ran, and it was not tried after another"
+        );
+        assert_eq!(
+            result.clipboard_restore,
+            NativeClipboardRestoreStatus::Scheduled,
+            "the portal confirmed delivery, so the user's clipboard is theirs again"
+        );
+    }
+
     #[test]
     fn only_a_real_paste_reports_inserted_delivery() {
         assert_eq!(
@@ -2124,6 +2470,9 @@ mod tests {
         /// `Unknown` in every pre-existing test, which is what keeps them on
         /// their previous behaviour: the probe only refuses on `Unreachable`.
         xtest_target: XtestTargetProbe,
+        /// `false` in every pre-existing test, so the portal driver cannot
+        /// appear in a chain that was written before it existed.
+        portal_session_live: bool,
     }
 
     impl FakeInsertIo {
@@ -2145,6 +2494,7 @@ mod tests {
                 paste_drivers: Vec::new(),
                 type_drivers: Vec::new(),
                 xtest_target: XtestTargetProbe::Unknown,
+                portal_session_live: false,
             }
         }
     }
@@ -2197,6 +2547,10 @@ mod tests {
 
         fn probe_xtest_target(&mut self) -> XtestTargetProbe {
             self.xtest_target
+        }
+
+        fn portal_session_is_live(&mut self) -> bool {
+            self.portal_session_live
         }
     }
 
@@ -2335,6 +2689,7 @@ mod tests {
             type_drivers: Vec::new(),
             xdotool_type_results: HashMap::new(),
             xtest_target: XtestTargetProbe::Unreachable,
+            portal_session_live: false,
         };
 
         let result = execute_insert_request_with_io(
@@ -2404,6 +2759,7 @@ mod tests {
             type_drivers: Vec::new(),
             xdotool_type_results: HashMap::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
 
         let result = execute_insert_request_with_io(
@@ -2469,6 +2825,7 @@ mod tests {
             type_drivers: Vec::new(),
             xdotool_type_results: HashMap::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2512,11 +2869,19 @@ mod tests {
         assert!(result
             .recovery_message
             .contains("transcript is on the clipboard"));
-        assert_eq!(
-            result.fallback_reason.as_deref(),
-            Some(
-                "Auto-paste is not available on pure Wayland sessions to avoid compositor privilege prompts. Paste manually from the clipboard."
-            )
+        // The sentence changed with the portal driver and had to: a pure
+        // Wayland session without a grant is no longer a session where insert
+        // "is not available", it is one where nobody has granted it yet. A
+        // reason that describes a permanent limitation would send the reader
+        // looking for a different app instead of for the button.
+        let reason = result.fallback_reason.as_deref().unwrap_or_default();
+        assert!(
+            reason.contains("Delivery & Insert"),
+            "the reason names where the permission is granted: {reason}"
+        );
+        assert!(
+            reason.contains("paste manually"),
+            "and what to do meanwhile: {reason}"
         );
         assert!(io.paste_drivers.is_empty());
         assert!(io.scheduled_restores.is_empty());
@@ -2548,6 +2913,7 @@ mod tests {
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
         let mut portal_prompt = None;
         let result = execute_insert_request_with_io(
@@ -2599,6 +2965,7 @@ mod tests {
             type_drivers: Vec::new(),
             xdotool_type_results: HashMap::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
 
         let result = execute_insert_request_with_io(
@@ -2661,9 +3028,13 @@ mod tests {
         assert_eq!(status.platform_label, "Linux Wayland");
         assert_eq!(status.active_driver, NativeInsertDriver::Arboard);
         assert_eq!(status.readiness, NativeInsertReadiness::RecoveryOnly);
-        assert!(status
-            .readiness_message
-            .contains("Auto-paste is not available on pure Wayland"));
+        assert!(
+            status
+                .readiness_message
+                .contains("needs the one-time input permission"),
+            "{}",
+            status.readiness_message
+        );
         assert!(status
             .driver_chain
             .iter()
@@ -2733,6 +3104,7 @@ mod tests {
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2793,6 +3165,7 @@ mod tests {
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2855,6 +3228,7 @@ mod tests {
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {
@@ -2907,6 +3281,7 @@ mod tests {
             paste_drivers: Vec::new(),
             type_drivers: Vec::new(),
             xtest_target: XtestTargetProbe::Unknown,
+            portal_session_live: false,
         };
         let result = execute_insert_request_with_io(
             NativeInsertRequest {

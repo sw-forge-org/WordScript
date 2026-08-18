@@ -20,6 +20,7 @@ import type {
   NativeInsertDriverStatus,
   NativeInsertReadiness,
   NativeSupportTier,
+  PortalGrantStatus,
 } from "@/types/nativeInsertion";
 import type { WiredScreenProps } from "./props";
 
@@ -103,9 +104,52 @@ function driverCheck(driver: NativeInsertDriverStatus, excludedByDecision: boole
   };
 }
 
+/**
+ * THE ONE-TIME INPUT PERMISSION, AND WHY IT IS A BUTTON.
+ *
+ * On a Wayland session the only mechanism that can put text into a NATIVE
+ * Wayland window is the RemoteDesktop portal, and it needs the desktop's
+ * "Control input devices" permission once. Where that request lives was the
+ * owner's decision and it was made against experience: an early WordScript
+ * asked every single time, and the answer was "properly once in the settings,
+ * or not at all". So it is here, it is pressed deliberately, and no dictation
+ * ever raises it (ADR 0234). A run without the permission goes to the clipboard
+ * and says which button fixes that.
+ *
+ * A REFUSAL IS REMEMBERED, NOT RE-ASKED. Saying no once means WordScript stops
+ * asking; this button is how somebody takes that back, which is why its label
+ * changes rather than the row disappearing.
+ */
+function grantTone(grant: PortalGrantStatus): StatusTone {
+  switch (grant.phase) {
+    case "granted":
+      return "success";
+    case "refused":
+      return "warning";
+    case "failed":
+      return "danger";
+    default:
+      return "plan";
+  }
+}
+
+function grantLabel(grant: PortalGrantStatus): string {
+  switch (grant.phase) {
+    case "granted":
+      return "Granted";
+    case "refused":
+      return "Refused";
+    case "failed":
+      return "Could not restore";
+    default:
+      return "Not granted";
+  }
+}
+
 export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
   const { config, active, open } = runtime;
-  const { status, error, isLoading, refresh, clearScratchpad } = useNativeInsertion();
+  const { status, error, isLoading, refresh, clearScratchpad, requestPortalGrant } =
+    useNativeInsertion();
 
   /* `useNativeInsertion` reads once on mount, which is what a section the user
      just opened wants. It is re-read when the section comes back into view,
@@ -148,6 +192,10 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
   const pasteStage = chain.filter((driver) => driver.role === "paste");
   const recovery = chain.find((driver) => driver.role === "recovery") ?? null;
 
+  /* `null` where there is nothing to grant -- a desktop with no RemoteDesktop
+     portal, or a platform that never had this problem. An absent permission and
+     an ungranted one are different states, and only one of them is a button. */
+  const grant = status?.portal_grant ?? null;
   const caveats = platform?.caveats ?? [];
   const scratchpadCount = status?.scratchpad_entries.length ?? 0;
 
@@ -231,6 +279,39 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
           </CardRows>
         </Card>
       </SectionHeader>
+
+      {grant && (
+        <SectionHeader title="Insert on Wayland">
+          <Card description="Native Wayland windows only accept typed input from an app the desktop has given permission to. It is asked for once, here.">
+            <CardRows>
+              <Row
+                label="Input permission"
+                hint={grant.detail}
+                control={
+                  <span className="ws-rowflex">
+                    <StatusBadge tone={grantTone(grant)}>{grantLabel(grant)}</StatusBadge>
+                    {grant.can_request && (
+                      <Button
+                        variant="ghost"
+                        icon={<Icon name="key" />}
+                        disabled={isLoading}
+                        onClick={() => void requestPortalGrant()}
+                      >
+                        {grant.phase === "refused" ? "Ask again" : "Grant access"}
+                      </Button>
+                    )}
+                  </span>
+                }
+              />
+              <Row
+                label="Desktop"
+                hint="The compositor that owns the permission and the windows it applies to."
+                control={<span className="ws-mono ws-muted">{grant.compositor}</span>}
+              />
+            </CardRows>
+          </Card>
+        </SectionHeader>
+      )}
 
       <SectionHeader title="How text gets there" description="Two stages and a fallback, not one chain.">
         <Card>

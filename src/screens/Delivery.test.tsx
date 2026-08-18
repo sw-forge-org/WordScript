@@ -212,4 +212,82 @@ describe("Delivery & Insert", () => {
     expect(await screen.findByText("General writing delivers")).toBeInTheDocument();
     expect(screen.getByText("Insert at cursor")).toBeInTheDocument();
   });
+
+  /* THE PERMISSION SECTION. It is drawn from `portal_grant`, which is null on
+     every machine that has nothing to grant — an X11 session, macOS, Windows, a
+     compositor with no RemoteDesktop portal. A row offering a permission that
+     does not exist would be the fake affordance rule 7 forbids. */
+  it("offers no permission where there is none to give", async () => {
+    render(<DeliveryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    await screen.findByText("Linux · X11");
+    expect(screen.queryByText("Input permission")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Grant access" })).not.toBeInTheDocument();
+  });
+
+  it("asks for the permission only when the button is pressed", async () => {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "native_insertion_status") {
+        return insertionStatus({
+          portal_grant: {
+            phase: "not_granted",
+            session_active: false,
+            can_request: true,
+            compositor: "KDE Plasma 6",
+            detail: "Grant it once in Delivery & Insert.",
+            refused_at_ms: null,
+          },
+        });
+      }
+      if (command === "request_portal_input_grant") {
+        return insertionStatus({
+          portal_grant: {
+            phase: "granted",
+            session_active: true,
+            can_request: false,
+            compositor: "KDE Plasma 6",
+            detail: "Insert at cursor can reach native Wayland windows on this desktop.",
+            refused_at_ms: null,
+          },
+        });
+      }
+      return undefined;
+    });
+
+    render(<DeliveryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    const button = await screen.findByRole("button", { name: "Grant access" });
+    /* Mounting the screen must not have asked for anything: the whole point of
+       putting the request here is that it happens on a press. */
+    expect(invoked).not.toHaveBeenCalledWith("request_portal_input_grant");
+
+    await userEvent.click(button);
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("request_portal_input_grant"));
+    expect(await screen.findByText("Granted")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Grant access" })).not.toBeInTheDocument();
+  });
+
+  /* A refusal is remembered rather than re-asked (ADR 0228, answer 2), so the
+     row stays and its label becomes the way back in. A row that disappeared
+     would leave somebody who changed their mind with no route at all. */
+  it("keeps a way back after a refusal instead of asking again by itself", async () => {
+    invoked.mockImplementation(async (command: string) => {
+      if (command === "native_insertion_status") {
+        return insertionStatus({
+          portal_grant: {
+            phase: "refused",
+            session_active: false,
+            can_request: true,
+            compositor: "KDE Plasma 6",
+            detail: "The desktop refused the input-device permission.",
+            refused_at_ms: 1_787_000_000_000,
+          },
+        });
+      }
+      return undefined;
+    });
+
+    render(<DeliveryScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    expect(await screen.findByText("Refused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask again" })).toBeInTheDocument();
+    expect(invoked).not.toHaveBeenCalledWith("request_portal_input_grant");
+  });
 });
