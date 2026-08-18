@@ -97,3 +97,6 @@ storybook-static
 # Diagnostics artifacts
 /.playwright-mcp/
 /gallery-full.png
+
+# Ad-hoc measurement scripts in the repo root; the kept ones live in scripts/
+/_*.mjs
